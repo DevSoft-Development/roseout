@@ -39,9 +39,12 @@ export type StampsConnectionResult = {
   message: string;
 };
 
+export const STAMPS_V160_NAMESPACE = "http://stamps.com/xml/namespace/2026/06/swsim/SwsimV160";
+export const STAMPS_PRODUCTION_ENDPOINT = "https://swsim.stamps.com/swsim/swsimv160.asmx";
+export const STAMPS_PRODUCTION_WSDL = `${STAMPS_PRODUCTION_ENDPOINT}?wsdl`;
 const DEFAULT_STAGING_ENDPOINT = "https://swsim.testing.stamps.com/swsim/swsimv160.asmx";
 const DEFAULT_STAGING_WSDL = `${DEFAULT_STAGING_ENDPOINT}?wsdl`;
-let cachedNamespace: string | null = null;
+let cachedNamespace: { wsdlUrl: string; namespace: string } | null = null;
 
 export function getStampsMode(): StampsMode {
   const value = String(process.env.STAMPS_MODE || "mock").toLowerCase();
@@ -56,8 +59,10 @@ export function getStampsConfiguration() {
   const username = process.env.STAMPS_USERNAME?.trim() || "";
   const password = process.env.STAMPS_PASSWORD?.trim() || "";
   const configured = Boolean(integrationId && username && password);
-  const endpointUrl = process.env.STAMPS_ENDPOINT_URL?.trim() || (mode === "staging" ? DEFAULT_STAGING_ENDPOINT : "");
-  const wsdlUrl = process.env.STAMPS_WSDL_URL?.trim() || (mode === "staging" ? DEFAULT_STAGING_WSDL : "");
+  const defaultEndpointUrl = mode === "staging" ? DEFAULT_STAGING_ENDPOINT : mode === "live" ? STAMPS_PRODUCTION_ENDPOINT : "";
+  const defaultWsdlUrl = mode === "staging" ? DEFAULT_STAGING_WSDL : mode === "live" ? STAMPS_PRODUCTION_WSDL : "";
+  const endpointUrl = process.env.STAMPS_ENDPOINT_URL?.trim() || defaultEndpointUrl;
+  const wsdlUrl = process.env.STAMPS_WSDL_URL?.trim() || defaultWsdlUrl;
   const explicitlyDisabled = process.env.STAMPS_POSTCARD_ENABLED === "false";
 
   return {
@@ -102,21 +107,34 @@ function redactSoapXml(xml: string) {
     .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>");
 }
 
+function assertProductionV160Configuration(endpointUrl: string, wsdlUrl: string) {
+  if (endpointUrl !== STAMPS_PRODUCTION_ENDPOINT) {
+    throw new Error("Stamps.com production endpoint must use the approved SWS/IM v160 endpoint.");
+  }
+  if (wsdlUrl !== STAMPS_PRODUCTION_WSDL) {
+    throw new Error("Stamps.com production WSDL must use the approved SWS/IM v160 WSDL.");
+  }
+}
+
 async function getStampsNamespace(wsdlUrl: string) {
-  if (cachedNamespace) return cachedNamespace;
+  if (cachedNamespace?.wsdlUrl === wsdlUrl) return cachedNamespace.namespace;
   const response = await fetch(wsdlUrl, { cache: "no-store" });
   if (!response.ok) throw new Error(`Could not load Stamps.com v160 WSDL (${response.status}).`);
   const wsdl = await response.text();
   const match = wsdl.match(/targetNamespace=["']([^"']+)["']/i);
   if (!match?.[1]) throw new Error("Stamps.com v160 WSDL did not expose a target namespace.");
-  cachedNamespace = match[1];
-  return cachedNamespace;
+  if (match[1] !== STAMPS_V160_NAMESPACE) {
+    throw new Error("Stamps.com WSDL namespace does not match the approved SWS/IM v160 namespace.");
+  }
+  cachedNamespace = { wsdlUrl, namespace: match[1] };
+  return match[1];
 }
 
 async function stampsSoapCall(operation: string, body: string) {
   const config = getStampsConfiguration();
   if (!config.configured) throw new Error("Stamps.com credentials are not configured.");
   if (!config.endpointUrl || !config.wsdlUrl) throw new Error("Stamps.com endpoint/WSDL is not configured.");
+  if (config.mode === "live") assertProductionV160Configuration(config.endpointUrl, config.wsdlUrl);
 
   const namespace = await getStampsNamespace(config.wsdlUrl);
   const requestXml = `<?xml version="1.0" encoding="utf-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="${escapeXml(namespace)}"><soapenv:Header/><soapenv:Body><sws:${operation}>${body}</sws:${operation}></soapenv:Body></soapenv:Envelope>`;
@@ -132,13 +150,22 @@ async function stampsSoapCall(operation: string, body: string) {
   });
   const responseXml = await response.text();
 
-  console.info("Stamps SWS/IM SOAP exchange", {
-    operation,
-    durationMs: Date.now() - startedAt,
-    status: response.status,
-    requestXml: redactSoapXml(requestXml),
-    responseXml: redactSoapXml(responseXml),
-  });
+  if (config.mode === "live") {
+    console.info("Stamps SWS/IM production SOAP exchange", {
+      operation,
+      durationMs: Date.now() - startedAt,
+      status: response.status,
+      apiVersion: "v160",
+    });
+  } else {
+    console.info("Stamps SWS/IM SOAP exchange", {
+      operation,
+      durationMs: Date.now() - startedAt,
+      status: response.status,
+      requestXml: redactSoapXml(requestXml),
+      responseXml: redactSoapXml(responseXml),
+    });
+  }
 
   const fault = readXmlTag(responseXml, "faultstring") || readXmlTag(responseXml, "FaultReason") || readXmlTag(responseXml, "Message");
   if (!response.ok || responseXml.includes(":Fault") || responseXml.includes("<Fault")) {
@@ -172,7 +199,9 @@ export async function testStampsConnection(): Promise<StampsConnectionResult> {
     meterNumber: readXmlTag(responseXml, "MeterNumber"),
     availablePostage: Number.isFinite(availablePostage) ? availablePostage : null,
     namespace,
-    message: config.mode === "staging" ? "Connected to Stamps.com SWS/IM v160 staging. Test indicia must never be mailed." : "Connected to Stamps.com SWS/IM.",
+    message: config.mode === "staging"
+      ? "Connected to Stamps.com SWS/IM v160 staging. Test indicia must never be mailed."
+      : "Connected to Stamps.com SWS/IM v160 production.",
   };
 }
 
@@ -241,7 +270,7 @@ export async function quoteFirstClassPostcards(quantity: number): Promise<Postca
     readyForPurchase: false,
     source: "mock",
     note: config.mode === "staging"
-      ? "SWS/IM staging is configured. Test the connection first; rate and indicia calls are intentionally added after authentication is verified."
-      : "Postcard API access is configured. Live purchase remains gated until production approval.",
+      ? "SWS/IM v160 staging is configured. Test the connection first; rate and indicia calls are intentionally added after authentication is verified."
+      : "SWS/IM v160 production is configured. Live purchase remains gated by STAMPS_LIVE_PURCHASES_ENABLED and duplicate-postage protection.",
   };
 }
