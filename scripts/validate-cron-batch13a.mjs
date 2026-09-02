@@ -45,6 +45,24 @@ const vercelJobs = new Set(
     .filter(Boolean),
 );
 
+if (activation.batch > 13) {
+  for (const name of batch13a) {
+    if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 13A AWS ownership regressed: ${name}`);
+    if (stagedNames.has(name)) throw new Error(`Batch 13A returned to staged inventory: ${name}`);
+    if (vercelJobs.has(name)) throw new Error(`Batch 13A returned to Vercel ownership: ${name}`);
+    const row = schedules.find((item) => item.name === name);
+    if (row?.expression !== expected.get(name)) throw new Error(`Batch 13A cadence drifted: ${name}`);
+    if (row?.function !== "sqs:background-cron") throw new Error(`Batch 13A durable path regressed: ${name}`);
+    if (row?.body?.target !== `/api/cron/managed?job=${name}`) throw new Error(`Batch 13A durable target drifted: ${name}`);
+  }
+  if (activeNames.has("domain-lifecycle") || enabled.has("domain-lifecycle") || stagedNames.has("domain-lifecycle")) {
+    throw new Error("domain-lifecycle must remain on its dedicated worker migration path");
+  }
+  if (!vercelJobs.has("domain-lifecycle")) throw new Error("domain-lifecycle must remain Vercel-owned until its dedicated worker cutover");
+  console.log(`batch13a_scheduler_contract=preserved current_batch=${activation.batch} jobs=6`);
+  process.exit(0);
+}
+
 if (activation.batch !== 13) throw new Error(`expected Batch 13, got ${activation.batch}`);
 if (schedules.length !== 61) throw new Error(`expected 61 active schedules, got ${schedules.length}`);
 if (activation.enabled.length !== 61) throw new Error(`expected 61 enabled schedules, got ${activation.enabled.length}`);
