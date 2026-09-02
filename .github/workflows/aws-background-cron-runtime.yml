@@ -53,6 +53,11 @@ jobs:
           grep -F 'path.startswith("/api/cron/")' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'read_timeout=305' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'EVENT_DRIVEN_TARGETS' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'background_cron_continuation_queued' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'DelaySeconds=2' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'BACKGROUND_CRON_QUEUE_URL' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'sqs:SendMessage' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
@@ -147,6 +152,10 @@ jobs:
           aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout >/dev/null
           MAPPING="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION" --query 'EventSourceMappings[0].State' --output text)"
           test "$MAPPING" = 'Enabled'
+          MAX_CONCURRENCY="$(aws lambda list-event-source-mappings --function-name "$WORKER_FUNCTION" --query 'EventSourceMappings[0].ScalingConfig.MaximumConcurrency' --output text)"
+          test "$MAX_CONCURRENCY" = '3'
+          LIVE_QUEUE_URL="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.BACKGROUND_CRON_QUEUE_URL' --output text)"
+          test "$LIVE_QUEUE_URL" = "$QUEUE_URL"
 
           jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"/not-a-cron-route\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
           aws lambda invoke \
@@ -168,6 +177,8 @@ jobs:
             echo '- DLQ: `toh-production-background-cron-dlq`'
             echo '- SQS event-source max concurrency: 3'
             echo '- SQS batch size: 1'
+            echo '- Event-driven profile/catalog/description batches self-chain only while work remains'
+            echo '- Continuation delay: 2 seconds'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
             echo '- Invalid-target smoke: passed'
           } >> "$GITHUB_STEP_SUMMARY"
