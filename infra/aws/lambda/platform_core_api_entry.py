@@ -100,6 +100,74 @@ def read_admin_communication_search(payload):
     }
 
 
+def read_support_operations_settings(payload):
+    core.load_secret(core.SUPABASE_SERVICE_ROLE_SECRET_ID)
+    jobs = {
+        "groups": ("support_groups", "sort_order.asc"),
+        "slas": ("support_sla_policies", "first_response_minutes.asc"),
+        "businessHours": ("support_business_hours", "day_of_week.asc"),
+        "macros": ("support_macros", "sort_order.asc"),
+        "triggers": ("support_triggers", "sort_order.asc"),
+        "automations": ("support_automation_rules", "name.asc"),
+    }
+
+    def load(table, order):
+        rows, _ = core.supabase_rows(table, "*", [("order", order)], limit=1000)
+        return rows
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {
+            name: pool.submit(load, table, order)
+            for name, (table, order) in jobs.items()
+        }
+        results = {name: future.result() for name, future in futures.items()}
+
+    return {"success": True, **results}
+
+
+def read_support_case(payload):
+    ticket_id = core.text(payload.get("ticketId"))
+    if not core.valid_uuid(ticket_id):
+        raise ValueError("valid_ticketId_required")
+
+    core.load_secret(core.SUPABASE_SERVICE_ROLE_SECRET_ID)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        ticket_future = pool.submit(
+            core.supabase_get,
+            "support_tickets",
+            "*",
+            [("id", f"eq.{ticket_id}")],
+        )
+        messages_future = pool.submit(
+            core.supabase_rows,
+            "support_ticket_messages",
+            "*",
+            [("ticket_id", f"eq.{ticket_id}"), ("order", "created_at.asc")],
+            limit=1000,
+        )
+        activities_future = pool.submit(
+            core.supabase_rows,
+            "crm_activities",
+            "*",
+            [("record_id", f"eq.{ticket_id}"), ("order", "occurred_at.desc")],
+            limit=100,
+        )
+        ticket = ticket_future.result()
+        messages, _ = messages_future.result()
+        activities, _ = activities_future.result()
+
+    if ticket is None:
+        raise RuntimeError("support_ticket_not_found")
+
+    return {
+        "success": True,
+        "ticket": ticket,
+        "messages": messages,
+        "activities": activities,
+    }
+
+
 def handler(event, context):
     method = core.request_method(event)
     path = core.request_path(event)
@@ -110,6 +178,8 @@ def handler(event, context):
         "/v1/crm/sms/recipients/read",
         "/v1/crm/operations-snapshot/read",
         "/v1/crm/report-snapshot/read",
+        "/v1/crm/support/settings/read",
+        "/v1/crm/support/case/read",
         "/v1/admin/communication/search/read",
         "/v1/admin/business-analytics/read",
         "/v1/admin/overview/read",
@@ -135,6 +205,8 @@ def handler(event, context):
                 "crm.sms_recipients.read",
                 "crm.operations_snapshot.read",
                 "crm.report_snapshot.read",
+                "crm.support_settings.read",
+                "crm.support_case.read",
                 "admin.communication.search.read",
                 "admin.business_analytics.read",
                 "admin.overview.read",
@@ -176,6 +248,24 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "crm_report_snapshot_read_failed"})
+
+    if method == "POST" and path == "/v1/crm/support/settings/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_support_operations_settings(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "crm_support_settings_read_failed"})
+
+    if method == "POST" and path == "/v1/crm/support/case/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_support_case(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "crm_support_case_read_failed"})
 
     if method == "POST" and path == "/v1/admin/communication/search/read":
         try:

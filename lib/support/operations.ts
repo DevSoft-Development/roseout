@@ -1,5 +1,9 @@
 import "server-only";
 
+import {
+  platformCoreApiConfigured,
+  readSupportOperationsSettingsViaCoreApi,
+} from "@/lib/aws/core-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { isSupportPriority, isSupportStatus, type SupportPriority, type SupportStatus } from "./canonical";
 
@@ -7,7 +11,7 @@ export const SUPPORT_QUEUE_KEYS = [
   "new","mine","unassigned","waiting_on_customer","waiting_on_internal","escalated","sla_breached","urgent","billing","reservations","location_support","reopened",
 ] as const;
 
-export async function getSupportOperationsSettings() {
+async function getSupportOperationsSettingsLocally() {
   const [groups, slas, businessHours, macros, triggers, automations] = await Promise.all([
     supabaseAdmin.from("support_groups").select("*").order("sort_order"),
     supabaseAdmin.from("support_sla_policies").select("*").order("first_response_minutes"),
@@ -20,6 +24,17 @@ export async function getSupportOperationsSettings() {
   return {
     groups: groups.data ?? [], slas: slas.data ?? [], businessHours: businessHours.data ?? [], macros: macros.data ?? [], triggers: triggers.data ?? [], automations: automations.data ?? [],
   };
+}
+
+export async function getSupportOperationsSettings() {
+  if (platformCoreApiConfigured()) {
+    try {
+      return await readSupportOperationsSettingsViaCoreApi();
+    } catch (error) {
+      console.warn("Core support settings unavailable; using local fallback", error);
+    }
+  }
+  return getSupportOperationsSettingsLocally();
 }
 
 export async function setSupportGroup(ticketId: string, group: string | null) {

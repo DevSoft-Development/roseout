@@ -13,6 +13,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'lib/crm/core-modules.ts'
+      - 'lib/support/operations.ts'
       - 'lib/admin/admin-overview.ts'
       - 'app/admin/dashboard/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
@@ -36,6 +37,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'lib/crm/core-modules.ts'
+      - 'lib/support/operations.ts'
       - 'lib/admin/admin-overview.ts'
       - 'app/admin/dashboard/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
@@ -291,6 +293,10 @@ jobs:
           })
           crm_operations = call('POST', '/v1/crm/operations-snapshot/read', {})
           crm_report = call('POST', '/v1/crm/report-snapshot/read', {})
+          support_settings = call('POST', '/v1/crm/support/settings/read', {})
+          support_case = call('POST', '/v1/crm/support/case/read', {
+              'ticketId': '9c96ea6b-270f-4643-995b-b3b90f68a9ee'
+          })
           communication_search = call('POST', '/v1/admin/communication/search/read', {'q': 'New'})
           business_analytics = call('POST', '/v1/admin/business-analytics/read', {
               'range': '7d',
@@ -306,6 +312,8 @@ jobs:
           assert 'crm.sms_recipients.read' in status.get('operations', []), status
           assert 'crm.operations_snapshot.read' in status.get('operations', []), status
           assert 'crm.report_snapshot.read' in status.get('operations', []), status
+          assert 'crm.support_settings.read' in status.get('operations', []), status
+          assert 'crm.support_case.read' in status.get('operations', []), status
           assert 'admin.communication.search.read' in status.get('operations', []), status
           assert 'admin.business_analytics.read' in status.get('operations', []), status
           assert 'admin.overview.read' in status.get('operations', []), status
@@ -334,6 +342,15 @@ jobs:
           assert isinstance(crm_report.get('end'), str) and crm_report.get('end'), crm_report
           for key in ['opps', 'claims', 'support', 'outreach']:
               assert isinstance(crm_report.get(key), list), (key, crm_report)
+          assert support_settings.get('success') is True, support_settings
+          for key in ['groups', 'slas', 'businessHours', 'macros', 'triggers', 'automations']:
+              assert isinstance(support_settings.get(key), list), (key, support_settings)
+              assert len(support_settings.get(key, [])) > 0, (key, support_settings)
+          assert support_case.get('success') is True, support_case
+          assert support_case.get('ticket', {}).get('id') == '9c96ea6b-270f-4643-995b-b3b90f68a9ee', support_case
+          assert isinstance(support_case.get('messages'), list), support_case
+          assert len(support_case.get('messages', [])) > 0, support_case
+          assert isinstance(support_case.get('activities'), list), support_case
           assert isinstance(communication_search.get('users'), list), communication_search
           assert isinstance(communication_search.get('locations'), list), communication_search
           assert business_analytics.get('success') is True, business_analytics
@@ -361,7 +378,7 @@ jobs:
               assert admin_overview.get(key) >= 0, (key, admin_overview.get(key))
           assert admin_overview.get('liveGeneratedSites', 0) <= admin_overview.get('generatedSites', 0), admin_overview
           assert admin_overview.get('healthyHostingNodes', 0) <= admin_overview.get('hostingNodes', 0), admin_overview
-          print('Core API Virginia reads passed, including CRM Operations, CRM Reports, Business Analytics, and Admin Overview')
+          print('Core API Virginia reads passed, including Support Settings, Support Case, CRM Operations, CRM Reports, Business Analytics, and Admin Overview')
           PY
 
       - name: Resolve Integration API endpoint
@@ -453,8 +470,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations + CRM Reports + Admin Communication Search + Business Analytics + Admin Overview snapshot'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations + CRM Reports + Support Settings + Support Case + Admin Communication Search + Business Analytics + Admin Overview snapshot'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin/scope authorization + BFF compatibility/fallback layer'
-            echo '- SMS send/reply, communication writes, Location Health repair writes, and CRM mutations remain on existing paths'
+            echo '- SMS send/reply, communication writes, Location Health repair writes, support mutations, and CRM mutations remain on existing paths'
           } >> "$GITHUB_STEP_SUMMARY"
