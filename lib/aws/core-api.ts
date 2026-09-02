@@ -203,6 +203,29 @@ export type CoreSupportCaseResponse = {
   activities: Array<Record<string, unknown>>;
 };
 
+export type CoreAdminBillingMetrics = {
+  activePaidLocations: number;
+  trialingLocations: number;
+  pastDueLocations: number;
+  canceledThisMonth: number;
+  mrrCents: number;
+  arrCents: number;
+  collectedThisMonthCents: number;
+  upcoming7d: number;
+  upcoming30d: number;
+  pastDueEstimatedCents: number;
+};
+
+export type CoreAdminBillingResponse = {
+  success: true;
+  sourceError: boolean;
+  metrics: CoreAdminBillingMetrics;
+  upcomingRows: Array<Record<string, unknown>>;
+  pastDueRows: Array<Record<string, unknown>>;
+  recentEvents: Array<Record<string, unknown>>;
+  trialRows: Array<Record<string, unknown>>;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -356,6 +379,15 @@ export async function readAdminOverviewViaCoreApi(): Promise<CoreAdminOverviewRe
   return signedRequest<CoreAdminOverviewResponse>(
     "POST",
     "/v1/admin/overview/read",
+    "{}",
+    18_000,
+  );
+}
+
+export async function readAdminBillingViaCoreApi(): Promise<CoreAdminBillingResponse> {
+  return signedRequest<CoreAdminBillingResponse>(
+    "POST",
+    "/v1/admin/billing/read",
     "{}",
     18_000,
   );
