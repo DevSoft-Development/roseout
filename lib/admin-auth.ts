@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -13,12 +14,12 @@ function normalizeAdminRole(role: unknown): AdminRole | null {
   return isAdminRole(normalized) ? normalized : null;
 }
 
-export async function getCurrentAdmin(): Promise<{
+export const getCurrentAdmin = cache(async (): Promise<{
   user_id: string;
   email: string | null;
   full_name: string | null;
   role: AdminRole;
-}> {
+}> => {
   const supabase = await createClient();
 
   const {
@@ -54,7 +55,7 @@ export async function getCurrentAdmin(): Promise<{
         : null,
     role,
   };
-}
+});
 
 export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
   const adminUser = await getCurrentAdmin();
