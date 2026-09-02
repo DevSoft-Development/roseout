@@ -55,6 +55,9 @@ jobs:
           grep -F 'EDGE_ALLOWED_TARGETS' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'edge:claim-qr-repair-worker' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'edge:unified-location-gap-repair' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'edge:worker-dispatcher' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'x-worker-secret' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'WORKER_INTERNAL_SECRET' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'EDGE_RUNTIME_FUNCTION_NAME' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'read_timeout=305' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
@@ -186,7 +189,7 @@ jobs:
             echo '- DLQ: `toh-production-background-cron-dlq`'
             echo '- SQS event-source max concurrency: 3'
             echo '- SQS batch size: 1'
-            echo '- Event-driven profile/catalog/description/claim-QR/gap-repair batches self-chain only while work remains'
+            echo '- Event-driven profile/catalog/description/claim-QR/gap-repair/worker-dispatcher batches self-chain only while work remains'
             echo '- Continuation delay: 2 seconds'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
             echo '- Approved Edge runtime target: `toh-production-edge-runtime`'

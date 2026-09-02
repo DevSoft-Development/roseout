@@ -37,14 +37,19 @@ test("batch 9 is AWS-owned with lower-frequency recovery schedules", () => {
   assert.equal(active.get("search-hf-inventory-maintenance")?.expression, "cron(20 * * * ? *)");
   assert.equal(active.get("website-replica-repair")?.expression, "cron(0/15 * * * ? *)");
   assert.equal(active.get("cron-alert-dispatcher")?.expression, "cron(0/10 * * * ? *)");
-  assert.equal(active.get("worker-dispatcher-unified")?.expression, "cron(0/5 * * * ? *)");
+  assert.equal(active.get("worker-dispatcher-unified")?.expression, "cron(0/15 * * * ? *)");
 });
 
-test("durable worker enqueue has an immediate AWS kick and a guarded fallback", () => {
+test("durable worker queue changes wake the dispatcher and retain recovery", () => {
   const source = read("lib/workers/enqueue.ts");
-  assert.match(source, /AWS_EVENT_DISPATCH_JOB_TYPES/);
-  assert.match(source, /invokePlatformBackground\("worker-dispatcher"/);
-  assert.match(source, /worker_jobs row is already persisted/);
+  const migration = read("supabase/migrations/20260902194000_event_driven_worker_dispatcher.sql");
+  const signal = read("infra/aws/lambda/background_work_signal.py");
+
+  assert.doesNotMatch(source, /invokePlatformBackground\("worker-dispatcher"/);
+  assert.doesNotMatch(source, /AWS_EVENT_DISPATCH_JOB_TYPES/);
+  assert.match(migration, /trg_signal_worker_dispatcher_work/);
+  assert.match(migration, /worker-dispatcher-unified/);
+  assert.match(signal, /"worker-dispatcher-unified": "edge:worker-dispatcher"/);
 });
 
 test("website replication failure requests immediate repair", () => {

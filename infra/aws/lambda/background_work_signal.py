@@ -10,12 +10,31 @@ QUEUE_URL = os.environ["BACKGROUND_CRON_QUEUE_URL"]
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_SERVICE_ROLE_SECRET_ID = os.environ["SUPABASE_SERVICE_ROLE_SECRET_ID"]
 
+WORKER_DISPATCH_JOB_TYPES = [
+    "photo.backfill",
+    "enrichment.google_photos",
+    "nightly-photo-backfill",
+    "enrichment.google_metadata",
+    "search.anchor.reconcile",
+    "search.qa.batch",
+    "reservation.cleanup",
+    "search.document_rebuild",
+    "search.embedding_generation",
+    "analytics.aggregate",
+    "enrichment.ai_profile",
+    "enrichment.ai_menu",
+    "ml.duplicate_detection.recalculate",
+    "review.moderation",
+    "location.publishability_repair",
+]
+
 ALLOWED_JOBS = {
     "location-search-profile-worker": "/api/cron/managed?job=location-search-profile-worker",
     "catalog-enrichment-runner": "/api/cron/managed?job=catalog-enrichment-runner",
     "location-description-backfill": "/api/cron/managed?job=location-description-backfill",
     "claim-qr-repair-worker": "edge:claim-qr-repair-worker",
     "unified-location-gap-repair": "edge:unified-location-gap-repair",
+    "worker-dispatcher-unified": "edge:worker-dispatcher",
 }
 
 sqs = boto3.client("sqs")
@@ -78,6 +97,18 @@ def _verify_signal_token(token):
         return False
 
 
+def _payload_for_job(job):
+    if job == "worker-dispatcher-unified":
+        return {
+            "limit": 25,
+            "lease_seconds": 300,
+            "worker_name": "production-event-worker",
+            "job_types": WORKER_DISPATCH_JOB_TYPES,
+            "source": "database_work_signal",
+        }
+    return {}
+
+
 def handler(event, context):
     method = str(((event.get("requestContext") or {}).get("http") or {}).get("method") or "POST").upper()
     if method != "POST":
@@ -103,7 +134,7 @@ def handler(event, context):
         "jobType": "background.cron",
         "source": "database-work-signal",
         "target": target,
-        "payload": {},
+        "payload": _payload_for_job(job),
     }
     result = sqs.send_message(
         QueueUrl=QUEUE_URL,

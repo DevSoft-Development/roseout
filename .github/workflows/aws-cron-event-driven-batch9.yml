@@ -11,6 +11,7 @@ on:
       - 'lib/aws/platform-jobs.ts'
       - 'lib/workers/enqueue.ts'
       - 'lib/hosting/website-replication.ts'
+      - 'supabase/migrations/*event_driven*.sql'
       - 'vercel.json'
       - 'scripts/validate-cron-event-driven-batch9.mjs'
       - 'scripts/__tests__/cron-event-driven-batch9-contract.test.mjs'
@@ -26,6 +27,7 @@ on:
       - 'lib/aws/platform-jobs.ts'
       - 'lib/workers/enqueue.ts'
       - 'lib/hosting/website-replication.ts'
+      - 'supabase/migrations/*event_driven*.sql'
       - 'vercel.json'
       - 'scripts/validate-cron-event-driven-batch9.mjs'
       - 'scripts/__tests__/cron-event-driven-batch9-contract.test.mjs'
@@ -51,11 +53,13 @@ jobs:
           else
             echo 'Batch 9 is complete; historical batch-specific assertions are not applied to the current scheduler batch.'
           fi
-      - name: Validate gateway syntax and event contract
+      - name: Validate gateway and current event contracts
         run: |
+          set -euo pipefail
           python -m py_compile infra/aws/lambda/platform_job_gateway_entry.py
           grep -F '/v1/background/invoke' infra/aws/lambda/platform_job_gateway_entry.py >/dev/null
           grep -F 'InvocationType="Event"' infra/aws/lambda/platform_job_gateway_entry.py >/dev/null
-          grep -F 'AWS_EVENT_DISPATCH_JOB_TYPES' lib/workers/enqueue.ts >/dev/null
-          grep -F 'worker-dispatcher' lib/workers/enqueue.ts >/dev/null
+          ! grep -F 'AWS_EVENT_DISPATCH_JOB_TYPES' lib/workers/enqueue.ts >/dev/null
+          ! grep -F 'invokePlatformBackground("worker-dispatcher"' lib/workers/enqueue.ts >/dev/null
+          grep -F 'trg_signal_worker_dispatcher_work' supabase/migrations/20260902194000_event_driven_worker_dispatcher.sql >/dev/null
           grep -F 'website_replica_repair_event_failed' lib/hosting/website-replication.ts >/dev/null
