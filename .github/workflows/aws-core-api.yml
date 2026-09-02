@@ -122,20 +122,25 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify AWS identity and Supabase service-role secret
+      - name: Verify AWS identity and resolve Supabase service-role secret ARN
+        id: supabase-secret
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
         run: |
           set -euo pipefail
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
-          aws secretsmanager describe-secret \
-            --secret-id "/theouthaven/${TARGET_ENV}/supabase/service-role" >/dev/null
+          SECRET_ARN="$(aws secretsmanager describe-secret \
+            --secret-id "/theouthaven/${TARGET_ENV}/supabase/service-role" \
+            --query ARN --output text)"
+          test -n "$SECRET_ARN" && test "$SECRET_ARN" != 'None'
+          echo "arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Core API stack
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
+          SUPABASE_SECRET_ARN: ${{ steps.supabase-secret.outputs.arn }}
         run: |
           set -euo pipefail
           SHARED_SECRET="$(cat "$RUNNER_TEMP/core-api-secret")"
@@ -148,6 +153,7 @@ jobs:
               Environment="$TARGET_ENV" \
               CoreApiSharedSecret="$SHARED_SECRET" \
               SupabaseUrl="$SUPABASE_URL" \
+              SupabaseServiceRoleSecretArn="$SUPABASE_SECRET_ARN" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=CoreAPI ManagedBy=CloudFormation
 
       - name: Show CloudFormation failure events
@@ -200,6 +206,7 @@ jobs:
           import json
           import os
           import time
+          import urllib.error
           import urllib.request
 
           base_url = os.environ['API_URL'].rstrip('/')
@@ -219,8 +226,13 @@ jobs:
                   data = body.encode()
                   headers['content-type'] = 'application/json'
               request = urllib.request.Request(base_url + path, data=data, method=method, headers=headers)
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  return json.loads(response.read().decode() or '{}')
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      return json.loads(response.read().decode() or '{}')
+              except urllib.error.HTTPError as error:
+                  raw = error.read().decode('utf-8', errors='replace')
+                  print(f'Core API smoke HTTP {error.code}: {raw[:1000]}')
+                  raise
 
           status = call('GET', '/v1/status')
           crm = call('POST', '/v1/crm/context', {
