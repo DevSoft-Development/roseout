@@ -25,28 +25,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Apply current-main vault-backed Stamps cutover
+      - name: Apply vault-backed Stamps cutover
         id: apply
         run: |
           set -euo pipefail
           LOG_FILE="$RUNNER_TEMP/stamps-generator.log"
           set +e
-          python - <<'PYTHON' >"$LOG_FILE" 2>&1
-          from pathlib import Path
-          import subprocess
-          import sys
-
-          source = Path('.github/workflows/stamps-vault-finish.yml').read_text()
-          begin_marker = '          cat > "$RUNNER_TEMP/finish_stamps_vault.py" <<\'PY\'\n'
-          start = source.index(begin_marker) + len(begin_marker)
-          end = source.index('\n          PY\n', start)
-          block = source[start:end]
-          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
-          script = '\n'.join(line for line in script.splitlines() if not (line.strip().startswith('assert ') and 'transactionalOperationsEnabled' in line)) + '\n'
-          target = Path('/tmp/finish_stamps_vault.py')
-          target.write_text(script)
-          subprocess.run([sys.executable, str(target)], check=True)
-          PYTHON
+          python scripts/stamps-vault-cutover.py >"$LOG_FILE" 2>&1
           STATUS=$?
           set -e
           if [ "$STATUS" -ne 0 ]; then
@@ -63,6 +48,7 @@ jobs:
           python -m py_compile infra/aws/lambda/platform_integration_api.py
           rm -rf infra/aws/lambda/__pycache__
           git diff --check
+          rm -f stamps-generator-error.txt
           echo "failed=false" >> "$GITHUB_OUTPUT"
 
       - name: Commit generator diagnostics
@@ -74,6 +60,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add stamps-generator-error.txt
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "Capture Stamps generator failure"
           git push origin "HEAD:${HEAD_BRANCH}"
 
@@ -85,7 +72,8 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add infra/aws/lambda/platform_integration_api.py \
+          git add -A stamps-generator-error.txt \
+            infra/aws/lambda/platform_integration_api.py \
             infra/aws/cloudformation/integration-api.yml \
             lib/aws/integration-api.ts \
             app/api/admin/mailing-batches/postage/connection/route.ts \
