@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { platformIntegrationApiConfigured, testStampsConnectionViaIntegrationApi } from "@/lib/aws/integration-api";
 import { requireSuperAdmin } from "@/lib/admin-api-auth";
 import { logAdminAuditEvent } from "@/lib/admin-audit-log";
 import {
@@ -204,7 +205,18 @@ export async function POST(request: NextRequest) {
       return Response.json({ ...result, migrationState: "vault_managed" }, { headers: { "cache-control": "no-store" } });
     }
 
-    const result = await testCredentialVaultProvider(provider, environment);
+    if (provider === "stamps" && environment === "production" && !platformIntegrationApiConfigured()) {
+      throw new Error("credential_vault_gateway_not_configured");
+    }
+
+    const result = provider === "stamps" && environment === "production"
+      ? await testStampsConnectionViaIntegrationApi().then((connection) => ({
+          ok: connection.ok,
+          provider: "stamps" as const,
+          status: "healthy" as const,
+          detail: connection.message,
+        }))
+      : await testCredentialVaultProvider(provider, environment);
     await logAdminAuditEvent({
       actor: adminUser,
       action: "credential_vault.tested",

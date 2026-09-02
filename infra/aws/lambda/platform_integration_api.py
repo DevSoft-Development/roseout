@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 
 import boto3
+from botocore.exceptions import ClientError
 
 from google_places_provider import (
     details as google_places_details,
@@ -42,6 +43,12 @@ STRIPE_SNAPSHOT_TIMEOUT_SECONDS = 14
 STRIPE_MAX_WORKERS = 10
 MAX_STRIPE_ACCOUNTS = 200
 STRIPE_API_VERSION = "2026-07-29.dahlia"
+STAMPS_CREDENTIAL_SECRET_ID = os.environ.get("STAMPS_CREDENTIAL_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/stamps")
+STAMPS_V160_NAMESPACE = "http://stamps.com/xml/namespace/2026/06/swsim/SwsimV160"
+STAMPS_PRODUCTION_ENDPOINT = "https://swsim.stamps.com/swsim/swsimv160.asmx"
+STAMPS_PRODUCTION_WSDL = f"{STAMPS_PRODUCTION_ENDPOINT}?wsdl"
+STAMPS_REQUEST_TIMEOUT_SECONDS = 12
+MAX_STAMPS_XML_BYTES = 2_000_000
 ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 ALLOWED_GRAPH_VERSIONS = {"v1.0", "beta"}
 ALLOWED_FORWARD_HEADERS = {
@@ -716,6 +723,168 @@ def telnyx_json_route(route, body):
         return response(502, {"ok": False, "error": "telnyx_unavailable"})
 
 
+
+def _stamps_clean(value):
+    return str(value or "").strip()
+
+
+def _stamps_xml(value):
+    return (
+        _stamps_clean(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def _stamps_read_xml_tag(xml_text, tag):
+    safe_tag = re.escape(tag)
+    match = re.search(
+        rf"<(?:[A-Za-z0-9_-]+:)?{safe_tag}(?:\s[^>]*)?>([\s\S]*?)</(?:[A-Za-z0-9_-]+:)?{safe_tag}>",
+        xml_text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return (
+        match.group(1).strip()
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", '"')
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+    )
+
+
+def _load_stamps_credentials(*, missing_ok=False):
+    try:
+        raw = _stamps_clean(secrets.get_secret_value(SecretId=STAMPS_CREDENTIAL_SECRET_ID).get("SecretString", ""))
+    except ClientError as exc:
+        if missing_ok and exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+            return {"integrationId": "", "username": "", "password": ""}
+        raise
+    if not raw:
+        return {"integrationId": "", "username": "", "password": ""}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("stamps_credential_secret_invalid_json") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("stamps_credential_secret_invalid")
+    return {
+        "integrationId": _stamps_clean(payload.get("integrationId")),
+        "username": _stamps_clean(payload.get("username")),
+        "password": _stamps_clean(payload.get("password")),
+    }
+
+
+def _stamps_credentials_configured(credentials):
+    return bool(credentials.get("integrationId") and credentials.get("username") and credentials.get("password"))
+
+
+def _validate_stamps_wsdl():
+    request = urllib.request.Request(
+        STAMPS_PRODUCTION_WSDL,
+        method="GET",
+        headers={"Accept": "text/xml,application/xml", "User-Agent": "TheOutHaven/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=STAMPS_REQUEST_TIMEOUT_SECONDS) as upstream:
+            body = upstream.read(MAX_STAMPS_XML_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("stamps_wsdl_unavailable") from exc
+    if len(body) > MAX_STAMPS_XML_BYTES:
+        raise RuntimeError("stamps_wsdl_too_large")
+    wsdl = body.decode("utf-8", errors="replace")
+    match = re.search(r"targetNamespace=[\"']([^\"']+)[\"']", wsdl, flags=re.IGNORECASE)
+    if not match or match.group(1) != STAMPS_V160_NAMESPACE:
+        raise RuntimeError("stamps_wsdl_namespace_mismatch")
+
+
+def _stamps_get_account_info(credentials):
+    if not _stamps_credentials_configured(credentials):
+        raise RuntimeError("stamps_credentials_not_configured")
+    _validate_stamps_wsdl()
+    credentials_xml = (
+        "<sws:Credentials>"
+        f"<sws:IntegrationID>{_stamps_xml(credentials['integrationId'])}</sws:IntegrationID>"
+        f"<sws:Username>{_stamps_xml(credentials['username'])}</sws:Username>"
+        f"<sws:Password>{_stamps_xml(credentials['password'])}</sws:Password>"
+        "</sws:Credentials>"
+    )
+    request_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        f'<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="{_stamps_xml(STAMPS_V160_NAMESPACE)}">'
+        f"<soapenv:Header/><soapenv:Body><sws:GetAccountInfo>{credentials_xml}</sws:GetAccountInfo></soapenv:Body></soapenv:Envelope>"
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        STAMPS_PRODUCTION_ENDPOINT,
+        data=request_xml,
+        method="POST",
+        headers={
+            "Content-Type": "text/xml; charset=utf-8",
+            "SOAPAction": f'"{STAMPS_V160_NAMESPACE}/GetAccountInfo"',
+            "User-Agent": "TheOutHaven/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=STAMPS_REQUEST_TIMEOUT_SECONDS) as upstream:
+            status = int(upstream.status)
+            body = upstream.read(MAX_STAMPS_XML_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        body = exc.read(MAX_STAMPS_XML_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("stamps_getaccountinfo_unavailable") from exc
+    if len(body) > MAX_STAMPS_XML_BYTES:
+        raise RuntimeError("stamps_response_too_large")
+    response_xml = body.decode("utf-8", errors="replace")
+    if status < 200 or status >= 300 or ":Fault" in response_xml or "<Fault" in response_xml:
+        raise RuntimeError("stamps_getaccountinfo_failed")
+    return response_xml
+
+
+def stamps_status():
+    credentials = _load_stamps_credentials(missing_ok=True)
+    configured = _stamps_credentials_configured(credentials)
+    return {
+        "ok": True,
+        "provider": "stamps",
+        "mode": "live",
+        "apiVersion": "v160",
+        "configured": configured,
+        "postcardEnabled": configured,
+        "livePurchasesEnabled": False,
+        "endpointApproved": True,
+        "credentialSource": "admin-credential-vault",
+        "transactionalOperationsEnabled": False,
+    }
+
+
+def stamps_connection_test():
+    credentials = _load_stamps_credentials()
+    response_xml = _stamps_get_account_info(credentials)
+    available_raw = _stamps_read_xml_tag(response_xml, "AvailablePostage")
+    try:
+        available = float(available_raw) if available_raw is not None else None
+    except ValueError:
+        available = None
+    return {
+        "ok": True,
+        "provider": "stamps",
+        "mode": "live",
+        "apiVersion": "v160",
+        "accountStatus": _stamps_read_xml_tag(response_xml, "AccountStatus"),
+        "customerId": _stamps_read_xml_tag(response_xml, "CustomerID"),
+        "meterNumber": _stamps_read_xml_tag(response_xml, "MeterNumber"),
+        "availablePostage": available,
+        "namespace": STAMPS_V160_NAMESPACE,
+        "credentialSource": "admin-credential-vault",
+        "message": "Connected to Stamps.com SWS/IM v160 production through the AWS Integration API using the Superadmin Credentials Vault.",
+    }
+
 def handler(event, context):
     body = raw_body(event)
     try:
@@ -727,7 +896,7 @@ def handler(event, context):
     method = request_method(event)
     path = request_path(event)
     if method == "GET" and path == "/v1/status":
-        return response(200, {"ok": True, "service": "theouthaven-integration-api", "environment": ENVIRONMENT, "providers": ["microsoft-graph", "stripe", "google-places", "telnyx", "resend"]})
+        return response(200, {"ok": True, "service": "theouthaven-integration-api", "environment": ENVIRONMENT, "providers": ["microsoft-graph", "stripe-connect", "google-places", "telnyx", "resend", "stamps"]})
     if method == "GET" and path == "/v1/stripe/status":
         try:
             return response(200, stripe_status())
@@ -748,6 +917,18 @@ def handler(event, context):
             return response(200, telnyx_verify_channels())
         except Exception:
             return response(502, {"ok": False, "error": "telnyx_verification_failed"})
+    if method == "GET" and path == "/v1/stamps/status":
+        try:
+            return response(200, stamps_status())
+        except Exception:
+            return response(502, {"ok": False, "error": "stamps_unavailable"})
+    if method == "POST" and path == "/v1/stamps/connection-test":
+        try:
+            return response(200, stamps_connection_test())
+        except Exception as exc:
+            message = str(exc).strip()
+            safe_error = message if re.fullmatch(r"stamps_[a-z0-9_]+", message) else "stamps_unavailable"
+            return response(502, {"ok": False, "error": safe_error})
     if method == "GET" and path == "/v1/microsoft-app/readiness":
         try:
             return response(200, microsoft_app_readiness())

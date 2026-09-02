@@ -226,7 +226,7 @@ export default function StampsPostagePanel({ batchId, total }: { batchId: string
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-3">
-          <Step done={Boolean(connection?.ok)} label="1. Connect Stamps.com" detail={connection?.ok ? `SWS/IM v160 ${connection.mode} authentication succeeded.` : "Verify server-side Stamps.com credentials before generating postage."} />
+          <Step done={Boolean(connection?.ok)} label="1. Connect Stamps.com" detail={connection?.ok ? `SWS/IM v160 ${connection.mode} authentication succeeded.` : "Verify the Stamps.com credentials saved in the Superadmin Credentials Vault before generating postage."} />
           <Step done={addressesReady} label="2. Check addresses" detail={preview ? `${preview.validAddressCount.toLocaleString()} ready · ${preview.invalidAddressCount.toLocaleString()} need attention.` : "Run the batch address completeness check before any indicium request."} />
           <Step done={Boolean(isLive ? productionProof : proof)} label={isLive ? "3. Create one live postcard" : "3. Create one staging postcard"} detail={isLive ? (productionProof ? "One production indicium purchased with persistent duplicate protection." : "One live charge only; verify it before any batch purchasing.") : (proof ? "Single-card staging proof created and loaded into the print center." : "Runs CleanseAddress, GetRates, then one CreateMailingLabelIndicia call.")} />
         </div>
