@@ -6,6 +6,7 @@ from core_api_admin_overview import read_admin_overview
 from core_api_business_analytics import read_business_analytics
 from core_api_communication_center import read_communication_center
 from core_api_crm_sms_recipients import read_crm_sms_recipients
+from core_api_crm_snapshots import read_crm_operations_snapshot, read_crm_report_snapshot
 
 
 def read_admin_communication_search(payload):
@@ -107,6 +108,8 @@ def handler(event, context):
         "/v1/status",
         "/v1/crm/communication-center/read",
         "/v1/crm/sms/recipients/read",
+        "/v1/crm/operations-snapshot/read",
+        "/v1/crm/report-snapshot/read",
         "/v1/admin/communication/search/read",
         "/v1/admin/business-analytics/read",
         "/v1/admin/overview/read",
@@ -130,6 +133,8 @@ def handler(event, context):
                 "crm.location_health.read",
                 "crm.communication_center.read",
                 "crm.sms_recipients.read",
+                "crm.operations_snapshot.read",
+                "crm.report_snapshot.read",
                 "admin.communication.search.read",
                 "admin.business_analytics.read",
                 "admin.overview.read",
@@ -153,6 +158,24 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "crm_sms_recipients_read_failed"})
+
+    if method == "POST" and path == "/v1/crm/operations-snapshot/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_crm_operations_snapshot(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "crm_operations_snapshot_read_failed"})
+
+    if method == "POST" and path == "/v1/crm/report-snapshot/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_crm_report_snapshot(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "crm_report_snapshot_read_failed"})
 
     if method == "POST" and path == "/v1/admin/communication/search/read":
         try:
