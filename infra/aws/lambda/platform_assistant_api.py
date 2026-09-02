@@ -12,7 +12,7 @@ import boto3
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
 RUNTIME_PROVIDER_SECRET_ID = os.environ.get("RUNTIME_PROVIDER_SECRET_ID", "")
-RUNTIME_PROVIDER_SECRET_REGION = os.environ.get("RUNTIME_PROVIDER_SECRET_REGION", "us-west-2")
+RUNTIME_PROVIDER_SECRET_REGION = os.environ.get("RUNTIME_PROVIDER_SECRET_REGION", "us-east-1")
 MAX_CLOCK_SKEW_SECONDS = 300
 MAX_REQUEST_BODY_BYTES = 512_000
 MAX_RESPONSE_BODY_BYTES = 2_500_000
@@ -132,8 +132,12 @@ def validate_model(payload):
     return model
 
 
+def openai_api_key(env):
+    return str(env.get("apiKey") or env.get("OPENAI_API_KEY") or "").strip()
+
+
 def openai_headers(env):
-    api_key = str(env.get("OPENAI_API_KEY") or "").strip()
+    api_key = openai_api_key(env)
     if len(api_key) < 20:
         raise RuntimeError("openai_credential_not_configured")
     headers = {
@@ -213,7 +217,7 @@ def handler(event, context):
     if method == "GET" and path in {"/healthz", "/v1/status"}:
         try:
             env = runtime_provider_env()
-            openai_ready = len(str(env.get("OPENAI_API_KEY") or "").strip()) >= 20
+            openai_ready = len(openai_api_key(env)) >= 20
         except Exception:
             openai_ready = False
         return response(200, {
