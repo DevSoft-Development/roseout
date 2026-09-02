@@ -23,6 +23,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   BACKGROUND_CRON_STACK: theouthaven-background-cron-production
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
 
 jobs:
   validate:
@@ -40,12 +41,13 @@ jobs:
         run: |
           set -euo pipefail
           FILE='.github/workflows/aws-cron-batch12.yml'
-          grep -F 'aws sqs send-message' "$FILE" >/dev/null
+          grep -F 'function:"sqs:background-cron"' "$FILE" >/dev/null
+          grep -F -- '--function-name "$INVOKER"' "$FILE" >/dev/null
           grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
           grep -F 'background_cron_completed' "$FILE" >/dev/null
           grep -F 'background_cron_failed' "$FILE" >/dev/null
           grep -F 'MaximumConcurrency' "$FILE" >/dev/null
-          ! grep -F 'aws lambda invoke' "$FILE" >/dev/null
+          ! grep -F 'aws lambda invoke --function-name "$WORKER"' "$FILE" >/dev/null
           jq -e '[.[] | select(.name == "curated-location-discovery-restaurant" or .name == "curated-location-discovery-activity" or .name == "event-provider-ingestion" or .name == "crm-commercial" or .name == "marketing-reminders" or .name == "marketing-content-opportunities" or .name == "marketing-social-metrics" or .name == "marketing-attribution" or .name == "website-dr-readiness" or .name == "stripe-connect-status-sync") | select(.function == "sqs:background-cron")] | length == 10' infra/aws/edge-runtime/schedules.json >/dev/null
 
   preflight:
@@ -63,7 +65,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Resolve durable worker and verify queue state
+      - name: Resolve durable runtime and verify queue state
         id: runtime
         run: |
           set -euo pipefail
@@ -71,17 +73,16 @@ jobs:
           STATUS="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
           if [ "$STATUS" != 'CREATE_COMPLETE' ] && [ "$STATUS" != 'UPDATE_COMPLETE' ]; then
             echo "Durable background cron stack is not ready: ${STATUS:-missing}" >&2
-            aws cloudformation describe-stack-events \
-              --stack-name "$BACKGROUND_CRON_STACK" \
-              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
-              --output table || true
             exit 1
           fi
           WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
           QUEUE_URL="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronQueueUrl'].OutputValue" --output text)"
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           test -n "$WORKER" && test "$WORKER" != 'None'
           test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
           aws lambda get-function --function-name "$WORKER" >/dev/null
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
           aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn RedrivePolicy VisibilityTimeout ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible >/dev/null
           STATE="$(aws lambda list-event-source-mappings --function-name "$WORKER" --query 'EventSourceMappings[0].State' --output text)"
           test "$STATE" = 'Enabled'
@@ -90,11 +91,13 @@ jobs:
           LOG_GROUP="/aws/lambda/${WORKER}"
           aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --query 'logGroups[?logGroupName==`'"$LOG_GROUP"'`].logGroupName' --output text | grep -Fx "$LOG_GROUP" >/dev/null
           echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
           echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
           echo "log_group=$LOG_GROUP" >> "$GITHUB_OUTPUT"
 
       - name: Enqueue and verify all ten jobs through production SQS path
         env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
           QUEUE_URL: ${{ steps.runtime.outputs.queue_url }}
           LOG_GROUP: ${{ steps.runtime.outputs.log_group }}
         run: |
@@ -104,13 +107,22 @@ jobs:
           : > "$MAPPING"
           : > "$RESULTS"
           START_MS="$(( $(date +%s%3N) - 5000 ))"
-          SOURCE="batch12-durable-preflight-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           enqueue() {
             NAME="$1"
-            BODY="$(jq -nc --arg target "/api/cron/managed?job=${NAME}" --arg source "$SOURCE" '{version:1,jobType:"background.cron",source:$source,target:$target,payload:{}}')"
-            MESSAGE_ID="$(aws sqs send-message --queue-url "$QUEUE_URL" --message-body "$BODY" --query MessageId --output text)"
-            test -n "$MESSAGE_ID" && test "$MESSAGE_ID" != 'None'
+            TARGET="/api/cron/managed?job=${NAME}"
+            REQUEST="$RUNNER_TEMP/${NAME}-enqueue.json"
+            RESPONSE="$RUNNER_TEMP/${NAME}-enqueue-response.json"
+            META="$RUNNER_TEMP/${NAME}-enqueue-meta.json"
+            jq -nc --arg target "$TARGET" '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$REQUEST"
+            aws lambda invoke \
+              --function-name "$INVOKER" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$REQUEST" \
+              "$RESPONSE" > "$META"
+            test "$(jq -r '.FunctionError // empty' "$META")" = ''
+            jq -e '.ok == true and .runtime == "sqs" and .queue == "background-cron" and (.messageId | type == "string" and length > 0)' "$RESPONSE" >/dev/null
+            MESSAGE_ID="$(jq -r '.messageId' "$RESPONSE")"
             printf '%s|%s\n' "$NAME" "$MESSAGE_ID" >> "$MAPPING"
             echo "ENQUEUED $NAME"
           }
@@ -177,4 +189,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP/batch12-message-map.txt" "$RUNNER_TEMP/batch12-results.txt"
+        run: rm -f "$RUNNER_TEMP/batch12-message-map.txt" "$RUNNER_TEMP/batch12-results.txt" "$RUNNER_TEMP"/*-enqueue.json "$RUNNER_TEMP"/*-enqueue-response.json "$RUNNER_TEMP"/*-enqueue-meta.json
