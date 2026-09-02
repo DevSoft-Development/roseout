@@ -2,6 +2,7 @@ import json
 
 import base_core as core
 from core_api_communication_center import read_communication_center
+from core_api_crm_operations_snapshot import read_crm_operations_snapshot
 from core_api_crm_sms_recipients import read_crm_sms_recipients
 
 
@@ -13,6 +14,7 @@ def handler(event, context):
         "/v1/status",
         "/v1/crm/communication-center/read",
         "/v1/crm/sms/recipients/read",
+        "/v1/crm/operations-snapshot/read",
     }:
         return core.handler(event, context)
 
@@ -33,6 +35,7 @@ def handler(event, context):
                 "crm.location_health.read",
                 "crm.communication_center.read",
                 "crm.sms_recipients.read",
+                "crm.operations_snapshot.read",
             ],
         })
 
@@ -53,5 +56,14 @@ def handler(event, context):
             return core.response(400, {"ok": False, "error": str(exc)})
         except Exception:
             return core.response(500, {"ok": False, "error": "crm_sms_recipients_read_failed"})
+
+    if method == "POST" and path == "/v1/crm/operations-snapshot/read":
+        try:
+            payload = core.parse_json(body)
+            return core.response(200, read_crm_operations_snapshot(payload))
+        except ValueError as exc:
+            return core.response(400, {"ok": False, "error": str(exc)})
+        except Exception:
+            return core.response(500, {"ok": False, "error": "crm_operations_snapshot_read_failed"})
 
     return core.response(404, {"ok": False, "error": "not_found"})
