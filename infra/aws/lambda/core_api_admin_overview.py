@@ -1,3 +1,4 @@
+import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -31,6 +32,10 @@ def integer(value):
     return int(number(value))
 
 
+def js_round(value):
+    return math.floor(number(value) + 0.5)
+
+
 def is_business_pro(plan):
     return core.text(plan).lower() in BUSINESS_PRO_ALIASES
 
@@ -59,6 +64,10 @@ def read_admin_overview(payload):
     today = now.date().isoformat()
     seven_days_out = (now + timedelta(days=7)).date().isoformat()
     thirty_days_ago = (now - timedelta(days=30)).isoformat().replace("+00:00", "Z")
+
+    # Warm the shared service-role credential before fanning out so a cold Lambda
+    # does not race Secrets Manager from every worker thread.
+    core.load_secret(core.SUPABASE_SERVICE_ROLE_SECRET_ID)
 
     jobs = {
         "restaurants": lambda: exact_count("restaurants"),
@@ -137,7 +146,7 @@ def read_admin_overview(payload):
     }
 
     results = {}
-    with ThreadPoolExecutor(max_workers=16) as pool:
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         futures = {name: pool.submit(fn) for name, fn in jobs.items()}
         for name, future in futures.items():
             results[name] = future.result()
@@ -172,7 +181,7 @@ def read_admin_overview(payload):
         for row in results["experience_prices"]
     }
     experience_estimated_value_cents = sum(
-        round(
+        js_round(
             number(row.get("party_size"))
             * price_by_experience.get(str(row.get("experience_id")), 0)
             * 100
@@ -189,7 +198,7 @@ def read_admin_overview(payload):
     for row in active_paid_locations:
         amount = subscription_amount(row)
         interval = core.text(row.get("subscription_interval")).lower()
-        mrr_cents += round(amount / 12) if interval in {"year", "annual"} else amount
+        mrr_cents += js_round(amount / 12) if interval in {"year", "annual"} else amount
 
     subscription_collected_30d_cents = sum(
         integer(row.get("amount_paid_cents")) for row in results["payment_logs"]
