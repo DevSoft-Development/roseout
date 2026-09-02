@@ -141,6 +141,7 @@ jobs:
           ADMIN_API_SECRET: ${{ secrets.ADMIN_API_SECRET }}
           ADMIN_DIGEST_SECRET: ${{ secrets.ADMIN_DIGEST_SECRET }}
           DOMAIN_GATEWAY_SECRET: ${{ secrets.DOMAIN_GATEWAY_SECRET }}
+          AWS_PLATFORM_INTEGRATION_API_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET }}
           AWS_PLATFORM_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
           MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           MICROSOFT_TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
@@ -162,6 +163,14 @@ jobs:
             printf '{}\n' > "$EXISTING"
           fi
           jq -e 'type == "object"' "$EXISTING" >/dev/null
+
+          INTEGRATION_STACK='theouthaven-integration-api-production'
+          AWS_PLATFORM_INTEGRATION_API_URL="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiUrl'].OutputValue" --output text)"
+          AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET="${AWS_PLATFORM_INTEGRATION_API_SECRET:-${AWS_PLATFORM_JOB_GATEWAY_SECRET:-}}"
+          test -n "$AWS_PLATFORM_INTEGRATION_API_URL" && test "$AWS_PLATFORM_INTEGRATION_API_URL" != 'None' || { echo "Integration API URL is unavailable" >&2; exit 1; }
+          [[ "$AWS_PLATFORM_INTEGRATION_API_URL" == https://* ]] || { echo "Integration API URL must use HTTPS" >&2; exit 1; }
+          test "${#AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET}" -ge 32 || { echo "Integration API shared secret is missing or too short" >&2; exit 1; }
+          echo "::add-mask::$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET"
 
           ensure_generated() {
             local key="$1"
@@ -190,6 +199,8 @@ jobs:
             --arg SITE_URL "https://theouthaven.com" \
             --arg APP_URL "https://theouthaven.com" \
             --arg INTERNAL_APP_ORIGIN "https://www.theouthaven.com" \
+            --arg AWS_PLATFORM_INTEGRATION_API_URL "$AWS_PLATFORM_INTEGRATION_API_URL" \
+            --arg AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET "$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET" \
             '. + {
               SUPABASE_URL:$SUPABASE_URL,
               UPSTREAM_SUPABASE_URL:$SUPABASE_URL,
@@ -200,7 +211,9 @@ jobs:
               NEXT_PUBLIC_SITE_URL:$NEXT_PUBLIC_SITE_URL,
               SITE_URL:$SITE_URL,
               APP_URL:$APP_URL,
-              INTERNAL_APP_ORIGIN:$INTERNAL_APP_ORIGIN
+              INTERNAL_APP_ORIGIN:$INTERNAL_APP_ORIGIN,
+              AWS_PLATFORM_INTEGRATION_API_URL:$AWS_PLATFORM_INTEGRATION_API_URL,
+              AWS_PLATFORM_INTEGRATION_API_SECRET:$AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET
             }' "$EXISTING" > "$RUNTIME"
 
           add_if_present() {
@@ -224,6 +237,11 @@ jobs:
             SEARCH_HEALTH_DIGEST_TO ADMIN_EMAIL SUPERADMIN_EMAIL ADMIN_NOTIFY_EMAIL RESEND_FROM_EMAIL; do
             add_if_present "$key"
           done
+
+          jq -e '
+            (.AWS_PLATFORM_INTEGRATION_API_URL | strings | startswith("https://"))
+            and (.AWS_PLATFORM_INTEGRATION_API_SECRET | strings | length >= 32)
+          ' "$RUNTIME" >/dev/null
 
           # Stable non-secret channel values used by current functions.
           jq '. + {
@@ -349,4 +367,5 @@ jobs:
             echo '- Retired Supabase-only job: cron-run-history-retention (no pg_cron execution remains in Virginia)'
             echo "- Schedule state: ${STATE}"
             echo '- Managed Supabase East cron jobs: intentionally 0'
+            echo '- Transactional SMS provider: AWS Integration API (Telnyx)'
           } >> "$GITHUB_STEP_SUMMARY"
