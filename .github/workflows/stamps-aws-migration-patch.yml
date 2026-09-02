@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply:
+  diagnose:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -26,32 +26,23 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Apply deterministic migration
-        run: python scripts/dev/apply_stamps_aws_migration.py
-
-      - name: Commit generated migration changes
+      - name: Diagnose deterministic migration
         env:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
+          set +e
+          python scripts/dev/apply_stamps_aws_migration.py > /tmp/stamps-patch-debug.txt 2>&1
+          RC=$?
+          set -e
+          git reset --hard HEAD
+          git clean -fd
+          {
+            echo "exit_code=${RC}"
+            cat /tmp/stamps-patch-debug.txt
+          } > stamps-patch-debug.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            infra/aws/lambda/platform_integration_api.py \
-            infra/aws/lambda/stamps_provider.py \
-            infra/aws/cloudformation/integration-api.yml \
-            .github/workflows/aws-integration-api.yml \
-            lib/aws/integration-api.ts \
-            lib/stamps-postcard.ts \
-            lib/stamps-production-postcard.ts \
-            app/api/admin/mailing-batches/postage/connection/route.ts \
-            'app/api/admin/mailing-batches/[id]/postage/preview/route.ts' \
-            'app/api/admin/mailing-batches/[id]/postage/production-proof/route.ts' \
-            'app/admin/dashboard/operations/mailing-batches/[id]/StampsPostagePanel.tsx' \
-            docs/aws/integration-api-rollout.md
-          if git diff --cached --quiet; then
-            echo "Migration changes already applied."
-            exit 0
-          fi
-          git commit -m "Move Stamps production execution to AWS Integration API"
+          git add stamps-patch-debug.txt
+          git commit -m "Capture Stamps migration patch diagnostics"
           git push origin "HEAD:${HEAD_BRANCH}"
