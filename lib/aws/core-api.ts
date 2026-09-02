@@ -40,6 +40,38 @@ export type CoreCrmLocationHealthInput = {
   view: string;
 };
 
+export type CoreCrmOpportunityPageInput = {
+  page: number;
+  size: 25 | 250;
+  pipelineMode: "all" | "unassigned" | "values";
+  pipelineValues: string[];
+  stagePipeline: string;
+  stage?: string;
+  forecast?: string;
+  risk?: string;
+  search?: string;
+  accountId?: string;
+  contactId?: string;
+  locationId?: string;
+  opportunityId?: string;
+  selectorAccountId?: string;
+};
+
+export type CoreCrmOpportunityPageResponse = {
+  success: true;
+  rows: Array<Record<string, unknown>>;
+  count: number;
+  page: number;
+  size: number;
+  stages: Array<Record<string, unknown>>;
+  pipelineKeys: Array<string | null>;
+  selectors: {
+    accounts: Array<{ id: string; name: string | null }>;
+    contacts: Array<{ id: string; full_name: string | null; email: string | null }>;
+    locations: Array<{ id: string; name: string | null; city: string | null; state: string | null }>;
+  };
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_PLATFORM_CORE_API_SECRET
@@ -106,5 +138,16 @@ export async function readCrmLocationHealthViaCoreApi(
     "/v1/crm/location-health/read",
     JSON.stringify(input),
     15_000,
+  );
+}
+
+export async function readCrmOpportunityPageViaCoreApi(
+  input: CoreCrmOpportunityPageInput,
+): Promise<CoreCrmOpportunityPageResponse> {
+  return signedRequest<CoreCrmOpportunityPageResponse>(
+    "POST",
+    "/v1/crm/opportunities/page",
+    JSON.stringify(input),
+    20_000,
   );
 }
