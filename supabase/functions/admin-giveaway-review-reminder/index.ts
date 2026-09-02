@@ -2,6 +2,7 @@ import { handleOptions } from "../_shared/cors.ts";
 import { jsonResponse, ok } from "../_shared/response.ts";
 import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 import { logCronJobRun } from "../_shared/cronLogger.ts";
+import { sendEmailViaIntegrationApi } from "../_shared/aws-integration.ts";
 
 type EntryRow = Record<string, unknown>;
 
@@ -251,23 +252,18 @@ function buildEmail(
 }
 
 async function sendEmail(to: string[], html: string, text: string) {
-  const apiKey = env("RESEND_API_KEY");
-  if (!apiKey) throw new Error("Missing RESEND_API_KEY");
   const from =
     env("EMAIL_FROM") ||
     env("SEARCH_HEALTH_DIGEST_FROM") ||
     "TheOutHaven Admin <admin@theouthaven.com>";
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ from, to, subject: SUBJECT, html, text }),
+  const result = await sendEmailViaIntegrationApi({
+    from,
+    to,
+    subject: SUBJECT,
+    html,
+    text,
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message ?? response.statusText);
-  return data?.id ?? null;
+  return result.id ?? null;
 }
 
 Deno.serve(async (req) => {
