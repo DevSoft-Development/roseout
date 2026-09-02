@@ -1,8 +1,9 @@
 -- Event-driven AWS background work signals.
 --
 -- The database emits authenticated, asynchronous pg_net signals only when work
--- is created or a worker completes a batch. EventBridge remains a low-frequency
--- recovery mechanism; Virginia pg_cron remains intentionally empty.
+-- is created or becomes runnable. The durable AWS SQS worker self-chains while a
+-- batch reports more work. EventBridge remains a low-frequency recovery
+-- mechanism; Virginia pg_cron remains intentionally empty.
 
 create table if not exists private.aws_background_work_signal_state (
   job_key text primary key,
@@ -137,7 +138,7 @@ begin
   limit 1;
 
   -- The endpoint is configured only after the AWS stack is live. Before then,
-  -- triggers are deliberately harmless and the recovery schedules remain active.
+  -- triggers are deliberately harmless and recovery schedules remain active.
   if nullif(btrim(endpoint), '') is null or nullif(btrim(token), '') is null then
     return null;
   end if;
@@ -177,8 +178,15 @@ security definer
 set search_path = pg_catalog, public, private
 as $$
 begin
-  if new.status = 'pending'
-     or (tg_op = 'UPDATE' and old.status = 'processing' and new.status <> 'processing') then
+  if tg_op = 'INSERT' then
+    if new.status = 'pending' then
+      perform private.emit_aws_background_work_signal('location-search-profile-worker');
+    end if;
+  elsif new.status = 'pending'
+        and (
+          old.status is distinct from new.status
+          or old.available_at is distinct from new.available_at
+        ) then
     perform private.emit_aws_background_work_signal('location-search-profile-worker');
   end if;
   return new;
@@ -197,39 +205,55 @@ create trigger trg_signal_location_search_profile_run_item_work
 after insert or update of status, available_at on public.location_search_profile_run_items
 for each row execute function private.signal_location_search_profile_work();
 
-create or replace function private.signal_catalog_enrichment_work()
+create or replace function private.signal_catalog_enrichment_run_work()
 returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, private
 as $$
 begin
-  if tg_table_name = 'location_enrichment_runs' then
-    if new.status = 'running' and (tg_op = 'INSERT' or old.status is distinct from new.status) then
+  if tg_op = 'INSERT' then
+    if new.status = 'running' then
       perform private.emit_aws_background_work_signal('catalog-enrichment-runner');
     end if;
-  elsif tg_table_name = 'location_enrichment_run_items' then
-    if tg_op = 'UPDATE'
-       and old.status = 'processing'
-       and new.status in ('review','completed','unchanged','skipped','no_match','failed') then
-      perform private.emit_aws_background_work_signal('catalog-enrichment-runner');
-    end if;
+  elsif new.status = 'running' and old.status is distinct from new.status then
+    perform private.emit_aws_background_work_signal('catalog-enrichment-runner');
   end if;
   return new;
 end
 $$;
 
-revoke all on function private.signal_catalog_enrichment_work() from public, anon, authenticated;
+revoke all on function private.signal_catalog_enrichment_run_work() from public, anon, authenticated;
 
 drop trigger if exists trg_signal_location_enrichment_run_work on public.location_enrichment_runs;
 create trigger trg_signal_location_enrichment_run_work
 after insert or update of status on public.location_enrichment_runs
-for each row execute function private.signal_catalog_enrichment_work();
+for each row execute function private.signal_catalog_enrichment_run_work();
 
-drop trigger if exists trg_signal_location_enrichment_item_completion on public.location_enrichment_run_items;
-create trigger trg_signal_location_enrichment_item_completion
-after update of status on public.location_enrichment_run_items
-for each row execute function private.signal_catalog_enrichment_work();
+create or replace function private.signal_catalog_enrichment_item_work()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, private
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status = 'pending' then
+      perform private.emit_aws_background_work_signal('catalog-enrichment-runner');
+    end if;
+  elsif new.status = 'pending' and old.status is distinct from new.status then
+    perform private.emit_aws_background_work_signal('catalog-enrichment-runner');
+  end if;
+  return new;
+end
+$$;
+
+revoke all on function private.signal_catalog_enrichment_item_work() from public, anon, authenticated;
+
+drop trigger if exists trg_signal_location_enrichment_item_work on public.location_enrichment_run_items;
+create trigger trg_signal_location_enrichment_item_work
+after insert or update of status on public.location_enrichment_run_items
+for each row execute function private.signal_catalog_enrichment_item_work();
 
 create or replace function private.signal_location_description_backfill_work()
 returns trigger
@@ -243,16 +267,11 @@ begin
   if tg_op = 'INSERT' then
     should_signal := nullif(btrim(coalesce(new.description, '')), '') is null;
   else
-    should_signal := (
-      nullif(btrim(coalesce(new.description, '')), '') is null
+    should_signal := nullif(btrim(coalesce(new.description, '')), '') is null
       and (
         old.description is distinct from new.description
         or old.description_backfill_status is distinct from new.description_backfill_status
-      )
-    ) or (
-      nullif(btrim(coalesce(old.description, '')), '') is null
-      and nullif(btrim(coalesce(new.description, '')), '') is not null
-    );
+      );
   end if;
 
   if should_signal then
