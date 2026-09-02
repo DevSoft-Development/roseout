@@ -1,0 +1,112 @@
+name: AWS Batch 11B collect-all preflight
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/cron/nightly-search-profile-queue/**'
+      - 'lib/health/nycDohmh.ts'
+      - 'infra/aws/lambda/edge_scheduler_invoker.py'
+      - '.github/workflows/aws-batch11b-preflight.yml'
+  workflow_run:
+    workflows: ['AWS background runtime']
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Batch 11B repair contract
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/edge_scheduler_invoker.py
+          grep -F 'total_max_attempts": 1' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
+          grep -F 'read_timeout=115' infra/aws/lambda/edge_scheduler_invoker.py >/dev/null
+          grep -F 'enqueue_nightly_location_search_profile_run' app/api/cron/nightly-search-profile-queue/route.ts >/dev/null
+          ! grep -F '/functions/v1/nightly-search-profile-queue' app/api/cron/nightly-search-profile-queue/route.ts >/dev/null
+          grep -F 'id,name,restaurant_name,business_name,address,formatted_address,street_address,address_line_1,city,state,postal_code,zip_code,phone,location_type,type,category,primary_category,health_department_camis' lib/health/nycDohmh.ts >/dev/null
+
+  preflight:
+    needs: validate
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Restore canonical scheduler invoker and prove private Node routing
+        id: invoker
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$FN"
+          BUILD="$RUNNER_TEMP/scheduler-invoker"
+          ZIP="$RUNNER_TEMP/scheduler-invoker.zip"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/edge_scheduler_invoker.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FN" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated --function-name "$FN"
+          echo "name=$FN" >> "$GITHUB_OUTPUT"
+
+          jq -nc '{function:"node:/api/health/background-runtime",body:{}}' > "$RUNNER_TEMP/health.json"
+          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/health.json" "$RUNNER_TEMP/health-response.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.runtime == "aws-background"' "$RUNNER_TEMP/health-response.json" >/dev/null
+
+      - name: Probe all five Batch 11B candidates and collect failures
+        env:
+          INVOKER_FN: ${{ steps.invoker.outputs.name }}
+        run: |
+          set -euo pipefail
+          FAILURES="$RUNNER_TEMP/failures.txt"
+          PASSES="$RUNNER_TEMP/passes.txt"
+          : > "$FAILURES"
+          : > "$PASSES"
+
+          for NAME in health-intelligence nightly-search-profile-queue ml-recalculate-advanced-all ml-recalculate-review-intelligence search-phase4b-evaluation; do
+            ITEM="$(jq -c --arg name "$NAME" '.[] | select(.name == $name)' infra/aws/edge-runtime/staged-schedules.json)"
+            test -n "$ITEM"
+            FUNCTION="$(jq -r '.function' <<<"$ITEM")"
+            jq -nc --arg fn "$FUNCTION" '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe.json"
+
+            aws lambda invoke --function-name "$INVOKER_FN" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json" >/dev/null || true
+            if jq -e '.ok == true and (.status // 200) < 400 and (.response.success // true) != false and (.response.ok // true) != false' "$RUNNER_TEMP/response.json" >/dev/null 2>&1; then
+              echo "$NAME" | tee -a "$PASSES"
+            else
+              echo "$NAME" | tee -a "$FAILURES"
+              jq -c --arg name "$NAME" '{name:$name,ok,runtime,status,errorType,errorMessage,response:(if (.response|type)=="object" then {success:.response.success,ok:.response.ok,error:.response.error,reason:.response.reason} else {type:(.response|type)} end)}' "$RUNNER_TEMP/response.json" || true
+            fi
+          done
+
+          PASS_COUNT="$(wc -l < "$PASSES" | tr -d ' ')"
+          FAIL_COUNT="$(wc -l < "$FAILURES" | tr -d ' ')"
+          echo "batch11b_passed=${PASS_COUNT}"
+          echo "batch11b_failed=${FAIL_COUNT}"
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo 'batch11b_failing_jobs:'
+            cat "$FAILURES"
+          fi
+          test "$FAIL_COUNT" = '0'
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/scheduler-invoker" "$RUNNER_TEMP/scheduler-invoker.zip" "$RUNNER_TEMP"/health.json "$RUNNER_TEMP"/health-response.json "$RUNNER_TEMP"/probe.json "$RUNNER_TEMP"/response.json "$RUNNER_TEMP"/failures.txt "$RUNNER_TEMP"/passes.txt
