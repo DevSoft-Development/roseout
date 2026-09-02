@@ -1,0 +1,52 @@
+name: Vercel registrar env diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/vercel-registrar-env-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+      VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+    steps:
+      - name: Inspect registrar env safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/env.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          envs = json.loads((Path(os.environ['RUNNER_TEMP']) / 'env.json').read_text()).get('envs', [])
+          entries = [e for e in envs if e.get('key') == 'DOMAIN_REGISTRAR_LIFECYCLE_MODE']
+          print('registrar_entries=' + str(len(entries)))
+          for idx, entry in enumerate(entries, start=1):
+              value = entry.get('value')
+              targets = entry.get('target') or []
+              custom = entry.get('customEnvironmentIds') or []
+              print(f'entry_{idx}_targets={targets}')
+              print(f'entry_{idx}_custom_environment_count={len(custom)}')
+              print(f'entry_{idx}_type={entry.get("type")}')
+              print(f'entry_{idx}_decrypted={entry.get("decrypted")}')
+              print(f'entry_{idx}_production_in_target={"production" in targets}')
+              print(f'entry_{idx}_value_present={bool(value)}')
+              print(f'entry_{idx}_value_is_aws={value == "aws"}')
+              print(f'entry_{idx}_value_is_vercel={value == "vercel"}')
+          cron = [e for e in envs if e.get('key') == 'CRON_SECRET' and 'production' in (e.get('target') or [])]
+          print('production_cron_secret_entries=' + str(len(cron)))
+          print('diagnostic_complete=true')
+          PY
+          rm -f "$RUNNER_TEMP/env.json"
