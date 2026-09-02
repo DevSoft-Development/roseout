@@ -1,0 +1,333 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven scheduler health, queue pressure, Lambda saturation, and cost/capacity
+  observability for the AWS-owned periodic workload platform.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  PlatformAlertsTopicArn:
+    Type: String
+  SchedulerInvokerFunctionName:
+    Type: String
+  EdgeRuntimeFunctionName:
+    Type: String
+  BackgroundRuntimeFunctionName:
+    Type: String
+  BackgroundCronWorkerFunctionName:
+    Type: String
+  BackgroundCronQueueName:
+    Type: String
+    Default: toh-production-background-cron
+  BackgroundCronDLQName:
+    Type: String
+    Default: toh-production-background-cron-dlq
+
+Resources:
+  SchedulerTargetErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-scheduler-target-errors
+      AlarmDescription: EventBridge Scheduler target invocations returned errors.
+      Namespace: AWS/Scheduler
+      MetricName: TargetErrorCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  SchedulerTargetThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-scheduler-target-throttled
+      AlarmDescription: EventBridge Scheduler targets were throttled.
+      Namespace: AWS/Scheduler
+      MetricName: TargetErrorThrottledCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  SchedulerServiceThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-scheduler-service-throttled
+      AlarmDescription: EventBridge Scheduler throttled invocations because scheduler quotas were reached.
+      Namespace: AWS/Scheduler
+      MetricName: InvocationThrottleCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  SchedulerDroppedInvocationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-scheduler-invocations-dropped
+      AlarmDescription: EventBridge Scheduler exhausted retries and dropped one or more invocations.
+      Namespace: AWS/Scheduler
+      MetricName: InvocationDroppedCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  BackgroundCronQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-cron-oldest-message
+      AlarmDescription: Durable cron work has remained queued for at least 15 minutes.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref BackgroundCronQueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 900
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  BackgroundCronDLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-cron-dlq-visible
+      AlarmDescription: Durable cron work entered the dead-letter queue.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref BackgroundCronDLQName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  SchedulerInvokerThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-scheduler-invoker-throttles
+      AlarmDescription: The central scheduler invoker Lambda was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SchedulerInvokerFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  EdgeRuntimeThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-edge-runtime-throttles
+      AlarmDescription: The AWS edge runtime Lambda was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref EdgeRuntimeFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  BackgroundRuntimeThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-runtime-throttles
+      AlarmDescription: The private Next.js background runtime Lambda was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackgroundRuntimeFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  BackgroundCronWorkerThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-background-cron-worker-throttles
+      AlarmDescription: The durable cron SQS worker Lambda was throttled.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref BackgroundCronWorkerFunctionName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+
+  SchedulerOperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub TheOutHaven-${Environment}-Scheduler-Operations
+      DashboardBody: !Sub |
+        {
+          "start": "-PT24H",
+          "periodOverride": "inherit",
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 2,
+              "properties": {
+                "markdown": "# TheOutHaven scheduler operations\nAWS owns periodic/background execution. Watch delivery errors, throttles, queue age, Lambda concurrency, duration, and monthly AWS charges before changing capacity."
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 2,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "EventBridge Scheduler delivery",
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["AWS/Scheduler", "InvocationAttemptCount"],
+                  [".", "TargetErrorCount"],
+                  [".", "TargetErrorThrottledCount"],
+                  [".", "InvocationThrottleCount"],
+                  [".", "InvocationDroppedCount"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 2,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Durable cron queue pressure",
+                "region": "${AWS::Region}",
+                "period": 300,
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${BackgroundCronQueueName}", {"stat":"Maximum"}],
+                  [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", {"stat":"Maximum"}],
+                  [".", "ApproximateAgeOfOldestMessage", ".", ".", {"stat":"Maximum", "yAxis":"right"}],
+                  [".", "ApproximateNumberOfMessagesVisible", "QueueName", "${BackgroundCronDLQName}", {"stat":"Maximum"}]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Lambda concurrency",
+                "region": "${AWS::Region}",
+                "stat": "Maximum",
+                "period": 60,
+                "metrics": [
+                  ["AWS/Lambda", "ConcurrentExecutions", "FunctionName", "${SchedulerInvokerFunctionName}"],
+                  [".", ".", ".", "${EdgeRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundCronWorkerFunctionName}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Lambda throttles",
+                "region": "${AWS::Region}",
+                "stat": "Sum",
+                "period": 300,
+                "metrics": [
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${SchedulerInvokerFunctionName}"],
+                  [".", ".", ".", "${EdgeRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundCronWorkerFunctionName}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 14,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Lambda p95 duration",
+                "region": "${AWS::Region}",
+                "stat": "p95",
+                "period": 300,
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${SchedulerInvokerFunctionName}"],
+                  [".", ".", ".", "${EdgeRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundRuntimeFunctionName}"],
+                  [".", ".", ".", "${BackgroundCronWorkerFunctionName}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 14,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "AWS estimated month-to-date charges",
+                "region": "us-east-1",
+                "stat": "Maximum",
+                "period": 21600,
+                "metrics": [
+                  ["AWS/Billing", "EstimatedCharges", "Currency", "USD"]
+                ]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  DashboardName:
+    Value: !Ref SchedulerOperationsDashboard
