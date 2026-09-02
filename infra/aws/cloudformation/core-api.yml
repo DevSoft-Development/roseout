@@ -1,0 +1,133 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven dedicated Core API for transactional platform data access.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  CoreApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+  SupabaseUrl:
+    Type: String
+
+Resources:
+  CoreApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/core-api/hmac
+      SecretString: !Ref CoreApiSharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: CoreAPI
+
+  CoreApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenCoreApi-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: core-api-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-core-api:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref CoreApiSecret
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/${Environment}/supabase/service-role-*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: CoreAPI
+
+  CoreApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-core-api
+      RetentionInDays: 30
+
+  CoreApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: CoreApiLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-core-api
+      Description: Isolated Core API for TheOutHaven CRM and business operations.
+      Role: !GetAtt CoreApiRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 20
+      MemorySize: 384
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SUPABASE_URL: !Ref SupabaseUrl
+          SHARED_SECRET_ARN: !Ref CoreApiSecret
+          SUPABASE_SERVICE_ROLE_SECRET_ID: !Sub /theouthaven/${Environment}/supabase/service-role
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "core_api_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: CoreAPI
+
+  CoreApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt CoreApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  CoreApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CoreApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  CoreApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CoreApiFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  CoreApiFunctionName:
+    Value: !Ref CoreApiFunction
+  CoreApiUrl:
+    Value: !GetAtt CoreApiUrl.FunctionUrl
+  CoreApiSecretArn:
+    Value: !Ref CoreApiSecret
