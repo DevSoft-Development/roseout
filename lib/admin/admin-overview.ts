@@ -10,7 +10,6 @@ import { BUSINESS_PRO_MONTHLY_CENTS, isBusinessProPlan } from "@/lib/billing/pla
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const ADMIN_OVERVIEW_TTL_SECONDS = 15;
-const ADMIN_OVERVIEW_CORE_TIMEOUT_MS = 5_000;
 
 function subscriptionAmount(row: Record<string, any>) {
   return Number(
@@ -24,20 +23,6 @@ function subscriptionAmount(row: Record<string, any>) {
 function paymentAmountPaid(row: Record<string, any>) {
   const object = row.payload?.data?.object;
   return Number(object?.amount_paid ?? object?.amount_total ?? object?.amount_received ?? 0);
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("admin_overview_core_api_timeout")), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
@@ -211,7 +196,7 @@ async function readAdminOverviewLocally(): Promise<CoreAdminOverviewResponse> {
 async function readAdminOverviewUncached(): Promise<CoreAdminOverviewResponse> {
   if (platformCoreApiConfigured()) {
     try {
-      return await withTimeout(readAdminOverviewViaCoreApi(), ADMIN_OVERVIEW_CORE_TIMEOUT_MS);
+      return await readAdminOverviewViaCoreApi();
     } catch (error) {
       console.warn("Core admin overview unavailable; using local fallback", error);
     }
