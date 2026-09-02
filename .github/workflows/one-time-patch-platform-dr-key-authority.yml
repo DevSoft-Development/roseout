@@ -9,7 +9,7 @@ on:
       - '.github/workflows/one-time-patch-platform-dr-key-authority.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   patch:
@@ -20,9 +20,14 @@ jobs:
           ref: ops/fix-platform-dr-virginia-key-authority
       - name: Apply exact workflow patch
         run: python scripts/patch-platform-dr-key-authority.py
-      - name: Emit patched workflow payload
+      - name: Stage patched workflow as a regular repository file
         run: |
           set -euo pipefail
-          printf 'PATCHED_WORKFLOW_BASE64='
-          base64 -w0 .github/workflows/aws-platform-dr.yml
-          printf '\n'
+          mkdir -p tmp
+          cp .github/workflows/aws-platform-dr.yml tmp/aws-platform-dr.patched.yml
+          git checkout -- .github/workflows/aws-platform-dr.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tmp/aws-platform-dr.patched.yml
+          git commit -m 'Stage patched platform DR workflow blob'
+          git push origin HEAD:ops/fix-platform-dr-virginia-key-authority
