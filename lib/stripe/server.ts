@@ -1,8 +1,6 @@
 import "server-only";
 
-const STRIPE_API_BASE = "https://api.stripe.com/v1";
-const STRIPE_API_V2_BASE = "https://api.stripe.com/v2";
-const STRIPE_API_VERSION = "2026-07-29.dahlia";
+import { stripeRequestViaIntegrationApi } from "@/lib/aws/integration-api";
 
 export type StripeMode = "live" | "test";
 
@@ -25,16 +23,8 @@ export function getStripeModeForLocation(location: Record<string, any> | null | 
   return isDemo ? "test" : getDefaultStripeMode();
 }
 
-export function getStripeSecretKey(mode: StripeMode = getDefaultStripeMode()) {
-  const stripeSecretKey = mode === "live"
-    ? process.env.STRIPE_SECRET_KEY
-    : process.env.STRIPE_TEST_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
-
-  if (!stripeSecretKey) {
-    throw new Error(mode === "live" ? "Missing STRIPE_SECRET_KEY" : "Missing STRIPE_TEST_SECRET_KEY or STRIPE_SECRET_KEY");
-  }
-
-  return stripeSecretKey;
+export function getStripeSecretKey(_mode: StripeMode = getDefaultStripeMode()): never {
+  throw new Error("Stripe secret keys are managed by the AWS Integration API.");
 }
 
 export function getStripePublishableKey(mode: StripeMode = getDefaultStripeMode()) {
@@ -70,62 +60,48 @@ export async function safeStripeRequest<T>(
   try {
     return await stripeRequest<T>(path, { method, body, idempotencyKey, stripeAccount, mode });
   } catch (error) {
-    console.error("Stripe request failed", { path, mode: mode || getDefaultStripeMode(), message: error instanceof Error ? error.message : String(error) });
+    console.error("Stripe request failed through AWS Integration API", {
+      path,
+      mode: mode || getDefaultStripeMode(),
+      message: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   }
 }
 
-export async function stripeRequest<T>(
+export function stripeRequest<T>(
   path: string,
   { method = "POST", body, idempotencyKey, stripeAccount, mode = getDefaultStripeMode() }: StripeRequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${STRIPE_API_BASE}${path}`, {
+  return stripeRequestViaIntegrationApi<T>({
+    apiVersion: "v1",
+    mode,
     method,
-    headers: {
-      Authorization: `Bearer ${getStripeSecretKey(mode)}`,
-      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
-      ...(stripeAccount ? { "Stripe-Account": stripeAccount } : {}),
-      ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
-    },
-    body,
+    path,
+    form: body?.toString(),
+    idempotencyKey,
+    stripeAccount,
   });
-
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || "Stripe request failed.");
-  }
-
-  return payload as T;
 }
 
-export async function stripeV2Request<T>(
+export function stripeV2Request<T>(
   path: string,
   { method = "POST", body, idempotencyKey, mode = getDefaultStripeMode() }: StripeV2RequestOptions = {},
 ): Promise<T> {
-  const response = await fetch(`${STRIPE_API_V2_BASE}${path}`, {
+  return stripeRequestViaIntegrationApi<T>({
+    apiVersion: "v2",
+    mode,
     method,
-    headers: {
-      Authorization: `Bearer ${getStripeSecretKey(mode)}`,
-      "Stripe-Version": STRIPE_API_VERSION,
-      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    path,
+    body,
+    idempotencyKey,
   });
-
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || payload?.error?.code || "Stripe v2 request failed.");
-  }
-  return payload as T;
 }
 
 function getEnvironmentPriceId(liveName: string, testName: string, legacyLiveName?: string, legacyTestName?: string, mode: StripeMode = getDefaultStripeMode()) {
   if (mode === "live") {
     return process.env[liveName] || (legacyLiveName ? process.env[legacyLiveName] : undefined);
   }
-
   return process.env[testName]
     || (legacyTestName ? process.env[legacyTestName] : undefined)
     || process.env[liveName]
