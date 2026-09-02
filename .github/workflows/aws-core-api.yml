@@ -7,6 +7,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
+      - 'app/api/admin/crm/location-health/route.ts'
       - '.github/workflows/aws-core-api.yml'
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'app/api/admin/crm/context/route.ts'
+      - 'app/api/admin/crm/location-health/route.ts'
       - '.github/workflows/aws-core-api.yml'
   workflow_dispatch:
     inputs:
@@ -238,12 +240,24 @@ jobs:
           crm = call('POST', '/v1/crm/context', {
               'context': {'locationId': '00000000-0000-4000-8000-000000000000'}
           })
+          location_health = call('POST', '/v1/crm/location-health', {
+              'page': 1,
+              'pageSize': 25,
+              'q': '',
+              'view': 'attention',
+          })
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
+          assert 'crm.location-health' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
-          print('Core API authentication and Virginia Supabase CRM read smoke test passed')
+          assert location_health.get('success') is True, location_health
+          assert location_health.get('page') == 1, location_health
+          assert location_health.get('pageSize') == 25, location_health
+          assert isinstance(location_health.get('rows'), list), location_health
+          assert isinstance(location_health.get('total'), int), location_health
+          print('Core API authentication, CRM context, and Location Health Virginia read smoke tests passed')
           PY
 
       - name: Resolve Integration API endpoint
@@ -335,7 +349,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- First extracted operation: CRM context reads'
+            echo '- Extracted reads: CRM context + CRM Location Health GET data fan-out'
+            echo '- Location Health POST repair action: remains on the authenticated Vercel route'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
-            echo '- Vercel: admin authorization + BFF compatibility layer'
+            echo '- Vercel: admin authorization + BFF compatibility/fallback layer'
           } >> "$GITHUB_STEP_SUMMARY"
