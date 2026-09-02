@@ -53,5 +53,11 @@
   {"name":"marketing-social-metrics","expression":"cron(10 0/6 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/marketing-social-metrics/aws"}},
   {"name":"marketing-attribution","expression":"cron(25 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-attribution"}},
   {"name":"website-dr-readiness","expression":"cron(15 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/website-dr-readiness/aws"}},
-  {"name":"stripe-connect-status-sync","expression":"cron(45 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=stripe-connect-status-sync"}}
+  {"name":"stripe-connect-status-sync","expression":"cron(45 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=stripe-connect-status-sync"}},
+  {"name":"daily-admin-digest","expression":"cron(30 7 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=daily-admin-digest"}},
+  {"name":"search-quality-digest","expression":"cron(30 12 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=search-quality-digest"}},
+  {"name":"beta-reminders","expression":"cron(0 14 ? * MON-FRI *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=beta-reminders"}},
+  {"name":"post-visit-followups","expression":"cron(5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=post-visit-followups"}},
+  {"name":"profile-completion-nurture","expression":"cron(5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=profile-completion-nurture"}},
+  {"name":"postcard-followups","expression":"cron(45 13 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=postcard-followups"}}
 ]
