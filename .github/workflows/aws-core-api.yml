@@ -10,12 +10,15 @@ on:
       - 'infra/aws/lambda/core_api_crm_snapshots.py'
       - 'infra/aws/lambda/core_api_business_analytics.py'
       - 'infra/aws/lambda/core_api_admin_overview.py'
+      - 'infra/aws/lambda/core_api_admin_billing.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'lib/crm/core-modules.ts'
       - 'lib/support/operations.ts'
       - 'lib/admin/admin-overview.ts'
+      - 'lib/admin/admin-billing.ts'
       - 'app/admin/dashboard/page.tsx'
+      - 'app/admin/dashboard/billing/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
@@ -34,12 +37,15 @@ on:
       - 'infra/aws/lambda/core_api_crm_snapshots.py'
       - 'infra/aws/lambda/core_api_business_analytics.py'
       - 'infra/aws/lambda/core_api_admin_overview.py'
+      - 'infra/aws/lambda/core_api_admin_billing.py'
       - 'infra/aws/cloudformation/core-api.yml'
       - 'lib/aws/core-api.ts'
       - 'lib/crm/core-modules.ts'
       - 'lib/support/operations.ts'
       - 'lib/admin/admin-overview.ts'
+      - 'lib/admin/admin-billing.ts'
       - 'app/admin/dashboard/page.tsx'
+      - 'app/admin/dashboard/billing/page.tsx'
       - 'app/api/admin/crm/context/route.ts'
       - 'app/api/admin/crm/location-health/route.ts'
       - 'app/api/admin/crm/communication-center/route.ts'
@@ -95,6 +101,7 @@ jobs:
           python -m py_compile infra/aws/lambda/core_api_crm_snapshots.py
           python -m py_compile infra/aws/lambda/core_api_business_analytics.py
           python -m py_compile infra/aws/lambda/core_api_admin_overview.py
+          python -m py_compile infra/aws/lambda/core_api_admin_billing.py
 
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -217,6 +224,7 @@ jobs:
           cp infra/aws/lambda/core_api_crm_snapshots.py "$BUILD_DIR/core_api_crm_snapshots.py"
           cp infra/aws/lambda/core_api_business_analytics.py "$BUILD_DIR/core_api_business_analytics.py"
           cp infra/aws/lambda/core_api_admin_overview.py "$BUILD_DIR/core_api_admin_overview.py"
+          cp infra/aws/lambda/core_api_admin_billing.py "$BUILD_DIR/core_api_admin_billing.py"
           (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
           test -s "$ZIP_FILE"
 
@@ -304,6 +312,7 @@ jobs:
               'filtered': True,
           })
           admin_overview = call('POST', '/v1/admin/overview/read', {})
+          admin_billing = call('POST', '/v1/admin/billing/read', {})
           assert status.get('ok') is True, status
           assert status.get('service') == 'theouthaven-core-api', status
           assert 'crm.context' in status.get('operations', []), status
@@ -317,6 +326,7 @@ jobs:
           assert 'admin.communication.search.read' in status.get('operations', []), status
           assert 'admin.business_analytics.read' in status.get('operations', []), status
           assert 'admin.overview.read' in status.get('operations', []), status
+          assert 'admin.billing.read' in status.get('operations', []), status
           assert crm.get('context', {}).get('locationId') == '00000000-0000-4000-8000-000000000000', crm
           assert crm.get('labels', {}).get('location') is None, crm
           assert health.get('success') is True, health
@@ -378,7 +388,28 @@ jobs:
               assert admin_overview.get(key) >= 0, (key, admin_overview.get(key))
           assert admin_overview.get('liveGeneratedSites', 0) <= admin_overview.get('generatedSites', 0), admin_overview
           assert admin_overview.get('healthyHostingNodes', 0) <= admin_overview.get('hostingNodes', 0), admin_overview
-          print('Core API Virginia reads passed, including Support Settings, Support Case, CRM Operations, CRM Reports, Business Analytics, and Admin Overview')
+          assert admin_billing.get('success') is True, admin_billing
+          assert admin_billing.get('sourceError') is False, admin_billing
+          billing_metrics = admin_billing.get('metrics') or {}
+          for key in [
+              'activePaidLocations', 'trialingLocations', 'pastDueLocations', 'canceledThisMonth',
+              'mrrCents', 'arrCents', 'collectedThisMonthCents', 'upcoming7d', 'upcoming30d',
+              'pastDueEstimatedCents'
+          ]:
+              assert isinstance(billing_metrics.get(key), int), (key, billing_metrics)
+              assert billing_metrics.get(key) >= 0, (key, billing_metrics)
+          assert billing_metrics.get('arrCents') == billing_metrics.get('mrrCents', 0) * 12, billing_metrics
+          for key in ['upcomingRows', 'pastDueRows', 'recentEvents', 'trialRows']:
+              assert isinstance(admin_billing.get(key), list), (key, admin_billing)
+          assert len(admin_billing.get('upcomingRows', [])) <= 20, admin_billing
+          assert len(admin_billing.get('recentEvents', [])) <= 20, admin_billing
+          assert len(admin_billing.get('trialRows', [])) <= 20, admin_billing
+          assert billing_metrics.get('upcoming30d') == len(admin_billing.get('upcomingRows', [])), admin_billing
+          assert billing_metrics.get('pastDueLocations') == len(admin_billing.get('pastDueRows', [])), admin_billing
+          for row in admin_billing.get('recentEvents', []):
+              assert isinstance(row.get('amount_paid_cents'), int), row
+              assert isinstance(row.get('amount_due_cents'), int), row
+          print('Core API Virginia reads passed, including Admin Billing, Support Settings, Support Case, CRM Operations, CRM Reports, Business Analytics, and Admin Overview')
           PY
 
       - name: Resolve Integration API endpoint
@@ -470,8 +501,8 @@ jobs:
             echo '### TheOutHaven Core API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $CORE_API_URL"
-            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations + CRM Reports + Support Settings + Support Case + Admin Communication Search + Business Analytics + Admin Overview snapshot'
+            echo '- Extracted operations: CRM context + Location Health + Communication Center + CRM SMS recipient reads + CRM Operations + CRM Reports + Support Settings + Support Case + Admin Communication Search + Business Analytics + Admin Overview + Admin Billing snapshot'
             echo '- Database access: Supabase REST from AWS, no raw Postgres connection pool'
             echo '- Vercel: admin/scope authorization + BFF compatibility/fallback layer'
-            echo '- SMS send/reply, communication writes, Location Health repair writes, support mutations, and CRM mutations remain on existing paths'
+            echo '- SMS send/reply, communication writes, Location Health repair writes, support mutations, CRM mutations, Stripe webhooks, and subscription/payment writes remain on existing paths'
           } >> "$GITHUB_STEP_SUMMARY"
