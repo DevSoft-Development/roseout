@@ -1,0 +1,43 @@
+name: AWS website replica repair recovery
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/cron/website-failover/route.ts'
+      - 'lib/hosting/website-replication.ts'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'lib/__tests__/website-automatic-failback-contract.test.ts'
+      - '.github/workflows/aws-website-replica-repair-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/api/cron/website-failover/route.ts'
+      - 'lib/hosting/website-replication.ts'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'lib/__tests__/website-automatic-failback-contract.test.ts'
+      - '.github/workflows/aws-website-replica-repair-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Run automatic failback contract
+        run: npx vitest run lib/__tests__/website-automatic-failback-contract.test.ts
+
+      - name: Validate hourly recovery schedule
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          jq -e 'any(.[]; .name == "website-replica-repair" and .expression == "cron(0 * * * ? *)" and .function == "node:/api/cron/managed?job=website-replica-repair")' infra/aws/edge-runtime/schedules.json >/dev/null
+          grep -F 'source: "website_failback_waiting_replica"' app/api/cron/website-failover/route.ts >/dev/null
+          grep -F 'The hourly EventBridge reconciliation remains the fail-safe' lib/hosting/website-replication.ts >/dev/null

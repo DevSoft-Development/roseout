@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { invokePlatformBackground, platformJobGatewayConfigured } from "@/lib/aws/platform-jobs";
 import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site";
 import { switchPlatformWildcardToNode } from "@/lib/domains/vercel-wildcard-failover";
 import { failoverWebsiteToHealthyNode } from "@/lib/hosting/lightsail-failover";
@@ -28,6 +29,30 @@ function healthIsSustained(value: string | null | undefined) {
   if (!value) return false;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && timestamp <= Date.now() - AUTO_FAILBACK_STABILITY_MS;
+}
+
+async function requestWebsiteReplicaRepair(
+  website: { id: string; location_id: string; published_version: number | null },
+  reason: string,
+) {
+  if (!platformJobGatewayConfigured()) return false;
+  try {
+    await invokePlatformBackground("node:/api/cron/managed?job=website-replica-repair", {
+      source: "website_failback_waiting_replica",
+      website_id: website.id,
+      location_id: website.location_id,
+      version: Number(website.published_version || 0),
+      reason,
+    });
+    return true;
+  } catch (eventError) {
+    console.error("website_replica_repair_event_failed", {
+      websiteId: website.id,
+      version: Number(website.published_version || 0),
+      error: eventError instanceof Error ? eventError.message : String(eventError),
+    });
+    return false;
+  }
 }
 
 async function finishRouting(
@@ -121,7 +146,8 @@ async function tryAutomaticFailback(website: {
     .maybeSingle();
 
   if (replicaError || !replica || replica.status !== "synced" || Number(replica.version) !== version) {
-    return { state: "failback_waiting_replica" as const, node: sourceNode.name, version };
+    const repairSignaled = await requestWebsiteReplicaRepair(website, "failback_waiting_replica");
+    return { state: "failback_waiting_replica" as const, node: sourceNode.name, version, repairSignaled };
   }
 
   try {
