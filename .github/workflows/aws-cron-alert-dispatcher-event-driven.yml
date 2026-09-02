@@ -1,0 +1,59 @@
+name: AWS cron alert dispatcher event driven
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/migrations/*event_driven_cron_alert_dispatcher.sql'
+      - 'app/api/cron/cron-alert-dispatcher/route.ts'
+      - '.github/workflows/aws-cron-alert-dispatcher-event-driven.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/migrations/*event_driven_cron_alert_dispatcher.sql'
+      - 'app/api/cron/cron-alert-dispatcher/route.ts'
+      - '.github/workflows/aws-cron-alert-dispatcher-event-driven.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate delayed signal contract
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/background_work_signal.py
+          grep -F '"cron-alert-dispatcher": "/api/cron/managed?job=cron-alert-dispatcher"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"cron-alert-dispatcher": 300' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'DelaySeconds=delay_seconds' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'delaySeconds' infra/aws/lambda/background_work_signal.py >/dev/null
+
+      - name: Validate recovery cadence
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          jq -e 'any(.[]; .name == "cron-alert-dispatcher" and .expression == "cron(0/30 * * * ? *)" and .function == "node:/api/cron/managed?job=cron-alert-dispatcher")' infra/aws/edge-runtime/schedules.json >/dev/null
+
+      - name: Validate database wake contract
+        run: |
+          set -euo pipefail
+          MIGRATION='supabase/migrations/20260902220200_event_driven_cron_alert_dispatcher.sql'
+          grep -F "'cron-alert-dispatcher'" "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_cron_alert_dispatcher_failure' "$MIGRATION" >/dev/null
+          grep -F 'send_failure_email' "$MIGRATION" >/dev/null
+          grep -F "interval '0 seconds'" "$MIGRATION" >/dev/null
+          grep -F "new.job_key = 'cron-alert-dispatcher'" "$MIGRATION" >/dev/null
+          grep -F 'after insert or update of status, error_message' "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$MIGRATION" >/dev/null
+
+      - name: Validate retry timing compatibility
+        run: |
+          set -euo pipefail
+          grep -F 'ageMs >= 5 * 60_000' app/api/cron/cron-alert-dispatcher/route.ts >/dev/null

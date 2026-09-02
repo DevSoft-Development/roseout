@@ -36,6 +36,11 @@ ALLOWED_JOBS = {
     "unified-location-gap-repair": "edge:unified-location-gap-repair",
     "worker-dispatcher-unified": "edge:worker-dispatcher",
     "location-enrichment-reconcile": "edge:aws-db-maintenance",
+    "cron-alert-dispatcher": "/api/cron/managed?job=cron-alert-dispatcher",
+}
+
+JOB_DELAY_SECONDS = {
+    "cron-alert-dispatcher": 300,
 }
 
 sqs = boto3.client("sqs")
@@ -142,13 +147,16 @@ def handler(event, context):
         "target": target,
         "payload": _payload_for_job(job),
     }
+    delay_seconds = JOB_DELAY_SECONDS.get(job, 0)
     result = sqs.send_message(
         QueueUrl=QUEUE_URL,
         MessageBody=json.dumps(envelope, separators=(",", ":")),
+        DelaySeconds=delay_seconds,
     )
     print(json.dumps({
         "event": "background_work_signaled",
         "job": job,
+        "delaySeconds": delay_seconds,
         "messageId": result.get("MessageId"),
     }, separators=(",", ":")))
     return _response(202, {"ok": True, "job": job, "queued": True})
