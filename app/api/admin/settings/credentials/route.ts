@@ -33,6 +33,16 @@ function providerFrom(value: unknown): CredentialProviderId | null {
 
 function safeError(error: unknown) {
   const code = error instanceof Error ? error.message : "credential_vault_error";
+  const stampsMessages: Record<string, string> = {
+    stamps_getaccountinfo_failed: "Stamps.com authentication failed. Use the Stamps API/partner username, not the email address used to sign in to the Stamps website. In Stamps.com, go to Manage Account > Profile > Personal Contact Info > Get Username, save that username in the vault, then test again.",
+    stamps_credentials_not_configured: "Stamps.com production credentials are incomplete. Save the Production Integration ID, API username, and password, then test again.",
+    stamps_getaccountinfo_unavailable: "Stamps.com could not be reached for the non-transactional account test. No postage was purchased. Try the test again later.",
+    stamps_wsdl_unavailable: "The approved Stamps.com SWS/IM v160 service definition could not be reached. No postage was purchased.",
+    stamps_wsdl_namespace_mismatch: "The Stamps.com service definition did not match the approved SWS/IM v160 namespace. No postage was purchased.",
+    stamps_unavailable: "The AWS Stamps.com integration is temporarily unavailable. No postage was purchased.",
+  };
+  if (stampsMessages[code]) return stampsMessages[code];
+
   const allowed = new Set([
     "credential_vault_gateway_not_configured",
     "credential_vault_gateway_requires_https",
