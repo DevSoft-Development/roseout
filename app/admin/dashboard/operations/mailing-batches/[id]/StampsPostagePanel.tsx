@@ -53,6 +53,7 @@ type StagingProof = {
 };
 
 type ProductionProof = {
+  itemId: string;
   businessName: string;
   cleansedAddress: { street: string; city: string; state: string; zip: string; zip4?: string | null };
   addressMatch: boolean;
@@ -245,9 +246,10 @@ export default function StampsPostagePanel({ batchId, total }: { batchId: string
                 {productionProof.assetWarning ? <p className="mt-3 text-sm font-bold text-amber-200">{productionProof.assetWarning} Do not retry the postage purchase.</p> : null}
               </div>
               {productionProof.postageAssetUrl ? (
-                <a href={productionProof.postageAssetUrl} target="_blank" rel="noreferrer" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-200 px-4 text-sm font-black text-black">
-                  Inspect live indicium <ExternalLink className="h-4 w-4" />
-                </a>
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                  <a href={productionProof.postageAssetUrl} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200/25 bg-emerald-950/30 px-4 text-sm font-black text-emerald-50">Inspect live indicium <ExternalLink className="h-4 w-4" /></a>
+                  <a href={`/admin/dashboard/operations/mailing-batches/${batchId}/print?mode=duplex&production=1&item=${encodeURIComponent(productionProof.itemId)}`} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-200 px-4 text-sm font-black text-black">Open live proof in print center <Printer className="h-4 w-4" /></a>
+                </div>
               ) : null}
             </div>
           </div>

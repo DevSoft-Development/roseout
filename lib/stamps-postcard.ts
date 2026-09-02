@@ -107,15 +107,6 @@ function redactSoapXml(xml: string) {
     .replace(/<(?:[A-Za-z0-9_-]+:)?IntegrationID(?:\s[^>]*)?>[\s\S]*?<\/(?:[A-Za-z0-9_-]+:)?IntegrationID>/gi, "<IntegrationID>[REDACTED]</IntegrationID>");
 }
 
-function assertProductionV160Configuration(endpointUrl: string, wsdlUrl: string) {
-  if (endpointUrl !== STAMPS_PRODUCTION_ENDPOINT) {
-    throw new Error("Stamps.com production endpoint must use the approved SWS/IM v160 endpoint.");
-  }
-  if (wsdlUrl !== STAMPS_PRODUCTION_WSDL) {
-    throw new Error("Stamps.com production WSDL must use the approved SWS/IM v160 WSDL.");
-  }
-}
-
 async function getStampsNamespace(wsdlUrl: string) {
   if (cachedNamespace?.wsdlUrl === wsdlUrl) return cachedNamespace.namespace;
   const response = await fetch(wsdlUrl, { cache: "no-store" });
@@ -132,9 +123,9 @@ async function getStampsNamespace(wsdlUrl: string) {
 
 async function stampsSoapCall(operation: string, body: string) {
   const config = getStampsConfiguration();
+  if (config.mode === "live") throw new Error("Stamps.com production SOAP calls must run through the AWS Integration API.");
   if (!config.configured) throw new Error("Stamps.com credentials are not configured.");
   if (!config.endpointUrl || !config.wsdlUrl) throw new Error("Stamps.com endpoint/WSDL is not configured.");
-  if (config.mode === "live") assertProductionV160Configuration(config.endpointUrl, config.wsdlUrl);
 
   const namespace = await getStampsNamespace(config.wsdlUrl);
   const requestXml = `<?xml version="1.0" encoding="utf-8"?>\n<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sws="${escapeXml(namespace)}"><soapenv:Header/><soapenv:Body><sws:${operation}>${body}</sws:${operation}></soapenv:Body></soapenv:Envelope>`;
@@ -150,22 +141,13 @@ async function stampsSoapCall(operation: string, body: string) {
   });
   const responseXml = await response.text();
 
-  if (config.mode === "live") {
-    console.info("Stamps SWS/IM production SOAP exchange", {
-      operation,
-      durationMs: Date.now() - startedAt,
-      status: response.status,
-      apiVersion: "v160",
-    });
-  } else {
-    console.info("Stamps SWS/IM SOAP exchange", {
-      operation,
-      durationMs: Date.now() - startedAt,
-      status: response.status,
-      requestXml: redactSoapXml(requestXml),
-      responseXml: redactSoapXml(responseXml),
-    });
-  }
+  console.info("Stamps SWS/IM staging SOAP exchange", {
+    operation,
+    durationMs: Date.now() - startedAt,
+    status: response.status,
+    requestXml: redactSoapXml(requestXml),
+    responseXml: redactSoapXml(responseXml),
+  });
 
   const fault = readXmlTag(responseXml, "faultstring") || readXmlTag(responseXml, "FaultReason") || readXmlTag(responseXml, "Message");
   if (!response.ok || responseXml.includes(":Fault") || responseXml.includes("<Fault")) {

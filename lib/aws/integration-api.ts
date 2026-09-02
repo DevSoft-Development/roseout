@@ -63,10 +63,10 @@ export type IntegrationStampsStatusResponse = {
   apiVersion: "v160";
   configured: boolean;
   postcardEnabled: boolean;
-  livePurchasesEnabled: false;
+  livePurchasesEnabled: boolean;
   endpointApproved: boolean;
   credentialSource: "admin-credential-vault";
-  transactionalOperationsEnabled: false;
+  transactionalOperationsEnabled: boolean;
 };
 
 export type IntegrationStampsConnectionResponse = {
@@ -81,6 +81,26 @@ export type IntegrationStampsConnectionResponse = {
   namespace: string;
   credentialSource: "admin-credential-vault";
   message: string;
+};
+
+export type IntegrationStampsProductionProofResponse = {
+  ok: true;
+  provider: "stamps";
+  mode: "live";
+  apiVersion: "v160";
+  businessName: string;
+  cleansedAddress: { street: string; city: string; state: string; zip: string; zip4?: string | null };
+  addressMatch: boolean;
+  cityStateZipOk: boolean;
+  amount: number;
+  serviceType: string;
+  packageType: string;
+  shipDate: string;
+  stampsTxId: string | null;
+  integratorTxId: string;
+  labelPngBase64: string | null;
+  labelWarning: string | null;
+  sampleOnly: false;
 };
 
 export type IntegrationResendSendResponse = {
@@ -313,6 +333,17 @@ export async function getStampsStatusViaIntegrationApi(): Promise<IntegrationSta
 
 export async function testStampsConnectionViaIntegrationApi(): Promise<IntegrationStampsConnectionResponse> {
   return signedJson<IntegrationStampsConnectionResponse>("/v1/stamps/connection-test", {}, 20_000);
+}
+
+export async function createStampsPostcardProductionProofViaIntegrationApi(
+  address: { name: string; street: string; city: string; state: string; zip: string },
+  integratorTxId: string,
+): Promise<IntegrationStampsProductionProofResponse> {
+  return signedJson<IntegrationStampsProductionProofResponse>(
+    "/v1/stamps/postcard/production-proof",
+    { address, integratorTxId },
+    90_000,
+  );
 }
 
 export async function searchGooglePlacesTextViaIntegrationApi<T>(
