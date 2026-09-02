@@ -55,9 +55,9 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "twilio", label: "Twilio", category: "Communications", description: "Twilio account credentials for SMS and phone workflows.", fields: [
     { key: "accountSid", label: "Account SID" }, { key: "authToken", label: "Auth token", secret: true },
   ] },
-  { id: "stamps", label: "Stamps.com", category: "Communications", description: "Production USPS postage credentials for the Stamps.com SWS/IM v160 integration.", note: "Stored only in AWS Secrets Manager. Saved values are never revealed by the vault. Connection validation must remain non-transactional and must not purchase postage.", fields: [
+  { id: "stamps", label: "Stamps.com", category: "Communications", description: "Production USPS postage credentials for the Stamps.com SWS/IM v160 integration.", note: "For SWS/IM, use the Stamps API/partner username, not the email address used to sign in to the Stamps website. In Stamps.com, go to Manage Account > Profile > Personal Contact Info > Get Username. Credentials remain only in AWS Secrets Manager; connection validation is non-transactional and does not purchase postage.", fields: [
     { key: "integrationId", label: "Production Integration ID", secret: true, placeholder: "Production SWS/IM Integration ID" },
-    { key: "username", label: "Production username", secret: true },
+    { key: "username", label: "Production API username (not email)", secret: true, placeholder: "Stamps username from Get Username" },
     { key: "password", label: "Production password", secret: true },
   ] },
   { id: "meta", label: "Meta / Instagram", category: "Social", description: "Platform credentials for Facebook/Meta and Instagram Business Login.", note: "Instagram Business Login uses its own Instagram App ID and Instagram App Secret from Meta's API setup with Instagram login. Do not use the generic Facebook/Meta App ID for Instagram login.", fields: [
