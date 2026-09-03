@@ -51,6 +51,7 @@ export default function ReserveHostServiceDock({
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const [managerPin, setManagerPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const date = useMemo(() => easternDate(), []);
@@ -75,7 +76,10 @@ export default function ReserveHostServiceDock({
 
   const attention = snapshot?.attention || [];
   const pacing = snapshot?.pacing?.warnings || [];
-  const manager = ["location_admin", "manager"].includes(String(snapshot?.access?.role || ""));
+  const canManageReservations = Boolean(snapshot?.access?.permissions?.manageReservations);
+  const managers = (snapshot?.staff || []).filter(
+    (person: any) => person.is_active !== false && String(person.role || "") === "manager",
+  );
   const reservations = (snapshot?.reservations || []).filter((row: any) =>
     ACTIVE.has(String(row.status || "").toLowerCase()),
   );
@@ -119,9 +123,10 @@ export default function ReserveHostServiceDock({
     const form = new FormData(event.currentTarget);
     const reservationId = String(form.get("reservationId") || "");
     const resourceId = String(form.get("resourceId") || "");
+    const managerStaffProfileId = String(form.get("managerStaffProfileId") || "");
     const reason = String(form.get("reason") || "").trim();
     const resource = tableResources.find((row: any) => String(row.id || row.layout_item_id || "") === resourceId);
-    if (!reservationId || !resource || !reason) return;
+    if (!reservationId || !resource || !managerStaffProfileId || !reason || !/^\d{4,6}$/.test(managerPin)) return;
     setBusy(true);
     setNotice("");
     try {
@@ -135,12 +140,15 @@ export default function ReserveHostServiceDock({
           resource_label: resourceLabel(resource),
           seat_after_assign: true,
           override_reason: reason,
+          managerStaffProfileId,
+          managerPin,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to apply manager override.");
       setOverrideOpen(false);
-      setNotice("Manager override applied and audited.");
+      setManagerPin("");
+      setNotice(`Approved by ${data.managerApproval?.displayName || "manager"} and audited.`);
       await load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to apply manager override.");
@@ -171,13 +179,13 @@ export default function ReserveHostServiceDock({
           >
             <AlertTriangle size={13} /> Attention {attention.length + pacing.length}
           </button>
-          {manager ? (
+          {canManageReservations ? (
             <button
               type="button"
-              onClick={() => setOverrideOpen(true)}
+              onClick={() => { setManagerPin(""); setOverrideOpen(true); }}
               className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[11px] font-black text-white/70"
             >
-              <ShieldCheck size={13} /> Manager override
+              <ShieldCheck size={13} /> Request manager approval
             </button>
           ) : null}
           <Link
@@ -225,17 +233,22 @@ export default function ReserveHostServiceDock({
         </div>
       ) : null}
 
-      {overrideOpen && manager ? (
+      {overrideOpen && canManageReservations ? (
         <div className="fixed inset-0 z-[120] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" onMouseDown={() => setOverrideOpen(false)}>
           <form onSubmit={submitOverride} onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-lg rounded-[1.5rem] border border-white/10 bg-[#0a0c10] p-5 text-white shadow-2xl">
-            <div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ff6b86]">Audited exception</p><h2 className="mt-1 text-xl font-black">Manager capacity override</h2></div><button type="button" onClick={() => setOverrideOpen(false)}><X size={18} /></button></div>
-            <p className="mt-2 text-xs font-semibold text-white/45">Capacity exceptions are allowed with a reason. An occupied or time-conflicting table can never be overridden.</p>
+            <div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#ff6b86]">Manager approval</p><h2 className="mt-1 text-xl font-black">Approve capacity exception</h2></div><button type="button" onClick={() => setOverrideOpen(false)}><X size={18} /></button></div>
+            <p className="mt-2 text-xs font-semibold text-white/45">A host can request this exception, but a Reserve manager must approve it with their own PIN. Hard table conflicts remain blocked.</p>
             <div className="mt-4 grid gap-3">
               <label className="text-xs font-black text-white/55">Reservation<select name="reservationId" required className="mt-2 w-full rounded-xl border border-white/15 bg-[#111318] px-3 py-3 text-white"><option value="">Choose reservation</option>{reservations.map((row: any) => <option key={row.id} value={row.id}>{getReservationGuestName(row)} · party {row.party_size || 1}</option>)}</select></label>
               <label className="text-xs font-black text-white/55">Table<select name="resourceId" required className="mt-2 w-full rounded-xl border border-white/15 bg-[#111318] px-3 py-3 text-white"><option value="">Choose table</option>{tableResources.map((row: any) => <option key={row.id || row.layout_item_id || resourceLabel(row)} value={row.id || row.layout_item_id}>{resourceLabel(row)} · {resourceCapacity(row)} seats</option>)}</select></label>
               <label className="text-xs font-black text-white/55">Reason<textarea name="reason" required maxLength={500} className="mt-2 min-h-24 w-full rounded-xl border border-white/15 bg-black/30 p-3 text-white outline-none focus:border-[#e1062a]/60" placeholder="Why is this capacity exception appropriate?" /></label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-black text-white/55">Approving manager<select name="managerStaffProfileId" required className="mt-2 w-full rounded-xl border border-white/15 bg-[#111318] px-3 py-3 text-white"><option value="">Choose manager</option>{managers.map((person: any) => <option key={person.id} value={person.id}>{person.display_name}</option>)}</select></label>
+                <label className="text-xs font-black text-white/55">Manager PIN<input value={managerPin} onChange={(event) => setManagerPin(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" pattern="[0-9]*" minLength={4} maxLength={6} required className="mt-2 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-3 text-center text-lg font-black tracking-[0.3em] text-white outline-none focus:border-[#e1062a]/60" placeholder="••••" /></label>
+              </div>
+              {!managers.length ? <p className="rounded-xl border border-amber-300/25 bg-amber-300/8 p-3 text-xs font-bold text-amber-100">No active Reserve manager profile is configured. Add a manager and PIN in Service controls before approvals can be used.</p> : null}
             </div>
-            <button disabled={busy} className="mt-4 w-full rounded-xl bg-[#e1062a] px-4 py-3 text-sm font-black text-white disabled:opacity-40">{busy ? "Applying…" : "Apply audited override"}</button>
+            <button disabled={busy || !managers.length || !/^\d{4,6}$/.test(managerPin)} className="mt-4 w-full rounded-xl bg-[#e1062a] px-4 py-3 text-sm font-black text-white disabled:opacity-40">{busy ? "Verifying manager…" : "Verify PIN & approve"}</button>
           </form>
         </div>
       ) : null}
