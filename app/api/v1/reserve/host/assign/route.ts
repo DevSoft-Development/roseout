@@ -6,6 +6,11 @@ import {
 } from "@/lib/reserve/locationPermissions";
 import { getReserveStaffSession } from "@/lib/reserve/staffSession";
 import { rankStaffForParty } from "@/lib/reservations/enterpriseHost";
+import {
+  assignReserveResourceViaAws,
+  assignReserveServerViaAws,
+  reserveApiConfigured,
+} from "@/lib/aws/reserve-api";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -116,6 +121,51 @@ async function activeStaff(locationId: string, date: string) {
   });
 }
 
+async function assignResource(input: {
+  reservationId: string;
+  locationId: string;
+  resource: { id: string | null; label: string; type: string; capacity: number | null; bar: boolean };
+  seatAfterAssign: boolean;
+  actorStaffProfileId: string | null;
+  overrideReason: string | null;
+}) {
+  if (reserveApiConfigured()) {
+    try {
+      const result = await assignReserveResourceViaAws({
+        reservationId: input.reservationId,
+        locationId: input.locationId,
+        resourceId: input.resource.id,
+        resourceLabel: input.resource.label,
+        resourceType: input.resource.type,
+        resourceCapacity: input.resource.bar ? null : input.resource.capacity,
+        seatAfterAssign: input.seatAfterAssign,
+        staffProfileId: input.actorStaffProfileId,
+        overrideReason: input.overrideReason,
+      });
+      return { data: result.reservation as any, error: null, service: "aws-reserve-api" as const };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Reserve API unavailable";
+      if (/assigned|conflict|fit|available|not found/i.test(message)) {
+        return { data: null, error: { message }, service: "aws-reserve-api" as const };
+      }
+      console.error("Reserve API seating failed; using database fallback", { error: message });
+    }
+  }
+
+  const rpc = await supabaseAdmin.rpc("reserve_assign_resource_atomic", {
+    p_reservation_id: input.reservationId,
+    p_location_id: input.locationId,
+    p_resource_id: input.resource.id,
+    p_resource_label: input.resource.label,
+    p_resource_type: input.resource.type,
+    p_resource_capacity: input.resource.bar ? null : input.resource.capacity,
+    p_seat_after_assign: input.seatAfterAssign,
+    p_staff_profile_id: input.actorStaffProfileId,
+    p_override_reason: input.overrideReason,
+  });
+  return { data: rpc.data as any, error: rpc.error, service: "supabase-direct" as const };
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const locationId = clean(body.location_id || body.locationId);
@@ -150,20 +200,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "A manager is required for this override." }, { status: 403 });
   }
 
-  const rpc = await supabaseAdmin.rpc("reserve_assign_resource_atomic", {
-    p_reservation_id: reservationId,
-    p_location_id: canonicalLocationId,
-    p_resource_id: resource.id,
-    p_resource_label: resource.label,
-    p_resource_type: resource.type,
-    p_resource_capacity: resource.bar ? null : resource.capacity,
-    p_seat_after_assign: body.seat_after_assign !== false,
-    p_staff_profile_id: actorStaffProfileId,
-    p_override_reason: overrideReason,
+  const assignment = await assignResource({
+    reservationId,
+    locationId: canonicalLocationId,
+    resource,
+    seatAfterAssign: body.seat_after_assign !== false,
+    actorStaffProfileId,
+    overrideReason,
   });
 
-  if (rpc.error) {
-    const message = String(rpc.error.message || "Unable to seat this guest.");
+  if (assignment.error) {
+    const message = String(assignment.error.message || "Unable to seat this guest.");
     const conflict = /assigned|conflict|fit|available/i.test(message);
     return NextResponse.json(
       { success: false, code: conflict ? "seat_conflict" : "seat_failed", error: message },
@@ -171,8 +218,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let reservation = rpc.data;
+  let reservation = assignment.data;
   let recommendedServer: any = null;
+  let serverAssignmentService: "aws-reserve-api" | "supabase-direct" | null = null;
   const settings = await supabaseAdmin
     .from("reserve_service_settings")
     .select("assignment_mode")
@@ -185,27 +233,57 @@ export async function POST(request: NextRequest) {
       .from("location_reservations")
       .select("id,status,reservation_date,reservation_time,party_size,seated_at,server_staff_profile_id")
       .eq("location_id", canonicalLocationId)
-      .eq("reservation_date", reservation.reservation_date);
-    const ranking = rankStaffForParty(Number(reservation.party_size || 1), staff, dayReservations.data || []);
+      .eq("reservation.reservation_date" in reservation ? reservation.reservation_date : reservationResult.data.reservation_date);
+    const serviceDate = reservation.reservation_date || reservationResult.data.reservation_date;
+    const ranking = rankStaffForParty(Number(reservation.party_size || reservationResult.data.party_size || 1), staff, dayReservations.data || []);
     recommendedServer = ranking[0] || null;
     if (assignmentMode === "balanced" && recommendedServer?.staff?.id) {
-      const serverRpc = await supabaseAdmin.rpc("reserve_assign_server", {
-        p_reservation_id: reservationId,
-        p_location_id: canonicalLocationId,
-        p_server_staff_profile_id: recommendedServer.staff.id,
-        p_actor_staff_profile_id: actorStaffProfileId,
-      });
-      if (!serverRpc.error) reservation = serverRpc.data;
+      if (reserveApiConfigured()) {
+        try {
+          const serverResult = await assignReserveServerViaAws({
+            reservationId,
+            locationId: canonicalLocationId,
+            serverStaffProfileId: recommendedServer.staff.id,
+            actorStaffProfileId,
+          });
+          reservation = serverResult.reservation as any;
+          serverAssignmentService = "aws-reserve-api";
+        } catch (error) {
+          console.error("Reserve API server assignment failed; using database fallback", { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      if (!serverAssignmentService) {
+        const serverRpc = await supabaseAdmin.rpc("reserve_assign_server", {
+          p_reservation_id: reservationId,
+          p_location_id: canonicalLocationId,
+          p_server_staff_profile_id: recommendedServer.staff.id,
+          p_actor_staff_profile_id: actorStaffProfileId,
+        });
+        if (!serverRpc.error) {
+          reservation = serverRpc.data;
+          serverAssignmentService = "supabase-direct";
+        }
+      }
+      if (serverAssignmentService) {
+        await supabaseAdmin.from("reserve_background_outbox").insert({
+          location_id: canonicalLocationId,
+          reservation_id: reservationId,
+          event_type: "server.auto_assigned",
+          payload: { server_staff_profile_id: recommendedServer.staff.id },
+        });
+      }
     }
   }
 
   return NextResponse.json({
     success: true,
     lane: "reserve-v1",
+    service: assignment.service,
     reservation,
     resource,
     assignmentMode,
     recommendedServer,
+    serverAssignmentService,
   }, {
     headers: { "Cache-Control": "no-store", "X-TheOutHaven-API-Lane": "reserve-v1" },
   });
