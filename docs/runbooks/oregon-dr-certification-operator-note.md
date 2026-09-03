@@ -1,0 +1,1 @@
+The certification workflow is intentionally one-shot and production-mutating only after merge. It delegates all cutover mutations to the existing guarded promotion/failback workflows and finishes by re-proving Virginia-primary steady state.
