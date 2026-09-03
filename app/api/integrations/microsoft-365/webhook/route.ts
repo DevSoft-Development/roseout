@@ -66,7 +66,11 @@ export async function POST(request: NextRequest) {
     byUser.set(row.user_id, group);
 
     if (notification.lifecycleEvent) {
-      await markMicrosoft365SubscriptionLifecycle(subscriptionId, notification.lifecycleEvent).catch(() => undefined);
+      try {
+        await markMicrosoft365SubscriptionLifecycle(subscriptionId, notification.lifecycleEvent);
+      } catch {
+        // A later recovery sweep can repair subscription state.
+      }
     } else {
       await supabaseAdmin.from("microsoft_365_subscriptions").update({
         last_notification_at: new Date().toISOString(),
@@ -86,7 +90,11 @@ export async function POST(request: NextRequest) {
       notification_count: group.subscriptionIds.size,
       received_at: receivedAt,
     }));
-    await supabaseAdmin.from("microsoft_365_webhook_events").insert(rows).catch(() => undefined);
+    try {
+      await supabaseAdmin.from("microsoft_365_webhook_events").insert(rows);
+    } catch {
+      // Graph retries webhook deliveries; returning quickly avoids an avoidable notification storm.
+    }
   }
 
   return NextResponse.json({ accepted: byUser.size }, { status: 202 });
