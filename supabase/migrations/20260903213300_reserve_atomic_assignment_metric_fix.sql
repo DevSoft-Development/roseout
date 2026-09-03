@@ -41,7 +41,7 @@ begin
      and r.id <> p_reservation_id
      and r.reservation_date = v_res.reservation_date
      and lower(coalesce(r.bookable_item_name,'')) = lower(coalesce(p_resource_label,''))
-     and r.status in ('pending','confirmed','checked_in','waiting','arrived','seated')
+     and lower(coalesce(r.status,'')) in ('pending','confirmed','checked_in','waiting','arrived','seated','occupied')
      and (
        (extract(hour from r.reservation_time::time) * 60 + extract(minute from r.reservation_time::time))
          < (extract(hour from v_res.reservation_time::time) * 60 + extract(minute from v_res.reservation_time::time)) + coalesce(v_res.duration_minutes,v_res.turn_time_minutes,90)
@@ -59,10 +59,10 @@ begin
      set bookable_item_id = p_resource_id,
          bookable_item_name = p_resource_label,
          bookable_item_type = coalesce(nullif(p_resource_type,''),'table'),
-         status = case when p_seat_after_assign and v_res.status in ('confirmed','checked_in','waiting','arrived') then 'seated' else v_res.status end,
-         checked_in_at = case when p_seat_after_assign and v_res.status = 'confirmed' then coalesce(v_res.checked_in_at,v_now) else v_res.checked_in_at end,
-         arrived_at = case when p_seat_after_assign and v_res.status = 'confirmed' then coalesce(v_res.arrived_at,v_now) else v_res.arrived_at end,
-         seated_at = case when p_seat_after_assign and v_res.status in ('confirmed','checked_in','waiting','arrived') then coalesce(v_res.seated_at,v_now) else v_res.seated_at end,
+         status = case when p_seat_after_assign and lower(coalesce(v_res.status,'')) in ('pending','confirmed','checked_in','waiting','arrived') then 'seated' else v_res.status end,
+         checked_in_at = case when p_seat_after_assign and lower(coalesce(v_res.status,'')) in ('pending','confirmed') then coalesce(v_res.checked_in_at,v_now) else v_res.checked_in_at end,
+         arrived_at = case when p_seat_after_assign and lower(coalesce(v_res.status,'')) in ('pending','confirmed') then coalesce(v_res.arrived_at,v_now) else v_res.arrived_at end,
+         seated_at = case when p_seat_after_assign and lower(coalesce(v_res.status,'')) in ('pending','confirmed','checked_in','waiting','arrived') then coalesce(v_res.seated_at,v_now) else v_res.seated_at end,
          updated_at = v_now
    where id = p_reservation_id
    returning * into v_res;
