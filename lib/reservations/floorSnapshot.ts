@@ -10,6 +10,7 @@ export type FloorReservation = {
   customer_name?: string | null;
   party_size?: number | null;
   reservation_time?: string | null;
+  seated_at?: string | null;
   updated_at?: string | null;
 };
 export type FloorResource = {
