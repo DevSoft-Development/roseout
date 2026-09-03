@@ -20,7 +20,11 @@ const batch14 = [
   "website-failover",
 ].sort();
 
-const expectedCadence = new Map(batch14.map((name) => [name, "cron(0/5 * * * ? *)"]));
+const expectedCadence = new Map([
+  ["microsoft-365-sync", "cron(0/5 * * * ? *)"],
+  ["marketing-social-publish", "cron(0 * * * ? *)"],
+  ["website-failover", "cron(0/5 * * * ? *)"],
+]);
 const activeNames = new Set(schedules.map((row) => row.name));
 const stagedNames = new Set(staged.map((row) => row.name));
 const enabled = new Set(activation.enabled ?? []);
