@@ -43,6 +43,8 @@ ALLOWED_JOBS = {
     "worker-dispatcher-unified": "edge:worker-dispatcher",
     "location-enrichment-reconcile": "edge:aws-db-maintenance",
     "cron-alert-dispatcher": "/api/cron/managed?job=cron-alert-dispatcher",
+    "marketing-report-scheduler": "edge:admin-marketing-report-scheduler",
+    "marketing-social-publish": "/api/cron/managed?job=marketing-social-publish",
 }
 
 JOB_DELAY_SECONDS = {
