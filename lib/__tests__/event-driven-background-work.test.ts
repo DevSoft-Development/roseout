@@ -50,13 +50,32 @@ describe("event-driven AWS background work", () => {
       expression: "cron(0/15 * * * ? *)",
       function: "worker-dispatcher",
     });
-  });
-
-  it("keeps active search learning at one minute until its backlog is cleared", () => {
     expect(schedule("search-ml-learning-maintenance")).toMatchObject({
-      expression: "cron(* * * * ? *)",
+      expression: "cron(0/15 * * * ? *)",
       function: "node:/api/cron/managed?job=search-ml-learning-maintenance",
     });
+  });
+
+  it("wakes Search ML from data changes and self-chains until the learning backlog is drained", () => {
+    const lambda = read("infra/aws/lambda/background_work_signal.py");
+    const worker = read("infra/aws/lambda/background_cron_worker.py");
+    const migration = read("supabase/migrations/20260903003000_event_driven_search_ml_learning.sql");
+
+    expect(lambda).toContain('"search-ml-learning-maintenance": "/api/cron/managed?job=search-ml-learning-maintenance"');
+    expect(worker).toContain('"/api/cron/managed?job=search-ml-learning-maintenance"');
+    expect(worker).toContain('target.endswith("job=search-ml-learning-maintenance")');
+    expect(worker).toContain('value.get("remainingEstimate")');
+    expect(worker).toContain('value.get("updated")');
+    expect(worker).toContain("remaining > 0 and progressed > 0");
+
+    expect(migration).toContain("search-ml-learning-maintenance");
+    expect(migration).toContain("interval '10 seconds'");
+    expect(migration).toContain("trg_signal_search_ml_location_change");
+    expect(migration).toContain("trg_signal_search_ml_profile_food_change");
+    expect(migration).toContain("trg_signal_search_ml_analytics_event");
+    expect(migration).toContain("trg_signal_search_ml_negative_feedback");
+    expect(migration).toContain("trg_signal_search_ml_outing_change");
+    expect(migration).not.toMatch(/cron\.schedule\s*\(/i);
   });
 
   it("signals only approved jobs and reuses the durable background queue", () => {
