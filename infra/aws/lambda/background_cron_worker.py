@@ -36,6 +36,7 @@ EVENT_DRIVEN_TARGETS = {
     "/api/cron/managed?job=location-search-profile-worker",
     "/api/cron/managed?job=catalog-enrichment-runner",
     "/api/cron/managed?job=location-description-backfill",
+    "/api/cron/managed?job=search-ml-learning-maintenance",
     *EDGE_ALLOWED_TARGETS,
 }
 
@@ -183,6 +184,16 @@ def _should_continue(target, parsed_body):
     if target.endswith("job=location-description-backfill"):
         batch = parsed_body.get("batch") or {}
         return isinstance(batch, dict) and _numeric(batch.get("selected")) > 0
+
+    if target.endswith("job=search-ml-learning-maintenance"):
+        steps = parsed_body.get("steps") or {}
+        tags = steps.get("tags") if isinstance(steps, dict) else {}
+        value = tags.get("value") if isinstance(tags, dict) else {}
+        if not isinstance(value, dict):
+            return False
+        remaining = _numeric(value.get("remainingEstimate"))
+        progressed = _numeric(value.get("updated")) + _numeric(value.get("failed"))
+        return remaining > 0 and progressed > 0
 
     if target == "edge:claim-qr-repair-worker":
         return _numeric(parsed_body.get("claimed")) > 0 and parsed_body.get("completed") is False
