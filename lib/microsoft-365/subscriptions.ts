@@ -39,6 +39,10 @@ function webhookUrl(userId: string) {
   return url.toString();
 }
 
+function normalizedResource(value: string) {
+  return value.replace(/^\/+/, "").toLowerCase();
+}
+
 async function listSubscriptions(userId: string) {
   const subscriptions: GraphSubscription[] = [];
   let next: string | undefined = "/subscriptions?$top=100";
@@ -99,7 +103,8 @@ export async function ensureMicrosoft365Subscriptions(userId: string) {
   let healthy = 0;
 
   for (const resource of resources) {
-    const current = existing.find((item) => item.resource === resource && item.notificationUrl === url);
+    const wanted = normalizedResource(resource);
+    const current = existing.find((item) => normalizedResource(item.resource) === wanted && item.notificationUrl === url);
     if (!current) {
       await createSubscription(userId, resource);
       created += 1;
