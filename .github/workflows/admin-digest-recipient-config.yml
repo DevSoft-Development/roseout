@@ -1,0 +1,132 @@
+name: Admin digest recipient configuration
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/admin-digest-recipient-config.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/admin-digest-recipient-config.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-digest-recipient-config-production
+  cancel-in-progress: false
+
+env:
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recipient backfill contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/admin-digest-recipient-config.yml'
+          grep -F 'ADMIN_DIGEST_EMAIL' "$FILE" >/dev/null
+          grep -F 'ADMIN_EMAIL' "$FILE" >/dev/null
+          grep -F 'ADMIN_ALERT_EMAIL' "$FILE" >/dev/null
+          grep -F 'env add ADMIN_DIGEST_EMAIL production' "$FILE" >/dev/null
+          grep -F -- '--force' "$FILE" >/dev/null
+          grep -F '::add-mask::' "$FILE" >/dev/null
+          grep -F 'verify-production.env' "$FILE" >/dev/null
+
+  configure:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure canonical production digest recipient
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'VERCEL_TOKEN is required.' >&2; exit 1; }
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+
+          ENV_FILE="$RUNNER_TEMP/vercel-production.env"
+          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
+          chmod 600 "$ENV_FILE"
+
+          ENV_FILE="$ENV_FILE" OUT_FILE="$RUNNER_TEMP/recipient.json" python <<'PY'
+          import json, os
+          from pathlib import Path
+          wanted = {'ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_EMAIL','ADMIN_ALERT_EMAIL'}
+          values = {}
+          for raw_line in Path(os.environ['ENV_FILE']).read_text(encoding='utf-8').splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              key, raw = line.split('=', 1)
+              key = key.strip()
+              if key not in wanted:
+                  continue
+              raw = raw.strip()
+              try:
+                  value = json.loads(raw) if raw.startswith('"') else raw.strip("'")
+              except json.JSONDecodeError:
+                  value = raw.strip('"').strip("'")
+              if isinstance(value, str) and value:
+                  values[key] = value
+          existing = values.get('ADMIN_DIGEST_EMAIL') or values.get('THEOUTHAVEN_ADMIN_EMAIL') or values.get('SUPERADMIN_EMAIL')
+          fallback = existing or values.get('ADMIN_EMAIL') or values.get('ADMIN_ALERT_EMAIL')
+          if not fallback:
+              raise SystemExit('No production admin email exists to use for the daily digest.')
+          Path(os.environ['OUT_FILE']).write_text(json.dumps({'recipient':fallback,'needs_backfill':not bool(values.get('ADMIN_DIGEST_EMAIL'))}, separators=(',',':')), encoding='utf-8')
+          PY
+          rm -f "$ENV_FILE"
+
+          RECIPIENT="$(jq -r '.recipient' "$RUNNER_TEMP/recipient.json")"
+          NEEDS_BACKFILL="$(jq -r '.needs_backfill' "$RUNNER_TEMP/recipient.json")"
+          test -n "$RECIPIENT"
+          echo "::add-mask::$RECIPIENT"
+
+          if [ "$NEEDS_BACKFILL" = 'true' ]; then
+            printf '%s' "$RECIPIENT" | npx --yes vercel@59.3.0 env add ADMIN_DIGEST_EMAIL production --force --token "$VERCEL_TOKEN" >/dev/null
+            echo 'ADMIN_DIGEST_EMAIL was backfilled from the existing canonical admin destination.'
+          else
+            echo 'ADMIN_DIGEST_EMAIL is already configured.'
+          fi
+
+          VERIFY_FILE="$RUNNER_TEMP/verify-production.env"
+          npx --yes vercel@59.3.0 env pull "$VERIFY_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
+          chmod 600 "$VERIFY_FILE"
+          VERIFY_FILE="$VERIFY_FILE" EXPECTED="$RECIPIENT" python <<'PY'
+          import json, os
+          from pathlib import Path
+          found = ''
+          for raw_line in Path(os.environ['VERIFY_FILE']).read_text(encoding='utf-8').splitlines():
+              line = raw_line.strip()
+              if not line.startswith('ADMIN_DIGEST_EMAIL='):
+                  continue
+              raw = line.split('=',1)[1].strip()
+              try:
+                  found = json.loads(raw) if raw.startswith('"') else raw.strip("'")
+              except json.JSONDecodeError:
+                  found = raw.strip('"').strip("'")
+              break
+          if found != os.environ['EXPECTED']:
+              raise SystemExit('ADMIN_DIGEST_EMAIL verification failed.')
+          PY
+          rm -f "$VERIFY_FILE" "$RUNNER_TEMP/recipient.json"
+
+      - name: Configuration summary
+        run: |
+          {
+            echo '### Admin digest recipient configuration'
+            echo ''
+            echo '- Production ADMIN_DIGEST_EMAIL is configured.'
+            echo '- Existing canonical admin destination was reused; no address was logged or committed.'
+          } >> "$GITHUB_STEP_SUMMARY"
