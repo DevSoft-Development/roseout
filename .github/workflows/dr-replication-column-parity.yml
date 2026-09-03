@@ -1,0 +1,19 @@
+name: DR replication column parity
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260903024500_restore_dr_replicated_column_parity.sql'
+      - 'scripts/validate-dr-replication-column-parity.mjs'
+      - '.github/workflows/dr-replication-column-parity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate replicated column repair
+        run: node scripts/validate-dr-replication-column-parity.mjs
