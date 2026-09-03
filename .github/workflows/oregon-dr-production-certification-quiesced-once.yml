@@ -1,0 +1,339 @@
+name: Oregon DR production certification quiesced once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-production-certification-quiesced-once.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-production-certification-quiesced-once.yml'
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: oregon-dr-production-certification-quiesced-2026-09-03
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate quiesced certification safety contract
+        run: |
+          set -euo pipefail
+          workflow='.github/workflows/oregon-dr-production-certification-quiesced-once.yml'
+          promotion='.github/workflows/oregon-dr-promotion.yml'
+          failback='scripts/dr/oregon-failback.sh'
+
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+
+          # Live readiness is observational. Exact public-data equality is only
+          # authoritative after the guarded promotion workflow has fenced writes.
+          grep -F 'oregon-dr-readiness.yml -f mode=assess' "$workflow" >/dev/null
+          ! grep -F 'oregon-dr-readiness.yml -f mode=promotion_preflight' "$workflow" >/dev/null
+
+          # Do not weaken the real cutover safety gates: promotion must prove a
+          # database write fence, an API write rejection, zero WAL lag, and exact
+          # public/Auth/Storage parity before the irreversible detach boundary.
+          grep -F 'default_transaction_read_only=on' "$promotion" >/dev/null
+          grep -F 'DR write-fence probe' "$promotion" >/dev/null
+          grep -F "'25006'" "$promotion" >/dev/null
+          grep -F 'sourceSlotLagBytes==0' "$promotion" >/dev/null
+          grep -F 'Final public data fingerprint mismatch.' "$promotion" >/dev/null
+          grep -F 'Storage did not converge before promotion.' "$promotion" >/dev/null
+          grep -F 'forward-detached' "$promotion" >/dev/null
+          grep -F 'Fail-safe recovery' "$promotion" >/dev/null
+
+          # Failback must retain its guarded reverse synchronization/fencing path.
+          grep -F 'FAILBACK_VIRGINIA' "$workflow" >/dev/null
+          grep -F 'PREPARE_FAILBACK' "$workflow" >/dev/null
+          grep -F 'FAILBACK_VIRGINIA' '.github/workflows/oregon-dr-failback.yml' >/dev/null
+          grep -F 'theouthaven_or_to_va_failback' "$failback" >/dev/null
+
+          grep -F 'aws-scheduler-activation.yml' "$workflow" >/dev/null
+          grep -F 'aws-dr-scheduler-activation.yml' "$workflow" >/dev/null
+          grep -F 'PROMOTE_OREGON' "$workflow" >/dev/null
+          grep -F "if: github.event_name == 'push'" "$workflow" >/dev/null
+
+  certify:
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Initialize certification evidence
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          : > "$RUNNER_TEMP/certification-runs.txt"
+          jq -n \
+            --arg certification_id 'oregon-production-dr-certification-quiesced-2026-09-03' \
+            --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg source_sha '${{ github.sha }}' \
+            '{certification_id:$certification_id,started_at:$started_at,source_sha:$source_sha,expected_final_primary:"virginia"}' \
+            > "$RUNNER_TEMP/certification-evidence.json"
+
+      - name: Execute guarded Virginia to Oregon to Virginia certification
+        id: drill
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          dispatch_and_wait() {
+            local workflow="$1"
+            shift
+            local before new_id status conclusion
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+            new_id=''
+            for attempt in $(seq 1 90); do
+              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then
+                break
+              fi
+              sleep 2
+            done
+            test -n "$new_id" && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ] || { echo "Could not resolve new run for $workflow" >&2; exit 1; }
+            echo "Dispatched $workflow run $new_id"
+            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
+            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
+            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
+            test "$status" = 'completed' && test "$conclusion" = 'success' || { echo "$workflow did not complete successfully" >&2; exit 1; }
+            echo "$workflow=$new_id" >> "$RUNNER_TEMP/certification-runs.txt"
+          }
+
+          # Restore/prove the exact canonical scheduler fleet and the normal
+          # Virginia-primary forward DR reconciliation state first.
+          dispatch_and_wait aws-scheduler-activation.yml
+          dispatch_and_wait aws-dr-scheduler-activation.yml
+
+          # This is a live observational assessment. A sequential whole-database
+          # fingerprint can race normal writes even with zero logical WAL lag, so
+          # exact public-data equality is intentionally not treated as authoritative
+          # until the guarded promotion workflow has applied and proven its fence.
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+
+          promotion_started="$(date +%s)"
+          # User authorization for this one-shot certification permits the guarded
+          # promotion workflow to quiesce Virginia. That workflow itself disables
+          # business schedules, applies the database read-only fence, proves the
+          # service-role write is rejected with SQLSTATE 25006, reaches zero WAL lag,
+          # and then requires exact DB/Auth/Storage parity before detach.
+          dispatch_and_wait oregon-dr-promotion.yml \
+            -f writes_quiesced=true \
+            -f confirmation=PROMOTE_OREGON
+          promotion_finished="$(date +%s)"
+          promotion_seconds="$((promotion_finished - promotion_started))"
+          echo "promotion_duration_seconds=$promotion_seconds" >> "$GITHUB_OUTPUT"
+
+          # User-facing smoke checks while Oregon is authoritative.
+          for url in https://theouthaven.com/ https://theouthaven.com/create; do
+            code="$(curl --location --silent --show-error --retry 8 --retry-delay 5 --max-time 30 --output /dev/null --write-out '%{http_code}' "$url")"
+            case "$code" in
+              2*|3*) ;;
+              *) echo "Oregon production smoke failed for $url: HTTP $code" >&2; exit 1 ;;
+            esac
+          done
+
+          failback_started="$(date +%s)"
+          dispatch_and_wait oregon-dr-failback.yml \
+            -f action=prepare \
+            -f oregon_writes_quiesced=false \
+            -f confirmation=PREPARE_FAILBACK
+
+          dispatch_and_wait oregon-dr-failback.yml \
+            -f action=failback \
+            -f oregon_writes_quiesced=true \
+            -f confirmation=FAILBACK_VIRGINIA
+          failback_finished="$(date +%s)"
+          failback_seconds="$((failback_finished - failback_started))"
+          echo "failback_duration_seconds=$failback_seconds" >> "$GITHUB_OUTPUT"
+
+          # User-facing smoke checks after Virginia is authoritative again.
+          for url in https://theouthaven.com/ https://theouthaven.com/create; do
+            code="$(curl --location --silent --show-error --retry 8 --retry-delay 5 --max-time 30 --output /dev/null --write-out '%{http_code}' "$url")"
+            case "$code" in
+              2*|3*) ;;
+              *) echo "Virginia production smoke failed for $url: HTTP $code" >&2; exit 1 ;;
+            esac
+          done
+
+          # Restore normal Virginia-primary steady state. The final direct AWS
+          # proof below is authoritative for the live standby topology; exact data
+          # equality has already been proven inside the guarded promotion/failback.
+          dispatch_and_wait aws-scheduler-activation.yml
+          dispatch_and_wait aws-dr-scheduler-activation.yml
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+
+      - name: Prove final production topology and standby health
+        id: final
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-final.json"
+          jq -e '.DR_MODE == "virginia_primary"' "$RUNNER_TEMP/dr-final.json" >/dev/null || {
+            echo 'Certification failed: final DR mode is not virginia_primary.' >&2
+            exit 1
+          }
+
+          base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
+          test "$base_expected" = '65'
+          base_enabled=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "Final base schedule is not enabled: $name" >&2; exit 1; }
+            base_enabled=$((base_enabled + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$base_enabled" = "$base_expected"
+
+          dr_enabled=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "Final forward DR schedule is not enabled: $name" >&2; exit 1; }
+            dr_enabled=$((dr_enabled + 1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr_enabled" = '2'
+
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$invoker"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke \
+            --function-name "$invoker" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/status-input.json" \
+            "$RUNNER_TEMP/status-final.json" >/dev/null
+
+          jq -e '
+            .ok==true and
+            .status<400 and
+            .response.success==true and
+            .response.guard.sourceCronJobs==0 and
+            .response.guard.sourceActiveSlots==1 and
+            .response.guard.sourceSlotLagBytes>=0 and
+            .response.guard.targetActiveCronJobs==0 and
+            .response.guard.targetReadyTables==462 and
+            .response.guard.targetConnectedWorkers>=1 and
+            .response.auth.parity==true and
+            .response.storage.parity==true
+          ' "$RUNNER_TEMP/status-final.json" >/dev/null
+
+          lag_bytes="$(jq -r '.response.guard.sourceSlotLagBytes // 0' "$RUNNER_TEMP/status-final.json")"
+          echo "source_slot_lag_bytes=$lag_bytes" >> "$GITHUB_OUTPUT"
+          echo "base_enabled=$base_enabled" >> "$GITHUB_OUTPUT"
+          echo "dr_enabled=$dr_enabled" >> "$GITHUB_OUTPUT"
+
+          jq -c '{
+            success:.response.success,
+            sourceCronJobs:.response.guard.sourceCronJobs,
+            sourceActiveSlots:.response.guard.sourceActiveSlots,
+            sourceSlotLagBytes:.response.guard.sourceSlotLagBytes,
+            targetActiveCronJobs:.response.guard.targetActiveCronJobs,
+            targetReadyTables:.response.guard.targetReadyTables,
+            targetConnectedWorkers:.response.guard.targetConnectedWorkers,
+            authParity:.response.auth.parity,
+            storageParity:.response.storage.parity
+          }' "$RUNNER_TEMP/status-final.json"
+
+      - name: Write certification evidence
+        if: success()
+        env:
+          PROMOTION_SECONDS: ${{ steps.drill.outputs.promotion_duration_seconds }}
+          FAILBACK_SECONDS: ${{ steps.drill.outputs.failback_duration_seconds }}
+          SLOT_LAG_BYTES: ${{ steps.final.outputs.source_slot_lag_bytes }}
+          BASE_ENABLED: ${{ steps.final.outputs.base_enabled }}
+          DR_ENABLED: ${{ steps.final.outputs.dr_enabled }}
+        run: |
+          set -euo pipefail
+          jq \
+            --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson promotion_seconds "${PROMOTION_SECONDS:-0}" \
+            --argjson failback_seconds "${FAILBACK_SECONDS:-0}" \
+            --argjson source_slot_lag_bytes "${SLOT_LAG_BYTES:-0}" \
+            --argjson base_schedules_enabled "${BASE_ENABLED:-0}" \
+            --argjson dr_schedules_enabled "${DR_ENABLED:-0}" \
+            --rawfile runs "$RUNNER_TEMP/certification-runs.txt" \
+            '. + {
+              completed_at:$completed_at,
+              result:"PASS",
+              final_primary:"virginia",
+              promotion_duration_seconds:$promotion_seconds,
+              failback_duration_seconds:$failback_seconds,
+              final_source_slot_lag_bytes:$source_slot_lag_bytes,
+              base_schedules_enabled:$base_schedules_enabled,
+              forward_dr_schedules_enabled:$dr_schedules_enabled,
+              public_data_gate:"exact_quiesced_parity_passed",
+              auth_gate:"exact_quiesced_parity_passed",
+              storage_gate:"exact_quiesced_parity_passed",
+              split_brain_gate:"guarded_promotion_and_failback_passed",
+              workflow_runs:($runs | split("\n") | map(select(length>0)))
+            }' "$RUNNER_TEMP/certification-evidence.json" > "$RUNNER_TEMP/certification-evidence-final.json"
+          mv "$RUNNER_TEMP/certification-evidence-final.json" "$RUNNER_TEMP/certification-evidence.json"
+          cat "$RUNNER_TEMP/certification-evidence.json"
+
+      - name: Upload certification evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oregon-production-dr-certification-quiesced-2026-09-03
+          path: ${{ runner.temp }}/certification-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Certification summary
+        if: always()
+        run: |
+          {
+            echo '### Oregon production DR certification — quiesced exact-parity run'
+            echo ''
+            if [ -s "$RUNNER_TEMP/certification-runs.txt" ]; then
+              echo 'Guarded workflow runs:'
+              while IFS= read -r line; do echo "- \`$line\`"; done < "$RUNNER_TEMP/certification-runs.txt"
+            fi
+            echo ''
+            if [ '${{ job.status }}' = 'success' ]; then
+              echo '- Result: **PASS**'
+              echo '- Exact parity was enforced only after the production write fence was proven.'
+              echo '- Virginia -> Oregon promotion completed successfully.'
+              echo '- Production smoke checks passed while Oregon was authoritative.'
+              echo '- Oregon -> Virginia failback completed successfully.'
+              echo '- Production smoke checks passed after Virginia was restored.'
+              echo '- Final primary: **Virginia**.'
+              echo '- Base production schedules enabled: **65/65**.'
+              echo '- Forward DR reconciliation schedules enabled: **2/2**.'
+              echo '- Final standby reconciler reports Auth parity and Storage parity.'
+              echo "- Promotion workflow duration: **${{ steps.drill.outputs.promotion_duration_seconds }} seconds**."
+              echo "- Failback workflow window: **${{ steps.drill.outputs.failback_duration_seconds }} seconds**."
+              echo "- Final logical replication slot lag: **${{ steps.final.outputs.source_slot_lag_bytes }} bytes**."
+            else
+              echo '- Result: **STOPPED / FAIL-CLOSED**'
+              echo '- No safety predicate was bypassed. Existing guarded promotion/failback recovery remains authoritative.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/dr-final.json "$RUNNER_TEMP"/status-input.json "$RUNNER_TEMP"/status-final.json
