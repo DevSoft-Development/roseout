@@ -121,6 +121,40 @@ async function activeStaff(locationId: string, date: string) {
   });
 }
 
+async function verifyManagerApproval(locationId: string, body: Record<string, any>) {
+  const managerStaffProfileId = clean(body.managerStaffProfileId || body.manager_staff_profile_id);
+  const managerPin = clean(body.managerPin || body.manager_pin);
+  if (!managerStaffProfileId || !/^\d{4,6}$/.test(managerPin)) {
+    return { error: "Manager approval requires a 4–6 digit manager PIN." } as const;
+  }
+
+  const manager = await supabaseAdmin
+    .from("reserve_staff_profiles")
+    .select("id,display_name,role,is_active,can_quick_switch")
+    .eq("id", managerStaffProfileId)
+    .eq("location_id", locationId)
+    .maybeSingle();
+
+  if (
+    manager.error ||
+    !manager.data ||
+    manager.data.is_active === false ||
+    !["manager"].includes(String(manager.data.role || ""))
+  ) {
+    return { error: "Choose an active Reserve manager for this approval." } as const;
+  }
+
+  const verify = await supabaseAdmin.rpc("reserve_verify_staff_pin", {
+    p_staff_profile_id: managerStaffProfileId,
+    p_pin: managerPin,
+  });
+  if (verify.error || verify.data !== true) {
+    return { error: "Manager PIN was not accepted." } as const;
+  }
+
+  return { manager: manager.data } as const;
+}
+
 async function assignResource(input: {
   reservationId: string;
   locationId: string;
@@ -178,7 +212,7 @@ export async function POST(request: NextRequest) {
   if (auth.error) return auth.error;
   const canonicalLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   const staffSession = await getReserveStaffSession(canonicalLocationId);
-  const actorStaffProfileId = staffSession?.staff_profile_id || null;
+  const operatingStaffProfileId = staffSession?.staff_profile_id || null;
 
   const reservationResult = await supabaseAdmin
     .from("location_reservations")
@@ -196,10 +230,16 @@ export async function POST(request: NextRequest) {
   }
 
   const overrideReason = clean(body.override_reason) || null;
-  if (overrideReason && !["location_admin", "manager"].includes(String(auth.access?.role || ""))) {
-    return NextResponse.json({ success: false, error: "A manager is required for this override." }, { status: 403 });
+  let approvingManager: any = null;
+  if (overrideReason) {
+    const approval = await verifyManagerApproval(canonicalLocationId, body);
+    if ("error" in approval) {
+      return NextResponse.json({ success: false, code: "manager_approval_required", error: approval.error }, { status: 403 });
+    }
+    approvingManager = approval.manager;
   }
 
+  const actorStaffProfileId = approvingManager?.id || operatingStaffProfileId;
   const assignment = await assignResource({
     reservationId,
     locationId: canonicalLocationId,
@@ -216,6 +256,21 @@ export async function POST(request: NextRequest) {
       { success: false, code: conflict ? "seat_conflict" : "seat_failed", error: message },
       { status: conflict ? 409 : 500 },
     );
+  }
+
+  if (approvingManager) {
+    await supabaseAdmin.from("reserve_service_events").insert({
+      location_id: canonicalLocationId,
+      reservation_id: reservationId,
+      staff_profile_id: approvingManager.id,
+      event_type: "manager.pin_approval",
+      resource_label: resource.label,
+      metadata: {
+        reason: overrideReason,
+        operating_staff_profile_id: operatingStaffProfileId,
+        approving_manager_name: approvingManager.display_name,
+      },
+    });
   }
 
   let reservation = assignment.data;
@@ -290,6 +345,10 @@ export async function POST(request: NextRequest) {
     assignmentMode,
     recommendedServer,
     serverAssignmentService,
+    managerApproval: approvingManager ? {
+      staffProfileId: approvingManager.id,
+      displayName: approvingManager.display_name,
+    } : null,
   }, {
     headers: { "Cache-Control": "no-store", "X-TheOutHaven-API-Lane": "reserve-v1" },
   });
