@@ -2,8 +2,11 @@
 
 The Integration API keeps its existing /v1/resend/emails/send compatibility route.
 When a valid Resend credential exists, the original provider path remains authoritative.
-When Resend is not configured, this overlay sends through the already-provisioned
-Amazon SES v2 production identity and configuration set.
+When Resend is not configured, this overlay sends through Amazon SES v2.
+
+If SES is still in sandbox, the overlay fails closed for non-TheOutHaven recipients.
+That lets internal operational reports use the verified TheOutHaven domain without
+accidentally treating sandbox SES as a production-wide customer email provider.
 """
 
 from __future__ import annotations
@@ -15,11 +18,21 @@ import boto3
 from botocore.exceptions import ClientError
 
 ALLOWED_FROM_DOMAIN = os.environ.get("SES_ALLOWED_FROM_DOMAIN", "theouthaven.com").strip().lower()
+ALLOWED_SANDBOX_RECIPIENT_DOMAIN = os.environ.get(
+    "SES_ALLOWED_SANDBOX_RECIPIENT_DOMAIN",
+    "theouthaven.com",
+).strip().lower()
 SES_CONFIGURATION_SET = os.environ.get(
     "SES_CONFIGURATION_SET",
     f"toh-{os.environ.get('ENVIRONMENT', 'production')}",
 ).strip()
 SES_REGION = os.environ.get("AWS_REGION", "us-east-1")
+SES_SANDBOX_MODE = os.environ.get("SES_SANDBOX_MODE", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 _EMAIL_RE = re.compile(r"^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$")
 _ses = boto3.client("sesv2", region_name=SES_REGION)
@@ -37,6 +50,13 @@ def _valid_resend_key(value: object) -> bool:
     if len(text) < 16:
         return False
     return text.lower() not in {"placeholder", "changeme", "not-configured", "resend_api_key"}
+
+
+def _sandbox_recipient_allowed(value: str) -> bool:
+    email = _extract_email(value)
+    if "@" not in email:
+        return False
+    return email.rsplit("@", 1)[1] == ALLOWED_SANDBOX_RECIPIENT_DOMAIN
 
 
 def install(namespace: dict) -> None:
@@ -68,6 +88,12 @@ def install(namespace: dict) -> None:
         to = normalize_email_list(payload.get("to"), "to")
         cc = normalize_email_list(payload.get("cc") or [], "cc")
         bcc = normalize_email_list(payload.get("bcc") or [], "bcc")
+        all_recipients = [*to, *cc, *bcc]
+        if SES_SANDBOX_MODE and not all(
+            _sandbox_recipient_allowed(value) for value in all_recipients
+        ):
+            raise ValueError("ses_sandbox_recipient_not_verified")
+
         destination = {"ToAddresses": to}
         if cc:
             destination["CcAddresses"] = cc
