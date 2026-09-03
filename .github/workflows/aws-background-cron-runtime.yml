@@ -63,14 +63,23 @@ jobs:
           grep -F 'total_max_attempts": 1' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'EVENT_DRIVEN_TARGETS' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'background_cron_continuation_queued' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'background_cron_continuation_stopped' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'MAX_CHAIN_DEPTH' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'MAX_CHAIN_AGE_SECONDS' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'chainDepth' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'chainStartedAt' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'DelaySeconds=2' infra/aws/lambda/background_cron_worker.py >/dev/null
           grep -F 'EDGE_RUNTIME_FUNCTION_NAME' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F 'RecursiveLoop: Allow' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F "MAX_CHAIN_DEPTH: '64'" infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
+          grep -F "MAX_CHAIN_AGE_SECONDS: '3600'" infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'sqs:SendMessage' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'BatchSize: 1' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'VisibilityTimeout: 360' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'get-function-recursion-config' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -152,7 +161,7 @@ jobs:
           aws lambda wait function-updated --function-name "$FUNCTION"
           echo "function=$FUNCTION" >> "$GITHUB_OUTPUT"
 
-      - name: Verify queue, event source, and worker policy path
+      - name: Verify queue, event source, recursion guard, and worker policy path
         env:
           WORKER_FUNCTION: ${{ steps.worker.outputs.function }}
         run: |
@@ -168,6 +177,12 @@ jobs:
           test "$LIVE_QUEUE_URL" = "$QUEUE_URL"
           LIVE_EDGE_FUNCTION="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.EDGE_RUNTIME_FUNCTION_NAME' --output text)"
           test "$LIVE_EDGE_FUNCTION" = "$EDGE_FUNCTION"
+          LIVE_MAX_DEPTH="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.MAX_CHAIN_DEPTH' --output text)"
+          test "$LIVE_MAX_DEPTH" = '64'
+          LIVE_MAX_AGE="$(aws lambda get-function-configuration --function-name "$WORKER_FUNCTION" --query 'Environment.Variables.MAX_CHAIN_AGE_SECONDS' --output text)"
+          test "$LIVE_MAX_AGE" = '3600'
+          RECURSION="$(aws lambda get-function-recursion-config --function-name "$WORKER_FUNCTION" --query 'RecursiveLoop' --output text)"
+          test "$RECURSION" = 'Allow'
 
           jq -nc '{Records:[{messageId:"background-cron-smoke",body:"{\"version\":1,\"jobType\":\"background.cron\",\"target\":\"edge:not-approved\",\"payload\":{}}"}]}' > "$RUNNER_TEMP/smoke.json"
           aws lambda invoke \
@@ -191,6 +206,9 @@ jobs:
             echo '- SQS batch size: 1'
             echo '- Event-driven profile/catalog/description/claim-QR/gap-repair/worker-dispatcher batches self-chain only while work remains'
             echo '- Continuation delay: 2 seconds'
+            echo '- Maximum continuation depth: 64'
+            echo '- Maximum continuation age: 3600 seconds'
+            echo '- Lambda recursive loop mode: Allow (intentional bounded SQS self-chain only)'
             echo '- Private Node runtime target: `toh-production-background-runtime`'
             echo '- Approved Edge runtime target: `toh-production-edge-runtime`'
             echo '- Invalid edge-target smoke: passed'
