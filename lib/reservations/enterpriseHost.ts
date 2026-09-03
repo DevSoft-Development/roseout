@@ -33,6 +33,13 @@ export type ReserveHostResource = {
   section_id?: string | null;
 };
 
+export type ReserveHostAttentionItem = {
+  key: string;
+  tone: "critical" | "warning";
+  reservationId: string;
+  message: string;
+};
+
 const ACTIVE = new Set(["pending", "confirmed", "checked_in", "waiting", "arrived", "seated", "occupied"]);
 
 function minutesOfDay(value: string | null | undefined) {
@@ -109,13 +116,13 @@ export function tableTurnState(reservation: ReserveHostReservation, now = Date.n
   return { seatedAt, elapsedMinutes, expectedMinutes, remainingMinutes, state } as const;
 }
 
-export function hostAttentionItems(reservations: ReserveHostReservation[], now = Date.now()) {
-  return reservations.flatMap((reservation) => {
+export function hostAttentionItems(reservations: ReserveHostReservation[], now = Date.now()): ReserveHostAttentionItem[] {
+  return reservations.flatMap<ReserveHostAttentionItem>((reservation) => {
     const turn = tableTurnState(reservation, now);
     if (turn?.state === "overdue") {
       return [{
         key: `turn-${reservation.id}`,
-        tone: "critical" as const,
+        tone: "critical",
         reservationId: reservation.id,
         message: `${reservation.bookable_item_name || "Table"} is ${Math.abs(turn.remainingMinutes)} minutes over its expected turn.`,
       }];
@@ -125,7 +132,7 @@ export function hostAttentionItems(reservations: ReserveHostReservation[], now =
       const start = new Date(`${reservation.reservation_date}T${String(reservation.reservation_time).slice(0, 5)}:00`).getTime();
       if (Number.isFinite(start)) {
         const minutesLate = Math.floor((now - start) / 60_000);
-        if (minutesLate >= 10) return [{ key: `late-${reservation.id}`, tone: "warning" as const, reservationId: reservation.id, message: `Guest is ${minutesLate} minutes late.` }];
+        if (minutesLate >= 10) return [{ key: `late-${reservation.id}`, tone: "warning", reservationId: reservation.id, message: `Guest is ${minutesLate} minutes late.` }];
       }
     }
     return [];
