@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
-import ReserveEnterpriseHostView from "@/components/reserve/ReserveEnterpriseHostView";
+import ReserveEnterpriseHostShell from "@/components/reserve/ReserveEnterpriseHostShell";
 import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
@@ -141,7 +141,7 @@ export default async function LocationWorkspaceReservationsPage({
         </div>
       ) : null}
       {hostMode ? (
-        <ReserveEnterpriseHostView initialLocationId={selectedLocationId} />
+        <ReserveEnterpriseHostShell locationId={selectedLocationId} />
       ) : showOverview ? (
         <ReserveOverviewPage />
       ) : (
