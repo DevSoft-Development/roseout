@@ -25,12 +25,19 @@ export type CronJobRunPayload = {
   metadata?: Record<string, unknown> | null;
 };
 
+const CANONICAL_JOB_KEYS: Record<string, string> = {
+  "admin-daily-marketing-pulse": "daily-marketing-pulse",
+  "admin-platform-error-digest": "daily-platform-error-digest",
+  "admin-search-health-digest": "daily-search-health-digest",
+};
+
 function normalizeJobKey(value: string | null | undefined): string {
-  return String(value || "unknown-cron-job")
+  const normalized = String(value || "unknown-cron-job")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "unknown-cron-job";
+  return CANONICAL_JOB_KEYS[normalized] || normalized;
 }
 
 export function normalizeCronStatus(status: string): CronJobRunStatus {
