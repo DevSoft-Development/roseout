@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "reason": "oregon-forward-logical-replication-slot-lost",
+  "expected_slot": "theouthaven_va_to_or_dr_slot",
+  "expected_subscription": "theouthaven_va_to_or_dr",
+  "expected_invalidation_reason": "wal_removed",
+  "reseed_mode": "copy_data_true"
+}
