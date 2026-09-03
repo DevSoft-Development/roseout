@@ -7,12 +7,25 @@ type CreatePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type PlanType = "outing" | "restaurant" | "activity";
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizePlanType(value: string | undefined): PlanType {
+  return value === "restaurant" || value === "activity" ? value : "outing";
+}
+
 export default async function CreatePage({ searchParams }: CreatePageProps) {
   const params = searchParams ? await searchParams : {};
-  const guided = Array.isArray(params.guided) ? params.guided[0] : params.guided;
-  const snapshot = Array.isArray(params.snapshot) ? params.snapshot[0] : params.snapshot;
-  const planExact = Array.isArray(params.planExact) ? params.planExact[0] : params.planExact;
-  const campaignSlug = Array.isArray(params.campaignSlug) ? params.campaignSlug[0] : params.campaignSlug;
+  const guided = firstParam(params.guided);
+  const snapshot = firstParam(params.snapshot);
+  const planExact = firstParam(params.planExact);
+  const campaignSlug = firstParam(params.campaignSlug);
+  const prompt = firstParam(params.prompt)?.trim() || "";
+  const requestedStep = firstParam(params.step);
+  const planType = normalizePlanType(firstParam(params.planType));
 
   if (guided === "results" && snapshot) {
     return <GuidedSnapshotResultsPage />;
@@ -26,5 +39,11 @@ export default async function CreatePage({ searchParams }: CreatePageProps) {
     return <AnchorAwareCreatePage />;
   }
 
-  return <GuidedCreatePageV2 />;
+  return (
+    <GuidedCreatePageV2
+      initialIdea={prompt}
+      initialPlanType={planType}
+      initialStep={requestedStep === "2" && prompt ? 2 : 1}
+    />
+  );
 }
