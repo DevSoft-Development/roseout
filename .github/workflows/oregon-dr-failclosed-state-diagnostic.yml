@@ -47,7 +47,7 @@ jobs:
           file=.github/workflows/oregon-dr-failclosed-state-diagnostic.yml
           grep -F 'state_classification=' "$file" >/dev/null
           grep -F 'database/query' "$file" >/dev/null
-          if sed -n '/- name: Classify exact production DR state/,$p' "$file" | grep -E 'update-schedule|put-secret-value|alter role|alter subscription|drop subscription|create subscription|request POST.*env\?upsert|request PATCH|request DELETE'; then
+          if awk 'found{print} /^  diagnose:/{found=1}' "$file" | grep -E 'update-schedule|put-secret-value|alter role|alter subscription|drop subscription|create subscription|request POST.*env\?upsert|request PATCH|request DELETE'; then
             echo 'Diagnostic contains a forbidden mutation command.' >&2
             exit 1
           fi
