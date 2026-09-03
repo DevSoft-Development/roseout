@@ -66,10 +66,10 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Run Reserve regression tests
-        run: npm run test:reserve
       - name: Typecheck Reserve BFF wiring
         run: npm run typecheck
+      - name: Run Reserve regression tests
+        run: npm run test:reserve
 
   deploy:
     if: >-
