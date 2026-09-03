@@ -6,6 +6,7 @@ import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { encryptMicrosoftToken } from "@/lib/microsoft-365/crypto";
 import { microsoftGraphFetch } from "@/lib/microsoft-365/graph";
 import { exchangeMicrosoft365Code } from "@/lib/microsoft-365/oauth";
+import { ensureMicrosoft365Subscriptions } from "@/lib/microsoft-365/subscriptions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type GraphMe = { id: string; displayName?: string | null; mail?: string | null; userPrincipalName?: string | null };
@@ -113,6 +114,18 @@ export async function GET(request: NextRequest) {
     if (connectionError) throw connectionError;
 
     await supabaseAdmin.from("microsoft_365_sync_preferences").upsert({ user_id: admin.user_id, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+
+    // Webhook creation is self-healing through the hourly recovery sweep; a temporary
+    // Graph subscription failure should not turn an otherwise valid Microsoft login into an error.
+    try {
+      await ensureMicrosoft365Subscriptions(admin.user_id);
+    } catch (subscriptionError) {
+      console.error("Microsoft 365 webhook subscription setup deferred", {
+        userId: admin.user_id,
+        error: subscriptionError instanceof Error ? subscriptionError.message : String(subscriptionError),
+      });
+    }
+
     return clearFlowCookies(redirectToNext(request, next, true));
   } catch (caught) {
     await supabaseAdmin.from("microsoft_365_connections").update({
