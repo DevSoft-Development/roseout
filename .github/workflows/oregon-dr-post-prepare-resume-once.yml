@@ -55,13 +55,13 @@ jobs:
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'prepared_failback_state=proven' "$file" >/dev/null
-          grep -F 'reverse_ready==462' "$file" >/dev/null
-          grep -F 'base_enabled==65' "$file" >/dev/null
-          grep -F 'dr_disabled==2' "$file" >/dev/null
+          grep -F '.[0].reverse_ready==462' "$file" >/dev/null
+          grep -F 'test "$base_enabled" = '\''65'\''' "$file" >/dev/null
+          grep -F 'test "$dr_enabled" = '\''0'\'' && test "$dr_disabled" = '\''2'\''' "$file" >/dev/null
           grep -F 'FAILBACK_VIRGINIA' "$file" >/dev/null
           grep -F 'PROMOTE_OREGON' "$file" >/dev/null
           grep -F 'certification_result=PASS' "$file" >/dev/null
-          ! grep -F '[ "$new_id" != "$before"' "$file" >/dev/null
+          grep -F 'if [ -z "$new_id" ] || [ "$new_id" = '\''0'\'' ] || [ "$new_id" = "$before" ]' "$file" >/dev/null
 
   recover:
     needs: validate
