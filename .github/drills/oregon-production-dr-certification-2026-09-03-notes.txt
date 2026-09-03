@@ -1,0 +1,1 @@
+Authorized one-shot final DR certification. Merge only after focused PR validation passes; the merge-triggered workflow performs the guarded production exercise and must finish with Virginia primary.
