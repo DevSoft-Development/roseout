@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Scoped SES send permission for the TheOutHaven Integration API.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  IntegrationApiRoleName:
+    Type: String
+    Default: TheOutHavenIntegrationApi-production
+  EmailIdentity:
+    Type: String
+    Default: theouthaven.com
+  SesConfigurationSetName:
+    Type: String
+    Default: toh-production
+
+Resources:
+  IntegrationApiSesSendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub TheOutHavenIntegrationApiSesSend-${Environment}
+      Roles:
+        - !Ref IntegrationApiRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: SendTheOutHavenEmailViaSes
+            Effect: Allow
+            Action:
+              - ses:SendEmail
+            Resource:
+              - !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${EmailIdentity}
+              - !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${SesConfigurationSetName}
+
+Outputs:
+  IntegrationApiRoleName:
+    Value: !Ref IntegrationApiRoleName
+  EmailIdentity:
+    Value: !Ref EmailIdentity
+  SesConfigurationSetName:
+    Value: !Ref SesConfigurationSetName

@@ -1,0 +1,219 @@
+name: AWS Integration API SES fallback
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/integration_api_email_ses_fallback.py'
+      - 'infra/aws/cloudformation/integration-api-ses-fallback.yml'
+      - '.github/workflows/aws-integration-api-email-ses-fallback.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/integration_api_email_ses_fallback.py'
+      - 'infra/aws/cloudformation/integration-api-ses-fallback.yml'
+      - '.github/workflows/aws-integration-api-email-ses-fallback.yml'
+  workflow_run:
+    workflows: ['AWS integration API']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-integration-api-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ENVIRONMENT: production
+  INTEGRATION_STACK: theouthaven-integration-api-production
+  FALLBACK_STACK: theouthaven-integration-api-ses-fallback-production
+  INTEGRATION_ROLE: TheOutHavenIntegrationApi-production
+  EMAIL_IDENTITY: theouthaven.com
+  SES_CONFIGURATION_SET: toh-production
+  SES_EVENT_DESTINATION: toh-production-provider-events
+
+jobs:
+  validate:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate SES fallback Python syntax
+        run: python -m py_compile infra/aws/lambda/integration_api_email_ses_fallback.py
+
+      - name: Validate SES fallback CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/integration-api-ses-fallback.yml
+
+      - name: Validate fallback safety contract
+        run: |
+          set -euo pipefail
+          PY='infra/aws/lambda/integration_api_email_ses_fallback.py'
+          CF='infra/aws/cloudformation/integration-api-ses-fallback.yml'
+          WF='.github/workflows/aws-integration-api-email-ses-fallback.yml'
+          grep -F 'if _valid_resend_key(runtime_value("RESEND_API_KEY"))' "$PY" >/dev/null
+          grep -F 'return original_resend_send(payload)' "$PY" >/dev/null
+          grep -F 'return ses_send(payload)' "$PY" >/dev/null
+          grep -F 'ses:SendEmail' "$CF" >/dev/null
+          grep -F 'identity/${EmailIdentity}' "$CF" >/dev/null
+          grep -F 'configuration-set/${SesConfigurationSetName}' "$CF" >/dev/null
+          grep -F "group: aws-integration-api-production" "$WF" >/dev/null
+          grep -F "workflows: ['AWS integration API']" "$WF" >/dev/null
+          grep -F "github.event.workflow_run.head_branch == 'main'" "$WF" >/dev/null
+          grep -F 'ProductionAccessEnabled' "$WF" >/dev/null
+          grep -F 'VerifiedForSendingStatus' "$WF" >/dev/null
+          grep -F 'email_from_invalid' "$WF" >/dev/null
+
+  deploy:
+    if: >-
+      (github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove SES production readiness before changing email delivery
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          ACCOUNT="$RUNNER_TEMP/ses-account.json"
+          IDENTITY="$RUNNER_TEMP/ses-identity.json"
+          CONFIG="$RUNNER_TEMP/ses-config.json"
+          DESTINATIONS="$RUNNER_TEMP/ses-destinations.json"
+          aws sesv2 get-account > "$ACCOUNT"
+          aws sesv2 get-email-identity --email-identity "$EMAIL_IDENTITY" > "$IDENTITY"
+          aws sesv2 get-configuration-set --configuration-set-name "$SES_CONFIGURATION_SET" > "$CONFIG"
+          aws sesv2 get-configuration-set-event-destinations --configuration-set-name "$SES_CONFIGURATION_SET" > "$DESTINATIONS"
+          jq -e '.ProductionAccessEnabled == true and .SendingEnabled == true' "$ACCOUNT" >/dev/null
+          jq -e '.VerifiedForSendingStatus == true and .VerificationStatus == "SUCCESS" and .DkimAttributes.SigningEnabled == true and .DkimAttributes.Status == "SUCCESS"' "$IDENTITY" >/dev/null
+          jq -e '.SendingOptions.SendingEnabled == true' "$CONFIG" >/dev/null
+          jq -e --arg name "$SES_EVENT_DESTINATION" 'any(.EventDestinations[]?; .Name == $name and .Enabled == true)' "$DESTINATIONS" >/dev/null
+          echo 'ses_production_readiness=ready'
+
+      - name: Attach scoped SES send permission to Integration API
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$FALLBACK_STACK" \
+            --template-file infra/aws/cloudformation/integration-api-ses-fallback.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$ENVIRONMENT" \
+              IntegrationApiRoleName="$INTEGRATION_ROLE" \
+              EmailIdentity="$EMAIL_IDENTITY" \
+              SesConfigurationSetName="$SES_CONFIGURATION_SET" \
+            --tags Project=TheOutHaven Environment="$ENVIRONMENT" Service=IntegrationAPIEmailFallback ManagedBy=CloudFormation
+          echo 'integration_api_ses_permission=ready'
+
+      - name: Build Integration API with SES fallback overlay
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/integration-api-ses-fallback"
+          ZIP_FILE="$RUNNER_TEMP/integration-api-ses-fallback.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_integration_api.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/google_places_provider.py "$BUILD_DIR/google_places_provider.py"
+          cp infra/aws/lambda/telnyx_provider.py "$BUILD_DIR/telnyx_provider.py"
+          cp infra/aws/lambda/integration_api_email_ses_fallback.py "$BUILD_DIR/integration_api_email_ses_fallback.py"
+          cat >> "$BUILD_DIR/index.py" <<'PY'
+
+          # TheOutHaven SES compatibility overlay. Kept outside the large Integration API
+          # core so this fallback can be independently validated and re-applied.
+          from integration_api_email_ses_fallback import install as _install_email_ses_fallback
+          _install_email_ses_fallback(globals())
+          PY
+          python -m py_compile "$BUILD_DIR/index.py" "$BUILD_DIR/integration_api_email_ses_fallback.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+          test -s "$ZIP_FILE"
+
+      - name: Deploy SES-enabled Integration API package
+        id: runtime
+        run: |
+          set -euo pipefail
+          FUNCTION="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiFunctionName'].OutputValue" --output text)"
+          test -n "$FUNCTION" && test "$FUNCTION" != 'None'
+          aws lambda update-function-code \
+            --function-name "$FUNCTION" \
+            --zip-file "fileb://$RUNNER_TEMP/integration-api-ses-fallback.zip" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION"
+          echo "function=$FUNCTION" >> "$GITHUB_OUTPUT"
+          echo 'integration_api_ses_overlay=deployed'
+
+      - name: Verify SES fallback selection without sending email
+        env:
+          FUNCTION: ${{ steps.runtime.outputs.function }}
+        run: |
+          set -euo pipefail
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiSecretArn'].OutputValue" --output text)"
+          SECRET="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          echo "::add-mask::$SECRET"
+          PATH_VALUE='/v1/resend/emails/send'
+          BODY_VALUE='{"from":"invalid","to":"nobody@example.com","subject":"SES fallback validation","text":"validation only"}'
+          TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+          )"
+          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" PATH_VALUE="$PATH_VALUE" BODY_VALUE="$BODY_VALUE" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_VALUE'], os.environ['BODY_VALUE']])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          EVENT="$RUNNER_TEMP/ses-fallback-smoke-event.json"
+          RESPONSE="$RUNNER_TEMP/ses-fallback-smoke-response.json"
+          TIMESTAMP="$TIMESTAMP" SIGNATURE="$SIGNATURE" PATH_VALUE="$PATH_VALUE" BODY_VALUE="$BODY_VALUE" EVENT="$EVENT" python - <<'PY'
+          import json, os, time
+          path = os.environ['PATH_VALUE']
+          event = {
+            'version':'2.0','routeKey':f'POST {path}','rawPath':path,'rawQueryString':'',
+            'headers':{'content-type':'application/json','x-toh-timestamp':os.environ['TIMESTAMP'],'x-toh-signature':os.environ['SIGNATURE']},
+            'requestContext':{'http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':'ses-fallback-smoke','routeKey':f'POST {path}','stage':'$default','timeEpoch':int(time.time()*1000)},
+            'body':os.environ['BODY_VALUE'],'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+          aws lambda invoke --function-name "$FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$EVENT" "$RESPONSE" >/dev/null
+          jq -e '.statusCode == 400' "$RESPONSE" >/dev/null
+          jq -e '(.body | fromjson | .error) == "email_from_invalid"' "$RESPONSE" >/dev/null
+          ! grep -F 'resend_not_configured' "$RESPONSE" >/dev/null
+          echo 'ses_fallback_selection=verified_without_send'
+
+      - name: Deployment summary
+        run: |
+          {
+            echo '### Integration API SES email fallback'
+            echo ''
+            echo '- SES account: production access and sending enabled.'
+            echo '- SES identity: theouthaven.com verified with successful DKIM.'
+            echo '- SES configuration set: toh-production enabled with provider-event destination.'
+            echo '- Integration API permission: scoped to the TheOutHaven SES identity and configuration set.'
+            echo '- Provider behavior: valid Resend remains primary; SES is used only when Resend is not configured.'
+            echo '- Duplicate protection: no SES fallback after an attempted valid Resend request.'
+            echo '- Smoke verification intentionally used an invalid sender and did not send email.'
+          } >> "$GITHUB_STEP_SUMMARY"
