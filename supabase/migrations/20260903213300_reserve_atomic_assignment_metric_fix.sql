@@ -50,7 +50,9 @@ begin
          < (extract(hour from r.reservation_time::time) * 60 + extract(minute from r.reservation_time::time)) + coalesce(r.duration_minutes,r.turn_time_minutes,90)
      );
 
-  if v_conflict_count > 0 and p_override_reason is null then
+  -- A manager may approve a capacity exception, but a hard overlapping table
+  -- ownership conflict is never overridable.
+  if v_conflict_count > 0 then
     raise exception 'That table was just assigned or conflicts with another reservation';
   end if;
 
