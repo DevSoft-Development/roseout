@@ -30,6 +30,7 @@ EDGE_ALLOWED_TARGETS = {
     "edge:unified-location-gap-repair",
     "edge:worker-dispatcher",
     "edge:aws-db-maintenance",
+    "edge:admin-marketing-report-scheduler",
 }
 
 EVENT_DRIVEN_TARGETS = {
