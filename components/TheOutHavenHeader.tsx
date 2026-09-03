@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase-browser";
 
 const navItems = [
   { href: "/explore", label: "Explore" },
-  { href: "/create", label: "Create Outing" },
+  { href: "/#plan-your-outing", label: "Create Outing" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
   { href: "/reservations", label: "Reservations" },
   { href: "/support", label: "Support" },
@@ -130,7 +130,8 @@ export default function TheOutHavenHeader() {
   }, [accountDropdownOpen]);
 
   function isActive(href: string) {
-    return safePathname === href || (href !== "/" && safePathname.startsWith(href));
+    const activeHref = href.split("#")[0] || "/";
+    return safePathname === activeHref || (activeHref !== "/" && safePathname.startsWith(activeHref));
   }
 
   async function handleSignOut() {
