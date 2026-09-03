@@ -7,6 +7,7 @@ const items = [
   ["Overview", "/admin/dashboard/crm"],
   ["Accounts", "/admin/dashboard/crm/accounts"],
   ["Work Queue", "/admin/dashboard/crm/work-queue"],
+  ["Communications", "/admin/dashboard/crm/communications"],
   ["Outreach", "/admin/dashboard/crm/outreach"],
   ["Operations", "/admin/dashboard/crm/operations"],
 ] as const;
