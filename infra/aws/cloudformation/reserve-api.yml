@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven dedicated Reserve API for latency-sensitive reservation operations.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  ReserveApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleSecretArn:
+    Type: String
+  ReservedConcurrency:
+    Type: Number
+    Default: 25
+    MinValue: 2
+    MaxValue: 200
+
+Resources:
+  ReserveApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/reserve-api/hmac
+      SecretString: !Ref ReserveApiSharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: ReserveAPI
+
+  ReserveApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenReserveApi-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: reserve-api-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-reserve-api:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref ReserveApiSecret
+                  - !Ref SupabaseServiceRoleSecretArn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: ReserveAPI
+
+  ReserveApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-reserve-api
+      RetentionInDays: 30
+
+  ReserveApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ReserveApiLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-reserve-api
+      Description: Isolated Reserve API for seating, server assignment, and reservation operations.
+      Role: !GetAtt ReserveApiRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 12
+      MemorySize: 512
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SUPABASE_URL: !Ref SupabaseUrl
+          SHARED_SECRET_ARN: !Ref ReserveApiSecret
+          SUPABASE_SERVICE_ROLE_SECRET_ID: !Ref SupabaseServiceRoleSecretArn
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "reserve_api_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: ReserveAPI
+
+  ReserveApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ReserveApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  ReserveApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReserveApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  ReserveApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReserveApiFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  ReserveApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub ${Environment} Reserve API Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ReserveApiFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ReserveApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub ${Environment} Reserve API Lambda throttles
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ReserveApiFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ReserveApiFunctionName:
+    Value: !Ref ReserveApiFunction
+  ReserveApiUrl:
+    Value: !GetAtt ReserveApiUrl.FunctionUrl
+  ReserveApiSecretArn:
+    Value: !Ref ReserveApiSecret
