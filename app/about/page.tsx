@@ -6,11 +6,65 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 export const metadata = {
   title: "About TheOutHaven",
   description:
-    "Learn about TheOutHaven LLC, our mission, how we help people plan better outings, and how we help local businesses become part of those plans.",
+    "Learn about TheOutHaven LLC, how we help people plan better outings, and the business platform we provide to restaurants, venues, and local experience operators.",
 };
 
 const founderLinkedIn =
   "https://www.linkedin.com/in/nicholas-endeavour-91b65a431/";
+
+const locationCapabilities = [
+  {
+    number: "01",
+    title: "Business profile & discovery",
+    text: "Own how your location appears across TheOutHaven with your brand, photos, details, hours, offerings, and the information customers need to choose you.",
+  },
+  {
+    number: "02",
+    title: "Reservations & guest management",
+    text: "Manage reservations, tables and spaces, waitlists, large groups, guest details, reminders, policies, and the day-of hosting experience from one workspace.",
+  },
+  {
+    number: "03",
+    title: "Events & experiences",
+    text: "Publish events, experiences, times, availability, and bookable offerings that give customers more reasons to visit your location.",
+  },
+  {
+    number: "04",
+    title: "Menus, packages & offers",
+    text: "Show the food, drinks, packages, promotions, and signature offerings that make your business the right fit for a specific outing.",
+  },
+  {
+    number: "05",
+    title: "Website & domain",
+    text: "Create and manage a polished business website and connect your domain so your location can maintain a strong presence beyond its TheOutHaven profile.",
+  },
+  {
+    number: "06",
+    title: "Customer relationships",
+    text: "Keep up with leads, guests, VIP customers, messages, notifications, reviews, and feedback so interest can turn into lasting relationships.",
+  },
+  {
+    number: "07",
+    title: "Marketing & social",
+    text: "Plan promotions, create marketing content, connect social accounts, and keep your business visible before and after a customer discovers you.",
+  },
+  {
+    number: "08",
+    title: "Performance & insights",
+    text: "See how your location is performing across discovery, reservations, customer activity, events, and other business outcomes from a single overview.",
+  },
+];
+
+const businessTypes = [
+  "Restaurants",
+  "Bars & lounges",
+  "Rooftops",
+  "Nightlife venues",
+  "Activity venues",
+  "Entertainment concepts",
+  "Event spaces",
+  "Experience operators",
+];
 
 export default function AboutPage() {
   return (
@@ -25,15 +79,13 @@ export default function AboutPage() {
           <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff8a9b]">
             About TheOutHaven
           </p>
-          <div className="mt-6 grid gap-10 lg:grid-cols-[1.05fr_.75fr] lg:items-end">
-            <div>
-              <h1 className="max-w-5xl text-5xl font-black leading-[.95] tracking-[-.055em] md:text-7xl lg:text-[5.2rem]">
-                We’re changing the way people decide
-                <span className="block text-[#e1062a]">where to go next.</span>
-              </h1>
-            </div>
+          <div className="mt-6 grid gap-10 lg:grid-cols-[1.08fr_.72fr] lg:items-end">
+            <h1 className="max-w-5xl text-5xl font-black leading-[.95] tracking-[-.055em] md:text-7xl lg:text-[5.2rem]">
+              One company connecting better outings
+              <span className="block text-[#e1062a]">with better local business.</span>
+            </h1>
             <p className="max-w-xl text-lg leading-8 text-white/62 lg:justify-self-end">
-              TheOutHaven is a New York company built around one simple idea: planning a great day or night out should feel exciting, not exhausting.
+              TheOutHaven brings people and local businesses together around the moments that matter: where to eat, what to do, where to celebrate, and how to turn an idea into a complete outing.
             </p>
           </div>
         </div>
@@ -47,13 +99,13 @@ export default function AboutPage() {
           </div>
           <div className="space-y-6 text-lg leading-8 text-white/62">
             <p>
-              TheOutHaven brings the pieces of an outing together in one place. Instead of making people search separately for dinner, drinks, activities, neighborhoods, and what to do next, we help them think about the entire experience from the beginning.
+              TheOutHaven is building a better connection between people planning their time out and the local businesses that make those experiences possible.
             </p>
             <p>
-              We are starting with New York City and Long Island, two places where people have nearly endless choices but still spend too much time figuring out which choices actually work together.
+              For consumers, that means one place to discover restaurants, activities, nightlife, entertainment, and complete outings. For businesses, it means a place to be discovered, present what makes the location special, manage the customer experience, and grow the relationship after discovery.
             </p>
             <p>
-              Our goal is bigger than helping someone find a restaurant or an activity. We want TheOutHaven to become the place people turn to when they know they want to go out, celebrate, explore, spend time together, or simply do something different.
+              We are starting in New York City and Long Island, with a long-term vision of becoming the place people turn to when they decide to go out—and the platform local businesses use to be ready when they do.
             </p>
           </div>
         </div>
@@ -61,87 +113,103 @@ export default function AboutPage() {
 
       <section className="bg-white px-6 py-20 text-black lg:py-24">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-12 lg:grid-cols-[.85fr_1.15fr] lg:items-end">
+          <div className="grid gap-12 lg:grid-cols-[.9fr_1.1fr] lg:items-end">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Why we exist</p>
               <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
-                Going out should not feel like research.
+                Discovery should end with a decision—not another search.
               </h2>
             </div>
             <p className="max-w-2xl text-lg leading-8 text-black/58 lg:justify-self-end">
-              People often know the feeling they want before they know the exact places. A romantic night. A birthday that feels special. Dinner and something fun nearby. The hard part is turning that idea into a plan without losing an hour to tabs, maps, reviews, and group chats.
+              People often know the kind of experience they want before they know the exact places. TheOutHaven helps turn that intent into a plan while giving strong local businesses a better opportunity to become part of it.
             </p>
           </div>
 
           <div className="mt-14 grid gap-5 md:grid-cols-3">
-            <CompanyCard number="01" title="Bring the night together" text="Restaurants, activities, nightlife, and local experiences should work as one outing, not separate searches." />
-            <CompanyCard number="02" title="Make choices feel easier" text="The right recommendation depends on the occasion, the area, the people, the timing, and the mood." />
-            <CompanyCard number="03" title="Help people act" text="Discovery matters most when it leads to a decision, a reservation, a visit, or a memorable experience." />
+            <CompanyCard number="01" title="Plan the whole outing" text="Bring restaurants, activities, nightlife, and experiences into the same decision." />
+            <CompanyCard number="02" title="Make the right match" text="Consider the occasion, area, timing, atmosphere, preferences, and the way the outing should flow." />
+            <CompanyCard number="03" title="Connect people with places" text="Help discovery lead to reservations, bookings, visits, and stronger customer relationships." />
           </div>
         </div>
       </section>
 
       <section className="px-6 py-20 lg:py-24">
         <div className="mx-auto max-w-7xl">
-          <div className="max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">What TheOutHaven brings together</p>
+          <div className="max-w-4xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">For people</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
-              One destination for the entire outing.
+              A better way to decide where to go next.
             </h2>
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-white/58">
+              Start with an occasion, a neighborhood, a restaurant, an activity, or simply the feeling you want. TheOutHaven helps bring the pieces together so the plan feels complete.
+            </p>
           </div>
 
           <div className="mt-12 grid gap-px overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 md:grid-cols-2">
-            <DarkCompanyCard title="Restaurants & drinks" text="From casual neighborhood favorites to rooftops, lounges, brunch, date-night tables, and special-occasion dining." />
-            <DarkCompanyCard title="Activities & entertainment" text="Comedy, karaoke, bowling, museums, games, nightlife, live entertainment, and more ways to keep the outing going." />
-            <DarkCompanyCard title="Neighborhood discovery" text="Plan around the borough, town, or area that fits the people, travel time, atmosphere, and occasion." />
-            <DarkCompanyCard title="Complete outings" text="Move beyond finding one place and start thinking about how the stops, timing, and experience fit together." />
+            <DarkCompanyCard title="Restaurants & drinks" text="Discover dining, brunch, rooftops, lounges, date-night options, and special-occasion places that fit the plan." />
+            <DarkCompanyCard title="Activities & entertainment" text="Find comedy, bowling, karaoke, museums, games, live entertainment, nightlife, and more ways to keep the outing going." />
+            <DarkCompanyCard title="Area-first planning" text="Explore by borough, neighborhood, or town when location matters as much as the places themselves." />
+            <DarkCompanyCard title="Complete outings" text="Move beyond finding one place and build a plan where the stops and experience make sense together." />
           </div>
+
+          <Link href="/#plan-your-outing" className="mt-10 inline-flex rounded-full bg-[#e1062a] px-8 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">
+            Plan an Outing
+          </Link>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-[#120606] px-6 py-20 lg:py-24">
-        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">For people</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
-              Built around the way plans really happen.
-            </h2>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62">
-              Sometimes the plan starts with a restaurant. Sometimes it starts with the occasion. Sometimes it is simply “we want to do something tonight.” TheOutHaven is designed to meet people at that starting point and help them move toward a complete plan.
-            </p>
-            <Link href="/create" className="mt-8 inline-flex rounded-full bg-[#e1062a] px-8 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">
-              Plan an Outing
-            </Link>
+      <section className="relative overflow-hidden border-y border-white/10 bg-[#120606] px-6 py-20 lg:py-28">
+        <div className="absolute right-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-[#e1062a]/10 blur-3xl" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.82fr_1.18fr] lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">For businesses & locations</p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-6xl">
+                More than a listing. A place to run and grow the customer experience.
+              </h2>
+            </div>
+            <div>
+              <p className="text-lg leading-8 text-white/62">
+                TheOutHaven gives local businesses a dedicated workspace built around the full customer journey—from being discovered to hosting the visit and building the next relationship.
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <Link href="/business" className="inline-flex justify-center rounded-full bg-white px-7 py-3.5 text-sm font-black text-black transition hover:bg-white/90">
+                  For Businesses
+                </Link>
+                <Link href="/business/claim" className="inline-flex justify-center rounded-full border border-white/20 px-7 py-3.5 text-sm font-black text-white transition hover:bg-white hover:text-black">
+                  Claim Your Location
+                </Link>
+              </div>
+            </div>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-black/35 p-7 sm:p-9">
-            {["Start with the occasion, not just a category.", "Bring food and things to do into the same decision.", "Consider the area and the flow of the outing.", "Explore places that fit the kind of experience you want.", "Choose a plan that feels right for your group."].map((text) => (
-              <div key={text} className="flex gap-4 border-b border-white/10 py-5 first:pt-0 last:border-0 last:pb-0">
-                <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a]/15 text-xs font-black text-[#ff8a9b]">✓</span>
-                <p className="text-base font-semibold leading-7 text-white/66">{text}</p>
-              </div>
+          <div className="mt-14 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {locationCapabilities.map((item) => (
+              <BusinessCapability key={item.number} {...item} />
             ))}
           </div>
         </div>
       </section>
 
       <section className="bg-white px-6 py-20 text-black lg:py-24">
-        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">For local businesses</p>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
-              Better discovery should create better opportunities.
-            </h2>
-            <p className="mt-6 text-lg leading-8 text-black/58">
-              TheOutHaven is also being built for the restaurants, venues, attractions, nightlife businesses, and experience providers that make local outings possible.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <LightPoint title="Be discoverable" text="Help the right people find your business when it fits the outing they already want." />
-            <LightPoint title="Tell a fuller story" text="Give people the details, photos, offerings, and reasons they need to choose your location." />
-            <LightPoint title="Turn interest into action" text="Create a clearer path from discovery to reservations, bookings, visits, and customer relationships." />
-            <LightPoint title="Grow with TheOutHaven" text="Take part in a local discovery experience designed around complete plans instead of isolated listings." />
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Who we serve</p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+                Built for the businesses that make going out worth it.
+              </h2>
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-black/58">
+                Whether the customer is planning dinner, a celebration, a night out, or an activity, TheOutHaven is designed to help the right location become part of the plan.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {businessTypes.map((type) => (
+                <div key={type} className="rounded-2xl border border-black/10 bg-[#f7f7f7] px-4 py-6 text-center text-sm font-black text-black/70">
+                  {type}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -152,36 +220,36 @@ export default function AboutPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">What guides us</p>
               <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">
-                A better way to discover local experiences.
+                Build value on both sides of the outing.
               </h2>
             </div>
             <div className="grid gap-6 sm:grid-cols-2">
-              <Principle title="Useful over overwhelming" text="More choices are not always better. We focus on helping people get closer to a decision." />
-              <Principle title="The outing over the listing" text="A place matters because of how it fits the full experience a person is trying to create." />
-              <Principle title="Local businesses matter" text="Great outings depend on the restaurants, venues, and local operators that give neighborhoods their character." />
-              <Principle title="Trust matters" text="People should understand what they are choosing, where information comes from, and when details should be confirmed with a business." />
+              <Principle title="Useful over overwhelming" text="People should get closer to a decision, not simply receive more choices." />
+              <Principle title="The outing over the listing" text="A location matters because of how it fits the experience a person is trying to create." />
+              <Principle title="Local businesses matter" text="Restaurants, venues, and experience operators are not inventory—they are the reason memorable outings exist." />
+              <Principle title="Relationships over clicks" text="The strongest outcome is not just discovery. It is a customer who chooses, visits, returns, and remembers the business." />
             </div>
           </div>
         </div>
       </section>
 
       <section className="border-y border-white/10 bg-[#080808] px-6 py-20 lg:py-24">
-        <div className="mx-auto max-w-7xl">
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Where we’re starting</p>
-              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">
-                New York first. Built for what comes next.
-              </h2>
-              <p className="mt-6 text-lg leading-8 text-white/60">
-                New York City and Long Island are the starting point because few markets offer more variety in food, entertainment, neighborhoods, culture, and nightlife. That variety makes the opportunity clear: people do not need more places to search. They need a better way to turn all those choices into a plan.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "Long Island"].map((area) => (
-                <div key={area} className="rounded-2xl border border-white/10 bg-white/[.035] px-4 py-5 text-center text-sm font-black text-white/72">{area}</div>
-              ))}
-            </div>
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Where we’re starting</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">
+              New York first. Built for what comes next.
+            </h2>
+            <p className="mt-6 text-lg leading-8 text-white/60">
+              New York City and Long Island are our starting markets because few places offer more variety in food, entertainment, neighborhoods, culture, and nightlife. We are building the company here with a model designed to expand to more markets over time.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "Long Island"].map((area) => (
+              <div key={area} className="rounded-2xl border border-white/10 bg-white/[.035] px-4 py-5 text-center text-sm font-black text-white/72">
+                {area}
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -191,10 +259,10 @@ export default function AboutPage() {
           <div className="max-w-4xl">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Our direction</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
-              We want TheOutHaven to become part of the moment people decide to go out.
+              Become part of the moment people decide to go out—and the place businesses are ready to meet them.
             </h2>
             <p className="mt-6 max-w-3xl text-lg leading-8 text-white/60">
-              Over time, that means helping more people plan with confidence, helping more local businesses become part of those plans, and expanding the experience into more cities and more kinds of outings while keeping the same simple promise: make planning feel easier.
+              TheOutHaven is building toward a future where planning, discovery, reservations, experiences, customer relationships, and business growth feel connected instead of fragmented.
             </p>
           </div>
         </div>
@@ -220,14 +288,18 @@ export default function AboutPage() {
         <div className="relative mx-auto max-w-4xl">
           <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff8a9b]">TheOutHaven</p>
           <h2 className="mt-4 text-5xl font-black tracking-[-0.05em] md:text-6xl">
-            Make the plan. Enjoy the outing.
+            Better plans. Stronger local businesses.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Discover restaurants, activities, nightlife, and experiences across New York City and Long Island.
+            Discover your next outing or bring your business into the experience.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/create" className="inline-flex rounded-full bg-[#e1062a] px-9 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">Plan an Outing</Link>
-            <Link href="/explore" className="inline-flex rounded-full border border-white/15 px-9 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Explore Places</Link>
+            <Link href="/#plan-your-outing" className="inline-flex rounded-full bg-[#e1062a] px-9 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">
+              Plan an Outing
+            </Link>
+            <Link href="/business" className="inline-flex rounded-full border border-white/15 px-9 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">
+              Explore Business Tools
+            </Link>
           </div>
         </div>
       </section>
@@ -256,11 +328,15 @@ function DarkCompanyCard({ title, text }: { title: string; text: string }) {
   );
 }
 
-function LightPoint({ title, text }: { title: string; text: string }) {
+function BusinessCapability({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <article className="rounded-[1.5rem] border border-black/10 bg-[#f7f7f7] p-6">
-      <h3 className="text-lg font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-black/58">{text}</p>
+    <article className="group rounded-[1.6rem] border border-white/10 bg-black/35 p-6 transition hover:border-[#e1062a]/45 hover:bg-black/50">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs font-black tracking-[0.2em] text-[#ff8a9b]">{number}</span>
+        <span className="h-px flex-1 bg-gradient-to-r from-[#e1062a]/45 to-transparent" />
+      </div>
+      <h3 className="mt-6 text-xl font-black tracking-[-0.025em]">{title}</h3>
+      <p className="mt-3 text-sm leading-7 text-white/52">{text}</p>
     </article>
   );
 }
