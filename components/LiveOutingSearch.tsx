@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const examples = [
@@ -9,9 +9,68 @@ const examples = [
   "Seafood rooftop restaurant in Queens",
 ];
 
+const typewriterPrompts = [
+  "Italian dinner and comedy show in Manhattan",
+  "Rooftop drinks and something fun in Brooklyn",
+  "A romantic birthday dinner in Queens",
+  "Brunch and an activity on Long Island",
+];
+
 export default function LiveOutingSearch() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (prompt || focused) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      setTypedPlaceholder(typewriterPrompts[0]);
+      return;
+    }
+
+    let promptIndex = 0;
+    let characterIndex = 0;
+    let deleting = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = () => {
+      const current = typewriterPrompts[promptIndex];
+
+      if (!deleting) {
+        characterIndex += 1;
+        setTypedPlaceholder(current.slice(0, characterIndex));
+
+        if (characterIndex >= current.length) {
+          deleting = true;
+          timer = setTimeout(tick, 1600);
+          return;
+        }
+
+        timer = setTimeout(tick, 52);
+        return;
+      }
+
+      characterIndex -= 1;
+      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0)));
+
+      if (characterIndex <= 0) {
+        deleting = false;
+        promptIndex = (promptIndex + 1) % typewriterPrompts.length;
+        timer = setTimeout(tick, 350);
+        return;
+      }
+
+      timer = setTimeout(tick, 28);
+    };
+
+    setTypedPlaceholder("");
+    timer = setTimeout(tick, 450);
+
+    return () => clearTimeout(timer);
+  }, [focused, prompt]);
 
   function openPlanner(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -24,24 +83,24 @@ export default function LiveOutingSearch() {
       prompt: input,
       guidedFlow: "guided_create_v1",
       journey: "four_step",
-      source: "homepage_live_product",
+      source: "homepage_outing_search",
     });
 
     router.push(`/create?${params.toString()}`);
   }
 
   return (
-    <section id="live-product" className="w-full" aria-labelledby="live-product-title">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-5 text-center">
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff8a9b]">
-            Live product
+    <section id="plan-your-outing" className="w-full" aria-labelledby="plan-your-outing-title">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-7 text-center">
+          <p className="text-xs font-black uppercase tracking-[0.26em] text-[#ff8a9b]">
+            Start with what sounds good
           </p>
-          <h2 id="live-product-title" className="mt-2 text-2xl font-black tracking-[-0.03em] sm:text-3xl">
-            Describe an outing and use the real planner.
+          <h2 id="plan-your-outing-title" className="mt-3 text-3xl font-black tracking-[-0.04em] sm:text-4xl lg:text-5xl">
+            Tell us the outing you have in mind.
           </h2>
-          <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-white/55">
-            No account is required to search. The planner returns live TheOutHaven results and lets you continue into location profiles and outing planning.
+          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/58">
+            Dinner and a show. Rooftop drinks. A birthday night in Queens. Say it your way and TheOutHaven will help bring the plan together.
           </p>
         </div>
 
@@ -49,8 +108,10 @@ export default function LiveOutingSearch() {
           <input
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             aria-label="Describe your outing"
-            placeholder="Italian dinner and comedy show in Manhattan"
+            placeholder={typedPlaceholder}
             className="h-14 w-full rounded-full border border-white/10 bg-black/60 px-5 text-base font-semibold text-white outline-none transition placeholder:text-white/35 focus:border-[#e1062a]/60 sm:h-16 sm:border-0 sm:bg-transparent"
           />
           <button

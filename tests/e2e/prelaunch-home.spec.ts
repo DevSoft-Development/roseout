@@ -6,10 +6,14 @@ const forbiddenLaunchCopy = [
   "request early access",
   "preparing for launch",
   "limited read-only preview",
+  "live product",
+  "real planner",
+  "reviewer signing in",
+  "public planner",
 ];
 
 test.describe("public product readiness", () => {
-  test("homepage presents the live product without launch-gating language", async ({ page }) => {
+  test("homepage presents the product without launch-gating or reviewer language", async ({ page }) => {
     const failedImageRequests: string[] = [];
     page.on("response", (response) => {
       if (response.request().resourceType() === "image" && response.status() >= 400) {
@@ -19,17 +23,17 @@ test.describe("public product readiness", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByRole("heading", { name: "Stop searching 10 tabs." })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Plan an Outing" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Plan the whole outing. In one place." })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Plan an Outing" }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Explore Places" }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Describe an outing and use the real planner." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tell us the outing you have in mind." })).toBeVisible();
 
     const body = (await page.locator("body").innerText()).toLowerCase();
     for (const copy of forbiddenLaunchCopy) expect(body).not.toContain(copy);
     expect(failedImageRequests).toEqual([]);
   });
 
-  test("homepage search opens the real planner with the visitor prompt", async ({ page }) => {
+  test("homepage search opens the outing planner with the visitor prompt", async ({ page }) => {
     await page.route("**/api/generate", async (route) => {
       await route.fulfill({
         status: 200,
@@ -46,20 +50,20 @@ test.describe("public product readiness", () => {
     expect(decodeURIComponent(page.url())).toContain("Italian dinner and comedy in Manhattan");
   });
 
-  test("public Explore is directly reachable from the homepage", async ({ page }) => {
+  test("Explore is directly reachable from the homepage", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("link", { name: "Explore Places" }).first().click();
     await expect(page).toHaveURL(/\/explore/);
   });
 
-  test("About identifies the founder, company, and independent LinkedIn profile", async ({ page }) => {
+  test("About identifies the company and founder with an independent LinkedIn profile", async ({ page }) => {
     await page.goto("/about", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByRole("heading", { name: "Nicholas Endeavour" })).toBeVisible();
-    await expect(page.getByText("Founder & CEO, TheOutHaven")).toBeVisible();
     await expect(page.getByRole("heading", { name: "TheOutHaven LLC" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Nicholas Endeavour" })).toBeVisible();
+    await expect(page.getByText("Founder & CEO")).toBeVisible();
 
-    const linkedin = page.getByRole("link", { name: /View Nicholas on LinkedIn/ });
+    const linkedin = page.getByRole("link", { name: /LinkedIn/ });
     await expect(linkedin).toHaveAttribute(
       "href",
       "https://www.linkedin.com/in/nicholas-endeavour-91b65a431/",
@@ -83,7 +87,7 @@ test.describe("public product readiness", () => {
     { width: 390, height: 900 },
     { width: 1280, height: 900 },
   ]) {
-    test(`live planner entry has no horizontal overflow at ${viewport.width}px`, async ({ page }) => {
+    test(`outing planner entry has no horizontal overflow at ${viewport.width}px`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.goto("/");
       await expect(page.getByRole("button", { name: "Plan my outing" })).toBeVisible();
