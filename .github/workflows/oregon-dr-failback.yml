@@ -106,7 +106,11 @@ jobs:
           grep -F 'reverse_cleanup_stage=source_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'reverse_cleanup_stage=target_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit false, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit false, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
+          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
+          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'reverse_cleanup=complete' .github/workflows/oregon-dr-failback.yml >/dev/null
 
   execute:
@@ -170,7 +174,7 @@ jobs:
             echo 'reverse_cleanup_stage=source_membership'
             query_ref "$OREGON_REF" "grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit false, set true;" "$TMP/reverse-source-membership-grant.json"
             echo 'reverse_cleanup_stage=source_owned'
-            query_ref "$OREGON_REF" "set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;" "$TMP/reverse-source-owned-drop.json"
+            query_ref "$OREGON_REF" "drop owned by ${FAILBACK_REPLICATION_ROLE};" "$TMP/reverse-source-owned-drop.json"
             query_ref "$OREGON_REF" "revoke ${FAILBACK_REPLICATION_ROLE} from postgres granted by postgres;" "$TMP/reverse-source-membership-revoke.json"
             echo 'reverse_cleanup_stage=source_role'
             query_ref "$OREGON_REF" "drop role ${FAILBACK_REPLICATION_ROLE};" "$TMP/reverse-source-role-drop.json"
@@ -181,7 +185,7 @@ jobs:
             echo 'reverse_cleanup_stage=target_membership'
             query_ref "$VIRGINIA_REF" "grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit false, set true;" "$TMP/reverse-target-membership-grant.json"
             echo 'reverse_cleanup_stage=target_owned'
-            query_ref "$VIRGINIA_REF" "set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;" "$TMP/reverse-target-owned-drop.json"
+            query_ref "$VIRGINIA_REF" "drop owned by ${FAILBACK_SUBSCRIBER_ROLE};" "$TMP/reverse-target-owned-drop.json"
             query_ref "$VIRGINIA_REF" "revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres;" "$TMP/reverse-target-membership-revoke.json"
             echo 'reverse_cleanup_stage=target_role'
             query_ref "$VIRGINIA_REF" "drop role ${FAILBACK_SUBSCRIBER_ROLE};" "$TMP/reverse-target-role-drop.json"
@@ -203,8 +207,10 @@ jobs:
           grep -F 'reverse_cleanup_stage=publication' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reverse_cleanup_stage=source_membership' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reverse_cleanup_stage=target_membership' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reverse_cleanup=complete' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F "drop publication if exists \${FAILBACK_PUBLICATION}; drop owned by \${FAILBACK_REPLICATION_ROLE}" scripts/dr/oregon-failback.sh >/dev/null
           bash -n scripts/dr/oregon-failback.sh
