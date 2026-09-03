@@ -6,12 +6,14 @@ on:
       - '.github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml'
       - 'scripts/dr/recover-failback-pre-forward-rebuild.sh'
       - '.github/workflows/oregon-dr-failback.yml'
+      - '.github/workflows/oregon-dr-post-detach-recovery-once.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml'
       - 'scripts/dr/recover-failback-pre-forward-rebuild.sh'
       - '.github/workflows/oregon-dr-failback.yml'
+      - '.github/workflows/oregon-dr-post-detach-recovery-once.yml'
 
 permissions:
   contents: read
@@ -48,6 +50,9 @@ jobs:
           grep -F 'Rebuilt forward slot did not become active at zero lag.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'Both databases remained fenced until Vercel' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'recovery_result=virginia_primary_restored' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Patch recovery for exact post-publication boundary' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
+          grep -F 'grant ${REVERSE_REPLICATION_ROLE} to postgres with inherit false, set true' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
+          grep -F 'grant ${REVERSE_SUBSCRIBER_ROLE} to postgres with inherit false, set true' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           grep -F 'certification_restart=dispatched' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
 
   recover:
@@ -65,6 +70,61 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Patch recovery for exact post-publication boundary
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/dr/recover-failback-pre-forward-rebuild.sh')
+          text = path.read_text()
+
+          old_boundary = ".[0].active_cron_jobs==0 and .[0].fence==1 and .[0].admin_override==1 and .[0].forward_subscriptions==0 and .[0].reverse_publications==1 and .[0].reverse_slots==0 and .[0].reverse_replication_roles<=1 and .[0].dr_pre_request_configured==1"
+          new_boundary = ".[0].active_cron_jobs==0 and .[0].fence==1 and .[0].admin_override==1 and .[0].forward_subscriptions==0 and .[0].reverse_publications==0 and .[0].reverse_slots==0 and .[0].reverse_replication_roles==1 and .[0].dr_pre_request_configured==1"
+          if old_boundary not in text:
+              raise SystemExit('Expected pre-publication recovery boundary not found')
+          text = text.replace(old_boundary, new_boundary, 1)
+
+          source_old = '''    echo 'reverse_cleanup_stage=source_owned'
+              query_ref "$OREGON_REF" "drop owned by ${REVERSE_REPLICATION_ROLE};" "$TMP/reverse-source-owned-drop.json"
+              echo 'reverse_cleanup_stage=source_role'
+              query_ref "$OREGON_REF" "drop role ${REVERSE_REPLICATION_ROLE};" "$TMP/reverse-source-role-drop.json"
+          '''
+          source_new = '''    echo 'reverse_cleanup_stage=source_membership'
+              query_ref "$OREGON_REF" "grant ${REVERSE_REPLICATION_ROLE} to postgres with inherit false, set true;" "$TMP/reverse-source-membership-grant.json"
+              echo 'reverse_cleanup_stage=source_owned'
+              query_ref "$OREGON_REF" "set role ${REVERSE_REPLICATION_ROLE}; drop owned by ${REVERSE_REPLICATION_ROLE}; reset role;" "$TMP/reverse-source-owned-drop.json"
+              query_ref "$OREGON_REF" "revoke ${REVERSE_REPLICATION_ROLE} from postgres granted by postgres;" "$TMP/reverse-source-membership-revoke.json"
+              echo 'reverse_cleanup_stage=source_role'
+              query_ref "$OREGON_REF" "drop role ${REVERSE_REPLICATION_ROLE};" "$TMP/reverse-source-role-drop.json"
+          '''
+          if source_old not in text:
+              raise SystemExit('Expected source role cleanup block not found')
+          text = text.replace(source_old, source_new, 1)
+
+          target_old = '''    echo 'reverse_cleanup_stage=target_owned'
+              query_ref "$VIRGINIA_REF" "drop owned by ${REVERSE_SUBSCRIBER_ROLE};" "$TMP/reverse-target-owned-drop.json"
+              echo 'reverse_cleanup_stage=target_role'
+              query_ref "$VIRGINIA_REF" "drop role ${REVERSE_SUBSCRIBER_ROLE};" "$TMP/reverse-target-role-drop.json"
+          '''
+          target_new = '''    echo 'reverse_cleanup_stage=target_membership'
+              query_ref "$VIRGINIA_REF" "grant ${REVERSE_SUBSCRIBER_ROLE} to postgres with inherit false, set true;" "$TMP/reverse-target-membership-grant.json"
+              echo 'reverse_cleanup_stage=target_owned'
+              query_ref "$VIRGINIA_REF" "set role ${REVERSE_SUBSCRIBER_ROLE}; drop owned by ${REVERSE_SUBSCRIBER_ROLE}; reset role;" "$TMP/reverse-target-owned-drop.json"
+              query_ref "$VIRGINIA_REF" "revoke ${REVERSE_SUBSCRIBER_ROLE} from postgres granted by postgres;" "$TMP/reverse-target-membership-revoke.json"
+              echo 'reverse_cleanup_stage=target_role'
+              query_ref "$VIRGINIA_REF" "drop role ${REVERSE_SUBSCRIBER_ROLE};" "$TMP/reverse-target-role-drop.json"
+          '''
+          if target_old not in text:
+              raise SystemExit('Expected target role cleanup block not found')
+          path.write_text(text.replace(target_old, target_new, 1))
+          PY
+          grep -F 'reverse_publications==0' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'reverse_replication_roles==1' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'grant ${REVERSE_REPLICATION_ROLE} to postgres with inherit false, set true' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'set role ${REVERSE_REPLICATION_ROLE}; drop owned by ${REVERSE_REPLICATION_ROLE}; reset role;' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'grant ${REVERSE_SUBSCRIBER_ROLE} to postgres with inherit false, set true' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          bash -n scripts/dr/recover-failback-pre-forward-rebuild.sh
 
       - name: Recover exact fail-closed pre-forward-rebuild state
         env:
