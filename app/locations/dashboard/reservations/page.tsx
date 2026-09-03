@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import ReserveEnterpriseHostShell from "@/components/reserve/ReserveEnterpriseHostShell";
 import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
@@ -54,6 +55,20 @@ function buildSettingsHref(params: Record<string, SearchValue>) {
 
   const qs = query.toString();
   return `/locations/dashboard/reservations/settings${qs ? `?${qs}` : ""}`;
+}
+
+function buildReserveSubpageHref(
+  page: "service" | "reports" | "operations",
+  params: Record<string, SearchValue>,
+  locationId: string,
+) {
+  const query = new URLSearchParams();
+  const adminLocationId = first(params.adminLocationId);
+  if (locationId) {
+    query.set(adminLocationId ? "adminLocationId" : "locationId", locationId);
+  }
+  const qs = query.toString();
+  return `/locations/dashboard/reservations/${page}${qs ? `?${qs}` : ""}`;
 }
 
 export default async function LocationWorkspaceReservationsPage({
@@ -121,15 +136,29 @@ export default async function LocationWorkspaceReservationsPage({
               Host View
             </p>
             <p className="truncate text-sm font-black text-white">
-              Full-screen reservation operations
+              Floor-first reservation operations
             </p>
           </div>
-          <Link
-            href={buildWorkspaceHref(rawParams)}
-            className="shrink-0 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-black text-white transition hover:bg-white/[0.1]"
-          >
-            Exit Host View
-          </Link>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link
+              href={buildReserveSubpageHref("service", rawParams, selectedLocationId)}
+              className="shrink-0 rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75 transition hover:text-white"
+            >
+              Service controls
+            </Link>
+            <Link
+              href={buildReserveSubpageHref("reports", rawParams, selectedLocationId)}
+              className="shrink-0 rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75 transition hover:text-white"
+            >
+              Reports
+            </Link>
+            <Link
+              href={buildWorkspaceHref(rawParams)}
+              className="shrink-0 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-black text-white transition hover:bg-white/[0.1]"
+            >
+              Exit Host View
+            </Link>
+          </div>
         </div>
       ) : null}
       {!hostMode && !parsedDemo.demo ? (
@@ -139,7 +168,13 @@ export default async function LocationWorkspaceReservationsPage({
           />
         </div>
       ) : null}
-      {showOverview ? <ReserveOverviewPage /> : <ReserveCommandCenterPage />}
+      {hostMode ? (
+        <ReserveEnterpriseHostShell locationId={selectedLocationId} />
+      ) : showOverview ? (
+        <ReserveOverviewPage />
+      ) : (
+        <ReserveCommandCenterPage />
+      )}
     </div>
   );
 }
