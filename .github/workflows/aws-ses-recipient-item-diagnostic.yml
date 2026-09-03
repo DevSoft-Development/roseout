@@ -1,0 +1,115 @@
+name: AWS SES recipient item-shape diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ses-recipient-item-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+      EDGE_RUNTIME_SECRET_REGION: us-east-1
+      SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+      SHARED_APP_ENV_SECRET_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Report recipient item shapes without addresses
+        run: |
+          set -euo pipefail
+          EDGE="$RUNNER_TEMP/edge.json"
+          SHARED="$RUNNER_TEMP/shared.json"
+          aws secretsmanager get-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
+          chmod 600 "$EDGE" "$SHARED"
+
+          EDGE="$EDGE" SHARED="$SHARED" python <<'PY'
+          import json, os
+          from email.utils import parseaddr
+          from pathlib import Path
+
+          recipient_keys = [
+              'ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL','ADMIN_CRON_DIGEST_EMAIL',
+              'ADMIN_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO',
+              'SEARCH_HEALTH_ALERT_EMAILS','MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO',
+              'THEOUTHAVEN_ADMIN_EMAIL',
+          ]
+
+          docs = {
+              'edge': json.loads(Path(os.environ['EDGE']).read_text()),
+              'shared': json.loads(Path(os.environ['SHARED']).read_text()),
+          }
+
+          def safe_string_shape(value):
+              text = value.strip()
+              if not text:
+                  return 'empty'
+              parsed = None
+              if text[:1] in {'[', '{', '"'}:
+                  try:
+                      parsed = json.loads(text)
+                  except Exception:
+                      parsed = None
+              if parsed is not None and parsed != value:
+                  return f'nested_json:{type(parsed).__name__}'
+              _, addr = parseaddr(text)
+              addr = addr.strip().lower()
+              valid = addr.count('@') == 1 and not any(ch.isspace() for ch in addr)
+              domain = addr.rsplit('@', 1)[1] if valid else '-'
+              return f'email_like={str(valid).lower()},domain={domain},comma={str("," in text).lower()},at_count={text.count("@")}'
+
+          def describe(value, path='root', depth=0):
+              if depth > 4:
+                  print(f'  item path={path} type=depth_limit')
+                  return
+              if isinstance(value, str):
+                  print(f'  item path={path} type=str shape={safe_string_shape(value)}')
+                  text = value.strip()
+                  if text[:1] in {'[', '{', '"'}:
+                      try:
+                          parsed = json.loads(text)
+                      except Exception:
+                          return
+                      if parsed != value:
+                          describe(parsed, path + '.json', depth + 1)
+                  return
+              if isinstance(value, list):
+                  print(f'  item path={path} type=list length={len(value)}')
+                  for index, item in enumerate(value):
+                      describe(item, f'{path}[{index}]', depth + 1)
+                  return
+              if isinstance(value, dict):
+                  keys = sorted(str(k) for k in value.keys())
+                  print(f'  item path={path} type=dict keys={"|".join(keys)}')
+                  for field in ('email','address','value','to','recipient'):
+                      if field in value:
+                          print(f'  candidate_field path={path}.{field} type={type(value[field]).__name__}')
+                          describe(value[field], f'{path}.{field}', depth + 1)
+                  return
+              print(f'  item path={path} type={type(value).__name__}')
+
+          for source, doc in docs.items():
+              for key in recipient_keys:
+                  if key not in doc:
+                      continue
+                  raw = doc[key]
+                  print(f'source={source} key={key} stored_type={type(raw).__name__}')
+                  describe(raw)
+          PY
+          rm -f "$EDGE" "$SHARED"
