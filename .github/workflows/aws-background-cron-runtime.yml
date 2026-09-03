@@ -79,9 +79,13 @@ jobs:
           grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
-          grep -F 'Bootstrap Lambda recursion deployment permission' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'Bootstrap background cron deployment permissions' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'lambda:PutFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'lambda:GetFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'cloudformation:ContinueUpdateRollback' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'UPDATE_ROLLBACK_FAILED' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'continue-update-rollback' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'stack-rollback-complete' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'get-function-recursion-config' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
   deploy:
@@ -111,14 +115,14 @@ jobs:
           test -n "$ALERTS_TOPIC" && test "$ALERTS_TOPIC" != 'None'
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
 
-      - name: Bootstrap Lambda recursion deployment permission
+      - name: Bootstrap background cron deployment permissions
         env:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           POLICY_NAME='TheOutHavenLambdaRecursionConfigBootstrap'
-          POLICY_FILE="$RUNNER_TEMP/lambda-recursion-config-bootstrap.json"
+          POLICY_FILE="$RUNNER_TEMP/background-cron-deploy-bootstrap.json"
           cat > "$POLICY_FILE" <<JSON
           {
             "Version":"2012-10-17",
@@ -131,6 +135,12 @@ jobs:
                   "lambda:PutFunctionRecursionConfig"
                 ],
                 "Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-production-background-cron-worker"
+              },
+              {
+                "Sid":"RecoverBackgroundCronStackRollback",
+                "Effect":"Allow",
+                "Action":"cloudformation:ContinueUpdateRollback",
+                "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${STACK_NAME}/*"
               }
             ]
           }
@@ -150,8 +160,20 @@ jobs:
         run: |
           set -euo pipefail
           STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
-          if [ "$STATUS" = 'ROLLBACK_COMPLETE' ]; then
-            echo 'Deleting failed durable background cron stack before clean redeploy.'
+
+          if [ "$STATUS" = 'UPDATE_ROLLBACK_FAILED' ]; then
+            echo 'Continuing failed durable background cron update rollback without deleting the stack.'
+            aws cloudformation continue-update-rollback --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-rollback-complete --stack-name "$STACK_NAME"
+            STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+            test "$STATUS" = 'UPDATE_ROLLBACK_COMPLETE'
+          elif [ "$STATUS" = 'UPDATE_ROLLBACK_IN_PROGRESS' ]; then
+            echo 'Waiting for the existing durable background cron update rollback to complete.'
+            aws cloudformation wait stack-rollback-complete --stack-name "$STACK_NAME"
+            STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+            test "$STATUS" = 'UPDATE_ROLLBACK_COMPLETE'
+          elif [ "$STATUS" = 'ROLLBACK_COMPLETE' ]; then
+            echo 'Deleting failed initial durable background cron stack before clean redeploy.'
             aws cloudformation delete-stack --stack-name "$STACK_NAME"
             aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
           fi
