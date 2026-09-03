@@ -2,11 +2,48 @@ import { NextRequest, NextResponse } from "next/server";
 import { runOutingSearch } from "@/lib/search/runSearch";
 import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
 import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
   isExplicitMarket,
   isPairAllowedForResolvedMarket,
   isResultAllowedForResolvedMarket,
 } from "@/lib/search/market-guardrails";
+
+const AREA_FALLBACK_FIELDS = [
+  "id",
+  "source_table",
+  "location_type",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "main_image",
+  "image_url",
+  "images",
+  "city",
+  "borough",
+  "neighborhood",
+  "primary_category",
+  "cuisine",
+  "cuisine_type",
+  "activity_type",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "search_document",
+  "description",
+  "reservation_url",
+  "reservation_link",
+  "external_reservation_url",
+  "website",
+  "rating",
+  "review_count",
+  "theouthaven_score",
+  "is_featured",
+  "created_at",
+  "is_searchable",
+  "is_hidden",
+  "data_status",
+].join(",");
 
 function metadataString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -176,6 +213,48 @@ function normalizeAndFilterItems(items: any[]) {
   });
 }
 
+async function loadAreaFallback(area: string) {
+  let query = supabaseAdmin
+    .from("locations")
+    .select(AREA_FALLBACK_FIELDS)
+    .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
+    .not("address", "is", null)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("primary_category", "is", null)
+    .eq("data_status", "clean")
+    .not("is_hidden", "is", true)
+    .is("deleted_at", null)
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
+    .not("status", "in", '("closed","archived")')
+    .order("is_featured", { ascending: false, nullsFirst: false })
+    .order("rating", { ascending: false, nullsFirst: false })
+    .limit(48);
+
+  if (area.toLowerCase() === "long island") {
+    query = query.eq("market", "LONG_ISLAND");
+  } else {
+    query = query.ilike("borough", area);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("EXPLORE_AREA_FALLBACK_ERROR", { area, message: error.message });
+    return [];
+  }
+
+  return normalizeAndFilterItems(data || []);
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const q = cleanParam(params.get("q"));
@@ -294,6 +373,14 @@ export async function GET(request: NextRequest) {
         ),
       );
     items = normalizeAndFilterItems(items);
+
+    if (!q && kind === "all" && area !== "all" && items.length === 0) {
+      items = await loadAreaFallback(area);
+      if (items.length > 0) {
+        exploreNote = `Showing curated places in ${area}.`;
+      }
+    }
+
     const resultCount = items.length;
     const start = (page - 1) * perPage;
     items = items.slice(start, start + perPage);
