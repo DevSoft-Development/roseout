@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -11,6 +12,8 @@ EDGE_RUNTIME_FUNCTION_NAME = os.environ["EDGE_RUNTIME_FUNCTION_NAME"]
 BACKGROUND_CRON_QUEUE_URL = os.environ["BACKGROUND_CRON_QUEUE_URL"]
 APP_ENV_SECRET_NAME = os.environ["APP_ENV_SECRET_NAME"]
 APP_ENV_SECRET_REGION = os.environ.get("APP_ENV_SECRET_REGION", "us-west-2")
+MAX_CHAIN_DEPTH = int(os.environ.get("MAX_CHAIN_DEPTH", "64"))
+MAX_CHAIN_AGE_SECONDS = int(os.environ.get("MAX_CHAIN_AGE_SECONDS", "3600"))
 
 lambda_client = boto3.client(
     "lambda",
@@ -209,8 +212,26 @@ def _should_continue(target, parsed_body):
 
 
 def _enqueue_continuation(envelope, target):
+    now = int(time.time())
+    current_depth = max(0, _numeric(envelope.get("chainDepth")))
+    started_at = _numeric(envelope.get("chainStartedAt")) or now
+    age_seconds = max(0, now - started_at)
+
+    if current_depth >= MAX_CHAIN_DEPTH or age_seconds >= MAX_CHAIN_AGE_SECONDS:
+        print(json.dumps({
+            "event": "background_cron_continuation_stopped",
+            "target": target,
+            "chainDepth": current_depth,
+            "chainAgeSeconds": age_seconds,
+            "maxChainDepth": MAX_CHAIN_DEPTH,
+            "maxChainAgeSeconds": MAX_CHAIN_AGE_SECONDS,
+        }, separators=(",", ":")))
+        return False
+
     continuation = dict(envelope)
     continuation["source"] = "background-cron-chain"
+    continuation["chainDepth"] = current_depth + 1
+    continuation["chainStartedAt"] = started_at
     response = sqs_client.send_message(
         QueueUrl=BACKGROUND_CRON_QUEUE_URL,
         MessageBody=json.dumps(continuation, separators=(",", ":")),
@@ -220,7 +241,10 @@ def _enqueue_continuation(envelope, target):
         "event": "background_cron_continuation_queued",
         "target": target,
         "messageId": response.get("MessageId"),
+        "chainDepth": continuation["chainDepth"],
+        "chainAgeSeconds": age_seconds,
     }, separators=(",", ":")))
+    return True
 
 
 def _run_message(record):
@@ -267,6 +291,7 @@ def _run_message(record):
         "target": target,
         "messageId": request_id,
         "status": status,
+        "chainDepth": max(0, _numeric(envelope.get("chainDepth"))),
     }, separators=(",", ":")))
 
 
