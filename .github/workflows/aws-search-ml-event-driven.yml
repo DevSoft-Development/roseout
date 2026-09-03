@@ -1,0 +1,56 @@
+name: AWS Search ML event driven
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'supabase/migrations/20260903003000_event_driven_search_ml_learning.sql'
+      - 'lib/__tests__/event-driven-background-work.test.ts'
+      - '.github/workflows/aws-search-ml-event-driven.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'supabase/migrations/20260903003000_event_driven_search_ml_learning.sql'
+      - 'lib/__tests__/event-driven-background-work.test.ts'
+      - '.github/workflows/aws-search-ml-event-driven.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Search ML event-driven recovery contract
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .expression' infra/aws/edge-runtime/schedules.json)" = 'cron(0/15 * * * ? *)'
+          test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .function' infra/aws/edge-runtime/schedules.json)" = 'node:/api/cron/managed?job=search-ml-learning-maintenance'
+
+          grep -F '"search-ml-learning-maintenance": "/api/cron/managed?job=search-ml-learning-maintenance"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'target.endswith("job=search-ml-learning-maintenance")' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'value.get("remainingEstimate")' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'background_cron_continuation_queued' infra/aws/lambda/background_cron_worker.py >/dev/null
+
+          MIGRATION='supabase/migrations/20260903003000_event_driven_search_ml_learning.sql'
+          grep -F "interval '10 seconds'" "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_search_ml_location_change' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_search_ml_profile_food_change' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_search_ml_analytics_event' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_search_ml_negative_feedback' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_search_ml_outing_change' "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule[[:space:]]*\(' "$MIGRATION" >/dev/null
+
+      - name: Run event-driven background work contract tests
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npx vitest run lib/__tests__/event-driven-background-work.test.ts
