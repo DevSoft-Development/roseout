@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
 
 export default function LocationsDashboardLayout({
@@ -7,7 +8,9 @@ export default function LocationsDashboardLayout({
 }) {
   return (
     <div className="location-dashboard-layout min-h-screen overflow-x-hidden bg-[#050607] md:flex">
-      <CanonicalLocationModuleNav />
+      <Suspense fallback={null}>
+        <CanonicalLocationModuleNav />
+      </Suspense>
       <div className="location-dashboard-content min-w-0 max-w-full flex-1 overflow-x-hidden">{children}</div>
       <style>{`
         .location-dashboard-layout,
