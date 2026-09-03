@@ -1,0 +1,462 @@
+name: AWS SES daily email recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ses-recipient-format-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-ses-recipient-format-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-daily-email-recovery-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ENVIRONMENT: production
+  EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
+  BACKGROUND_RUNTIME_FUNCTION: toh-production-background-runtime
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  EDGE_RUNTIME_SECRET_REGION: us-east-1
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+  SHARED_APP_ENV_SECRET_REGION: us-west-2
+  INTEGRATION_STACK: theouthaven-integration-api-production
+  FALLBACK_STACK: theouthaven-integration-api-ses-fallback-production
+  INTEGRATION_ROLE: TheOutHavenIntegrationApi-production
+  EMAIL_IDENTITY: theouthaven.com
+  SES_CONFIGURATION_SET: toh-production
+  SES_EVENT_DESTINATION: toh-production-provider-events
+  PRODUCTION_ORIGIN: https://theouthaven.com
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery safety contract
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/integration_api_email_ses_fallback.py
+          FILE='.github/workflows/aws-ses-recipient-format-diagnostic.yml'
+          for token in \
+            'json.loads(value)' \
+            'recipient_domain_not_allowed' \
+            'SES_SANDBOX_MODE' \
+            'admin-cron-digest-email' \
+            'reservation-daily-digest' \
+            'admin-platform-error-digest' \
+            'admin-search-health-digest' \
+            'admin-daily-marketing-pulse' \
+            'daily-admin-digest' \
+            'search-quality-digest' \
+            'background_health=healthy' \
+            'background_health=unhealthy_use_web'; do
+            grep -F "$token" "$FILE" >/dev/null
+          done
+          grep -F 'if _valid_resend_key(runtime_value("RESEND_API_KEY"))' infra/aws/lambda/integration_api_email_ses_fallback.py >/dev/null
+          grep -F 'return ses_send(payload)' infra/aws/lambda/integration_api_email_ses_fallback.py >/dev/null
+
+  recover_and_send:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove SES readiness and canonicalize digest recipients
+        id: mail
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          ACCOUNT="$RUNNER_TEMP/ses-account.json"
+          IDENTITY="$RUNNER_TEMP/ses-identity.json"
+          CONFIG="$RUNNER_TEMP/ses-config.json"
+          DESTINATIONS="$RUNNER_TEMP/ses-destinations.json"
+          aws sesv2 get-account > "$ACCOUNT"
+          aws sesv2 get-email-identity --email-identity "$EMAIL_IDENTITY" > "$IDENTITY"
+          aws sesv2 get-configuration-set --configuration-set-name "$SES_CONFIGURATION_SET" > "$CONFIG"
+          aws sesv2 get-configuration-set-event-destinations --configuration-set-name "$SES_CONFIGURATION_SET" > "$DESTINATIONS"
+          jq -e '.SendingEnabled == true' "$ACCOUNT" >/dev/null
+          jq -e '.VerifiedForSendingStatus == true and .VerificationStatus == "SUCCESS" and .DkimAttributes.SigningEnabled == true and .DkimAttributes.Status == "SUCCESS"' "$IDENTITY" >/dev/null
+          jq -e '.SendingOptions.SendingEnabled == true' "$CONFIG" >/dev/null
+          jq -e --arg name "$SES_EVENT_DESTINATION" 'any(.EventDestinations[]?; .Name == $name and .Enabled == true)' "$DESTINATIONS" >/dev/null
+
+          EDGE_CURRENT="$RUNNER_TEMP/edge-current.json"
+          SHARED_CURRENT="$RUNNER_TEMP/shared-current.json"
+          EDGE_NORMALIZED="$RUNNER_TEMP/edge-normalized.json"
+          SHARED_NORMALIZED="$RUNNER_TEMP/shared-normalized.json"
+          DOMAIN_FILE="$RUNNER_TEMP/recipient-domains.txt"
+          aws secretsmanager get-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE_CURRENT"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED_CURRENT"
+          chmod 600 "$EDGE_CURRENT" "$SHARED_CURRENT"
+
+          EDGE_CURRENT="$EDGE_CURRENT" SHARED_CURRENT="$SHARED_CURRENT" EDGE_NORMALIZED="$EDGE_NORMALIZED" SHARED_NORMALIZED="$SHARED_NORMALIZED" DOMAIN_FILE="$DOMAIN_FILE" EMAIL_IDENTITY="$EMAIL_IDENTITY" python <<'PY'
+          import json, os
+          from email.utils import parseaddr
+          from pathlib import Path
+
+          recipient_keys = {
+              'ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL','ADMIN_CRON_DIGEST_EMAIL',
+              'ADMIN_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO',
+              'SEARCH_HEALTH_ALERT_EMAILS','MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO',
+              'THEOUTHAVEN_ADMIN_EMAIL',
+          }
+
+          def normalize(value):
+              if not isinstance(value, str) or not value.strip():
+                  return value
+              text = value.strip()
+              items = None
+              try:
+                  parsed = json.loads(text)
+                  if isinstance(parsed, list):
+                      items = parsed
+                  elif isinstance(parsed, str) and parsed.strip() and parsed != text:
+                      return normalize(parsed)
+              except Exception:
+                  pass
+              if items is None:
+                  items = text.split(',')
+              addresses = []
+              for item in items:
+                  candidate = str(item or '').strip()
+                  if not candidate:
+                      continue
+                  _, address = parseaddr(candidate)
+                  address = address.strip()
+                  if address.count('@') != 1 or any(ch.isspace() for ch in address):
+                      raise SystemExit('Configured digest recipient is not a valid email address')
+                  local, domain = address.rsplit('@', 1)
+                  if not local or not domain or '.' not in domain:
+                      raise SystemExit('Configured digest recipient is not a valid email address')
+                  addresses.append(address)
+              if not addresses:
+                  raise SystemExit('Configured digest recipient list is empty')
+              return ','.join(dict.fromkeys(addresses))
+
+          def canonicalize(doc):
+              result = dict(doc)
+              for key in recipient_keys:
+                  if key in result and isinstance(result[key], str) and result[key].strip():
+                      result[key] = normalize(result[key])
+              return result
+
+          edge = canonicalize(json.loads(Path(os.environ['EDGE_CURRENT']).read_text()))
+          shared = canonicalize(json.loads(Path(os.environ['SHARED_CURRENT']).read_text()))
+
+          def first(env, *keys):
+              for key in keys:
+                  value = env.get(key)
+                  if isinstance(value, str) and value.strip():
+                      return value.strip()
+              return ''
+
+          groups = {
+              'admin-cron-digest-email': first(edge, 'ADMIN_CRON_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'reservation-daily-digest': first(edge, 'ADMIN_RESERVATION_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'admin-platform-error-digest': first(edge, 'PLATFORM_ERROR_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': first(edge, 'SEARCH_HEALTH_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': first(edge, 'MARKETING_PULSE_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'daily-admin-digest': first(shared, 'ADMIN_DIGEST_EMAIL', 'THEOUTHAVEN_ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'search-quality-digest': first(shared, 'SEARCH_HEALTH_ALERT_EMAILS', 'ADMIN_EMAIL'),
+          }
+          missing = [name for name, value in groups.items() if not value]
+          if missing:
+              raise SystemExit('Missing configured recipient for: ' + ','.join(missing))
+
+          domains = set()
+          for value in groups.values():
+              for raw in value.split(','):
+                  address = parseaddr(raw.strip())[1].strip().lower()
+                  domains.add(address.rsplit('@', 1)[1])
+          expected = os.environ['EMAIL_IDENTITY'].strip().lower()
+          invalid_domains = sorted(domain for domain in domains if domain != expected)
+          if invalid_domains:
+              raise SystemExit('recipient_domain_not_allowed')
+
+          Path(os.environ['EDGE_NORMALIZED']).write_text(json.dumps(edge, separators=(',', ':'), sort_keys=True))
+          Path(os.environ['SHARED_NORMALIZED']).write_text(json.dumps(shared, separators=(',', ':'), sort_keys=True))
+          Path(os.environ['DOMAIN_FILE']).write_text('\n'.join(sorted(domains)) + '\n')
+          print('digest_recipient_configuration=canonical')
+          PY
+
+          while IFS= read -r domain; do
+            [ -n "$domain" ] || continue
+            test "$domain" = "$EMAIL_IDENTITY"
+          done < "$DOMAIN_FILE"
+
+          aws secretsmanager put-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --secret-string "file://$EDGE_NORMALIZED" --query VersionId --output text >/dev/null
+          aws secretsmanager put-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --secret-string "file://$SHARED_NORMALIZED" --query VersionId --output text >/dev/null
+
+          PRODUCTION_ACCESS="$(jq -r '.ProductionAccessEnabled // false' "$ACCOUNT")"
+          if [ "$PRODUCTION_ACCESS" = 'true' ]; then
+            echo 'sandbox_mode=false' >> "$GITHUB_OUTPUT"
+            echo 'ses_account_mode=production'
+          else
+            echo 'sandbox_mode=true' >> "$GITHUB_OUTPUT"
+            echo 'ses_account_mode=sandbox_internal_verified_domain_only'
+          fi
+          rm -f "$ACCOUNT" "$IDENTITY" "$CONFIG" "$DESTINATIONS" "$EDGE_CURRENT" "$SHARED_CURRENT" "$EDGE_NORMALIZED" "$SHARED_NORMALIZED" "$DOMAIN_FILE"
+
+      - name: Attach scoped SES permission to Integration API
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$FALLBACK_STACK" \
+            --template-file infra/aws/cloudformation/integration-api-ses-fallback.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$ENVIRONMENT" \
+              IntegrationApiRoleName="$INTEGRATION_ROLE" \
+              EmailIdentity="$EMAIL_IDENTITY" \
+              SesConfigurationSetName="$SES_CONFIGURATION_SET" \
+            --tags Project=TheOutHaven Environment="$ENVIRONMENT" Service=IntegrationAPIEmailFallback ManagedBy=CloudFormation
+          echo 'integration_api_ses_permission=ready'
+
+      - name: Build and deploy SES-enabled Integration API
+        id: integration
+        env:
+          SANDBOX_MODE: ${{ steps.mail.outputs.sandbox_mode }}
+        run: |
+          set -euo pipefail
+          BUILD_DIR="$RUNNER_TEMP/integration-api-ses-fallback"
+          ZIP_FILE="$RUNNER_TEMP/integration-api-ses-fallback.zip"
+          rm -rf "$BUILD_DIR" "$ZIP_FILE"
+          mkdir -p "$BUILD_DIR"
+          cp infra/aws/lambda/platform_integration_api.py "$BUILD_DIR/index.py"
+          cp infra/aws/lambda/google_places_provider.py "$BUILD_DIR/google_places_provider.py"
+          cp infra/aws/lambda/telnyx_provider.py "$BUILD_DIR/telnyx_provider.py"
+          cp infra/aws/lambda/integration_api_email_ses_fallback.py "$BUILD_DIR/integration_api_email_ses_fallback.py"
+          cat >> "$BUILD_DIR/index.py" <<'PY'
+
+          from integration_api_email_ses_fallback import install as _install_email_ses_fallback
+          _install_email_ses_fallback(globals())
+          PY
+          python -m py_compile "$BUILD_DIR/index.py" "$BUILD_DIR/integration_api_email_ses_fallback.py"
+          (cd "$BUILD_DIR" && zip -qr "$ZIP_FILE" .)
+
+          FUNCTION="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiFunctionName'].OutputValue" --output text)"
+          test -n "$FUNCTION" && test "$FUNCTION" != 'None'
+          VARS="$RUNNER_TEMP/integration-vars.json"
+          ENVDOC="$RUNNER_TEMP/integration-env.json"
+          aws lambda get-function-configuration --function-name "$FUNCTION" --query 'Environment.Variables' --output json > "$VARS"
+          jq --arg sandbox "$SANDBOX_MODE" --arg domain "$EMAIL_IDENTITY" --arg config "$SES_CONFIGURATION_SET" \
+            '{Variables:(. + {SES_SANDBOX_MODE:$sandbox,SES_ALLOWED_FROM_DOMAIN:$domain,SES_CONFIGURATION_SET:$config})}' "$VARS" > "$ENVDOC"
+          aws lambda update-function-configuration --function-name "$FUNCTION" --environment "file://$ENVDOC" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION"
+          aws lambda update-function-code --function-name "$FUNCTION" --zip-file "fileb://$ZIP_FILE" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION"
+          rm -f "$VARS" "$ENVDOC"
+          echo "function=$FUNCTION" >> "$GITHUB_OUTPUT"
+          echo 'integration_api_ses_overlay=deployed'
+
+      - name: Verify SES fallback selection without sending email
+        env:
+          FUNCTION: ${{ steps.integration.outputs.function }}
+        run: |
+          set -euo pipefail
+          SECRET_ARN="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiSecretArn'].OutputValue" --output text)"
+          SECRET="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" --query SecretString --output text)"
+          echo "::add-mask::$SECRET"
+          PATH_VALUE='/v1/resend/emails/send'
+          BODY_VALUE='{"from":"invalid","to":"nobody@example.com","subject":"SES fallback validation","text":"validation only"}'
+          TIMESTAMP="$(python - <<'PY'
+          import time
+          print(int(time.time() * 1000))
+          PY
+          )"
+          SIGNATURE="$(SECRET="$SECRET" TIMESTAMP="$TIMESTAMP" PATH_VALUE="$PATH_VALUE" BODY_VALUE="$BODY_VALUE" python - <<'PY'
+          import hashlib, hmac, os
+          canonical = '\n'.join([os.environ['TIMESTAMP'], 'POST', os.environ['PATH_VALUE'], os.environ['BODY_VALUE']])
+          print(hmac.new(os.environ['SECRET'].encode(), canonical.encode(), hashlib.sha256).hexdigest())
+          PY
+          )"
+          EVENT="$RUNNER_TEMP/ses-fallback-smoke-event.json"
+          RESPONSE="$RUNNER_TEMP/ses-fallback-smoke-response.json"
+          TIMESTAMP="$TIMESTAMP" SIGNATURE="$SIGNATURE" PATH_VALUE="$PATH_VALUE" BODY_VALUE="$BODY_VALUE" EVENT="$EVENT" python - <<'PY'
+          import json, os, time
+          path = os.environ['PATH_VALUE']
+          event = {
+            'version':'2.0','routeKey':f'POST {path}','rawPath':path,'rawQueryString':'',
+            'headers':{'content-type':'application/json','x-toh-timestamp':os.environ['TIMESTAMP'],'x-toh-signature':os.environ['SIGNATURE']},
+            'requestContext':{'http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':'ses-fallback-smoke','routeKey':f'POST {path}','stage':'$default','timeEpoch':int(time.time()*1000)},
+            'body':os.environ['BODY_VALUE'],'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+          aws lambda invoke --function-name "$FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$EVENT" "$RESPONSE" >/dev/null
+          jq -e '.statusCode == 400' "$RESPONSE" >/dev/null
+          jq -e '(.body | fromjson | .error) == "email_from_invalid"' "$RESPONSE" >/dev/null
+          ! grep -F 'resend_not_configured' "$RESPONSE" >/dev/null
+          rm -f "$EVENT" "$RESPONSE"
+          echo 'ses_fallback_selection=verified_without_send'
+
+      - name: Refresh Edge runtime mail generation
+        run: |
+          set -euo pipefail
+          VARS="$RUNNER_TEMP/edge-vars.json"
+          ENVDOC="$RUNNER_TEMP/edge-env.json"
+          aws lambda get-function-configuration --function-name "$EDGE_RUNTIME_FUNCTION" --query 'Environment.Variables' --output json > "$VARS"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-mail" '{Variables:(. + {MAIL_ENV_REFRESH_TOKEN:$token})}' "$VARS" > "$ENVDOC"
+          aws lambda update-function-configuration --function-name "$EDGE_RUNTIME_FUNCTION" --environment "file://$ENVDOC" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$EDGE_RUNTIME_FUNCTION"
+          rm -f "$VARS" "$ENVDOC"
+          echo 'edge_mail_generation=refreshed'
+
+      - name: Replay five missed Edge daily emails
+        run: |
+          set -euo pipefail
+          invoke_edge() {
+            local fn="$1" body="$2"
+            local event="$RUNNER_TEMP/${fn}-event.json"
+            local response="$RUNNER_TEMP/${fn}-response.json"
+            FN="$fn" BODY="$body" EVENT="$event" python <<'PY'
+          import json, os, time
+          fn = os.environ['FN']
+          path = f'/functions/v1/{fn}'
+          event = {
+            'version':'2.0','routeKey':f'POST {path}','rawPath':path,'rawQueryString':'',
+            'headers':{'content-type':'application/json','x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal',
+              'http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},
+              'requestId':f'email-recovery-{fn}','routeKey':f'POST {path}','stage':'$default','timeEpoch':int(time.time()*1000)},
+            'body':json.dumps(json.loads(os.environ['BODY']),separators=(',',':')),'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+            aws lambda invoke --function-name "$EDGE_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+            jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
+            jq -e '(.body | fromjson | (.success // true) != false)' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false)))' "$response" >/dev/null
+            rm -f "$event" "$response"
+            echo "email_replay=${fn}:passed"
+          }
+          invoke_edge 'admin-cron-digest-email' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'reservation-daily-digest' '{"source":"cron","force":true}'
+          invoke_edge 'admin-platform-error-digest' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'admin-search-health-digest' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'admin-daily-marketing-pulse' '{"source":"cron","hours":24,"force":true}'
+
+      - name: Determine safe background replay path
+        id: background
+        run: |
+          set -euo pipefail
+          EVENT="$RUNNER_TEMP/background-health-event.json"
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
+          EVENT="$EVENT" python <<'PY'
+          import json, os, time
+          path = '/api/health/background-runtime'
+          event = {
+            'version':'2.0','routeKey':f'GET {path}','rawPath':path,'rawQueryString':'',
+            'headers':{'x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'http':{'method':'GET','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':'email-recovery-health','routeKey':f'GET {path}','stage':'$default','timeEpoch':int(time.time()*1000)},
+            'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+          aws lambda invoke --function-name "$BACKGROUND_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$EVENT" "$RESPONSE" >/dev/null || true
+          if jq -e '.statusCode >= 200 and .statusCode < 300 and (.body | fromjson | .ok == true)' "$RESPONSE" >/dev/null 2>&1; then
+            echo 'healthy=true' >> "$GITHUB_OUTPUT"
+            echo 'background_health=healthy'
+          else
+            echo 'healthy=false' >> "$GITHUB_OUTPUT"
+            echo 'background_health=unhealthy_use_web'
+          fi
+          rm -f "$EVENT" "$RESPONSE"
+
+      - name: Replay two missed Node daily emails
+        env:
+          BACKGROUND_HEALTHY: ${{ steps.background.outputs.healthy }}
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/shared-secret.json"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SECRET_FILE"
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$SECRET_FILE")"
+          rm -f "$SECRET_FILE"
+          test -n "$CRON_SECRET"
+          echo "::add-mask::$CRON_SECRET"
+
+          check_response() {
+            local response="$1" label="$2"
+            jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
+            jq -e '(.body | fromjson | (.success // .ok // true) != false)' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false) or (has("status") and .status == "error")))' "$response" >/dev/null
+            echo "email_replay=${label}:passed"
+          }
+
+          invoke_background() {
+            local label="$1" path="$2" query="$3"
+            local event="$RUNNER_TEMP/${label}-event.json"
+            local response="$RUNNER_TEMP/${label}-response.json"
+            LABEL="$label" PATH_VALUE="$path" QUERY_VALUE="$query" CRON_VALUE="$CRON_SECRET" EVENT="$event" python <<'PY'
+          import json, os, time
+          path, query = os.environ['PATH_VALUE'], os.environ['QUERY_VALUE']
+          event = {
+            'version':'2.0','routeKey':f'GET {path}','rawPath':path,'rawQueryString':query,
+            'headers':{'authorization':f"Bearer {os.environ['CRON_VALUE']}",'x-cron-secret':os.environ['CRON_VALUE'],'x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'http':{'method':'GET','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':f"email-recovery-{os.environ['LABEL']}",'routeKey':f'GET {path}','stage':'$default','timeEpoch':int(time.time()*1000)},
+            'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+            aws lambda invoke --function-name "$BACKGROUND_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+            check_response "$response" "$label"
+            rm -f "$event" "$response"
+          }
+
+          invoke_web() {
+            local label="$1" url="$2"
+            local body="$RUNNER_TEMP/${label}-web-body.json"
+            local code
+            code="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' --max-time 120 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "x-cron-secret: $CRON_SECRET" \
+              "$url")"
+            test "$code" -ge 200 && test "$code" -lt 300
+            jq -e '(.success // .ok // true) != false' "$body" >/dev/null
+            ! jq -e 'tostring | contains("resend_not_configured")' "$body" >/dev/null
+            ! jq -e '.. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false) or (has("status") and .status == "error"))' "$body" >/dev/null
+            rm -f "$body"
+            echo "email_replay=${label}:passed_via_web"
+          }
+
+          if [ "$BACKGROUND_HEALTHY" = 'true' ]; then
+            invoke_background 'daily-admin-digest' '/api/cron/daily-admin-digest' ''
+            invoke_background 'search-quality-digest' '/api/cron/managed' 'job=search-quality-digest'
+          else
+            invoke_web 'daily-admin-digest' "$PRODUCTION_ORIGIN/api/cron/daily-admin-digest"
+            invoke_web 'search-quality-digest' "$PRODUCTION_ORIGIN/api/cron/search-quality-digest"
+          fi
+
+      - name: Recovery summary
+        if: success()
+        run: |
+          {
+            echo '### Daily email recovery complete'
+            echo ''
+            echo '- JSON-array recipient settings were canonicalized in both AWS runtime secrets.'
+            echo '- SES readiness and verified-domain restrictions were proved before sending.'
+            echo '- Integration API SES fallback was deployed with sandbox restrictions when required.'
+            echo '- Five Edge digests and two Node digests were replayed exactly once.'
+            echo '- Every replay failed closed on non-2xx, provider errors, resend_not_configured, or sent=false.'
+          } >> "$GITHUB_STEP_SUMMARY"
