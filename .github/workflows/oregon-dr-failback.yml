@@ -106,10 +106,10 @@ jobs:
           grep -F 'reverse_cleanup_stage=source_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'reverse_cleanup_stage=target_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F "pg_has_role(current_user,'${FAILBACK_REPLICATION_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F "pg_has_role(current_user,'${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
           grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
           ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
           ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
@@ -214,10 +214,10 @@ jobs:
           grep -F 'reverse_cleanup_stage=source_membership' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reverse_cleanup_stage=target_membership' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F "pg_has_role(current_user,'${FAILBACK_REPLICATION_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F "pg_has_role(current_user,'${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
