@@ -27,7 +27,7 @@ describe("event-driven AWS background work", () => {
       body: { target: "/api/cron/managed?job=location-search-profile-worker" },
     });
     expect(schedule("catalog-enrichment-runner")).toMatchObject({
-      expression: "cron(0/15 * * * ? *)",
+      expression: "cron(0 * * * ? *)",
       function: "sqs:background-cron",
       body: { target: "/api/cron/managed?job=catalog-enrichment-runner" },
     });
