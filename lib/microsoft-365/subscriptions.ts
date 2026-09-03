@@ -48,7 +48,7 @@ async function listSubscriptions(userId: string) {
   let next: string | undefined = "/subscriptions?$top=100";
   let pages = 0;
   while (next && pages < 5) {
-    const page = await microsoftGraphFetch<GraphCollection<GraphSubscription>>(userId, next);
+    const page: GraphCollection<GraphSubscription> = await microsoftGraphFetch<GraphCollection<GraphSubscription>>(userId, next);
     subscriptions.push(...(page.value || []));
     next = page["@odata.nextLink"];
     pages += 1;
