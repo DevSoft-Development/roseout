@@ -1,0 +1,30 @@
+name: DR exact catalog parity
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260903025500_restore_dr_exact_catalog_parity.sql'
+      - '.github/workflows/dr-exact-catalog-parity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exact catalog repair contract
+        run: |
+          set -euo pipefail
+          FILE='supabase/migrations/20260903025500_restore_dr_exact_catalog_parity.sql'
+          test -f "$FILE"
+          grep -F 'numeric(12,4)' "$FILE" >/dev/null
+          grep -F 'mailing_batch_items_stamps_postage_status_check' "$FILE" >/dev/null
+          grep -F 'mailing_batch_items_stamps_integrator_tx_id_uidx' "$FILE" >/dev/null
+          grep -F 'mailing_batch_items_stamps_postage_status_idx' "$FILE" >/dev/null
+          grep -F 'mailing_batch_items_stamps_tx_id_uidx' "$FILE" >/dev/null
+          grep -F 'create or replace function private.signal_unified_location_gap_repair_work()' "$FILE" >/dev/null
+          grep -F "'unified-location-gap-repair'" "$FILE" >/dev/null
+          grep -F "interval '20 seconds'" "$FILE" >/dev/null
+          ! grep -Eiq '^\s*(drop|truncate|delete|update|insert)\b' "$FILE"
