@@ -131,13 +131,9 @@ def supabase_rpc(name, payload):
         raise RuntimeError("supabase_unavailable") from exc
 
 
-def assign_resource(payload):
-    reservation_id = payload.get("reservationId")
-    location_id = payload.get("locationId")
+def normalized_resource(payload):
     resource_id = payload.get("resourceId")
     staff_profile_id = payload.get("staffProfileId")
-    if not valid_uuid(reservation_id) or not valid_uuid(location_id):
-        raise ValueError("invalid_reservation_context")
     if not valid_uuid(resource_id, nullable=True) or not valid_uuid(staff_profile_id, nullable=True):
         raise ValueError("invalid_resource_or_staff_id")
     label = str(payload.get("resourceLabel") or "").strip()
@@ -149,6 +145,15 @@ def assign_resource(payload):
         capacity = int(capacity)
         if capacity < 1 or capacity > 500:
             raise ValueError("invalid_capacity")
+    return resource_id, staff_profile_id, label, resource_type, capacity
+
+
+def assign_resource(payload):
+    reservation_id = payload.get("reservationId")
+    location_id = payload.get("locationId")
+    if not valid_uuid(reservation_id) or not valid_uuid(location_id):
+        raise ValueError("invalid_reservation_context")
+    resource_id, staff_profile_id, label, resource_type, capacity = normalized_resource(payload)
     override_reason = payload.get("overrideReason")
     if override_reason is not None:
         override_reason = str(override_reason).strip()[:500] or None
@@ -162,6 +167,24 @@ def assign_resource(payload):
         "p_seat_after_assign": payload.get("seatAfterAssign") is not False,
         "p_staff_profile_id": staff_profile_id,
         "p_override_reason": override_reason,
+    })
+    return response(200, {"success": True, "reservation": result})
+
+
+def seat_waitlist(payload):
+    waitlist_id = payload.get("waitlistId")
+    location_id = payload.get("locationId")
+    if not valid_uuid(waitlist_id) or not valid_uuid(location_id):
+        raise ValueError("invalid_waitlist_context")
+    resource_id, staff_profile_id, label, resource_type, capacity = normalized_resource(payload)
+    result = supabase_rpc("reserve_seat_waitlist_atomic", {
+        "p_waitlist_id": waitlist_id,
+        "p_location_id": location_id,
+        "p_resource_id": resource_id,
+        "p_resource_label": label,
+        "p_resource_type": resource_type,
+        "p_resource_capacity": capacity,
+        "p_staff_profile_id": staff_profile_id,
     })
     return response(200, {"success": True, "reservation": result})
 
@@ -184,11 +207,51 @@ def assign_server(payload):
     return response(200, {"success": True, "reservation": result})
 
 
+def drain_outbox(limit=50):
+    claimed = supabase_rpc("reserve_claim_background_outbox", {
+        "p_limit": max(1, min(int(limit or 50), 100)),
+    }) or []
+    if not isinstance(claimed, list):
+        raise RuntimeError("reserve_outbox_claim_invalid")
+    succeeded = 0
+    failed = 0
+    for event in claimed:
+        event_id = event.get("id") if isinstance(event, dict) else None
+        if not valid_uuid(event_id):
+            failed += 1
+            continue
+        try:
+            supabase_rpc("reserve_process_background_outbox", {"p_id": event_id})
+            succeeded += 1
+        except Exception as exc:
+            failed += 1
+            attempts = int(event.get("attempts") or 1)
+            delay = min(3600, 30 * (2 ** min(attempts, 6)))
+            try:
+                supabase_rpc("reserve_fail_background_outbox", {
+                    "p_id": event_id,
+                    "p_error": str(exc)[:1000],
+                    "p_delay_seconds": delay,
+                })
+            except Exception as fail_exc:
+                print(json.dumps({
+                    "level": "error",
+                    "service": "reserve-api",
+                    "operation": "outbox_fail_ack",
+                    "event_id": event_id,
+                    "error": str(fail_exc),
+                }))
+    return {"ok": failed == 0, "service": "reserve-outbox", "claimed": len(claimed), "succeeded": succeeded, "failed": failed}
+
+
 def handler(event, context):
-    body = raw_body(event)
-    path = request_path(event)
-    method = request_method(event)
     try:
+        if event.get("source") == "aws.events" and event.get("detail-type") == "Scheduled Event":
+            return drain_outbox(50)
+
+        body = raw_body(event)
+        path = request_path(event)
+        method = request_method(event)
         if not authenticate(event, body):
             return response(401, {"success": False, "error": "unauthorized"})
         if method == "GET" and path == "/healthz":
@@ -196,11 +259,17 @@ def handler(event, context):
         payload = parse_json(body)
         if method == "POST" and path == "/v1/reserve/assign":
             return assign_resource(payload)
+        if method == "POST" and path == "/v1/reserve/seat-waitlist":
+            return seat_waitlist(payload)
         if method == "POST" and path == "/v1/reserve/assign-server":
             return assign_server(payload)
+        if method == "POST" and path == "/v1/reserve/outbox/drain":
+            return response(200, drain_outbox(payload.get("limit", 50)))
         return response(404, {"success": False, "error": "not_found"})
     except ValueError as exc:
-        return response(409 if "assigned" in str(exc).lower() or "conflict" in str(exc).lower() else 400, {"success": False, "error": str(exc)})
+        message = str(exc)
+        conflict = any(token in message.lower() for token in ("assigned", "conflict", "fit", "available", "no longer active", "already been converted"))
+        return response(409 if conflict else 400, {"success": False, "error": message})
     except Exception as exc:
         print(json.dumps({"level": "error", "service": "reserve-api", "error": str(exc)}))
         return response(503, {"success": False, "error": "reserve_api_unavailable"})
