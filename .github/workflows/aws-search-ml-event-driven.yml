@@ -33,7 +33,8 @@ jobs:
           set -euo pipefail
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
           test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .expression' infra/aws/edge-runtime/schedules.json)" = 'cron(0/15 * * * ? *)'
-          test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .function' infra/aws/edge-runtime/schedules.json)" = 'node:/api/cron/managed?job=search-ml-learning-maintenance'
+          test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .function' infra/aws/edge-runtime/schedules.json)" = 'sqs:background-cron'
+          test "$(jq -r '.[] | select(.name == "search-ml-learning-maintenance") | .body.target' infra/aws/edge-runtime/schedules.json)" = '/api/cron/managed?job=search-ml-learning-maintenance'
 
           grep -F '"search-ml-learning-maintenance": "/api/cron/managed?job=search-ml-learning-maintenance"' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'target.endswith("job=search-ml-learning-maintenance")' infra/aws/lambda/background_cron_worker.py >/dev/null
