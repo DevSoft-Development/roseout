@@ -1,1 +1,0 @@
-Final production DR certification authorized on 2026-09-03. The production-mutating workflow runs only after merge and must return the platform to Virginia primary with Oregon passive and fully synchronized.
