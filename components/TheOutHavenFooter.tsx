@@ -4,11 +4,9 @@ import Link from "next/link";
 export default function TheOutHavenFooter() {
   return (
     <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
-      {/* BACKGROUND */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
 
       <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
-        {/* BRAND */}
         <div>
           <Link href="/" className="group inline-flex items-center gap-3">
             <span className="relative flex h-10 w-10 overflow-hidden rounded-full ring-1 ring-white/15 transition group-hover:scale-105">
@@ -20,15 +18,13 @@ export default function TheOutHavenFooter() {
                 className="object-contain"
               />
             </span>
-            <span className="text-2xl font-black tracking-tight">
-              TheOutHaven
-            </span>
+            <span className="text-2xl font-black tracking-tight">TheOutHaven</span>
           </Link>
 
           <p className="mt-5 max-w-md text-sm leading-7 text-white/45">
-            Plan date nights, birthday dinners, friends’ nights out, restaurants,
-            activities, and full outings with a smarter way to decide where to
-            go next.
+            TheOutHaven LLC is a New York-based technology company helping people
+            plan restaurants, activities, nightlife, and complete outings across
+            NYC and Long Island.
           </p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -38,18 +34,15 @@ export default function TheOutHavenFooter() {
             >
               Start Planning
             </Link>
-
             <Link
-              href="/business"
+              href="/about"
               className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
             >
-              For Businesses
+              About TheOutHaven
             </Link>
-
           </div>
         </div>
 
-        {/* EXPLORE */}
         <FooterColumn
           title="Explore"
           links={[
@@ -62,30 +55,26 @@ export default function TheOutHavenFooter() {
           ]}
         />
 
-        {/* BUSINESS */}
         <FooterColumn
-          title="Business"
+          title="Company"
           links={[
+            { label: "About", href: "/about" },
             { label: "For Businesses", href: "/business" },
             { label: "Claim Listing", href: "/business/claim" },
-            { label: "Apply", href: "/location/apply" },
             { label: "Careers", href: "/careers" },
           ]}
         />
 
-
-
-        {/* SUPPORT */}
         <FooterColumn
           title="Support"
           links={[
             { label: "Get Help", href: "/support" },
             { label: "Knowledge Base", href: "/help" },
             { label: "FAQ", href: "/faq" },
+            { label: "Contact", href: "/contact" },
           ]}
         />
 
-        {/* LEGAL */}
         <FooterColumn
           title="Legal"
           links={[
@@ -96,13 +85,11 @@ export default function TheOutHavenFooter() {
         />
       </div>
 
-      {/* BOTTOM */}
       <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35 md:flex-row md:items-center md:justify-between">
-        <p>© {new Date().getFullYear()} TheOutHaven. All rights reserved.</p>
-
+        <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
         <p className="max-w-xl leading-6 md:text-right">
-          Recommendations may include third-party listings. Always confirm
-          details directly with the business.
+          Recommendations may include third-party listings. Always confirm details
+          directly with the business.
         </p>
       </div>
     </footer>
@@ -121,7 +108,6 @@ function FooterColumn({
       <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">
         {title}
       </p>
-
       <div className="mt-5 flex flex-col gap-3">
         {links.map((link) => (
           <Link
