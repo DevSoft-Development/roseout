@@ -3,11 +3,13 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { matchCrmByEmails, shouldIgnoreMailboxMessage } from "./matching";
 import { microsoftGraphFetch } from "./graph";
+import { ensureMicrosoft365Subscriptions } from "./subscriptions";
 
-type GraphCollection<T> = { value?: T[]; "@odata.nextLink"?: string };
+type GraphCollection<T> = { value?: T[]; "@odata.nextLink"?: string; "@odata.deltaLink"?: string };
 type GraphAddress = { emailAddress?: { address?: string | null; name?: string | null } | null };
 type GraphMessage = {
   id: string;
+  "@removed"?: { reason?: string };
   conversationId?: string | null;
   internetMessageId?: string | null;
   subject?: string | null;
@@ -31,6 +33,8 @@ type SyncPreferences = {
   calendar_sync_enabled: boolean;
   task_sync_enabled: boolean;
 };
+
+type SyncResource = "mail_inbox" | "mail_sent" | "calendar" | "todo_lists" | "todo_tasks";
 
 function cleanEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -65,6 +69,79 @@ async function getMailbox(userId: string) {
   if (error) throw error;
   if (!data?.email) throw new Error("M365_NOT_CONNECTED");
   return cleanEmail(data.email);
+}
+
+async function getDeltaLink(userId: string, resource: SyncResource, resourceKey = "default") {
+  const { data, error } = await supabaseAdmin
+    .from("microsoft_365_sync_state")
+    .select("delta_link")
+    .eq("user_id", userId)
+    .eq("resource", resource)
+    .eq("resource_key", resourceKey)
+    .maybeSingle();
+  if (error) throw error;
+  return typeof data?.delta_link === "string" && data.delta_link ? data.delta_link : null;
+}
+
+async function saveDeltaState(userId: string, resource: SyncResource, resourceKey: string, deltaLink: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabaseAdmin.from("microsoft_365_sync_state").upsert({
+    user_id: userId,
+    resource,
+    resource_key: resourceKey,
+    delta_link: deltaLink,
+    last_synced_at: now,
+    last_success_at: now,
+    last_error: null,
+    updated_at: now,
+  }, { onConflict: "user_id,resource,resource_key" });
+  if (error) throw error;
+}
+
+async function recordDeltaError(userId: string, resource: SyncResource, resourceKey: string, error: unknown) {
+  const now = new Date().toISOString();
+  await supabaseAdmin.from("microsoft_365_sync_state").upsert({
+    user_id: userId,
+    resource,
+    resource_key: resourceKey,
+    last_synced_at: now,
+    last_error: error instanceof Error ? error.message.slice(0, 1000) : "Microsoft delta sync failed",
+    updated_at: now,
+  }, { onConflict: "user_id,resource,resource_key" });
+}
+
+async function runDelta<T>(options: {
+  userId: string;
+  resource: SyncResource;
+  resourceKey?: string;
+  initialPath: string;
+  maxPages?: number;
+  process: (item: T) => Promise<void>;
+}) {
+  const resourceKey = options.resourceKey || "default";
+  let next: string | undefined = (await getDeltaLink(options.userId, options.resource, resourceKey)) || options.initialPath;
+  let pages = 0;
+  let processed = 0;
+  try {
+    while (next && pages < (options.maxPages || 10)) {
+      const page = await microsoftGraphFetch<GraphCollection<T>>(options.userId, next);
+      for (const item of page.value || []) {
+        await options.process(item);
+        processed += 1;
+      }
+      if (page["@odata.deltaLink"]) {
+        await saveDeltaState(options.userId, options.resource, resourceKey, page["@odata.deltaLink"]!);
+        next = undefined;
+      } else {
+        next = page["@odata.nextLink"];
+      }
+      pages += 1;
+    }
+    return processed;
+  } catch (error) {
+    await recordDeltaError(options.userId, options.resource, resourceKey, error).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function getOrCreateConversation(userId: string, message: GraphMessage, match: Awaited<ReturnType<typeof matchCrmByEmails>>) {
@@ -189,7 +266,7 @@ async function queueUnmatched(userId: string, message: GraphMessage) {
 }
 
 async function processMessage(userId: string, mailboxEmail: string, prefs: SyncPreferences, message: GraphMessage) {
-  if (!message.id || message.isDraft) return;
+  if (!message.id || message.isDraft || message["@removed"]) return;
   const senderEmail = addressOf(message.from);
   const recipients = [...addressesOf(message.toRecipients), ...addressesOf(message.ccRecipients)];
   if (shouldIgnoreMailboxMessage({ mailboxEmail, senderEmail, recipientEmails: recipients, includeInternalMail: prefs.include_internal_mail })) return;
@@ -206,37 +283,43 @@ async function syncMail(userId: string, mailboxEmail: string, prefs: SyncPrefere
   if (!prefs.email_sync_enabled) return 0;
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const select = "id,conversationId,internetMessageId,subject,body,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isDraft,hasAttachments";
-  const paths = [
-    `/me/mailFolders/inbox/messages?$top=100&$orderby=receivedDateTime%20desc&$filter=receivedDateTime%20ge%20${encodeURIComponent(since)}&$select=${select}`,
-    `/me/mailFolders/sentitems/messages?$top=100&$orderby=sentDateTime%20desc&$filter=sentDateTime%20ge%20${encodeURIComponent(since)}&$select=${select}`,
+  const folders: Array<{ folder: string; resource: SyncResource }> = [
+    { folder: "inbox", resource: "mail_inbox" },
+    { folder: "sentitems", resource: "mail_sent" },
   ];
   let processed = 0;
-  for (const initialPath of paths) {
-    let next: string | undefined = initialPath;
-    let pages = 0;
-    while (next && pages < 3) {
-      const page: GraphCollection<GraphMessage> = await microsoftGraphFetch<GraphCollection<GraphMessage>>(userId, next);
-      for (const message of page.value || []) {
-        await processMessage(userId, mailboxEmail, prefs, message);
-        processed += 1;
-      }
-      next = page["@odata.nextLink"];
-      pages += 1;
-    }
+  for (const entry of folders) {
+    const initialPath = `/me/mailFolders/${entry.folder}/messages/delta?$top=100&$filter=${encodeURIComponent(`receivedDateTime ge ${since}`)}&$select=${select}`;
+    processed += await runDelta<GraphMessage>({
+      userId,
+      resource: entry.resource,
+      initialPath,
+      maxPages: 10,
+      process: (message) => processMessage(userId, mailboxEmail, prefs, message),
+    });
   }
   return processed;
 }
 
 async function syncCalendar(userId: string, prefs: SyncPreferences) {
   if (!prefs.calendar_sync_enabled) return 0;
+  const anchor = new Date().toISOString().slice(0, 10);
+  const resourceKey = `window:${anchor}`;
   const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
-  let next: string | undefined = `/me/calendarView?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$top=100&$select=id,changeKey,subject,bodyPreview,start,end,location,organizer,attendees,isCancelled,isAllDay,webLink,lastModifiedDateTime`;
-  let count = 0;
-  let pages = 0;
-  while (next && pages < 5) {
-    const page: GraphCollection<any> = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
-    for (const event of page.value || []) {
+  const initialPath = `/me/calendarView/delta?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$top=100`;
+  const count = await runDelta<any>({
+    userId,
+    resource: "calendar",
+    resourceKey,
+    initialPath,
+    maxPages: 10,
+    process: async (event) => {
+      if (!event?.id) return;
+      if (event["@removed"]) {
+        await supabaseAdmin.from("microsoft_365_calendar_events").delete().eq("user_id", userId).eq("provider_event_id", event.id);
+        return;
+      }
       const organizerEmail = cleanEmail(event.organizer?.emailAddress?.address);
       const attendeeEmails = (event.attendees || []).map((a: any) => cleanEmail(a?.emailAddress?.address)).filter(Boolean);
       const match = await matchCrmByEmails([organizerEmail, ...attendeeEmails]);
@@ -264,11 +347,10 @@ async function syncCalendar(userId: string, prefs: SyncPreferences) {
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id,provider_event_id" });
       if (error) throw error;
-      count += 1;
-    }
-    next = page["@odata.nextLink"];
-    pages += 1;
-  }
+    },
+  });
+  const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  await supabaseAdmin.from("microsoft_365_sync_state").delete().eq("user_id", userId).eq("resource", "calendar").neq("resource_key", resourceKey).lt("updated_at", staleBefore);
   return count;
 }
 
@@ -285,12 +367,18 @@ async function syncTasks(userId: string, prefs: SyncPreferences) {
   let count = 0;
   for (const list of lists.value || []) {
     if (!list?.id) continue;
-    let next: string | undefined = `/me/todo/lists/${encodeURIComponent(list.id)}/tasks?$top=100`;
-    let pages = 0;
-    while (next && pages < 5) {
-      const page: GraphCollection<any> = await microsoftGraphFetch<GraphCollection<any>>(userId, next);
-      for (const task of page.value || []) {
-        if (!task?.id) continue;
+    count += await runDelta<any>({
+      userId,
+      resource: "todo_tasks",
+      resourceKey: String(list.id),
+      initialPath: `/me/todo/lists/${encodeURIComponent(list.id)}/tasks/delta?$top=100`,
+      maxPages: 10,
+      process: async (task) => {
+        if (!task?.id) return;
+        if (task["@removed"]) {
+          await supabaseAdmin.from("microsoft_365_todo_tasks").delete().eq("user_id", userId).eq("provider_list_id", list.id).eq("provider_task_id", task.id);
+          return;
+        }
         const { error } = await supabaseAdmin.from("microsoft_365_todo_tasks").upsert({
           user_id: userId,
           provider_list_id: list.id,
@@ -307,11 +395,8 @@ async function syncTasks(userId: string, prefs: SyncPreferences) {
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id,provider_list_id,provider_task_id" });
         if (error) throw error;
-        count += 1;
-      }
-      next = page["@odata.nextLink"];
-      pages += 1;
-    }
+      },
+    });
   }
   return count;
 }
@@ -326,8 +411,9 @@ export async function syncMicrosoft365ForUser(userId: string) {
       syncCalendar(userId, prefs),
       syncTasks(userId, prefs),
     ]);
+    const subscriptions = await ensureMicrosoft365Subscriptions(userId);
     await supabaseAdmin.from("microsoft_365_connections").update({ last_error: null, updated_at: new Date().toISOString() }).eq("user_id", userId);
-    return { mail, calendar, tasks, startedAt, completedAt: new Date().toISOString() };
+    return { mail, calendar, tasks, subscriptions, startedAt, completedAt: new Date().toISOString() };
   } catch (error) {
     await supabaseAdmin.from("microsoft_365_connections").update({ last_error: error instanceof Error ? error.message.slice(0, 1000) : "Microsoft sync failed", updated_at: new Date().toISOString() }).eq("user_id", userId);
     throw error;
