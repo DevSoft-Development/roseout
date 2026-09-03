@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const examples = [
@@ -9,9 +9,68 @@ const examples = [
   "Seafood rooftop restaurant in Queens",
 ];
 
+const typewriterPrompts = [
+  "Italian dinner and comedy show in Manhattan",
+  "Rooftop drinks and something fun in Brooklyn",
+  "A romantic birthday dinner in Queens",
+  "Brunch and an activity on Long Island",
+];
+
 export default function LiveOutingSearch() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
+  const [typedPlaceholder, setTypedPlaceholder] = useState(typewriterPrompts[0]);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (prompt || focused) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      setTypedPlaceholder(typewriterPrompts[0]);
+      return;
+    }
+
+    let promptIndex = 0;
+    let characterIndex = 0;
+    let deleting = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = () => {
+      const current = typewriterPrompts[promptIndex];
+
+      if (!deleting) {
+        characterIndex += 1;
+        setTypedPlaceholder(current.slice(0, characterIndex));
+
+        if (characterIndex >= current.length) {
+          deleting = true;
+          timer = setTimeout(tick, 1600);
+          return;
+        }
+
+        timer = setTimeout(tick, 52);
+        return;
+      }
+
+      characterIndex -= 1;
+      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0)));
+
+      if (characterIndex <= 0) {
+        deleting = false;
+        promptIndex = (promptIndex + 1) % typewriterPrompts.length;
+        timer = setTimeout(tick, 350);
+        return;
+      }
+
+      timer = setTimeout(tick, 28);
+    };
+
+    setTypedPlaceholder("");
+    timer = setTimeout(tick, 450);
+
+    return () => clearTimeout(timer);
+  }, [focused, prompt]);
 
   function openPlanner(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,8 +108,10 @@ export default function LiveOutingSearch() {
           <input
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             aria-label="Describe your outing"
-            placeholder="Italian dinner and comedy show in Manhattan"
+            placeholder={typedPlaceholder || typewriterPrompts[0]}
             className="h-14 w-full rounded-full border border-white/10 bg-black/60 px-5 text-base font-semibold text-white outline-none transition placeholder:text-white/35 focus:border-[#e1062a]/60 sm:h-16 sm:border-0 sm:bg-transparent"
           />
           <button
