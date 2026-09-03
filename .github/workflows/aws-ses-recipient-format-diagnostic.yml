@@ -1,0 +1,89 @@
+name: AWS SES digest recipient format diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ses-recipient-format-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+      EDGE_RUNTIME_SECRET_REGION: us-east-1
+      SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+      SHARED_APP_ENV_SECRET_REGION: us-west-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Report recipient format by digest only
+        run: |
+          set -euo pipefail
+          EDGE="$RUNNER_TEMP/edge.json"
+          SHARED="$RUNNER_TEMP/shared.json"
+          aws secretsmanager get-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
+          chmod 600 "$EDGE" "$SHARED"
+          EDGE="$EDGE" SHARED="$SHARED" python <<'PY'
+          import json, os
+          from pathlib import Path
+          from email.utils import parseaddr
+
+          edge = json.loads(Path(os.environ['EDGE']).read_text())
+          shared = json.loads(Path(os.environ['SHARED']).read_text())
+
+          def first(env, *keys):
+              for key in keys:
+                  value = env.get(key)
+                  if isinstance(value, str) and value.strip():
+                      return value.strip(), key
+              return '', ''
+
+          groups = {
+              'admin-cron-digest-email': first(edge, 'ADMIN_CRON_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'reservation-daily-digest': first(edge, 'ADMIN_RESERVATION_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'admin-platform-error-digest': first(edge, 'PLATFORM_ERROR_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': first(edge, 'SEARCH_HEALTH_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': first(edge, 'MARKETING_PULSE_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'daily-admin-digest': first(shared, 'ADMIN_DIGEST_EMAIL', 'THEOUTHAVEN_ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'search-quality-digest': first(shared, 'SEARCH_HEALTH_ALERT_EMAILS', 'ADMIN_EMAIL'),
+          }
+
+          def classify(raw):
+              if not raw:
+                  return 'missing', ''
+              value = raw.strip()
+              if value[:1] == value[-1:] and value[:1] in {'"', "'"}:
+                  return 'wrapped_quote', ''
+              if value.startswith('[') and value.endswith(']'):
+                  return 'json_array_like', ''
+              domains = set()
+              for part in value.split(','):
+                  part = part.strip()
+                  _, addr = parseaddr(part)
+                  addr = addr.strip().lower()
+                  if '@' not in addr or addr.count('@') != 1:
+                      return 'invalid_email', ''
+                  domains.add(addr.rsplit('@', 1)[1])
+              return 'valid', ','.join(sorted(domains))
+
+          for name, (value, key) in groups.items():
+              status, domains = classify(value)
+              safe_domain = domains if domains else '-'
+              print(f'digest={name} source_key={key or "-"} status={status} domains={safe_domain}')
+          PY
+          rm -f "$EDGE" "$SHARED"
