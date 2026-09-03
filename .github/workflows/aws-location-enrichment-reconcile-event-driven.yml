@@ -38,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
-          jq -e 'any(.[]; .name == "location-enrichment-reconcile" and .expression == "cron(0/15 * * * ? *)" and .function == "aws-db-maintenance" and .body.operation == "location_enrichment_reconcile")' infra/aws/edge-runtime/schedules.json >/dev/null
+          jq -e 'any(.[]; .name == "location-enrichment-reconcile" and .expression == "cron(0 * * * ? *)" and .function == "aws-db-maintenance" and .body.operation == "location_enrichment_reconcile")' infra/aws/edge-runtime/schedules.json >/dev/null
 
       - name: Validate database wake contract
         run: |
