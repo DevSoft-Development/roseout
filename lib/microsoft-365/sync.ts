@@ -124,7 +124,7 @@ async function runDelta<T>(options: {
   let processed = 0;
   try {
     while (next && pages < (options.maxPages || 10)) {
-      const page = await microsoftGraphFetch<GraphCollection<T>>(options.userId, next);
+      const page: GraphCollection<T> = await microsoftGraphFetch<GraphCollection<T>>(options.userId, next);
       for (const item of page.value || []) {
         await options.process(item);
         processed += 1;
