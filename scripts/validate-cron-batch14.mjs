@@ -21,7 +21,7 @@ const batch14 = [
 ].sort();
 
 const expectedCadence = new Map([
-  ["microsoft-365-sync", "cron(0/5 * * * ? *)"],
+  ["microsoft-365-sync", "cron(0/30 * * * ? *)"],
   ["marketing-social-publish", "cron(0 * * * ? *)"],
   ["website-failover", "cron(0/5 * * * ? *)"],
 ]);
