@@ -1,0 +1,99 @@
+name: Oregon DR pre-forward rebuild recovery once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml'
+      - 'scripts/dr/recover-failback-pre-forward-rebuild.sh'
+      - '.github/workflows/oregon-dr-failback.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml'
+      - 'scripts/dr/recover-failback-pre-forward-rebuild.sh'
+      - '.github/workflows/oregon-dr-failback.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: oregon-dr-pre-forward-rebuild-recovery-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery safety contract
+        run: |
+          set -euo pipefail
+          bash -n scripts/dr/recover-failback-pre-forward-rebuild.sh
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          grep -F 'Recovery requires DR_MODE=failback_in_progress.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Recovery requires AWS runtime still targeting Oregon.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Recovery requires Vercel production still targeting Oregon.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Exact public data parity is not proven.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Reverse Auth/Storage parity is not exact' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'copy_data=false' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Rebuilt forward slot did not become active at zero lag.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'Both databases remained fenced until Vercel' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'recovery_result=virginia_primary_restored' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F 'certification_restart=dispatched' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
+
+  recover:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Recover exact fail-closed pre-forward-rebuild state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          OREGON_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: bash scripts/dr/recover-failback-pre-forward-rebuild.sh
+
+      - name: Restart full production DR certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run oregon-dr-production-certification-quiesced-once.yml --ref main
+          echo 'certification_restart=dispatched'
+
+      - name: Fail closed on recovery failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/schedule-fail.json" || continue
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/schedule-fail.json")"
+              window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/schedule-fail.json")"
+              target="$(jq -c '.Target' "$RUNNER_TEMP/schedule-fail.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" \
+                --schedule-expression "$expression" --flexible-time-window "$window" \
+                --state DISABLED --target "$target" >/dev/null || true
+            done < <(jq -r '.[].name' "$manifest")
+          done
+          echo 'Recovery failed closed. Schedulers remain disabled; no automatic database or traffic rollback was attempted.' >> "$GITHUB_STEP_SUMMARY"
