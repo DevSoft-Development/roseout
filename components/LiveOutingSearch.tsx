@@ -78,7 +78,7 @@ export default function LiveOutingSearch() {
     if (!input) return;
 
     const params = new URLSearchParams({
-      guided: "results",
+      step: "2",
       planType: "outing",
       prompt: input,
       guidedFlow: "guided_create_v1",
