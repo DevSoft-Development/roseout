@@ -45,18 +45,18 @@ jobs:
           import os
           from pathlib import Path
 
-          text = Path(os.environ['FILE']).read_text(encoding='utf-8')
+          text = Path(os.environ['FILE']).read_text(encoding='utf-8').lower()
           forbidden = (
               'aws scheduler ' + 'update-schedule',
               'aws scheduler ' + 'create-schedule',
               'aws scheduler ' + 'delete-schedule',
               'apply-' + 'migration',
               'execute-' + 'sql',
-              'pg_drop_replication_slot',
-              'drop subscription',
-              'truncate table',
+              'pg_' + 'drop_replication_slot',
+              'drop ' + 'subscription',
+              'truncate ' + 'table',
           )
-          found = [item for item in forbidden if item in text.lower()]
+          found = [item for item in forbidden if item in text]
           if found:
               raise SystemExit(f'Catch-up workflow contains forbidden mutation path: {found}')
           PY
