@@ -2,7 +2,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   Event-driven background work signal endpoint. Database change signals are
   authenticated against a Virginia Supabase Vault token, then placed onto the
-  existing durable background cron queue.
+  existing durable background cron queue immediately or through exact one-shot
+  EventBridge Scheduler wakes.
 
 Parameters:
   Environment:
@@ -25,6 +26,45 @@ Conditions:
   HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
 
 Resources:
+  BackgroundOneShotScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Properties:
+      Name: !Sub toh-${Environment}-background-one-shot
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundWorkSignal
+
+  BackgroundOneShotTargetRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenBackgroundOneShotTarget-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: send-background-cron-message
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref BackgroundCronQueueArn
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: BackgroundWorkSignal
+
   BackgroundWorkSignalRole:
     Type: AWS::IAM::Role
     Properties:
@@ -53,6 +93,19 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref SupabaseServiceRoleSecretArn
+              - Effect: Allow
+                Action:
+                  - scheduler:CreateSchedule
+                  - scheduler:UpdateSchedule
+                  - scheduler:DeleteSchedule
+                  - scheduler:GetSchedule
+                Resource: !Sub arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${BackgroundOneShotScheduleGroup}/*
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt BackgroundOneShotTargetRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: scheduler.amazonaws.com
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -82,8 +135,11 @@ Resources:
       Environment:
         Variables:
           BACKGROUND_CRON_QUEUE_URL: !Ref BackgroundCronQueueUrl
+          BACKGROUND_CRON_QUEUE_ARN: !Ref BackgroundCronQueueArn
           SUPABASE_URL: !Ref SupabaseUrl
           SUPABASE_SERVICE_ROLE_SECRET_ID: !Ref SupabaseServiceRoleSecretArn
+          SCHEDULER_GROUP_NAME: !Ref BackgroundOneShotScheduleGroup
+          SCHEDULER_TARGET_ROLE_ARN: !GetAtt BackgroundOneShotTargetRole.Arn
       Code:
         ZipFile: |
           import json
@@ -167,3 +223,7 @@ Outputs:
     Value: !Ref BackgroundWorkSignalFunction
   BackgroundWorkSignalUrl:
     Value: !GetAtt BackgroundWorkSignalUrl.FunctionUrl
+  BackgroundOneShotScheduleGroupName:
+    Value: !Ref BackgroundOneShotScheduleGroup
+  BackgroundOneShotTargetRoleArn:
+    Value: !GetAtt BackgroundOneShotTargetRole.Arn

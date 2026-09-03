@@ -55,12 +55,30 @@ jobs:
           grep -F 'edge:worker-dispatcher' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'verify_aws_background_work_signal' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'database-work-signal' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'scheduler.create_schedule' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'scheduler.update_schedule' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'scheduler.delete_schedule' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'ActionAfterCompletion' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"DELETE"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'ScheduleExpressionTimezone' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"UTC"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'run_at_must_be_future' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'schedule_key_required' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'BACKGROUND_CRON_QUEUE_ARN' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'SCHEDULER_TARGET_ROLE_ARN' infra/aws/lambda/background_work_signal.py >/dev/null
 
       - name: Validate CloudFormation
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check cfn-lint
           cfn-lint infra/aws/cloudformation/background-work-signal.yml
+          grep -F 'AWS::Scheduler::ScheduleGroup' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'scheduler.amazonaws.com' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'scheduler:CreateSchedule' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'scheduler:UpdateSchedule' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'scheduler:DeleteSchedule' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'iam:PassRole' infra/aws/cloudformation/background-work-signal.yml >/dev/null
+          grep -F 'sqs:SendMessage' infra/aws/cloudformation/background-work-signal.yml >/dev/null
 
       - name: Validate database signal security contract
         run: |
@@ -138,8 +156,13 @@ jobs:
           set -euo pipefail
           FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundWorkSignalFunctionName'].OutputValue" --output text)"
           FUNCTION_URL="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundWorkSignalUrl'].OutputValue" --output text)"
+          GROUP_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundOneShotScheduleGroupName'].OutputValue" --output text)"
+          TARGET_ROLE_ARN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundOneShotTargetRoleArn'].OutputValue" --output text)"
           test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != 'None'
           test -n "$FUNCTION_URL" && test "$FUNCTION_URL" != 'None'
+          test -n "$GROUP_NAME" && test "$GROUP_NAME" != 'None'
+          test -n "$TARGET_ROLE_ARN" && test "$TARGET_ROLE_ARN" != 'None'
+          aws scheduler get-schedule-group --name "$GROUP_NAME" >/dev/null
           BUILD="$RUNNER_TEMP/background-work-signal"
           ZIP="$RUNNER_TEMP/background-work-signal.zip"
           rm -rf "$BUILD" "$ZIP"
@@ -150,6 +173,7 @@ jobs:
           aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
           echo "function_url=$FUNCTION_URL" >> "$GITHUB_OUTPUT"
+          echo "group_name=$GROUP_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Verify unauthenticated requests are rejected
         env:
@@ -164,12 +188,15 @@ jobs:
       - name: Write deployment summary
         env:
           FUNCTION_URL: ${{ steps.signal.outputs.function_url }}
+          GROUP_NAME: ${{ steps.signal.outputs.group_name }}
         run: |
           {
             echo '### AWS background work signal'
             echo '- Signal Lambda: deployed on arm64 / 128 MB'
-            echo '- Destination: existing durable background-cron SQS queue'
-            echo '- Allowed jobs: profile, catalog, description, claim QR repair, unified location gap repair, unified worker dispatcher'
+            echo '- Immediate destination: existing durable background-cron SQS queue'
+            echo '- Exact destination: EventBridge Scheduler one-shot -> existing durable background-cron SQS queue'
+            echo "- One-shot group: ${GROUP_NAME}"
+            echo '- One-shot schedules: deterministic key, upsertable, cancellable, auto-delete after completion'
             echo '- Authentication: Virginia Vault token verified through service-role-only RPC'
             echo '- Unauthenticated probe: rejected with HTTP 401'
             echo "- Function URL: ${FUNCTION_URL}"
