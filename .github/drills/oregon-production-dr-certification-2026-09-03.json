@@ -1,0 +1,10 @@
+{
+  "certification_id": "oregon-production-dr-certification-2026-09-03",
+  "approved": true,
+  "requested_at": "2026-09-03T13:58:00-04:00",
+  "promotion_confirmation": "PROMOTE_OREGON",
+  "failback_prepare_confirmation": "PREPARE_FAILBACK",
+  "failback_confirmation": "FAILBACK_VIRGINIA",
+  "expected_final_primary": "virginia",
+  "canonical_schedule_count": 65
+}
