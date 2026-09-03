@@ -116,6 +116,7 @@ Resources:
       Handler: index.handler
       Timeout: 330
       MemorySize: 256
+      RecursiveLoop: Allow
       Environment:
         Variables:
           BACKGROUND_FUNCTION_NAME: !Ref BackgroundRuntimeFunctionName
@@ -123,6 +124,8 @@ Resources:
           BACKGROUND_CRON_QUEUE_URL: !Ref BackgroundCronQueue
           APP_ENV_SECRET_NAME: !Ref AppEnvSecretName
           APP_ENV_SECRET_REGION: !Ref AppEnvSecretRegion
+          MAX_CHAIN_DEPTH: '64'
+          MAX_CHAIN_AGE_SECONDS: '3600'
       Code:
         ZipFile: |
           def handler(event, context):
