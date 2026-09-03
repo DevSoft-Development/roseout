@@ -79,13 +79,17 @@ jobs:
           grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
-          grep -F 'Bootstrap background cron deployment permissions' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'Bootstrap temporary rollback permissions' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'Restore Lambda recursion deployment permission' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'lambda:PutFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'lambda:GetFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'cloudformation:ContinueUpdateRollback' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'UPDATE_ROLLBACK_FAILED' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'continue-update-rollback' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'stack-rollback-complete' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'RECOVERY_POLICY_FILE' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'test "$(wc -c < "$RECOVERY_POLICY_FILE")" -lt 256' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'if: always()' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'get-function-recursion-config' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
   deploy:
@@ -115,40 +119,22 @@ jobs:
           test -n "$ALERTS_TOPIC" && test "$ALERTS_TOPIC" != 'None'
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
 
-      - name: Bootstrap background cron deployment permissions
+      - name: Bootstrap temporary rollback permissions
         env:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           POLICY_NAME='TheOutHavenLambdaRecursionConfigBootstrap'
-          POLICY_FILE="$RUNNER_TEMP/background-cron-deploy-bootstrap.json"
-          cat > "$POLICY_FILE" <<JSON
-          {
-            "Version":"2012-10-17",
-            "Statement":[
-              {
-                "Sid":"ManageBackgroundCronRecursionConfig",
-                "Effect":"Allow",
-                "Action":[
-                  "lambda:GetFunctionRecursionConfig",
-                  "lambda:PutFunctionRecursionConfig"
-                ],
-                "Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-production-background-cron-worker"
-              },
-              {
-                "Sid":"RecoverBackgroundCronStackRollback",
-                "Effect":"Allow",
-                "Action":"cloudformation:ContinueUpdateRollback",
-                "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${STACK_NAME}/*"
-              }
-            ]
-          }
+          RECOVERY_POLICY_FILE="$RUNNER_TEMP/background-cron-recovery-bootstrap.json"
+          cat > "$RECOVERY_POLICY_FILE" <<'JSON'
+          {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["cloudformation:ContinueUpdateRollback","lambda:PutFunctionRecursionConfig"],"Resource":"*"}]}
           JSON
+          test "$(wc -c < "$RECOVERY_POLICY_FILE")" -lt 256
           aws iam put-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name "$POLICY_NAME" \
-            --policy-document "file://$POLICY_FILE"
+            --policy-document "file://$RECOVERY_POLICY_FILE"
           aws iam get-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name "$POLICY_NAME" \
@@ -177,6 +163,30 @@ jobs:
             aws cloudformation delete-stack --stack-name "$STACK_NAME"
             aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
           fi
+
+      - name: Restore Lambda recursion deployment permission
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME='TheOutHavenLambdaRecursionConfigBootstrap'
+          POLICY_FILE="$RUNNER_TEMP/lambda-recursion-config-bootstrap.json"
+          cat > "$POLICY_FILE" <<JSON
+          {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["lambda:GetFunctionRecursionConfig","lambda:PutFunctionRecursionConfig"],"Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-production-background-cron-worker"}]}
+          JSON
+          test "$(wc -c < "$POLICY_FILE")" -lt 384
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          sleep 8
 
       - name: Deploy durable background cron stack
         env:
