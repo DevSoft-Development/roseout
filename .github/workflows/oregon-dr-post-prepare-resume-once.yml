@@ -1,0 +1,256 @@
+name: Oregon DR post-prepare resume once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-post-prepare-resume-once.yml'
+      - '.github/workflows/oregon-dr-failback.yml'
+      - '.github/workflows/oregon-dr-promotion.yml'
+      - 'scripts/dr/oregon-failback.sh'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'infra/aws/edge-runtime/dr-schedules.json'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-post-prepare-resume-once.yml'
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: oregon-dr-post-prepare-resume-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  FORWARD_PUBLICATION: theouthaven_dr_publication
+  FORWARD_SUBSCRIPTION: theouthaven_va_to_or_dr
+  FORWARD_SLOT: theouthaven_va_to_or_dr_slot
+  REVERSE_PUBLICATION: theouthaven_failback_publication
+  REVERSE_SUBSCRIPTION: theouthaven_or_to_va_failback
+  REVERSE_SLOT: theouthaven_or_to_va_failback_slot
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate prepared-boundary resume contract
+        run: |
+          set -euo pipefail
+          file=.github/workflows/oregon-dr-post-prepare-resume-once.yml
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          grep -F 'prepared_failback_state=proven' "$file" >/dev/null
+          grep -F '.[0].reverse_ready==462' "$file" >/dev/null
+          grep -F 'test "$base_enabled" = '\''65'\''' "$file" >/dev/null
+          grep -F 'test "$dr_enabled" = '\''0'\'' && test "$dr_disabled" = '\''2'\''' "$file" >/dev/null
+          grep -F 'FAILBACK_VIRGINIA' "$file" >/dev/null
+          grep -F 'PROMOTE_OREGON' "$file" >/dev/null
+          grep -F 'certification_result=PASS' "$file" >/dev/null
+          grep -F 'if [ -z "$new_id" ] || [ "$new_id" = '\''0'\'' ] || [ "$new_id" = "$before" ]' "$file" >/dev/null
+
+  recover:
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove exact prepared failback boundary
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$VERCEL_TOKEN"
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" --header 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type=="array" and length==1' "$out" >/dev/null
+          }
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime.json"
+          jq -e '.DR_MODE=="oregon_primary"' "$RUNNER_TEMP/dr.json" >/dev/null
+          jq -e --arg url "$OREGON_URL" '.SUPABASE_URL==$url' "$RUNNER_TEMP/runtime.json" >/dev/null
+
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel.json"
+          env_id="$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$RUNNER_TEMP/vercel.json")"
+          test -n "$env_id"
+          curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${env_id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-detail.json"
+          vercel_url=''
+          for candidate in \
+            "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel.json")" \
+            "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].legacyValue // empty' "$RUNNER_TEMP/vercel.json")" \
+            "$(jq -r '.value // empty' "$RUNNER_TEMP/vercel-detail.json")" \
+            "$(jq -r '.legacyValue // empty' "$RUNNER_TEMP/vercel-detail.json")"; do
+            case "$candidate" in https://*.supabase.co) vercel_url="$candidate"; break ;; esac
+          done
+          test "$vercel_url" = "$OREGON_URL"
+
+          va_sql="select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fence,(select count(*) from pg_subscription where subname='${REVERSE_SUBSCRIPTION}') reverse_subscriptions,(select count(*) from pg_subscription where subname='${REVERSE_SUBSCRIPTION}' and subenabled) reverse_enabled,(select count(*) from pg_stat_subscription where subname='${REVERSE_SUBSCRIPTION}' and pid is not null) reverse_workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${REVERSE_SUBSCRIPTION}') reverse_total,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${REVERSE_SUBSCRIPTION}' and sr.srsubstate='r') reverse_ready,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}') forward_slots,(select count(*) from cron.job) cron_jobs;"
+          or_sql="select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fence,(select count(*) from pg_publication where pubname='${REVERSE_PUBLICATION}') reverse_publications,(select count(*) from pg_replication_slots where slot_name='${REVERSE_SLOT}') reverse_slots,(select count(*) from pg_replication_slots where slot_name='${REVERSE_SLOT}' and active) reverse_active_slots,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}') forward_subscriptions,(select count(*) from cron.job where active) active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$va_sql" "$RUNNER_TEMP/va.json"
+          query_ref "$OREGON_REF" "$or_sql" "$RUNNER_TEMP/or.json"
+          jq -e '.[0].fence==1 and .[0].reverse_subscriptions==1 and .[0].reverse_enabled==1 and .[0].reverse_workers==1 and .[0].reverse_total==462 and .[0].reverse_ready==462 and .[0].forward_slots==0 and .[0].cron_jobs==0' "$RUNNER_TEMP/va.json" >/dev/null
+          jq -e '.[0].fence==0 and .[0].reverse_publications==1 and .[0].reverse_slots==1 and .[0].reverse_active_slots==1 and .[0].forward_subscriptions==0 and .[0].active_cron_jobs==0' "$RUNNER_TEMP/or.json" >/dev/null
+
+          base_enabled=0; base_disabled=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            case "$state" in ENABLED) base_enabled=$((base_enabled+1));; DISABLED) base_disabled=$((base_disabled+1));; *) exit 1;; esac
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          dr_enabled=0; dr_disabled=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            case "$state" in ENABLED) dr_enabled=$((dr_enabled+1));; DISABLED) dr_disabled=$((dr_disabled+1));; *) exit 1;; esac
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$base_enabled" = '65' && test "$base_disabled" = '0'
+          test "$dr_enabled" = '0' && test "$dr_disabled" = '2'
+          echo 'prepared_failback_state=proven'
+
+      - name: Complete guarded failback to Virginia
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          dispatch_and_wait() {
+            local workflow="$1"; shift
+            local before new_id status conclusion
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+            new_id=''
+            for attempt in $(seq 1 90); do
+              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then break; fi
+              sleep 2
+            done
+            if [ -z "$new_id" ] || [ "$new_id" = '0' ] || [ "$new_id" = "$before" ]; then echo "Could not resolve new run for $workflow" >&2; exit 1; fi
+            echo "Dispatched $workflow run $new_id"
+            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
+            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
+            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
+            test "$status" = 'completed' && test "$conclusion" = 'success'
+            echo "$workflow=$new_id" >> "$RUNNER_TEMP/recovery-runs.txt"
+          }
+          : > "$RUNNER_TEMP/recovery-runs.txt"
+          dispatch_and_wait oregon-dr-failback.yml -f action=failback -f oregon_writes_quiesced=true -f confirmation=FAILBACK_VIRGINIA -f fail_closed_recovery=false
+          dispatch_and_wait aws-scheduler-activation.yml
+          dispatch_and_wait aws-dr-scheduler-activation.yml
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+
+  certify:
+    needs: recover
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Execute fresh corrected Virginia to Oregon to Virginia certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          : > "$RUNNER_TEMP/cert-runs.txt"
+          dispatch_and_wait() {
+            local workflow="$1"; shift
+            local before new_id status conclusion
+            before="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GH_REPO" --ref main "$@"
+            new_id=''
+            for attempt in $(seq 1 90); do
+              new_id="$(gh run list --repo "$GH_REPO" --workflow "$workflow" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // 0')"
+              if [ -n "$new_id" ] && [ "$new_id" != '0' ] && [ "$new_id" != "$before" ]; then break; fi
+              sleep 2
+            done
+            if [ -z "$new_id" ] || [ "$new_id" = '0' ] || [ "$new_id" = "$before" ]; then echo "Could not resolve new run for $workflow" >&2; exit 1; fi
+            echo "$workflow=$new_id" >> "$RUNNER_TEMP/cert-runs.txt"
+            gh run watch "$new_id" --repo "$GH_REPO" --exit-status
+            status="$(gh run view "$new_id" --repo "$GH_REPO" --json status --jq '.status')"
+            conclusion="$(gh run view "$new_id" --repo "$GH_REPO" --json conclusion --jq '.conclusion')"
+            test "$status" = 'completed' && test "$conclusion" = 'success'
+          }
+          dispatch_and_wait aws-scheduler-activation.yml
+          dispatch_and_wait aws-dr-scheduler-activation.yml
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+          dispatch_and_wait oregon-dr-promotion.yml -f writes_quiesced=true -f confirmation=PROMOTE_OREGON
+          for url in https://theouthaven.com/ https://theouthaven.com/create; do code="$(curl --location --silent --show-error --retry 8 --retry-delay 5 --max-time 30 --output /dev/null --write-out '%{http_code}' "$url")"; case "$code" in 2*|3*) ;; *) exit 1;; esac; done
+          dispatch_and_wait oregon-dr-failback.yml -f action=prepare -f oregon_writes_quiesced=false -f confirmation=PREPARE_FAILBACK -f fail_closed_recovery=false
+          dispatch_and_wait oregon-dr-failback.yml -f action=failback -f oregon_writes_quiesced=true -f confirmation=FAILBACK_VIRGINIA -f fail_closed_recovery=false
+          for url in https://theouthaven.com/ https://theouthaven.com/create; do code="$(curl --location --silent --show-error --retry 8 --retry-delay 5 --max-time 30 --output /dev/null --write-out '%{http_code}' "$url")"; case "$code" in 2*|3*) ;; *) exit 1;; esac; done
+          dispatch_and_wait aws-scheduler-activation.yml
+          dispatch_and_wait aws-dr-scheduler-activation.yml
+          dispatch_and_wait oregon-dr-readiness.yml -f mode=assess
+
+      - name: Prove final Virginia primary topology
+        id: final
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-final.json"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime-final.json"
+          jq -e '.DR_MODE=="virginia_primary"' "$RUNNER_TEMP/dr-final.json" >/dev/null
+          jq -e --arg url "$VIRGINIA_URL" '.SUPABASE_URL==$url' "$RUNNER_TEMP/runtime-final.json" >/dev/null
+          base=0
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; base=$((base+1)); done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$base" = '65'
+          dr=0
+          while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; dr=$((dr+1)); done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr" = '2'
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/status.json" >/dev/null
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.guard.sourceCronJobs==0 and .response.guard.sourceActiveSlots==1 and .response.guard.sourceSlotLagBytes>=0 and .response.guard.targetActiveCronJobs==0 and .response.guard.targetReadyTables==462 and .response.guard.targetConnectedWorkers>=1 and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/status.json" >/dev/null
+          echo 'final_primary=virginia'
+          echo 'base_schedules=65'
+          echo 'dr_schedules=2'
+          echo 'certification_result=PASS'
+
+      - name: Write certification evidence
+        run: |
+          set -euo pipefail
+          jq -n --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg source_sha "$GITHUB_SHA" --rawfile runs "$RUNNER_TEMP/cert-runs.txt" '{completed_at:$completed_at,source_sha:$source_sha,result:"PASS",final_primary:"virginia",base_schedules_enabled:65,forward_dr_schedules_enabled:2,public_data_gate:"exact_quiesced_parity_passed",auth_gate:"exact_quiesced_parity_passed",storage_gate:"exact_quiesced_parity_passed",split_brain_gate:"guarded_promotion_and_failback_passed",workflow_runs:($runs|split("\n")|map(select(length>0)))}' > "$RUNNER_TEMP/evidence.json"
+          cat "$RUNNER_TEMP/evidence.json"
+
+      - name: Upload certification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: oregon-dr-post-prepare-resume-certification
+          path: ${{ runner.temp }}/evidence.json
+          if-no-files-found: error
+          retention-days: 90
