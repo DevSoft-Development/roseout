@@ -19,7 +19,7 @@ const typewriterPrompts = [
 export default function LiveOutingSearch() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
-  const [typedPlaceholder, setTypedPlaceholder] = useState(typewriterPrompts[0]);
+  const [typedPlaceholder, setTypedPlaceholder] = useState("");
   const [focused, setFocused] = useState(false);
 
   useEffect(() => {
@@ -111,7 +111,7 @@ export default function LiveOutingSearch() {
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             aria-label="Describe your outing"
-            placeholder={typedPlaceholder || typewriterPrompts[0]}
+            placeholder={typedPlaceholder}
             className="h-14 w-full rounded-full border border-white/10 bg-black/60 px-5 text-base font-semibold text-white outline-none transition placeholder:text-white/35 focus:border-[#e1062a]/60 sm:h-16 sm:border-0 sm:bg-transparent"
           />
           <button
