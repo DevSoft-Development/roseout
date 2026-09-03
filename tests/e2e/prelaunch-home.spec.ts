@@ -71,7 +71,7 @@ test.describe("public product readiness", () => {
     await page.goto("/");
     const footer = page.locator("footer");
 
-    await expect(footer.getByRole("link", { name: "About" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "About", exact: true })).toBeVisible();
     await expect(footer.getByRole("link", { name: "Explore", exact: true })).toBeVisible();
     await expect(footer.getByRole("link", { name: "Get Help" })).toBeVisible();
     await expect(footer.getByRole("link", { name: "Contact" }).first()).toBeVisible();
