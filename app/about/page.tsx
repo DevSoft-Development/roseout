@@ -4,9 +4,9 @@ import TheOutHavenFooter from "@/components/TheOutHavenFooter";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const metadata = {
-  title: "About TheOutHaven – AI Outing Planner",
+  title: "About TheOutHaven",
   description:
-    "Meet the founder and learn how TheOutHaven LLC helps people plan restaurants, activities, nightlife, and complete outings across NYC and Long Island.",
+    "Learn about TheOutHaven LLC, our mission, how we help people plan better outings, and how we help local businesses become part of those plans.",
 };
 
 const founderLinkedIn =
@@ -17,215 +17,217 @@ export default function AboutPage() {
     <main className="min-h-screen bg-black text-white">
       <TheOutHavenHeader />
 
-      <section className="relative overflow-hidden px-6 pb-24 pt-32 text-center">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.22),transparent_42%),linear-gradient(180deg,#050505,#000)]" />
-        <div className="relative mx-auto max-w-5xl">
-          <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
+      <section className="relative overflow-hidden px-6 pb-24 pt-36">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_8%,rgba(225,6,42,0.22),transparent_30%),radial-gradient(circle_at_88%_42%,rgba(225,6,42,0.1),transparent_24%),linear-gradient(180deg,#050505,#090606_72%,#000)]" />
+        <div className="absolute inset-x-0 top-20 h-px bg-gradient-to-r from-transparent via-[#e1062a]/45 to-transparent" />
+
+        <div className="relative mx-auto max-w-7xl">
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff8a9b]">
             About TheOutHaven
           </p>
-          <h1 className="mt-5 text-5xl font-black leading-tight tracking-tight md:text-7xl">
-            Plan better outings.
-            <br />
-            <span className="text-[#e1062a]">Without endless scrolling.</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-3xl text-lg leading-8 text-white/60">
-            TheOutHaven is an AI-powered outing planner that helps people discover
-            restaurants, activities, nightlife, and experiences that fit the
-            place, timing, and kind of outing they have in mind.
-          </p>
-          <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              href="/create"
-              className="rounded-2xl bg-[#e1062a] px-8 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/30 transition hover:bg-red-500"
-            >
-              Plan My Outing →
-            </Link>
-            <Link
-              href="/explore"
-              className="rounded-2xl border border-white/15 bg-white/5 px-8 py-4 text-sm font-black text-white/75 transition hover:bg-white hover:text-black"
-            >
-              Explore Places
-            </Link>
+          <div className="mt-6 grid gap-10 lg:grid-cols-[1.05fr_.75fr] lg:items-end">
+            <div>
+              <h1 className="max-w-5xl text-5xl font-black leading-[.95] tracking-[-.055em] md:text-7xl lg:text-[5.2rem]">
+                We’re changing the way people decide
+                <span className="block text-[#e1062a]">where to go next.</span>
+              </h1>
+            </div>
+            <p className="max-w-xl text-lg leading-8 text-white/62 lg:justify-self-end">
+              TheOutHaven is a New York company built around one simple idea: planning a great day or night out should feel exciting, not exhausting.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-[#070707] px-6 py-20">
-        <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[.85fr_1.15fr] lg:items-center">
+      <section className="border-y border-white/10 bg-[#080808] px-6 py-20 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.72fr_1.28fr]">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Founder
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Our company</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">TheOutHaven LLC</h2>
+          </div>
+          <div className="space-y-6 text-lg leading-8 text-white/62">
+            <p>
+              TheOutHaven brings the pieces of an outing together in one place. Instead of making people search separately for dinner, drinks, activities, neighborhoods, and what to do next, we help them think about the entire experience from the beginning.
             </p>
-            <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-              Nicholas Endeavour
-            </h2>
-            <p className="mt-2 text-lg font-black text-white/75">
-              Founder & CEO, TheOutHaven
+            <p>
+              We are starting with New York City and Long Island, two places where people have nearly endless choices but still spend too much time figuring out which choices actually work together.
+            </p>
+            <p>
+              Our goal is bigger than helping someone find a restaurant or an activity. We want TheOutHaven to become the place people turn to when they know they want to go out, celebrate, explore, spend time together, or simply do something different.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white px-6 py-20 text-black lg:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.85fr_1.15fr] lg:items-end">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Why we exist</p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+                Going out should not feel like research.
+              </h2>
+            </div>
+            <p className="max-w-2xl text-lg leading-8 text-black/58 lg:justify-self-end">
+              People often know the feeling they want before they know the exact places. A romantic night. A birthday that feels special. Dinner and something fun nearby. The hard part is turning that idea into a plan without losing an hour to tabs, maps, reviews, and group chats.
             </p>
           </div>
 
-          <div className="rounded-[2rem] border border-white/10 bg-black p-7 sm:p-8">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              <div
-                className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full border border-[#e1062a]/35 bg-[#e1062a]/10 text-3xl font-black text-white"
-                aria-label="Nicholas Endeavour"
-              >
-                NE
+          <div className="mt-14 grid gap-5 md:grid-cols-3">
+            <CompanyCard number="01" title="Bring the night together" text="Restaurants, activities, nightlife, and local experiences should work as one outing, not separate searches." />
+            <CompanyCard number="02" title="Make choices feel easier" text="The right recommendation depends on the occasion, the area, the people, the timing, and the mood." />
+            <CompanyCard number="03" title="Help people act" text="Discovery matters most when it leads to a decision, a reservation, a visit, or a memorable experience." />
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-20 lg:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="max-w-3xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">What TheOutHaven brings together</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+              One destination for the entire outing.
+            </h2>
+          </div>
+
+          <div className="mt-12 grid gap-px overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 md:grid-cols-2">
+            <DarkCompanyCard title="Restaurants & drinks" text="From casual neighborhood favorites to rooftops, lounges, brunch, date-night tables, and special-occasion dining." />
+            <DarkCompanyCard title="Activities & entertainment" text="Comedy, karaoke, bowling, museums, games, nightlife, live entertainment, and more ways to keep the outing going." />
+            <DarkCompanyCard title="Neighborhood discovery" text="Plan around the borough, town, or area that fits the people, travel time, atmosphere, and occasion." />
+            <DarkCompanyCard title="Complete outings" text="Move beyond finding one place and start thinking about how the stops, timing, and experience fit together." />
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/10 bg-[#120606] px-6 py-20 lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">For people</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+              Built around the way plans really happen.
+            </h2>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62">
+              Sometimes the plan starts with a restaurant. Sometimes it starts with the occasion. Sometimes it is simply “we want to do something tonight.” TheOutHaven is designed to meet people at that starting point and help them move toward a complete plan.
+            </p>
+            <Link href="/create" className="mt-8 inline-flex rounded-full bg-[#e1062a] px-8 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">
+              Plan an Outing
+            </Link>
+          </div>
+
+          <div className="rounded-[2rem] border border-white/10 bg-black/35 p-7 sm:p-9">
+            {["Start with the occasion, not just a category.", "Bring food and things to do into the same decision.", "Consider the area and the flow of the outing.", "Explore places that fit the kind of experience you want.", "Choose a plan that feels right for your group."].map((text) => (
+              <div key={text} className="flex gap-4 border-b border-white/10 py-5 first:pt-0 last:border-0 last:pb-0">
+                <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e1062a]/15 text-xs font-black text-[#ff8a9b]">✓</span>
+                <p className="text-base font-semibold leading-7 text-white/66">{text}</p>
               </div>
-              <div>
-                <p className="text-base leading-7 text-white/65">
-                  Nicholas Endeavour founded TheOutHaven and leads the company’s
-                  product and platform development. The mission is to make local
-                  discovery more useful by turning a person’s outing idea into a
-                  focused plan instead of another long list of places to search.
-                </p>
-                <a
-                  href={founderLinkedIn}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-6 inline-flex rounded-full border border-white/15 bg-white/[.05] px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black"
-                >
-                  View Nicholas on LinkedIn ↗
-                </a>
-                <p className="mt-3 text-xs leading-5 text-white/35">
-                  LinkedIn is an independent third-party public profile.
-                </p>
-              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white px-6 py-20 text-black lg:py-24">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">For local businesses</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+              Better discovery should create better opportunities.
+            </h2>
+            <p className="mt-6 text-lg leading-8 text-black/58">
+              TheOutHaven is also being built for the restaurants, venues, attractions, nightlife businesses, and experience providers that make local outings possible.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <LightPoint title="Be discoverable" text="Help the right people find your business when it fits the outing they already want." />
+            <LightPoint title="Tell a fuller story" text="Give people the details, photos, offerings, and reasons they need to choose your location." />
+            <LightPoint title="Turn interest into action" text="Create a clearer path from discovery to reservations, bookings, visits, and customer relationships." />
+            <LightPoint title="Grow with TheOutHaven" text="Take part in a local discovery experience designed around complete plans instead of isolated listings." />
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-20 lg:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-12 lg:grid-cols-[.75fr_1.25fr]">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">What guides us</p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">
+                A better way to discover local experiences.
+              </h2>
+            </div>
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Principle title="Useful over overwhelming" text="More choices are not always better. We focus on helping people get closer to a decision." />
+              <Principle title="The outing over the listing" text="A place matters because of how it fits the full experience a person is trying to create." />
+              <Principle title="Local businesses matter" text="Great outings depend on the restaurants, venues, and local operators that give neighborhoods their character." />
+              <Principle title="Trust matters" text="People should understand what they are choosing, where information comes from, and when details should be confirmed with a business." />
             </div>
           </div>
         </div>
       </section>
 
-      <section className="px-6 py-20">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[.9fr_1.1fr] lg:items-center">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Company
-            </p>
-            <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-              TheOutHaven LLC
-            </h2>
-            <p className="mt-6 text-lg leading-8 text-white/60">
-              TheOutHaven LLC is a New York-based technology company building an
-              AI-powered discovery and outing-planning platform for consumers and
-              local businesses.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FactCard title="Product" text="AI-assisted outing discovery and planning." />
-            <FactCard title="Current coverage" text="New York City and Long Island." />
-            <FactCard title="For consumers" text="Search, compare, explore, and build an outing." />
-            <FactCard title="For businesses" text="Public profiles, discovery tools, claims, and business operations." />
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white px-6 py-20 text-black">
+      <section className="border-y border-white/10 bg-[#080808] px-6 py-20 lg:py-24">
         <div className="mx-auto max-w-7xl">
-          <div className="max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              What the product does
-            </p>
-            <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">
-              One idea in. A more useful plan out.
-            </h2>
-            <p className="mt-6 text-lg leading-8 text-black/60">
-              Instead of opening multiple search, map, review, and reservation
-              tools, users can describe the outing they want in plain English and
-              work from a focused set of restaurant and activity matches.
-            </p>
-          </div>
-          <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <LightCard title="Restaurants" text="Find dinner, brunch, rooftops, lounges, casual spots, and upscale options." />
-            <LightCard title="Activities" text="Pair a meal with karaoke, bowling, comedy, nightlife, museums, games, and more." />
-            <LightCard title="Vibe matching" text="Search around the occasion, neighborhood, timing, budget, and preferences." />
-            <LightCard title="Actionable results" text="Open public profiles and continue from discovery toward a real outing." />
+          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Where we’re starting</p>
+              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">
+                New York first. Built for what comes next.
+              </h2>
+              <p className="mt-6 text-lg leading-8 text-white/60">
+                New York City and Long Island are the starting point because few markets offer more variety in food, entertainment, neighborhoods, culture, and nightlife. That variety makes the opportunity clear: people do not need more places to search. They need a better way to turn all those choices into a plan.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "Long Island"].map((area) => (
+                <div key={area} className="rounded-2xl border border-white/10 bg-white/[.035] px-4 py-5 text-center text-sm font-black text-white/72">{area}</div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="px-6 py-20">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-10 max-w-3xl">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              How it works
-            </p>
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              Search, compare, and build the outing.
+      <section className="px-6 py-20 lg:py-24">
+        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_90%_10%,rgba(225,6,42,.2),transparent_30%),#0a0a0a] p-8 sm:p-10 lg:p-12">
+          <div className="max-w-4xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Our direction</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] md:text-5xl">
+              We want TheOutHaven to become part of the moment people decide to go out.
             </h2>
-          </div>
-          <div className="grid gap-6 md:grid-cols-3">
-            <Step number="01" title="Describe the outing" text="Type what you want naturally, such as “steak dinner and karaoke in Manhattan” or “romantic birthday dinner in Queens.”" />
-            <Step number="02" title="Review live matches" text="TheOutHaven returns restaurants, activities, and paired outings that fit the request and location context." />
-            <Step number="03" title="Choose and continue" text="View profiles, compare the options, choose a plan, and use available business or booking links when ready." />
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-white/60">
+              Over time, that means helping more people plan with confidence, helping more local businesses become part of those plans, and expanding the experience into more cities and more kinds of outings while keeping the same simple promise: make planning feel easier.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-[#070707] px-6 py-20">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_1fr] lg:items-center">
+      <section className="border-t border-white/10 px-6 py-16">
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              Designed for trust
-            </p>
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              TheOutHaven helps people decide. Businesses remain the source of record.
-            </h2>
-            <p className="mt-6 text-lg leading-8 text-white/60">
-              Business hours, prices, inventory, reservation availability, and
-              policies can change. TheOutHaven helps users discover and compare
-              options, while final details should be confirmed directly with the
-              business or booking provider.
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#e1062a]">Founder & CEO</p>
+            <h2 className="mt-2 text-2xl font-black">Nicholas Endeavour</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/48">
+              Nicholas Endeavour founded TheOutHaven and leads the company’s direction and development.
             </p>
           </div>
-          <div className="rounded-[2rem] border border-white/10 bg-black p-7">
-            <TrustPoint text="Public Explore and planning experiences can be viewed without signing into a private business dashboard." />
-            <TrustPoint text="Reservation and booking links may lead to third-party services." />
-            <TrustPoint text="Business owners and authorized representatives can claim and maintain their presence." />
-            <TrustPoint text="Current consumer coverage focuses on NYC and Long Island." />
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="px-6 py-20">
-        <div className="mx-auto max-w-4xl">
-          <div className="text-center">
-            <p className="text-xs font-black uppercase tracking-[0.3em] text-[#e1062a]">
-              FAQ
-            </p>
-            <h2 className="mt-4 text-4xl font-black md:text-5xl">
-              How TheOutHaven works
-            </h2>
-          </div>
-          <div className="mt-12 space-y-4">
-            <FAQ q="How do I use TheOutHaven?" a="Describe what you want in plain English. TheOutHaven returns matching restaurants, activities, or a combined outing when the request includes both." />
-            <FAQ q="Do I need an account to try the product?" a="No. Public Explore pages and the outing-planning entry experience are available without requiring a reviewer to sign into a private dashboard." />
-            <FAQ q="Do I book through TheOutHaven?" a="TheOutHaven may show reservation, website, or booking links when available. Final booking, availability, cancellation policies, and pricing are handled by the business or booking provider." />
-            <FAQ q="Where is TheOutHaven available?" a="The current consumer discovery area focuses on New York City and Long Island, with expansion planned over time." />
-          </div>
+          <a href={founderLinkedIn} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 rounded-full border border-white/15 px-6 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">
+            LinkedIn ↗
+          </a>
         </div>
       </section>
 
       <section className="relative overflow-hidden px-6 py-24 text-center">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,6,42,0.18),transparent_38%)]" />
         <div className="relative mx-auto max-w-4xl">
-          <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">
-            Start now
-          </p>
-          <h2 className="mt-4 text-5xl font-black tracking-tight md:text-6xl">
-            Your next outing starts with one sentence.
+          <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff8a9b]">TheOutHaven</p>
+          <h2 className="mt-4 text-5xl font-black tracking-[-0.05em] md:text-6xl">
+            Make the plan. Enjoy the outing.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/55">
-            Use the live planner or browse public locations across the current coverage area.
+            Discover restaurants, activities, nightlife, and experiences across New York City and Long Island.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/create" className="inline-flex rounded-2xl bg-[#e1062a] px-10 py-5 text-lg font-black text-white shadow-2xl shadow-red-500/30 transition hover:bg-red-500">
-              Plan My Outing →
-            </Link>
-            <Link href="/explore" className="inline-flex rounded-2xl border border-white/15 px-10 py-5 text-lg font-black text-white transition hover:bg-white hover:text-black">
-              Explore Places
-            </Link>
+            <Link href="/create" className="inline-flex rounded-full bg-[#e1062a] px-9 py-4 text-sm font-black text-white transition hover:bg-[#ff1744]">Plan an Outing</Link>
+            <Link href="/explore" className="inline-flex rounded-full border border-white/15 px-9 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Explore Places</Link>
           </div>
         </div>
       </section>
@@ -235,52 +237,39 @@ export default function AboutPage() {
   );
 }
 
-function FactCard({ title, text }: { title: string; text: string }) {
+function CompanyCard({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-white/[.035] p-6">
+    <article className="rounded-[1.75rem] border border-black/10 bg-[#f7f7f7] p-7">
+      <p className="text-xs font-black tracking-[0.2em] text-[#e1062a]">{number}</p>
+      <h3 className="mt-5 text-2xl font-black tracking-[-0.03em]">{title}</h3>
+      <p className="mt-4 text-sm leading-7 text-black/58">{text}</p>
+    </article>
+  );
+}
+
+function DarkCompanyCard({ title, text }: { title: string; text: string }) {
+  return (
+    <article className="bg-[#0a0a0a] p-7 sm:p-9">
+      <h3 className="text-2xl font-black tracking-[-0.03em]">{title}</h3>
+      <p className="mt-4 max-w-xl text-sm leading-7 text-white/52">{text}</p>
+    </article>
+  );
+}
+
+function LightPoint({ title, text }: { title: string; text: string }) {
+  return (
+    <article className="rounded-[1.5rem] border border-black/10 bg-[#f7f7f7] p-6">
       <h3 className="text-lg font-black">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-white/50">{text}</p>
-    </div>
+      <p className="mt-3 text-sm leading-7 text-black/58">{text}</p>
+    </article>
   );
 }
 
-function Step({ number, title, text }: { number: string; title: string; text: string }) {
+function Principle({ title, text }: { title: string; text: string }) {
   return (
-    <div className="rounded-[2rem] border border-white/10 bg-[#0d0d0d] p-7">
-      <p className="text-sm font-black text-[#e1062a]">{number}</p>
-      <h3 className="mt-4 text-2xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-white/50">{text}</p>
-    </div>
-  );
-}
-
-function LightCard({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded-[2rem] border border-black/10 bg-white p-6 shadow-lg shadow-black/5">
+    <article className="border-t border-white/10 pt-5">
       <h3 className="text-xl font-black">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-black/60">{text}</p>
-    </div>
-  );
-}
-
-function TrustPoint({ text }: { text: string }) {
-  return (
-    <div className="border-b border-white/10 py-4 last:border-b-0">
-      <p className="text-sm font-semibold leading-7 text-white/60">✓ {text}</p>
-    </div>
-  );
-}
-
-function FAQ({ q, a }: { q: string; a: string }) {
-  return (
-    <details className="group rounded-[1.5rem] border border-white/10 bg-[#0d0d0d] p-6">
-      <summary className="cursor-pointer list-none text-lg font-black marker:hidden">
-        <span className="flex items-center justify-between gap-4">
-          {q}
-          <span className="text-[#e1062a] transition group-open:rotate-45">+</span>
-        </span>
-      </summary>
-      <p className="mt-4 text-sm leading-7 text-white/55">{a}</p>
-    </details>
+      <p className="mt-3 text-sm leading-7 text-white/52">{text}</p>
+    </article>
   );
 }
