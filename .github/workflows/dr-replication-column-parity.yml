@@ -1,0 +1,40 @@
+name: DR replication column parity
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/20260903024500_restore_dr_replicated_column_parity.sql'
+      - '.github/workflows/dr-replication-column-parity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate replicated column repair
+        run: |
+          set -euo pipefail
+          FILE='supabase/migrations/20260903024500_restore_dr_replicated_column_parity.sql'
+          test -f "$FILE"
+          grep -F 'alter table public.payment_logs' "$FILE" >/dev/null
+          grep -F 'stripe_customer_id text' "$FILE" >/dev/null
+          grep -F 'stripe_subscription_id text' "$FILE" >/dev/null
+          grep -F 'stripe_invoice_id text' "$FILE" >/dev/null
+          grep -F 'amount_paid_cents integer' "$FILE" >/dev/null
+          grep -F 'amount_due_cents integer' "$FILE" >/dev/null
+          grep -F 'currency text' "$FILE" >/dev/null
+          grep -F 'status text' "$FILE" >/dev/null
+          grep -F 'processed_at timestamptz' "$FILE" >/dev/null
+          grep -F 'alter table public.mailing_batch_items' "$FILE" >/dev/null
+          grep -F 'stamps_integrator_tx_id text' "$FILE" >/dev/null
+          grep -F 'stamps_tx_id text' "$FILE" >/dev/null
+          grep -F 'stamps_postage_status text' "$FILE" >/dev/null
+          grep -F 'stamps_postage_amount numeric' "$FILE" >/dev/null
+          grep -F 'stamps_postage_ship_date date' "$FILE" >/dev/null
+          grep -F 'stamps_postage_reserved_at timestamptz' "$FILE" >/dev/null
+          grep -F 'stamps_postage_purchased_at timestamptz' "$FILE" >/dev/null
+          grep -F 'stamps_postage_error text' "$FILE" >/dev/null
+          ! grep -Eiq '\b(drop|truncate|delete|update|insert)\b' "$FILE"
