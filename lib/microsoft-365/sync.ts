@@ -307,7 +307,7 @@ async function syncCalendar(userId: string, prefs: SyncPreferences) {
   const resourceKey = `window:${anchor}`;
   const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
-  const initialPath = `/me/calendarView/delta?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$top=100`;
+  const initialPath = `/me/calendarView/delta?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}`;
   const count = await runDelta<any>({
     userId,
     resource: "calendar",
