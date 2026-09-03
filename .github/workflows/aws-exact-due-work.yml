@@ -1,0 +1,62 @@
+name: AWS exact due work
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/functions/admin-marketing-report-scheduler/index.ts'
+      - 'supabase/migrations/*exact_social_report_background_wakes.sql'
+      - 'scripts/validate-cron-batch14.mjs'
+      - '.github/workflows/aws-exact-due-work.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/lambda/background_cron_worker.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'supabase/functions/admin-marketing-report-scheduler/index.ts'
+      - 'supabase/migrations/*exact_social_report_background_wakes.sql'
+      - 'scripts/validate-cron-batch14.mjs'
+      - '.github/workflows/aws-exact-due-work.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate exact wake contracts
+        run: |
+          set -euo pipefail
+          MIGRATION='supabase/migrations/20260903014000_exact_social_report_background_wakes.sql'
+          python -m py_compile infra/aws/lambda/background_work_signal.py infra/aws/lambda/background_cron_worker.py
+          node scripts/validate-cron-batch14.mjs
+          node - <<'NODE'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
+          if (rows.length !== 65) throw new Error(`expected 65 schedules, got ${rows.length}`);
+          const report = rows.find((row) => row.name === 'marketing-report-scheduler');
+          const social = rows.find((row) => row.name === 'marketing-social-publish');
+          if (report?.expression !== 'cron(0 * * * ? *)') throw new Error('report recovery must be hourly');
+          if (report?.function !== 'sqs:background-cron' || report?.body?.target !== 'edge:admin-marketing-report-scheduler') throw new Error('report recovery must use durable edge queue path');
+          if (social?.expression !== 'cron(0 * * * ? *)') throw new Error('social recovery must be hourly');
+          if (social?.function !== 'sqs:background-cron' || social?.body?.target !== '/api/cron/managed?job=marketing-social-publish') throw new Error('social recovery durable path drifted');
+          NODE
+          grep -F '"marketing-report-scheduler": "edge:admin-marketing-report-scheduler"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"marketing-social-publish": "/api/cron/managed?job=marketing-social-publish"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"edge:admin-marketing-report-scheduler"' infra/aws/lambda/background_cron_worker.py >/dev/null
+          grep -F 'x-worker-secret' supabase/functions/admin-marketing-report-scheduler/index.ts >/dev/null
+          grep -F 'Exact AWS one-shot at next_run_at; hourly recovery sweep' supabase/functions/admin-marketing-report-scheduler/index.ts >/dev/null
+          grep -F 'private.emit_aws_scheduled_background_work_signal' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_marketing_report_schedule' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_social_publish_schedule' "$MIGRATION" >/dev/null
+          grep -F "new.status = 'queued'" "$MIGRATION" >/dev/null
+          grep -F "new.status = 'retrying'" "$MIGRATION" >/dev/null
+          grep -F "greatest(new.scheduled_at, coalesce(new.next_retry_at, new.scheduled_at))" "$MIGRATION" >/dev/null
+          grep -F "p_run_at > clock_timestamp() + interval '2 seconds'" "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$MIGRATION" >/dev/null
