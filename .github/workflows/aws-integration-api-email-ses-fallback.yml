@@ -38,7 +38,9 @@ env:
 
 jobs:
   validate:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +70,7 @@ jobs:
           grep -F 'configuration-set/${SesConfigurationSetName}' "$CF" >/dev/null
           grep -F "group: aws-integration-api-production" "$WF" >/dev/null
           grep -F "workflows: ['AWS integration API']" "$WF" >/dev/null
+          grep -F "github.event.workflow_run.head_branch == 'main'" "$WF" >/dev/null
           grep -F 'ProductionAccessEnabled' "$WF" >/dev/null
           grep -F 'VerifiedForSendingStatus' "$WF" >/dev/null
           grep -F 'email_from_invalid' "$WF" >/dev/null
@@ -76,7 +79,7 @@ jobs:
     if: >-
       (github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     needs: validate
     runs-on: ubuntu-latest
     environment: production
