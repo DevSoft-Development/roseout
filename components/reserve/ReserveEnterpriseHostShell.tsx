@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import ReserveEnterpriseHostView from "@/components/reserve/ReserveEnterpriseHostView";
+import ReserveHostServiceDock from "@/components/reserve/ReserveHostServiceDock";
 
 export default function ReserveEnterpriseHostShell({
   locationId,
@@ -38,5 +39,10 @@ export default function ReserveEnterpriseHostShell({
     };
   }, [locationId]);
 
-  return <ReserveEnterpriseHostView key={refreshKey} initialLocationId={locationId} />;
+  return (
+    <>
+      <ReserveHostServiceDock locationId={locationId} refreshKey={refreshKey} />
+      <ReserveEnterpriseHostView key={refreshKey} initialLocationId={locationId} />
+    </>
+  );
 }
