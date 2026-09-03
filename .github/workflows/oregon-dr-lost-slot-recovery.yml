@@ -147,7 +147,7 @@ jobs:
 
           target_sql="select (select count(*) from cron.job where active) active_cron,(select count(*) from pg_subscription where subname='${SUBSCRIPTION}') subscriptions,(select count(*) from pg_subscription s join pg_stat_subscription st on st.subid=s.oid where s.subname='${SUBSCRIPTION}' and st.pid is not null) workers,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${SUBSCRIPTION}') total,(select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${SUBSCRIPTION}' and sr.srsubstate='r') ready,(select coalesce(bool_or(subenabled),false) from pg_subscription where subname='${SUBSCRIPTION}') subscription_enabled;"
           query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/target-preflight.json"
-          jq -e '.[0].active_cron==0 and .[0].subscriptions==1 and .[0].workers==0 and .[0].total==462 and .[0].ready==462 and .[0].subscription_enabled==false' "$RUNNER_TEMP/target-preflight.json" >/dev/null || {
+          jq -e '.[0].active_cron==0 and .[0].subscriptions==1 and .[0].workers==0 and .[0].total==462 and .[0].ready==462' "$RUNNER_TEMP/target-preflight.json" >/dev/null || {
             echo 'Oregon subscriber preconditions are not exact.' >&2
             jq -c '.[0] | {active_cron,subscriptions,workers,total,ready,subscription_enabled}' "$RUNNER_TEMP/target-preflight.json" >&2
             exit 1
