@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
-import { cronDefinition, cronDefinitions, humanizeCronKey, vercelCronSchedules } from "@/lib/cron/controlPlane";
+import { awsCronSchedules, cronDefinition, cronDefinitions, humanizeCronKey, vercelCronSchedules } from "@/lib/cron/controlPlane";
 import { summarizeCronOutcome } from "@/lib/cron/outcome";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -86,9 +86,6 @@ function isSuccessfulRun(run?: RunRow) {
 function reliableDuration(run?: RunRow): number | null {
   if (!run) return null;
   const source = String(run.source || "").toLowerCase();
-  // pg_net_tracked duration measures database transport/reconciliation timing, not
-  // the Edge Function's wall-clock runtime. Keep timeout/failure monitoring for
-  // those rows, but never use this pseudo-duration for slow-run classification.
   if (source === "pg_net_tracked") return null;
   const duration = Number(run.duration_ms || 0);
   return Number.isFinite(duration) && duration > 0 ? duration : null;
@@ -209,10 +206,12 @@ export async function GET() {
 
   const existing = new Map((cronJobs || []).map((job: any) => [String(job.job_key), job]));
   const pgByKey = new Map(((pgSnapshot || []) as PgCronRow[]).map((job) => [job.jobname, job]));
+  const awsByKey = awsCronSchedules();
   const vercelByKey = vercelCronSchedules();
   const allKeys = new Set<string>([
     ...existing.keys(),
     ...pgByKey.keys(),
+    ...awsByKey.keys(),
     ...vercelByKey.keys(),
     ...cronDefinitions().map((definition) => definition.jobKey),
   ]);
@@ -222,14 +221,21 @@ export async function GET() {
     .map((jobKey) => {
       const definition = cronDefinition(jobKey);
       const pg = pgByKey.get(jobKey);
+      const aws = awsByKey.get(jobKey);
       const vercel = vercelByKey.get(jobKey);
       return {
         job_key: jobKey,
         job_name: definition?.jobName || humanizeCronKey(jobKey),
         route_path: definition?.targetPath || null,
-        source: pg ? "pg_cron" : vercel ? "vercel_cron" : "registered",
-        schedule_hint: pg ? `pg_cron: ${pg.schedule}` : vercel ? `Vercel cron: ${vercel.schedule}` : null,
-        is_active: pg?.active ?? true,
+        source: pg ? "pg_cron" : aws ? "aws_eventbridge" : vercel ? "vercel_cron" : "registered",
+        schedule_hint: pg
+          ? `pg_cron: ${pg.schedule}`
+          : aws
+            ? `AWS EventBridge: ${aws.expression}`
+            : vercel
+              ? `Vercel cron: ${vercel.schedule}`
+              : null,
+        is_active: pg?.active ?? aws?.enabled ?? true,
         is_manually_runnable: definition?.manuallyRunnable ?? false,
       };
     });
@@ -259,11 +265,16 @@ export async function GET() {
     const job = existing.get(jobKey) || { job_key: jobKey, job_name: humanizeCronKey(jobKey) };
     const definition = cronDefinition(jobKey);
     const scheduler = pgByKey.get(jobKey) || null;
+    const awsSchedule = awsByKey.get(jobKey) || null;
     const vercelSchedule = vercelByKey.get(jobKey) || null;
     const runStats = stats.get(jobKey) || buildRunStats([], 0);
-    const scheduleDetected = Boolean(scheduler || vercelSchedule);
-    const loggerExpected = scheduler ? scheduler.command_kind === "http" : Boolean(vercelSchedule || definition);
-    const needs_attention_reason = attentionReason({ job, runStats, scheduler, scheduleDetected, loggerExpected });
+    const scheduleDetected = Boolean(scheduler || awsSchedule || vercelSchedule);
+    const loggerExpected = scheduler ? scheduler.command_kind === "http" : Boolean(awsSchedule || vercelSchedule || definition);
+    const effectiveJob = {
+      ...job,
+      is_active: job.is_active !== false && (awsSchedule ? awsSchedule.enabled : true),
+    };
+    const needs_attention_reason = attentionReason({ job: effectiveJob, runStats, scheduler, scheduleDetected, loggerExpected });
     const appStatus = operationalStatus(runStats.latest?.status || job.last_status);
     const schedulerStatus = operationalStatus(scheduler?.last_status);
     const effectiveStatus = loggerExpected ? appStatus : schedulerStatus;
@@ -286,15 +297,21 @@ export async function GET() {
       ...job,
       job_name: job.job_name || definition?.jobName || humanizeCronKey(jobKey),
       route_path: definition?.targetPath || job.route_path || null,
-      source: scheduler ? "pg_cron" : vercelSchedule ? "vercel_cron" : job.source || "registered",
+      source: scheduler ? "pg_cron" : awsSchedule ? "aws_eventbridge" : vercelSchedule ? "vercel_cron" : job.source || "registered",
       schedule_hint: scheduler
         ? `pg_cron: ${scheduler.schedule}`
-        : vercelSchedule
-          ? `Vercel cron: ${vercelSchedule.schedule}`
-          : job.schedule_hint || null,
+        : awsSchedule
+          ? `AWS EventBridge: ${awsSchedule.expression}`
+          : vercelSchedule
+            ? `Vercel cron: ${vercelSchedule.schedule}`
+            : job.schedule_hint || null,
       schedule_detected: scheduleDetected,
       logger_expected: loggerExpected,
-      is_active: scheduler ? scheduler.active && job.is_active !== false : job.is_active !== false,
+      is_active: scheduler
+        ? scheduler.active && job.is_active !== false
+        : awsSchedule
+          ? awsSchedule.enabled && job.is_active !== false
+          : job.is_active !== false,
       is_manually_runnable: definition?.manuallyRunnable ?? Boolean(job.is_manually_runnable),
       last_status: displayStatus,
       health_state: healthState,
@@ -349,6 +366,7 @@ export async function GET() {
     transport_only_duration: jobs.filter((j: any) => j.duration_monitoring === "transport_only").length,
     email_alerts_enabled: jobs.filter((j: any) => j.send_success_email || j.send_failure_email).length,
     pg_cron_count: pgByKey.size,
+    aws_schedule_count: awsByKey.size,
     vercel_cron_count: vercelByKey.size,
   };
 
