@@ -53,7 +53,15 @@ describe("event-driven AWS background work", () => {
     });
     expect(schedule("worker-dispatcher-unified")).toMatchObject({
       expression: "cron(0/15 * * * ? *)",
-      function: "worker-dispatcher",
+      function: "sqs:background-cron",
+      body: {
+        target: "edge:worker-dispatcher",
+        payload: {
+          limit: 25,
+          lease_seconds: 300,
+          worker_name: "production-unified-worker",
+        },
+      },
     });
     expect(schedule("search-ml-learning-maintenance")).toMatchObject({
       expression: "cron(0/15 * * * ? *)",
@@ -138,6 +146,8 @@ describe("event-driven AWS background work", () => {
     expect(worker).toContain('"edge:claim-qr-repair-worker"');
     expect(worker).toContain('"edge:unified-location-gap-repair"');
     expect(worker).toContain('"edge:worker-dispatcher"');
+    expect(worker).toContain('target == "edge:worker-dispatcher"');
+    expect(worker).toContain('value.get("claimed")');
     expect(worker).toContain('"x-worker-secret": _worker_secret_value()');
     expect(worker).toContain("_build_edge_http_event");
     expect(worker).toContain("EDGE_RUNTIME_FUNCTION_NAME");
@@ -148,6 +158,7 @@ describe("event-driven AWS background work", () => {
     expect(schedulerInvoker).toContain("BACKGROUND_EDGE_TARGETS");
     expect(schedulerInvoker).toContain('"edge:claim-qr-repair-worker"');
     expect(schedulerInvoker).toContain('"edge:unified-location-gap-repair"');
+    expect(schedulerInvoker).toContain('"edge:worker-dispatcher"');
     expect(stack).toContain("EDGE_RUNTIME_FUNCTION_NAME");
     expect(stack).toContain("sqs:SendMessage");
     expect(stack).toContain("MaximumConcurrency: 3");
