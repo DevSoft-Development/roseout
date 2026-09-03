@@ -1,0 +1,248 @@
+name: AWS daily email recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-daily-email-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-daily-email-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-daily-email-recovery-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
+  BACKGROUND_RUNTIME_FUNCTION: toh-production-background-runtime
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  EDGE_RUNTIME_SECRET_REGION: us-east-1
+  BACKGROUND_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_APP_ENV_SECRET_REGION: us-west-2
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+  VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-daily-email-recovery.yml'
+          for token in RESEND_API_KEY ADMIN_DIGEST_EMAIL MAIL_ENV_REFRESH_TOKEN admin-cron-digest-email reservation-daily-digest admin-platform-error-digest admin-search-health-digest admin-daily-marketing-pulse '/api/cron/daily-admin-digest' 'job=search-quality-digest' resend_not_configured; do
+            grep -F "$token" "$FILE" >/dev/null
+          done
+
+  recover_and_send:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Pull authoritative production mail configuration
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo 'VERCEL_TOKEN is required for production mail recovery.' >&2; exit 1; }
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+          ENV_FILE="$RUNNER_TEMP/vercel-production.env"
+          MAIL_JSON="$RUNNER_TEMP/mail-env.json"
+          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
+          chmod 600 "$ENV_FILE"
+          ENV_FILE="$ENV_FILE" MAIL_JSON="$MAIL_JSON" python <<'PY'
+          import json, os
+          from pathlib import Path
+          allowed = {
+              'RESEND_API_KEY','RESEND_FROM_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL',
+              'ADMIN_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO',
+              'MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO','THEOUTHAVEN_ADMIN_EMAIL',
+          }
+          values = {}
+          for raw_line in Path(os.environ['ENV_FILE']).read_text(encoding='utf-8').splitlines():
+              line = raw_line.strip()
+              if not line or line.startswith('#') or '=' not in line:
+                  continue
+              key, raw = line.split('=', 1)
+              key = key.strip()
+              if key not in allowed:
+                  continue
+              raw = raw.strip()
+              try:
+                  value = json.loads(raw) if raw.startswith('"') else raw.strip("'")
+              except json.JSONDecodeError:
+                  value = raw.strip('"').strip("'")
+              if isinstance(value, str) and value:
+                  values[key] = value
+          if not values.get('RESEND_API_KEY'):
+              raise SystemExit('Production Vercel environment is missing RESEND_API_KEY.')
+          if not any(values.get(k) for k in ('ADMIN_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','THEOUTHAVEN_ADMIN_EMAIL')):
+              raise SystemExit('Production Vercel environment is missing an admin digest recipient.')
+          Path(os.environ['MAIL_JSON']).write_text(json.dumps(values, separators=(',', ':')), encoding='utf-8')
+          PY
+          while IFS= read -r value; do [ -z "$value" ] || echo "::add-mask::$value"; done < <(jq -r '.[]' "$MAIL_JSON")
+          rm -f "$ENV_FILE"
+
+      - name: Synchronize AWS mail secrets
+        run: |
+          set -euo pipefail
+          MAIL_JSON="$RUNNER_TEMP/mail-env.json"
+          sync_secret() {
+            local region="$1" secret="$2" label="$3"
+            local current="$RUNNER_TEMP/${label}-current.json"
+            local merged="$RUNNER_TEMP/${label}-merged.json"
+            aws secretsmanager get-secret-value --region "$region" --secret-id "$secret" --query SecretString --output text > "$current"
+            CURRENT="$current" MAIL="$MAIL_JSON" OUTPUT="$merged" python <<'PY'
+          import json, os
+          from pathlib import Path
+          current = json.loads(Path(os.environ['CURRENT']).read_text(encoding='utf-8'))
+          mail = json.loads(Path(os.environ['MAIL']).read_text(encoding='utf-8'))
+          merged = dict(current)
+          merged.update({k:v for k,v in mail.items() if isinstance(v,str) and v})
+          Path(os.environ['OUTPUT']).write_text(json.dumps(merged, separators=(',', ':'), sort_keys=True), encoding='utf-8')
+          PY
+            jq -e '.RESEND_API_KEY | strings | length >= 16' "$merged" >/dev/null
+            aws secretsmanager put-secret-value --region "$region" --secret-id "$secret" --secret-string "file://$merged" --query VersionId --output text >/dev/null
+            rm -f "$current" "$merged"
+            echo "${label}_mail_secret=synchronized"
+          }
+          sync_secret "$EDGE_RUNTIME_SECRET_REGION" "$EDGE_RUNTIME_SECRET" edge
+          sync_secret "$BACKGROUND_APP_ENV_SECRET_REGION" "$BACKGROUND_APP_ENV_SECRET" background
+          rm -f "$MAIL_JSON"
+
+      - name: Refresh AWS mail runtime generations
+        run: |
+          set -euo pipefail
+          refresh_function() {
+            local fn="$1" label="$2"
+            local vars="$RUNNER_TEMP/${label}-vars.json"
+            local envdoc="$RUNNER_TEMP/${label}-env.json"
+            aws lambda get-function-configuration --function-name "$fn" --query 'Environment.Variables' --output json > "$vars"
+            jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${label}" '{Variables:(. + {MAIL_ENV_REFRESH_TOKEN:$token})}' "$vars" > "$envdoc"
+            aws lambda update-function-configuration --function-name "$fn" --environment "file://$envdoc" >/dev/null
+            aws lambda wait function-updated-v2 --function-name "$fn"
+            rm -f "$vars" "$envdoc"
+            echo "${label}_runtime_generation=refreshed"
+          }
+          refresh_function "$EDGE_RUNTIME_FUNCTION" edge
+          refresh_function "$BACKGROUND_RUNTIME_FUNCTION" background
+
+      - name: Prove Resend and recipient configuration without exposing values
+        run: |
+          set -euo pipefail
+          for spec in \
+            "$EDGE_RUNTIME_SECRET_REGION|$EDGE_RUNTIME_SECRET|edge" \
+            "$BACKGROUND_APP_ENV_SECRET_REGION|$BACKGROUND_APP_ENV_SECRET|background"; do
+            IFS='|' read -r region secret label <<< "$spec"
+            file="$RUNNER_TEMP/${label}-proof.json"
+            aws secretsmanager get-secret-value --region "$region" --secret-id "$secret" --query SecretString --output text > "$file"
+            jq -e '.RESEND_API_KEY | strings | length >= 16' "$file" >/dev/null
+            jq -e '((.ADMIN_DIGEST_EMAIL // .ADMIN_EMAIL // .SUPERADMIN_EMAIL // .THEOUTHAVEN_ADMIN_EMAIL // "") | strings | length > 0)' "$file" >/dev/null
+            rm -f "$file"
+            echo "${label}_mail_configuration=ready"
+          done
+
+      - name: Replay missed Edge daily emails
+        run: |
+          set -euo pipefail
+          invoke_edge() {
+            local fn="$1" body="$2"
+            local event="$RUNNER_TEMP/${fn}-event.json"
+            local response="$RUNNER_TEMP/${fn}-response.json"
+            FN="$fn" BODY="$body" EVENT="$event" python <<'PY'
+          import json, os, time
+          fn = os.environ['FN']
+          body = json.loads(os.environ['BODY'])
+          path = f'/functions/v1/{fn}'
+          event = {
+            'version':'2.0','routeKey':f'POST {path}','rawPath':path,'rawQueryString':'',
+            'headers':{'content-type':'application/json','x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal',
+              'http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},
+              'requestId':f'email-recovery-{fn}','routeKey':f'POST {path}','stage':'$default','time':'03/Sep/2026:15:00:00 +0000','timeEpoch':int(time.time()*1000)},
+            'body':json.dumps(body,separators=(',',':')),'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+            aws lambda invoke --function-name "$EDGE_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+            jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
+            jq -e '(.body | fromjson | (.success // true) != false)' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false)))' "$response" >/dev/null
+            echo "email_replay=${fn}:passed"
+          }
+          invoke_edge 'admin-cron-digest-email' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'reservation-daily-digest' '{"source":"cron","force":true}'
+          invoke_edge 'admin-platform-error-digest' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'admin-search-health-digest' '{"source":"cron","hours":24,"force":true}'
+          invoke_edge 'admin-daily-marketing-pulse' '{"source":"cron","hours":24,"force":true}'
+
+      - name: Replay missed background daily emails
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/background-secret.json"
+          aws secretsmanager get-secret-value --region "$BACKGROUND_APP_ENV_SECRET_REGION" --secret-id "$BACKGROUND_APP_ENV_SECRET" --query SecretString --output text > "$SECRET_FILE"
+          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$SECRET_FILE")"
+          rm -f "$SECRET_FILE"
+          test -n "$CRON_SECRET"
+          echo "::add-mask::$CRON_SECRET"
+          invoke_background() {
+            local label="$1" path="$2" query="$3" method="$4"
+            local event="$RUNNER_TEMP/${label}-event.json"
+            local response="$RUNNER_TEMP/${label}-response.json"
+            LABEL="$label" PATH_VALUE="$path" QUERY_VALUE="$query" METHOD_VALUE="$method" CRON_VALUE="$CRON_SECRET" EVENT="$event" python <<'PY'
+          import json, os, time
+          path, query, method = os.environ['PATH_VALUE'], os.environ['QUERY_VALUE'], os.environ['METHOD_VALUE']
+          secret = os.environ['CRON_VALUE']
+          event = {
+            'version':'2.0','routeKey':f'{method} {path}','rawPath':path,'rawQueryString':query,
+            'headers':{'content-type':'application/json','authorization':f'Bearer {secret}','x-cron-secret':secret,'x-toh-aws-internal':'eventbridge'},
+            'requestContext':{'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal',
+              'http':{'method':method,'path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},
+              'requestId':f"email-recovery-{os.environ['LABEL']}",'routeKey':f'{method} {path}','stage':'$default','time':'03/Sep/2026:15:00:00 +0000','timeEpoch':int(time.time()*1000)},
+            'isBase64Encoded':False,
+          }
+          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
+          PY
+            aws lambda invoke --function-name "$BACKGROUND_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+            jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
+            jq -e '(.body | fromjson | (.success // true) != false)' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
+            ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false)))' "$response" >/dev/null
+            echo "email_replay=${label}:passed"
+          }
+          invoke_background 'daily-admin-digest' '/api/cron/daily-admin-digest' '' 'GET'
+          invoke_background 'search-quality-digest' '/api/cron/managed' 'job=search-quality-digest' 'GET'
+
+      - name: Recovery summary
+        if: success()
+        run: |
+          {
+            echo '### AWS daily email recovery'
+            echo ''
+            echo '- Production mail settings synchronized into both AWS runtime secrets.'
+            echo '- Edge and background Lambda generations refreshed to clear cached secret state.'
+            echo '- Seven daily admin/report emails replayed through their production jobs.'
+            echo '- Replay failed closed on any Resend/configuration or sent=false result.'
+          } >> "$GITHUB_STEP_SUMMARY"
