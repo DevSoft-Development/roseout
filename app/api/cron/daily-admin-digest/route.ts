@@ -25,11 +25,11 @@ export async function GET(request: NextRequest) {
   if (authError) return authError;
 
   const to = process.env.ADMIN_DIGEST_EMAIL || process.env.THEOUTHAVEN_ADMIN_EMAIL || process.env.SUPERADMIN_EMAIL;
-  if (!to || !process.env.RESEND_API_KEY) {
+  if (!to) {
     return NextResponse.json({
       success: false,
       skipped: true,
-      error: "ADMIN_DIGEST_EMAIL and RESEND_API_KEY are required to send the daily digest.",
+      error: "ADMIN_DIGEST_EMAIL, THEOUTHAVEN_ADMIN_EMAIL, or SUPERADMIN_EMAIL is required to send the daily digest.",
     }, { status: 200 });
   }
 
