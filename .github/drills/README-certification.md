@@ -1,1 +1,0 @@
-The `oregon-production-dr-certification-2026-09-03` marker authorizes one guarded production DR certification run. The workflow uploads secret-free evidence as a GitHub Actions artifact and is fail-closed on any promotion, failback, scheduler, replication, Auth, Storage, or production smoke-test gate.
