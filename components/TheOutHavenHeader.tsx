@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase-browser";
 
 const navItems = [
   { href: "/explore", label: "Explore" },
-  { href: "/create", label: "Create Outing" },
+  { href: "/#plan-your-outing", label: "Create Outing", activePath: "/" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
   { href: "/reservations", label: "Reservations" },
   { href: "/support", label: "Support" },
@@ -129,8 +129,9 @@ export default function TheOutHavenHeader() {
     };
   }, [accountDropdownOpen]);
 
-  function isActive(href: string) {
-    return safePathname === href || (href !== "/" && safePathname.startsWith(href));
+  function isActive(item: (typeof navItems)[number]) {
+    const activePath = item.activePath || item.href;
+    return safePathname === activePath || (activePath !== "/" && safePathname.startsWith(activePath));
   }
 
   async function handleSignOut() {
@@ -169,9 +170,9 @@ export default function TheOutHavenHeader() {
 
         <nav className="hidden items-center gap-4 lg:flex">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className={isActive(item.href) ? "relative text-sm font-black text-white transition" : "relative text-sm font-black text-white/45 transition hover:text-white"}>
+            <Link key={item.href} href={item.href} className={isActive(item) ? "relative text-sm font-black text-white transition" : "relative text-sm font-black text-white/45 transition hover:text-white"}>
               {item.label}
-              <span className={isActive(item.href) ? "absolute -bottom-1 left-0 h-[2px] w-full bg-[#e1062a]" : "absolute -bottom-1 left-0 h-[2px] w-0 bg-[#e1062a]"} />
+              <span className={isActive(item) ? "absolute -bottom-1 left-0 h-[2px] w-full bg-[#e1062a]" : "absolute -bottom-1 left-0 h-[2px] w-0 bg-[#e1062a]"} />
             </Link>
           ))}
         </nav>
@@ -233,7 +234,7 @@ export default function TheOutHavenHeader() {
         <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl lg:hidden">
           <div className="mx-auto max-w-7xl space-y-2">
             {navItems.map((item) => (
-              <Link key={item.href} href={item.href} className={isActive(item.href) ? "block rounded-2xl bg-white px-4 py-4 text-sm font-black text-black transition" : "block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"}>{item.label}</Link>
+              <Link key={item.href} href={item.href} className={isActive(item) ? "block rounded-2xl bg-white px-4 py-4 text-sm font-black text-black transition" : "block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"}>{item.label}</Link>
             ))}
             {!signedIn ? (
               <>
