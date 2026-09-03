@@ -79,6 +79,9 @@ jobs:
           grep -F 'MaximumConcurrency: 3' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           ! grep -F 'ReservedConcurrentExecutions:' infra/aws/cloudformation/background-cron-runtime.yml >/dev/null
           grep -F 'Recover rolled-back durable stack' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'Bootstrap Lambda recursion deployment permission' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'lambda:PutFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
+          grep -F 'lambda:GetFunctionRecursionConfig' .github/workflows/aws-background-cron-runtime.yml >/dev/null
           grep -F 'get-function-recursion-config' .github/workflows/aws-background-cron-runtime.yml >/dev/null
 
   deploy:
@@ -107,6 +110,41 @@ jobs:
           ALERTS_TOPIC="$(aws cloudformation describe-stacks --stack-name "$PLATFORM_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
           test -n "$ALERTS_TOPIC" && test "$ALERTS_TOPIC" != 'None'
           echo "alerts_topic=$ALERTS_TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Bootstrap Lambda recursion deployment permission
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME='TheOutHavenLambdaRecursionConfigBootstrap'
+          POLICY_FILE="$RUNNER_TEMP/lambda-recursion-config-bootstrap.json"
+          cat > "$POLICY_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"ManageBackgroundCronRecursionConfig",
+                "Effect":"Allow",
+                "Action":[
+                  "lambda:GetFunctionRecursionConfig",
+                  "lambda:PutFunctionRecursionConfig"
+                ],
+                "Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-production-background-cron-worker"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --query 'PolicyName' \
+            --output text >/dev/null
+          sleep 8
 
       - name: Recover rolled-back durable stack
         run: |
