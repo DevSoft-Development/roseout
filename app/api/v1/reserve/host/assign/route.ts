@@ -4,6 +4,7 @@ import {
   getReserveCanonicalLocationId,
   requireReservePermission,
 } from "@/lib/reserve/locationPermissions";
+import { getReserveStaffSession } from "@/lib/reserve/staffSession";
 import { rankStaffForParty } from "@/lib/reservations/enterpriseHost";
 
 function clean(value: unknown) {
@@ -126,6 +127,8 @@ export async function POST(request: NextRequest) {
   const auth = await requireReservePermission(locationId, "manageReservations");
   if (auth.error) return auth.error;
   const canonicalLocationId = getReserveCanonicalLocationId(auth.access, locationId);
+  const staffSession = await getReserveStaffSession(canonicalLocationId);
+  const actorStaffProfileId = staffSession?.staff_profile_id || null;
 
   const reservationResult = await supabaseAdmin
     .from("location_reservations")
@@ -147,7 +150,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "A manager is required for this override." }, { status: 403 });
   }
 
-  const actorStaffProfileId = clean(body.staff_profile_id) || null;
   const rpc = await supabaseAdmin.rpc("reserve_assign_resource_atomic", {
     p_reservation_id: reservationId,
     p_location_id: canonicalLocationId,
