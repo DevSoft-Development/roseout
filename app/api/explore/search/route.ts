@@ -1,62 +1,122 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { runOutingSearch } from "@/lib/search/runSearch";
-import { logSearchEvent } from "@/lib/search/enterprise/searchEventLogger";
-import { logSearchHealthEvent } from "@/lib/search/enterprise/searchHealthLogger";
-import {
-  isExplicitMarket,
-  isPairAllowedForResolvedMarket,
-  isResultAllowedForResolvedMarket,
-} from "@/lib/search/market-guardrails";
 
-function metadataString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
+const CARD_FIELDS = [
+  "id",
+  "source_table",
+  "source_id",
+  "location_type",
+  "name",
+  "restaurant_name",
+  "activity_name",
+  "business_name",
+  "main_image",
+  "image_url",
+  "images",
+  "city",
+  "borough",
+  "neighborhood",
+  "state",
+  "primary_category",
+  "primary_tag",
+  "cuisine",
+  "cuisine_type",
+  "food_type",
+  "activity_type",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "google_types",
+  "atmosphere",
+  "best_for",
+  "date_style_tags",
+  "search_keywords",
+  "search_document",
+  "description",
+  "reservation_url",
+  "reservation_link",
+  "external_reservation_url",
+  "website",
+  "rating",
+  "review_count",
+  "theouthaven_score",
+  "popularity_score",
+  "is_featured",
+  "created_at",
+  "is_searchable",
+  "is_hidden",
+  "data_status",
+  "quality_status",
+  "duplicate_status",
+  "duplicate_of",
+  "deleted_at",
+  "has_photos",
+  "photo_status",
+  "is_low_level",
+  "public_visibility_tier",
+  "curation_tier",
+  "source_quality_status",
+  "import_confidence",
+].join(",");
 
-function sanitizeSearchMetadata(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeSearchMetadata);
-  if (!value || typeof value !== "object") {
-    if (typeof value !== "string") return value;
-    return value
-      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted_email]")
-      .replace(
-        /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/g,
-        "[redacted_phone]",
-      );
-  }
-
-  return Object.entries(value as Record<string, unknown>).reduce<
-    Record<string, unknown>
-  >((acc, [key, item]) => {
-    if (/email|phone|address/i.test(key)) return acc;
-    acc[key] = sanitizeSearchMetadata(item);
-    return acc;
-  }, {});
-}
+const LONG_ISLAND_CITIES = [
+  "Garden City",
+  "Rockville Centre",
+  "Huntington",
+  "Huntington Station",
+  "Patchogue",
+  "Great Neck",
+  "Westbury",
+  "Freeport",
+  "Levittown",
+  "Bohemia",
+  "Centereach",
+  "Massapequa",
+  "Mineola",
+  "Hempstead",
+  "Farmingdale",
+  "Long Beach",
+  "Babylon",
+  "Bay Shore",
+  "Islip",
+  "Ronkonkoma",
+  "Smithtown",
+  "Riverhead",
+  "Port Jefferson",
+  "Oyster Bay",
+  "Glen Cove",
+  "Hicksville",
+  "Syosset",
+  "Jericho",
+  "Roslyn",
+  "Manhasset",
+  "Valley Stream",
+];
 
 function cleanParam(value: string | null) {
-  return (value ?? "").trim();
+  return (value || "").replace(/[<>]/g, "").trim().slice(0, 120);
 }
+
 function normalizeKind(value: string | null) {
-  const v = cleanParam(value).toLowerCase();
-  if (["restaurants", "restaurant", "food", "brunch"].includes(v))
-    return "restaurants";
-  if (["activities", "activity", "things", "things-to-do"].includes(v))
-    return "activities";
-  if (["rooftops", "rooftop"].includes(v)) return "rooftops";
-  if (["lounges", "lounge"].includes(v)) return "lounges";
-  if (["date-night", "date night", "date"].includes(v)) return "date-night";
-  if (["groups", "group"].includes(v)) return "groups";
-  if (["open-now", "open now", "open"].includes(v)) return "open-now";
+  const kind = cleanParam(value).toLowerCase();
+  if (["restaurants", "restaurant", "food", "brunch"].includes(kind)) return "restaurants";
+  if (["activities", "activity", "things", "things-to-do"].includes(kind)) return "activities";
+  if (["lounges", "lounge"].includes(kind)) return "lounges";
+  if (["date-night", "date night", "date"].includes(kind)) return "date-night";
+  if (["groups", "group"].includes(kind)) return "groups";
+  if (["open-now", "open now", "open"].includes(kind)) return "open-now";
   return "all";
 }
+
 function normalizeArea(value: string | null) {
   return cleanParam(value) || "all";
 }
+
 function buildExploreQuery(q: string, kind: string, area: string) {
   const parts = [q];
   if (kind === "restaurants") parts.push("restaurant food");
   if (kind === "activities") parts.push("activity things to do");
-  if (kind === "rooftops") parts.push("rooftop lounge");
   if (kind === "lounges") parts.push("lounge nightlife");
   if (kind === "date-night") parts.push("date night romantic dinner");
   if (kind === "groups") parts.push("group outing fun activities");
@@ -66,35 +126,15 @@ function buildExploreQuery(q: string, kind: string, area: string) {
 }
 
 function firstObject(...values: unknown[]) {
-  return values.find(
-    (value): value is Record<string, any> =>
-      Boolean(value) && typeof value === "object" && !Array.isArray(value),
-  );
+  return values.find((value): value is Record<string, any> => Boolean(value) && typeof value === "object" && !Array.isArray(value));
 }
 
 function normalizeExploreItem(item: any) {
-  const source = firstObject(
-    item?.restaurant,
-    item?.activity,
-    item?.location,
-    item?.venue,
-    item?.place,
-    item,
-  );
-
+  const source = firstObject(item?.restaurant, item?.activity, item?.location, item?.venue, item?.place, item);
   if (!source) return item;
 
-  const sourceTable =
-    source.source_table ??
-    item?.source_table ??
-    (item?.restaurant || source.restaurant_name ? "restaurants" : null) ??
-    (item?.activity || source.activity_name ? "activities" : null);
-  const locationType =
-    source.location_type ??
-    source.type ??
-    item?.location_type ??
-    item?.type ??
-    sourceTable;
+  const sourceTable = source.source_table ?? item?.source_table ?? (item?.restaurant || source.restaurant_name ? "restaurants" : null) ?? (item?.activity || source.activity_name ? "activities" : null);
+  const locationType = source.location_type ?? source.type ?? item?.location_type ?? item?.type ?? sourceTable;
 
   return {
     ...source,
@@ -103,13 +143,7 @@ function normalizeExploreItem(item: any) {
     source_id: source.source_id ?? item?.source_id ?? source.id,
     location_type: locationType,
     type: source.type ?? item?.type ?? locationType,
-    name:
-      source.name ??
-      source.restaurant_name ??
-      source.activity_name ??
-      source.business_name ??
-      item?.name ??
-      null,
+    name: source.name ?? source.restaurant_name ?? source.activity_name ?? source.business_name ?? item?.name ?? null,
     restaurant_name: source.restaurant_name ?? item?.restaurant_name ?? null,
     activity_name: source.activity_name ?? item?.activity_name ?? null,
     business_name: source.business_name ?? item?.business_name ?? null,
@@ -130,8 +164,7 @@ function normalizeExploreItem(item: any) {
     description: source.description ?? item?.description ?? null,
     rating: source.rating ?? item?.rating ?? null,
     review_count: source.review_count ?? item?.review_count ?? null,
-    theouthaven_score:
-      source.theouthaven_score ?? item?.theouthaven_score ?? null,
+    theouthaven_score: source.theouthaven_score ?? item?.theouthaven_score ?? null,
     is_searchable: source.is_searchable ?? item?.is_searchable ?? true,
     is_hidden: source.is_hidden ?? item?.is_hidden ?? false,
     data_status: source.data_status ?? item?.data_status ?? "clean",
@@ -139,41 +172,89 @@ function normalizeExploreItem(item: any) {
 }
 
 function validExploreItem(item: any) {
-  const name = String(
-    item?.name ??
-      item?.restaurant_name ??
-      item?.activity_name ??
-      item?.business_name ??
-      "",
-  ).trim();
-  if (!item?.id || !name || name.toLowerCase() === "unknown location")
-    return false;
-  if (item.is_hidden === true) return false;
-  if (item.is_searchable === false) return false;
+  const name = String(item?.name ?? item?.restaurant_name ?? item?.activity_name ?? item?.business_name ?? "").trim();
+  if (!item?.id || !name || name.toLowerCase() === "unknown location") return false;
+  if (item.is_hidden === true || item.is_searchable === false) return false;
   if (item.data_status && item.data_status !== "clean") return false;
   return true;
 }
 
 function normalizeAndFilterItems(items: any[]) {
-  const normalized = items.map(normalizeExploreItem);
-  const filtered = normalized.filter(validExploreItem);
-  const dropped = normalized.length - filtered.length;
-
-  if (dropped > 0 && process.env.NODE_ENV !== "production") {
-    console.warn("EXPLORE_DROPPED_INVALID_ITEMS", {
-      dropped,
-      sampleKeys: normalized
-        .slice(0, 3)
-        .map((item) => Object.keys(item ?? {}).slice(0, 12)),
-    });
-  }
-
   const seen = new Set<string>();
-  return filtered.filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
+  return items.map(normalizeExploreItem).filter(validExploreItem).filter((item) => {
+    const id = String(item.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
     return true;
   });
+}
+
+function searchableText(item: any) {
+  return [
+    item.name,
+    item.restaurant_name,
+    item.activity_name,
+    item.business_name,
+    item.primary_category,
+    item.primary_tag,
+    item.cuisine,
+    item.cuisine_type,
+    item.food_type,
+    item.activity_type,
+    item.description,
+    item.search_document,
+    ...(Array.isArray(item.tags) ? item.tags : []),
+    ...(Array.isArray(item.vibe_tags) ? item.vibe_tags : []),
+    ...(Array.isArray(item.best_for_tags) ? item.best_for_tags : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function matchesKind(item: any, kind: string) {
+  if (kind === "all" || kind === "open-now") return true;
+  const text = searchableText(item);
+  const type = String(item.location_type || item.source_table || "").toLowerCase();
+  if (kind === "restaurants") return /restaurant|food|dining|cafe|bakery|bar/.test(`${type} ${text}`);
+  if (kind === "activities") return /activit|museum|bowling|karaoke|comedy|arcade|gallery|theater|spa|game|experience/.test(`${type} ${text}`);
+  if (kind === "lounges") return /lounge|hookah|nightlife|cocktail|bar/.test(text);
+  if (kind === "date-night") return /romantic|date|rooftop|cocktail|dinner|jazz|lounge/.test(text);
+  if (kind === "groups") return /group|birthday|party|bowling|karaoke|arcade|game|comedy/.test(text);
+  return true;
+}
+
+async function loadAreaCatalog(area: string, kind: string, limit: number) {
+  let query = supabaseAdmin
+    .from("locations")
+    .select(CARD_FIELDS)
+    .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .or("duplicate_status.is.null,duplicate_status.neq.duplicate")
+    .is("duplicate_of", null)
+    .eq("has_photos", true)
+    .not("photo_status", "eq", "missing_photo")
+    .not("address", "is", null)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .not("primary_category", "is", null)
+    .eq("data_status", "clean")
+    .not("is_hidden", "is", true)
+    .is("deleted_at", null)
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("source_quality_status", "in", '("imported_unverified","generic_restaurant","needs_enrichment","low_level_review")')
+    .not("import_confidence", "eq", "low")
+    .not("status", "in", '("closed","archived")');
+
+  if (area === "Long Island") query = query.in("city", LONG_ISLAND_CITIES);
+  else query = query.ilike("borough", area);
+
+  const { data, error } = await query
+    .order("is_featured", { ascending: false, nullsFirst: false })
+    .order("rating", { ascending: false, nullsFirst: false })
+    .limit(Math.max(limit * 3, 96));
+
+  if (error) throw error;
+  return normalizeAndFilterItems(data || []).filter((item) => matchesKind(item, kind)).slice(0, limit);
 }
 
 export async function GET(request: NextRequest) {
@@ -181,346 +262,51 @@ export async function GET(request: NextRequest) {
   const q = cleanParam(params.get("q"));
   const kind = normalizeKind(params.get("kind"));
   const area = normalizeArea(params.get("area"));
-  const page = Math.max(1, Number(params.get("page") ?? 1) || 1);
-  const perPage = Math.min(
-    96,
-    Math.max(12, Number(params.get("limit") ?? 96) || 96),
-  );
+  const limit = Math.min(96, Math.max(12, Number(params.get("limit") || 96) || 96));
+
   try {
+    // Area cards and area pills are catalog browsing, not outing generation.
+    // Reading the catalog directly keeps these interactions fast and guarantees
+    // that eligible locations are not lost to planner intent/pairing logic.
+    if (!q && area !== "all") {
+      const items = await loadAreaCatalog(area, kind, limit);
+      return NextResponse.json({ success: true, items, restaurants: [], activities: [], pairs: [], total: items.length });
+    }
+
     const query = buildExploreQuery(q, kind, area);
     const simple = Boolean(!q || /^[\w\s-]+$/.test(q));
-    const betaAssignmentId =
-      params.get("betaAssignmentId") ||
-      request.headers.get("x-beta-assignment-id");
-    const betaTesterId =
-      params.get("betaTesterId") || request.headers.get("x-beta-tester-id");
-    const usedCustomPrompt =
-      params.get("usedCustomPrompt") === "true" ||
-      request.headers.get("x-used-custom-prompt") === "true";
-    const betaDebug =
-      process.env.NODE_ENV !== "production" ||
-      params.get("betaDebug") === "true";
     const result = await runOutingSearch({
       query,
       useLLM: !simple && q.split(/\s+/).length > 3,
       displayLimit: 48,
-      source: betaTesterId ? "beta_tester_search" : "public_explore_search",
+      source: "public_explore_search",
       route: "/api/explore/search",
       logPerformance: true,
-      sessionId:
-        request.cookies.get("toh_session")?.value ||
-        request.headers.get("x-session-id"),
-      betaAssignmentId,
-      betaTesterId,
-      usedCustomPrompt,
-      betaDebug,
-      searchHealthDebug: betaDebug,
-    });
-    const mixedWithPairing =
-      result.render_mode === "mixed_pairs" ||
-      result.render_mode === "partial_mixed";
-    let exploreNote: string | undefined;
-    const resolvedMarket =
-      (result.debug as any)?.resolvedMarket ??
-      (result.debug as any)?.normalizedIntent?.geo?.resolvedMarket ??
-      null;
-    const explicitMarketRequested =
-      isExplicitMarket(resolvedMarket) &&
-      Boolean(
-        (result.debug as any)?.explicitMarketRequested ??
-        (result.debug as any)?.normalizedIntent?.geo?.explicitMarketRequested,
-      );
-    const restaurantsBeforeGuardrail = result.restaurants ?? [];
-    const activitiesBeforeGuardrail = result.activities ?? [];
-    const pairsBeforeGuardrail = result.pairs ?? [];
-    const guardedRestaurants = explicitMarketRequested
-      ? restaurantsBeforeGuardrail.filter((item: any) =>
-          isResultAllowedForResolvedMarket(item, resolvedMarket),
-        )
-      : restaurantsBeforeGuardrail;
-    const guardedActivities = explicitMarketRequested
-      ? activitiesBeforeGuardrail.filter((item: any) =>
-          isResultAllowedForResolvedMarket(item, resolvedMarket),
-        )
-      : activitiesBeforeGuardrail;
-    const guardedPairs = explicitMarketRequested
-      ? pairsBeforeGuardrail.filter((pair: any) =>
-          isPairAllowedForResolvedMarket(pair, resolvedMarket),
-        )
-      : pairsBeforeGuardrail;
-    const marketGuardrailRejected =
-      restaurantsBeforeGuardrail.length -
-      guardedRestaurants.length +
-      (activitiesBeforeGuardrail.length - guardedActivities.length) +
-      (pairsBeforeGuardrail.length - guardedPairs.length);
-    let items =
-      kind === "restaurants" || kind === "rooftops"
-        ? guardedRestaurants
-        : kind === "activities" || kind === "lounges"
-          ? guardedActivities
-          : mixedWithPairing && guardedPairs.length
-            ? [...guardedPairs, ...guardedRestaurants, ...guardedActivities]
-            : [...guardedRestaurants, ...guardedActivities];
-    if (kind === "all" && mixedWithPairing && !result.pairs.length)
-      exploreNote =
-        "No walkable pairs found. Showing individual matches. Prefer using /create for full pair planning.";
-    if (kind === "rooftops")
-      items = items.filter((item: any) =>
-        /[\s-]roof|rooftop|terrace|skyline|view|lounge/i.test(
-          [
-            item.name,
-            item.primary_category,
-            item.description,
-            item.search_document,
-            item.tags,
-          ]
-            .flat()
-            .join(" "),
-        ),
-      );
-    if (kind === "lounges")
-      items = items.filter((item: any) =>
-        /lounge|hookah|bar|nightlife|cocktail/i.test(
-          [
-            item.name,
-            item.primary_category,
-            item.activity_type,
-            item.description,
-            item.search_document,
-            item.tags,
-          ]
-            .flat()
-            .join(" "),
-        ),
-      );
-    items = normalizeAndFilterItems(items);
-    const resultCount = items.length;
-    const start = (page - 1) * perPage;
-    items = items.slice(start, start + perPage);
-    const debug = (result.debug as any) ?? {};
-    const normalizedIntent =
-      debug.normalizedIntent ??
-      debug.intent ??
-      (result as any).normalizedIntent ??
-      null;
-    const perf = debug?.performance;
-    const noResultsReason =
-      (result as any).no_results_reason ??
-      (result as any).noResultsReason ??
-      debug.no_results_reason ??
-      debug.noResultsReason ??
-      null;
-    const noPairsReason =
-      (result as any).no_pairs_reason ??
-      (result as any).noPairsReason ??
-      debug.no_pairs_reason ??
-      debug.noPairsReason ??
-      (exploreNote ? "no_walkable_pairs_for_explore" : null);
-    const resolvedIntentParserSource =
-      debug.intentParserSource ??
-      debug.intent_parser_source ??
-      debug.intentParser?.source ??
-      debug.normalizedIntent?.intentParserSource ??
-      debug.normalizedIntent?.parserSource ??
-      normalizedIntent?.intentParserSource ??
-      normalizedIntent?.parserSource ??
-      (result as any)?.intentParserSource ??
-      (result as any)?.parserSource ??
-      null;
-    const resolvedSearchType =
-      normalizedIntent?.searchType ??
-      debug.normalizedIntent?.searchType ??
-      debug.intent?.searchType ??
-      (result as any)?.searchType ??
-      kind ??
-      null;
-    const resolvedPrimaryDomain =
-      normalizedIntent?.primaryDomain ??
-      debug.normalizedIntent?.primaryDomain ??
-      debug.intent?.primaryDomain ??
-      (result as any)?.primaryDomain ??
-      null;
-    const resolvedGeo =
-      normalizedIntent?.geo ??
-      debug.normalizedIntent?.geo ??
-      debug.geo ??
-      debug.originalGeo ??
-      (result as any)?.geo ??
-      (area !== "all" ? { city: area } : null);
-    const resolvedOutingDate =
-      metadataString(normalizedIntent?.outingDate?.date) ??
-      metadataString(normalizedIntent?.dateTime?.date) ??
-      metadataString(normalizedIntent?.outing?.date) ??
-      metadataString(debug.normalizedIntent?.outingDate?.date) ??
-      metadataString(debug.normalizedIntent?.dateTime?.date) ??
-      null;
-    const resolvedOutingTime =
-      metadataString(normalizedIntent?.outingDate?.time) ??
-      metadataString(normalizedIntent?.dateTime?.time) ??
-      metadataString(normalizedIntent?.outing?.time) ??
-      metadataString(debug.normalizedIntent?.outingDate?.time) ??
-      metadataString(debug.normalizedIntent?.dateTime?.time) ??
-      null;
-    const resolvedOutingDateTime =
-      metadataString(normalizedIntent?.outingDate?.dateTime) ??
-      metadataString(normalizedIntent?.dateTime?.dateTime) ??
-      metadataString(debug.normalizedIntent?.outingDate?.dateTime) ??
-      metadataString(debug.normalizedIntent?.dateTime?.dateTime) ??
-      null;
-    const resolvedOutingTimeLabel =
-      metadataString(normalizedIntent?.outingDate?.label) ??
-      metadataString(normalizedIntent?.dateTime?.label) ??
-      metadataString(debug.normalizedIntent?.outingDate?.label) ??
-      metadataString(debug.normalizedIntent?.dateTime?.label) ??
-      null;
-
-    void logSearchEvent({
-      source: "public_explore_search",
-      route: "/api/explore/search",
-      rawQuery: query,
-      normalizedQuery:
-        normalizedIntent?.rawQuery ?? normalizedIntent?.query ?? query,
-      searchType: resolvedSearchType,
-      primaryDomain: resolvedPrimaryDomain,
-      intentParserSource: resolvedIntentParserSource,
-      sessionId:
-        request.cookies.get("toh_session")?.value ||
-        request.headers.get("x-session-id"),
-      betaAssignmentId,
-      betaTesterId,
-      geo: resolvedGeo,
-      outingDate: resolvedOutingDate,
-      outingTime: resolvedOutingTime,
-      outingDateTime: resolvedOutingDateTime,
-      outingTimeLabel: resolvedOutingTimeLabel,
-      counts: debug?.counts ?? {
-        restaurants: result.restaurants?.length ?? 0,
-        activities: result.activities?.length ?? 0,
-        pairs: result.pairs?.length ?? 0,
-        finalDisplayedResultCount: resultCount,
-        marketGuardrailRejected,
-        resolvedMarket,
-        explicitMarketRequested,
-        fallbackSuppressedBecauseExplicitMarket:
-          explicitMarketRequested && marketGuardrailRejected > 0,
-      },
-      performance: perf ?? { route: "/api/explore/search" },
-      pairingPreference:
-        normalizedIntent?.pairingPreference ?? debug?.pairingPreference ?? null,
-      success: true,
-      hadIssue: Boolean(
-        noResultsReason ||
-        noPairsReason ||
-        debug?.event_type === "no_results" ||
-        debug?.event_type === "no_valid_pairs",
-      ),
-      issueType: noResultsReason
-        ? "no_results"
-        : noPairsReason
-          ? "no_valid_pairs"
-          : null,
-      issueLabel: noResultsReason ?? noPairsReason ?? null,
-      noResultsReason,
-      noPairsReason,
-      metadata: sanitizeSearchMetadata({
-        search_system: debug?.search_system,
-        render_mode: debug?.render_mode ?? result.render_mode,
-        wantsPairing: normalizedIntent?.wantsPairing,
-        needsRestaurant: normalizedIntent?.needsRestaurant,
-        needsActivity: normalizedIntent?.needsActivity,
-        explore_kind: kind,
-        raw_query: query,
-        parsed_market: resolvedMarket,
-        parsed_borough:
-          normalizedIntent?.geo?.borough ?? debug?.parsedBorough ?? null,
-        parsed_city: normalizedIntent?.geo?.city ?? debug?.parsedCity ?? null,
-        explicit_market_requested: explicitMarketRequested,
-        final_result_markets_returned: Array.from(
-          new Set(
-            [...guardedRestaurants, ...guardedActivities].map(
-              (item: any) => `${item.market || "UNKNOWN"}:${item.state || ""}`,
-            ),
-          ),
-        ),
-        market_guardrail_rejected_count: marketGuardrailRejected,
-        fallback_suppressed_count:
-          explicitMarketRequested && marketGuardrailRejected > 0 ? 1 : 0,
-        normalizedIntent,
-        geo: resolvedGeo,
-        searchType: resolvedSearchType,
-        primaryDomain: resolvedPrimaryDomain,
-        intentParserSource: resolvedIntentParserSource,
-      }) as Record<string, any>,
+      sessionId: request.cookies.get("toh_session")?.value || request.headers.get("x-session-id"),
     });
 
-    const debugPayload = betaDebug
-      ? {
-          ...(result.debug as any),
-          marketGuardrailRejected,
-          resolvedMarket,
-          explicitMarketRequested,
-          fallbackSuppressedBecauseExplicitMarket:
-            explicitMarketRequested && marketGuardrailRejected > 0,
-        }
-      : undefined;
-    return NextResponse.json({
-      success: true,
-      items,
-      restaurants: normalizeAndFilterItems(guardedRestaurants),
-      activities: normalizeAndFilterItems(guardedActivities),
-      pairs: guardedPairs,
-      note: exploreNote,
-      searchPerformance:
-        betaDebug && perf
-          ? {
-              totalMs: perf.total_ms,
-              speedStatus: perf.speed_status,
-              resultCount: perf.result_count,
-            }
-          : undefined,
-      debug: debugPayload,
-    });
+    const restaurants = normalizeAndFilterItems(result.restaurants || []);
+    const activities = normalizeAndFilterItems(result.activities || []);
+    const pairs = Array.isArray(result.pairs) ? result.pairs : [];
+    let items = kind === "restaurants"
+      ? restaurants
+      : kind === "activities" || kind === "lounges"
+        ? activities
+        : [...restaurants, ...activities];
+
+    if (area !== "all") {
+      const areaLower = area.toLowerCase();
+      items = items.filter((item) => {
+        if (area === "Long Island") return LONG_ISLAND_CITIES.some((city) => city.toLowerCase() === String(item.city || "").toLowerCase());
+        return String(item.borough || "").toLowerCase() === areaLower;
+      });
+    }
+
+    items = items.filter((item) => matchesKind(item, kind)).slice(0, limit);
+    return NextResponse.json({ success: true, items, restaurants, activities, pairs, total: items.length });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Explore search failed";
+    const message = error instanceof Error ? error.message : "Explore search failed";
     console.error("EXPLORE_SEARCH_ERROR", error);
-    void logSearchEvent({
-      source: "public_explore_search",
-      route: "/api/explore/search",
-      rawQuery: buildExploreQuery(q, kind, area),
-      searchType: kind,
-      geo: area !== "all" ? { city: area } : null,
-      performance: { route: "/api/explore/search", speed_status: "failed" },
-      success: false,
-      hadIssue: true,
-      issueType: "search_error",
-      issueLabel: "Explore search failed",
-      metadata: { error: message, explore_kind: kind },
-    });
-
-    void logSearchHealthEvent({
-      source: "public_explore_search",
-      rawQuery: buildExploreQuery(q, kind, area),
-      result: {
-        success: false,
-        restaurants: [],
-        activities: [],
-        pairs: [],
-        render_mode: "empty",
-      },
-      errors: [message],
-      speedStatus: "failed",
-    });
-    return NextResponse.json(
-      {
-        success: false,
-        items: [],
-        restaurants: [],
-        activities: [],
-        total: 0,
-        error: message,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ success: false, items: [], restaurants: [], activities: [], pairs: [], total: 0, error: message }, { status: 500 });
   }
 }
