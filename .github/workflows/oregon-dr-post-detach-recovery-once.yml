@@ -1,0 +1,220 @@
+name: Oregon DR post-detach recovery once
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-post-detach-recovery-once.yml'
+      - '.github/workflows/oregon-dr-failback.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-post-detach-recovery-once.yml'
+      - '.github/workflows/oregon-dr-failback.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: oregon-dr-post-detach-recovery-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  VIRGINIA_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  OREGON_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  FORWARD_PUBLICATION: theouthaven_dr_publication
+  FORWARD_SUBSCRIPTION: theouthaven_va_to_or_dr
+  FORWARD_SLOT: theouthaven_va_to_or_dr_slot
+  REVERSE_SUBSCRIPTION: theouthaven_or_to_va_failback
+  REVERSE_SLOT: theouthaven_or_to_va_failback_slot
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_PROJECT_NAME: roseout
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery contract
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          grep -F 'post_detach_partial' .github/workflows/oregon-dr-post-detach-recovery-once.yml >/dev/null
+          grep -F 'Vercel still targets Oregon' .github/workflows/oregon-dr-post-detach-recovery-once.yml >/dev/null
+          grep -F 'env_type()' .github/workflows/oregon-dr-post-detach-recovery-once.yml >/dev/null
+          grep -F 'public_data_api=healthy' .github/workflows/oregon-dr-post-detach-recovery-once.yml >/dev/null
+          grep -F 'oregon-dr-production-certification-quiesced-once.yml' .github/workflows/oregon-dr-post-detach-recovery-once.yml >/dev/null
+
+  recover:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Prove exact fail-closed post-detach state
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/runtime.json"
+          test "$(jq -r '.DR_MODE // empty' "$RUNNER_TEMP/dr.json")" = 'virginia_primary' || { echo 'Expected post-detach DR mode virginia_primary.' >&2; exit 1; }
+          test "$(jq -r '.SUPABASE_URL // empty' "$RUNNER_TEMP/runtime.json")" = "$VIRGINIA_URL" || { echo 'Expected AWS runtime already staged to Virginia.' >&2; exit 1; }
+
+          base_disabled=0
+          while IFS= read -r name; do
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED' || { echo "Base schedule not fail-closed: $name" >&2; exit 1; }
+            base_disabled=$((base_disabled+1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+          test "$base_disabled" = '65'
+          dr_disabled=0
+          while IFS= read -r name; do
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED' || { echo "DR schedule not fail-closed: $name" >&2; exit 1; }
+            dr_disabled=$((dr_disabled+1))
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+          test "$dr_disabled" = '2'
+
+          curl --fail --silent --show-error -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel.json"
+          resolve_vercel_url() {
+            local id candidate
+            id="$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].id // empty' "$RUNNER_TEMP/vercel.json")"
+            test -n "$id"
+            curl --fail --silent --show-error -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v1/projects/${VERCEL_PROJECT_ID}/env/${id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-detail.json"
+            for candidate in "$(jq -r '[.envs[]|select(.key=="NEXT_PUBLIC_SUPABASE_URL" and .target==["production"])][0].value // empty' "$RUNNER_TEMP/vercel.json")" "$(jq -r '.value // empty' "$RUNNER_TEMP/vercel-detail.json")" "$(jq -r '.legacyValue // empty' "$RUNNER_TEMP/vercel-detail.json")" "$(jq -r '.vsmValue // empty' "$RUNNER_TEMP/vercel-detail.json")"; do
+              case "$candidate" in https://*.supabase.co) printf '%s' "$candidate"; return 0;; esac
+            done
+            return 1
+          }
+          test "$(resolve_vercel_url)" = "$OREGON_URL" || { echo 'Expected Vercel still targets Oregon at the fail-closed boundary.' >&2; exit 1; }
+
+          query_ref "$VIRGINIA_REF" "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fence,(select count(*) from pg_subscription where subname='${REVERSE_SUBSCRIPTION}') reverse_subscriptions,(select count(*) from pg_publication where pubname='${FORWARD_PUBLICATION}') forward_publications,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}') forward_slots,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_forward_slots;" "$RUNNER_TEMP/va.json"
+          query_ref "$OREGON_REF" "select (select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fence,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) forward_subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) forward_workers,(select count(*) from pg_replication_slots where slot_name='${REVERSE_SLOT}') reverse_slots;" "$RUNNER_TEMP/or.json"
+          jq -e '.[0].fence==1 and .[0].reverse_subscriptions==0 and .[0].forward_publications==1 and .[0].forward_slots==1 and .[0].active_forward_slots==1' "$RUNNER_TEMP/va.json" >/dev/null
+          jq -e '.[0].fence==1 and .[0].forward_subscriptions==1 and .[0].forward_workers==1 and .[0].reverse_slots==0' "$RUNNER_TEMP/or.json" >/dev/null
+          echo 'recovery_boundary=post_detach_partial'
+
+      - name: Complete Virginia traffic cutover
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          curl --fail --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/api-keys?reveal=true" > "$RUNNER_TEMP/va-keys.json"
+          anon="$(jq -r '[.[]|select(.type=="legacy" and .name=="anon" and (.disabled!=true))][0].api_key // empty' "$RUNNER_TEMP/va-keys.json")"
+          service="$(jq -r '[.[]|select(.type=="legacy" and .name=="service_role" and (.disabled!=true))][0].api_key // empty' "$RUNNER_TEMP/va-keys.json")"
+          test -n "$anon"; test -n "$service"; echo "::add-mask::$anon"; echo "::add-mask::$service"
+          curl --fail --silent --show-error -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$RUNNER_TEMP/vercel-before.json"
+          env_type() { jq -r --arg key "$1" '[.envs[]|select(.key==$key and .target==["production"])][0].type // "encrypted"' "$RUNNER_TEMP/vercel-before.json"; }
+          for key in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do
+            test "$(jq --arg key "$key" '[.envs[]|select(.key==$key and .target==["production"])]|length' "$RUNNER_TEMP/vercel-before.json")" = '1'
+          done
+          jq -n --arg url "$VIRGINIA_URL" --arg anon "$anon" --arg service "$service" --arg url_type "$(env_type NEXT_PUBLIC_SUPABASE_URL)" --arg anon_type "$(env_type NEXT_PUBLIC_SUPABASE_ANON_KEY)" --arg service_type "$(env_type SUPABASE_SERVICE_ROLE_KEY)" '[{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:$url_type,target:["production"]},{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:$anon_type,target:["production"]},{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:$service_type,target:["production"]}]' > "$RUNNER_TEMP/upsert.json"
+          if [ "$(jq '[.envs[]|select(.key=="SUPABASE_URL" and .target==["production"])]|length' "$RUNNER_TEMP/vercel-before.json")" = '1' ]; then
+            jq --arg url "$VIRGINIA_URL" --arg type "$(env_type SUPABASE_URL)" '. + [{key:"SUPABASE_URL",value:$url,type:$type,target:["production"]}]' "$RUNNER_TEMP/upsert.json" > "$RUNNER_TEMP/upsert2.json"; mv "$RUNNER_TEMP/upsert2.json" "$RUNNER_TEMP/upsert.json"
+          fi
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/upsert-response.json" --write-out '%{http_code}' --request POST -H "Authorization: Bearer $VERCEL_TOKEN" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/upsert.json" "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}")"
+          [[ "$code" == 2* ]] || { jq -r '{code:(.error.code//"unknown"),message:(.error.message//"Vercel env upsert failed")}' "$RUNNER_TEMP/upsert-response.json" >&2 || true; exit 1; }
+          echo 'vercel_env_cutover=accepted'
+
+          query_ref "$VIRGINIA_REF" "alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" "$RUNNER_TEMP/va-unfence.json"
+          curl --fail --silent --show-error -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/current-deployment.json"
+          old_id="$(jq -r '.deployments[0].uid // .deployments[0].id // empty' "$RUNNER_TEMP/current-deployment.json")"; test -n "$old_id"
+          jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$old_id" '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/redeploy.json"
+          curl --fail --silent --show-error --request POST -H "Authorization: Bearer $VERCEL_TOKEN" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/redeploy.json" "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/new-deployment.json"
+          new_id="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/new-deployment.json")"; test -n "$new_id"
+          ready=false
+          for _ in $(seq 1 120); do
+            curl --fail --silent --show-error -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v13/deployments/${new_id}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/status.json"
+            state="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/status.json")"
+            [ "$state" = READY ] && { ready=true; break; }
+            [ "$state" = ERROR ] || [ "$state" = CANCELED ] && { echo "Vercel recovery deployment entered $state" >&2; exit 1; }
+            sleep 5
+          done
+          test "$ready" = true
+          echo 'virginia_production_deployment=ready'
+
+      - name: Restore Virginia primary standby topology
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() { local ref="$1" sql="$2" out="$3"; jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"; curl --fail --silent --show-error --request POST -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H 'Content-Type: application/json' --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"; }
+          query_ref "$OREGON_REF" "alter database postgres reset default_transaction_read_only; alter role postgres reset default_transaction_read_only; select pg_terminate_backend(pid) from pg_stat_activity where pid<>pg_backend_pid() and usename in ('authenticator','supabase_auth_admin','supabase_storage_admin');" "$RUNNER_TEMP/or-unfence.json"
+          invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          printf '%s' '{"function":"dr-standby-reconciler","body":{"operation":"status","dryRun":true}}' > "$RUNNER_TEMP/status-input.json"
+          aws lambda invoke --function-name "$invoker" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/status-input.json" "$RUNNER_TEMP/standby.json" >/dev/null
+          jq -e '.ok==true and .status<400 and .response.success==true and .response.auth.parity==true and .response.storage.parity==true' "$RUNNER_TEMP/standby.json" >/dev/null
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/schedule.json"
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/schedule.json")"; window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/schedule.json")"; target="$(jq -c '.Target' "$RUNNER_TEMP/schedule.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window "$window" --state ENABLED --target "$target" >/dev/null
+            done < <(jq -r '.[].name' "$manifest")
+          done
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | while read -r n; do aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$n" --query State --output text; done | grep -c '^ENABLED$')" = '65'
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | while read -r n; do aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$n" --query State --output text; done | grep -c '^ENABLED$')" = '2'
+          query_ref "$VIRGINIA_REF" "select (select count(*) from cron.job) cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fences,(select count(*) from pg_replication_slots where slot_name='${FORWARD_SLOT}' and active) active_slots;" "$RUNNER_TEMP/va-final.json"
+          query_ref "$OREGON_REF" "select (select count(*) from cron.job where active) active_cron_jobs,(select count(*) from pg_db_role_setting s join pg_database d on d.oid=s.setdatabase where d.datname='postgres' and s.setrole=0 and coalesce(array_to_string(s.setconfig,','),'') like '%default_transaction_read_only=on%') fences,(select count(*) from pg_subscription where subname='${FORWARD_SUBSCRIPTION}' and subenabled) subscriptions,(select count(*) from pg_stat_subscription where subname='${FORWARD_SUBSCRIPTION}' and pid is not null) workers;" "$RUNNER_TEMP/or-final.json"
+          jq -e '.[0].cron_jobs==0 and .[0].fences==0 and .[0].active_slots==1' "$RUNNER_TEMP/va-final.json" >/dev/null
+          jq -e '.[0].active_cron_jobs==0 and .[0].fences==0 and .[0].subscriptions==1 and .[0].workers==1' "$RUNNER_TEMP/or-final.json" >/dev/null
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://theouthaven.com/)"; [[ "$status" == 2* || "$status" == 3* ]]
+          curl --fail --silent --show-error -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${VIRGINIA_REF}/api-keys?reveal=true" > "$RUNNER_TEMP/va-keys-final.json"
+          anon="$(jq -r '[.[]|select(.type=="legacy" and .name=="anon" and (.disabled!=true))][0].api_key // empty' "$RUNNER_TEMP/va-keys-final.json")"; echo "::add-mask::$anon"; test -n "$anon"
+          api="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' -H "apikey: $anon" -H "Authorization: Bearer $anon" "${VIRGINIA_URL}/rest/v1/locations?select=id&limit=1")"; test "$api" = '200'
+          echo 'public_data_api=healthy'
+          echo 'recovery_result=virginia_primary_restored'
+
+      - name: Restart full production DR certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run oregon-dr-production-certification-quiesced-once.yml --ref main
+          echo 'certification_restart=dispatched'
+
+      - name: Fail closed on recovery failure
+        if: failure()
+        run: |
+          set -euo pipefail
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            while IFS= read -r name; do
+              aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" > "$RUNNER_TEMP/schedule-fail.json" || continue
+              expression="$(jq -r '.ScheduleExpression' "$RUNNER_TEMP/schedule-fail.json")"; window="$(jq -c '.FlexibleTimeWindow' "$RUNNER_TEMP/schedule-fail.json")"; target="$(jq -c '.Target' "$RUNNER_TEMP/schedule-fail.json")"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window "$window" --state DISABLED --target "$target" >/dev/null || true
+            done < <(jq -r '.[].name' "$manifest")
+          done
+          echo 'Recovery failed closed. Schedulers remain disabled; no database or traffic rollback was attempted.' >> "$GITHUB_STEP_SUMMARY"
