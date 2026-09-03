@@ -48,6 +48,7 @@ jobs:
           ' "$marker" >/dev/null
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          grep -F 'aws-scheduler-activation.yml' "$workflow" >/dev/null
           grep -F 'aws-dr-scheduler-activation.yml' "$workflow" >/dev/null
           grep -F 'oregon-dr-readiness.yml' "$workflow" >/dev/null
           grep -F 'oregon-dr-promotion.yml' "$workflow" >/dev/null
@@ -119,8 +120,13 @@ jobs:
             echo "$workflow=$new_id" >> "$RUNNER_TEMP/certification-runs.txt"
           }
 
-          # Restore normal Virginia-primary forward reconciliation first. This step
-          # proves the current passive standby is already healthy before enabling it.
+          # Repair any base-scheduler drift from the canonical 65-schedule activation
+          # manifest before checking DR-specific reconciliation state. This is the
+          # same fail-closed production activation path used by normal scheduler ops.
+          dispatch_and_wait aws-scheduler-activation.yml
+
+          # Restore normal Virginia-primary forward reconciliation. This step proves
+          # the passive standby is healthy before enabling the two forward DR jobs.
           dispatch_and_wait aws-dr-scheduler-activation.yml
 
           # Exact DB/Auth/Storage promotion gates must pass before any cutover.
@@ -166,7 +172,9 @@ jobs:
             esac
           done
 
-          # Re-establish and prove normal steady-state forward reconciliation.
+          # Re-establish and prove the exact base fleet plus normal steady-state
+          # Virginia -> Oregon reconciliation after failback.
+          dispatch_and_wait aws-scheduler-activation.yml
           dispatch_and_wait aws-dr-scheduler-activation.yml
           dispatch_and_wait oregon-dr-readiness.yml -f mode=promotion_preflight
 
