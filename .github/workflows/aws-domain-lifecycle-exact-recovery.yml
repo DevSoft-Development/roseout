@@ -1,0 +1,50 @@
+name: AWS domain lifecycle exact recovery
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'scripts/validate-cron-batch15.mjs'
+      - 'supabase/migrations/*exact_domain_lifecycle_wakes.sql'
+      - '.github/workflows/aws-domain-lifecycle-exact-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'scripts/validate-cron-batch15.mjs'
+      - 'supabase/migrations/*exact_domain_lifecycle_wakes.sql'
+      - '.github/workflows/aws-domain-lifecycle-exact-recovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate exact domain lifecycle contract
+        run: |
+          set -euo pipefail
+          MIGRATION='supabase/migrations/20260903022000_exact_domain_lifecycle_wakes.sql'
+          python -m py_compile infra/aws/lambda/background_work_signal.py
+          node scripts/validate-cron-batch15.mjs
+          node - <<'NODE'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
+          if (rows.length !== 65) throw new Error(`expected 65 schedules, got ${rows.length}`);
+          const domain = rows.find((row) => row.name === 'domain-lifecycle');
+          if (domain?.expression !== 'cron(0 * * * ? *)') throw new Error('domain lifecycle recovery must be hourly');
+          if (domain?.function !== 'sqs:background-cron') throw new Error('domain lifecycle must remain durable');
+          if (domain?.body?.target !== '/api/cron/managed?job=domain-lifecycle') throw new Error('domain lifecycle target drifted');
+          NODE
+          grep -F '"domain-lifecycle": "/api/cron/managed?job=domain-lifecycle"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F "'marketing-report-scheduler', 'marketing-social-publish', 'domain-lifecycle'" "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_domain_lifecycle_schedule' "$MIGRATION" >/dev/null
+          grep -F "interval '5 minutes'" "$MIGRATION" >/dev/null
+          grep -F "= 'live'" "$MIGRATION" >/dev/null
+          grep -F "'domain-lifecycle', row_id::text, null, true" "$MIGRATION" >/dev/null
+          grep -F "'domain-lifecycle', id::text, null, false" "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$MIGRATION" >/dev/null
