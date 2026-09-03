@@ -1,0 +1,242 @@
+name: Purchase one controlled Stamps live postcard
+
+on:
+  push:
+    branches:
+      - ops/stamps-one-live-postcard
+    paths:
+      - '.github/workflows/stamps-one-live-postcard.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  BATCH_ID: bb844630-80fe-48b7-8aaa-4f3c2350e000
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  INTEGRATION_STACK: theouthaven-integration-api-production
+
+jobs:
+  purchase-one:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve protected runtime values
+        env:
+          INTEGRATION_SECRET: ${{ secrets.AWS_PLATFORM_INTEGRATION_API_SECRET || secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$INTEGRATION_SECRET"
+          echo "::add-mask::$INTEGRATION_SECRET"
+          SERVICE_ROLE="$(aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text)"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          INTEGRATION_URL="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiUrl'].OutputValue" --output text)"
+          test -n "$INTEGRATION_URL" && test "$INTEGRATION_URL" != "None"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE" >> "$GITHUB_ENV"
+          echo "AWS_PLATFORM_INTEGRATION_API_SECRET=$INTEGRATION_SECRET" >> "$GITHUB_ENV"
+          echo "AWS_PLATFORM_INTEGRATION_API_URL=${INTEGRATION_URL%/}" >> "$GITHUB_ENV"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Purchase exactly one live postcard
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHmac, randomUUID } from 'node:crypto';
+          import sharp from 'sharp';
+          import { createClient } from '@supabase/supabase-js';
+
+          const batchId = process.env.BATCH_ID;
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          const integrationUrl = String(process.env.AWS_PLATFORM_INTEGRATION_API_URL || '').replace(/\/$/, '');
+          const integrationSecret = process.env.AWS_PLATFORM_INTEGRATION_API_SECRET;
+          const bucket = 'postcard-templates';
+
+          if (!batchId || !supabaseUrl || !serviceRole || !integrationUrl || !integrationSecret) {
+            throw new Error('required_runtime_configuration_missing');
+          }
+
+          const supabase = createClient(supabaseUrl, serviceRole, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          });
+
+          async function signedRequest(path, payload, method = 'POST', timeoutMs = 90000) {
+            const body = method === 'POST' ? JSON.stringify(payload ?? {}) : '';
+            const timestamp = Date.now().toString();
+            const signature = createHmac('sha256', integrationSecret)
+              .update([timestamp, method, path, body].join('\n'))
+              .digest('hex');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+              const response = await fetch(`${integrationUrl}${path}`, {
+                method,
+                signal: controller.signal,
+                headers: {
+                  ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+                  'x-toh-timestamp': timestamp,
+                  'x-toh-signature': signature,
+                },
+                ...(method === 'POST' ? { body } : {}),
+              });
+              const data = await response.json().catch(() => null);
+              return { response, data };
+            } finally {
+              clearTimeout(timeout);
+            }
+          }
+
+          const statusResult = await signedRequest('/v1/stamps/status', null, 'GET', 15000);
+          if (!statusResult.response.ok) throw new Error('stamps_status_unavailable');
+          const status = statusResult.data || {};
+          if (
+            status.mode !== 'live' || status.apiVersion !== 'v160' || !status.endpointApproved ||
+            !status.configured || !status.postcardEnabled || !status.livePurchasesEnabled ||
+            !status.transactionalOperationsEnabled
+          ) {
+            throw new Error('stamps_live_purchase_not_enabled');
+          }
+
+          const { data: item, error: itemError } = await supabase
+            .from('mailing_batch_items')
+            .select('id,business_name,street_address,city,state,zip_code,sequence_number,stamps_postage_status')
+            .eq('batch_id', batchId)
+            .not('status', 'eq', 'cancelled')
+            .is('stamps_postage_status', null)
+            .order('sequence_number', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (itemError) throw new Error(`eligible_postcard_query_failed:${itemError.message}`);
+          if (!item) throw new Error('no_unattempted_postcard_available');
+          if (!item.street_address || !item.city || !item.state || !item.zip_code) {
+            throw new Error('selected_postcard_address_incomplete');
+          }
+
+          const integratorTxId = `toh-postcard-live-${randomUUID()}`;
+          const reservedAt = new Date().toISOString();
+          const { data: reserved, error: reserveError } = await supabase
+            .from('mailing_batch_items')
+            .update({
+              stamps_integrator_tx_id: integratorTxId,
+              stamps_postage_status: 'reserved',
+              stamps_postage_reserved_at: reservedAt,
+              stamps_postage_error: null,
+            })
+            .eq('id', item.id)
+            .is('stamps_postage_status', null)
+            .select('id')
+            .maybeSingle();
+          if (reserveError) throw new Error(`postcard_reservation_failed:${reserveError.message}`);
+          if (!reserved) throw new Error('postcard_already_reserved_no_stamps_call');
+
+          let proof;
+          try {
+            const result = await signedRequest('/v1/stamps/postcard/production-proof', {
+              address: {
+                name: item.business_name,
+                street: item.street_address,
+                city: item.city,
+                state: item.state,
+                zip: item.zip_code,
+              },
+              integratorTxId,
+            }, 'POST', 100000);
+            if (!result.response.ok || !result.data?.ok) {
+              throw new Error(String(result.data?.error || `integration_http_${result.response.status}`).slice(0, 500));
+            }
+            proof = result.data;
+          } catch (error) {
+            const message = String(error instanceof Error ? error.message : error).replace(/[\r\n\t]+/g, ' ').slice(0, 500);
+            await supabase
+              .from('mailing_batch_items')
+              .update({ stamps_postage_status: 'manual_review', stamps_postage_error: message })
+              .eq('id', item.id)
+              .eq('stamps_integrator_tx_id', integratorTxId);
+            console.error('purchase_result=manual_review');
+            console.error(`item_id=${item.id}`);
+            console.error('No automatic retry will be attempted.');
+            process.exit(2);
+          }
+
+          const purchasedAt = new Date().toISOString();
+          const { data: purchaseUpdated, error: purchaseUpdateError } = await supabase
+            .from('mailing_batch_items')
+            .update({
+              stamps_tx_id: proof.stampsTxId,
+              stamps_postage_status: 'purchased',
+              stamps_postage_amount: proof.amount,
+              stamps_postage_ship_date: proof.shipDate,
+              stamps_postage_purchased_at: purchasedAt,
+              stamps_postage_error: null,
+            })
+            .eq('id', item.id)
+            .eq('stamps_integrator_tx_id', integratorTxId)
+            .select('id')
+            .maybeSingle();
+          if (purchaseUpdateError || !purchaseUpdated) {
+            console.error('purchase_result=charged_persistence_failed');
+            console.error(`item_id=${item.id}`);
+            console.error('Do not retry this postcard.');
+            process.exit(3);
+          }
+
+          let postageAssetUrl = null;
+          let assetWarning = proof.labelWarning || null;
+          if (proof.labelPngBase64) {
+            try {
+              const imageBytes = Buffer.from(proof.labelPngBase64, 'base64');
+              const trimmed = await sharp(imageBytes)
+                .flatten({ background: '#ffffff' })
+                .trim({ background: '#ffffff', threshold: 12 })
+                .extend({ top: 12, bottom: 12, left: 12, right: 12, background: '#ffffff' })
+                .png()
+                .toBuffer();
+              const metadata = await sharp(trimmed).metadata();
+              if (!metadata.width || !metadata.height || metadata.width < 24 || metadata.height < 24) {
+                throw new Error('postage_artwork_invalid');
+              }
+              const path = `production-proofs/${batchId}/${item.id}.png`;
+              const { error: uploadError } = await supabase.storage
+                .from(bucket)
+                .upload(path, trimmed, { contentType: 'image/png', cacheControl: '60', upsert: true });
+              if (uploadError) throw uploadError;
+              postageAssetUrl = supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+            } catch (error) {
+              assetWarning = String(error instanceof Error ? error.message : error).slice(0, 500);
+            }
+          }
+
+          if (assetWarning) {
+            await supabase
+              .from('mailing_batch_items')
+              .update({ stamps_postage_error: assetWarning })
+              .eq('id', item.id)
+              .eq('stamps_integrator_tx_id', integratorTxId);
+          }
+
+          console.log('purchase_result=success');
+          console.log(`batch_id=${batchId}`);
+          console.log(`item_id=${item.id}`);
+          console.log(`sequence_number=${item.sequence_number ?? ''}`);
+          console.log(`business_name=${String(proof.businessName || '').replace(/[\r\n]/g, ' ')}`);
+          console.log(`amount=${Number(proof.amount).toFixed(2)}`);
+          console.log(`ship_date=${proof.shipDate}`);
+          console.log(`stamps_tx_id_present=${Boolean(proof.stampsTxId)}`);
+          console.log(`postage_asset_saved=${Boolean(postageAssetUrl)}`);
+          console.log(`asset_warning_present=${Boolean(assetWarning)}`);
+          NODE
