@@ -57,7 +57,8 @@ describe("event-driven AWS background work", () => {
     });
     expect(schedule("search-ml-learning-maintenance")).toMatchObject({
       expression: "cron(0/15 * * * ? *)",
-      function: "node:/api/cron/managed?job=search-ml-learning-maintenance",
+      function: "sqs:background-cron",
+      body: { target: "/api/cron/managed?job=search-ml-learning-maintenance" },
     });
   });
 
