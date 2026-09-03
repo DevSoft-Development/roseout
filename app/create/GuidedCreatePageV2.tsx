@@ -8,6 +8,11 @@ import GuidedJourneySteps from "@/components/planner/GuidedJourneySteps";
 
 type PlanType = "outing" | "restaurant" | "activity";
 type LocationSource = "search" | "manual" | "device" | null;
+type GuidedCreatePageV2Props = {
+  initialIdea?: string;
+  initialPlanType?: PlanType;
+  initialStep?: 1 | 2;
+};
 
 const LOCATION_KEY = "theouthaven_user_location";
 const FLOW_VERSION = "guided_create_v1";
@@ -84,14 +89,19 @@ function getThisWeekendDateValue() {
   return getLocalDateValue(Math.round((date.getTime() - new Date().setHours(12, 0, 0, 0)) / 86400000));
 }
 
-export default function GuidedCreatePageV2() {
+export default function GuidedCreatePageV2({
+  initialIdea = "",
+  initialPlanType = "outing",
+  initialStep = 1,
+}: GuidedCreatePageV2Props) {
   const router = useRouter();
   const makeItYoursRef = useRef<HTMLElement | null>(null);
-  const [activeStep, setActiveStep] = useState<1 | 2>(1);
-  const [planType, setPlanType] = useState<PlanType>("outing");
-  const [idea, setIdea] = useState("");
-  const [location, setLocation] = useState("");
-  const [locationSource, setLocationSource] = useState<LocationSource>(null);
+  const initialDetectedLocation = initialStep === 2 && initialIdea ? getLocationFromSearch(initialIdea) : "";
+  const [activeStep, setActiveStep] = useState<1 | 2>(initialStep);
+  const [planType, setPlanType] = useState<PlanType>(initialPlanType);
+  const [idea, setIdea] = useState(initialIdea);
+  const [location, setLocation] = useState(initialDetectedLocation);
+  const [locationSource, setLocationSource] = useState<LocationSource>(initialDetectedLocation ? "search" : null);
   const [when, setWhen] = useState("No specific time");
   const [customDate, setCustomDate] = useState("");
   const [customTime, setCustomTime] = useState("");
@@ -105,12 +115,19 @@ export default function GuidedCreatePageV2() {
 
   useEffect(() => {
     document.title = "Create Your Outing | TheOutHaven";
-    safelyTrack("planner_started", { step: 1, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
+    safelyTrack("planner_started", { step: initialStep, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
+    if (initialStep === 2) {
+      safelyTrack("planner_intent_completed", { step: 1, plan_type: initialPlanType, idea: initialIdea.trim(), location_from_search: initialDetectedLocation || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
+      safelyTrack("planner_make_it_yours_viewed", { step: 2, plan_type: initialPlanType, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
+      window.setTimeout(() => makeItYoursRef.current?.scrollIntoView({ behavior: "auto", block: "start" }), 0);
+    }
     try {
       setLocationSaved(Boolean(localStorage.getItem(LOCATION_KEY)));
     } catch {
       setLocationSaved(false);
     }
+    // Initial homepage handoff values are intentionally consumed only on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
