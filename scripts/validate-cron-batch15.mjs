@@ -47,7 +47,7 @@ if (rollback.has(job)) throw new Error("domain-lifecycle leaked into rollback ba
 
 const row = schedules.find((item) => item.name === job);
 if (!row) throw new Error("domain-lifecycle schedule missing");
-if (row.expression !== "cron(0/5 * * * ? *)") throw new Error("domain-lifecycle cadence drifted");
+if (row.expression !== "cron(0 * * * ? *)") throw new Error("domain-lifecycle recovery cadence drifted");
 if (row.function !== "sqs:background-cron") throw new Error("domain-lifecycle must use the shared durable background queue");
 if (row.body?.target !== "/api/cron/managed?job=domain-lifecycle") throw new Error("domain-lifecycle durable target drifted");
 if (JSON.stringify(Object.keys(row.body ?? {}).sort()) !== JSON.stringify(["target"])) throw new Error("domain-lifecycle schedule body must contain target only");
@@ -74,4 +74,4 @@ if (!workerWorkflow.includes("enable_domain_lifecycle:") || !workerWorkflow.incl
   throw new Error("dedicated registrar worker deployment toggle must remain disabled by default");
 }
 
-console.log(`batch15_scheduler_contract=pass active=65 rollback=64 vercel_overlap=${vercelJobs.size} live_probe=1 dry_run_probe=1`);
+console.log(`batch15_scheduler_contract=pass active=65 rollback=64 vercel_overlap=${vercelJobs.size} live_probe=1 dry_run_probe=1 domain_recovery=hourly`);
