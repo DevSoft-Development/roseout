@@ -36,6 +36,11 @@ describe("event-driven AWS background work", () => {
       function: "sqs:background-cron",
       body: { target: "/api/cron/managed?job=location-description-backfill" },
     });
+    expect(schedule("team-session-watchdog")).toMatchObject({
+      expression: "cron(0 * * * ? *)",
+      function: "team-session-watchdog",
+      body: { source: "cron" },
+    });
     expect(schedule("claim-qr-repair-worker")).toMatchObject({
       expression: "cron(0/15 * * * ? *)",
       function: "sqs:background-cron",
@@ -54,6 +59,13 @@ describe("event-driven AWS background work", () => {
       expression: "cron(0/15 * * * ? *)",
       function: "node:/api/cron/managed?job=search-ml-learning-maintenance",
     });
+  });
+
+  it("preserves the 12-hour team session watchdog threshold", () => {
+    const watchdog = read("supabase/functions/team-session-watchdog/index.ts");
+    expect(watchdog).toContain("Date.now() - 12 * 60 * 60 * 1000");
+    expect(watchdog).toContain('status: "needs_correction"');
+    expect(watchdog).toContain('approval_status: "needs_correction"');
   });
 
   it("wakes Search ML from data changes and self-chains until the learning backlog is drained", () => {
