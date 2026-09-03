@@ -11,23 +11,47 @@ function authorized(request: NextRequest) {
   return Boolean(secret) && request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-export async function GET(request: NextRequest) {
-  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function syncUsers(userIds: string[]) {
+  const results: Array<{ userId: string; ok: boolean; result?: unknown; error?: string }> = [];
+  for (const userId of userIds) {
+    try {
+      const result = await syncMicrosoft365WorkspaceForUser(userId);
+      results.push({ userId, ok: true, result });
+    } catch (caught) {
+      results.push({ userId, ok: false, error: caught instanceof Error ? caught.message.slice(0, 300) : "Sync failed" });
+    }
+  }
+  return NextResponse.json({ ok: results.every((row) => row.ok), processed: results.length, results });
+}
+
+async function activeUserIds() {
   const { data: connections, error } = await supabaseAdmin
     .from("microsoft_365_connections")
     .select("user_id")
     .eq("status", "active")
     .limit(50);
   if (error) throw error;
+  return (connections || []).map((row) => String(row.user_id));
+}
 
-  const results: Array<{ userId: string; ok: boolean; error?: string }> = [];
-  for (const connection of connections || []) {
-    try {
-      await syncMicrosoft365WorkspaceForUser(connection.user_id);
-      results.push({ userId: connection.user_id, ok: true });
-    } catch (caught) {
-      results.push({ userId: connection.user_id, ok: false, error: caught instanceof Error ? caught.message.slice(0, 300) : "Sync failed" });
-    }
-  }
-  return NextResponse.json({ ok: results.every((row) => row.ok), processed: results.length, results });
+export async function GET(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return syncUsers(await activeUserIds());
+}
+
+export async function POST(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => ({}));
+  const userId = typeof body?.userId === "string" ? body.userId.trim() : "";
+  if (!userId) return NextResponse.json({ error: "userId is required." }, { status: 400 });
+
+  const { data, error } = await supabaseAdmin
+    .from("microsoft_365_connections")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.user_id) return NextResponse.json({ ok: true, processed: 0, skipped: true, reason: "connection_inactive" });
+  return syncUsers([userId]);
 }

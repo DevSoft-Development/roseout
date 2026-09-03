@@ -1,0 +1,72 @@
+name: AWS Microsoft 365 event driven
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/cron/microsoft-365-sync/route.ts'
+      - 'app/api/integrations/microsoft-365/webhook/route.ts'
+      - 'lib/microsoft-365/sync.ts'
+      - 'lib/microsoft-365/subscriptions.ts'
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'scripts/validate-cron-batch14.mjs'
+      - 'supabase/migrations/*event_driven_microsoft_365_sync.sql'
+      - '.github/workflows/aws-m365-event-driven.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/api/cron/microsoft-365-sync/route.ts'
+      - 'app/api/integrations/microsoft-365/webhook/route.ts'
+      - 'lib/microsoft-365/sync.ts'
+      - 'lib/microsoft-365/subscriptions.ts'
+      - 'infra/aws/lambda/background_work_signal.py'
+      - 'infra/aws/edge-runtime/schedules.json'
+      - 'scripts/validate-cron-batch14.mjs'
+      - 'supabase/migrations/*event_driven_microsoft_365_sync.sql'
+      - '.github/workflows/aws-m365-event-driven.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck application
+        run: npm run typecheck
+      - name: Validate Microsoft 365 event-driven contract
+        run: |
+          set -euo pipefail
+          MIGRATION='supabase/migrations/20260903015000_event_driven_microsoft_365_sync.sql'
+          python -m py_compile infra/aws/lambda/background_work_signal.py
+          node scripts/validate-cron-batch14.mjs
+          node - <<'NODE'
+          const fs = require('fs');
+          const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
+          if (rows.length !== 65) throw new Error(`expected 65 schedules, got ${rows.length}`);
+          const m365 = rows.find((row) => row.name === 'microsoft-365-sync');
+          if (m365?.expression !== 'cron(0/30 * * * ? *)') throw new Error('Microsoft 365 recovery must be 30 minutes');
+          if (m365?.function !== 'sqs:background-cron') throw new Error('Microsoft 365 recovery must remain durable');
+          NODE
+          grep -F '"microsoft-365-sync": "/api/cron/microsoft-365-sync"' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F '"@odata.deltaLink"' lib/microsoft-365/sync.ts >/dev/null
+          grep -F 'microsoft_365_sync_state' lib/microsoft-365/sync.ts >/dev/null
+          grep -F 'ensureMicrosoft365Subscriptions' lib/microsoft-365/sync.ts >/dev/null
+          grep -F 'calendarView/delta?startDateTime=' lib/microsoft-365/sync.ts >/dev/null
+          ! grep -F 'calendarView/delta?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$top=' lib/microsoft-365/sync.ts >/dev/null
+          grep -F 'me/mailFolders' lib/microsoft-365/subscriptions.ts >/dev/null
+          grep -F 'me/events' lib/microsoft-365/subscriptions.ts >/dev/null
+          grep -F '/tasks' lib/microsoft-365/subscriptions.ts >/dev/null
+          grep -F 'validationToken' app/api/integrations/microsoft-365/webhook/route.ts >/dev/null
+          grep -F 'verifyMicrosoft365WebhookClientState' app/api/integrations/microsoft-365/webhook/route.ts >/dev/null
+          grep -F 'webhook_wake_at' "$MIGRATION" >/dev/null
+          grep -F 'trg_signal_microsoft_365_webhook_wake' "$MIGRATION" >/dev/null
+          grep -F "'job', 'microsoft-365-sync'" "$MIGRATION" >/dev/null
+          ! grep -E 'cron\.schedule|create extension.*pg_cron' "$MIGRATION" >/dev/null

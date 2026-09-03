@@ -45,6 +45,7 @@ ALLOWED_JOBS = {
     "cron-alert-dispatcher": "/api/cron/managed?job=cron-alert-dispatcher",
     "marketing-report-scheduler": "edge:admin-marketing-report-scheduler",
     "marketing-social-publish": "/api/cron/managed?job=marketing-social-publish",
+    "microsoft-365-sync": "/api/cron/microsoft-365-sync",
 }
 
 JOB_DELAY_SECONDS = {
