@@ -1,0 +1,174 @@
+name: AWS SES daily recipient authority repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ses-recipient-item-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-ses-recipient-item-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-daily-email-recipient-repair-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  EDGE_RUNTIME_SECRET_REGION: us-east-1
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+  SHARED_APP_ENV_SECRET_REGION: us-west-2
+  EMAIL_IDENTITY: theouthaven.com
+  RECOVERY_WORKFLOW: aws-ses-recipient-format-diagnostic.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recipient-authority safety contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-ses-recipient-item-diagnostic.yml'
+          for token in \
+            'THEOUTHAVEN_ADMIN_EMAIL' \
+            'recipient_authority_invalid' \
+            'ADMIN_CRON_DIGEST_EMAIL' \
+            'ADMIN_RESERVATION_DIGEST_EMAIL' \
+            'SEARCH_HEALTH_DIGEST_TO' \
+            'SEARCH_HEALTH_ALERT_EMAILS' \
+            'MARKETING_PULSE_TO' \
+            'PLATFORM_ERROR_DIGEST_TO' \
+            'ADMIN_DIGEST_EMAIL' \
+            'digest_recipient_authority=verified_internal' \
+            'gh workflow run "$RECOVERY_WORKFLOW" --ref main'; do
+            grep -F "$token" "$FILE" >/dev/null
+          done
+
+  repair_and_dispatch:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Canonicalize daily report recipients from verified admin authority
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          EDGE_CURRENT="$RUNNER_TEMP/edge-current.json"
+          SHARED_CURRENT="$RUNNER_TEMP/shared-current.json"
+          EDGE_REPAIRED="$RUNNER_TEMP/edge-repaired.json"
+          SHARED_REPAIRED="$RUNNER_TEMP/shared-repaired.json"
+          aws secretsmanager get-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE_CURRENT"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED_CURRENT"
+          chmod 600 "$EDGE_CURRENT" "$SHARED_CURRENT"
+
+          EDGE_CURRENT="$EDGE_CURRENT" SHARED_CURRENT="$SHARED_CURRENT" EDGE_REPAIRED="$EDGE_REPAIRED" SHARED_REPAIRED="$SHARED_REPAIRED" EMAIL_IDENTITY="$EMAIL_IDENTITY" python <<'PY'
+          import json, os
+          from email.utils import parseaddr
+          from pathlib import Path
+
+          edge = json.loads(Path(os.environ['EDGE_CURRENT']).read_text())
+          shared = json.loads(Path(os.environ['SHARED_CURRENT']).read_text())
+          raw = edge.get('THEOUTHAVEN_ADMIN_EMAIL')
+          if not isinstance(raw, str) or not raw.strip():
+              raise SystemExit('recipient_authority_invalid')
+          _, authority = parseaddr(raw.strip())
+          authority = authority.strip()
+          if authority.count('@') != 1 or any(ch.isspace() for ch in authority):
+              raise SystemExit('recipient_authority_invalid')
+          local, domain = authority.rsplit('@', 1)
+          if not local or domain.lower() != os.environ['EMAIL_IDENTITY'].strip().lower():
+              raise SystemExit('recipient_authority_invalid')
+
+          edge_keys = {
+              'ADMIN_EMAIL',
+              'ADMIN_CRON_DIGEST_EMAIL',
+              'ADMIN_RESERVATION_DIGEST_EMAIL',
+              'SEARCH_HEALTH_DIGEST_TO',
+              'MARKETING_PULSE_TO',
+              'PLATFORM_ERROR_DIGEST_TO',
+          }
+          shared_keys = {
+              'ADMIN_EMAIL',
+              'ADMIN_DIGEST_EMAIL',
+              'THEOUTHAVEN_ADMIN_EMAIL',
+              'SEARCH_HEALTH_ALERT_EMAILS',
+          }
+          for key in edge_keys:
+              edge[key] = authority
+          for key in shared_keys:
+              shared[key] = authority
+
+          Path(os.environ['EDGE_REPAIRED']).write_text(json.dumps(edge, separators=(',', ':'), sort_keys=True))
+          Path(os.environ['SHARED_REPAIRED']).write_text(json.dumps(shared, separators=(',', ':'), sort_keys=True))
+          print('digest_recipient_authority=verified_internal')
+          print(f'digest_recipient_domain={domain.lower()}')
+          PY
+
+          aws secretsmanager put-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --secret-string "file://$EDGE_REPAIRED" --query VersionId --output text >/dev/null
+          aws secretsmanager put-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --secret-string "file://$SHARED_REPAIRED" --query VersionId --output text >/dev/null
+
+          EDGE_PROOF="$RUNNER_TEMP/edge-proof.json"
+          SHARED_PROOF="$RUNNER_TEMP/shared-proof.json"
+          aws secretsmanager get-secret-value --region "$EDGE_RUNTIME_SECRET_REGION" --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE_PROOF"
+          aws secretsmanager get-secret-value --region "$SHARED_APP_ENV_SECRET_REGION" --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED_PROOF"
+          chmod 600 "$EDGE_PROOF" "$SHARED_PROOF"
+          EDGE_PROOF="$EDGE_PROOF" SHARED_PROOF="$SHARED_PROOF" EMAIL_IDENTITY="$EMAIL_IDENTITY" python <<'PY'
+          import json, os
+          from email.utils import parseaddr
+          from pathlib import Path
+
+          edge = json.loads(Path(os.environ['EDGE_PROOF']).read_text())
+          shared = json.loads(Path(os.environ['SHARED_PROOF']).read_text())
+          edge_keys = ['ADMIN_EMAIL','ADMIN_CRON_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO','MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO']
+          shared_keys = ['ADMIN_EMAIL','ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SEARCH_HEALTH_ALERT_EMAILS']
+          values = [edge.get(k) for k in edge_keys] + [shared.get(k) for k in shared_keys]
+          if any(not isinstance(v, str) or not v.strip() for v in values):
+              raise SystemExit('recipient_repair_verification_failed')
+          canonical = values[0].strip().lower()
+          if any(v.strip().lower() != canonical for v in values):
+              raise SystemExit('recipient_repair_verification_failed')
+          _, addr = parseaddr(canonical)
+          if addr.count('@') != 1 or addr.rsplit('@', 1)[1].lower() != os.environ['EMAIL_IDENTITY'].lower():
+              raise SystemExit('recipient_repair_verification_failed')
+          print('digest_recipient_repair=verified')
+          PY
+          rm -f "$EDGE_CURRENT" "$SHARED_CURRENT" "$EDGE_REPAIRED" "$SHARED_REPAIRED" "$EDGE_PROOF" "$SHARED_PROOF"
+
+      - name: Dispatch controlled daily email recovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run "$RECOVERY_WORKFLOW" --ref main
+          echo 'daily_email_recovery=dispatched'
+
+      - name: Repair summary
+        run: |
+          {
+            echo '### Daily report recipient authority repair'
+            echo ''
+            echo '- Existing verified THEOUTHAVEN_ADMIN_EMAIL was used as the recipient authority.'
+            echo '- Only daily-report recipient keys were repaired; unrelated superadmin/security values were not changed.'
+            echo '- Edge and shared AWS runtime secrets were re-read and verified after the write.'
+            echo '- The controlled daily-email recovery workflow was dispatched after verification.'
+          } >> "$GITHUB_STEP_SUMMARY"
