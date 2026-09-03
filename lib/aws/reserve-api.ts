@@ -14,6 +14,16 @@ export type ReserveApiAssignmentInput = {
   overrideReason: string | null;
 };
 
+export type ReserveApiWaitlistSeatInput = {
+  waitlistId: string;
+  locationId: string;
+  resourceId: string | null;
+  resourceLabel: string;
+  resourceType: string;
+  resourceCapacity: number | null;
+  staffProfileId: string | null;
+};
+
 function configuredSecret() {
   return String(
     process.env.AWS_RESERVE_API_SECRET
@@ -66,6 +76,14 @@ export async function assignReserveResourceViaAws(input: ReserveApiAssignmentInp
   return signedRequest<{ success: true; reservation: Record<string, unknown> }>(
     "POST",
     "/v1/reserve/assign",
+    JSON.stringify(input),
+  );
+}
+
+export async function seatReserveWaitlistViaAws(input: ReserveApiWaitlistSeatInput) {
+  return signedRequest<{ success: true; reservation: Record<string, unknown> }>(
+    "POST",
+    "/v1/reserve/seat-waitlist",
     JSON.stringify(input),
   );
 }
