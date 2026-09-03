@@ -44,9 +44,13 @@ jobs:
       - name: Validate read-only diagnostic contract
         run: |
           set -euo pipefail
-          grep -F 'state_classification=' .github/workflows/oregon-dr-failclosed-state-diagnostic.yml >/dev/null
-          grep -F 'database/query' .github/workflows/oregon-dr-failclosed-state-diagnostic.yml >/dev/null
-          ! grep -E 'update-schedule|put-secret-value|alter role|alter subscription|drop subscription|create subscription|request POST.*env\?upsert|request PATCH|request DELETE' .github/workflows/oregon-dr-failclosed-state-diagnostic.yml >/dev/null
+          file=.github/workflows/oregon-dr-failclosed-state-diagnostic.yml
+          grep -F 'state_classification=' "$file" >/dev/null
+          grep -F 'database/query' "$file" >/dev/null
+          if sed -n '/- name: Classify exact production DR state/,$p' "$file" | grep -E 'update-schedule|put-secret-value|alter role|alter subscription|drop subscription|create subscription|request POST.*env\?upsert|request PATCH|request DELETE'; then
+            echo 'Diagnostic contains a forbidden mutation command.' >&2
+            exit 1
+          fi
 
   diagnose:
     needs: validate
