@@ -54,6 +54,15 @@ jobs:
           grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
           grep -F 'toh-production-edge-runtime' "$FILE" >/dev/null
           grep -F 'toh-production-background-runtime' "$FILE" >/dev/null
+          grep -F 'id: sync_mail' "$FILE" >/dev/null
+          grep -F 'edge_changed=false' "$FILE" >/dev/null
+          grep -F 'background_changed=false' "$FILE" >/dev/null
+          grep -F 'EDGE_CHANGED:' "$FILE" >/dev/null
+          grep -F 'BACKGROUND_CHANGED:' "$FILE" >/dev/null
+          grep -F 'sync_mail.outputs.edge_changed' "$FILE" >/dev/null
+          grep -F 'sync_mail.outputs.background_changed' "$FILE" >/dev/null
+          grep -F 'if [[ "$EDGE_CHANGED" == "true" ]]' "$FILE" >/dev/null
+          grep -F 'if [[ "$BACKGROUND_CHANGED" == "true" ]]' "$FILE" >/dev/null
           grep -F 'awsCronSchedules' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'AWS EventBridge:' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'aws_schedule_count' app/api/admin/cron-jobs/route.ts >/dev/null
@@ -138,6 +147,7 @@ jobs:
           rm -f "$ENV_FILE"
 
       - name: Synchronize mail configuration into AWS runtime secrets
+        id: sync_mail
         run: |
           set -euo pipefail
           MAIL_JSON="$RUNNER_TEMP/mail-env.json"
@@ -157,20 +167,31 @@ jobs:
           mail = json.loads(Path(os.environ['MAIL']).read_text(encoding='utf-8'))
           if not isinstance(current, dict) or not isinstance(mail, dict):
               raise SystemExit('Runtime mail parity input must be JSON objects.')
-          current.update({key: value for key, value in mail.items() if isinstance(value, str) and value})
-          Path(os.environ['OUTPUT']).write_text(json.dumps(current, separators=(',', ':')), encoding='utf-8')
+          merged = dict(current)
+          merged.update({key: value for key, value in mail.items() if isinstance(value, str) and value})
+          Path(os.environ['OUTPUT']).write_text(json.dumps(merged, separators=(',', ':'), sort_keys=True), encoding='utf-8')
           PY
             chmod 600 "$merged"
             jq -e '.RESEND_API_KEY | strings | length > 0' "$merged" >/dev/null
-            aws secretsmanager put-secret-value --region "$region" --secret-id "$secret" --secret-string "file://$merged" --query VersionId --output text >/dev/null
+
+            if cmp -s <(jq -S -c . "$current") <(jq -S -c . "$merged"); then
+              echo "${label}_changed=false" >> "$GITHUB_OUTPUT"
+              echo "${label}_mail_secret=unchanged"
+            else
+              aws secretsmanager put-secret-value --region "$region" --secret-id "$secret" --secret-string "file://$merged" --query VersionId --output text >/dev/null
+              echo "${label}_changed=true" >> "$GITHUB_OUTPUT"
+              echo "${label}_mail_secret=synchronized"
+            fi
             rm -f "$current" "$merged"
-            echo "${label}_mail_parity=synchronized"
           }
           sync_secret "$EDGE_RUNTIME_SECRET_REGION" "$EDGE_RUNTIME_SECRET" edge
           sync_secret "$BACKGROUND_APP_ENV_SECRET_REGION" "$BACKGROUND_APP_ENV_SECRET" background
           rm -f "$MAIL_JSON"
 
-      - name: Force fresh runtime generations without changing business configuration
+      - name: Refresh only runtime generations whose mail secret changed
+        env:
+          EDGE_CHANGED: ${{ steps.sync_mail.outputs.edge_changed }}
+          BACKGROUND_CHANGED: ${{ steps.sync_mail.outputs.background_changed }}
         run: |
           set -euo pipefail
           refresh_function() {
@@ -184,8 +205,18 @@ jobs:
             rm -f "$vars" "$envdoc"
             echo "${label}_runtime_generation=refreshed"
           }
-          refresh_function "$EDGE_RUNTIME_FUNCTION" edge
-          refresh_function "$BACKGROUND_RUNTIME_FUNCTION" background
+
+          if [[ "$EDGE_CHANGED" == "true" ]]; then
+            refresh_function "$EDGE_RUNTIME_FUNCTION" edge
+          else
+            echo 'edge_runtime_generation=unchanged'
+          fi
+
+          if [[ "$BACKGROUND_CHANGED" == "true" ]]; then
+            refresh_function "$BACKGROUND_RUNTIME_FUNCTION" background
+          else
+            echo 'background_runtime_generation=unchanged'
+          fi
 
       - name: Prove runtime secret mail parity and background health
         run: |
@@ -218,4 +249,4 @@ jobs:
             fi
             if [ "$attempt" -lt 4 ]; then sleep $((attempt * 5)); fi
           done
-          test "$healthy" = '1' || { echo 'Background runtime did not recover after mail parity refresh.' >&2; exit 1; }
+          test "$healthy" = '1' || { echo 'Background runtime health proof failed after mail parity synchronization.' >&2; exit 1; }
