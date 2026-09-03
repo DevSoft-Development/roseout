@@ -4,6 +4,7 @@ import {
   getReserveCanonicalLocationId,
   requireReservePermission,
 } from "@/lib/reserve/locationPermissions";
+import { getReserveStaffSession } from "@/lib/reserve/staffSession";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -25,6 +26,8 @@ export async function POST(request: NextRequest) {
   const auth = await requireReservePermission(locationId, "manageReservations");
   if (auth.error) return auth.error;
   const canonicalLocationId = getReserveCanonicalLocationId(auth.access, locationId);
+  const staffSession = await getReserveStaffSession(canonicalLocationId);
+  const actorStaffProfileId = staffSession?.staff_profile_id || null;
 
   const waitlist = await supabaseAdmin
     .from("reservation_waitlist")
@@ -61,7 +64,8 @@ export async function POST(request: NextRequest) {
         parent.data &&
         parent.data.is_active !== false &&
         ["bar", "bar_seat", "counter", "counter_seat"].includes(String(parent.data.item_type || "").toLowerCase()) &&
-        seatNumber >= 1 && seatNumber <= Number(parent.data.capacity || 0)
+        seatNumber >= 1 &&
+        seatNumber <= Number(parent.data.capacity || 0)
       ) {
         resource = { id: null, item_name: resourceLabel, item_type: "bar_seat", capacity: null };
       }
@@ -111,7 +115,7 @@ export async function POST(request: NextRequest) {
     p_resource_type: resource.item_type || "table",
     p_resource_capacity: ["bar", "bar_seat", "counter", "counter_seat"].includes(String(resource.item_type || "").toLowerCase()) ? null : Number(resource.capacity || 0) || null,
     p_seat_after_assign: true,
-    p_staff_profile_id: clean(body.staffProfileId || body.staff_profile_id) || null,
+    p_staff_profile_id: actorStaffProfileId,
     p_override_reason: null,
   });
 
@@ -129,7 +133,7 @@ export async function POST(request: NextRequest) {
   await supabaseAdmin.from("reserve_service_events").insert({
     location_id: canonicalLocationId,
     reservation_id: create.data.id,
-    staff_profile_id: clean(body.staffProfileId || body.staff_profile_id) || null,
+    staff_profile_id: actorStaffProfileId,
     event_type: "waitlist.converted_and_seated",
     resource_label: resource.item_name,
     metadata: { waitlist_id: waitlistId },
