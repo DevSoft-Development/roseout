@@ -132,6 +132,28 @@ Resources:
       Principal: '*'
       InvokedViaFunctionUrl: true
 
+  ReserveOutboxRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub toh-${Environment}-reserve-outbox
+      Description: Drain durable Reserve background events independently from the web runtime.
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ReserveApiFunction.Arn
+          Id: reserve-outbox
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 300
+            MaximumRetryAttempts: 2
+
+  ReserveOutboxInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReserveApiFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ReserveOutboxRule.Arn
+
   ReserveApiErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -172,3 +194,5 @@ Outputs:
     Value: !GetAtt ReserveApiUrl.FunctionUrl
   ReserveApiSecretArn:
     Value: !Ref ReserveApiSecret
+  ReserveOutboxRuleName:
+    Value: !Ref ReserveOutboxRule
