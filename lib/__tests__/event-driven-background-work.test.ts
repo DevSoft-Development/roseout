@@ -22,7 +22,7 @@ describe("event-driven AWS background work", () => {
       body: { operation: "worker_http_response_reconciler" },
     });
     expect(schedule("location-search-profile-worker")).toMatchObject({
-      expression: "cron(0/15 * * * ? *)",
+      expression: "cron(0 * * * ? *)",
       function: "sqs:background-cron",
       body: { target: "/api/cron/managed?job=location-search-profile-worker" },
     });
