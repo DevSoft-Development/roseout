@@ -33,6 +33,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck application
+        run: npm run typecheck
       - name: Validate Microsoft 365 event-driven contract
         run: |
           set -euo pipefail
@@ -51,6 +59,8 @@ jobs:
           grep -F '"@odata.deltaLink"' lib/microsoft-365/sync.ts >/dev/null
           grep -F 'microsoft_365_sync_state' lib/microsoft-365/sync.ts >/dev/null
           grep -F 'ensureMicrosoft365Subscriptions' lib/microsoft-365/sync.ts >/dev/null
+          grep -F 'calendarView/delta?startDateTime=' lib/microsoft-365/sync.ts >/dev/null
+          ! grep -F 'calendarView/delta?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$top=' lib/microsoft-365/sync.ts >/dev/null
           grep -F 'me/mailFolders' lib/microsoft-365/subscriptions.ts >/dev/null
           grep -F 'me/events' lib/microsoft-365/subscriptions.ts >/dev/null
           grep -F '/tasks' lib/microsoft-365/subscriptions.ts >/dev/null
