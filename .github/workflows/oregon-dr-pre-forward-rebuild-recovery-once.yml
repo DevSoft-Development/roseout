@@ -52,10 +52,10 @@ jobs:
           grep -F 'recovery_result=virginia_primary_restored' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'Patch recovery for exact post-publication boundary' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           grep -F 'grant ${REVERSE_REPLICATION_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
-          grep -F "pg_has_role(current_user,'${REVERSE_REPLICATION_ROLE}','USAGE') usage" .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
+          grep -F "pg_has_role(current_user,'\${REVERSE_REPLICATION_ROLE}','USAGE') usage" .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           grep -F 'drop owned by ${REVERSE_REPLICATION_ROLE};' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           grep -F 'grant ${REVERSE_SUBSCRIBER_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
-          grep -F "pg_has_role(current_user,'${REVERSE_SUBSCRIBER_ROLE}','USAGE') usage" .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
+          grep -F "pg_has_role(current_user,'\${REVERSE_SUBSCRIBER_ROLE}','USAGE') usage" .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           grep -F 'drop owned by ${REVERSE_SUBSCRIBER_ROLE};' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           ! grep -F 'set role ${REVERSE_REPLICATION_ROLE}; drop owned by ${REVERSE_REPLICATION_ROLE}; reset role;' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
           ! grep -F 'set role ${REVERSE_SUBSCRIBER_ROLE}; drop owned by ${REVERSE_SUBSCRIBER_ROLE}; reset role;' .github/workflows/oregon-dr-pre-forward-rebuild-recovery-once.yml >/dev/null
@@ -132,10 +132,10 @@ jobs:
           grep -F 'reverse_publications==0' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'reverse_replication_roles==1' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'grant ${REVERSE_REPLICATION_ROLE} to postgres with inherit true, set true' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
-          grep -F "pg_has_role(current_user,'${REVERSE_REPLICATION_ROLE}','USAGE') usage" scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${REVERSE_REPLICATION_ROLE}','USAGE') usage" scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'drop owned by ${REVERSE_REPLICATION_ROLE};' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'grant ${REVERSE_SUBSCRIBER_ROLE} to postgres with inherit true, set true' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
-          grep -F "pg_has_role(current_user,'${REVERSE_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${REVERSE_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'drop owned by ${REVERSE_SUBSCRIBER_ROLE};' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           ! grep -F 'set role ${REVERSE_REPLICATION_ROLE}; drop owned by ${REVERSE_REPLICATION_ROLE}; reset role;' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           ! grep -F 'set role ${REVERSE_SUBSCRIBER_ROLE}; drop owned by ${REVERSE_SUBSCRIBER_ROLE}; reset role;' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
