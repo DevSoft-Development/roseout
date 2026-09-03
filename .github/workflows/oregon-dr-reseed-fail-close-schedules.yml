@@ -1,0 +1,106 @@
+name: Oregon DR reseed fail-close schedules
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/oregon-dr-reseed-fail-close-schedules.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oregon-dr-reseed-fail-close-schedules.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-dr-scheduler-activation-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate fail-close contract
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          jq -e 'all(.[]; .name=="dr-auth-standby-reconcile" or .name=="dr-storage-standby-reconcile")' infra/aws/edge-runtime/dr-schedules.json >/dev/null
+          grep -F 'DR_MODE' .github/workflows/oregon-dr-reseed-fail-close-schedules.yml >/dev/null
+          grep -F -- '--state DISABLED' .github/workflows/oregon-dr-reseed-fail-close-schedules.yml >/dev/null
+
+  fail_close:
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Require Virginia primary and healthy base scheduler fleet
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-current.json"
+          test "$(jq -r '.DR_MODE // empty' "$RUNNER_TEMP/dr-current.json")" = 'virginia_primary'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          while IFS= read -r name; do
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || {
+              echo "Base production schedule is not enabled: $name" >&2
+              exit 1
+            }
+          done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+
+      - name: Fail-close forward DR schedules for reseed
+        run: |
+          set -euo pipefail
+          invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+          scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+          test -n "$invoker_arn"
+          test -n "$scheduler_role"
+          while IFS= read -r item; do
+            name="$(jq -r '.name' <<<"$item")"
+            expression="$(jq -r '.expression' <<<"$item")"
+            input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+            target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+            aws scheduler update-schedule \
+              --group-name "$SCHEDULE_GROUP" \
+              --name "$name" \
+              --schedule-expression "$expression" \
+              --flexible-time-window '{"Mode":"OFF"}' \
+              --state DISABLED \
+              --target "$target" >/dev/null
+            test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED'
+          done < <(jq -c '.[]' infra/aws/edge-runtime/dr-schedules.json)
+
+      - name: Fail-close summary
+        run: |
+          {
+            echo '### Oregon DR reseed scheduler guard'
+            echo ''
+            echo '- Virginia remains authoritative primary.'
+            echo '- All 65 base production schedules remain enabled.'
+            echo '- Both forward DR reconciliation schedules are now disabled.'
+            echo '- No database or traffic mutation was performed.'
+            echo '- The lost-slot reseed may now be retried through its protected workflow.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dr-current.json"
