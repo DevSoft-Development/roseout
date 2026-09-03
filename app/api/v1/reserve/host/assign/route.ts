@@ -228,14 +228,18 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   const assignmentMode = settings.data?.assignment_mode || "balanced";
   if (assignmentMode !== "manual" && !reservation?.server_staff_profile_id) {
-    const staff = await activeStaff(canonicalLocationId, reservation.reservation_date);
+    const serviceDate = reservation?.reservation_date || reservationResult.data.reservation_date;
+    const staff = await activeStaff(canonicalLocationId, serviceDate);
     const dayReservations = await supabaseAdmin
       .from("location_reservations")
       .select("id,status,reservation_date,reservation_time,party_size,seated_at,server_staff_profile_id")
       .eq("location_id", canonicalLocationId)
-      .eq("reservation.reservation_date" in reservation ? reservation.reservation_date : reservationResult.data.reservation_date);
-    const serviceDate = reservation.reservation_date || reservationResult.data.reservation_date;
-    const ranking = rankStaffForParty(Number(reservation.party_size || reservationResult.data.party_size || 1), staff, dayReservations.data || []);
+      .eq("reservation_date", serviceDate);
+    const ranking = rankStaffForParty(
+      Number(reservation?.party_size || reservationResult.data.party_size || 1),
+      staff,
+      dayReservations.data || [],
+    );
     recommendedServer = ranking[0] || null;
     if (assignmentMode === "balanced" && recommendedServer?.staff?.id) {
       if (reserveApiConfigured()) {
@@ -249,7 +253,9 @@ export async function POST(request: NextRequest) {
           reservation = serverResult.reservation as any;
           serverAssignmentService = "aws-reserve-api";
         } catch (error) {
-          console.error("Reserve API server assignment failed; using database fallback", { error: error instanceof Error ? error.message : String(error) });
+          console.error("Reserve API server assignment failed; using database fallback", {
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
       if (!serverAssignmentService) {
