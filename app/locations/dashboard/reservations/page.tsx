@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
+import ReserveEnterpriseHostView from "@/components/reserve/ReserveEnterpriseHostView";
 import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
@@ -121,7 +122,7 @@ export default async function LocationWorkspaceReservationsPage({
               Host View
             </p>
             <p className="truncate text-sm font-black text-white">
-              Full-screen reservation operations
+              Floor-first reservation operations
             </p>
           </div>
           <Link
@@ -139,7 +140,13 @@ export default async function LocationWorkspaceReservationsPage({
           />
         </div>
       ) : null}
-      {showOverview ? <ReserveOverviewPage /> : <ReserveCommandCenterPage />}
+      {hostMode ? (
+        <ReserveEnterpriseHostView initialLocationId={selectedLocationId} />
+      ) : showOverview ? (
+        <ReserveOverviewPage />
+      ) : (
+        <ReserveCommandCenterPage />
+      )}
     </div>
   );
 }
