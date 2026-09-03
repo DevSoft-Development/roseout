@@ -4,21 +4,24 @@ import { createSupabaseAdminClient } from "../_shared/supabaseAdmin.ts";
 import { logCronJobRun } from "../_shared/cronLogger.ts";
 
 const JOB_NAME = "admin-marketing-report-scheduler";
+const SCHEDULE_HINT = "Exact AWS one-shot at next_run_at; hourly recovery sweep";
 
 function siteUrl() {
   return (Deno.env.get("NEXT_PUBLIC_SITE_URL") || Deno.env.get("SITE_URL") || "https://theouthaven.com").replace(/\/$/, "");
 }
 
-function cronSecretMatches(req: Request) {
-  const expected = Deno.env.get("CRON_SECRET");
-  return Boolean(expected) && req.headers.get("x-cron-secret") === expected;
+function schedulerSecretMatches(req: Request) {
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const workerSecret = Deno.env.get("WORKER_INTERNAL_SECRET");
+  return (Boolean(cronSecret) && req.headers.get("x-cron-secret") === cronSecret)
+    || (Boolean(workerSecret) && req.headers.get("x-worker-secret") === workerSecret);
 }
 
 Deno.serve(async (req: Request) => {
   const options = handleOptions(req);
   if (options) return options;
 
-  if (!cronSecretMatches(req)) return unauthorized("Invalid scheduler credentials.");
+  if (!schedulerSecretMatches(req)) return unauthorized("Invalid scheduler credentials.");
 
   const startedAt = new Date();
   const supabase = createSupabaseAdminClient();
@@ -37,7 +40,7 @@ Deno.serve(async (req: Request) => {
       await logCronJobRun(supabase, {
         job_name: JOB_NAME,
         function_name: JOB_NAME,
-        schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
+        schedule_hint: SCHEDULE_HINT,
         description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
         source: "cron",
         status: "success",
@@ -73,7 +76,7 @@ Deno.serve(async (req: Request) => {
     await logCronJobRun(supabase, {
       job_name: JOB_NAME,
       function_name: JOB_NAME,
-      schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
+      schedule_hint: SCHEDULE_HINT,
       description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
       source: "cron",
       status: "success",
@@ -93,7 +96,7 @@ Deno.serve(async (req: Request) => {
     await logCronJobRun(supabase, {
       job_name: JOB_NAME,
       function_name: JOB_NAME,
-      schedule_hint: "Every 15 minutes; sends only reports whose saved schedule is due",
+      schedule_hint: SCHEDULE_HINT,
       description: "Runs saved Marketing Intelligence report schedules and emails fresh report data.",
       source: "cron",
       status: "failed",
