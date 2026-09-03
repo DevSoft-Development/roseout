@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -48,11 +49,15 @@ export default function MailingBatchActions({ batchId, status }: { batchId: stri
         ? ["completed"]
         : [];
 
-  if (!actions.length) return null;
-
   return (
     <div>
       <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/admin/dashboard/operations/mailing-batches/${batchId}/live-proof`}
+          className="rounded-xl border border-emerald-300/25 bg-emerald-500/10 px-4 py-2.5 text-sm font-black text-emerald-100 hover:bg-emerald-500/15"
+        >
+          Open live proof
+        </Link>
         {actions.map((action) => (
           <button
             key={action}
