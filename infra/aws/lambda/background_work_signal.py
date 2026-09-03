@@ -46,6 +46,7 @@ ALLOWED_JOBS = {
     "marketing-report-scheduler": "edge:admin-marketing-report-scheduler",
     "marketing-social-publish": "/api/cron/managed?job=marketing-social-publish",
     "microsoft-365-sync": "/api/cron/microsoft-365-sync",
+    "domain-lifecycle": "/api/cron/managed?job=domain-lifecycle",
 }
 
 JOB_DELAY_SECONDS = {
