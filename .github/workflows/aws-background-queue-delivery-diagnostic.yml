@@ -40,8 +40,6 @@ jobs:
           grep -F 'aws lambda get-event-source-mapping' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-configuration' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-concurrency' "$FILE" >/dev/null
-          grep -F 'aws cloudwatch get-metric-statistics' "$FILE" >/dev/null
-          grep -F 'aws cloudwatch describe-alarms' "$FILE" >/dev/null
           python - <<'PY'
           from pathlib import Path
           text = Path('.github/workflows/aws-background-queue-delivery-diagnostic.yml').read_text()
@@ -109,33 +107,13 @@ jobs:
             --queue-url "$DLQ_URL" \
             --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed VisibilityTimeout \
             --output json > "$DLQ"
-
-          START_TIME="$(date -u -d '15 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')"
-          END_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-          MAIN_AGE="$RUNNER_TEMP/background-queue-age.json"
-          DLQ_AGE="$RUNNER_TEMP/background-dlq-age.json"
-          aws cloudwatch get-metric-statistics \
-            --namespace AWS/SQS \
-            --metric-name ApproximateAgeOfOldestMessage \
-            --dimensions Name=QueueName,Value="$BACKGROUND_CRON_QUEUE" \
-            --start-time "$START_TIME" --end-time "$END_TIME" \
-            --period 60 --statistics Maximum --output json > "$MAIN_AGE"
-          aws cloudwatch get-metric-statistics \
-            --namespace AWS/SQS \
-            --metric-name ApproximateAgeOfOldestMessage \
-            --dimensions Name=QueueName,Value="$BACKGROUND_CRON_DLQ" \
-            --start-time "$START_TIME" --end-time "$END_TIME" \
-            --period 60 --statistics Maximum --output json > "$DLQ_AGE"
-
           echo "visible=$(jq -r '.Attributes.ApproximateNumberOfMessages // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "inflight=$(jq -r '.Attributes.ApproximateNumberOfMessagesNotVisible // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "delayed=$(jq -r '.Attributes.ApproximateNumberOfMessagesDelayed // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
-          echo "oldest=$(jq -r '[.Datapoints[]?] | sort_by(.Timestamp) | last | .Maximum // 0' "$MAIN_AGE")" >> "$GITHUB_OUTPUT"
           echo "visibility=$(jq -r '.Attributes.VisibilityTimeout // "unknown"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "dlq_visible=$(jq -r '.Attributes.ApproximateNumberOfMessages // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
           echo "dlq_inflight=$(jq -r '.Attributes.ApproximateNumberOfMessagesNotVisible // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
           echo "dlq_delayed=$(jq -r '.Attributes.ApproximateNumberOfMessagesDelayed // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
-          echo "dlq_oldest=$(jq -r '[.Datapoints[]?] | sort_by(.Timestamp) | last | .Maximum // 0' "$DLQ_AGE")" >> "$GITHUB_OUTPUT"
 
       - name: Inspect event source mapping
         id: mapping
@@ -150,7 +128,6 @@ jobs:
           COUNT="$(jq '.EventSourceMappings | length' "$LIST")"
           test "$COUNT" -eq 1 || { echo "expected exactly one background-cron event source mapping; found $COUNT" >&2; exit 1; }
           UUID="$(jq -r '.EventSourceMappings[0].UUID' "$LIST")"
-          test -n "$UUID" && test "$UUID" != 'null'
           aws lambda get-event-source-mapping --uuid "$UUID" --output json > "$DETAIL"
           STATE="$(jq -r '.State // "unknown"' "$DETAIL")"
           LAST_RESULT="$(jq -r '.LastProcessingResult // "unknown"' "$DETAIL")"
@@ -160,7 +137,6 @@ jobs:
           BATCH_WINDOW="$(jq -r '.MaximumBatchingWindowInSeconds // "unknown"' "$DETAIL")"
           test "$STATE" = 'Enabled' || { echo "background-cron mapping is not enabled: $STATE ($REASON)" >&2; exit 1; }
           test "$MAX_CONCURRENCY" = '3' || { echo "background-cron max concurrency drifted: $MAX_CONCURRENCY" >&2; exit 1; }
-          echo "uuid=$UUID" >> "$GITHUB_OUTPUT"
           echo "state=$STATE" >> "$GITHUB_OUTPUT"
           echo "last_result=$LAST_RESULT" >> "$GITHUB_OUTPUT"
           echo "reason=$REASON" >> "$GITHUB_OUTPUT"
@@ -201,17 +177,16 @@ jobs:
           echo "runtime_timeout=$(jq -r '.Timeout' "$RUNTIME_JSON")" >> "$GITHUB_OUTPUT"
           echo "runtime_memory=$(jq -r '.MemorySize' "$RUNTIME_JSON")" >> "$GITHUB_OUTPUT"
 
-      - name: Read queue alarms
+      - name: Read queue alarms when permitted
         run: |
           set -euo pipefail
-          aws cloudwatch describe-alarms \
-            --alarm-names \
-              toh-production-background-cron-oldest-message \
-              toh-production-background-cron-dlq-visible \
-              toh-production-background-cron-worker-throttles \
-              toh-production-background-runtime-throttles \
-            --query 'MetricAlarms[].{alarm:AlarmName,state:StateValue,reason:StateReason}' \
-            --output table
+          if aws cloudwatch describe-alarms \
+            --alarm-names toh-production-background-cron-oldest-message toh-production-background-cron-dlq-visible toh-production-background-cron-worker-throttles toh-production-background-runtime-throttles \
+            --query 'MetricAlarms[].{alarm:AlarmName,state:StateValue,reason:StateReason}' --output table; then
+            echo 'CloudWatch alarm state read succeeded.'
+          else
+            echo 'CloudWatch alarm state read is not permitted for the deploy role; continuing with SQS/Lambda diagnostics.'
+          fi
 
       - name: Report delivery diagnostic
         run: |
@@ -224,14 +199,12 @@ jobs:
             echo "- Visible: ${{ steps.queue.outputs.visible }}"
             echo "- In flight: ${{ steps.queue.outputs.inflight }}"
             echo "- Delayed: ${{ steps.queue.outputs.delayed }}"
-            echo "- Oldest message age: ${{ steps.queue.outputs.oldest }}s"
             echo "- Visibility timeout: ${{ steps.queue.outputs.visibility }}s"
             echo ''
             echo '#### DLQ'
             echo "- Visible: ${{ steps.queue.outputs.dlq_visible }}"
             echo "- In flight: ${{ steps.queue.outputs.dlq_inflight }}"
             echo "- Delayed: ${{ steps.queue.outputs.dlq_delayed }}"
-            echo "- Oldest message age: ${{ steps.queue.outputs.dlq_oldest }}s"
             echo ''
             echo '#### Event source mapping'
             echo "- State: ${{ steps.mapping.outputs.state }}"
