@@ -38,9 +38,10 @@ jobs:
         run: |
           set -euo pipefail
           FILE=.github/workflows/aws-location-intelligence-dedupe-drain.yml
-          grep -F 'BATCH_LIMIT: '\''25'\''' "$FILE" >/dev/null
+          grep -F "BATCH_LIMIT: '25'" "$FILE" >/dev/null
           grep -F 'sqs:background-cron' "$FILE" >/dev/null
           grep -F '/api/cron/managed?job=location-intelligence-dedupe-classifier' "$FILE" >/dev/null
+          grep -F 'github.event_name == '\''workflow_dispatch'\''' "$FILE" >/dev/null
           grep -F 'googleCallsPerformed == 0' "$FILE" >/dev/null
           grep -F 'destructiveMergesPerformed == 0' "$FILE" >/dev/null
           grep -F 'AUTO_UNIQUE + REVIEW_DISPOSITIONED == SELECTED' "$FILE" >/dev/null
@@ -50,7 +51,7 @@ jobs:
           grep -F 'location_intelligence_prior_' "$FILE" >/dev/null
 
   execute:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     environment: production
@@ -335,6 +336,7 @@ jobs:
             echo ''
             echo "- Batch cap: \`$BATCH_LIMIT\`"
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
+            echo '- Activation: explicit workflow dispatch only; merge/push validates but does not classify'
             echo '- Google calls: 0'
             echo '- Destructive merges: 0'
             echo '- Classifier never publishes locations'
