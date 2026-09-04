@@ -1,0 +1,60 @@
+name: AWS Location Intelligence cleanup canary trigger
+# One-shot dispatch marker: 2026-09-04T18:27Z
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-canary-trigger.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-canary-trigger.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: aws-location-intelligence-cleanup-canary-trigger-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate one-shot dispatch contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-cleanup-canary-trigger.yml
+          grep -F 'aws-location-intelligence-cleanup-canary.yml/dispatches' "$FILE" >/dev/null
+          grep -F '"ref":"main"' "$FILE" >/dev/null
+          grep -F "github.event_name == 'push'" "$FILE" >/dev/null
+
+  dispatch:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch guarded production cleanup canary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/aws-location-intelligence-cleanup-canary.yml/dispatches" \
+            --input - <<'JSON'
+          {"ref":"main"}
+          JSON
+
+      - name: Summary
+        run: |
+          {
+            echo '### AWS Location Intelligence cleanup canary trigger'
+            echo ''
+            echo '- Dispatched the existing manual-only guarded cleanup canary workflow on main.'
+            echo '- Cleanup remains private-AWS only, Google-free, and batch-limited by the cleanup worker.'
+          } >> "$GITHUB_STEP_SUMMARY"
