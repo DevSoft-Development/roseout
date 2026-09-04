@@ -1,5 +1,5 @@
 name: AWS background queue delivery diagnostic
-# Read-only production diagnostic marker: 2026-09-04T17:07Z
+# Read-only production diagnostic marker: 2026-09-04T17:10Z
 
 on:
   pull_request:
@@ -41,6 +41,7 @@ jobs:
           grep -F 'aws lambda get-event-source-mapping' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-configuration' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-concurrency' "$FILE" >/dev/null
+          grep -F 'aws logs filter-log-events' "$FILE" >/dev/null
           python - <<'PY'
           from pathlib import Path
           text = Path('.github/workflows/aws-background-queue-delivery-diagnostic.yml').read_text()
@@ -177,6 +178,48 @@ jobs:
           echo "worker_memory=$(jq -r '.MemorySize' "$WORKER_JSON")" >> "$GITHUB_OUTPUT"
           echo "runtime_timeout=$(jq -r '.Timeout' "$RUNTIME_JSON")" >> "$GITHUB_OUTPUT"
           echo "runtime_memory=$(jq -r '.MemorySize' "$RUNTIME_JSON")" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize recent worker failures
+        env:
+          WORKER: ${{ steps.targets.outputs.worker }}
+        run: |
+          set -euo pipefail
+          LOG_GROUP="/aws/lambda/${WORKER}"
+          OUT="$RUNNER_TEMP/background-worker-failures.json"
+          START_MS="$(( $(date +%s) * 1000 - 72 * 60 * 60 * 1000 ))"
+          aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --start-time "$START_MS" \
+            --filter-pattern '"background_cron_failed"' \
+            --max-items 5000 \
+            --output json > "$OUT"
+          python - "$OUT" <<'PY'
+          import collections
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          counts = collections.Counter()
+          total = 0
+          for event in data.get('events') or []:
+              message = str(event.get('message') or '').strip()
+              start = message.find('{')
+              if start < 0:
+                  continue
+              try:
+                  payload = json.loads(message[start:])
+              except Exception:
+                  continue
+              if payload.get('event') != 'background_cron_failed':
+                  continue
+              total += 1
+              error = str(payload.get('error') or 'unknown')
+              category = error.split(':', 1)[0].strip() or 'unknown'
+              counts[category] += 1
+          print(f'background_failure_events_72h={total}')
+          for category, count in counts.most_common(20):
+              print(f'background_failure_category={category} count={count}')
+          PY
 
       - name: Read queue alarms when permitted
         run: |
