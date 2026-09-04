@@ -56,7 +56,10 @@ jobs:
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'prepared_failback_state=proven' "$file" >/dev/null
           grep -F '.[0].reverse_ready==462' "$file" >/dev/null
-          grep -F 'test "$base_enabled" = '\''65'\''' "$file" >/dev/null
+          grep -F 'case "$base_enabled:$base_disabled" in' "$file" >/dev/null
+          grep -F "'65:0')" "$file" >/dev/null
+          grep -F "'0:65') recover_base=true" "$file" >/dev/null
+          grep -F 'prepared_failback_base_recovery=complete' "$file" >/dev/null
           grep -F 'test "$dr_enabled" = '\''0'\'' && test "$dr_disabled" = '\''2'\''' "$file" >/dev/null
           grep -F 'FAILBACK_VIRGINIA' "$file" >/dev/null
           grep -F 'PROMOTE_OREGON' "$file" >/dev/null
@@ -130,9 +133,30 @@ jobs:
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
             case "$state" in ENABLED) dr_enabled=$((dr_enabled+1));; DISABLED) dr_disabled=$((dr_disabled+1));; *) exit 1;; esac
           done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
-          test "$base_enabled" = '65' && test "$base_disabled" = '0'
+          recover_base=false
+          case "$base_enabled:$base_disabled" in
+            '65:0') ;;
+            '0:65') recover_base=true ;;
+            *) echo "Prepared failback requires either 65/0 or fail-closed 0/65 base schedules; got ${base_enabled}/${base_disabled}." >&2; exit 1 ;;
+          esac
           test "$dr_enabled" = '0' && test "$dr_disabled" = '2'
           echo 'prepared_failback_state=proven'
+
+          if [ "$recover_base" = true ]; then
+            invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
+            scheduler_role="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='EventBridgeSchedulerRoleArn'].OutputValue" --output text)"
+            test -n "$invoker_arn" && test -n "$scheduler_role"
+            while IFS= read -r item; do
+              name="$(jq -r '.name' <<<"$item")"
+              expression="$(jq -r '.expression' <<<"$item")"
+              input="$(jq -c '{function:.function,body:.body}' <<<"$item")"
+              target="$(jq -nc --arg arn "$invoker_arn" --arg role "$scheduler_role" --arg input "$input" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:3600,MaximumRetryAttempts:2}}')"
+              aws scheduler update-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --schedule-expression "$expression" --flexible-time-window '{"Mode":"OFF"}' --state ENABLED --target "$target" >/dev/null
+            done < <(jq -c '.[]' infra/aws/edge-runtime/schedules.json)
+            while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/schedules.json)
+            while IFS= read -r name; do test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'DISABLED'; done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
+            echo 'prepared_failback_base_recovery=complete'
+          fi
 
       - name: Complete guarded failback to Virginia
         env:
