@@ -8,6 +8,7 @@ export const DEFAULT_GOOGLE_PLACES_BUDGET = {
   hardCapUsd: 200,
   creditBalanceUsd: 300,
   openingSpendUsd: 0,
+  openingSpendMonth: null as string | null,
   enabled: true,
 } as const;
 
@@ -17,6 +18,7 @@ export type GooglePlacesBudgetConfig = {
   hardCapUsd: number;
   creditBalanceUsd: number;
   openingSpendUsd: number;
+  openingSpendMonth: string | null;
   enabled: boolean;
 };
 
@@ -24,6 +26,11 @@ function money(value: unknown, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return Math.round(parsed * 100) / 100;
+}
+
+function month(value: unknown) {
+  const normalized = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(normalized) ? normalized : null;
 }
 
 export function normalizeGooglePlacesBudget(value: unknown): GooglePlacesBudgetConfig {
@@ -39,6 +46,7 @@ export function normalizeGooglePlacesBudget(value: unknown): GooglePlacesBudgetC
     hardCapUsd,
     creditBalanceUsd: money(raw.creditBalanceUsd, DEFAULT_GOOGLE_PLACES_BUDGET.creditBalanceUsd),
     openingSpendUsd: money(raw.openingSpendUsd, DEFAULT_GOOGLE_PLACES_BUDGET.openingSpendUsd),
+    openingSpendMonth: month(raw.openingSpendMonth),
     enabled: raw.enabled !== false,
   };
 }
