@@ -72,6 +72,13 @@ export default async function AdminSettingsPage() {
             <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Manage Domain Benefit</span>
           </Link>
 
+          <Link href="/admin/dashboard/settings/google-places" className="rounded-3xl border border-emerald-300/20 bg-[#0f1510] p-6 hover:border-emerald-300/45">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">Location Intelligence</p>
+            <h2 className="mt-2 text-xl font-bold text-white">Google Places Budget</h2>
+            <p className="mt-2 text-sm text-white/70">Adjust monthly Google spend and see current usage, remaining budget, credits, photos, rich Details, and address autocomplete.</p>
+            <span className="mt-4 inline-block rounded-full bg-emerald-300 px-4 py-2 text-sm font-black text-black">Manage Google Budget</span>
+          </Link>
+
           <Link href="/admin/dashboard/settings/demo-center" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
             <h2 className="text-xl font-bold text-rose-100">Demo Center</h2>
             <p className="mt-2 text-sm text-white/70">Create, reset, train, and demo TheOutHaven using a real-location mirror.</p>
