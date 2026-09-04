@@ -103,6 +103,12 @@ Resources:
                   - logs:PutLogEvents
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-integration-api:*
               - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: TheOutHaven/GooglePlaces
+              - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref IntegrationApiSecret
               - Effect: Allow

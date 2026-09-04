@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven AWS Location Intelligence API for catalog readiness, enrichment orchestration, and Google budget controls.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  LocationIntelligenceApiSharedSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleSecretArn:
+    Type: String
+  IntegrationApiUrl:
+    Type: String
+  IntegrationApiSecretArn:
+    Type: String
+  ReservedConcurrency:
+    Type: Number
+    Default: 10
+    MinValue: 2
+    MaxValue: 100
+
+Resources:
+  LocationIntelligenceApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub /theouthaven/${Environment}/location-intelligence-api/hmac
+      SecretString: !Ref LocationIntelligenceApiSharedSecret
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: LocationIntelligenceAPI
+
+  LocationIntelligenceApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenLocationIntelligenceApi-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: location-intelligence-api-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-location-intelligence-api:*
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref LocationIntelligenceApiSecret
+                  - !Ref SupabaseServiceRoleSecretArn
+                  - !Ref IntegrationApiSecretArn
+              - Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: LocationIntelligenceAPI
+
+  LocationIntelligenceApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-location-intelligence-api
+      RetentionInDays: 30
+
+  LocationIntelligenceApiFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: LocationIntelligenceApiLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-location-intelligence-api
+      Description: AWS-native location intelligence, readiness, and budget-control API for TheOutHaven.
+      Role: !GetAtt LocationIntelligenceApiRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 512
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_SECRET_ID: !Ref SupabaseServiceRoleSecretArn
+          SHARED_SECRET_ARN: !Ref LocationIntelligenceApiSecret
+          INTEGRATION_API_URL: !Ref IntegrationApiUrl
+          INTEGRATION_API_SECRET_ARN: !Ref IntegrationApiSecretArn
+          GOOGLE_METRIC_NAMESPACE: TheOutHaven/GooglePlaces
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+              return {"statusCode": 503, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "error": "location_intelligence_api_code_not_deployed"})}
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: LocationIntelligenceAPI
+
+  LocationIntelligenceApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt LocationIntelligenceApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+
+  LocationIntelligenceApiUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LocationIntelligenceApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  LocationIntelligenceApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LocationIntelligenceApiFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  LocationIntelligenceApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub ${Environment} Location Intelligence API Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LocationIntelligenceApiFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  LocationIntelligenceApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub ${Environment} Location Intelligence API Lambda throttles
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LocationIntelligenceApiFunction
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  LocationIntelligenceApiFunctionName:
+    Value: !Ref LocationIntelligenceApiFunction
+  LocationIntelligenceApiUrl:
+    Value: !GetAtt LocationIntelligenceApiUrl.FunctionUrl
+  LocationIntelligenceApiSecretArn:
+    Value: !Ref LocationIntelligenceApiSecret

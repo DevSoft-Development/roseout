@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGooglePlaceDetailsViaIntegrationApi } from "@/lib/aws/integration-api";
+import { getGoogleAddressDetailsViaIntegrationApi } from "@/lib/aws/google-places-address-api";
 
 type AddressComponent = {
   longText?: string;
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const placeId = String(body.placeId || "").trim();
     const sessionToken = String(body.sessionToken || "").trim();
     if (!placeId) return NextResponse.json({ error: "Missing placeId." }, { status: 400 });
-    const place = await getGooglePlaceDetailsViaIntegrationApi<AddressPlace>(placeId, { sessionToken: sessionToken || undefined });
+    const place = await getGoogleAddressDetailsViaIntegrationApi<AddressPlace>(placeId, sessionToken || undefined);
     return jsonWithProvider(formatAddressDetails(place, placeId));
   } catch (error) {
     return NextResponse.json(

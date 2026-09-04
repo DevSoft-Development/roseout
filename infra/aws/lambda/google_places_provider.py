@@ -16,7 +16,9 @@ GOOGLE_PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,512}$")
 GOOGLE_PHOTO_NAME_RE = re.compile(r"^places/[A-Za-z0-9_-]+/photos/[A-Za-z0-9_-]+$")
 GOOGLE_REGION_RE = re.compile(r"^[A-Z]{2}$")
 GOOGLE_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{1,256}$")
+GOOGLE_METRIC_NAMESPACE = "TheOutHaven/GooglePlaces"
 
+TEXT_SEARCH_IDS_ONLY_FIELD_MASK = "places.id"
 TEXT_SEARCH_FIELD_MASK = ",".join([
     "places.id",
     "places.displayName",
@@ -37,6 +39,13 @@ AUTOCOMPLETE_FIELD_MASK = ",".join([
     "suggestions.placePrediction.text",
 ])
 
+ADDRESS_DETAILS_FIELD_MASK = ",".join([
+    "id",
+    "formattedAddress",
+    "addressComponents",
+    "location",
+])
+
 DETAILS_FIELD_MASK = ",".join([
     "id",
     "displayName",
@@ -50,13 +59,16 @@ DETAILS_FIELD_MASK = ",".join([
     "userRatingCount",
     "businessStatus",
     "primaryType",
+    "primaryTypeDisplayName",
     "types",
     "photos",
     "addressComponents",
     "currentOpeningHours",
+    "currentSecondaryOpeningHours",
     "regularOpeningHours",
     "regularSecondaryOpeningHours",
     "utcOffsetMinutes",
+    "timeZone",
     "priceLevel",
     "priceRange",
     "editorialSummary",
@@ -64,6 +76,8 @@ DETAILS_FIELD_MASK = ",".join([
     "outdoorSeating",
     "liveMusic",
     "goodForGroups",
+    "goodForChildren",
+    "menuForChildren",
     "goodForWatchingSports",
     "servesCocktails",
     "servesBeer",
@@ -84,10 +98,14 @@ DETAILS_FIELD_MASK = ",".join([
     "parkingOptions",
     "accessibilityOptions",
     "paymentOptions",
+    "pureServiceAreaBusiness",
+    "containingPlaces",
+    "consumerAlert",
 ])
 PHOTO_FIELD_MASK = "photos"
 
 secrets = boto3.client("secretsmanager")
+cloudwatch = boto3.client("cloudwatch")
 _cached_google_places_secret = None
 
 
@@ -108,6 +126,42 @@ def load_google_places_secret():
         raise RuntimeError("google_places_secret_invalid")
     _cached_google_places_secret = secret
     return secret
+
+
+def _record_usage(sku, operation, *, session_token="", metadata=None):
+    """Best-effort usage metering. Provider availability never depends on telemetry."""
+    dimensions = [
+        {"Name": "Sku", "Value": sku[:255]},
+        {"Name": "Operation", "Value": operation[:255]},
+    ]
+    try:
+        cloudwatch.put_metric_data(
+            Namespace=GOOGLE_METRIC_NAMESPACE,
+            MetricData=[{
+                "MetricName": "Requests",
+                "Dimensions": dimensions,
+                "Value": 1.0,
+                "Unit": "Count",
+            }],
+        )
+    except Exception as exc:
+        print(json.dumps({
+            "level": "warning",
+            "service": "integration-api",
+            "provider": "google-places",
+            "operation": "usage_metering",
+            "sku": sku,
+            "error": str(exc)[:300],
+        }))
+    print(json.dumps({
+        "level": "info",
+        "service": "integration-api",
+        "provider": "google-places",
+        "operation": operation,
+        "sku": sku,
+        "session_token_present": bool(_clean(session_token)),
+        "metadata": metadata or {},
+    }))
 
 
 def _upstream_error(status, body_bytes):
@@ -200,6 +254,12 @@ def search_text(payload):
             field_mask=AUTOCOMPLETE_FIELD_MASK,
             body=body,
         )
+        _record_usage(
+            "autocomplete_requests",
+            "autocomplete",
+            session_token=token,
+            metadata={"sessionTokenPresent": bool(token)},
+        )
         suggestions = result.get("suggestions") if isinstance(result.get("suggestions"), list) else []
         return {"ok": True, "suggestions": suggestions}
     if mode != "text-search":
@@ -218,11 +278,20 @@ def search_text(payload):
     region_code = _clean(payload.get("regionCode") or "US").upper()
     if not GOOGLE_REGION_RE.fullmatch(region_code):
         raise ValueError("google_region_code_invalid")
+    field_mode = _clean(payload.get("fieldMode") or "rich").lower()
+    if field_mode not in {"ids-only", "rich"}:
+        raise ValueError("google_text_search_field_mode_invalid")
+    field_mask = TEXT_SEARCH_IDS_ONLY_FIELD_MASK if field_mode == "ids-only" else TEXT_SEARCH_FIELD_MASK
     result = _json_request(
         "/places:searchText",
         method="POST",
-        field_mask=TEXT_SEARCH_FIELD_MASK,
+        field_mask=field_mask,
         body={"textQuery": query, "pageSize": page_size, "regionCode": region_code},
+    )
+    _record_usage(
+        "text_search_ids_only" if field_mode == "ids-only" else "text_search_enterprise",
+        "text_search",
+        metadata={"fieldMode": field_mode, "pageSize": page_size},
     )
     places = result.get("places") if isinstance(result.get("places"), list) else []
     return {"ok": True, "places": places}
@@ -231,12 +300,21 @@ def search_text(payload):
 def details(payload):
     place_id = _place_id(payload)
     token = _session_token(payload)
+    field_mode = _clean(payload.get("fieldMode") or "rich").lower()
+    if field_mode not in {"address", "rich"}:
+        raise ValueError("google_details_field_mode_invalid")
     path = f"/places/{urllib.parse.quote(place_id, safe='')}"
     if token:
         path += "?" + urllib.parse.urlencode({"sessionToken": token})
     result = _json_request(
         path,
-        field_mask=DETAILS_FIELD_MASK,
+        field_mask=ADDRESS_DETAILS_FIELD_MASK if field_mode == "address" else DETAILS_FIELD_MASK,
+    )
+    _record_usage(
+        "place_details_essentials" if field_mode == "address" else "place_details_enterprise_atmosphere",
+        "place_details",
+        session_token=token,
+        metadata={"fieldMode": field_mode, "sessionTokenPresent": bool(token)},
     )
     return {"ok": True, "place": result}
 
@@ -247,6 +325,7 @@ def photo_metadata(payload):
         f"/places/{urllib.parse.quote(place_id, safe='')}",
         field_mask=PHOTO_FIELD_MASK,
     )
+    _record_usage("place_details_ids_only", "photo_metadata")
     photos = result.get("photos") if isinstance(result.get("photos"), list) else []
     return {"ok": True, "photos": photos}
 
@@ -288,6 +367,7 @@ def photo_media(payload):
         raise RuntimeError("Google Places photo response was too large")
     if not content_type.lower().startswith("image/"):
         raise RuntimeError("Google Places photo returned a non-image response")
+    _record_usage("place_details_photos", "photo_media", metadata={"maxWidthPx": max_width_px})
     return {
         "status": status_code,
         "contentType": content_type,
