@@ -28,7 +28,7 @@ const candidateProjection = [
   "claim_status",
 ].join(",");
 
-type DedupeCandidate = {
+export type DedupeCandidate = {
   id: string;
   google_place_id?: string | null;
   location_key?: string | null;
@@ -251,6 +251,47 @@ async function ensurePendingReview(candidate: DedupeCandidate, verification: Ded
     .maybeSingle();
   if (inserted.error) throw new Error(`Dedupe review-pair insert failed: ${inserted.error.message}`);
   return Boolean(inserted.data?.id);
+}
+
+export async function routeUniqueCandidateToReview(
+  candidate: DedupeCandidate,
+  verification: DedupeVerification,
+) {
+  if (!["review_pending", "review_exact_collision", "review_shared_phone"].includes(verification.decision)) {
+    return false;
+  }
+
+  // A stale `unique` row may only be downgraded when review is demonstrably
+  // actionable. Exact/shared-phone collisions must have a new or existing
+  // pending pair; a generic missing-Place-ID signal is not enough.
+  const reviewReady = verification.decision === "review_pending"
+    ? true
+    : await ensurePendingReview(candidate, verification);
+  if (!reviewReady) return false;
+
+  const now = new Date().toISOString();
+  const exact = verification.decision === "review_exact_collision";
+  const result = await supabaseAdmin
+    .from("locations")
+    .update({
+      duplicate_status: "possible_duplicate",
+      duplicate_score: exact ? 100 : 70,
+      last_deduped_at: now,
+      updated_at: now,
+    })
+    .eq("id", candidate.id)
+    .eq("quality_status", "publish_ready")
+    .eq("is_searchable", false)
+    .eq("duplicate_status", "unique")
+    .eq("is_hidden", false)
+    .eq("active", true)
+    .eq("is_low_level", false)
+    .is("deleted_at", null)
+    .is("duplicate_of", null)
+    .select("id")
+    .maybeSingle();
+  if (result.error) throw new Error(`Dedupe review-state update failed: ${result.error.message}`);
+  return Boolean(result.data?.id);
 }
 
 async function markUnique(candidate: DedupeCandidate) {
