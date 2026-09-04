@@ -73,6 +73,13 @@ export type DedupeVerification = {
   matchLocationId: string | null;
 };
 
+type ReviewSourceStatus = "unknown" | "unique";
+
+type ReviewRouteResult = {
+  routed: boolean;
+  reviewQueued: boolean;
+};
+
 export function classifyDedupeSignals(signals: DedupeSignalSet): DedupeDecision {
   if (!signals.hasGooglePlaceId) return "review_missing_google_place_id";
   if (signals.pendingReview) return "review_pending";
@@ -253,23 +260,11 @@ async function ensurePendingReview(candidate: DedupeCandidate, verification: Ded
   return Boolean(inserted.data?.id);
 }
 
-export async function routeUniqueCandidateToReview(
+async function markPossibleDuplicate(
   candidate: DedupeCandidate,
   verification: DedupeVerification,
+  expectedStatus: ReviewSourceStatus,
 ) {
-  if (!["review_pending", "review_exact_collision", "review_shared_phone"].includes(verification.decision)) {
-    return false;
-  }
-
-  // A stale `unique` row may only be downgraded when review is demonstrably
-  // actionable. Re-prove an existing pending review immediately before the
-  // update; exact/shared-phone collisions must have a new or existing pending
-  // pair. A generic missing-Place-ID signal is not enough.
-  const reviewReady = verification.decision === "review_pending"
-    ? await hasPendingReview(candidate.id)
-    : await ensurePendingReview(candidate, verification);
-  if (!reviewReady) return false;
-
   const now = new Date().toISOString();
   const exact = verification.decision === "review_exact_collision";
   const result = await supabaseAdmin
@@ -283,7 +278,7 @@ export async function routeUniqueCandidateToReview(
     .eq("id", candidate.id)
     .eq("quality_status", "publish_ready")
     .eq("is_searchable", false)
-    .eq("duplicate_status", "unique")
+    .eq("duplicate_status", expectedStatus)
     .eq("is_hidden", false)
     .eq("active", true)
     .eq("is_low_level", false)
@@ -293,6 +288,46 @@ export async function routeUniqueCandidateToReview(
     .maybeSingle();
   if (result.error) throw new Error(`Dedupe review-state update failed: ${result.error.message}`);
   return Boolean(result.data?.id);
+}
+
+async function routeCandidateToReview(
+  candidate: DedupeCandidate,
+  verification: DedupeVerification,
+  expectedStatus: ReviewSourceStatus,
+): Promise<ReviewRouteResult> {
+  if (!["review_pending", "review_exact_collision", "review_shared_phone"].includes(verification.decision)) {
+    return { routed: false, reviewQueued: false };
+  }
+
+  // A candidate may only leave the classifier/cleanup queue when review is
+  // demonstrably actionable. Re-prove an existing pending review immediately
+  // before the update; exact/shared-phone collisions must have a new or existing
+  // pending pair. A generic missing-Place-ID signal is not enough.
+  const reviewQueued = verification.decision === "review_pending"
+    ? false
+    : await ensurePendingReview(candidate, verification);
+  const reviewReady = verification.decision === "review_pending"
+    ? await hasPendingReview(candidate.id)
+    : reviewQueued;
+  if (!reviewReady) return { routed: false, reviewQueued };
+
+  const routed = await markPossibleDuplicate(candidate, verification, expectedStatus);
+  return { routed, reviewQueued };
+}
+
+export async function routeUniqueCandidateToReview(
+  candidate: DedupeCandidate,
+  verification: DedupeVerification,
+) {
+  const result = await routeCandidateToReview(candidate, verification, "unique");
+  return result.routed;
+}
+
+async function routeUnknownCandidateToReview(
+  candidate: DedupeCandidate,
+  verification: DedupeVerification,
+) {
+  return routeCandidateToReview(candidate, verification, "unknown");
 }
 
 async function markUnique(candidate: DedupeCandidate) {
@@ -330,6 +365,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
     signals: DedupeSignalSet;
     matchLocationId: string | null;
     reviewQueued: boolean;
+    reviewDispositioned: boolean;
   }> = [];
   const skipped: Array<{ locationId: string; reason: string }> = [];
   const failures: Array<{ locationId: string; error: string }> = [];
@@ -343,8 +379,13 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
 
       const verified = await verifyConservativeUnique(candidate);
       if (verified.decision !== "auto_unique") {
-        const reviewQueued = await ensurePendingReview(candidate, verified);
-        review.push({ locationId: candidate.id, ...verified, reviewQueued });
+        const routed = await routeUnknownCandidateToReview(candidate, verified);
+        review.push({
+          locationId: candidate.id,
+          ...verified,
+          reviewQueued: routed.reviewQueued,
+          reviewDispositioned: routed.routed,
+        });
         continue;
       }
 
@@ -352,8 +393,13 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
       // a concurrent import/review cannot be silently cleared as unique.
       const reverified = await verifyConservativeUnique(candidate);
       if (reverified.decision !== "auto_unique") {
-        const reviewQueued = await ensurePendingReview(candidate, reverified);
-        review.push({ locationId: candidate.id, ...reverified, reviewQueued });
+        const routed = await routeUnknownCandidateToReview(candidate, reverified);
+        review.push({
+          locationId: candidate.id,
+          ...reverified,
+          reviewQueued: routed.reviewQueued,
+          reviewDispositioned: routed.routed,
+        });
         continue;
       }
 
@@ -380,6 +426,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
     autoUniqueLocationIds: autoUnique,
     reviewRequired: review.length,
     reviewQueued: review.filter((item) => item.reviewQueued).length,
+    reviewDispositioned: review.filter((item) => item.reviewDispositioned).length,
     review,
     skipped: skipped.length,
     skippedDetails: skipped,
