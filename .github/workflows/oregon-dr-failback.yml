@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/oregon-dr-failback.yml'
       - 'scripts/dr/oregon-failback.sh'
+      - 'scripts/dr/harden-oregon-failback-runtime.py'
       - '.github/workflows/oregon-dr-failback-preflight.yml'
       - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'scripts/dr/promotion-sequence-state.sql'
@@ -15,6 +16,7 @@ on:
     paths:
       - '.github/workflows/oregon-dr-failback.yml'
       - 'scripts/dr/oregon-failback.sh'
+      - 'scripts/dr/harden-oregon-failback-runtime.py'
       - 'docs/runbooks/oregon-dr-failback.md'
   workflow_dispatch:
     inputs:
@@ -63,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/dr/oregon-failback.sh
+          python3 -m py_compile scripts/dr/harden-oregon-failback-runtime.py
           base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
           test "$base_expected" -ge 24
           test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort | uniq | wc -l | tr -d ' ')" = "$base_expected"
@@ -98,24 +101,34 @@ jobs:
           grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reauthentication_required' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'env_type()' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'legacy_type' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'reverse_cleanup_stage=publication' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'reverse_cleanup_stage=source_membership' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'reverse_cleanup_stage=target_membership' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
-          grep -F 'reverse_cleanup=complete' scripts/dr/oregon-failback.sh >/dev/null
-          ! grep -F "drop publication if exists \${FAILBACK_PUBLICATION}; drop owned by \${FAILBACK_REPLICATION_ROLE}" scripts/dr/oregon-failback.sh >/dev/null
+
+          hardened="$RUNNER_TEMP/oregon-failback-hardened.sh"
+          cp scripts/dr/oregon-failback.sh "$hardened"
+          python3 scripts/dr/harden-oregon-failback-runtime.py "$hardened"
+          first="$(sha256sum "$hardened" | awk '{print $1}')"
+          python3 scripts/dr/harden-oregon-failback-runtime.py "$hardened"
+          second="$(sha256sum "$hardened" | awk '{print $1}')"
+          test "$first" = "$second"
+          bash -n "$hardened"
+          grep -F 'env_type()' "$hardened" >/dev/null
+          grep -F 'legacy_type' "$hardened" >/dev/null
+          ! grep -F '{key:"SUPABASE_URL",value:$url,type:"encrypted",target:["production"]}' "$hardened" >/dev/null
+          grep -F 'reverse_cleanup_stage=publication' "$hardened" >/dev/null
+          grep -F 'reverse_cleanup_stage=source_membership' "$hardened" >/dev/null
+          grep -F 'reverse_cleanup_stage=target_membership' "$hardened" >/dev/null
+          grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' "$hardened" >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" "$hardened" >/dev/null
+          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' "$hardened" >/dev/null
+          grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' "$hardened" >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" "$hardened" >/dev/null
+          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' "$hardened" >/dev/null
+          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' "$hardened" >/dev/null
+          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' "$hardened" >/dev/null
+          grep -F 'reverse_cleanup=complete' "$hardened" >/dev/null
+          ! grep -F "drop publication if exists \${FAILBACK_PUBLICATION}; drop owned by \${FAILBACK_REPLICATION_ROLE}" "$hardened" >/dev/null
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'Verify final failback runtime hardening' .github/workflows/oregon-dr-failback.yml >/dev/null
-          ! grep -F 'Expected failback Vercel env block not found' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'Harden final failback runtime script' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'harden-oregon-failback-runtime.py' .github/workflows/oregon-dr-failback.yml >/dev/null
 
   execute:
     needs: validate
@@ -133,10 +146,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Verify final failback runtime hardening
+      - name: Harden final failback runtime script
         if: github.event.inputs.action == 'failback'
         run: |
           set -euo pipefail
+          python3 scripts/dr/harden-oregon-failback-runtime.py scripts/dr/oregon-failback.sh
           bash -n scripts/dr/oregon-failback.sh
           grep -F 'env_type()' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'legacy_type' scripts/dr/oregon-failback.sh >/dev/null
