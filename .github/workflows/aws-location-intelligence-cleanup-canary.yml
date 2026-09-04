@@ -26,6 +26,8 @@ env:
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
+  CLEANUP_POLL_ATTEMPTS: '300'
+  CLEANUP_POLL_INTERVAL_SECONDS: '4'
 
 jobs:
   validate:
@@ -35,11 +37,15 @@ jobs:
       - name: Validate guarded canary contract
         run: |
           set -euo pipefail
-          grep -F 'sqs:background-cron' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
-          grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
-          grep -F 'duplicate_status=eq.unique' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
-          grep -F 'is_searchable=eq.false' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
-          grep -F 'published-ready unique backlog did not decrease' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+          FILE=.github/workflows/aws-location-intelligence-cleanup-canary.yml
+          grep -F 'sqs:background-cron' "$FILE" >/dev/null
+          grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' "$FILE" >/dev/null
+          grep -F 'duplicate_status=eq.unique' "$FILE" >/dev/null
+          grep -F 'is_searchable=eq.false' "$FILE" >/dev/null
+          grep -F "CLEANUP_POLL_ATTEMPTS: '300'" "$FILE" >/dev/null
+          grep -F "CLEANUP_POLL_INTERVAL_SECONDS: '4'" "$FILE" >/dev/null
+          grep -F 'published-ready unique backlog did not decrease' "$FILE" >/dev/null
+          grep -F 'do not re-dispatch until late SQS execution is reconciled' "$FILE" >/dev/null
 
   enqueue:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -124,11 +130,13 @@ jobs:
         env:
           KEY_FILE: ${{ steps.runtime.outputs.key_file }}
           BEFORE: ${{ steps.before.outputs.count }}
+          POLL_ATTEMPTS: ${{ env.CLEANUP_POLL_ATTEMPTS }}
+          POLL_INTERVAL_SECONDS: ${{ env.CLEANUP_POLL_INTERVAL_SECONDS }}
         run: |
           set -euo pipefail
           SERVICE_ROLE="$(cat "$KEY_FILE")"
           AFTER="$BEFORE"
-          for attempt in $(seq 1 18); do
+          for attempt in $(seq 1 "$POLL_ATTEMPTS"); do
             HEADERS="$RUNNER_TEMP/location-intelligence-after-${attempt}.headers"
             curl --silent --show-error --fail \
               --dump-header "$HEADERS" \
@@ -142,9 +150,9 @@ jobs:
               echo "Location Intelligence canary made guarded progress: before=$BEFORE after=$AFTER"
               break
             fi
-            sleep 5
+            sleep "$POLL_INTERVAL_SECONDS"
           done
-          test "$AFTER" -lt "$BEFORE" || { echo 'published-ready unique backlog did not decrease after AWS cleanup canary.' >&2; exit 1; }
+          test "$AFTER" -lt "$BEFORE" || { echo 'published-ready unique backlog did not decrease within the configured cleanup observation window; do not re-dispatch until late SQS execution is reconciled.' >&2; exit 1; }
           echo "after=$AFTER" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup credential file
@@ -163,5 +171,6 @@ jobs:
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
             echo '- Scope: publish-ready, non-searchable, duplicate_status=unique, visible, active, non-low-level only'
             echo '- Google calls in cleanup worker: 0'
+            echo "- Cleanup observation window: up to $((CLEANUP_POLL_ATTEMPTS * CLEANUP_POLL_INTERVAL_SECONDS / 60)) minutes"
             echo "- Backlog before: \`${{ steps.before.outputs.count || 'unknown' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
