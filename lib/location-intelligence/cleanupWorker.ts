@@ -2,7 +2,10 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { refreshLocationSearchProfile } from "@/lib/search/profile/profileRepository";
-import { verifyConservativeUnique } from "@/lib/location-intelligence/dedupeClassifier";
+import {
+  routeUniqueCandidateToReview,
+  verifyConservativeUnique,
+} from "@/lib/location-intelligence/dedupeClassifier";
 
 const DEFAULT_BATCH_LIMIT = 10;
 const MAX_BATCH_LIMIT = 10;
@@ -181,6 +184,33 @@ async function remainingCanaryCandidates() {
   return result.count ?? 0;
 }
 
+async function markProfileReviewRequired(locationId: string) {
+  const now = new Date().toISOString();
+  const result = await supabaseAdmin
+    .from("locations")
+    .update({
+      quality_status: "needs_review",
+      data_status: "needs_review",
+      publish_ready: false,
+      is_searchable: false,
+      updated_at: now,
+    })
+    .eq("id", locationId)
+    .eq("quality_status", "publish_ready")
+    .eq("is_searchable", false)
+    .eq("duplicate_status", "unique")
+    .eq("is_hidden", false)
+    .eq("active", true)
+    .eq("is_low_level", false)
+    .is("deleted_at", null)
+    .is("duplicate_of", null)
+    .select("id")
+    .maybeSingle();
+
+  if (result.error) throw new Error(`Cleanup profile-review disposition failed: ${result.error.message}`);
+  return Boolean(result.data?.id);
+}
+
 async function publishCandidate(locationId: string) {
   const now = new Date().toISOString();
   const result = await supabaseAdmin
@@ -212,6 +242,7 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
   const published: string[] = [];
   const skipped: CleanupSkip[] = [];
   const failures: CleanupFailure[] = [];
+  let dispositionedToReview = 0;
 
   for (const candidate of candidates) {
     try {
@@ -223,7 +254,12 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
 
       const initialDedupe = await verifyConservativeUnique(candidate);
       if (initialDedupe.decision !== "auto_unique") {
-        skipped.push({ locationId: candidate.id, reason: `dedupe_recheck:${initialDedupe.decision}` });
+        const routed = await routeUniqueCandidateToReview(candidate, initialDedupe);
+        if (routed) dispositionedToReview += 1;
+        skipped.push({
+          locationId: candidate.id,
+          reason: `dedupe_recheck:${initialDedupe.decision}${routed ? ":routed_to_review" : ""}`,
+        });
         continue;
       }
 
@@ -239,12 +275,22 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
 
       const profileReviewReasons = actionableProfileReviewReasons(profile);
       if (profileReviewReasons.length > 0) {
-        skipped.push({ locationId: candidate.id, reason: `search_profile_needs_review:${profileReviewReasons.join("|")}` });
+        const dispositioned = await markProfileReviewRequired(candidate.id);
+        if (dispositioned) dispositionedToReview += 1;
+        skipped.push({
+          locationId: candidate.id,
+          reason: `search_profile_needs_review:${profileReviewReasons.join("|")}${dispositioned ? ":routed_to_review" : ""}`,
+        });
         continue;
       }
       const exclusions = Array.isArray(profile?.exclusions) ? profile.exclusions : [];
       if (exclusions.includes("unsupported_non_outing")) {
-        skipped.push({ locationId: candidate.id, reason: "unsupported_non_outing" });
+        const dispositioned = await markProfileReviewRequired(candidate.id);
+        if (dispositioned) dispositionedToReview += 1;
+        skipped.push({
+          locationId: candidate.id,
+          reason: `unsupported_non_outing${dispositioned ? ":routed_to_review" : ""}`,
+        });
         continue;
       }
 
@@ -263,7 +309,12 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
 
       const finalDedupe = await verifyConservativeUnique(current);
       if (finalDedupe.decision !== "auto_unique") {
-        skipped.push({ locationId: candidate.id, reason: `final_dedupe_recheck:${finalDedupe.decision}` });
+        const routed = await routeUniqueCandidateToReview(current, finalDedupe);
+        if (routed) dispositionedToReview += 1;
+        skipped.push({
+          locationId: candidate.id,
+          reason: `final_dedupe_recheck:${finalDedupe.decision}${routed ? ":routed_to_review" : ""}`,
+        });
         continue;
       }
 
@@ -301,6 +352,7 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
     processed: candidates.length,
     published: published.length,
     publishedLocationIds: published,
+    dispositionedToReview,
     skipped,
     failed: failures.length,
     failures,
