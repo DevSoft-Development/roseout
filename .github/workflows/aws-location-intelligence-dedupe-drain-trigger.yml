@@ -1,0 +1,59 @@
+name: AWS Location Intelligence dedupe drain trigger
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-dedupe-drain-trigger.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-dedupe-drain-trigger.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: aws-location-intelligence-dedupe-drain-trigger-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate one-shot dispatch contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-dedupe-drain-trigger.yml
+          grep -F 'aws-location-intelligence-dedupe-drain.yml/dispatches' "$FILE" >/dev/null
+          grep -F '"ref":"main"' "$FILE" >/dev/null
+          grep -F "github.event_name == 'push'" "$FILE" >/dev/null
+
+  dispatch:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch guarded production drain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/aws-location-intelligence-dedupe-drain.yml/dispatches" \
+            --input - <<'JSON'
+          {"ref":"main"}
+          JSON
+
+      - name: Summary
+        run: |
+          {
+            echo '### AWS Location Intelligence dedupe drain trigger'
+            echo ''
+            echo '- Dispatched the existing manual-only guarded dedupe drain workflow on main.'
+            echo '- The drain itself remains batch-limited to 25 and independently audits every selected row.'
+          } >> "$GITHUB_STEP_SUMMARY"
