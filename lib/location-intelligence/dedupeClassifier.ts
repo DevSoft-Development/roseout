@@ -262,10 +262,11 @@ export async function routeUniqueCandidateToReview(
   }
 
   // A stale `unique` row may only be downgraded when review is demonstrably
-  // actionable. Exact/shared-phone collisions must have a new or existing
-  // pending pair; a generic missing-Place-ID signal is not enough.
+  // actionable. Re-prove an existing pending review immediately before the
+  // update; exact/shared-phone collisions must have a new or existing pending
+  // pair. A generic missing-Place-ID signal is not enough.
   const reviewReady = verification.decision === "review_pending"
-    ? true
+    ? await hasPendingReview(candidate.id)
     : await ensurePendingReview(candidate, verification);
   if (!reviewReady) return false;
 
