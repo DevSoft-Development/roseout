@@ -67,6 +67,12 @@ export type DedupeDecision =
   | "review_shared_phone"
   | "review_missing_google_place_id";
 
+export type DedupeVerification = {
+  decision: DedupeDecision;
+  signals: DedupeSignalSet;
+  matchLocationId: string | null;
+};
+
 export function classifyDedupeSignals(signals: DedupeSignalSet): DedupeDecision {
   if (!signals.hasGooglePlaceId) return "review_missing_google_place_id";
   if (signals.pendingReview) return "review_pending";
@@ -131,7 +137,7 @@ async function hasPendingReview(locationId: string) {
   return Boolean(result.data?.length);
 }
 
-async function hasLiveFieldCollision(
+async function findLiveFieldCollision(
   candidate: DedupeCandidate,
   field: "google_place_id" | "location_key" | "normalized_phone",
   value: string,
@@ -143,17 +149,18 @@ async function hasLiveFieldCollision(
     .neq("id", candidate.id)
     .limit(20);
   if (result.error) throw new Error(`Dedupe ${field} collision read failed: ${result.error.message}`);
-  return (result.data ?? []).some((row) => (
+  const match = (result.data ?? []).find((row) => (
     !row.deleted_at
       && !row.duplicate_of
       && clean(row.duplicate_status).toLowerCase() !== "duplicate"
   ));
+  return match?.id ?? null;
 }
 
-async function hasLiveNormalizedNameAddressCollision(candidate: DedupeCandidate) {
+async function findLiveNormalizedNameAddressCollision(candidate: DedupeCandidate) {
   const name = clean(candidate.normalized_name);
   const address = clean(candidate.normalized_address);
-  if (!name || !address) return false;
+  if (!name || !address) return null;
   const result = await supabaseAdmin
     .from("locations")
     .select("id,duplicate_status,duplicate_of,deleted_at")
@@ -162,46 +169,88 @@ async function hasLiveNormalizedNameAddressCollision(candidate: DedupeCandidate)
     .neq("id", candidate.id)
     .limit(20);
   if (result.error) throw new Error(`Dedupe normalized identity read failed: ${result.error.message}`);
-  return (result.data ?? []).some((row) => (
+  const match = (result.data ?? []).find((row) => (
     !row.deleted_at
       && !row.duplicate_of
       && clean(row.duplicate_status).toLowerCase() !== "duplicate"
   ));
+  return match?.id ?? null;
 }
 
-export async function verifyConservativeUnique(candidate: DedupeCandidate): Promise<{
-  decision: DedupeDecision;
-  signals: DedupeSignalSet;
-}> {
+export async function verifyConservativeUnique(candidate: DedupeCandidate): Promise<DedupeVerification> {
   const googlePlaceId = clean(candidate.google_place_id);
   const locationKey = clean(candidate.location_key);
   const normalizedPhone = clean(candidate.normalized_phone);
 
   const pendingReview = await hasPendingReview(candidate.id);
-  const sameGooglePlaceId = googlePlaceId
-    ? await hasLiveFieldCollision(candidate, "google_place_id", googlePlaceId)
-    : false;
-  const sameLocationKey = locationKey
-    ? await hasLiveFieldCollision(candidate, "location_key", locationKey)
-    : false;
-  const sameNormalizedNameAddress = await hasLiveNormalizedNameAddressCollision(candidate);
+  const sameGooglePlaceIdId = googlePlaceId
+    ? await findLiveFieldCollision(candidate, "google_place_id", googlePlaceId)
+    : null;
+  const sameLocationKeyId = locationKey
+    ? await findLiveFieldCollision(candidate, "location_key", locationKey)
+    : null;
+  const sameNormalizedNameAddressId = await findLiveNormalizedNameAddressCollision(candidate);
   // Deliberately conservative: any shared normalized phone blocks auto-unique,
   // even when names differ. This avoids silently clearing chains, shared booking
   // desks, or reused contact numbers without review.
-  const sharedNormalizedPhone = normalizedPhone
-    ? await hasLiveFieldCollision(candidate, "normalized_phone", normalizedPhone)
-    : false;
+  const sharedNormalizedPhoneId = normalizedPhone
+    ? await findLiveFieldCollision(candidate, "normalized_phone", normalizedPhone)
+    : null;
 
   const signals: DedupeSignalSet = {
     hasGooglePlaceId: Boolean(googlePlaceId),
     pendingReview,
-    sameGooglePlaceId,
-    sameLocationKey,
-    sameNormalizedNameAddress,
-    sharedNormalizedPhone,
+    sameGooglePlaceId: Boolean(sameGooglePlaceIdId),
+    sameLocationKey: Boolean(sameLocationKeyId),
+    sameNormalizedNameAddress: Boolean(sameNormalizedNameAddressId),
+    sharedNormalizedPhone: Boolean(sharedNormalizedPhoneId),
   };
+  const decision = classifyDedupeSignals(signals);
+  const matchLocationId = sameGooglePlaceIdId
+    || sameLocationKeyId
+    || sameNormalizedNameAddressId
+    || sharedNormalizedPhoneId
+    || null;
 
-  return { decision: classifyDedupeSignals(signals), signals };
+  return { decision, signals, matchLocationId };
+}
+
+async function ensurePendingReview(candidate: DedupeCandidate, verification: DedupeVerification) {
+  if (verification.signals.pendingReview || !verification.matchLocationId) return false;
+  if (!["review_exact_collision", "review_shared_phone"].includes(verification.decision)) return false;
+
+  const [locationAId, locationBId] = [candidate.id, verification.matchLocationId].sort();
+  const existing = await supabaseAdmin
+    .from("location_duplicate_review")
+    .select("id,status")
+    .eq("location_a_id", locationAId)
+    .eq("location_b_id", locationBId)
+    .maybeSingle();
+  if (existing.error) throw new Error(`Dedupe review-pair read failed: ${existing.error.message}`);
+  // Never reopen or overwrite a prior human/system decision. If a decided pair
+  // still presents a conservative signal, leave the location unresolved for the
+  // next policy layer rather than erasing that audit history.
+  if (existing.data?.id) return existing.data.status === "pending";
+
+  const exact = verification.decision === "review_exact_collision";
+  const inserted = await supabaseAdmin
+    .from("location_duplicate_review")
+    .insert({
+      location_a_id: locationAId,
+      location_b_id: locationBId,
+      duplicate_score: exact ? 100 : 70,
+      match_reasons: [
+        exact
+          ? "location_intelligence_exact_identity_collision"
+          : "location_intelligence_shared_phone_conservative",
+      ],
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .maybeSingle();
+  if (inserted.error) throw new Error(`Dedupe review-pair insert failed: ${inserted.error.message}`);
+  return Boolean(inserted.data?.id);
 }
 
 async function markUnique(candidate: DedupeCandidate) {
@@ -233,7 +282,13 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
   const limit = requestedLimit(limitInput);
   const candidates = await readCandidates(limit);
   const autoUnique: string[] = [];
-  const review: Array<{ locationId: string; decision: DedupeDecision; signals: DedupeSignalSet }> = [];
+  const review: Array<{
+    locationId: string;
+    decision: DedupeDecision;
+    signals: DedupeSignalSet;
+    matchLocationId: string | null;
+    reviewQueued: boolean;
+  }> = [];
   const skipped: Array<{ locationId: string; reason: string }> = [];
   const failures: Array<{ locationId: string; error: string }> = [];
 
@@ -246,7 +301,8 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
 
       const verified = await verifyConservativeUnique(candidate);
       if (verified.decision !== "auto_unique") {
-        review.push({ locationId: candidate.id, ...verified });
+        const reviewQueued = await ensurePendingReview(candidate, verified);
+        review.push({ locationId: candidate.id, ...verified, reviewQueued });
         continue;
       }
 
@@ -254,7 +310,8 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
       // a concurrent import/review cannot be silently cleared as unique.
       const reverified = await verifyConservativeUnique(candidate);
       if (reverified.decision !== "auto_unique") {
-        review.push({ locationId: candidate.id, ...reverified });
+        const reviewQueued = await ensurePendingReview(candidate, reverified);
+        review.push({ locationId: candidate.id, ...reverified, reviewQueued });
         continue;
       }
 
@@ -280,6 +337,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
     autoUnique: autoUnique.length,
     autoUniqueLocationIds: autoUnique,
     reviewRequired: review.length,
+    reviewQueued: review.filter((item) => item.reviewQueued).length,
     review,
     skipped: skipped.length,
     skippedDetails: skipped,
