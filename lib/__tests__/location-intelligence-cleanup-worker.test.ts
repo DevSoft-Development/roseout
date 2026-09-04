@@ -91,6 +91,15 @@ describe("AWS Location Intelligence dedupe classifier", () => {
     expect(dedupeClassifier).toContain("googleCallsPerformed: 0");
   });
 
+  it("honors explicit not-duplicate pair decisions but keeps searching for other live collisions", () => {
+    expect(dedupeClassifier).toContain("pairWasExplicitlyNotDuplicate");
+    expect(dedupeClassifier).toContain('.eq("status", "not_duplicate")');
+    expect(dedupeClassifier).toContain("firstActionableCollision");
+    expect(dedupeClassifier).toContain("if (await pairWasExplicitlyNotDuplicate(candidate.id, matchLocationId)) continue");
+    expect(dedupeClassifier).toContain("Only status=not_duplicate is suppressive; pending/merged decisions remain");
+    expect(dedupeClassifier).toContain("return firstActionableCollision(candidate");
+  });
+
   it("only changes unknown publish-ready non-searchable rows to unique or actionable review", () => {
     expect(dedupeClassifier).toContain('.eq("quality_status", "publish_ready")');
     expect(dedupeClassifier).toContain('.eq("is_searchable", false)');
