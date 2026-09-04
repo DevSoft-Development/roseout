@@ -145,6 +145,45 @@ jobs:
           echo "supabase_secret_arn=$SUPABASE_SECRET_ARN" >> "$GITHUB_OUTPUT"
           echo "integration_url=$INTEGRATION_URL" >> "$GITHUB_OUTPUT"
           echo "integration_secret_arn=$INTEGRATION_SECRET_ARN" >> "$GITHUB_OUTPUT"
+      - name: Recover failed initial stack if needed
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-location-intelligence-api-${TARGET_ENV}"
+          SECRET_NAME="/theouthaven/${TARGET_ENV}/location-intelligence-api/hmac"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = 'ROLLBACK_COMPLETE' ]; then
+            echo "Existing Location Intelligence stack is ROLLBACK_COMPLETE. Failed resource events:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+            echo 'Deleting failed initial stack before clean redeploy.'
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+            if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+              echo 'Removing orphaned HMAC secret retained by the failed first-create template.'
+              aws secretsmanager delete-secret --secret-id "$SECRET_NAME" --force-delete-without-recovery >/dev/null
+              for _ in $(seq 1 40); do
+                if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+                  break
+                fi
+                sleep 3
+              done
+              if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+                echo 'Orphaned Location Intelligence secret is still pending deletion.' >&2
+                exit 1
+              fi
+            fi
+          elif [ -n "$STATUS" ] && [ "$STATUS" != 'CREATE_COMPLETE' ] && [ "$STATUS" != 'UPDATE_COMPLETE' ]; then
+            echo "Location Intelligence stack is in unexpected state: $STATUS" >&2
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[0:20].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+            exit 1
+          fi
       - name: Deploy Location Intelligence API stack
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
@@ -154,9 +193,10 @@ jobs:
           INTEGRATION_SECRET_ARN: ${{ steps.deps.outputs.integration_secret_arn }}
         run: |
           set -euo pipefail
+          STACK="theouthaven-location-intelligence-api-${TARGET_ENV}"
           SHARED_SECRET="$(cat "$RUNNER_TEMP/location-intelligence-secret")"
-          aws cloudformation deploy \
-            --stack-name "theouthaven-location-intelligence-api-${TARGET_ENV}" \
+          if ! aws cloudformation deploy \
+            --stack-name "$STACK" \
             --template-file "$TEMPLATE_FILE" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
@@ -167,7 +207,14 @@ jobs:
               SupabaseServiceRoleSecretArn="$SUPABASE_SECRET_ARN" \
               IntegrationApiUrl="$INTEGRATION_URL" \
               IntegrationApiSecretArn="$INTEGRATION_SECRET_ARN" \
-            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=LocationIntelligenceAPI ManagedBy=CloudFormation
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=LocationIntelligenceAPI ManagedBy=CloudFormation; then
+            echo 'CloudFormation deployment failed. Failed resource events:' >&2
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+            exit 1
+          fi
       - name: Build and deploy Lambda code
         id: runtime
         env:
