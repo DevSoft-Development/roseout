@@ -5,6 +5,7 @@ import type { GoogleBudgetSummary, GooglePlacesBudgetSettings } from "@/lib/aws/
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 type Props = {
   initialSettings: GooglePlacesBudgetSettings;
@@ -62,7 +63,8 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
     }
   }
 
-  const spend = summary?.estimatedSpendUsd ?? settings.openingSpendUsd;
+  const fallbackOpeningSpend = settings.openingSpendMonth === currentMonth() ? settings.openingSpendUsd : 0;
+  const spend = summary?.estimatedSpendUsd ?? fallbackOpeningSpend;
   const remaining = summary?.budgetRemainingUsd ?? Math.max(0, settings.hardCapUsd - spend);
   const creditsRemaining = summary?.estimatedCreditsRemainingUsd ?? Math.max(0, settings.creditBalanceUsd - spend);
   const percent = summary?.percentOfHardCapUsed ?? (settings.hardCapUsd > 0 ? Math.round((spend / settings.hardCapUsd) * 1000) / 10 : 0);
@@ -116,7 +118,12 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
           <NumberField label="Soft cap" value={settings.softCapUsd} onChange={(softCapUsd) => setSettings((current) => ({ ...current, softCapUsd }))} help="Above this point, only higher-priority paid work should continue." />
           <NumberField label="Hard cap" value={settings.hardCapUsd} onChange={(hardCapUsd) => setSettings((current) => ({ ...current, hardCapUsd }))} help="Optional paid Location Intelligence work stops here." />
           <NumberField label="Google credits" value={settings.creditBalanceUsd} onChange={(creditBalanceUsd) => setSettings((current) => ({ ...current, creditBalanceUsd }))} help="Used to estimate remaining promotional credits in this dashboard." />
-          <NumberField label="Opening spend" value={settings.openingSpendUsd} onChange={(openingSpendUsd) => setSettings((current) => ({ ...current, openingSpendUsd }))} help="Optional month-to-date spend from before AWS metering started." />
+          <NumberField
+            label="Opening spend"
+            value={settings.openingSpendMonth === currentMonth() ? settings.openingSpendUsd : 0}
+            onChange={(openingSpendUsd) => setSettings((current) => ({ ...current, openingSpendUsd, openingSpendMonth: currentMonth() }))}
+            help="Optional month-to-date spend from before AWS metering started. It automatically expires when the billing month changes."
+          />
         </div>
 
         {validation ? <p className="mt-4 text-sm font-bold text-amber-300">{validation}</p> : null}
@@ -153,7 +160,7 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
               </thead>
               <tbody>
                 {summary.usage.map((item) => (
-                  <tr key={item.sku} className="border-t border-white/8">
+                  <tr key={item.sku} className="border-t border-white/10">
                     <td className="py-4 pr-5 font-bold text-white">{item.label}</td>
                     <td className="py-4 pr-5 text-white/75">{integer.format(item.requests)}</td>
                     <td className="py-4 pr-5 text-white/60">{item.freeCap == null ? "Unlimited" : integer.format(item.freeCap)}</td>
