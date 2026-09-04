@@ -14,7 +14,6 @@ APP_ENV_SECRET_NAME = os.environ["APP_ENV_SECRET_NAME"]
 APP_ENV_SECRET_REGION = os.environ.get("APP_ENV_SECRET_REGION", "us-west-2")
 MAX_CHAIN_DEPTH = int(os.environ.get("MAX_CHAIN_DEPTH", "64"))
 MAX_CHAIN_AGE_SECONDS = int(os.environ.get("MAX_CHAIN_AGE_SECONDS", "3600"))
-LOCATION_INTELLIGENCE_CLEANUP_TARGET = "/api/cron/managed?job=location-intelligence-cleanup-worker"
 
 lambda_client = boto3.client(
     "lambda",
@@ -37,9 +36,8 @@ EDGE_ALLOWED_TARGETS = {
     "edge:admin-marketing-report-scheduler",
 }
 
-# Location Intelligence cleanup is intentionally excluded from this self-chain
-# allowlist during the guarded rollout. Catalog enrichment may hand off to one
-# cleanup batch, but cleanup itself must not enqueue another cleanup batch.
+# Location Intelligence cleanup is intentionally absent from this continuation
+# allowlist during the guarded rollout. Cleanup publication is explicit-only.
 EVENT_DRIVEN_TARGETS = {
     "/api/cron/managed?job=location-search-profile-worker",
     "/api/cron/managed?job=catalog-enrichment-runner",
@@ -177,14 +175,6 @@ def _numeric(value):
         return 0
 
 
-def _cleanup_should_continue(payload):
-    if not isinstance(payload, dict):
-        return False
-    remaining = _numeric(payload.get("remaining"))
-    progressed = _numeric(payload.get("published"))
-    return remaining > 0 and progressed > 0 and _numeric(payload.get("failed")) == 0
-
-
 def _should_continue(target, parsed_body):
     if target not in EVENT_DRIVEN_TARGETS or not isinstance(parsed_body, dict):
         return False
@@ -224,10 +214,6 @@ def _should_continue(target, parsed_body):
 
 
 def _continuation_target(target, parsed_body):
-    if target.endswith("job=catalog-enrichment-runner") and isinstance(parsed_body, dict):
-        cleanup = parsed_body.get("locationIntelligenceCleanup")
-        if _cleanup_should_continue(cleanup):
-            return LOCATION_INTELLIGENCE_CLEANUP_TARGET
     if _should_continue(target, parsed_body):
         return target
     return None
