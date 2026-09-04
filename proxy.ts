@@ -70,11 +70,21 @@ function isLoadTestBypassAllowed(request: NextRequest) {
   return !isProduction || allowProductionBypass;
 }
 
+function isProductionRuntime() {
+  return process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+}
+
 export function proxy(request: NextRequest) {
   const shortHostResponse = shortLinkHostResponse(request);
   if (shortHostResponse) return shortHostResponse;
 
   const pathname = request.nextUrl.pathname;
+
+  if (pathname === "/api/debug" || pathname.startsWith("/api/debug/")) {
+    if (isProductionRuntime()) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
 
   const shouldBypassRateLimitForLoadTest =
     pathname.startsWith("/api/generate") && isLoadTestBypassAllowed(request);
