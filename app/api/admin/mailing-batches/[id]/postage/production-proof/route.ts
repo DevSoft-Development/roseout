@@ -161,9 +161,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }, integratorTxId);
 
     const purchasedAt = new Date().toISOString();
+    const cleansedZip = proof.cleansedAddress.zip4
+      ? `${proof.cleansedAddress.zip}-${proof.cleansedAddress.zip4}`
+      : proof.cleansedAddress.zip;
     const { data: purchaseUpdated, error: purchaseUpdateError } = await supabaseAdmin
       .from("mailing_batch_items")
       .update({
+        street_address: proof.cleansedAddress.street,
+        city: proof.cleansedAddress.city,
+        state: proof.cleansedAddress.state,
+        zip_code: cleansedZip,
         stamps_tx_id: proof.stampsTxId,
         stamps_postage_status: "purchased",
         stamps_postage_amount: proof.amount,
