@@ -40,6 +40,19 @@ describe("AWS Location Intelligence cleanup worker", () => {
     expect(cleanupWorker).toContain('blockers.push("low_level")');
   });
 
+  it("moves real profile and dedupe blockers out of the retryable unique queue", () => {
+    expect(cleanupWorker).toContain("routeUniqueCandidateToReview");
+    expect(cleanupWorker).toContain("markProfileReviewRequired");
+    expect(cleanupWorker).toContain('quality_status: "needs_review"');
+    expect(cleanupWorker).toContain('data_status: "needs_review"');
+    expect(cleanupWorker).toContain("dispositionedToReview");
+    expect(dedupeClassifier).toContain("routeUniqueCandidateToReview");
+    expect(dedupeClassifier).toContain('duplicate_status: "possible_duplicate"');
+    expect(dedupeClassifier).toContain('verification.decision === "review_pending"');
+    expect(dedupeClassifier).toContain("await hasPendingReview(candidate.id)");
+    expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
+  });
+
   it("caps the cleanup canary at ten and requires the private AWS background runtime", () => {
     expect(cleanupWorker).toContain("const MAX_BATCH_LIMIT = 10");
     expect(cleanupRoute).toContain('provider === "aws-background"');
@@ -78,14 +91,26 @@ describe("AWS Location Intelligence dedupe classifier", () => {
     expect(dedupeClassifier).toContain("googleCallsPerformed: 0");
   });
 
-  it("only changes unknown publish-ready non-searchable rows to unique", () => {
+  it("only changes unknown publish-ready non-searchable rows to unique or actionable review", () => {
     expect(dedupeClassifier).toContain('.eq("quality_status", "publish_ready")');
     expect(dedupeClassifier).toContain('.eq("is_searchable", false)');
     expect(dedupeClassifier).toContain('.eq("duplicate_status", "unknown")');
     expect(dedupeClassifier).toContain('duplicate_status: "unique"');
+    expect(dedupeClassifier).toContain('duplicate_status: "possible_duplicate"');
+    expect(dedupeClassifier).toContain('type ReviewSourceStatus = "unknown" | "unique"');
+    expect(dedupeClassifier).toContain('.eq("duplicate_status", expectedStatus)');
+    expect(dedupeClassifier).toContain("routeUnknownCandidateToReview");
+    expect(dedupeClassifier).toContain("reviewDispositioned");
     expect(dedupeClassifier).toContain("last_deduped_at: now");
     expect(dedupeClassifier).not.toContain('duplicate_status: "duplicate"');
     expect(dedupeClassifier).not.toContain("duplicate_of:");
+  });
+
+  it("requires pending-review proof before moving unknown or unique rows into review state", () => {
+    expect(dedupeClassifier).toContain("routeCandidateToReview");
+    expect(dedupeClassifier).toContain("await hasPendingReview(candidate.id)");
+    expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
+    expect(dedupeClassifier).toContain("if (!reviewReady) return { routed: false, reviewQueued }");
   });
 
   it("is AWS-background-only, capped, managed, non-manual, and unscheduled", () => {
