@@ -44,7 +44,6 @@ ADDRESS_DETAILS_FIELD_MASK = ",".join([
     "formattedAddress",
     "addressComponents",
     "location",
-    "types",
 ])
 
 DETAILS_FIELD_MASK = ",".join([
