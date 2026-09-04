@@ -144,6 +144,36 @@ async function hasPendingReview(locationId: string) {
   return Boolean(result.data?.length);
 }
 
+async function pairWasExplicitlyNotDuplicate(locationId: string, matchLocationId: string) {
+  const result = await supabaseAdmin
+    .from("location_duplicate_review")
+    .select("id")
+    .eq("status", "not_duplicate")
+    .or(
+      `and(location_a_id.eq.${locationId},location_b_id.eq.${matchLocationId}),and(location_a_id.eq.${matchLocationId},location_b_id.eq.${locationId})`,
+    )
+    .limit(1);
+  if (result.error) throw new Error(`Dedupe prior-decision read failed: ${result.error.message}`);
+  return Boolean(result.data?.length);
+}
+
+async function firstActionableCollision(candidate: DedupeCandidate, rows: Array<Record<string, unknown>>) {
+  for (const row of rows) {
+    const matchLocationId = clean(row.id);
+    if (!matchLocationId || row.deleted_at || row.duplicate_of || clean(row.duplicate_status).toLowerCase() === "duplicate") {
+      continue;
+    }
+    // Preserve explicit prior review decisions for this exact pair. This is
+    // important for legitimate sub-venues or shared administrative phone
+    // numbers (for example, multiple venues inside one larger attraction).
+    // Only status=not_duplicate is suppressive; pending/merged decisions remain
+    // actionable blockers, and other live collisions are still evaluated.
+    if (await pairWasExplicitlyNotDuplicate(candidate.id, matchLocationId)) continue;
+    return matchLocationId;
+  }
+  return null;
+}
+
 async function findLiveFieldCollision(
   candidate: DedupeCandidate,
   field: "google_place_id" | "location_key" | "normalized_phone",
@@ -156,12 +186,7 @@ async function findLiveFieldCollision(
     .neq("id", candidate.id)
     .limit(20);
   if (result.error) throw new Error(`Dedupe ${field} collision read failed: ${result.error.message}`);
-  const match = (result.data ?? []).find((row) => (
-    !row.deleted_at
-      && !row.duplicate_of
-      && clean(row.duplicate_status).toLowerCase() !== "duplicate"
-  ));
-  return match?.id ?? null;
+  return firstActionableCollision(candidate, (result.data ?? []) as Array<Record<string, unknown>>);
 }
 
 async function findLiveNormalizedNameAddressCollision(candidate: DedupeCandidate) {
@@ -176,12 +201,7 @@ async function findLiveNormalizedNameAddressCollision(candidate: DedupeCandidate
     .neq("id", candidate.id)
     .limit(20);
   if (result.error) throw new Error(`Dedupe normalized identity read failed: ${result.error.message}`);
-  const match = (result.data ?? []).find((row) => (
-    !row.deleted_at
-      && !row.duplicate_of
-      && clean(row.duplicate_status).toLowerCase() !== "duplicate"
-  ));
-  return match?.id ?? null;
+  return firstActionableCollision(candidate, (result.data ?? []) as Array<Record<string, unknown>>);
 }
 
 export async function verifyConservativeUnique(candidate: DedupeCandidate): Promise<DedupeVerification> {
@@ -198,8 +218,9 @@ export async function verifyConservativeUnique(candidate: DedupeCandidate): Prom
     : null;
   const sameNormalizedNameAddressId = await findLiveNormalizedNameAddressCollision(candidate);
   // Deliberately conservative: any shared normalized phone blocks auto-unique,
-  // even when names differ. This avoids silently clearing chains, shared booking
-  // desks, or reused contact numbers without review.
+  // even when names differ, unless that exact pair was already reviewed and
+  // explicitly decided not_duplicate. This avoids silently clearing chains,
+  // shared booking desks, or reused contact numbers without review.
   const sharedNormalizedPhoneId = normalizedPhone
     ? await findLiveFieldCollision(candidate, "normalized_phone", normalizedPhone)
     : null;
