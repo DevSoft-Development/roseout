@@ -57,7 +57,7 @@ export default async function MailingBatchPrintPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ mode?: string; staging?: string; production?: string; item?: string }>;
+  searchParams?: Promise<{ mode?: string; staging?: string; production?: string; productionBatch?: string; item?: string }>;
 }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.mailingBatches);
   const { id } = await params;
@@ -65,9 +65,10 @@ export default async function MailingBatchPrintPage({
   const mode = ["fronts", "backs", "duplex"].includes(String(query.mode)) ? String(query.mode) : "duplex";
   const staging = query.staging === "1";
   const production = query.production === "1";
+  const productionBatch = query.productionBatch === "1";
   const proofItemId = typeof query.item === "string" ? query.item : "";
-  if (staging && production) {
-    return <PrintCenterMessage batchId={id} title="Choose one postage proof mode" detail="Staging and production postage cannot be rendered on the same print request." />;
+  if ([staging, production, productionBatch].filter(Boolean).length > 1) {
+    return <PrintCenterMessage batchId={id} title="Choose one postage proof mode" detail="Staging, single-card production, and purchased-batch production modes cannot be mixed on the same print request." />;
   }
 
   const [{ data: batch, error: batchError }, { data: itemData, error: itemError }, { data: templateObjects, error: templateError }] = await Promise.all([
@@ -98,7 +99,7 @@ export default async function MailingBatchPrintPage({
 
   const items = (itemData || []) as BatchItem[];
   let renderItems = items;
-  let proofPostageUrl: string | null = null;
+  const postageUrlByItem = new Map<string, string>();
 
   if (staging) {
     if (!proofItemId) {
@@ -120,7 +121,7 @@ export default async function MailingBatchPrintPage({
 
     renderItems = [stagingItem];
     const stagingPath = `${stagingFolder}/${stagingFile}`;
-    proofPostageUrl = `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(stagingPath).data.publicUrl}?v=${Date.now()}`;
+    postageUrlByItem.set(stagingItem.id, `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(stagingPath).data.publicUrl}?v=${Date.now()}`);
   }
 
   if (production) {
@@ -156,7 +157,48 @@ export default async function MailingBatchPrintPage({
     }
     renderItems = [productionItem];
     const productionPath = `${productionFolder}/${productionFile}`;
-    proofPostageUrl = `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(productionPath).data.publicUrl}?v=${Date.now()}`;
+    postageUrlByItem.set(productionItem.id, `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(productionPath).data.publicUrl}?v=${Date.now()}`);
+  }
+
+  if (productionBatch) {
+    if (!items.length) {
+      return <PrintCenterMessage batchId={id} title="No postcards are available" detail="This mailing batch has no active postcards to render." />;
+    }
+
+    const { data: purchaseRows, error: purchaseError } = await supabaseAdmin
+      .from("mailing_batch_items")
+      .select("id,stamps_postage_status,stamps_tx_id,stamps_integrator_tx_id,stamps_postage_purchased_at")
+      .eq("batch_id", id)
+      .in("id", items.map((item) => item.id));
+    if (purchaseError) throw new Error(purchaseError.message || "Could not verify purchased batch postage state.");
+
+    const purchaseByItem = new Map((purchaseRows || []).map((row) => [String(row.id), row]));
+    const unverified = items.filter((item) => {
+      const row = purchaseByItem.get(item.id);
+      return !row
+        || row.stamps_postage_status !== "purchased"
+        || !row.stamps_postage_purchased_at
+        || !row.stamps_integrator_tx_id
+        || !row.stamps_tx_id;
+    });
+    if (unverified.length) {
+      return <PrintCenterMessage batchId={id} title="Purchased batch is not ready to print" detail={`${unverified.length.toLocaleString()} active postcard${unverified.length === 1 ? " is" : "s are"} not verified as purchased. This mode fails closed and will not create or retry postage.`} />;
+    }
+
+    const productionFolder = `production-proofs/${id}`;
+    const { data: productionObjects, error: productionError } = await supabaseAdmin.storage.from(BUCKET).list(productionFolder, { limit: 1000 });
+    if (productionError) throw new Error(productionError.message || "Could not load purchased batch postage images.");
+    const productionNames = new Set((productionObjects || []).map((entry) => entry.name));
+    const missingAssets = items.filter((item) => !productionNames.has(`${item.id}.png`));
+    if (missingAssets.length) {
+      return <PrintCenterMessage batchId={id} title="Purchased batch postage images need review" detail={`${missingAssets.length.toLocaleString()} purchased postcard${missingAssets.length === 1 ? " is" : "s are"} missing a saved indicium image. Do not purchase those postcards again; review the existing transactions first.`} />;
+    }
+
+    renderItems = items;
+    for (const item of renderItems) {
+      const productionPath = `${productionFolder}/${item.id}.png`;
+      postageUrlByItem.set(item.id, `${supabaseAdmin.storage.from(BUCKET).getPublicUrl(productionPath).data.publicUrl}?v=${Date.now()}`);
+    }
   }
 
   const frontUrl = supabaseAdmin.storage.from(BUCKET).getPublicUrl("claim-front").data.publicUrl;
@@ -214,7 +256,7 @@ export default async function MailingBatchPrintPage({
 
   return (
     <main className="min-h-screen bg-[#111]">
-      <PrintToolbar batchId={id} mode={mode} staging={staging} production={production} proofItemId={proofItemId} />
+      <PrintToolbar batchId={id} mode={mode} staging={staging} production={production} productionBatch={productionBatch} proofItemId={proofItemId} />
 
       {staging ? (
         <div className="print:hidden mx-auto mt-4 max-w-6xl px-4"><div className="rounded-2xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-50"><strong>STAGING TEST ONLY.</strong> This print center is showing one test postcard with Stamps.com staging postage loaded into the mailing side. Never place this card into the USPS mailstream. Destroy any printed copy immediately after testing.</div></div>
@@ -222,9 +264,12 @@ export default async function MailingBatchPrintPage({
       {production ? (
         <div className="print:hidden mx-auto mt-4 max-w-6xl px-4"><div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-50"><strong>LIVE POSTAGE — ONE PURCHASED CARD.</strong> This page renders only the exact postcard whose transaction is persisted as purchased and whose saved indicium image exists. Verify 6×4 physical size, postage placement, address clearance, and duplex orientation before mailing it.</div></div>
       ) : null}
+      {productionBatch ? (
+        <div className="print:hidden mx-auto mt-4 max-w-6xl px-4"><div className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-50"><strong>LIVE POSTAGE — PURCHASED BATCH.</strong> Every active postcard on this page is persisted as purchased and matched to its own saved indicium image. This print view cannot buy or retry postage. Verify front/back sequence numbers, 6×4 size, short-edge duplex orientation, and indicium placement before mailing.</div></div>
+      ) : null}
 
       <div className="print:hidden mx-auto max-w-6xl px-4 py-4 text-sm text-white/55">
-        <strong className="text-white">{batch.name}</strong> · {renderItems.length.toLocaleString()} {staging ? "test card" : production ? "live proof card" : "cards"} · {mode === "duplex" ? "front/back pairs" : mode === "fronts" ? "fronts only" : "backs only"}. For duplex printing use 6×4 landscape, 100% scale, no margins, and flip on the short edge. For two-pass printing, keep the stack in sequence and verify the small matching number on both sides.
+        <strong className="text-white">{batch.name}</strong> · {renderItems.length.toLocaleString()} {staging ? "test card" : production ? "live proof card" : productionBatch ? "purchased live cards" : "cards"} · {mode === "duplex" ? "front/back pairs" : mode === "fronts" ? "fronts only" : "backs only"}. For duplex printing use 6×4 landscape, 100% scale, no margins, and flip on the short edge. For two-pass printing, keep the stack in sequence and verify the small matching number on both sides.
       </div>
 
       <div className="print-stack mx-auto w-fit">
@@ -236,9 +281,9 @@ export default async function MailingBatchPrintPage({
             {page.side === "front" ? (
               <>
                 {/* ATTN: OWNER / MANAGER is intentionally baked into the approved front master. */}
-                {(staging || production) && proofPostageUrl ? (
+                {postageUrlByItem.get(page.item.id) ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={proofPostageUrl} alt={production ? "Live production postage" : "Staging postage"} className="front-proof-postage" />
+                  <img src={postageUrlByItem.get(page.item.id)} alt={(production || productionBatch) ? "Live production postage" : "Staging postage"} className="front-proof-postage" />
                 ) : null}
                 <div className="front-address">
                   <div className="front-business">{page.item.business_name}</div>
