@@ -1,6 +1,7 @@
 import Link from "next/link";
 import BetaLaunchHeader from "@/components/BetaLaunchHeader";
-export const metadata = { title: "TheOutHaven Beta" };
+import { buildMetadata } from "@/lib/seo";
+export const metadata = buildMetadata({ title: "TheOutHaven Beta", path: "/beta", noIndex: true });
 const groups = ["User beta testers", "Business/location beta testers", "Ambassador beta testers", "Experience team testers"];
 const tests = ["Search quality", "Search speed", "Real user prompts", "Missing photos", "Location accuracy", "Plan creation", "Reservations", "Business claims", "QR codes", "Mobile experience"];
 export default function BetaPage() {
