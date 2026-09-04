@@ -2,9 +2,11 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { refreshLocationSearchProfile } from "@/lib/search/profile/profileRepository";
+import { verifyConservativeUnique } from "@/lib/location-intelligence/dedupeClassifier";
 
 const DEFAULT_BATCH_LIMIT = 10;
 const MAX_BATCH_LIMIT = 10;
+const PRE_PUBLISH_SUPPRESSED_REVIEW_REASON = "hidden_inactive_eligibility_conflict";
 
 const candidateProjection = [
   "id",
@@ -15,6 +17,11 @@ const candidateProjection = [
   "formatted_address",
   "latitude",
   "longitude",
+  "google_place_id",
+  "location_key",
+  "normalized_name",
+  "normalized_address",
+  "normalized_phone",
   "quality_status",
   "publish_ready",
   "is_searchable",
@@ -41,6 +48,11 @@ type CleanupCandidate = {
   formatted_address?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  google_place_id?: string | null;
+  location_key?: string | null;
+  normalized_name?: string | null;
+  normalized_address?: string | null;
+  normalized_phone?: string | null;
   quality_status?: string | null;
   publish_ready?: boolean | null;
   is_searchable?: boolean | null;
@@ -104,6 +116,23 @@ function isClaimed(row: CleanupCandidate) {
 function batchLimit(value?: number) {
   const parsed = Number.isFinite(value) ? Math.trunc(value as number) : DEFAULT_BATCH_LIMIT;
   return Math.max(1, Math.min(MAX_BATCH_LIMIT, parsed));
+}
+
+function actionableProfileReviewReasons(profile: { needs_review?: boolean | null; review_reasons?: unknown } | null | undefined) {
+  if (profile?.needs_review !== true) return [];
+  const reasons = Array.isArray(profile.review_reasons)
+    ? profile.review_reasons.filter((reason): reason is string => typeof reason === "string" && Boolean(reason.trim()))
+    : [];
+
+  // Search Profile validation normally treats source.searchable=false as an
+  // eligibility conflict. During this worker, that is the exact stale state we
+  // are repairing. Hidden/inactive/low-level/deleted states are independently
+  // checked from the live location row before and after profile generation, so
+  // this one reason is safe to suppress only in this guarded pre-publish flow.
+  if (reasons.length > 0 && reasons.every((reason) => reason === PRE_PUBLISH_SUPPRESSED_REVIEW_REASON)) {
+    return [];
+  }
+  return reasons.length > 0 ? reasons : ["search_profile_needs_review"];
 }
 
 async function readCanaryCandidates(limit: number) {
@@ -192,6 +221,12 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
         continue;
       }
 
+      const initialDedupe = await verifyConservativeUnique(candidate);
+      if (initialDedupe.decision !== "auto_unique") {
+        skipped.push({ locationId: candidate.id, reason: `dedupe_recheck:${initialDedupe.decision}` });
+        continue;
+      }
+
       // Claimed locations are allowed to become searchable from owner truth, but this
       // canary never performs a Google refresh. The flag is retained in the outcome
       // so later enrichment stages can enforce the claimed-location provider policy.
@@ -202,8 +237,9 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
         "location_intelligence_cleanup_pre_publish",
       );
 
-      if (profile?.needs_review === true) {
-        skipped.push({ locationId: candidate.id, reason: "search_profile_needs_review" });
+      const profileReviewReasons = actionableProfileReviewReasons(profile);
+      if (profileReviewReasons.length > 0) {
+        skipped.push({ locationId: candidate.id, reason: `search_profile_needs_review:${profileReviewReasons.join("|")}` });
         continue;
       }
       const exclusions = Array.isArray(profile?.exclusions) ? profile.exclusions : [];
@@ -222,6 +258,12 @@ export async function processPublishReadyCleanupCanary(requestedLimit = DEFAULT_
       const recheckBlockers = publishReadyCleanupBlockers(current);
       if (recheckBlockers.length) {
         skipped.push({ locationId: candidate.id, reason: `recheck:${recheckBlockers.join(",")}` });
+        continue;
+      }
+
+      const finalDedupe = await verifyConservativeUnique(current);
+      if (finalDedupe.decision !== "auto_unique") {
+        skipped.push({ locationId: candidate.id, reason: `final_dedupe_recheck:${finalDedupe.decision}` });
         continue;
       }
 
