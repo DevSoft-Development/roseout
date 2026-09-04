@@ -16,6 +16,7 @@ export type GooglePlacesBudgetSettings = {
   hardCapUsd: number;
   creditBalanceUsd: number;
   openingSpendUsd: number;
+  openingSpendMonth: string | null;
   enabled: boolean;
   updatedAt?: string | null;
 };
