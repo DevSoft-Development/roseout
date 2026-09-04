@@ -27,7 +27,7 @@ Parameters:
 Resources:
   LocationIntelligenceApiSecret:
     Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Name: !Sub /theouthaven/${Environment}/location-intelligence-api/hmac
