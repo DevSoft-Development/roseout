@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const cleanupWorker = readFileSync("lib/location-intelligence/cleanupWorker.ts", "utf8");
 const cleanupRoute = readFileSync("app/api/cron/location-intelligence-cleanup/route.ts", "utf8");
+const cleanupWorkflow = readFileSync(".github/workflows/aws-location-intelligence-cleanup-canary.yml", "utf8");
 const dedupeClassifier = readFileSync("lib/location-intelligence/dedupeClassifier.ts", "utf8");
 const dedupeRoute = readFileSync("app/api/cron/location-intelligence-dedupe-classifier/route.ts", "utf8");
 const catalogRoute = readFileSync("app/api/cron/catalog-enrichment-runner/route.ts", "utf8");
@@ -69,12 +70,14 @@ describe("AWS Location Intelligence cleanup worker", () => {
     });
   });
 
-  it("seeds from the existing catalog runner and switches SQS continuation to cleanup-only", () => {
-    expect(catalogRoute).toContain("processPublishReadyCleanupCanary(10)");
-    expect(catalogRoute).toContain("locationIntelligenceCleanup");
-    expect(backgroundWorker).toContain('LOCATION_INTELLIGENCE_CLEANUP_TARGET = "/api/cron/managed?job=location-intelligence-cleanup-worker"');
-    expect(backgroundWorker).toContain("cleanup = parsed_body.get(\"locationIntelligenceCleanup\")");
-    expect(backgroundWorker).toContain('continuation["target"] = target');
+  it("keeps cleanup publication explicit-only during the guarded rollout", () => {
+    expect(catalogRoute).not.toContain("processPublishReadyCleanupCanary");
+    expect(catalogRoute).not.toContain("locationIntelligenceCleanup");
+    expect(backgroundWorker).not.toContain("LOCATION_INTELLIGENCE_CLEANUP_TARGET");
+    expect(backgroundWorker).not.toContain('parsed_body.get("locationIntelligenceCleanup")');
+    expect(backgroundWorker).toContain("Location Intelligence cleanup is intentionally absent");
+    expect(cleanupWorkflow).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(cleanupWorkflow).toContain("merge/push validates but does not publish");
   });
 });
 
