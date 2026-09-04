@@ -122,7 +122,6 @@ export default function AboutPage() {
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff8a9b]">{card.label}</p>
                 <h3 className="mt-4 text-xl font-black tracking-[-0.025em]">{card.title}</h3>
                 <p className="mt-3 text-sm leading-7 text-white/52">{card.text}</p>
-                <span className="mt-6 inline-flex text-sm font-black transition group-hover:text-[#ff8a9b]">Open live product →</span>
               </Link>
             ))}
           </div>
