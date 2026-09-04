@@ -49,6 +49,7 @@ describe("AWS Location Intelligence cleanup worker", () => {
     expect(dedupeClassifier).toContain("routeUniqueCandidateToReview");
     expect(dedupeClassifier).toContain('duplicate_status: "possible_duplicate"');
     expect(dedupeClassifier).toContain('verification.decision === "review_pending"');
+    expect(dedupeClassifier).toContain("await hasPendingReview(candidate.id)");
     expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
   });
 
