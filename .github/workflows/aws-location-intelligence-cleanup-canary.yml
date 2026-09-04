@@ -1,0 +1,166 @@
+name: AWS Location Intelligence cleanup canary
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-canary.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-canary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-cleanup-canary-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate guarded canary contract
+        run: |
+          set -euo pipefail
+          grep -F 'sqs:background-cron' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+          grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+          grep -F 'duplicate_status=eq.unique' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+          grep -F 'is_searchable=eq.false' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+          grep -F 'published-ready unique backlog did not decrease' .github/workflows/aws-location-intelligence-cleanup-canary.yml >/dev/null
+
+  enqueue:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve AWS scheduler invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          INVOKER="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Count guarded publish-ready unique backlog
+        id: before
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          HEADERS="$RUNNER_TEMP/location-intelligence-before.headers"
+          curl --silent --show-error --fail \
+            --dump-header "$HEADERS" \
+            --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+          COUNT="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
+          test "$COUNT" -ge 0
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Guarded publish-ready unique backlog before canary: $COUNT"
+
+      - name: Enqueue cleanup through central AWS scheduler invoker
+        if: steps.before.outputs.count != '0'
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+        run: |
+          set -euo pipefail
+          REQUEST="$RUNNER_TEMP/location-intelligence-canary-request.json"
+          RESPONSE="$RUNNER_TEMP/location-intelligence-canary-response.json"
+          jq -nc --arg target "$CLEANUP_TARGET" \
+            '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$REQUEST"
+          aws lambda invoke \
+            --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$REQUEST" \
+            "$RESPONSE" >/dev/null
+          jq -e --arg target "$CLEANUP_TARGET" \
+            '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' \
+            "$RESPONSE" >/dev/null
+
+      - name: Verify guarded backlog decreases
+        if: steps.before.outputs.count != '0'
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+          BEFORE: ${{ steps.before.outputs.count }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          AFTER="$BEFORE"
+          for attempt in $(seq 1 18); do
+            HEADERS="$RUNNER_TEMP/location-intelligence-after-${attempt}.headers"
+            curl --silent --show-error --fail \
+              --dump-header "$HEADERS" \
+              --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+            AFTER="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
+            if [ "$AFTER" -lt "$BEFORE" ]; then
+              echo "Location Intelligence canary made guarded progress: before=$BEFORE after=$AFTER"
+              break
+            fi
+            sleep 5
+          done
+          test "$AFTER" -lt "$BEFORE" || { echo 'published-ready unique backlog did not decrease after AWS cleanup canary.' >&2; exit 1; }
+          echo "after=$AFTER" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### AWS Location Intelligence cleanup canary'
+            echo ''
+            echo "- Target: \`$CLEANUP_TARGET\`"
+            echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
+            echo '- Scope: publish-ready, non-searchable, duplicate_status=unique, visible, active, non-low-level only'
+            echo '- Google calls in cleanup worker: 0'
+            echo "- Backlog before: \`${{ steps.before.outputs.count || 'unknown' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
