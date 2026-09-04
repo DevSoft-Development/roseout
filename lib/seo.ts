@@ -21,6 +21,7 @@ const PRIVATE_PATH_PREFIXES = [
   "/api",
   "/internal",
   "/debug",
+  "/beta",
 ];
 
 export type SeoPageInput = {
@@ -156,9 +157,28 @@ export function organizationJsonLd() {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: SITE_NAME,
+    legalName: "TheOutHaven LLC",
     url,
     logo: canonicalUrl("/icon.svg"),
     description: DEFAULT_DESCRIPTION,
+    foundingDate: "2026",
+    foundingLocation: {
+      "@type": "Place",
+      name: "New York, United States",
+    },
+    founder: {
+      "@type": "Person",
+      name: "Nicholas Endeavour",
+      jobTitle: "Founder & CEO",
+      sameAs: ["https://www.linkedin.com/in/nicholas-endeavour-91b65a431/"],
+    },
+    sameAs: ["https://www.linkedin.com/in/nicholas-endeavour-91b65a431/"],
+    contactPoint: {
+      "@type": "ContactPoint",
+      contactType: "customer support",
+      email: "support@theouthaven.com",
+      url: canonicalUrl("/contact"),
+    },
   };
 }
 
