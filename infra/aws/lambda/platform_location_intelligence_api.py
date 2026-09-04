@@ -21,6 +21,7 @@ MAX_CLOCK_SKEW_SECONDS = 300
 MAX_REQUEST_BODY_BYTES = 64_000
 SUPABASE_TIMEOUT_SECONDS = 8
 MAX_CLEANUP_PREVIEW_LIMIT = 200
+MAX_DEDUPE_SCAN_LIMIT = 500
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
@@ -227,6 +228,36 @@ def _supabase_request(path, params=None):
     except urllib.error.HTTPError as exc:
         detail = exc.read(3000).decode("utf-8", errors="replace")
         raise RuntimeError(f"supabase_http_{exc.code}:{detail}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("supabase_unavailable") from exc
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("supabase_invalid_json") from exc
+
+
+def _supabase_rpc(function_name, payload):
+    if not SUPABASE_URL.startswith("https://"):
+        raise RuntimeError("supabase_url_not_configured")
+    service_role = load_secret(SUPABASE_SERVICE_ROLE_SECRET_ID)
+    encoded = json.dumps(payload or {}, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/rpc/{urllib.parse.quote(function_name, safe='')}",
+        data=encoded,
+        method="POST",
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "apikey": service_role,
+            "authorization": f"Bearer {service_role}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=SUPABASE_TIMEOUT_SECONDS) as upstream:
+            raw = upstream.read().decode("utf-8") or "null"
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(3000).decode("utf-8", errors="replace")
+        raise RuntimeError(f"supabase_rpc_http_{exc.code}:{detail}") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         raise RuntimeError("supabase_unavailable") from exc
     try:
@@ -609,6 +640,29 @@ def cleanup_preview(payload):
     })
 
 
+def cleanup_dedupe_scan(payload):
+    limit = _positive_int(payload.get("limit"), 250, MAX_DEDUPE_SCAN_LIMIT)
+    result = _supabase_rpc("oh_find_live_location_duplicates", {"p_limit": limit})
+    return response(200, {
+        "ok": True,
+        "service": "location-intelligence-api",
+        "mode": "bounded_dedupe_scan",
+        "requestedLimit": limit,
+        "mutationPerformed": True,
+        "mutationScope": "location_duplicate_review",
+        "locationsMutated": False,
+        "searchabilityChanged": False,
+        "duplicatesMerged": False,
+        "googleCallsPerformed": 0,
+        "result": result,
+        "notes": [
+            "The scan reuses the canonical oh_find_live_location_duplicates RPC.",
+            "It may create or update duplicate-review queue rows only.",
+            "It never merges locations, changes is_searchable, or calls Google.",
+        ],
+    })
+
+
 def handler(event, context):
     try:
         body = raw_body(event)
@@ -629,6 +683,8 @@ def handler(event, context):
             return evaluate_readiness(payload)
         if method == "POST" and path == "/v1/cleanup/preview":
             return cleanup_preview(payload)
+        if method == "POST" and path == "/v1/cleanup/dedupe-scan":
+            return cleanup_dedupe_scan(payload)
         return response(404, {"ok": False, "error": "not_found"})
     except ValueError as exc:
         return response(400, {"ok": False, "error": str(exc)})
