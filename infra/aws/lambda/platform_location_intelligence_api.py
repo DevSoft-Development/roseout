@@ -21,6 +21,7 @@ MAX_CLOCK_SKEW_SECONDS = 300
 MAX_REQUEST_BODY_BYTES = 64_000
 SUPABASE_TIMEOUT_SECONDS = 8
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
+MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
 DEFAULT_GOOGLE_BUDGET = {
     "targetUsd": 175.0,
@@ -28,6 +29,7 @@ DEFAULT_GOOGLE_BUDGET = {
     "hardCapUsd": 200.0,
     "creditBalanceUsd": 300.0,
     "openingSpendUsd": 0.0,
+    "openingSpendMonth": None,
     "enabled": True,
 }
 
@@ -187,6 +189,11 @@ def _number(value, fallback):
     return parsed if parsed >= 0 else fallback
 
 
+def _month(value):
+    normalized = str(value or "").strip()
+    return normalized if MONTH_RE.fullmatch(normalized) else None
+
+
 def load_google_budget():
     rows = _supabase_request("app_settings", {
         "select": "value,updated_at,updated_by",
@@ -201,6 +208,7 @@ def load_google_budget():
         "hardCapUsd": _number(raw.get("hardCapUsd"), DEFAULT_GOOGLE_BUDGET["hardCapUsd"]),
         "creditBalanceUsd": _number(raw.get("creditBalanceUsd"), DEFAULT_GOOGLE_BUDGET["creditBalanceUsd"]),
         "openingSpendUsd": _number(raw.get("openingSpendUsd"), DEFAULT_GOOGLE_BUDGET["openingSpendUsd"]),
+        "openingSpendMonth": _month(raw.get("openingSpendMonth")),
         "enabled": raw.get("enabled") is not False,
         "updatedAt": row.get("updated_at") if isinstance(row, dict) else None,
     }
@@ -273,7 +281,9 @@ def google_budget_summary():
             "pricePer1000": config["pricePer1000"],
             "estimatedCostUsd": cost,
         })
-    gross_spend = round(settings["openingSpendUsd"] + metered_spend, 2)
+    current_month = month[:7]
+    opening_spend_applied = settings["openingSpendUsd"] if settings["openingSpendMonth"] == current_month else 0.0
+    gross_spend = round(opening_spend_applied + metered_spend, 2)
     hard_cap = settings["hardCapUsd"]
     soft_cap = settings["softCapUsd"]
     target = settings["targetUsd"]
@@ -294,6 +304,7 @@ def google_budget_summary():
         "measuredAt": measured_at,
         "pricingSnapshot": "2026-09-01",
         "settings": settings,
+        "openingSpendAppliedUsd": round(opening_spend_applied, 2),
         "meteredSpendUsd": round(metered_spend, 2),
         "estimatedSpendUsd": gross_spend,
         "budgetRemainingUsd": round(max(0.0, hard_cap - gross_spend), 2),
@@ -306,6 +317,7 @@ def google_budget_summary():
         "notes": [
             "Spend is TheOutHaven's metered estimate; Google Cloud Billing remains authoritative.",
             "Autocomplete totals are conservatively counted as requests; valid sessions can reduce actual billable autocomplete usage after the session-pricing threshold.",
+            "Opening spend is applied only to the configured billing month and never carries into a later month.",
         ],
     }
 
@@ -358,9 +370,10 @@ def evaluate_readiness(payload):
     if duplicate_status == "duplicate" or row.get("duplicate_of"):
         blockers.append("confirmed_duplicate")
     elif duplicate_status in {"", "unknown", "possible_duplicate"}:
-        warnings.append("dedupe_unresolved")
+        blockers.append("dedupe_unresolved")
     if row.get("is_low_level") is True:
-        warnings.append(f"low_level:{str(row.get('low_level_reason') or 'unspecified')}")
+        blockers.append("low_level")
+        warnings.append(f"low_level_reason:{str(row.get('low_level_reason') or 'unspecified')}")
     name = row.get("name") or row.get("business_name") or row.get("restaurant_name") or row.get("activity_name")
     if not _present(name):
         blockers.append("missing_name")
