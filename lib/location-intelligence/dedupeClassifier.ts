@@ -74,10 +74,12 @@ export type DedupeVerification = {
 };
 
 type ReviewSourceStatus = "unknown" | "unique";
+type FinalReviewStatus = "merged" | "ignored" | "not_duplicate";
 
 type ReviewRouteResult = {
   routed: boolean;
   reviewQueued: boolean;
+  priorDecisionConflict: boolean;
 };
 
 export function classifyDedupeSignals(signals: DedupeSignalSet): DedupeDecision {
@@ -144,17 +146,21 @@ async function hasPendingReview(locationId: string) {
   return Boolean(result.data?.length);
 }
 
-async function pairWasExplicitlyNotDuplicate(locationId: string, matchLocationId: string) {
+async function pairDecisionStatus(locationId: string, matchLocationId: string): Promise<FinalReviewStatus | "pending" | null> {
+  const [locationAId, locationBId] = [locationId, matchLocationId].sort();
   const result = await supabaseAdmin
     .from("location_duplicate_review")
-    .select("id")
-    .eq("status", "not_duplicate")
-    .or(
-      `and(location_a_id.eq.${locationId},location_b_id.eq.${matchLocationId}),and(location_a_id.eq.${matchLocationId},location_b_id.eq.${locationId})`,
-    )
-    .limit(1);
+    .select("status")
+    .eq("location_a_id", locationAId)
+    .eq("location_b_id", locationBId)
+    .maybeSingle();
   if (result.error) throw new Error(`Dedupe prior-decision read failed: ${result.error.message}`);
-  return Boolean(result.data?.length);
+  const status = clean(result.data?.status) as FinalReviewStatus | "pending" | "";
+  return status || null;
+}
+
+async function pairWasExplicitlyNotDuplicate(locationId: string, matchLocationId: string) {
+  return (await pairDecisionStatus(locationId, matchLocationId)) === "not_duplicate";
 }
 
 async function firstActionableCollision(candidate: DedupeCandidate, rows: Array<Record<string, unknown>>) {
@@ -166,8 +172,8 @@ async function firstActionableCollision(candidate: DedupeCandidate, rows: Array<
     // Preserve explicit prior review decisions for this exact pair. This is
     // important for legitimate sub-venues or shared administrative phone
     // numbers (for example, multiple venues inside one larger attraction).
-    // Only status=not_duplicate is suppressive; pending/merged decisions remain
-    // actionable blockers, and other live collisions are still evaluated.
+    // Only status=not_duplicate is suppressive; pending/merged/ignored decisions
+    // remain actionable blockers, and other live collisions are still evaluated.
     if (await pairWasExplicitlyNotDuplicate(candidate.id, matchLocationId)) continue;
     return matchLocationId;
   }
@@ -255,9 +261,7 @@ async function ensurePendingReview(candidate: DedupeCandidate, verification: Ded
     .eq("location_b_id", locationBId)
     .maybeSingle();
   if (existing.error) throw new Error(`Dedupe review-pair read failed: ${existing.error.message}`);
-  // Never reopen or overwrite a prior human/system decision. If a decided pair
-  // still presents a conservative signal, leave the location unresolved for the
-  // next policy layer rather than erasing that audit history.
+  // Never reopen or overwrite a prior human/system decision.
   if (existing.data?.id) return existing.data.status === "pending";
 
   const exact = verification.decision === "review_exact_collision";
@@ -285,17 +289,21 @@ async function markPossibleDuplicate(
   candidate: DedupeCandidate,
   verification: DedupeVerification,
   expectedStatus: ReviewSourceStatus,
+  duplicateCheckKey?: string,
 ) {
   const now = new Date().toISOString();
   const exact = verification.decision === "review_exact_collision";
+  const patch: Record<string, unknown> = {
+    duplicate_status: "possible_duplicate",
+    duplicate_score: exact ? 100 : 70,
+    last_deduped_at: now,
+    updated_at: now,
+  };
+  if (duplicateCheckKey) patch.duplicate_check_key = duplicateCheckKey;
+
   const result = await supabaseAdmin
     .from("locations")
-    .update({
-      duplicate_status: "possible_duplicate",
-      duplicate_score: exact ? 100 : 70,
-      last_deduped_at: now,
-      updated_at: now,
-    })
+    .update(patch)
     .eq("id", candidate.id)
     .eq("quality_status", "publish_ready")
     .eq("is_searchable", false)
@@ -317,7 +325,7 @@ async function routeCandidateToReview(
   expectedStatus: ReviewSourceStatus,
 ): Promise<ReviewRouteResult> {
   if (!["review_pending", "review_exact_collision", "review_shared_phone"].includes(verification.decision)) {
-    return { routed: false, reviewQueued: false };
+    return { routed: false, reviewQueued: false, priorDecisionConflict: false };
   }
 
   // A candidate may only leave the classifier/cleanup queue when review is
@@ -330,10 +338,28 @@ async function routeCandidateToReview(
   const reviewReady = verification.decision === "review_pending"
     ? await hasPendingReview(candidate.id)
     : reviewQueued;
-  if (!reviewReady) return { routed: false, reviewQueued };
+
+  if (!reviewReady && verification.matchLocationId && verification.decision !== "review_pending") {
+    const priorDecision = await pairDecisionStatus(candidate.id, verification.matchLocationId);
+    if (priorDecision === "merged" || priorDecision === "ignored") {
+      // The pair cannot be reopened because the review table is unique per pair.
+      // Preserve that immutable audit history while safely removing the candidate
+      // from the retry loop. It remains non-searchable and explicitly marked for
+      // manual follow-up rather than being auto-unique or auto-merged.
+      const routed = await markPossibleDuplicate(
+        candidate,
+        verification,
+        expectedStatus,
+        `location_intelligence_prior_${priorDecision}_collision`,
+      );
+      return { routed, reviewQueued: false, priorDecisionConflict: routed };
+    }
+  }
+
+  if (!reviewReady) return { routed: false, reviewQueued, priorDecisionConflict: false };
 
   const routed = await markPossibleDuplicate(candidate, verification, expectedStatus);
-  return { routed, reviewQueued };
+  return { routed, reviewQueued, priorDecisionConflict: false };
 }
 
 export async function routeUniqueCandidateToReview(
@@ -387,6 +413,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
     matchLocationId: string | null;
     reviewQueued: boolean;
     reviewDispositioned: boolean;
+    priorDecisionConflict: boolean;
   }> = [];
   const skipped: Array<{ locationId: string; reason: string }> = [];
   const failures: Array<{ locationId: string; error: string }> = [];
@@ -406,6 +433,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
           ...verified,
           reviewQueued: routed.reviewQueued,
           reviewDispositioned: routed.routed,
+          priorDecisionConflict: routed.priorDecisionConflict,
         });
         continue;
       }
@@ -420,6 +448,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
           ...reverified,
           reviewQueued: routed.reviewQueued,
           reviewDispositioned: routed.routed,
+          priorDecisionConflict: routed.priorDecisionConflict,
         });
         continue;
       }
@@ -448,6 +477,7 @@ export async function processConservativeDedupeClassifier(limitInput = DEFAULT_B
     reviewRequired: review.length,
     reviewQueued: review.filter((item) => item.reviewQueued).length,
     reviewDispositioned: review.filter((item) => item.reviewDispositioned).length,
+    priorDecisionConflicts: review.filter((item) => item.priorDecisionConflict).length,
     review,
     skipped: skipped.length,
     skippedDetails: skipped,
