@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import re
@@ -9,11 +8,6 @@ import urllib.request
 import boto3
 
 GOOGLE_PLACES_SECRET_ARN = os.environ.get("GOOGLE_PLACES_SECRET_ARN", "")
-RUNTIME_PROVIDER_SECRET_ID = os.environ.get(
-    "RUNTIME_PROVIDER_SECRET_ID",
-    f"/theouthaven/{os.environ.get('ENVIRONMENT', 'production')}/platform-dr/app-env",
-)
-RUNTIME_PROVIDER_SECRET_REGION = os.environ.get("RUNTIME_PROVIDER_SECRET_REGION", "us-west-2")
 GOOGLE_REQUEST_TIMEOUT_SECONDS = 8
 GOOGLE_PHOTO_TIMEOUT_SECONDS = 12
 MAX_GOOGLE_JSON_BYTES = 1_500_000
@@ -22,6 +16,7 @@ GOOGLE_PLACE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,512}$")
 GOOGLE_PHOTO_NAME_RE = re.compile(r"^places/[A-Za-z0-9_-]+/photos/[A-Za-z0-9_-]+$")
 GOOGLE_REGION_RE = re.compile(r"^[A-Z]{2}$")
 GOOGLE_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~-]{1,256}$")
+GOOGLE_METRIC_NAMESPACE = "TheOutHaven/GooglePlaces"
 
 TEXT_SEARCH_IDS_ONLY_FIELD_MASK = "places.id"
 TEXT_SEARCH_FIELD_MASK = ",".join([
@@ -111,9 +106,8 @@ DETAILS_FIELD_MASK = ",".join([
 PHOTO_FIELD_MASK = "photos"
 
 secrets = boto3.client("secretsmanager")
-provider_secrets = boto3.client("secretsmanager", region_name=RUNTIME_PROVIDER_SECRET_REGION)
+cloudwatch = boto3.client("cloudwatch")
 _cached_google_places_secret = None
-_cached_runtime_provider_secret = None
 
 
 def _clean(value):
@@ -135,77 +129,40 @@ def load_google_places_secret():
     return secret
 
 
-def _runtime_provider_secret():
-    global _cached_runtime_provider_secret
-    if _cached_runtime_provider_secret is not None:
-        return _cached_runtime_provider_secret
-    if not RUNTIME_PROVIDER_SECRET_ID:
-        _cached_runtime_provider_secret = {}
-        return _cached_runtime_provider_secret
-    try:
-        raw = provider_secrets.get_secret_value(SecretId=RUNTIME_PROVIDER_SECRET_ID).get("SecretString", "")
-        payload = json.loads(raw or "{}")
-    except Exception:
-        payload = {}
-    _cached_runtime_provider_secret = payload if isinstance(payload, dict) else {}
-    return _cached_runtime_provider_secret
-
-
-def _runtime_value(*names):
-    source = _runtime_provider_secret()
-    for name in names:
-        value = _clean(source.get(name))
-        if value:
-            return value
-    return ""
-
-
-def _session_hash(token):
-    cleaned = _clean(token)
-    if not cleaned:
-        return None
-    return hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
-
-
 def _record_usage(sku, operation, *, session_token="", metadata=None):
-    """Best-effort usage metering. Provider availability must not depend on telemetry."""
-    supabase_url = _runtime_value("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL").rstrip("/")
-    service_role = _runtime_value("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY")
-    if not supabase_url.startswith("https://") or not service_role:
-        return
-    payload = json.dumps({
-        "service": "google-places",
-        "sku": sku,
-        "operation": operation,
-        "request_count": 1,
-        "session_token_hash": _session_hash(session_token),
-        "source": "aws-integration-api",
-        "metadata": metadata or {},
-    }, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        f"{supabase_url}/rest/v1/google_api_usage_events",
-        data=payload,
-        method="POST",
-        headers={
-            "accept": "application/json",
-            "content-type": "application/json",
-            "apikey": service_role,
-            "authorization": f"Bearer {service_role}",
-            "prefer": "return=minimal",
-        },
-    )
+    """Best-effort usage metering. Provider availability never depends on telemetry."""
+    dimensions = [
+        {"Name": "Sku", "Value": sku[:255]},
+        {"Name": "Operation", "Value": operation[:255]},
+    ]
     try:
-        with urllib.request.urlopen(request, timeout=3) as upstream:
-            if int(upstream.status) < 200 or int(upstream.status) >= 300:
-                raise RuntimeError(f"usage_ledger_http_{upstream.status}")
+        cloudwatch.put_metric_data(
+            Namespace=GOOGLE_METRIC_NAMESPACE,
+            MetricData=[{
+                "MetricName": "Requests",
+                "Dimensions": dimensions,
+                "Value": 1.0,
+                "Unit": "Count",
+            }],
+        )
     except Exception as exc:
         print(json.dumps({
             "level": "warning",
             "service": "integration-api",
             "provider": "google-places",
             "operation": "usage_metering",
+            "sku": sku,
             "error": str(exc)[:300],
         }))
+    print(json.dumps({
+        "level": "info",
+        "service": "integration-api",
+        "provider": "google-places",
+        "operation": operation,
+        "sku": sku,
+        "session_token_present": bool(_clean(session_token)),
+        "metadata": metadata or {},
+    }))
 
 
 def _upstream_error(status, body_bytes):
@@ -299,7 +256,7 @@ def search_text(payload):
             body=body,
         )
         _record_usage(
-            "autocomplete_request",
+            "autocomplete_requests",
             "autocomplete",
             session_token=token,
             metadata={"sessionTokenPresent": bool(token)},
