@@ -40,6 +40,18 @@ describe("AWS Location Intelligence cleanup worker", () => {
     expect(cleanupWorker).toContain('blockers.push("low_level")');
   });
 
+  it("moves real profile and dedupe blockers out of the retryable unique queue", () => {
+    expect(cleanupWorker).toContain("routeUniqueCandidateToReview");
+    expect(cleanupWorker).toContain("markProfileReviewRequired");
+    expect(cleanupWorker).toContain('quality_status: "needs_review"');
+    expect(cleanupWorker).toContain('data_status: "needs_review"');
+    expect(cleanupWorker).toContain("dispositionedToReview");
+    expect(dedupeClassifier).toContain("routeUniqueCandidateToReview");
+    expect(dedupeClassifier).toContain('duplicate_status: "possible_duplicate"');
+    expect(dedupeClassifier).toContain('verification.decision === "review_pending"');
+    expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
+  });
+
   it("caps the cleanup canary at ten and requires the private AWS background runtime", () => {
     expect(cleanupWorker).toContain("const MAX_BATCH_LIMIT = 10");
     expect(cleanupRoute).toContain('provider === "aws-background"');
