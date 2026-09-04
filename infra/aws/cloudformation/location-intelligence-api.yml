@@ -20,9 +20,9 @@ Parameters:
     Type: String
   ReservedConcurrency:
     Type: Number
-    Default: 10
-    MinValue: 2
-    MaxValue: 100
+    Default: 2
+    MinValue: 1
+    MaxValue: 20
 
 Resources:
   LocationIntelligenceApiSecret:
