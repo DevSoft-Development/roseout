@@ -28,6 +28,8 @@ env:
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   CLASSIFIER_TARGET: /api/cron/managed?job=location-intelligence-dedupe-classifier
   BATCH_LIMIT: '25'
+  OUTCOME_POLL_ATTEMPTS: '300'
+  OUTCOME_POLL_INTERVAL_SECONDS: '4'
 
 jobs:
   validate:
@@ -39,6 +41,8 @@ jobs:
           set -euo pipefail
           FILE=.github/workflows/aws-location-intelligence-dedupe-drain.yml
           grep -F "BATCH_LIMIT: '25'" "$FILE" >/dev/null
+          grep -F "OUTCOME_POLL_ATTEMPTS: '300'" "$FILE" >/dev/null
+          grep -F "OUTCOME_POLL_INTERVAL_SECONDS: '4'" "$FILE" >/dev/null
           grep -F 'sqs:background-cron' "$FILE" >/dev/null
           grep -F '/api/cron/managed?job=location-intelligence-dedupe-classifier' "$FILE" >/dev/null
           grep -F 'github.event_name == '\''workflow_dispatch'\''' "$FILE" >/dev/null
@@ -51,6 +55,7 @@ jobs:
           grep -F 'duplicate_status == "unique" or .duplicate_status == "possible_duplicate"' "$FILE" >/dev/null
           grep -F 'priorDecisionConflicts' "$FILE" >/dev/null
           grep -F 'location_intelligence_prior_' "$FILE" >/dev/null
+          grep -F 'do not re-dispatch until late SQS execution is reconciled' "$FILE" >/dev/null
 
   execute:
     if: github.event_name == 'workflow_dispatch'
@@ -169,12 +174,14 @@ jobs:
           KEY_FILE: ${{ steps.runtime.outputs.key_file }}
           STARTED_AT: ${{ steps.before.outputs.started_at }}
           EXPECTED: ${{ steps.before.outputs.selected_expected }}
+          POLL_ATTEMPTS: ${{ env.OUTCOME_POLL_ATTEMPTS }}
+          POLL_INTERVAL_SECONDS: ${{ env.OUTCOME_POLL_INTERVAL_SECONDS }}
         run: |
           set -euo pipefail
           SERVICE_ROLE="$(cat "$KEY_FILE")"
           OUTCOME="$RUNNER_TEMP/dedupe-drain-outcome.json"
           FOUND=0
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 "$POLL_ATTEMPTS"); do
             curl --silent --show-error --fail --get \
               --header "apikey: $SERVICE_ROLE" \
               --header "Authorization: Bearer $SERVICE_ROLE" \
@@ -188,9 +195,9 @@ jobs:
               FOUND=1
               break
             fi
-            sleep 4
+            sleep "$POLL_INTERVAL_SECONDS"
           done
-          test "$FOUND" = 1 || { echo 'classifier outcome was not observed.' >&2; exit 1; }
+          test "$FOUND" = 1 || { echo 'classifier outcome was not observed within the configured drain observation window; do not re-dispatch until late SQS execution is reconciled.' >&2; exit 1; }
 
           jq -e --argjson expected "$EXPECTED" '
             .[0].status == "success"
@@ -400,6 +407,7 @@ jobs:
             echo '### AWS Location Intelligence dedupe drain'
             echo ''
             echo "- Batch cap: \`$BATCH_LIMIT\`"
+            echo "- Classifier outcome observation window: up to $((OUTCOME_POLL_ATTEMPTS * OUTCOME_POLL_INTERVAL_SECONDS / 60)) minutes"
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
             echo '- Activation: explicit workflow dispatch only; merge/push validates but does not classify'
             echo '- Google calls: 0'
