@@ -1,0 +1,255 @@
+name: AWS Location Intelligence dedupe canary
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-dedupe-canary.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-dedupe-canary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-dedupe-canary-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  CLASSIFIER_TARGET: /api/cron/managed?job=location-intelligence-dedupe-classifier
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate guarded classifier canary contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-dedupe-canary.yml
+          grep -F 'sqs:background-cron' "$FILE" >/dev/null
+          grep -F '/api/cron/managed?job=location-intelligence-dedupe-classifier' "$FILE" >/dev/null
+          grep -F 'destructiveMergesPerformed == 0' "$FILE" >/dev/null
+          grep -F 'googleCallsPerformed == 0' "$FILE" >/dev/null
+          grep -F 'is_searchable == false' "$FILE" >/dev/null
+          grep -F 'duplicate_of == null' "$FILE" >/dev/null
+          grep -F 'AUTO_UNIQUE -le 25' "$FILE" >/dev/null
+
+  enqueue:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve AWS scheduler invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          INVOKER="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Count unresolved backlog before classifier canary
+        id: before
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          HEADERS="$RUNNER_TEMP/dedupe-before.headers"
+          curl --silent --show-error --fail \
+            --dump-header "$HEADERS" \
+            --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unknown&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+          COUNT="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
+          test "$COUNT" -ge 0
+          STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "started_at=$STARTED_AT" >> "$GITHUB_OUTPUT"
+          echo "Unresolved publish-ready backlog before classifier canary: $COUNT"
+
+      - name: Enqueue classifier through central AWS scheduler invoker
+        if: steps.before.outputs.count != '0'
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+        run: |
+          set -euo pipefail
+          REQUEST="$RUNNER_TEMP/location-intelligence-dedupe-canary-request.json"
+          RESPONSE="$RUNNER_TEMP/location-intelligence-dedupe-canary-response.json"
+          jq -nc --arg target "$CLASSIFIER_TARGET" \
+            '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$REQUEST"
+          aws lambda invoke \
+            --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$REQUEST" \
+            "$RESPONSE" >/dev/null
+          jq -e --arg target "$CLASSIFIER_TARGET" \
+            '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' \
+            "$RESPONSE" >/dev/null
+
+      - name: Read and validate classifier outcome
+        id: outcome
+        if: steps.before.outputs.count != '0'
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+          STARTED_AT: ${{ steps.before.outputs.started_at }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          OUTCOME="$RUNNER_TEMP/dedupe-outcome.json"
+          FOUND=0
+          for attempt in $(seq 1 30); do
+            curl --silent --show-error --fail --get \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --data-urlencode 'select=id,status,started_at,finished_at,details' \
+              --data-urlencode 'job_key=eq.location-intelligence-dedupe-classifier' \
+              --data-urlencode "started_at=gte.${STARTED_AT}" \
+              --data-urlencode 'order=started_at.desc' \
+              --data-urlencode 'limit=1' \
+              "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$OUTCOME"
+            if jq -e 'length == 1 and .[0].finished_at != null' "$OUTCOME" >/dev/null; then
+              FOUND=1
+              break
+            fi
+            sleep 4
+          done
+          test "$FOUND" = 1 || { echo 'classifier cron outcome was not observed.' >&2; exit 1; }
+          jq -e '
+            .[0].status == "success"
+            and .[0].details.mode == "conservative_dedupe_classifier_v1"
+            and .[0].details.googleCallsPerformed == 0
+            and .[0].details.destructiveMergesPerformed == 0
+            and .[0].details.limit == 25
+            and .[0].details.selected <= 25
+            and .[0].details.autoUnique <= 25
+            and .[0].details.failed == 0
+            and .[0].details.reviewQueued <= .[0].details.reviewRequired
+          ' "$OUTCOME" >/dev/null
+          AUTO_UNIQUE="$(jq -r '.[0].details.autoUnique' "$OUTCOME")"
+          REVIEW_REQUIRED="$(jq -r '.[0].details.reviewRequired' "$OUTCOME")"
+          REVIEW_QUEUED="$(jq -r '.[0].details.reviewQueued' "$OUTCOME")"
+          test "$AUTO_UNIQUE" -ge 0 && test "$AUTO_UNIQUE" -le 25
+          jq -r '.[0].details.autoUniqueLocationIds[]?' "$OUTCOME" > "$RUNNER_TEMP/auto-unique-ids.txt"
+          test "$(grep -c . "$RUNNER_TEMP/auto-unique-ids.txt" || true)" -eq "$AUTO_UNIQUE"
+          echo "auto_unique=$AUTO_UNIQUE" >> "$GITHUB_OUTPUT"
+          echo "review_required=$REVIEW_REQUIRED" >> "$GITHUB_OUTPUT"
+          echo "review_queued=$REVIEW_QUEUED" >> "$GITHUB_OUTPUT"
+
+      - name: Independently audit classifier mutations
+        if: steps.before.outputs.count != '0'
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+          AUTO_UNIQUE: ${{ steps.outcome.outputs.auto_unique }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          if [ "$AUTO_UNIQUE" -gt 0 ]; then
+            IDS="$(paste -sd, "$RUNNER_TEMP/auto-unique-ids.txt")"
+            AUDIT="$RUNNER_TEMP/dedupe-audit.json"
+            curl --silent --show-error --fail --get \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --data-urlencode 'select=id,duplicate_status,is_searchable,duplicate_of,last_deduped_at' \
+              --data-urlencode "id=in.(${IDS})" \
+              "${SUPABASE_URL}/rest/v1/locations" > "$AUDIT"
+            jq -e --argjson expected "$AUTO_UNIQUE" '
+              length == $expected
+              and all(.[];
+                .duplicate_status == "unique"
+                and .is_searchable == false
+                and .duplicate_of == null
+                and .last_deduped_at != null
+              )
+            ' "$AUDIT" >/dev/null
+          fi
+
+          DUPLICATE_WRITES="$RUNNER_TEMP/duplicate-writes.headers"
+          curl --silent --show-error --fail \
+            --dump-header "$DUPLICATE_WRITES" \
+            --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&duplicate_status=eq.duplicate&last_deduped_at=gte.${{ steps.before.outputs.started_at }}&limit=1"
+          DUPLICATE_COUNT="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$DUPLICATE_WRITES" | tail -1)"
+          test "$DUPLICATE_COUNT" = 0 || { echo 'classifier canary observed a duplicate-status write.' >&2; exit 1; }
+
+      - name: Verify unresolved backlog did not increase
+        if: steps.before.outputs.count != '0'
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+          BEFORE: ${{ steps.before.outputs.count }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          HEADERS="$RUNNER_TEMP/dedupe-after.headers"
+          curl --silent --show-error --fail \
+            --dump-header "$HEADERS" \
+            --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unknown&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+          AFTER="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
+          test "$AFTER" -le "$BEFORE" || { echo 'unresolved dedupe backlog increased during classifier canary.' >&2; exit 1; }
+          echo "after=$AFTER" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### AWS Location Intelligence dedupe canary'
+            echo ''
+            echo "- Target: \`$CLASSIFIER_TARGET\`"
+            echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
+            echo '- Batch cap: 25'
+            echo '- Google calls: 0'
+            echo '- Destructive merges: 0'
+            echo "- Unresolved before: \`${{ steps.before.outputs.count || 'unknown' }}\`"
+            echo "- Auto-unique: \`${{ steps.outcome.outputs.auto_unique || 'unknown' }}\`"
+            echo "- Review required: \`${{ steps.outcome.outputs.review_required || 'unknown' }}\`"
+            echo "- Review queued: \`${{ steps.outcome.outputs.review_queued || 'unknown' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
