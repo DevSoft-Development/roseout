@@ -20,6 +20,7 @@ GOOGLE_METRIC_NAMESPACE = os.environ.get("GOOGLE_METRIC_NAMESPACE", "TheOutHaven
 MAX_CLOCK_SKEW_SECONDS = 300
 MAX_REQUEST_BODY_BYTES = 64_000
 SUPABASE_TIMEOUT_SECONDS = 8
+MAX_CLEANUP_PREVIEW_LIMIT = 200
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 
@@ -78,6 +79,55 @@ GOOGLE_SKUS = {
     },
 }
 
+LOCATION_SELECT = ",".join([
+    "id",
+    "name",
+    "business_name",
+    "restaurant_name",
+    "activity_name",
+    "address",
+    "formatted_address",
+    "city",
+    "state",
+    "latitude",
+    "longitude",
+    "is_searchable",
+    "is_hidden",
+    "active",
+    "deleted_at",
+    "is_demo",
+    "training_only",
+    "is_low_level",
+    "low_level_reason",
+    "duplicate_status",
+    "duplicate_of",
+    "quality_status",
+    "publish_ready",
+    "enrichment_status",
+    "google_enrichment_status",
+    "google_place_id",
+    "place_id",
+    "website",
+    "website_url",
+    "google_website_uri",
+    "rating",
+    "google_rating",
+    "review_count",
+    "google_user_rating_count",
+    "google_primary_type",
+    "google_types",
+    "operating_hours",
+    "google_regular_opening_hours",
+    "google_current_opening_hours",
+    "hours",
+    "is_claimed",
+    "claimed",
+    "owner_user_id",
+    "claim_status",
+])
+
+PROFILE_SELECT = "location_id,primary_domain,confidence,needs_review,profile_version,taxonomy_version"
+
 secrets = boto3.client("secretsmanager")
 cloudwatch = boto3.client("cloudwatch")
 _secret_cache = {}
@@ -134,7 +184,11 @@ def authenticate(event, body):
     if abs((time.time() * 1000) - epoch_ms) > MAX_CLOCK_SKEW_SECONDS * 1000:
         return False
     canonical = "\n".join([timestamp, request_method(event), request_path(event), body])
-    expected = hmac.new(load_secret(SHARED_SECRET_ARN).encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+    expected = hmac.new(
+        load_secret(SHARED_SECRET_ARN).encode("utf-8"),
+        canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -187,6 +241,14 @@ def _number(value, fallback):
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed >= 0 else fallback
+
+
+def _positive_int(value, fallback, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(1, min(maximum, parsed))
 
 
 def _month(value):
@@ -324,20 +386,37 @@ def google_budget_summary():
 
 def _location_row(location_id):
     rows = _supabase_request("locations", {
-        "select": "id,name,business_name,restaurant_name,activity_name,address,formatted_address,city,state,latitude,longitude,is_searchable,is_hidden,active,deleted_at,is_low_level,low_level_reason,duplicate_status,duplicate_of,quality_status,publish_ready,enrichment_status,google_enrichment_status,google_place_id,place_id,website,website_url,google_website_uri,rating,google_rating,review_count,google_user_rating_count,google_primary_type,google_types,operating_hours,google_regular_opening_hours,google_current_opening_hours,hours,is_claimed,claimed,owner_user_id,claim_status",
+        "select": LOCATION_SELECT,
         "id": f"eq.{location_id}",
         "limit": "1",
     })
     return rows[0] if isinstance(rows, list) and rows else None
 
 
-def _has_profile(location_id):
+def _profile_row(location_id):
     rows = _supabase_request("location_search_profiles", {
-        "select": "location_id,primary_domain,confidence,needs_review,profile_version,taxonomy_version",
+        "select": PROFILE_SELECT,
         "location_id": f"eq.{location_id}",
         "limit": "1",
     })
     return rows[0] if isinstance(rows, list) and rows else None
+
+
+def _profiles_by_location(location_ids):
+    if not location_ids:
+        return {}
+    rows = _supabase_request("location_search_profiles", {
+        "select": PROFILE_SELECT,
+        "location_id": f"in.({','.join(location_ids)})",
+        "limit": str(len(location_ids)),
+    })
+    if not isinstance(rows, list):
+        return {}
+    return {
+        str(row.get("location_id")): row
+        for row in rows
+        if isinstance(row, dict) and row.get("location_id")
+    }
 
 
 def _present(value):
@@ -350,14 +429,7 @@ def _present(value):
     return True
 
 
-def evaluate_readiness(payload):
-    location_id = str(payload.get("locationId") or "").strip()
-    if not UUID_RE.fullmatch(location_id):
-        raise ValueError("invalid_location_id")
-    row = _location_row(location_id)
-    if not row:
-        return response(404, {"ok": False, "error": "location_not_found"})
-    profile = _has_profile(location_id)
+def _readiness_for_row(row, profile):
     blockers = []
     warnings = []
     if row.get("deleted_at"):
@@ -393,19 +465,147 @@ def evaluate_readiness(payload):
         warnings.append("missing_rating_count")
     if not _present(row.get("google_primary_type")) and not _present(row.get("google_types")):
         warnings.append("missing_google_type")
-    if not any(_present(row.get(field)) for field in ("operating_hours", "google_regular_opening_hours", "google_current_opening_hours", "hours")):
+    if not any(_present(row.get(field)) for field in (
+        "operating_hours",
+        "google_regular_opening_hours",
+        "google_current_opening_hours",
+        "hours",
+    )):
         warnings.append("missing_hours")
-    claimed = bool(row.get("is_claimed") or row.get("claimed") or row.get("owner_user_id") or row.get("claim_status") == "approved")
-    return response(200, {
-        "ok": True,
-        "locationId": location_id,
-        "currentSearchable": row.get("is_searchable") is True,
+    claimed = bool(
+        row.get("is_claimed")
+        or row.get("claimed")
+        or row.get("owner_user_id")
+        or row.get("claim_status") == "approved"
+    )
+    return {
         "recommendedSearchable": len(blockers) == 0,
         "blockers": blockers,
         "warnings": warnings,
         "claimed": claimed,
         "routineGoogleRefreshAllowed": not claimed,
+    }
+
+
+def evaluate_readiness(payload):
+    location_id = str(payload.get("locationId") or "").strip()
+    if not UUID_RE.fullmatch(location_id):
+        raise ValueError("invalid_location_id")
+    row = _location_row(location_id)
+    if not row:
+        return response(404, {"ok": False, "error": "location_not_found"})
+    profile = _profile_row(location_id)
+    readiness = _readiness_for_row(row, profile)
+    return response(200, {
+        "ok": True,
+        "locationId": location_id,
+        "currentSearchable": row.get("is_searchable") is True,
+        **readiness,
         "profile": profile,
+    })
+
+
+def _increment(counter, key):
+    counter[key] = int(counter.get(key, 0)) + 1
+
+
+def cleanup_preview(payload):
+    scope = str(payload.get("scope") or "publish_ready").strip().lower()
+    if scope not in {"publish_ready", "all_non_searchable"}:
+        raise ValueError("invalid_cleanup_scope")
+    limit = _positive_int(payload.get("limit"), 100, MAX_CLEANUP_PREVIEW_LIMIT)
+    query_limit = min(MAX_CLEANUP_PREVIEW_LIMIT * 3, max(limit, limit * 3))
+    params = {
+        "select": LOCATION_SELECT,
+        "deleted_at": "is.null",
+        "is_searchable": "eq.false",
+        "order": "id.asc",
+        "limit": str(query_limit),
+    }
+    if scope == "publish_ready":
+        params["quality_status"] = "eq.publish_ready"
+    rows = _supabase_request("locations", params)
+    if not isinstance(rows, list):
+        rows = []
+    eligible_rows = [
+        row for row in rows
+        if isinstance(row, dict)
+        and row.get("is_demo") is not True
+        and row.get("training_only") is not True
+    ][:limit]
+    location_ids = [str(row.get("id")) for row in eligible_rows if row.get("id")]
+    profiles = _profiles_by_location(location_ids)
+    blocker_counts = {}
+    warning_counts = {}
+    candidates = []
+    ready_now = 0
+    blocked = 0
+    claimed_count = 0
+    dedupe_only = 0
+    google_refresh_candidates = 0
+    google_warning_names = {
+        "missing_google_place_id",
+        "missing_website",
+        "missing_rating",
+        "missing_rating_count",
+        "missing_google_type",
+        "missing_hours",
+    }
+    for row in eligible_rows:
+        location_id = str(row.get("id") or "")
+        profile = profiles.get(location_id)
+        readiness = _readiness_for_row(row, profile)
+        blockers = readiness["blockers"]
+        warnings = readiness["warnings"]
+        if readiness["recommendedSearchable"]:
+            ready_now += 1
+        else:
+            blocked += 1
+        if readiness["claimed"]:
+            claimed_count += 1
+        if blockers == ["dedupe_unresolved"]:
+            dedupe_only += 1
+        if readiness["routineGoogleRefreshAllowed"] and any(warning in google_warning_names for warning in warnings):
+            google_refresh_candidates += 1
+        for blocker in blockers:
+            _increment(blocker_counts, blocker)
+        for warning in warnings:
+            _increment(warning_counts, warning)
+        candidates.append({
+            "locationId": location_id,
+            "name": row.get("name") or row.get("business_name") or row.get("restaurant_name") or row.get("activity_name"),
+            "city": row.get("city"),
+            "state": row.get("state"),
+            "qualityStatus": row.get("quality_status"),
+            "publishReady": row.get("publish_ready") is True,
+            "currentSearchable": row.get("is_searchable") is True,
+            **readiness,
+            "profilePresent": profile is not None,
+        })
+    return response(200, {
+        "ok": True,
+        "service": "location-intelligence-api",
+        "mode": "dry_run",
+        "mutationPerformed": False,
+        "googleCallsPerformed": 0,
+        "scope": scope,
+        "requestedLimit": limit,
+        "scanned": len(eligible_rows),
+        "summary": {
+            "readyNow": ready_now,
+            "blocked": blocked,
+            "dedupeOnly": dedupe_only,
+            "claimed": claimed_count,
+            "googleRefreshCandidates": google_refresh_candidates,
+            "blockerCounts": blocker_counts,
+            "warningCounts": warning_counts,
+        },
+        "candidates": candidates,
+        "notes": [
+            "This endpoint is read-only and never changes is_searchable or any catalog field.",
+            "Unresolved duplicates remain blocked even when quality_status is publish_ready.",
+            "Claimed locations are never marked eligible for routine Google refresh.",
+        ],
     })
 
 
@@ -417,12 +617,18 @@ def handler(event, context):
         if not authenticate(event, body):
             return response(401, {"ok": False, "error": "unauthorized"})
         if method == "GET" and path == "/healthz":
-            return response(200, {"ok": True, "service": "location-intelligence-api", "environment": ENVIRONMENT})
+            return response(200, {
+                "ok": True,
+                "service": "location-intelligence-api",
+                "environment": ENVIRONMENT,
+            })
         if method == "GET" and path == "/v1/google-budget/summary":
             return response(200, google_budget_summary())
         payload = parse_json(body)
         if method == "POST" and path == "/v1/location/readiness":
             return evaluate_readiness(payload)
+        if method == "POST" and path == "/v1/cleanup/preview":
+            return cleanup_preview(payload)
         return response(404, {"ok": False, "error": "not_found"})
     except ValueError as exc:
         return response(400, {"ok": False, "error": str(exc)})
