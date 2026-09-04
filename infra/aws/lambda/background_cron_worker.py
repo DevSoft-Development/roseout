@@ -37,10 +37,12 @@ EDGE_ALLOWED_TARGETS = {
     "edge:admin-marketing-report-scheduler",
 }
 
+# Location Intelligence cleanup is intentionally excluded from this self-chain
+# allowlist during the guarded rollout. Catalog enrichment may hand off to one
+# cleanup batch, but cleanup itself must not enqueue another cleanup batch.
 EVENT_DRIVEN_TARGETS = {
     "/api/cron/managed?job=location-search-profile-worker",
     "/api/cron/managed?job=catalog-enrichment-runner",
-    LOCATION_INTELLIGENCE_CLEANUP_TARGET,
     "/api/cron/managed?job=location-description-backfill",
     "/api/cron/managed?job=search-ml-learning-maintenance",
     *EDGE_ALLOWED_TARGETS,
@@ -194,9 +196,6 @@ def _should_continue(target, parsed_body):
         remaining = _numeric(parsed_body.get("remaining"))
         progressed = _numeric(parsed_body.get("processed")) + _numeric(parsed_body.get("retried"))
         return remaining > 0 and progressed > 0
-
-    if target == LOCATION_INTELLIGENCE_CLEANUP_TARGET:
-        return _cleanup_should_continue(parsed_body)
 
     if target.endswith("job=location-description-backfill"):
         batch = parsed_body.get("batch") or {}
