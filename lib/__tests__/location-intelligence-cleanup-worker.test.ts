@@ -93,11 +93,19 @@ describe("AWS Location Intelligence dedupe classifier", () => {
 
   it("honors explicit not-duplicate pair decisions but keeps searching for other live collisions", () => {
     expect(dedupeClassifier).toContain("pairWasExplicitlyNotDuplicate");
-    expect(dedupeClassifier).toContain('.eq("status", "not_duplicate")');
+    expect(dedupeClassifier).toContain('=== "not_duplicate"');
     expect(dedupeClassifier).toContain("firstActionableCollision");
     expect(dedupeClassifier).toContain("if (await pairWasExplicitlyNotDuplicate(candidate.id, matchLocationId)) continue");
-    expect(dedupeClassifier).toContain("Only status=not_duplicate is suppressive; pending/merged decisions remain");
+    expect(dedupeClassifier).toContain("Only status=not_duplicate is suppressive; pending/merged/ignored decisions");
     expect(dedupeClassifier).toContain("return firstActionableCollision(candidate");
+  });
+
+  it("terminally dispositions prior merged or ignored conflicts without reopening audit history", () => {
+    expect(dedupeClassifier).toContain('priorDecision === "merged" || priorDecision === "ignored"');
+    expect(dedupeClassifier).toContain("location_intelligence_prior_${priorDecision}_collision");
+    expect(dedupeClassifier).toContain("priorDecisionConflict");
+    expect(dedupeClassifier).toContain("priorDecisionConflicts:");
+    expect(dedupeClassifier).toContain("The pair cannot be reopened because the review table is unique per pair");
   });
 
   it("only changes unknown publish-ready non-searchable rows to unique or actionable review", () => {
@@ -115,11 +123,12 @@ describe("AWS Location Intelligence dedupe classifier", () => {
     expect(dedupeClassifier).not.toContain("duplicate_of:");
   });
 
-  it("requires pending-review proof before moving unknown or unique rows into review state", () => {
+  it("requires pending-review proof before moving normal unknown or unique rows into review state", () => {
     expect(dedupeClassifier).toContain("routeCandidateToReview");
     expect(dedupeClassifier).toContain("await hasPendingReview(candidate.id)");
     expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
-    expect(dedupeClassifier).toContain("if (!reviewReady) return { routed: false, reviewQueued }");
+    expect(dedupeClassifier).toContain("if (!reviewReady && verification.matchLocationId");
+    expect(dedupeClassifier).toContain("if (!reviewReady) return { routed: false, reviewQueued, priorDecisionConflict: false }");
   });
 
   it("is AWS-background-only, capped, managed, non-manual, and unscheduled", () => {
