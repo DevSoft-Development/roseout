@@ -18,11 +18,6 @@ Parameters:
     Type: String
   IntegrationApiSecretArn:
     Type: String
-  ReservedConcurrency:
-    Type: Number
-    Default: 2
-    MinValue: 1
-    MaxValue: 20
 
 Resources:
   LocationIntelligenceApiSecret:
@@ -101,7 +96,6 @@ Resources:
       Handler: index.handler
       Timeout: 30
       MemorySize: 512
-      ReservedConcurrentExecutions: !Ref ReservedConcurrency
       Environment:
         Variables:
           ENVIRONMENT: !Ref Environment
