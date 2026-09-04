@@ -1,0 +1,68 @@
+name: Stamps three-card production QA
+
+on:
+  push:
+    branches:
+      - ops/stamps-three-card-production-qa
+    paths:
+      - .github/workflows/stamps-three-card-production-qa.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  controlled-production-qa:
+    if: github.ref == 'refs/heads/ops/stamps-three-card-production-qa' && github.event.head_commit.message == 'Run one-shot three-card Stamps production QA'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_REGION: us-east-1
+      RUNTIME_SECRET_ID: /theouthaven/production/edge-runtime/env
+      BATCH_ID: 4ddf770c-29eb-4094-9151-314ad27231d8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
+          aws-region: us-east-1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Load protected runtime configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_file="$RUNNER_TEMP/stamps-qa-runtime.json"
+          aws secretsmanager get-secret-value \
+            --secret-id "$RUNTIME_SECRET_ID" \
+            --query SecretString \
+            --output text > "$runtime_file"
+          chmod 600 "$runtime_file"
+          jq -e '(.SUPABASE_URL // .NEXT_PUBLIC_SUPABASE_URL) and .SUPABASE_SERVICE_ROLE_KEY and .AWS_PLATFORM_INTEGRATION_API_URL and (.AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET // .AWS_PLATFORM_INTEGRATION_API_SECRET // .AWS_PLATFORM_JOB_GATEWAY_SECRET)' "$runtime_file" > /dev/null
+          for key in SUPABASE_SERVICE_ROLE_KEY AWS_PLATFORM_INTEGRATION_API_SHARED_SECRET AWS_PLATFORM_INTEGRATION_API_SECRET AWS_PLATFORM_JOB_GATEWAY_SECRET; do
+            value="$(jq -r --arg key "$key" '.[$key] // empty' "$runtime_file")"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+            fi
+          done
+          echo "RUNTIME_SECRET_FILE=$runtime_file" >> "$GITHUB_ENV"
+          echo "runtime_configuration=ready"
+
+      - name: Purchase exactly three controlled postcards
+        run: node scripts/dev/run_stamps_three_card_production_qa.mjs
+
+      - name: Remove runtime file
+        if: always()
+        shell: bash
+        run: rm -f "${RUNTIME_SECRET_FILE:-$RUNNER_TEMP/stamps-qa-runtime.json}"
