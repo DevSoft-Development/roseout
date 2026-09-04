@@ -44,11 +44,12 @@ jobs:
           grep -F 'is_searchable=eq.false' "$FILE" >/dev/null
           grep -F "CLEANUP_POLL_ATTEMPTS: '300'" "$FILE" >/dev/null
           grep -F "CLEANUP_POLL_INTERVAL_SECONDS: '4'" "$FILE" >/dev/null
+          grep -F "if: github.event_name == 'workflow_dispatch'" "$FILE" >/dev/null
           grep -F 'published-ready unique backlog did not decrease' "$FILE" >/dev/null
           grep -F 'do not re-dispatch until late SQS execution is reconciled' "$FILE" >/dev/null
 
   enqueue:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     environment: production
@@ -170,6 +171,7 @@ jobs:
             echo "- Target: \`$CLEANUP_TARGET\`"
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
             echo '- Scope: publish-ready, non-searchable, duplicate_status=unique, visible, active, non-low-level only'
+            echo '- Activation: explicit workflow dispatch only; merge/push validates but does not publish'
             echo '- Google calls in cleanup worker: 0'
             echo "- Cleanup observation window: up to $((CLEANUP_POLL_ATTEMPTS * CLEANUP_POLL_INTERVAL_SECONDS / 60)) minutes"
             echo "- Backlog before: \`${{ steps.before.outputs.count || 'unknown' }}\`"
