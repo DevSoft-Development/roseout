@@ -98,22 +98,24 @@ jobs:
           grep -F 'DR_PRIMARY_EPOCH' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'slot_name = NONE' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reauthentication_required' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'env_type()' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'legacy_type' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse_cleanup_stage=publication' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse_cleanup_stage=source_membership' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse_cleanup_stage=target_membership' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
+          grep -F 'reverse_cleanup=complete' scripts/dr/oregon-failback.sh >/dev/null
+          ! grep -F "drop publication if exists \${FAILBACK_PUBLICATION}; drop owned by \${FAILBACK_REPLICATION_ROLE}" scripts/dr/oregon-failback.sh >/dev/null
           grep -F "if: github.event_name == 'workflow_dispatch'" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'Harden final failback runtime script' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'env_type()' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'legacy_type' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'reverse_cleanup_stage=publication' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'reverse_cleanup_stage=source_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'reverse_cleanup_stage=target_membership' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F "pg_has_role(current_user,'\${FAILBACK_REPLICATION_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'drop owned by ${FAILBACK_REPLICATION_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F "pg_has_role(current_user,'\${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage" .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'drop owned by ${FAILBACK_SUBSCRIBER_ROLE};' .github/workflows/oregon-dr-failback.yml >/dev/null
-          ! grep -F 'set role ${FAILBACK_REPLICATION_ROLE}; drop owned by ${FAILBACK_REPLICATION_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
-          ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' .github/workflows/oregon-dr-failback.yml >/dev/null
-          grep -F 'reverse_cleanup=complete' .github/workflows/oregon-dr-failback.yml >/dev/null
+          grep -F 'Verify final failback runtime hardening' .github/workflows/oregon-dr-failback.yml >/dev/null
+          ! grep -F 'Expected failback Vercel env block not found' .github/workflows/oregon-dr-failback.yml >/dev/null
 
   execute:
     needs: validate
@@ -131,82 +133,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Harden final failback runtime script
+      - name: Verify final failback runtime hardening
         if: github.event.inputs.action == 'failback'
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/dr/oregon-failback.sh')
-          text = path.read_text()
-
-          old = '''  jq -n --arg url "$VIRGINIA_URL" --arg anon "$virginia_anon" --arg service "$virginia_service" '[
-            {key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:"encrypted",target:["production"]},
-            {key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:"encrypted",target:["production"]},
-            {key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:"encrypted",target:["production"]},
-            {key:"SUPABASE_URL",value:$url,type:"encrypted",target:["production"]}
-          ]' > "$TMP/vercel-env-upsert.json"
-          '''
-          new = '''  curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" \\
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" > "$TMP/vercel-env-before-failback.json"
-          env_type() { jq -r --arg key "$1" '[.envs[]|select(.key==$key and .target==["production"])][0].type // "encrypted"' "$TMP/vercel-env-before-failback.json"; }
-          jq -n --arg url "$VIRGINIA_URL" --arg anon "$virginia_anon" --arg service "$virginia_service" \\
-            --arg url_type "$(env_type NEXT_PUBLIC_SUPABASE_URL)" --arg anon_type "$(env_type NEXT_PUBLIC_SUPABASE_ANON_KEY)" --arg service_type "$(env_type SUPABASE_SERVICE_ROLE_KEY)" \\
-            '[{key:"NEXT_PUBLIC_SUPABASE_URL",value:$url,type:$url_type,target:["production"]},{key:"NEXT_PUBLIC_SUPABASE_ANON_KEY",value:$anon,type:$anon_type,target:["production"]},{key:"SUPABASE_SERVICE_ROLE_KEY",value:$service,type:$service_type,target:["production"]}]' > "$TMP/vercel-env-upsert.json"
-          if [ "$(jq '[.envs[]|select(.key=="SUPABASE_URL" and .target==["production"])]|length' "$TMP/vercel-env-before-failback.json")" = '1' ]; then
-            legacy_type="$(env_type SUPABASE_URL)"
-            jq --arg url "$VIRGINIA_URL" --arg type "$legacy_type" '. + [{key:"SUPABASE_URL",value:$url,type:$type,target:["production"]}]' "$TMP/vercel-env-upsert.json" > "$TMP/vercel-env-upsert2.json"
-            mv "$TMP/vercel-env-upsert2.json" "$TMP/vercel-env-upsert.json"
-          fi
-          '''
-          if old not in text:
-              raise SystemExit('Expected failback Vercel env block not found; refusing runtime patch')
-          text = text.replace(old, new, 1)
-
-          cleanup_old = '''  query_ref "$OREGON_REF" "select pg_drop_replication_slot('${FAILBACK_SLOT}') where exists(select 1 from pg_replication_slots where slot_name='${FAILBACK_SLOT}'); drop publication if exists ${FAILBACK_PUBLICATION}; drop owned by ${FAILBACK_REPLICATION_ROLE}; drop role if exists ${FAILBACK_REPLICATION_ROLE};" "$TMP/reverse-source-clean.json"
-          query_ref "$VIRGINIA_REF" "drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; drop role if exists ${FAILBACK_SUBSCRIBER_ROLE};" "$TMP/reverse-target-clean.json"
-          '''
-          cleanup_new = '''  echo 'reverse_cleanup_stage=slot'
-          query_ref "$OREGON_REF" "select pg_drop_replication_slot('${FAILBACK_SLOT}') where exists(select 1 from pg_replication_slots where slot_name='${FAILBACK_SLOT}');" "$TMP/reverse-slot-drop.json"
-          echo 'reverse_cleanup_stage=publication'
-          query_ref "$OREGON_REF" "drop publication if exists ${FAILBACK_PUBLICATION};" "$TMP/reverse-publication-drop.json"
-          query_ref "$OREGON_REF" "select count(*) roles from pg_roles where rolname='${FAILBACK_REPLICATION_ROLE}';" "$TMP/reverse-source-role-state.json"
-          test "$(jq -r '.[0].roles' "$TMP/reverse-source-role-state.json")" = '0' -o "$(jq -r '.[0].roles' "$TMP/reverse-source-role-state.json")" = '1'
-          if [ "$(jq -r '.[0].roles' "$TMP/reverse-source-role-state.json")" = '1' ]; then
-            echo 'reverse_cleanup_stage=source_membership'
-            query_ref "$OREGON_REF" "grant ${FAILBACK_REPLICATION_ROLE} to postgres with inherit true, set true;" "$TMP/reverse-source-membership-grant.json"
-            query_ref "$OREGON_REF" "select current_user,session_user,pg_has_role(current_user,'${FAILBACK_REPLICATION_ROLE}','USAGE') usage;" "$TMP/reverse-source-membership-proof.json"
-            jq -e '.[0].current_user=="postgres" and .[0].session_user=="postgres" and .[0].usage==true' "$TMP/reverse-source-membership-proof.json" >/dev/null || { echo 'Oregon cleanup membership is not inherited by postgres.' >&2; exit 1; }
-            echo 'reverse_cleanup_stage=source_owned'
-            query_ref "$OREGON_REF" "drop owned by ${FAILBACK_REPLICATION_ROLE};" "$TMP/reverse-source-owned-drop.json"
-            query_ref "$OREGON_REF" "revoke ${FAILBACK_REPLICATION_ROLE} from postgres granted by postgres;" "$TMP/reverse-source-membership-revoke.json"
-            echo 'reverse_cleanup_stage=source_role'
-            query_ref "$OREGON_REF" "drop role ${FAILBACK_REPLICATION_ROLE};" "$TMP/reverse-source-role-drop.json"
-          fi
-          query_ref "$VIRGINIA_REF" "select count(*) roles from pg_roles where rolname='${FAILBACK_SUBSCRIBER_ROLE}';" "$TMP/reverse-target-role-state.json"
-          test "$(jq -r '.[0].roles' "$TMP/reverse-target-role-state.json")" = '0' -o "$(jq -r '.[0].roles' "$TMP/reverse-target-role-state.json")" = '1'
-          if [ "$(jq -r '.[0].roles' "$TMP/reverse-target-role-state.json")" = '1' ]; then
-            echo 'reverse_cleanup_stage=target_membership'
-            query_ref "$VIRGINIA_REF" "grant ${FAILBACK_SUBSCRIBER_ROLE} to postgres with inherit true, set true;" "$TMP/reverse-target-membership-grant.json"
-            query_ref "$VIRGINIA_REF" "select current_user,session_user,pg_has_role(current_user,'${FAILBACK_SUBSCRIBER_ROLE}','USAGE') usage;" "$TMP/reverse-target-membership-proof.json"
-            jq -e '.[0].current_user=="postgres" and .[0].session_user=="postgres" and .[0].usage==true' "$TMP/reverse-target-membership-proof.json" >/dev/null || { echo 'Virginia cleanup membership is not inherited by postgres.' >&2; exit 1; }
-            echo 'reverse_cleanup_stage=target_owned'
-            query_ref "$VIRGINIA_REF" "drop owned by ${FAILBACK_SUBSCRIBER_ROLE};" "$TMP/reverse-target-owned-drop.json"
-            query_ref "$VIRGINIA_REF" "revoke ${FAILBACK_SUBSCRIBER_ROLE} from postgres granted by postgres;" "$TMP/reverse-target-membership-revoke.json"
-            echo 'reverse_cleanup_stage=target_role'
-            query_ref "$VIRGINIA_REF" "drop role ${FAILBACK_SUBSCRIBER_ROLE};" "$TMP/reverse-target-role-drop.json"
-          fi
-          query_ref "$OREGON_REF" "select (select count(*) from pg_replication_slots where slot_name='${FAILBACK_SLOT}') slots,(select count(*) from pg_publication where pubname='${FAILBACK_PUBLICATION}') publications,(select count(*) from pg_roles where rolname='${FAILBACK_REPLICATION_ROLE}') roles;" "$TMP/reverse-source-clean.json"
-          query_ref "$VIRGINIA_REF" "select (select count(*) from pg_subscription where subname='${FAILBACK_SUBSCRIPTION}') subscriptions,(select count(*) from pg_roles where rolname='${FAILBACK_SUBSCRIBER_ROLE}') roles;" "$TMP/reverse-target-clean.json"
-          jq -e '.[0].slots==0 and .[0].publications==0 and .[0].roles==0' "$TMP/reverse-source-clean.json" >/dev/null
-          jq -e '.[0].subscriptions==0 and .[0].roles==0' "$TMP/reverse-target-clean.json" >/dev/null
-          echo 'reverse_cleanup=complete'
-          '''
-          if cleanup_old not in text:
-              raise SystemExit('Expected combined reverse cleanup block not found; refusing runtime patch')
-          text = text.replace(cleanup_old, cleanup_new, 1)
-          path.write_text(text)
-          PY
+          bash -n scripts/dr/oregon-failback.sh
           grep -F 'env_type()' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'legacy_type' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F '{key:"SUPABASE_URL",value:$url,type:"encrypted",target:["production"]}' scripts/dr/oregon-failback.sh >/dev/null
@@ -223,7 +154,6 @@ jobs:
           ! grep -F 'set role ${FAILBACK_SUBSCRIBER_ROLE}; drop owned by ${FAILBACK_SUBSCRIBER_ROLE}; reset role;' scripts/dr/oregon-failback.sh >/dev/null
           grep -F 'reverse_cleanup=complete' scripts/dr/oregon-failback.sh >/dev/null
           ! grep -F "drop publication if exists \${FAILBACK_PUBLICATION}; drop owned by \${FAILBACK_REPLICATION_ROLE}" scripts/dr/oregon-failback.sh >/dev/null
-          bash -n scripts/dr/oregon-failback.sh
 
       - name: Execute explicit failback phase
         env:
