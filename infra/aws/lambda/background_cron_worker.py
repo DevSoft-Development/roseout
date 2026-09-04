@@ -14,6 +14,7 @@ APP_ENV_SECRET_NAME = os.environ["APP_ENV_SECRET_NAME"]
 APP_ENV_SECRET_REGION = os.environ.get("APP_ENV_SECRET_REGION", "us-west-2")
 MAX_CHAIN_DEPTH = int(os.environ.get("MAX_CHAIN_DEPTH", "64"))
 MAX_CHAIN_AGE_SECONDS = int(os.environ.get("MAX_CHAIN_AGE_SECONDS", "3600"))
+LOCATION_INTELLIGENCE_CLEANUP_TARGET = "/api/cron/managed?job=location-intelligence-cleanup-worker"
 
 lambda_client = boto3.client(
     "lambda",
@@ -39,6 +40,7 @@ EDGE_ALLOWED_TARGETS = {
 EVENT_DRIVEN_TARGETS = {
     "/api/cron/managed?job=location-search-profile-worker",
     "/api/cron/managed?job=catalog-enrichment-runner",
+    LOCATION_INTELLIGENCE_CLEANUP_TARGET,
     "/api/cron/managed?job=location-description-backfill",
     "/api/cron/managed?job=search-ml-learning-maintenance",
     *EDGE_ALLOWED_TARGETS,
@@ -173,6 +175,14 @@ def _numeric(value):
         return 0
 
 
+def _cleanup_should_continue(payload):
+    if not isinstance(payload, dict):
+        return False
+    remaining = _numeric(payload.get("remaining"))
+    progressed = _numeric(payload.get("published"))
+    return remaining > 0 and progressed > 0 and _numeric(payload.get("failed")) == 0
+
+
 def _should_continue(target, parsed_body):
     if target not in EVENT_DRIVEN_TARGETS or not isinstance(parsed_body, dict):
         return False
@@ -184,6 +194,9 @@ def _should_continue(target, parsed_body):
         remaining = _numeric(parsed_body.get("remaining"))
         progressed = _numeric(parsed_body.get("processed")) + _numeric(parsed_body.get("retried"))
         return remaining > 0 and progressed > 0
+
+    if target == LOCATION_INTELLIGENCE_CLEANUP_TARGET:
+        return _cleanup_should_continue(parsed_body)
 
     if target.endswith("job=location-description-backfill"):
         batch = parsed_body.get("batch") or {}
@@ -211,6 +224,16 @@ def _should_continue(target, parsed_body):
     return False
 
 
+def _continuation_target(target, parsed_body):
+    if target.endswith("job=catalog-enrichment-runner") and isinstance(parsed_body, dict):
+        cleanup = parsed_body.get("locationIntelligenceCleanup")
+        if _cleanup_should_continue(cleanup):
+            return LOCATION_INTELLIGENCE_CLEANUP_TARGET
+    if _should_continue(target, parsed_body):
+        return target
+    return None
+
+
 def _enqueue_continuation(envelope, target):
     now = int(time.time())
     current_depth = max(0, _numeric(envelope.get("chainDepth")))
@@ -230,6 +253,8 @@ def _enqueue_continuation(envelope, target):
 
     continuation = dict(envelope)
     continuation["source"] = "background-cron-chain"
+    continuation["target"] = target
+    continuation["payload"] = {}
     continuation["chainDepth"] = current_depth + 1
     continuation["chainStartedAt"] = started_at
     response = sqs_client.send_message(
@@ -283,12 +308,14 @@ def _run_message(record):
         if parsed_body.get("success") is False or parsed_body.get("ok") is False:
             raise RuntimeError(f"background_cron_declared_failure:{str(parsed_body)[:1500]}")
 
-    if _should_continue(target, parsed_body):
-        _enqueue_continuation(envelope, target)
+    next_target = _continuation_target(target, parsed_body)
+    if next_target:
+        _enqueue_continuation(envelope, next_target)
 
     print(json.dumps({
         "event": "background_cron_completed",
         "target": target,
+        "nextTarget": next_target,
         "messageId": request_id,
         "status": status,
         "chainDepth": max(0, _numeric(envelope.get("chainDepth"))),
