@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Validate read-only diagnostic contract
         run: |
           set -euo pipefail
@@ -41,6 +40,7 @@ jobs:
           grep -F 'aws lambda get-event-source-mapping' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-configuration' "$FILE" >/dev/null
           grep -F 'aws lambda get-function-concurrency' "$FILE" >/dev/null
+          grep -F 'aws cloudwatch get-metric-statistics' "$FILE" >/dev/null
           grep -F 'aws cloudwatch describe-alarms' "$FILE" >/dev/null
           python - <<'PY'
           from pathlib import Path
@@ -67,7 +67,6 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -80,21 +79,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-
-          WORKER="$(aws cloudformation describe-stacks \
-            --stack-name "$BACKGROUND_CRON_STACK_NAME" \
-            --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" \
-            --output text)"
+          WORKER="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_CRON_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='BackgroundCronWorkerFunctionName'].OutputValue" --output text)"
           test -n "$WORKER" && test "$WORKER" != 'None'
-
           QUEUE_URL="$(aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_QUEUE" --query QueueUrl --output text)"
           DLQ_URL="$(aws sqs get-queue-url --queue-name "$BACKGROUND_CRON_DLQ" --query QueueUrl --output text)"
           QUEUE_ARN="$(aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)"
-
           test -n "$QUEUE_URL" && test "$QUEUE_URL" != 'None'
           test -n "$DLQ_URL" && test "$DLQ_URL" != 'None'
           test -n "$QUEUE_ARN" && test "$QUEUE_ARN" != 'None'
-
           echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
           echo "queue_url=$QUEUE_URL" >> "$GITHUB_OUTPUT"
           echo "dlq_url=$DLQ_URL" >> "$GITHUB_OUTPUT"
@@ -109,25 +101,41 @@ jobs:
           set -euo pipefail
           MAIN="$RUNNER_TEMP/background-queue.json"
           DLQ="$RUNNER_TEMP/background-dlq.json"
-
           aws sqs get-queue-attributes \
             --queue-url "$QUEUE_URL" \
-            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed ApproximateAgeOfOldestMessage VisibilityTimeout RedrivePolicy \
+            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed VisibilityTimeout RedrivePolicy \
             --output json > "$MAIN"
           aws sqs get-queue-attributes \
             --queue-url "$DLQ_URL" \
-            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed ApproximateAgeOfOldestMessage VisibilityTimeout \
+            --attribute-names QueueArn ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible ApproximateNumberOfMessagesDelayed VisibilityTimeout \
             --output json > "$DLQ"
+
+          START_TIME="$(date -u -d '15 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          END_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          MAIN_AGE="$RUNNER_TEMP/background-queue-age.json"
+          DLQ_AGE="$RUNNER_TEMP/background-dlq-age.json"
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/SQS \
+            --metric-name ApproximateAgeOfOldestMessage \
+            --dimensions Name=QueueName,Value="$BACKGROUND_CRON_QUEUE" \
+            --start-time "$START_TIME" --end-time "$END_TIME" \
+            --period 60 --statistics Maximum --output json > "$MAIN_AGE"
+          aws cloudwatch get-metric-statistics \
+            --namespace AWS/SQS \
+            --metric-name ApproximateAgeOfOldestMessage \
+            --dimensions Name=QueueName,Value="$BACKGROUND_CRON_DLQ" \
+            --start-time "$START_TIME" --end-time "$END_TIME" \
+            --period 60 --statistics Maximum --output json > "$DLQ_AGE"
 
           echo "visible=$(jq -r '.Attributes.ApproximateNumberOfMessages // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "inflight=$(jq -r '.Attributes.ApproximateNumberOfMessagesNotVisible // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "delayed=$(jq -r '.Attributes.ApproximateNumberOfMessagesDelayed // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
-          echo "oldest=$(jq -r '.Attributes.ApproximateAgeOfOldestMessage // "0"' "$MAIN")" >> "$GITHUB_OUTPUT"
+          echo "oldest=$(jq -r '[.Datapoints[]?] | sort_by(.Timestamp) | last | .Maximum // 0' "$MAIN_AGE")" >> "$GITHUB_OUTPUT"
           echo "visibility=$(jq -r '.Attributes.VisibilityTimeout // "unknown"' "$MAIN")" >> "$GITHUB_OUTPUT"
           echo "dlq_visible=$(jq -r '.Attributes.ApproximateNumberOfMessages // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
           echo "dlq_inflight=$(jq -r '.Attributes.ApproximateNumberOfMessagesNotVisible // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
           echo "dlq_delayed=$(jq -r '.Attributes.ApproximateNumberOfMessagesDelayed // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
-          echo "dlq_oldest=$(jq -r '.Attributes.ApproximateAgeOfOldestMessage // "0"' "$DLQ")" >> "$GITHUB_OUTPUT"
+          echo "dlq_oldest=$(jq -r '[.Datapoints[]?] | sort_by(.Timestamp) | last | .Maximum // 0' "$DLQ_AGE")" >> "$GITHUB_OUTPUT"
 
       - name: Inspect event source mapping
         id: mapping
@@ -138,16 +146,11 @@ jobs:
           set -euo pipefail
           LIST="$RUNNER_TEMP/event-source-mappings.json"
           DETAIL="$RUNNER_TEMP/event-source-mapping.json"
-
-          aws lambda list-event-source-mappings \
-            --function-name "$WORKER" \
-            --event-source-arn "$QUEUE_ARN" \
-            --output json > "$LIST"
+          aws lambda list-event-source-mappings --function-name "$WORKER" --event-source-arn "$QUEUE_ARN" --output json > "$LIST"
           COUNT="$(jq '.EventSourceMappings | length' "$LIST")"
           test "$COUNT" -eq 1 || { echo "expected exactly one background-cron event source mapping; found $COUNT" >&2; exit 1; }
           UUID="$(jq -r '.EventSourceMappings[0].UUID' "$LIST")"
           test -n "$UUID" && test "$UUID" != 'null'
-
           aws lambda get-event-source-mapping --uuid "$UUID" --output json > "$DETAIL"
           STATE="$(jq -r '.State // "unknown"' "$DETAIL")"
           LAST_RESULT="$(jq -r '.LastProcessingResult // "unknown"' "$DETAIL")"
@@ -155,10 +158,8 @@ jobs:
           MAX_CONCURRENCY="$(jq -r '.ScalingConfig.MaximumConcurrency // "unset"' "$DETAIL")"
           BATCH_SIZE="$(jq -r '.BatchSize // "unknown"' "$DETAIL")"
           BATCH_WINDOW="$(jq -r '.MaximumBatchingWindowInSeconds // "unknown"' "$DETAIL")"
-
           test "$STATE" = 'Enabled' || { echo "background-cron mapping is not enabled: $STATE ($REASON)" >&2; exit 1; }
           test "$MAX_CONCURRENCY" = '3' || { echo "background-cron max concurrency drifted: $MAX_CONCURRENCY" >&2; exit 1; }
-
           echo "uuid=$UUID" >> "$GITHUB_OUTPUT"
           echo "state=$STATE" >> "$GITHUB_OUTPUT"
           echo "last_result=$LAST_RESULT" >> "$GITHUB_OUTPUT"
@@ -175,25 +176,20 @@ jobs:
           set -euo pipefail
           WORKER_JSON="$RUNNER_TEMP/background-worker.json"
           RUNTIME_JSON="$RUNNER_TEMP/background-runtime.json"
-
           aws lambda get-function-configuration --function-name "$WORKER" --output json > "$WORKER_JSON"
           aws lambda get-function-configuration --function-name "$BACKGROUND_RUNTIME_FUNCTION" --output json > "$RUNTIME_JSON"
-
           WORKER_STATE="$(jq -r '.State // "unknown"' "$WORKER_JSON")"
           WORKER_UPDATE="$(jq -r '.LastUpdateStatus // "unknown"' "$WORKER_JSON")"
           RUNTIME_STATE="$(jq -r '.State // "unknown"' "$RUNTIME_JSON")"
           RUNTIME_UPDATE="$(jq -r '.LastUpdateStatus // "unknown"' "$RUNTIME_JSON")"
-
           test "$WORKER_STATE" = 'Active' || { echo "background worker is not Active: $WORKER_STATE" >&2; exit 1; }
           test "$WORKER_UPDATE" = 'Successful' || { echo "background worker update status is $WORKER_UPDATE" >&2; exit 1; }
           test "$RUNTIME_STATE" = 'Active' || { echo "private background runtime is not Active: $RUNTIME_STATE" >&2; exit 1; }
           test "$RUNTIME_UPDATE" = 'Successful' || { echo "private background runtime update status is $RUNTIME_UPDATE" >&2; exit 1; }
-
           WORKER_RESERVED="$(aws lambda get-function-concurrency --function-name "$WORKER" --query ReservedConcurrentExecutions --output text 2>/dev/null || true)"
           RUNTIME_RESERVED="$(aws lambda get-function-concurrency --function-name "$BACKGROUND_RUNTIME_FUNCTION" --query ReservedConcurrentExecutions --output text 2>/dev/null || true)"
           if [ -z "$WORKER_RESERVED" ] || [ "$WORKER_RESERVED" = 'None' ]; then WORKER_RESERVED='unreserved'; fi
           if [ -z "$RUNTIME_RESERVED" ] || [ "$RUNTIME_RESERVED" = 'None' ]; then RUNTIME_RESERVED='unreserved'; fi
-
           echo "worker_state=$WORKER_STATE" >> "$GITHUB_OUTPUT"
           echo "worker_update=$WORKER_UPDATE" >> "$GITHUB_OUTPUT"
           echo "worker_reserved=$WORKER_RESERVED" >> "$GITHUB_OUTPUT"
@@ -206,18 +202,16 @@ jobs:
           echo "runtime_memory=$(jq -r '.MemorySize' "$RUNTIME_JSON")" >> "$GITHUB_OUTPUT"
 
       - name: Read queue alarms
-        id: alarms
         run: |
           set -euo pipefail
-          ALARMS="$RUNNER_TEMP/background-queue-alarms.json"
           aws cloudwatch describe-alarms \
             --alarm-names \
               toh-production-background-cron-oldest-message \
               toh-production-background-cron-dlq-visible \
               toh-production-background-cron-worker-throttles \
               toh-production-background-runtime-throttles \
-            --output json > "$ALARMS"
-          jq -r '.MetricAlarms[] | [.AlarmName,.StateValue,(.StateReason // "")] | @tsv' "$ALARMS"
+            --query 'MetricAlarms[].{alarm:AlarmName,state:StateValue,reason:StateReason}' \
+            --output table
 
       - name: Report delivery diagnostic
         run: |
