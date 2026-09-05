@@ -1,8 +1,6 @@
 name: Production S3 database backup
 
 on:
-  schedule:
-    - cron: "15 8 * * *"
   workflow_dispatch:
 
 permissions:
