@@ -50,7 +50,7 @@ const PREFERRED_SELECT = [
 const FALLBACK_SELECT =
   "id,name,address,city,state,zip_code,google_place_id,image_url,main_image,has_photos,photo_status";
 const MISSING_PHOTO_FILTER =
-  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,image_url.is.null,main_image.is.null";
+  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,and(image_url.is.null,main_image.is.null)";
 
 const ADMIN_ROLES = new Set([
   "superadmin",
@@ -382,6 +382,38 @@ async function findGooglePhoto(
   location: LocationRow,
   apiKey: string,
 ): Promise<GooglePhotoResult> {
+  const existingPlaceId = clean(location.google_place_id);
+  if (existingPlaceId) {
+    const detailsResponse = await fetch(
+      `https://places.googleapis.com/v1/places/${encodeURIComponent(existingPlaceId)}`,
+      {
+        headers: {
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "id,displayName,formattedAddress,photos",
+        },
+      },
+    );
+    const detailsPayload = await detailsResponse.json().catch(() => null);
+    if (detailsResponse.ok) {
+      const photoName = clean(detailsPayload?.photos?.[0]?.name);
+      if (!photoName) return { found: false, reason: "no_photo_reference" };
+      return {
+        found: true,
+        placeId: clean(detailsPayload?.id) || existingPlaceId,
+        googleName: clean(detailsPayload?.displayName?.text) || null,
+        googleAddress: clean(detailsPayload?.formattedAddress) || null,
+      };
+    }
+    if (detailsResponse.status === 403) {
+      const message = clean(detailsPayload?.error?.message) || `HTTP ${detailsResponse.status}`;
+      throw new Error(`Google Places request denied: ${message}`);
+    }
+    if (detailsResponse.status === 429) {
+      return { found: false, reason: "over_query_limit" };
+    }
+    // A stale/deleted Place ID may legitimately require the strict text-search fallback below.
+  }
+
   const query = buildGoogleQuery(location);
   if (!query) return { found: false, reason: "empty_google_query" };
 
