@@ -27,6 +27,8 @@ TEXT_SEARCH_FIELD_MASK = ",".join([
     "places.rating",
     "places.userRatingCount",
     "places.businessStatus",
+    "places.movedPlace",
+    "places.movedPlaceId",
     "places.primaryType",
     "places.types",
     "places.photos",
@@ -58,6 +60,8 @@ DETAILS_FIELD_MASK = ",".join([
     "rating",
     "userRatingCount",
     "businessStatus",
+    "movedPlace",
+    "movedPlaceId",
     "primaryType",
     "primaryTypeDisplayName",
     "types",
@@ -280,7 +284,7 @@ def search_text(payload):
         raise ValueError("google_region_code_invalid")
     field_mode = _clean(payload.get("fieldMode") or "rich").lower()
     if field_mode not in {"ids-only", "rich"}:
-        raise ValueError("google_text_search_field_mode_invalid")
+        raise ValueError("google_search_mode_invalid")
     field_mask = TEXT_SEARCH_IDS_ONLY_FIELD_MASK if field_mode == "ids-only" else TEXT_SEARCH_FIELD_MASK
     result = _json_request(
         "/places:searchText",
