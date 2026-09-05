@@ -1,0 +1,306 @@
+name: AWS Location Intelligence completion drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-completion-drain.yml'
+      - 'supabase/functions/unified-location-gap-repair/index.ts'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-completion-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-completion-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
+  MENU_TARGET: edge:unified-location-gap-repair
+  CLEANUP_MAX_BATCHES: '40'
+  MENU_MAX_BATCHES: '400'
+  POLL_ATTEMPTS: '180'
+  POLL_INTERVAL_SECONDS: '4'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate completion drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-completion-drain.yml
+          grep -F "CLEANUP_MAX_BATCHES: '40'" "$FILE" >/dev/null
+          grep -F "MENU_MAX_BATCHES: '400'" "$FILE" >/dev/null
+          grep -F 'location-intelligence-cleanup-worker' "$FILE" >/dev/null
+          grep -F 'edge:unified-location-gap-repair' "$FILE" >/dev/null
+          grep -F 'menuDiscoveryLimit:10' "$FILE" >/dev/null
+          grep -F 'menuContentLimit:5' "$FILE" >/dev/null
+          grep -F 'textSearchLimit:0' "$FILE" >/dev/null
+          grep -F 'googleCallsPerformed == 0' "$FILE" >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Completion drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+          grep -F 'github.event_name == '\''workflow_dispatch'\'' || github.event_name == '\''push'\''' "$FILE" >/dev/null
+
+  execute:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve scheduler invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          INVOKER="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain guarded publication queue
+        id: cleanup
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          TOTAL_PUBLISHED=0
+          TOTAL_REVIEW=0
+          LAST_REMAINING=-1
+
+          count_remaining() {
+            local headers="$RUNNER_TEMP/cleanup-count.headers"
+            curl --silent --show-error --fail \
+              --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL_REMAINING="$(count_remaining)"
+          REMAINING="$INITIAL_REMAINING"
+          echo "Guarded publication queue before drain: $REMAINING"
+
+          for batch in $(seq 1 "$CLEANUP_MAX_BATCHES"); do
+            if [ "$REMAINING" -eq 0 ]; then break; fi
+            if [ "$LAST_REMAINING" -eq "$REMAINING" ]; then
+              echo "Cleanup queue made no progress at $REMAINING rows; failing closed." >&2
+              exit 1
+            fi
+            LAST_REMAINING="$REMAINING"
+            STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+            REQUEST="$RUNNER_TEMP/cleanup-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/cleanup-response-${batch}.json"
+            jq -nc --arg target "$CLEANUP_TARGET" \
+              '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$REQUEST"
+            aws lambda invoke \
+              --function-name "$INVOKER" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$REQUEST" \
+              "$RESPONSE" >/dev/null
+            jq -e --arg target "$CLEANUP_TARGET" \
+              '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' \
+              "$RESPONSE" >/dev/null
+
+            OUTCOME="$RUNNER_TEMP/cleanup-outcome-${batch}.json"
+            FOUND=0
+            for attempt in $(seq 1 "$POLL_ATTEMPTS"); do
+              curl --silent --show-error --fail --get \
+                --header "apikey: $SERVICE_ROLE" \
+                --header "Authorization: Bearer $SERVICE_ROLE" \
+                --data-urlencode 'select=id,status,started_at,finished_at,details' \
+                --data-urlencode 'job_key=eq.location-intelligence-cleanup-worker' \
+                --data-urlencode "started_at=gte.${STARTED_AT}" \
+                --data-urlencode 'order=started_at.desc' \
+                --data-urlencode 'limit=1' \
+                "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$OUTCOME"
+              if jq -e 'length == 1 and .[0].finished_at != null' "$OUTCOME" >/dev/null; then
+                FOUND=1
+                break
+              fi
+              sleep "$POLL_INTERVAL_SECONDS"
+            done
+            test "$FOUND" = 1 || { echo 'Cleanup outcome was not observed; do not redispatch until late execution is reconciled.' >&2; exit 1; }
+
+            jq -e '
+              .[0].status == "success"
+              and .[0].details.mode == "publish_ready_unique_canary"
+              and .[0].details.googleCallsPerformed == 0
+              and .[0].details.failed == 0
+              and .[0].details.processed == .[0].details.selected
+            ' "$OUTCOME" >/dev/null
+
+            PUBLISHED="$(jq -r '.[0].details.published // 0' "$OUTCOME")"
+            REVIEW="$(jq -r '.[0].details.dispositionedToReview // 0' "$OUTCOME")"
+            TOTAL_PUBLISHED=$((TOTAL_PUBLISHED + PUBLISHED))
+            TOTAL_REVIEW=$((TOTAL_REVIEW + REVIEW))
+            REMAINING="$(count_remaining)"
+            test "$REMAINING" -lt "$LAST_REMAINING" || { echo "Cleanup batch $batch did not reduce queue: before=$LAST_REMAINING after=$REMAINING" >&2; exit 1; }
+            echo "Cleanup batch $batch: published=$PUBLISHED review=$REVIEW remaining=$REMAINING"
+          done
+
+          test "$REMAINING" -eq 0 || { echo "Cleanup drain hit batch cap with $REMAINING rows remaining." >&2; exit 1; }
+          echo "initial=$INITIAL_REMAINING" >> "$GITHUB_OUTPUT"
+          echo "remaining=$REMAINING" >> "$GITHUB_OUTPUT"
+          echo "published=$TOTAL_PUBLISHED" >> "$GITHUB_OUTPUT"
+          echo "review=$TOTAL_REVIEW" >> "$GITHUB_OUTPUT"
+
+      - name: Accelerate menu intelligence and gap repair
+        id: menu
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          count_menu_backlog() {
+            local headers="$RUNNER_TEMP/menu-count.headers"
+            curl --silent --show-error --fail \
+              --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&location_type=eq.restaurant&website=not.is.null&menu_url=not.is.null&deleted_at=is.null&or=(menu_intelligence_version.is.null,menu_intelligence_version.neq.first_party_menu_v2)&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL_BACKLOG="$(count_menu_backlog)"
+          BACKLOG="$INITIAL_BACKLOG"
+          LAST_BACKLOG=-1
+          echo "Menu v2 backlog before acceleration: $BACKLOG"
+
+          for batch in $(seq 1 "$MENU_MAX_BATCHES"); do
+            if [ "$BACKLOG" -eq 0 ]; then break; fi
+            if [ "$LAST_BACKLOG" -eq "$BACKLOG" ] && [ "$batch" -gt 2 ]; then
+              echo "Menu v2 backlog stalled at $BACKLOG; stopping acceleration without forcing stale/blocked sites."
+              break
+            fi
+            LAST_BACKLOG="$BACKLOG"
+
+            REQUEST="$RUNNER_TEMP/menu-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/menu-response-${batch}.json"
+            jq -nc --arg target "$MENU_TARGET" \
+              '{function:"sqs:background-cron",body:{target:$target,payload:{source:"location_intelligence_completion",limit:1,concurrency:8,textSearchLimit:0,menuDiscoveryLimit:10,menuContentLimit:5}}}' > "$REQUEST"
+            aws lambda invoke \
+              --function-name "$INVOKER" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$REQUEST" \
+              "$RESPONSE" >/dev/null
+            jq -e --arg target "$MENU_TARGET" \
+              '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' \
+              "$RESPONSE" >/dev/null
+
+            sleep 12
+            BACKLOG="$(count_menu_backlog)"
+            echo "Menu acceleration batch $batch: backlog=$BACKLOG"
+          done
+
+          echo "initial=$INITIAL_BACKLOG" >> "$GITHUB_OUTPUT"
+          echo "remaining=$BACKLOG" >> "$GITHUB_OUTPUT"
+
+      - name: Final Location Intelligence acceptance snapshot
+        id: final
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          count_rows() {
+            local name="$1"
+            local query="$2"
+            local headers="$RUNNER_TEMP/${name}.headers"
+            curl --silent --show-error --fail \
+              --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&${query}&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          DEDUPE_UNKNOWN="$(count_rows dedupe_unknown 'quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unknown&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null')"
+          PUBLICATION="$(count_rows publication 'quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null')"
+          MENU_V2="$(count_rows menu_v2 'location_type=eq.restaurant&deleted_at=is.null&menu_intelligence_version=eq.first_party_menu_v2')"
+          MENU_FAILED="$(count_rows menu_failed 'location_type=eq.restaurant&deleted_at=is.null&menu_discovery_status=eq.failed')"
+          MENU_BLOCKED="$(count_rows menu_blocked 'location_type=eq.restaurant&deleted_at=is.null&menu_discovery_status=eq.blocked')"
+          GOOGLE_MISSING="$(count_rows google_missing 'deleted_at=is.null&google_place_id=is.null')"
+          SEMANTIC_PENDING="$(count_rows semantic_pending 'deleted_at=is.null&needs_semantic_refresh=eq.true')"
+
+          echo "dedupe_unknown=$DEDUPE_UNKNOWN" >> "$GITHUB_OUTPUT"
+          echo "publication=$PUBLICATION" >> "$GITHUB_OUTPUT"
+          echo "menu_v2=$MENU_V2" >> "$GITHUB_OUTPUT"
+          echo "menu_failed=$MENU_FAILED" >> "$GITHUB_OUTPUT"
+          echo "menu_blocked=$MENU_BLOCKED" >> "$GITHUB_OUTPUT"
+          echo "google_missing=$GOOGLE_MISSING" >> "$GITHUB_OUTPUT"
+          echo "semantic_pending=$SEMANTIC_PENDING" >> "$GITHUB_OUTPUT"
+
+          printf 'dedupe_unknown=%s publication=%s menu_v2=%s menu_failed=%s menu_blocked=%s google_missing=%s semantic_pending=%s\n' \
+            "$DEDUPE_UNKNOWN" "$PUBLICATION" "$MENU_V2" "$MENU_FAILED" "$MENU_BLOCKED" "$GOOGLE_MISSING" "$SEMANTIC_PENDING"
+          test "$DEDUPE_UNKNOWN" -eq 0
+          test "$PUBLICATION" -eq 0
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### AWS Location Intelligence completion drain'
+            echo ''
+            echo "- Guarded publication queue before: \`${{ steps.cleanup.outputs.initial || 'n/a' }}\`"
+            echo "- Guarded publication queue after: \`${{ steps.cleanup.outputs.remaining || 'n/a' }}\`"
+            echo "- Published through Search Profile guard: \`${{ steps.cleanup.outputs.published || '0' }}\`"
+            echo "- Routed to review: \`${{ steps.cleanup.outputs.review || '0' }}\`"
+            echo "- Menu v2 backlog before: \`${{ steps.menu.outputs.initial || 'n/a' }}\`"
+            echo "- Menu v2 backlog after accelerated pass: \`${{ steps.menu.outputs.remaining || 'n/a' }}\`"
+            echo '- Recurring scheduler ownership: unchanged; this workflow has no timer.'
+            echo '- Cleanup Google calls: 0.'
+          } >> "$GITHUB_STEP_SUMMARY"
