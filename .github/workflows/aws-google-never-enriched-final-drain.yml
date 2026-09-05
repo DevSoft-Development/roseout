@@ -106,7 +106,8 @@ jobs:
           }
 
           run_remaining() {
-            local id="$1" headers="$RUNNER_TEMP/run-${id}.headers"
+            local id="$1"
+            local headers="$RUNNER_TEMP/run-${id}.headers"
             curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
               "${AUTH[@]}" -H 'Prefer: count=exact' \
               "${SUPABASE_URL}/rest/v1/location_enrichment_run_items?select=id&run_id=eq.${id}&status=in.(pending,processing)&limit=1"
