@@ -1,0 +1,96 @@
+name: One-shot claimed Google closure migration
+
+on:
+  push:
+    branches: [fix/location-intelligence-claimed-closure-safety]
+    paths:
+      - '.github/workflows/one-shot-claimed-google-closure-migration.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/location-intelligence-claimed-closure-safety
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Create migration with Supabase CLI
+        run: |
+          set -euo pipefail
+          npx --yes supabase@latest migration new protect_claimed_google_closure
+          FILE="$(ls -1t supabase/migrations/*_protect_claimed_google_closure.sql | head -1)"
+          cat > "$FILE" <<'SQL'
+          create or replace function public.trg_hide_google_closed_locations_fn()
+          returns trigger
+          language plpgsql
+          security invoker
+          set search_path = public
+          as $$
+          declare
+            v_claimed boolean := coalesce(new.is_claimed, false)
+              or coalesce(new.claimed, false)
+              or new.owner_user_id is not null
+              or coalesce(new.claim_status, '') = 'approved';
+          begin
+            if new.google_business_status = 'CLOSED_PERMANENTLY'
+              and coalesce(old.google_business_status, '') is distinct from 'CLOSED_PERMANENTLY' then
+              if v_claimed then
+                new.is_searchable := false;
+                new.publish_ready := false;
+                new.quality_status := 'needs_review';
+                new.data_status := 'needs_review';
+                new.hidden_reason := null;
+                new.hidden_at := null;
+                -- Preserve owner/admin visibility and active state. Google closure
+                -- becomes an explicit review condition instead of silently hiding
+                -- or deactivating a claimed business record.
+              else
+                new.is_searchable := false;
+                new.is_hidden := true;
+                new.active := false;
+                new.hidden_at := now();
+                new.hidden_reason := 'google_closed_permanently';
+                new.quality_status := 'suppressed';
+                new.publish_ready := false;
+              end if;
+            elsif old.google_business_status = 'CLOSED_PERMANENTLY'
+              and new.google_business_status = 'OPERATIONAL'
+              and old.hidden_reason = 'google_closed_permanently'
+              and not v_claimed then
+              new.active := true;
+              new.is_hidden := false;
+              new.is_searchable := true;
+              new.hidden_at := null;
+              new.hidden_reason := null;
+              new.quality_status := 'publish_ready';
+              new.publish_ready := true;
+            end if;
+            return new;
+          end;
+          $$;
+
+          revoke all on function public.trg_hide_google_closed_locations_fn() from public;
+          SQL
+          echo "migration_file=$FILE" >> "$GITHUB_ENV"
+      - name: Validate migration contract
+        run: |
+          set -euo pipefail
+          grep -F "v_claimed boolean" "$migration_file" >/dev/null
+          grep -F "new.quality_status := 'needs_review'" "$migration_file" >/dev/null
+          grep -F "new.is_hidden := true" "$migration_file" >/dev/null
+          grep -F "new.hidden_reason := 'google_closed_permanently'" "$migration_file" >/dev/null
+          grep -F "security invoker" "$migration_file" >/dev/null
+      - name: Commit migration and remove runner
+        run: |
+          set -euo pipefail
+          rm .github/workflows/one-shot-claimed-google-closure-migration.yml
+          git config user.name 'roseoutllc'
+          git config user.email 'nick@roseout.com'
+          git add "$migration_file" .github/workflows/one-shot-claimed-google-closure-migration.yml
+          git commit -m 'fix: protect claimed locations from automatic Google closure hiding'
+          git push origin HEAD:fix/location-intelligence-claimed-closure-safety
