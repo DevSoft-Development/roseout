@@ -1,0 +1,171 @@
+name: AWS Google enrichment completion drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-google-enrichment-completion-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-google-enrichment-completion-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-google-enrichment-completion-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  RUN_ID: a4b2f90c-2f20-43c4-bb4b-0f6c7203de15
+  MAX_BATCHES: '60'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate one-time Google drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-google-enrichment-completion-drain.yml
+          grep -F 'catalog-enrichment-runner' "$FILE" >/dev/null
+          grep -F "MAX_BATCHES: '60'" "$FILE" >/dev/null
+          grep -F 'RUN_ID: a4b2f90c-2f20-43c4-bb4b-0f6c7203de15' "$FILE" >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Completion drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve invoker and Supabase credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain resumed Google enrichment run
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          read_run() {
+            curl --silent --show-error --fail \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_runs?id=eq.${RUN_ID}&select=id,status,processed_records,actual_api_calls,max_api_calls&limit=1"
+          }
+
+          count_remaining() {
+            local headers="$RUNNER_TEMP/google-remaining.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_run_items?select=id&run_id=eq.${RUN_ID}&status=in.(pending,processing)&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL="$(count_remaining)"
+          PENDING="$INITIAL"
+          echo "Google enrichment run remaining before drain: $PENDING"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            ROW="$(read_run)"
+            STATUS="$(jq -r '.[0].status // "missing"' <<<"$ROW")"
+            if [ "$STATUS" = 'completed' ]; then PENDING=0; break; fi
+            if [ "$STATUS" = 'budget_stopped' ]; then
+              echo 'Google enrichment run stopped at its API budget before completion.' >&2
+              exit 1
+            fi
+            test "$STATUS" = 'running' || { echo "Unexpected run status: $STATUS" >&2; exit 1; }
+            if [ "$PENDING" -eq 0 ]; then break; fi
+
+            BEFORE="$PENDING"
+            REQUEST="$RUNNER_TEMP/google-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/google-response-${batch}.json"
+            jq -nc '{function:"node:/api/cron/managed?job=catalog-enrichment-runner",body:{}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.response.success != false)' "$RESPONSE" >/dev/null
+
+            PENDING="$(count_remaining)"
+            test "$PENDING" -lt "$BEFORE" || { echo "Google enrichment batch $batch made no progress: before=$BEFORE after=$PENDING" >&2; exit 1; }
+            echo "Google enrichment batch $batch: $BEFORE -> $PENDING"
+          done
+
+          ROW="$(read_run)"
+          STATUS="$(jq -r '.[0].status // "missing"' <<<"$ROW")"
+          PENDING="$(count_remaining)"
+          test "$PENDING" -eq 0 || { echo "Google drain hit batch cap with $PENDING rows remaining (status=$STATUS)." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Google enrichment acceptance state
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          headers="$RUNNER_TEMP/google-never-enriched.headers"
+          curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&active=eq.true&is_hidden=eq.false&duplicate_of=is.null&google_place_id=not.is.null&google_enriched_at=is.null&limit=1"
+          count="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1)"
+          echo "live_place_id_not_google_enriched=$count"
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Google enrichment completion drain'
+            echo "- Existing audited run: \`${RUN_ID}\`"
+            echo "- Pending before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Pending after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo "- Final run status: \`${{ steps.drain.outputs.status || 'n/a' }}\`"
+            echo '- Existing Google collision, budget, stale-ID, and Search Profile safeguards preserved.'
+            echo '- No recurring schedule added or changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
