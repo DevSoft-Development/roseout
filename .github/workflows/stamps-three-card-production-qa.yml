@@ -15,9 +15,11 @@ jobs:
   controlled-production-qa:
     if: github.ref == 'refs/heads/ops/stamps-three-card-production-qa-current' && github.event.head_commit.message == 'Run one-shot three-card Stamps production QA'
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 15
     env:
       AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
       RUNTIME_SECRET_ID: /theouthaven/production/edge-runtime/env
       BATCH_ID: 4ddf770c-29eb-4094-9151-314ad27231d8
     steps:
@@ -25,10 +27,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
-          aws-region: us-east-1
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          test "$account" = "$AWS_ACCOUNT_ID"
+          echo "aws_identity=verified"
 
       - name: Set up Node
         uses: actions/setup-node@v4
