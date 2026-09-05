@@ -62,27 +62,18 @@ begin
       next_retry := checked_at + interval '7 days';
       new.reservation_discovery_next_retry_at := next_retry;
       new.reservation_discovery_last_attempt_at := checked_at;
-      -- The existing unified gap-repair worker treats unchecked rows as eligible
-      -- once its general retry gate is due. Preserve the actual attempt separately.
+      -- Existing gap repair treats an unchecked row as eligible once its
+      -- general retry gate is due. Preserve the actual attempt separately.
       new.reservation_discovery_checked_at := null;
-      new.gap_repair_next_attempt_at := case
-        when new.gap_repair_next_attempt_at is null then next_retry
-        else greatest(new.gap_repair_next_attempt_at, next_retry)
-      end;
+      new.gap_repair_next_attempt_at := next_retry;
     when 'failed' then
       next_retry := checked_at + interval '7 days';
       new.reservation_discovery_next_retry_at := next_retry;
-      new.gap_repair_next_attempt_at := case
-        when new.gap_repair_next_attempt_at is null then next_retry
-        else greatest(new.gap_repair_next_attempt_at, next_retry)
-      end;
+      new.gap_repair_next_attempt_at := next_retry;
     when 'blocked' then
       next_retry := checked_at + interval '30 days';
       new.reservation_discovery_next_retry_at := next_retry;
-      new.gap_repair_next_attempt_at := case
-        when new.gap_repair_next_attempt_at is null then next_retry
-        else greatest(new.gap_repair_next_attempt_at, next_retry)
-      end;
+      new.gap_repair_next_attempt_at := next_retry;
     when 'no_website' then
       new.reservation_discovery_next_retry_at := null;
     when 'manual' then
