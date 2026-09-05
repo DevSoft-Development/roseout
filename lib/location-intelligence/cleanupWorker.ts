@@ -7,8 +7,8 @@ import {
   verifyConservativeUnique,
 } from "@/lib/location-intelligence/dedupeClassifier";
 
-const DEFAULT_BATCH_LIMIT = 10;
-const MAX_BATCH_LIMIT = 10;
+const DEFAULT_BATCH_LIMIT = 25;
+const MAX_BATCH_LIMIT = 25;
 const PRE_PUBLISH_SUPPRESSED_REVIEW_REASON = "hidden_inactive_eligibility_conflict";
 
 const candidateProjection = [
