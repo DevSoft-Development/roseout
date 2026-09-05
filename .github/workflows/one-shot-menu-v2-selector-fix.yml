@@ -23,34 +23,47 @@ jobs:
       - name: Patch menu candidate selector
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs');
-          const path = 'supabase/functions/unified-location-gap-repair/index.ts';
-          let s = fs.readFileSync(path, 'utf8');
-          const replace = (from, to) => {
-            if (!s.includes(from)) throw new Error(`expected source fragment not found:\n${from}`);
-            s = s.replace(from, to);
-          };
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/functions/unified-location-gap-repair/index.ts')
+          s = path.read_text()
 
-          replace('const MAX_MENU_CONTENT_LIMIT = 5;', 'const MAX_MENU_CONTENT_LIMIT = 10;');
+          def replace_once(old, new):
+              global s
+              if old not in s:
+                  raise SystemExit(f'expected source fragment not found: {old!r}')
+              s = s.replace(old, new, 1)
 
-          replace(
-`    { data: menuRows, error: menuError },\n  ] = await Promise.all([`,
-`    { data: menuRows, error: menuError },\n    { data: menuIntelligenceRows, error: menuIntelligenceError },\n  ] = await Promise.all([`
-          );
+          replace_once('const MAX_MENU_CONTENT_LIMIT = 5;', 'const MAX_MENU_CONTENT_LIMIT = 10;')
+          replace_once(
+              '    { data: menuRows, error: menuError },\n  ] = await Promise.all([',
+              '    { data: menuRows, error: menuError },\n    { data: menuIntelligenceRows, error: menuIntelligenceError },\n  ] = await Promise.all([',
+          )
 
-          replace(
-`    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n  ]);\n  if (identityError || cachedError || backlogError || menuError) return json({ error: (identityError || cachedError || backlogError || menuError)?.message || "Failed to load repair candidates" }, 500);`,
-`    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .not("menu_url", "is", null)\n      .or(\`menu_intelligence_version.is.null,menu_intelligence_version.neq.\${MENU_INTELLIGENCE_VERSION}\`)\n      .order("menu_intelligence_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n  ]);\n  if (identityError || cachedError || backlogError || menuError || menuIntelligenceError) return json({ error: (identityError || cachedError || backlogError || menuError || menuIntelligenceError)?.message || "Failed to load repair candidates" }, 500);`
-          );
+          needle = '      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n  ]);'
+          replacement = '''      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),
+            supabase.from("locations")
+              .select(selectFields)
+              .is("deleted_at", null)
+              .eq("location_type", "restaurant")
+              .not("website", "is", null)
+              .not("menu_url", "is", null)
+              .or(`menu_intelligence_version.is.null,menu_intelligence_version.neq.${MENU_INTELLIGENCE_VERSION}`)
+              .order("menu_intelligence_checked_at", { ascending: true, nullsFirst: true })
+              .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),
+          ]);'''
+          replace_once(needle, replacement)
 
-          replace(
-`  const menuCandidates = (menuRows || [])\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))`,
-`  const menuCandidates = [...(menuIntelligenceRows || []), ...(menuRows || [])]\n    .filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index)\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))`
-          );
-
-          fs.writeFileSync(path, s);
-          NODE
+          replace_once(
+              '  if (identityError || cachedError || backlogError || menuError) return json({ error: (identityError || cachedError || backlogError || menuError)?.message || "Failed to load repair candidates" }, 500);',
+              '  if (identityError || cachedError || backlogError || menuError || menuIntelligenceError) return json({ error: (identityError || cachedError || backlogError || menuError || menuIntelligenceError)?.message || "Failed to load repair candidates" }, 500);',
+          )
+          replace_once(
+              '  const menuCandidates = (menuRows || [])\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))',
+              '  const menuCandidates = [...(menuIntelligenceRows || []), ...(menuRows || [])]\n    .filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index)\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))',
+          )
+          path.write_text(s)
+          PY
           grep -F 'const MAX_MENU_CONTENT_LIMIT = 10;' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
           grep -F 'menuIntelligenceRows' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
           grep -F 'menu_intelligence_version.neq.${MENU_INTELLIGENCE_VERSION}' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
