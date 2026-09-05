@@ -23,42 +23,32 @@ type OpportunityRow = {
   reservation_upgrade_detected_at?: string | null;
   reservation_outreach_status?: string | null;
   reservation_outreach_notes?: string | null;
+  reservation_opportunity_score?: number | null;
+  reservation_opportunity_tier?: string | null;
+  reservation_opportunity_classification?: string | null;
+  reservation_opportunity_evidence?: unknown;
+  reservation_opportunity_scored_at?: string | null;
 };
 
 const OPPORTUNITY_SELECT =
-  "id,name,city,state,address,phone,website,google_maps_url,rating,review_count,primary_category,reservation_discovery_status,reservation_upgrade_reason,reservation_upgrade_detected_at,reservation_outreach_status,reservation_outreach_notes";
+  "id,name,city,state,address,phone,website,google_maps_url,rating,review_count,primary_category,reservation_discovery_status,reservation_upgrade_reason,reservation_upgrade_detected_at,reservation_outreach_status,reservation_outreach_notes,reservation_opportunity_score,reservation_opportunity_tier,reservation_opportunity_classification,reservation_opportunity_evidence,reservation_opportunity_scored_at";
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key)
-    throw new Error("Missing Supabase admin environment variables");
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  if (!url || !key) throw new Error("Missing Supabase admin environment variables");
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
 async function requireAuthorization(request: NextRequest) {
   const authHeader = request.headers.get("authorization") || "";
-  const bearerToken = authHeader.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
   const xAdminSecret = request.headers.get("x-admin-secret")?.trim() || "";
   const adminSecret = process.env.ADMIN_API_SECRET?.trim();
-
-  if (
-    adminSecret &&
-    (bearerToken === adminSecret || xAdminSecret === adminSecret)
-  )
-    return null;
-
+  if (adminSecret && (bearerToken === adminSecret || xAdminSecret === adminSecret)) return null;
   const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.reservations);
   if (!error) return null;
-
-  return NextResponse.json(
-    { success: false, error: "Unauthorized" },
-    { status: 401 },
-  );
+  return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 }
 
 function clean(value: string | null) {
@@ -66,12 +56,7 @@ function clean(value: string | null) {
   return trimmed || null;
 }
 
-function numberParam(
-  value: string | null,
-  fallback: number,
-  min: number,
-  max: number,
-) {
+function numberParam(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value ?? fallback);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(Math.floor(parsed), max));
@@ -83,15 +68,15 @@ interface FilterableQuery {
   gte(column: string, value: number): this;
 }
 
-function applyFilters<T extends FilterableQuery>(
-  query: T,
-  searchParams: URLSearchParams,
-): T {
+function applyFilters<T extends FilterableQuery>(query: T, searchParams: URLSearchParams): T {
   const city = clean(searchParams.get("city"));
   const state = clean(searchParams.get("state"));
   const category = clean(searchParams.get("category"));
   const status = clean(searchParams.get("status"));
+  const tier = clean(searchParams.get("tier"));
+  const classification = clean(searchParams.get("classification"));
   const minRating = clean(searchParams.get("minRating"));
+  const minScore = clean(searchParams.get("minScore"));
   const q = clean(searchParams.get("q"));
 
   query = query.eq("reservation_upgrade_opportunity", true);
@@ -99,10 +84,11 @@ function applyFilters<T extends FilterableQuery>(
   if (state) query = query.ilike("state", state);
   if (category) query = query.ilike("primary_category", `%${category}%`);
   if (status) query = query.eq("reservation_outreach_status", status);
-  if (minRating && Number.isFinite(Number(minRating)))
-    query = query.gte("rating", Number(minRating));
+  if (tier) query = query.eq("reservation_opportunity_tier", tier);
+  if (classification) query = query.eq("reservation_opportunity_classification", classification);
+  if (minRating && Number.isFinite(Number(minRating))) query = query.gte("rating", Number(minRating));
+  if (minScore && Number.isFinite(Number(minScore))) query = query.gte("reservation_opportunity_score", Number(minScore));
   if (q) query = query.ilike("name", `%${q}%`);
-
   return query;
 }
 
@@ -111,66 +97,36 @@ function csvCell(value: unknown) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function evidenceText(value: unknown) {
+  if (Array.isArray(value)) return value.map(String).join(" | ");
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return value ? String(value) : "";
+}
+
 function toCsv(rows: OpportunityRow[]) {
-  const headers = [
-    "Name",
-    "Address",
-    "City",
-    "State",
-    "Phone",
-    "Website",
-    "Google Maps",
-    "Rating",
-    "Reviews",
-    "Category",
-    "Discovery Status",
-    "Opportunity Reason",
-    "Outreach Status",
-  ];
-
-  const lines = rows.map((row) =>
-    [
-      row.name,
-      row.address,
-      row.city,
-      row.state,
-      row.phone,
-      row.website,
-      row.google_maps_url,
-      row.rating,
-      row.review_count,
-      row.primary_category,
-      row.reservation_discovery_status,
-      row.reservation_upgrade_reason,
-      row.reservation_outreach_status,
-    ]
-      .map(csvCell)
-      .join(","),
-  );
-
+  const headers = ["Name","Address","City","State","Phone","Website","Google Maps","Rating","Reviews","Category","Reserve Score","Reserve Tier","Classification","Evidence","Discovery Status","Opportunity Reason","Outreach Status"];
+  const lines = rows.map((row) => [
+    row.name,row.address,row.city,row.state,row.phone,row.website,row.google_maps_url,row.rating,row.review_count,row.primary_category,
+    row.reservation_opportunity_score,row.reservation_opportunity_tier,row.reservation_opportunity_classification,evidenceText(row.reservation_opportunity_evidence),
+    row.reservation_discovery_status,row.reservation_upgrade_reason,row.reservation_outreach_status,
+  ].map(csvCell).join(","));
   return [headers.map(csvCell).join(","), ...lines].join("\n");
 }
 
 async function getSummary(supabase: SupabaseClient) {
-  const statuses = [
-    "not_contacted",
-    "contacted",
-    "interested",
-    "claimed",
-    "onboarded",
-  ];
+  const statuses = ["not_contacted","contacted","interested","claimed","onboarded"];
+  const tiers = ["high","medium","low"];
   const summary: Record<string, number> = { claimed_onboarded: 0 };
-
-  await Promise.all(
-    statuses.map(async (status) => {
-      const { count } = await supabase
-        .from("locations")
-        .select("id", { count: "exact", head: true })
-        .eq("reservation_upgrade_opportunity", true)
-        .eq("reservation_outreach_status", status);
+  await Promise.all([
+    ...statuses.map(async (status) => {
+      const { count } = await supabase.from("locations").select("id", { count: "exact", head: true }).eq("reservation_upgrade_opportunity", true).eq("reservation_outreach_status", status);
       summary[status] = count || 0;
     }),
-  );
+    ...tiers.map(async (tier) => {
+      const { count } = await supabase.from("locations").select("id", { count: "exact", head: true }).eq("reservation_upgrade_opportunity", true).eq("reservation_opportunity_tier", tier);
+      summary[`tier_${tier}`] = count || 0;
+    }),
+  ]);
   summary.claimed_onboarded = (summary.claimed || 0) + (summary.onboarded || 0);
   return summary;
 }
@@ -178,53 +134,29 @@ async function getSummary(supabase: SupabaseClient) {
 export async function GET(request: NextRequest) {
   const authError = await requireAuthorization(request);
   if (authError) return authError;
-
   const supabase = getSupabaseAdmin();
   const { searchParams } = request.nextUrl;
   const isCsv = searchParams.get("export") === "csv";
-  const limit = isCsv
-    ? numberParam(searchParams.get("limit"), 1000, 1, 5000)
-    : numberParam(searchParams.get("limit"), 50, 1, 200);
+  const limit = isCsv ? numberParam(searchParams.get("limit"), 1000, 1, 5000) : numberParam(searchParams.get("limit"), 50, 1, 200);
   const offset = numberParam(searchParams.get("offset"), 0, 0, 1_000_000);
 
-  let query = supabase
-    .from("locations")
-    .select(OPPORTUNITY_SELECT, { count: "exact" });
+  let query = supabase.from("locations").select(OPPORTUNITY_SELECT, { count: "exact" });
   query = applyFilters(query, searchParams)
+    .order("reservation_opportunity_score", { ascending: false, nullsFirst: false })
     .order("rating", { ascending: false, nullsFirst: false })
     .order("review_count", { ascending: false, nullsFirst: false })
-    .order("reservation_upgrade_detected_at", {
-      ascending: false,
-      nullsFirst: false,
-    })
+    .order("reservation_upgrade_detected_at", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;
-  if (error)
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 },
-    );
-
+  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   const opportunities = (data || []) as OpportunityRow[];
 
   if (isCsv) {
     return new NextResponse(toCsv(opportunities), {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition":
-          'attachment; filename="reservation-opportunities.csv"',
-      },
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="reservation-opportunities.csv"' },
     });
   }
 
-  return NextResponse.json({
-    success: true,
-    total: count || 0,
-    limit,
-    offset,
-    nextOffset: offset + opportunities.length,
-    summary: await getSummary(supabase),
-    opportunities,
-  });
+  return NextResponse.json({ success: true, total: count || 0, limit, offset, nextOffset: offset + opportunities.length, summary: await getSummary(supabase), opportunities });
 }
