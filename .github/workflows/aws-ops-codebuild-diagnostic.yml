@@ -23,7 +23,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - run: echo 'CodeBuild diagnostic workflow validated'
+      - run: echo 'CodeBuild CloudWatch diagnostic workflow validated'
 
   diagnose:
     if: github.event_name != 'pull_request'
@@ -39,6 +39,26 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
+      - name: Bootstrap read-only CodeBuild log access
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          role_name="${DEPLOY_ROLE_ARN##*/}"
+          policy="$RUNNER_TEMP/ops-codebuild-log-read.json"
+          cat > "$policy" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Effect":"Allow",
+              "Action":["logs:GetLogEvents"],
+              "Resource":"arn:aws:logs:us-east-1:742020474738:log-group:/aws/codebuild/toh-production-ops-scheduled-runtime:log-stream:*"
+            }]
+          }
+          JSON
+          aws iam put-role-policy --role-name "$role_name" --policy-name TheOutHavenOpsCodeBuildDiagnostic --policy-document "file://$policy"
+          sleep 8
+
       - name: Run worker smoke and print CodeBuild failure context
         run: |
           set -euo pipefail
@@ -53,6 +73,10 @@ jobs:
               SUCCEEDED) exit 0 ;;
               FAILED|FAULT|STOPPED|TIMED_OUT)
                 aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].{Status:buildStatus,CurrentPhase:currentPhase,Phases:phases,Logs:logs}' --output json
+                group="$(aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].logs.groupName' --output text)"
+                stream="$(aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].logs.streamName' --output text)"
+                echo '--- CodeBuild CloudWatch log ---'
+                aws logs get-log-events --log-group-name "$group" --log-stream-name "$stream" --start-from-head --query 'events[].message' --output text || true
                 exit 1
                 ;;
             esac
