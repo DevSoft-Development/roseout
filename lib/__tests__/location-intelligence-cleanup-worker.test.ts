@@ -54,17 +54,18 @@ describe("AWS Location Intelligence cleanup worker", () => {
     expect(dedupeClassifier).toContain("await ensurePendingReview(candidate, verification)");
   });
 
-  it("caps the cleanup canary at ten and requires the private AWS background runtime", () => {
-    expect(cleanupWorker).toContain("const MAX_BATCH_LIMIT = 10");
+  it("caps the cleanup canary at twenty-five and requires the private AWS background runtime", () => {
+    expect(cleanupWorker).toContain("const DEFAULT_BATCH_LIMIT = 25");
+    expect(cleanupWorker).toContain("const MAX_BATCH_LIMIT = 25");
     expect(cleanupRoute).toContain('provider === "aws-background"');
     expect(cleanupRoute).toContain('internal === "managed-dispatch"');
-    expect(cleanupRoute).toContain("Math.min(10");
+    expect(cleanupRoute).toContain("Math.min(25");
   });
 
   it("keeps the cleanup target unscheduled and non-manual", () => {
     const job = cronRegistry.find((entry) => entry.jobKey === "location-intelligence-cleanup-worker");
     expect(job).toMatchObject({
-      targetPath: "/api/cron/location-intelligence-cleanup?limit=10",
+      targetPath: "/api/cron/location-intelligence-cleanup?limit=25",
       delivery: "managed",
       manuallyRunnable: false,
     });
@@ -134,13 +135,15 @@ describe("AWS Location Intelligence dedupe classifier", () => {
     expect(dedupeClassifier).toContain("if (!reviewReady) return { routed: false, reviewQueued, priorDecisionConflict: false }");
   });
 
-  it("is AWS-background-only, capped, managed, non-manual, and unscheduled", () => {
+  it("is AWS-background-only, capped at fifty, managed, non-manual, and unscheduled", () => {
+    expect(dedupeClassifier).toContain("const DEFAULT_BATCH_LIMIT = 50");
+    expect(dedupeClassifier).toContain("const MAX_BATCH_LIMIT = 50");
     expect(dedupeRoute).toContain('provider === "aws-background"');
     expect(dedupeRoute).toContain('internal === "managed-dispatch"');
     expect(dedupeRoute).toContain("Math.min(50");
     const job = cronRegistry.find((entry) => entry.jobKey === "location-intelligence-dedupe-classifier");
     expect(job).toMatchObject({
-      targetPath: "/api/cron/location-intelligence-dedupe-classifier?limit=25",
+      targetPath: "/api/cron/location-intelligence-dedupe-classifier?limit=50",
       delivery: "managed",
       manuallyRunnable: false,
     });
