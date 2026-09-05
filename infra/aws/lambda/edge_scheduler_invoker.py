@@ -36,6 +36,7 @@ _cron_secret = None
 BACKGROUND_EDGE_TARGETS = {
     "edge:claim-qr-repair-worker",
     "edge:unified-location-gap-repair",
+    "edge:worker-dispatcher",
 }
 
 
