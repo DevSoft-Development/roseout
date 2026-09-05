@@ -1,0 +1,49 @@
+name: Location Intelligence photo selector patch
+
+on:
+  push:
+    branches: [fix/location-intelligence-photo-candidate-starvation]
+    paths:
+      - '.github/workflows/location-intelligence-photo-selector-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/location-intelligence-photo-candidate-starvation
+      - name: Patch photo candidate selection and exact Place ID lookup
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('supabase/functions/nightly-photo-backfill/index.ts')
+          text = path.read_text()
+          old_filter = '''const MISSING_PHOTO_FILTER =\n  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,image_url.is.null,main_image.is.null";'''
+          new_filter = '''const MISSING_PHOTO_FILTER =\n  "has_photos.is.false,has_photos.is.null,photo_status.eq.missing_photo,and(image_url.is.null,main_image.is.null)";'''
+          assert text.count(old_filter) == 1
+          text = text.replace(old_filter, new_filter)
+
+          needle = '''async function findGooglePhoto(\n  location: LocationRow,\n  apiKey: string,\n): Promise<GooglePhotoResult> {\n  const query = buildGoogleQuery(location);'''
+          replacement = '''async function findGooglePhoto(\n  location: LocationRow,\n  apiKey: string,\n): Promise<GooglePhotoResult> {\n  const existingPlaceId = clean(location.google_place_id);\n  if (existingPlaceId) {\n    const detailsResponse = await fetch(\n      `https://places.googleapis.com/v1/places/${encodeURIComponent(existingPlaceId)}`,\n      {\n        headers: {\n          "X-Goog-Api-Key": apiKey,\n          "X-Goog-FieldMask": "id,displayName,formattedAddress,photos",\n        },\n      },\n    );\n    const detailsPayload = await detailsResponse.json().catch(() => null);\n    if (detailsResponse.ok) {\n      const photoName = clean(detailsPayload?.photos?.[0]?.name);\n      if (!photoName) return { found: false, reason: "no_photo_reference" };\n      return {\n        found: true,\n        placeId: clean(detailsPayload?.id) || existingPlaceId,\n        googleName: clean(detailsPayload?.displayName?.text) || null,\n        googleAddress: clean(detailsPayload?.formattedAddress) || null,\n      };\n    }\n    if (detailsResponse.status === 403) {\n      const message = clean(detailsPayload?.error?.message) || `HTTP ${detailsResponse.status}`;\n      throw new Error(`Google Places request denied: ${message}`);\n    }\n    if (detailsResponse.status === 429) {\n      return { found: false, reason: "over_query_limit" };\n    }\n    // A stale/deleted Place ID may legitimately require the strict text-search fallback below.\n  }\n\n  const query = buildGoogleQuery(location);'''
+          assert text.count(needle) == 1
+          text = text.replace(needle, replacement)
+          path.write_text(text)
+          PY
+          grep -F 'and(image_url.is.null,main_image.is.null)' supabase/functions/nightly-photo-backfill/index.ts >/dev/null
+          grep -F 'existingPlaceId = clean(location.google_place_id)' supabase/functions/nightly-photo-backfill/index.ts >/dev/null
+          grep -F 'X-Goog-FieldMask": "id,displayName,formattedAddress,photos"' supabase/functions/nightly-photo-backfill/index.ts >/dev/null
+      - name: Commit focused source change and remove patch runner
+        run: |
+          set -euo pipefail
+          rm .github/workflows/location-intelligence-photo-selector-patch.yml
+          git config user.name roseoutllc
+          git config user.email nick@roseout.com
+          git add supabase/functions/nightly-photo-backfill/index.ts .github/workflows/location-intelligence-photo-selector-patch.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: stop photo candidate starvation'
+          git push origin HEAD:fix/location-intelligence-photo-candidate-starvation
