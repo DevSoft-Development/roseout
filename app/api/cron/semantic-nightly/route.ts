@@ -9,19 +9,6 @@ export const maxDuration = 300;
 const AWS_BACKGROUND_ORIGIN = "http://127.0.0.1:3000";
 const DEFAULT_SEMANTIC_BATCH_SIZE = 200;
 
-type SemanticFailure = {
-  id?: unknown;
-  error?: unknown;
-};
-
-function failureMessage(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function isEmbeddingWarning(value: SemanticFailure) {
-  return failureMessage(value?.error) === "embedding_failed";
-}
-
 async function invokeSemanticNightly(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) throw new Error("CRON_SECRET is not configured.");
@@ -61,27 +48,14 @@ async function invokeSemanticNightly(request: NextRequest) {
     );
   }
 
-  const failures = Array.isArray(payload.failures)
-    ? payload.failures.filter((value): value is SemanticFailure => Boolean(value) && typeof value === "object")
-    : [];
-  const embeddingWarnings = failures.filter(isEmbeddingWarning);
-  const hardFailures = failures.filter((failure) => !isEmbeddingWarning(failure));
-
-  if (hardFailures.length > 0 || (payload.success === false && failures.length === 0)) {
-    const first = hardFailures.map((failure) => failureMessage(failure.error)).find(Boolean);
-    throw new Error(first || "Semantic Nightly reported a hard processing failure.");
+  if (payload.success === false) {
+    const failures = Array.isArray(payload.failures) ? payload.failures : [];
+    const first = failures.find((value) => value && typeof value === "object") as { error?: unknown } | undefined;
+    const detail = typeof first?.error === "string" ? first.error : "Semantic Nightly reported a processing failure.";
+    throw new Error(detail);
   }
 
-  const normalized = {
-    ...payload,
-    success: true,
-    failures: hardFailures,
-    warnings: embeddingWarnings,
-    degraded: embeddingWarnings.length > 0,
-    embedding_failures: embeddingWarnings.length,
-  };
-
-  return normalized;
+  return payload;
 }
 
 export async function GET(request: NextRequest) {
@@ -92,14 +66,12 @@ export async function GET(request: NextRequest) {
     jobKey: "semantic-nightly",
     jobName: "Semantic Nightly",
     routePath: "/api/cron/semantic-nightly",
-    description: "Refreshes semantic search metadata while treating embedding-provider fallback as retryable degradation instead of a hard job failure.",
+    description: "Refreshes deterministic semantic metadata, tags, and ranking scores. Search V2 embeddings are owned by Hugging Face; this job does not generate legacy OpenAI embeddings.",
     scheduleHint: "Daily at 5:40 AM UTC via AWS EventBridge Scheduler.",
     handler: async () => {
       const result = await invokeSemanticNightly(request);
       return {
-        message: result.degraded
-          ? `Semantic Nightly completed with ${result.embedding_failures} embedding warning(s) queued for refresh.`
-          : "Semantic Nightly completed successfully.",
+        message: "Semantic Nightly deterministic metadata refresh completed successfully.",
         details: result,
         response: NextResponse.json(result),
       };
