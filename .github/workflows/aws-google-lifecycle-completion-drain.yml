@@ -47,7 +47,8 @@ jobs:
           grep -F '"movedPlace"' infra/aws/lambda/google_places_provider.py >/dev/null
           grep -F '"movedPlaceId"' infra/aws/lambda/google_places_provider.py >/dev/null
           grep -F 'processGoogleLifecycleRefresh(25, 30)' app/api/cron/catalog-enrichment-runner/route.ts >/dev/null
-          grep -F 'CONCURRENCY = 8' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
+          grep -F 'CONCURRENCY = 2' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
+          grep -F 'MAX_RATE_LIMIT_RETRIES = 3' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
           grep -F 'MAX_LIMIT = 100' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
           python -m py_compile infra/aws/lambda/google_places_provider.py
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' .github/workflows/aws-google-lifecycle-completion-drain.yml; then
