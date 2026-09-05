@@ -1,0 +1,159 @@
+name: AWS Location Intelligence photo drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-photo-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-photo-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-photo-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  TARGET: edge:nightly-photo-backfill
+  MAX_BATCHES: '10'
+  BATCH_SIZE: '100'
+  POLL_SECONDS: '15'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate photo drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-photo-drain.yml
+          grep -F "BATCH_SIZE: '100'" "$FILE" >/dev/null
+          grep -F "MAX_BATCHES: '10'" "$FILE" >/dev/null
+          grep -F 'edge:nightly-photo-backfill' "$FILE" >/dev/null
+          grep -F 'textSearchLimit' "$FILE" >/dev/null || true
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Photo drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve scheduler invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Accelerate photo recovery
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          count_missing() {
+            local headers="$RUNNER_TEMP/photo-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&active=eq.true&is_hidden=eq.false&or=(has_photos.eq.false,has_photos.is.null)&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL="$(count_missing)"
+          MISSING="$INITIAL"
+          LAST=-1
+          echo "Missing-photo candidates before accelerated pass: $MISSING"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            if [ "$MISSING" -eq 0 ]; then break; fi
+            if [ "$LAST" -eq "$MISSING" ] && [ "$batch" -gt 2 ]; then
+              echo "Photo queue stalled at $MISSING; stopping without forcing blocked/no-photo records."
+              break
+            fi
+            LAST="$MISSING"
+            REQUEST="$RUNNER_TEMP/photo-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/photo-response-${batch}.json"
+            jq -nc --arg target "$TARGET" --argjson size "$BATCH_SIZE" \
+              '{function:"sqs:background-cron",body:{target:$target,payload:{source:"location_intelligence_completion",batchSize:$size,skipChains:true,includeChains:false,includeTheaters:false,includeLowPriority:false,onlySearchable:false,onlyPublishReady:false}}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e --arg target "$TARGET" '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' "$RESPONSE" >/dev/null
+            sleep "$POLL_SECONDS"
+            MISSING="$(count_missing)"
+            echo "Photo batch $batch: missing=$MISSING"
+          done
+
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$MISSING" >> "$GITHUB_OUTPUT"
+
+      - name: Verify photo health snapshot
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          curl --silent --show-error --fail --get \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --data-urlencode 'select=id,name,google_place_id,has_photos,google_photo_count,photo_discovery_status' \
+            --data-urlencode 'deleted_at=is.null' \
+            --data-urlencode 'active=eq.true' \
+            --data-urlencode 'is_hidden=eq.false' \
+            --data-urlencode 'or=(has_photos.eq.false,has_photos.is.null)' \
+            --data-urlencode 'limit=25' \
+            "${SUPABASE_URL}/rest/v1/locations" > "$RUNNER_TEMP/photo-exceptions.json"
+          jq -e 'type == "array"' "$RUNNER_TEMP/photo-exceptions.json" >/dev/null
+          echo "Remaining sample exceptions: $(jq 'length' "$RUNNER_TEMP/photo-exceptions.json")"
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Location Intelligence photo drain'
+            echo "- Missing-photo candidates before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Missing-photo candidates after accelerated pass: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- Existing photo selection, cooldown, blocked, closed, chain, and Google-photo safeguards remain authoritative.'
+            echo '- No recurring scheduler added.'
+          } >> "$GITHUB_STEP_SUMMARY"
