@@ -192,11 +192,19 @@ jobs:
       - name: Verify AWS-only scheduled ownership
         run: |
           set -euo pipefail
-          test "$(aws scheduler list-schedules --group-name "$OPS_SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = '4'
+          OPS_JSON="$(aws scheduler list-schedules --group-name "$OPS_SCHEDULE_GROUP" --max-items 100 --output json)"
+          OPS_COUNT="$(printf '%s' "$OPS_JSON" | jq '.Schedules | length')"
+          echo "AWS ops schedule count: $OPS_COUNT"
+          test "$OPS_COUNT" = '4'
           for name in production-database-backup production-storage-backup worker-reliability-soak search-ml-train-evaluate-promote; do
-            test "$(aws scheduler get-schedule --group-name "$OPS_SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'
+            STATE="$(aws scheduler get-schedule --group-name "$OPS_SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            echo "AWS ops schedule state: $name=$STATE"
+            test "$STATE" = 'ENABLED'
           done
-          test "$(aws scheduler list-schedules --group-name toh-production-edge-runtime --query 'length(Schedules)' --output text)" = '65'
+          EDGE_JSON="$(aws scheduler list-schedules --group-name toh-production-edge-runtime --max-items 100 --output json)"
+          EDGE_COUNT="$(printf '%s' "$EDGE_JSON" | jq '.Schedules | length')"
+          echo "AWS edge schedule count: $EDGE_COUNT"
+          test "$EDGE_COUNT" = '65'
 
       - name: Smoke the AWS worker-soak runtime
         run: |
