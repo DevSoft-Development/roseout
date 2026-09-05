@@ -1,4 +1,5 @@
 import { processLocationEnrichmentRun } from "@/lib/location-data-quality/enrichment-runner";
+import { processGoogleLifecycleRefresh } from "@/lib/location-data-quality/google-lifecycle-refresh";
 import { processWebsiteHoursDiscovery } from "@/lib/location-data-quality/website-hours-discovery";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -38,8 +39,11 @@ export async function GET(request: Request) {
     // is intentionally isolated to the explicit cleanup workflow.
     ensureGoogleEnrichmentKey();
     const result = await processLocationEnrichmentRun();
-    const websiteHours = await processWebsiteHoursDiscovery(5);
-    return Response.json({ ...result, postImportAttach, websiteHours });
+    const [websiteHours, googleLifecycle] = await Promise.all([
+      processWebsiteHoursDiscovery(5),
+      processGoogleLifecycleRefresh(25, 30),
+    ]);
+    return Response.json({ ...result, postImportAttach, websiteHours, googleLifecycle });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return Response.json({ success: false, error: message }, { status: 500 });
