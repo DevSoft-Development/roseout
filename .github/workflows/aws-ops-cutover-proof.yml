@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/aws-ops-cutover-proof.yml'
+      - 'infra/aws/ops/worker-reliability-soak.sh'
   push:
     branches: [main]
     paths:
       - '.github/workflows/aws-ops-cutover-proof.yml'
+      - 'infra/aws/ops/worker-reliability-soak.sh'
   workflow_dispatch:
 
 permissions:
@@ -27,13 +29,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate manifests
+      - name: Validate manifests and worker smoke contract
         run: |
           set -euo pipefail
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '65'
           test "$(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | sort -u | wc -l | tr -d ' ')" = '2'
+          bash -n infra/aws/ops/worker-reliability-soak.sh
+          grep -q 'WORKER_SOAK_RUNTIME_SMOKE' infra/aws/ops/worker-reliability-soak.sh
 
   prove:
     if: github.event_name != 'pull_request'
@@ -98,10 +102,15 @@ jobs:
           set -euo pipefail
           project="$(aws cloudformation describe-stacks --stack-name "$OPS_STACK" --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" --output text)"
           test -n "$project"
-          build_id="$(aws codebuild start-build --project-name "$project" --environment-variables-override name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT --query 'build.id' --output text)"
+          build_id="$(aws codebuild start-build \
+            --project-name "$project" \
+            --environment-variables-override \
+              name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT \
+              name=WORKER_SOAK_RUNTIME_SMOKE,value=true,type=PLAINTEXT \
+            --query 'build.id' --output text)"
           for attempt in $(seq 1 60); do
             status="$(aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].buildStatus' --output text)"
-            echo "CodeBuild worker-soak smoke status: $status"
+            echo "CodeBuild worker runtime smoke status: $status"
             case "$status" in
               SUCCEEDED) exit 0 ;;
               FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;

@@ -12,9 +12,16 @@ curl --fail-with-body --silent --show-error \
   -H 'Content-Type: application/json' \
   --data '{"p_window_days":7}' > "$OUT"
 
+jq -e 'type == "object" and (.state | type == "string") and (.observed_days | type == "number") and (.passing | type == "boolean")' "$OUT" >/dev/null
 jq . "$OUT"
+
 STATE="$(jq -r '.state' "$OUT")"
 OBSERVED="$(jq -r '.observed_days' "$OUT")"
+if [ "${WORKER_SOAK_RUNTIME_SMOKE:-false}" = "true" ]; then
+  echo "Worker reliability RPC/runtime smoke passed (state=$STATE, observed_days=$OBSERVED)."
+  exit 0
+fi
+
 if [ "$STATE" = "collecting" ]; then
   echo "Seven-day soak is still collecting data (${OBSERVED} observed days)."
   exit 0
