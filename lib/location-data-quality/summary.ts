@@ -38,6 +38,30 @@ export type LocationDataQualitySummary = {
   searchProfilesNeedingReview: number;
   searchProfilesActionableReview: number;
   searchProfilesSuppressedReview: number;
+  publicationBacklog: number;
+  dedupeUnknownBacklog: number;
+  hiddenDuplicateRows: number;
+  menuChecked: number;
+  menuFound: number;
+  menuNotFound: number;
+  menuBlocked: number;
+  menuFailed: number;
+  menuIntelligenceV2: number;
+  menuV2Backlog: number;
+  reservationFound: number;
+  reservationFailed: number;
+  reservationBlocked: number;
+  reservationNotFound: number;
+  semanticRefreshPending: number;
+  searchProfilesTotal: number;
+  locationsWithoutSearchProfile: number;
+  websitesPresent: number;
+  phonesPresent: number;
+  hoursPresent: number;
+  photosPresent: number;
+  lastCleanupSuccessAt: string | null;
+  lastGapRepairSuccessAt: string | null;
+  lastSearchProfileWorkerSuccessAt: string | null;
 };
 
 function sleep(ms: number) {
@@ -71,8 +95,10 @@ async function count(table: string, configure?: (query: any) => any) {
 }
 
 async function countStale(table: SourceTable, cutoff: string) {
-  const neverEnriched = await count(table, (query) => query.is("google_enriched_at", null));
-  const oldEnrichment = await count(table, (query) => query.lt("google_enriched_at", cutoff));
+  const [neverEnriched, oldEnrichment] = await Promise.all([
+    count(table, (query) => query.is("google_enriched_at", null)),
+    count(table, (query) => query.lt("google_enriched_at", cutoff)),
+  ]);
   return neverEnriched + oldEnrichment;
 }
 
@@ -162,6 +188,119 @@ async function getSearchProfileReviewCounts() {
   };
 }
 
+async function lastSuccessfulRun(jobKey: string) {
+  const { data, error } = await supabaseAdmin
+    .from("cron_job_runs")
+    .select("finished_at,started_at")
+    .eq("job_key", jobKey)
+    .eq("status", "success")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`${jobKey} last-run lookup failed: ${errorMessage(error)}`);
+  }
+  return data?.finished_at || data?.started_at || null;
+}
+
+async function getOperationalHealth() {
+  const [
+    publicationBacklog,
+    dedupeUnknownBacklog,
+    hiddenDuplicateRows,
+    menuChecked,
+    menuFound,
+    menuNotFound,
+    menuBlocked,
+    menuFailed,
+    menuIntelligenceV2,
+    menuV2Backlog,
+    reservationFound,
+    reservationFailed,
+    reservationBlocked,
+    reservationNotFound,
+    semanticRefreshPending,
+    searchProfilesTotal,
+    canonicalActiveTotal,
+    websitesPresent,
+    phonesPresent,
+    hoursPresent,
+    photosPresent,
+    lastCleanupSuccessAt,
+    lastGapRepairSuccessAt,
+    lastSearchProfileWorkerSuccessAt,
+  ] = await Promise.all([
+    count("locations", (query) => query
+      .eq("quality_status", "publish_ready")
+      .eq("is_searchable", false)
+      .eq("duplicate_status", "unique")
+      .eq("is_hidden", false)
+      .eq("active", true)
+      .eq("is_low_level", false)
+      .is("deleted_at", null)
+      .is("duplicate_of", null)),
+    count("locations", (query) => query
+      .eq("quality_status", "publish_ready")
+      .eq("is_searchable", false)
+      .eq("duplicate_status", "unknown")
+      .eq("is_hidden", false)
+      .eq("active", true)
+      .eq("is_low_level", false)
+      .is("deleted_at", null)
+      .is("duplicate_of", null)),
+    count("locations", (query) => query.eq("duplicate_status", "duplicate").eq("is_hidden", true).not("duplicate_of", "is", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").not("menu_discovery_checked_at", "is", null).is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").eq("menu_discovery_status", "found").is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").eq("menu_discovery_status", "not_found").is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").eq("menu_discovery_status", "blocked").is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").eq("menu_discovery_status", "failed").is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").eq("menu_intelligence_version", "first_party_menu_v2").is("deleted_at", null)),
+    count("locations", (query) => query.eq("location_type", "restaurant").not("website", "is", null).not("menu_url", "is", null).or("menu_intelligence_version.is.null,menu_intelligence_version.neq.first_party_menu_v2").is("deleted_at", null)),
+    count("locations", (query) => query.not("reservation_discovery_checked_at", "is", null).eq("reservation_discovery_status", "found").is("deleted_at", null)),
+    count("locations", (query) => query.eq("reservation_discovery_status", "failed").is("deleted_at", null)),
+    count("locations", (query) => query.eq("reservation_discovery_status", "blocked").is("deleted_at", null)),
+    count("locations", (query) => query.eq("reservation_discovery_status", "not_found").is("deleted_at", null)),
+    count("locations", (query) => query.eq("needs_semantic_refresh", true).is("deleted_at", null)),
+    count("location_search_profiles"),
+    count("locations", (query) => query.eq("active", true).eq("is_hidden", false).is("deleted_at", null).is("duplicate_of", null)),
+    count("locations", (query) => query.not("website", "is", null).is("deleted_at", null)),
+    count("locations", (query) => query.not("phone", "is", null).is("deleted_at", null)),
+    count("locations", (query) => query.not("operating_hours", "is", null).is("deleted_at", null)),
+    count("locations", (query) => query.eq("has_photos", true).is("deleted_at", null)),
+    lastSuccessfulRun("location-intelligence-cleanup-worker"),
+    lastSuccessfulRun("unified-location-gap-repair"),
+    lastSuccessfulRun("location-search-profile-worker"),
+  ]);
+
+  return {
+    publicationBacklog,
+    dedupeUnknownBacklog,
+    hiddenDuplicateRows,
+    menuChecked,
+    menuFound,
+    menuNotFound,
+    menuBlocked,
+    menuFailed,
+    menuIntelligenceV2,
+    menuV2Backlog,
+    reservationFound,
+    reservationFailed,
+    reservationBlocked,
+    reservationNotFound,
+    semanticRefreshPending,
+    searchProfilesTotal,
+    locationsWithoutSearchProfile: Math.max(0, canonicalActiveTotal - searchProfilesTotal),
+    websitesPresent,
+    phonesPresent,
+    hoursPresent,
+    photosPresent,
+    lastCleanupSuccessAt,
+    lastGapRepairSuccessAt,
+    lastSearchProfileWorkerSuccessAt,
+  };
+}
+
 export async function getLocationDataQualitySummary(staleDays = 90): Promise<LocationDataQualitySummary> {
   const cutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000).toISOString();
 
@@ -176,33 +315,35 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
   let weakSearchMetadata = 0;
 
   for (const table of SOURCE_TABLES) {
-    totals[table] = await count(table);
-    missingGooglePlaceId += await count(table, (query) => query.is("google_place_id", null));
-    staleGoogleEnrichment += await countStale(table, cutoff);
-    weakSearchMetadata += await count(
-      table,
-      (query) => query.or(WEAK_METADATA_FILTERS[table]),
-    );
+    const [tableTotal, missingPlaceId, staleCount, weakCount] = await Promise.all([
+      count(table),
+      count(table, (query) => query.is("google_place_id", null)),
+      countStale(table, cutoff),
+      count(table, (query) => query.or(WEAK_METADATA_FILTERS[table])),
+    ]);
+    totals[table] = tableTotal;
+    missingGooglePlaceId += missingPlaceId;
+    staleGoogleEnrichment += staleCount;
+    weakSearchMetadata += weakCount;
   }
 
-  const genericCuisineCounts = await getGenericRestaurantCuisineCounts();
-  const googleAutoApplyReady = await count(
-    "location_google_food_term_suggestions",
-    (query) => query.eq("status", "auto_apply_ready").is("applied_at", null),
-  );
-  const googleManualReview = await count(
-    "location_google_food_term_suggestions",
-    (query) => query.eq("status", "pending_review"),
-  );
-  const googleApprovedAwaitingNormalization = await count(
-    "location_google_food_term_suggestions",
-    (query) => query.eq("status", "approved").is("applied_at", null),
-  );
-  const googleApplied = await count(
-    "location_google_food_term_suggestions",
-    (query) => query.not("applied_at", "is", null),
-  );
-  const profileReviewCounts = await getSearchProfileReviewCounts();
+  const [
+    genericCuisineCounts,
+    googleAutoApplyReady,
+    googleManualReview,
+    googleApprovedAwaitingNormalization,
+    googleApplied,
+    profileReviewCounts,
+    operational,
+  ] = await Promise.all([
+    getGenericRestaurantCuisineCounts(),
+    count("location_google_food_term_suggestions", (query) => query.eq("status", "auto_apply_ready").is("applied_at", null)),
+    count("location_google_food_term_suggestions", (query) => query.eq("status", "pending_review")),
+    count("location_google_food_term_suggestions", (query) => query.eq("status", "approved").is("applied_at", null)),
+    count("location_google_food_term_suggestions", (query) => query.not("applied_at", "is", null)),
+    getSearchProfileReviewCounts(),
+    getOperationalHealth(),
+  ]);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -223,5 +364,6 @@ export async function getLocationDataQualitySummary(staleDays = 90): Promise<Loc
     searchProfilesNeedingReview: profileReviewCounts.total,
     searchProfilesActionableReview: profileReviewCounts.actionable,
     searchProfilesSuppressedReview: profileReviewCounts.suppressed,
+    ...operational,
   };
 }
