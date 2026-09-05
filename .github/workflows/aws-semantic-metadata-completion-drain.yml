@@ -179,3 +179,5 @@ jobs:
             echo '- Search V2 semantic embeddings: Hugging Face.'
             echo '- Recurring AWS schedule count unchanged.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+# Operational one-shot trigger: Location Intelligence semantic convergence after Menu v2 reached exception-only tail on 2026-09-05.
