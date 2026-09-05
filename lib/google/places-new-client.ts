@@ -136,6 +136,14 @@ function requireIntegrationApi() {
   }
 }
 
+function rethrowPlaceDetailsError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Place ID is no longer valid/i.test(message) || /\bNOT_FOUND\b/i.test(message)) {
+    throw new Error(`Google Place Details failed: 404 ${message}`);
+  }
+  throw error;
+}
+
 export async function searchPlacesTextNew(
   textQuery: string,
   options: { pageSize?: number; regionCode?: string } = {},
@@ -150,7 +158,11 @@ export async function getPlaceDetailsNew(placeId: string) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
   requireIntegrationApi();
-  return getGooglePlaceDetailsViaIntegrationApi<PlacesNewPlace>(id);
+  try {
+    return await getGooglePlaceDetailsViaIntegrationApi<PlacesNewPlace>(id);
+  } catch (error) {
+    rethrowPlaceDetailsError(error);
+  }
 }
 
 export async function getPlacePhotosNew(placeId: string) {
