@@ -1,0 +1,219 @@
+name: AWS ops scheduled runtime repair
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/ops/**'
+      - 'infra/aws/cloudformation/ops-scheduled-runtime.yml'
+      - '.github/workflows/aws-ops-scheduled-runtime-repair.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/ops/**'
+      - 'infra/aws/cloudformation/ops-scheduled-runtime.yml'
+      - '.github/workflows/aws-ops-scheduled-runtime-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-ops-scheduled-runtime-production
+  OPS_SECRET_NAME: /theouthaven/production/ops-scheduled-runtime
+  OPS_SCHEDULE_GROUP: toh-production-ops-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repair contract
+        run: |
+          set -euo pipefail
+          bash -n infra/aws/ops/database-backup.sh
+          bash -n infra/aws/ops/storage-backup.sh
+          bash -n infra/aws/ops/worker-reliability-soak.sh
+          bash -n infra/aws/ops/search-ml-train-evaluate-promote.sh
+          bash -n infra/aws/ops/run-scheduled-job.sh
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('infra/aws/cloudformation/ops-scheduled-runtime.yml').read_text()
+          assert text.count('arn:aws:scheduler:::aws-sdk:codebuild:startBuild') == 4
+          assert text.count('projectName') == 4
+          assert text.count('environmentVariablesOverride') == 4
+          PY
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Bootstrap CodeBuild deployment and smoke permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/ops-codebuild-bootstrap.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"OpsScheduledCodeBuildBootstrap",
+                "Effect":"Allow",
+                "Action":[
+                  "codebuild:CreateProject",
+                  "codebuild:UpdateProject",
+                  "codebuild:DeleteProject",
+                  "codebuild:BatchGetProjects",
+                  "codebuild:ListProjects",
+                  "codebuild:TagResource",
+                  "codebuild:UntagResource",
+                  "codebuild:StartBuild",
+                  "codebuild:BatchGetBuilds"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenOpsCodeBuildBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
+
+      - name: Validate required migration configuration
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_BACKUP_BUCKET"
+          test -n "$SUPABASE_DB_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_STORAGE_ACCESS_KEY_ID"
+          test -n "$SUPABASE_STORAGE_SECRET_ACCESS_KEY"
+
+      - name: Sync scheduled-ops secrets into AWS Secrets Manager
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/ops-secret.json"
+          jq -n \
+            --arg db "$SUPABASE_DB_URL" \
+            --arg service "$SUPABASE_SERVICE_ROLE_KEY" \
+            --arg storage_key "$SUPABASE_STORAGE_ACCESS_KEY_ID" \
+            --arg storage_secret "$SUPABASE_STORAGE_SECRET_ACCESS_KEY" \
+            '{SUPABASE_DB_URL:$db,SUPABASE_SERVICE_ROLE_KEY:$service,SUPABASE_STORAGE_ACCESS_KEY_ID:$storage_key,SUPABASE_STORAGE_SECRET_ACCESS_KEY:$storage_secret}' \
+            > "$SECRET_FILE"
+          aws secretsmanager put-secret-value \
+            --secret-id "$OPS_SECRET_NAME" \
+            --secret-string "file://$SECRET_FILE" >/dev/null
+          rm -f "$SECRET_FILE"
+
+      - name: Build corrected Scheduler template
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('infra/aws/cloudformation/ops-scheduled-runtime.yml').read_text()
+          fixed = (source
+            .replace('projectName', 'ProjectName')
+            .replace('environmentVariablesOverride', 'EnvironmentVariablesOverride')
+            .replace('"name":"OPS_JOB"', '"Name":"OPS_JOB"')
+            .replace('"value":"database-backup"', '"Value":"database-backup"')
+            .replace('"value":"storage-backup"', '"Value":"storage-backup"')
+            .replace('"value":"worker-reliability-soak"', '"Value":"worker-reliability-soak"')
+            .replace('"value":"search-ml-train-evaluate-promote"', '"Value":"search-ml-train-evaluate-promote"')
+            .replace('"type":"PLAINTEXT"', '"Type":"PLAINTEXT"'))
+          assert fixed.count('"ProjectName"') == 4
+          assert fixed.count('"EnvironmentVariablesOverride"') == 4
+          assert fixed.count('"Name":"OPS_JOB"') == 4
+          assert fixed.count('"Type":"PLAINTEXT"') == 4
+          Path('/tmp/ops-scheduled-runtime.yml').write_text(fixed)
+          PY
+          aws cloudformation validate-template \
+            --template-body file:///tmp/ops-scheduled-runtime.yml >/dev/null
+
+      - name: Recover rolled-back ops stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = 'ROLLBACK_COMPLETE' ]; then
+            aws cloudformation delete-stack --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+          fi
+
+      - name: Deploy corrected AWS scheduled operations runtime
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          if ! aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file /tmp/ops-scheduled-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackupBucketName="$AWS_BACKUP_BUCKET" \
+              OpsSecretName="$OPS_SECRET_NAME" \
+              RepositoryRef=main; then
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            exit 1
+          fi
+
+      - name: Verify AWS-only scheduled ownership
+        run: |
+          set -euo pipefail
+          test "$(aws scheduler list-schedules --group-name "$OPS_SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = '4'
+          for name in production-database-backup production-storage-backup worker-reliability-soak search-ml-train-evaluate-promote; do
+            test "$(aws scheduler get-schedule --group-name "$OPS_SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED'
+          done
+          test "$(aws scheduler list-schedules --group-name toh-production-edge-runtime --query 'length(Schedules)' --output text)" = '65'
+
+      - name: Smoke the AWS worker-soak runtime
+        run: |
+          set -euo pipefail
+          PROJECT="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" --output text)"
+          BUILD_ID="$(aws codebuild start-build \
+            --project-name "$PROJECT" \
+            --environment-variables-override name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT \
+            --query 'build.id' --output text)"
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildStatus' --output text)"
+            echo "CodeBuild worker-soak smoke status: $STATUS"
+            case "$STATUS" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+            esac
+            sleep 10
+          done
+          exit 1
