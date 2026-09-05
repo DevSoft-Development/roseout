@@ -39,6 +39,7 @@ jobs:
           bash -n infra/aws/ops/search-ml-train-evaluate-promote.sh
           bash -n infra/aws/ops/run-scheduled-job.sh
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           python - <<'PY'
           from pathlib import Path
           text = Path('infra/aws/cloudformation/ops-scheduled-runtime.yml').read_text()
@@ -201,10 +202,35 @@ jobs:
             echo "AWS ops schedule state: $name=$STATE"
             test "$STATE" = 'ENABLED'
           done
+
           EDGE_JSON="$(aws scheduler list-schedules --group-name toh-production-edge-runtime --max-items 100 --output json)"
-          EDGE_COUNT="$(printf '%s' "$EDGE_JSON" | jq '.Schedules | length')"
-          echo "AWS edge schedule count: $EDGE_COUNT"
-          test "$EDGE_COUNT" = '65'
+          EDGE_TOTAL="$(printf '%s' "$EDGE_JSON" | jq '.Schedules | length')"
+          echo "AWS edge group total schedules: $EDGE_TOTAL"
+          test "$EDGE_TOTAL" = '67'
+
+          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$RUNNER_TEMP/expected-edge.txt"
+          jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | sort > "$RUNNER_TEMP/expected-dr.txt"
+          cat "$RUNNER_TEMP/expected-edge.txt" "$RUNNER_TEMP/expected-dr.txt" | sort > "$RUNNER_TEMP/expected-all.txt"
+          printf '%s' "$EDGE_JSON" | jq -r '.Schedules[].Name' | sort > "$RUNNER_TEMP/actual-all.txt"
+          diff -u "$RUNNER_TEMP/expected-all.txt" "$RUNNER_TEMP/actual-all.txt"
+
+          EDGE_ENABLED=0
+          while IFS= read -r name; do
+            STATE="$(aws scheduler get-schedule --group-name toh-production-edge-runtime --name "$name" --query State --output text)"
+            test "$STATE" = 'ENABLED' || { echo "Canonical edge schedule not enabled: $name=$STATE" >&2; exit 1; }
+            EDGE_ENABLED=$((EDGE_ENABLED + 1))
+          done < "$RUNNER_TEMP/expected-edge.txt"
+          echo "AWS canonical edge schedules enabled: $EDGE_ENABLED"
+          test "$EDGE_ENABLED" = '65'
+
+          DR_DISABLED=0
+          while IFS= read -r name; do
+            STATE="$(aws scheduler get-schedule --group-name toh-production-edge-runtime --name "$name" --query State --output text)"
+            echo "AWS DR schedule state: $name=$STATE"
+            test "$STATE" = 'DISABLED'
+            DR_DISABLED=$((DR_DISABLED + 1))
+          done < "$RUNNER_TEMP/expected-dr.txt"
+          test "$DR_DISABLED" = '2'
 
       - name: Smoke the AWS worker-soak runtime
         run: |
