@@ -1,0 +1,208 @@
+name: AWS Location Intelligence cleanup drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-drain.yml'
+      - 'lib/location-intelligence/cleanupWorker.ts'
+      - 'app/api/cron/location-intelligence-cleanup/route.ts'
+      - 'config/cron-jobs.json'
+      - 'lib/__tests__/location-intelligence-cleanup-worker.test.ts'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-cleanup-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-cleanup-drain-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
+  BATCH_LIMIT: '10'
+  MAX_BATCHES: '40'
+  OUTCOME_POLL_ATTEMPTS: '180'
+  OUTCOME_POLL_INTERVAL_SECONDS: '4'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate guarded cleanup drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-cleanup-drain.yml
+          grep -F "BATCH_LIMIT: '10'" "$FILE" >/dev/null
+          grep -F "MAX_BATCHES: '40'" "$FILE" >/dev/null
+          grep -F 'sqs:background-cron' "$FILE" >/dev/null
+          grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' "$FILE" >/dev/null
+          grep -F 'publish_ready_unique_canary' "$FILE" >/dev/null
+          grep -F 'googleCallsPerformed == 0' "$FILE" >/dev/null
+          grep -F 'test "$final" = 0' "$FILE" >/dev/null
+          grep -F "github.event_name == 'push' || github.event_name == 'workflow_dispatch'" "$FILE" >/dev/null
+
+  execute:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve AWS invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          INVOKER="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          aws lambda get-function --function-name "$INVOKER" >/dev/null
+
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" \
+            --query SecretString \
+            --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain guarded publication queue through AWS
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          total_published=0
+          total_review=0
+
+          queue_count() {
+            local headers="$RUNNER_TEMP/cleanup-queue.headers"
+            curl --silent --show-error --fail \
+              --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          before="$(queue_count)"
+          echo "Guarded publication backlog before drain: $before"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            remaining="$(queue_count)"
+            if [ "$remaining" = 0 ]; then
+              echo "Publication queue drained after $((batch - 1)) batches."
+              break
+            fi
+
+            started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            request="$RUNNER_TEMP/cleanup-request-${batch}.json"
+            response="$RUNNER_TEMP/cleanup-response-${batch}.json"
+            jq -nc --arg target "$CLEANUP_TARGET" \
+              '{function:"sqs:background-cron",body:{target:$target,payload:{}}}' > "$request"
+            aws lambda invoke \
+              --function-name "$INVOKER" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$request" \
+              "$response" >/dev/null
+            jq -e --arg target "$CLEANUP_TARGET" \
+              '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' \
+              "$response" >/dev/null
+
+            outcome="$RUNNER_TEMP/cleanup-outcome-${batch}.json"
+            found=0
+            for attempt in $(seq 1 "$OUTCOME_POLL_ATTEMPTS"); do
+              curl --silent --show-error --fail --get \
+                --header "apikey: $SERVICE_ROLE" \
+                --header "Authorization: Bearer $SERVICE_ROLE" \
+                --data-urlencode 'select=id,status,started_at,finished_at,details' \
+                --data-urlencode 'job_key=eq.location-intelligence-cleanup-worker' \
+                --data-urlencode "started_at=gte.${started_at}" \
+                --data-urlencode 'order=started_at.desc' \
+                --data-urlencode 'limit=1' \
+                "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$outcome"
+              if jq -e 'length == 1 and .[0].finished_at != null' "$outcome" >/dev/null; then
+                found=1
+                break
+              fi
+              sleep "$OUTCOME_POLL_INTERVAL_SECONDS"
+            done
+            test "$found" = 1 || { echo "cleanup outcome not observed for batch $batch" >&2; exit 1; }
+
+            jq -e --argjson batch_limit "$BATCH_LIMIT" '
+              .[0].status == "success"
+              and .[0].details.mode == "publish_ready_unique_canary"
+              and .[0].details.googleCallsPerformed == 0
+              and .[0].details.failed == 0
+              and .[0].details.limit == $batch_limit
+              and .[0].details.selected <= $batch_limit
+              and .[0].details.processed == .[0].details.selected
+            ' "$outcome" >/dev/null
+
+            selected="$(jq -r '.[0].details.selected' "$outcome")"
+            published="$(jq -r '.[0].details.published' "$outcome")"
+            review="$(jq -r '.[0].details.dispositionedToReview' "$outcome")"
+            after="$(jq -r '.[0].details.remaining' "$outcome")"
+            total_published=$((total_published + published))
+            total_review=$((total_review + review))
+
+            echo "Batch $batch: selected=$selected published=$published review=$review remaining=$after"
+            if [ "$selected" = 0 ] && [ "$after" != 0 ]; then
+              echo "cleanup worker made no progress while backlog remains" >&2
+              exit 1
+            fi
+          done
+
+          final="$(queue_count)"
+          test "$final" = 0 || { echo "cleanup queue remains after MAX_BATCHES=$MAX_BATCHES: $final" >&2; exit 1; }
+          echo "Guarded publication queue: before=$before after=$final published=$total_published routed_to_review=$total_review"
+
+      - name: Prove final guarded queue is zero
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          HEADERS="$RUNNER_TEMP/final-queue.headers"
+          curl --silent --show-error --fail \
+            --dump-header "$HEADERS" --output /dev/null \
+            --header "apikey: $SERVICE_ROLE" \
+            --header "Authorization: Bearer $SERVICE_ROLE" \
+            --header 'Prefer: count=exact' \
+            "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unique&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
+          REMAINING="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
+          test "$REMAINING" = 0
+          echo "Final guarded cleanup queue is zero."
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
