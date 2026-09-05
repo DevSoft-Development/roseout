@@ -1,0 +1,40 @@
+name: AWS-only cron ownership
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'infra/aws/edge-runtime/**'
+      - 'infra/aws/ops/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'infra/aws/edge-runtime/**'
+      - 'infra/aws/ops/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject GitHub timer ownership
+        run: |
+          set -euo pipefail
+          matches="$(grep -R -nE '^[[:space:]]+-[[:space:]]+cron:' .github/workflows || true)"
+          if [ -n "$matches" ]; then
+            echo "Timed GitHub workflow triggers are forbidden; recurring schedules must be owned by AWS." >&2
+            echo "$matches" >&2
+            exit 1
+          fi
+          echo "No GitHub Actions cron triggers found. AWS is the recurring scheduler owner."
+
+      - name: Verify canonical AWS manifests
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
