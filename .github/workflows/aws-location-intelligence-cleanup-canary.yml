@@ -5,6 +5,10 @@ on:
   pull_request:
     paths:
       - '.github/workflows/aws-location-intelligence-cleanup-canary.yml'
+      - 'app/api/cron/location-intelligence-cleanup/route.ts'
+      - 'lib/location-intelligence/cleanupWorker.ts'
+      - 'config/cron-jobs.json'
+      - 'lib/__tests__/location-intelligence-cleanup-worker.test.ts'
   push:
     branches: [main]
     paths:
@@ -26,6 +30,7 @@ env:
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
+  CLEANUP_LIMIT: '25'
   CLEANUP_POLL_ATTEMPTS: '300'
   CLEANUP_POLL_INTERVAL_SECONDS: '4'
 
@@ -40,6 +45,7 @@ jobs:
           FILE=.github/workflows/aws-location-intelligence-cleanup-canary.yml
           grep -F 'sqs:background-cron' "$FILE" >/dev/null
           grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' "$FILE" >/dev/null
+          grep -F "CLEANUP_LIMIT: '25'" "$FILE" >/dev/null
           grep -F 'duplicate_status=eq.unique' "$FILE" >/dev/null
           grep -F 'is_searchable=eq.false' "$FILE" >/dev/null
           grep -F "CLEANUP_POLL_ATTEMPTS: '300'" "$FILE" >/dev/null
@@ -47,6 +53,9 @@ jobs:
           grep -F "if: github.event_name == 'workflow_dispatch'" "$FILE" >/dev/null
           grep -F 'published-ready unique backlog did not decrease' "$FILE" >/dev/null
           grep -F 'do not re-dispatch until late SQS execution is reconciled' "$FILE" >/dev/null
+          grep -F 'const MAX_BATCH_LIMIT = 25' lib/location-intelligence/cleanupWorker.ts >/dev/null
+          grep -F 'Math.min(25' app/api/cron/location-intelligence-cleanup/route.ts >/dev/null
+          grep -F '"targetPath":"/api/cron/location-intelligence-cleanup?limit=25"' config/cron-jobs.json >/dev/null
 
   enqueue:
     if: github.event_name == 'workflow_dispatch'
@@ -169,6 +178,7 @@ jobs:
             echo '### AWS Location Intelligence cleanup canary'
             echo ''
             echo "- Target: \`$CLEANUP_TARGET\`"
+            echo "- Batch cap: \`$CLEANUP_LIMIT\`"
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
             echo '- Scope: publish-ready, non-searchable, duplicate_status=unique, visible, active, non-low-level only'
             echo '- Activation: explicit workflow dispatch only; merge/push validates but does not publish'
