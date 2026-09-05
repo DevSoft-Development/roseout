@@ -1,0 +1,56 @@
+name: npm config cleanup one shot
+
+on:
+  push:
+    branches:
+      - cleanup/npm-config-final-runner3
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove proven-unused dev dependencies
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          for (const name of ['autoprefixer', 'crypto', 'dotenv-cli']) {
+            if (pkg.devDependencies) delete pkg.devDependencies[name];
+          }
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Validate package state
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const pkg = require('./package.json');
+          for (const name of ['autoprefixer', 'crypto', 'dotenv-cli']) {
+            if (pkg.devDependencies?.[name] || pkg.dependencies?.[name]) {
+              throw new Error(`stale dependency remains: ${name}`);
+            }
+          }
+          NODE
+          if grep -q '"node_modules/crypto"' package-lock.json; then
+            echo 'deprecated crypto package still present in lockfile' >&2
+            exit 1
+          fi
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+
+      - name: Commit cleaned manifest and lockfile
+        run: |
+          set -euo pipefail
+          rm .github/workflows/npm-config-cleanup-one-shot.yml
+          git config user.name 'roseoutllc'
+          git config user.email 'nick@roseout.com'
+          git add package.json package-lock.json .github/workflows/npm-config-cleanup-one-shot.yml
+          git commit -m 'chore: remove unused npm tooling dependencies'
+          git push origin HEAD:cleanup/npm-config-final-runner3
