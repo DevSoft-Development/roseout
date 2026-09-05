@@ -1,0 +1,187 @@
+name: AWS Google lifecycle completion drain
+
+on:
+  pull_request:
+    paths:
+      - 'lib/location-data-quality/google-lifecycle-refresh.ts'
+      - 'app/api/cron/google-location-lifecycle-refresh/route.ts'
+      - 'app/api/cron/catalog-enrichment-runner/route.ts'
+      - 'infra/aws/lambda/google_places_provider.py'
+      - '.github/workflows/aws-google-lifecycle-completion-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/location-data-quality/google-lifecycle-refresh.ts'
+      - 'app/api/cron/google-location-lifecycle-refresh/route.ts'
+      - 'app/api/cron/catalog-enrichment-runner/route.ts'
+      - 'infra/aws/lambda/google_places_provider.py'
+      - '.github/workflows/aws-google-lifecycle-completion-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-google-lifecycle-completion-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  INTEGRATION_STACK_NAME: theouthaven-integration-api-production
+  BACKGROUND_FUNCTION: toh-production-background-runtime
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  MAX_BATCHES: '70'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate lifecycle completion contract
+        run: |
+          set -euo pipefail
+          grep -F '"movedPlace"' infra/aws/lambda/google_places_provider.py >/dev/null
+          grep -F '"movedPlaceId"' infra/aws/lambda/google_places_provider.py >/dev/null
+          grep -F 'processGoogleLifecycleRefresh(25, 30)' app/api/cron/catalog-enrichment-runner/route.ts >/dev/null
+          grep -F 'CONCURRENCY = 8' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
+          grep -F 'MAX_LIMIT = 100' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
+          python -m py_compile infra/aws/lambda/google_places_provider.py
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' .github/workflows/aws-google-lifecycle-completion-drain.yml; then
+            echo 'Lifecycle completion drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Wait for background and Integration API deployments
+        run: |
+          set -euo pipefail
+          COMMIT_EPOCH="$(git show -s --format=%ct HEAD)"
+          INTEGRATION_FUNCTION="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiFunctionName'].OutputValue" --output text)"
+          test -n "$INTEGRATION_FUNCTION" && test "$INTEGRATION_FUNCTION" != 'None'
+          for attempt in $(seq 1 60); do
+            BG_MODIFIED="$(aws lambda get-function-configuration --function-name "$BACKGROUND_FUNCTION" --query LastModified --output text)"
+            INT_MODIFIED="$(aws lambda get-function-configuration --function-name "$INTEGRATION_FUNCTION" --query LastModified --output text)"
+            BG_EPOCH="$(date -d "$BG_MODIFIED" +%s)"
+            INT_EPOCH="$(date -d "$INT_MODIFIED" +%s)"
+            if [ "$BG_EPOCH" -ge "$COMMIT_EPOCH" ] && [ "$INT_EPOCH" -ge "$COMMIT_EPOCH" ]; then
+              echo "Both runtimes are deployed."
+              exit 0
+            fi
+            echo "Waiting for lifecycle runtimes ($attempt/60)..."
+            sleep 15
+          done
+          echo 'Lifecycle runtimes did not deploy to the merged revision in time; failing closed.' >&2
+          exit 1
+
+      - name: Resolve invoker and Supabase credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain Google lifecycle backlog
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          count_missing() {
+            local headers="$RUNNER_TEMP/lifecycle-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&duplicate_of=is.null&google_place_id=not.is.null&google_business_status=is.null&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL="$(count_missing)"
+          PENDING="$INITIAL"
+          echo "Google lifecycle backlog before drain: $PENDING"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            if [ "$PENDING" -eq 0 ]; then break; fi
+            BEFORE="$PENDING"
+            REQUEST="$RUNNER_TEMP/lifecycle-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/lifecycle-response-${batch}.json"
+            jq -nc '{function:"node:/api/cron/google-location-lifecycle-refresh?limit=100&stale_days=30",body:{}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.response.success == true) and ((.response.updated // 0) > 0)' "$RESPONSE" >/dev/null
+            PENDING="$(count_missing)"
+            test "$PENDING" -lt "$BEFORE" || { echo "Lifecycle batch $batch made no progress: before=$BEFORE after=$PENDING" >&2; jq . "$RESPONSE"; exit 1; }
+            echo "Lifecycle batch $batch: $BEFORE -> $PENDING"
+          done
+
+          test "$PENDING" -eq 0 || { echo "Lifecycle drain hit batch cap with $PENDING rows remaining." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+
+      - name: Verify lifecycle acceptance state
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          for column in google_business_status google_business_status_checked_at; do
+            headers="$RUNNER_TEMP/${column}.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&duplicate_of=is.null&google_place_id=not.is.null&${column}=is.null&limit=1"
+            count="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1)"
+            echo "$column missing=$count"
+            test "$count" -eq 0
+          done
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Google lifecycle completion drain'
+            echo "- Missing lifecycle status before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Missing lifecycle status after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- Captures business status plus movedPlace/movedPlaceId.'
+            echo '- Claimed-location closure safety remains database-enforced.'
+            echo '- Existing hourly catalog schedule now maintains 30-day lifecycle freshness.'
+            echo '- No recurring scheduler added.'
+          } >> "$GITHUB_STEP_SUMMARY"
