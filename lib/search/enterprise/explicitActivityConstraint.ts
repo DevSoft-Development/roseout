@@ -109,6 +109,27 @@ function activityEntries(): readonly CanonicalTaxonomyEntry[] {
   return canonicalTaxonomy.filter((entry) => ACTIVITY_DOMAINS.has(entry.domain));
 }
 
+function requestedActivityTerms(constraint: ExplicitActivityConstraint): string[] {
+  const requested = new Set(constraint.requestedIds);
+  return activityEntries()
+    .filter((entry) => requested.has(entry.id))
+    .flatMap((entry) => [
+      entry.id.replaceAll("_", " "),
+      ...entry.aliases,
+      ...entry.retrievalTerms,
+      ...entry.relatedCategories,
+    ]);
+}
+
+function conflictingEvidenceIsCompatible(
+  conflictingEvidence: readonly string[],
+  requestedTerms: readonly string[],
+): boolean {
+  return conflictingEvidence.length > 0 && conflictingEvidence.every((value) =>
+    requestedTerms.some((term) => includesPhrase(value, term) || includesPhrase(term, value)),
+  );
+}
+
 function aliasSpans(query: string): AliasSpan[] {
   const spans: AliasSpan[] = [];
   for (const entry of activityEntries()) {
@@ -187,7 +208,15 @@ export function candidateMatchesExplicitActivityConstraint(
 ): boolean {
   if (!constraint.applied) return true;
   const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
-  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
+  const qualification = qualifyExplicitActivityIntent(candidate, structuredTerms);
+  if (!qualification.matches) {
+    if (qualification.reason !== "conflicting_authoritative_category") return false;
+    if (!conflictingEvidenceIsCompatible(
+      qualification.conflictingTrustedEvidence ?? [],
+      requestedActivityTerms(constraint),
+    )) return false;
+  }
+
   const evidence = candidateEvidenceText(candidate);
   if (!evidence) return false;
 

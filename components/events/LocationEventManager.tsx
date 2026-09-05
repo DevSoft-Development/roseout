@@ -52,7 +52,7 @@ export default function LocationEventManager({locationId,location,events,metrics
       </Step>
 
       <Step number={6} title="Review and create" description="Create the draft now. You can review it again before making it public.">
-        <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-white/45">Published events automatically appear on the location's public TheOutHaven page and hosted website content.</p><button className="rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/20">Create draft event</button></div>
+        <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-semibold text-white/45">Published events automatically appear on the location&apos;s public TheOutHaven page and hosted website content.</p><button className="rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-3 text-sm font-black text-white shadow-lg shadow-[#ff1654]/20">Create draft event</button></div>
       </Step>
     </form>
 

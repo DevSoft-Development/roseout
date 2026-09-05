@@ -8,6 +8,7 @@ const billingPlans = read('lib/billing/plans.ts');
 const growthPlan = read('lib/growth-pro/plan.ts');
 const webhook = read('app/api/stripe/webhook/route.ts');
 const connectWebhook = read('app/api/stripe/connect/webhook/route.ts');
+const connectStatus = read('lib/stripe/connect-status.ts');
 const depositCheckout = read('app/api/reservations/create-deposit-checkout/route.ts');
 const reservationPage = read('app/reserve/confirmation/[token]/page.tsx');
 const organizerOnboard = read('app/api/organizers/stripe-connect/onboard/route.ts');
@@ -38,7 +39,7 @@ const checks = [
   ['hosted deposit checkout routes funds to connected location', depositCheckout, /payment_intent_data\[transfer_data\]\[destination\]/, /payment_intent_data\[on_behalf_of\]/, /reservation-deposit-checkout-/],
   ['reservation customer has Pay Deposit flow', reservationPage, /Pay Deposit Securely/, /create-deposit-checkout/, /searchParams\.get\("deposit"\)/, /depositResult === "success"/],
   ['reservation cancellation refunds transfer and application fee', read('app/api/reservations/[id]/cancel/route.ts'), /reverse_transfer/, /refund_application_fee/],
-  ['organizer Connect return is synchronized', organizerOnboard, /api\/organizers\/stripe-connect\/return/, organizerReturn, /stripe_connect_charges_enabled/, /stripe_connect_payouts_enabled/],
+  ['organizer Connect return is synchronized', organizerOnboard, /api\/organizers\/stripe-connect\/return/, organizerReturn, /retrieveConnectAccountState/, /connectStateUpdate\(state\)/, connectStatus, /stripe_connect_charges_enabled: state\.chargesEnabled/, /stripe_connect_payouts_enabled: state\.payoutsEnabled/],
   ['event refunds are connected-account scoped and return app fee', ticketRefund, /stripeAccount: connectedAccountId/, /refund_application_fee/, /provider_refund_id/, /refund_requested_by/],
   ['refund audit migration is versioned', refundMigration, /provider_refund_id/, /refund_requested_at/, /event_ticket_orders_provider_refund_id_key/],
   ['subscription lifecycle supports cycle switch and reactivation', changePlan, /change_interval/, /reactivate/, /proration_behavior/, /cancel_at_period_end/],

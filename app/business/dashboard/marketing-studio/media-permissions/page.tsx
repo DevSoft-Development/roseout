@@ -41,7 +41,7 @@ export default async function MarketingMediaPermissionsPage() {
     <main className="min-h-screen bg-[#050607] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div><p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff6b86]">Marketing Studio · Media</p><h1 className="mt-2 text-3xl font-black">{getLocationName(location, "Your location")}</h1><p className="mt-2 text-sm text-white/55">Control which profile media can be surfaced to TheOutHaven's internal Content Opportunities workflow.</p></div>
+          <div><p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff6b86]">Marketing Studio · Media</p><h1 className="mt-2 text-3xl font-black">{getLocationName(location, "Your location")}</h1><p className="mt-2 text-sm text-white/55">Control which profile media can be surfaced to TheOutHaven&apos;s internal Content Opportunities workflow.</p></div>
           <Link href="/business/dashboard/marketing-studio" className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-black">Back to Marketing Studio</Link>
         </div>
         <LocationMediaPermissions locationId={location.id} initialAssets={initialAssets} />

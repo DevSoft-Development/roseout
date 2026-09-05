@@ -6,8 +6,6 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 type ResendWebhookData = {
   email_id?: string;
   created_at?: string;
@@ -504,9 +502,12 @@ async function processVerifiedEvent(
 }
 
 export async function POST(request: NextRequest) {
-  if (!process.env.RESEND_WEBHOOK_SECRET) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+
+  if (!resendApiKey || !resendWebhookSecret) {
     console.error(
-      "RESEND_WEBHOOK_SECRET is not configured.",
+      "Resend webhook credentials are not configured.",
     );
 
     return NextResponse.json(
@@ -538,14 +539,14 @@ export async function POST(request: NextRequest) {
    */
   const payload = await request.text();
 
+  const resend = new Resend(resendApiKey);
   let event: ResendWebhookEvent;
 
   try {
     event = resend.webhooks.verify({
       payload,
       headers,
-      webhookSecret:
-        process.env.RESEND_WEBHOOK_SECRET,
+      webhookSecret: resendWebhookSecret,
     }) as ResendWebhookEvent;
   } catch (error) {
     console.warn("Invalid Resend webhook signature", {

@@ -59,9 +59,13 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
       ?.split("=")[1];
     const initial = resolveInitialEngine(stored, cookieValue);
     setEngine(initial);
-    document.cookie = `${COOKIE_NAME}=${initial}; path=/; max-age=31536000; samesite=lax`;
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    document.cookie = `${COOKIE_NAME}=${engine}; path=/; max-age=31536000; samesite=lax`;
+  }, [engine, ready]);
 
   useEffect(() => {
     const section = document.querySelector<HTMLElement>(
@@ -95,7 +99,6 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
   function selectEngine(next: QaSearchEngine) {
     setEngine(next);
     window.localStorage.setItem(STORAGE_KEY, next);
-    document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=31536000; samesite=lax`;
     window.dispatchEvent(
       new CustomEvent("theouthaven:search-qa-engine", { detail: next }),
     );
