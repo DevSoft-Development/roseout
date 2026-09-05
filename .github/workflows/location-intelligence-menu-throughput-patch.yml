@@ -1,0 +1,48 @@
+name: Location Intelligence menu throughput patch
+
+on:
+  push:
+    branches: [ops/location-intelligence-menu-throughput]
+    paths:
+      - '.github/workflows/location-intelligence-menu-throughput-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ops/location-intelligence-menu-throughput
+      - name: Raise bounded menu throughput and validate manifest
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('infra/aws/edge-runtime/schedules.json')
+          text = path.read_text()
+          old = '{"name":"unified-location-gap-repair","expression":"cron(0/15 * * * ? *)","function":"sqs:background-cron","body":{"target":"edge:unified-location-gap-repair","payload":{"source":"eventbridge","limit":50,"concurrency":8,"textSearchLimit":3}}}'
+          new = '{"name":"unified-location-gap-repair","expression":"cron(0/15 * * * ? *)","function":"sqs:background-cron","body":{"target":"edge:unified-location-gap-repair","payload":{"source":"eventbridge","limit":50,"concurrency":8,"textSearchLimit":3,"menuDiscoveryLimit":10,"menuContentLimit":10}}}'
+          assert text.count(old) == 1
+          path.write_text(text.replace(old, new))
+          data = json.loads(path.read_text())
+          assert len(data) == 65
+          entry = next(x for x in data if x['name'] == 'unified-location-gap-repair')
+          assert entry['expression'] == 'cron(0/15 * * * ? *)'
+          assert entry['body']['payload']['textSearchLimit'] == 3
+          assert entry['body']['payload']['menuDiscoveryLimit'] == 10
+          assert entry['body']['payload']['menuContentLimit'] == 10
+          PY
+      - name: Commit focused manifest change and remove patch runner
+        run: |
+          set -euo pipefail
+          rm .github/workflows/location-intelligence-menu-throughput-patch.yml
+          git config user.name roseoutllc
+          git config user.email nick@roseout.com
+          git add infra/aws/edge-runtime/schedules.json .github/workflows/location-intelligence-menu-throughput-patch.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'ops: double bounded menu intelligence throughput'
+          git push origin HEAD:ops/location-intelligence-menu-throughput
