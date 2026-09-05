@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const AWS_BACKGROUND_ORIGIN = "http://127.0.0.1:3000";
+const DEFAULT_SEMANTIC_BATCH_SIZE = 200;
 
 type SemanticFailure = {
   id?: unknown;
@@ -27,6 +28,9 @@ async function invokeSemanticNightly(request: NextRequest) {
 
   const target = new URL("/api/admin/semantic-nightly", AWS_BACKGROUND_ORIGIN);
   target.search = request.nextUrl.search;
+  if (!target.searchParams.has("limit") && !target.searchParams.has("batch_size")) {
+    target.searchParams.set("limit", String(DEFAULT_SEMANTIC_BATCH_SIZE));
+  }
 
   const response = await fetch(target, {
     method: "GET",
