@@ -26,6 +26,8 @@ env:
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   MAX_RUNS: '6'
   MAX_BATCHES_PER_RUN: '20'
+  PROGRESS_POLL_ATTEMPTS: '20'
+  PROGRESS_POLL_SECONDS: '2'
 
 jobs:
   validate:
@@ -37,6 +39,7 @@ jobs:
           set -euo pipefail
           FILE=.github/workflows/aws-google-never-enriched-final-drain.yml
           grep -F "MAX_RUNS: '6'" "$FILE" >/dev/null
+          grep -F "PROGRESS_POLL_ATTEMPTS: '20'" "$FILE" >/dev/null
           grep -F 'never_enriched' "$FILE" >/dev/null
           grep -F 'catalog-enrichment-runner' "$FILE" >/dev/null
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
@@ -164,8 +167,14 @@ jobs:
               jq -nc '{function:"node:/api/cron/managed?job=catalog-enrichment-runner",body:{}}' > "$REQUEST"
               aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
               jq -e '.ok == true and .runtime == "node" and (.response.success != false)' "$RESPONSE" >/dev/null
-              AFTER="$(run_remaining "$RUN_ID")"
-              test "$AFTER" -lt "$BEFORE" || { echo "Run $RUN_ID batch $batch made no progress: $BEFORE -> $AFTER" >&2; exit 1; }
+
+              AFTER="$BEFORE"
+              for attempt in $(seq 1 "$PROGRESS_POLL_ATTEMPTS"); do
+                AFTER="$(run_remaining "$RUN_ID")"
+                if [ "$AFTER" -lt "$BEFORE" ]; then break; fi
+                sleep "$PROGRESS_POLL_SECONDS"
+              done
+              test "$AFTER" -lt "$BEFORE" || { echo "Run $RUN_ID batch $batch made no progress after polling: $BEFORE -> $AFTER" >&2; exit 1; }
               echo "Run $run_number batch $batch: $BEFORE -> $AFTER"
             done
 
@@ -199,5 +208,6 @@ jobs:
             echo "- Live backlog before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
             echo "- Live backlog after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
             echo '- Uses bounded 250-row audited runs and the canonical 25-row enrichment worker.'
+            echo '- Waits for asynchronous canonical-runner progress before declaring a stall.'
             echo '- No recurring scheduler added or changed.'
           } >> "$GITHUB_STEP_SUMMARY"
