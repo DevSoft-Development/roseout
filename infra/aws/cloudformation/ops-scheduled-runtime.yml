@@ -1,0 +1,343 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven AWS-only scheduled operations runtime for backups, worker soak, and Search ML promotion.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [staging, production]
+  RepositoryUrl:
+    Type: String
+    Default: https://github.com/DevSoft-Development/roseout.git
+  RepositoryRef:
+    Type: String
+    Default: main
+  BackupBucketName:
+    Type: String
+  OpsSecretName:
+    Type: String
+    Default: /theouthaven/production/ops-scheduled-runtime
+  SupabaseUrl:
+    Type: String
+    Default: https://hnhbzynoyrhjndefbwkh.supabase.co
+  SupabaseStorageEndpoint:
+    Type: String
+    Default: https://hnhbzynoyrhjndefbwkh.storage.supabase.co/storage/v1/s3
+  SupabaseStorageRegion:
+    Type: String
+    Default: us-west-2
+
+Resources:
+  OpsScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Properties:
+      Name: !Sub toh-${Environment}-ops-runtime
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: scheduled-ops
+
+  OpsCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenOpsScheduledCodeBuild-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LogsAndSecrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OpsSecretName}*
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:theouthaven/${Environment}/search-ml/auth-token*
+        - PolicyName: BackupBucket
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BackupBucketName}
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetObjectVersion
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BackupBucketName}/*
+        - PolicyName: SearchMlPromotion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/theouthaven-search-ml
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:UpdateStack
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/theouthaven-search-ml-${Environment}/*
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/TheOutHavenSearchMlEcrAccess-${Environment}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/TheOutHavenSearchMlInstance-${Environment}
+              - Effect: Allow
+                Action:
+                  - apprunner:CreateAutoScalingConfiguration
+                  - apprunner:CreateService
+                  - apprunner:DeleteAutoScalingConfiguration
+                  - apprunner:DescribeAutoScalingConfiguration
+                  - apprunner:DescribeService
+                  - apprunner:ListOperations
+                  - apprunner:TagResource
+                  - apprunner:UntagResource
+                  - apprunner:UpdateService
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:DeleteSecret
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:TagResource
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:theouthaven/${Environment}/search-ml/auth-token*
+
+  OpsCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub toh-${Environment}-ops-scheduled-runtime
+      Description: AWS runtime for TheOutHaven scheduled operations previously timed by GitHub Actions.
+      ServiceRole: !GetAtt OpsCodeBuildRole.Arn
+      TimeoutInMinutes: 120
+      QueuedTimeoutInMinutes: 30
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                python: 3.12
+              commands:
+                - apt-get update -y
+                - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client jq curl unzip git ca-certificates
+            pre_build:
+              commands:
+                - rm -rf /tmp/roseout
+                - git clone --depth 1 --branch "$REPOSITORY_REF" "$REPOSITORY_URL" /tmp/roseout
+                - export REPO_ROOT=/tmp/roseout
+            build:
+              commands:
+                - cd /tmp/roseout
+                - bash infra/aws/ops/run-scheduled-job.sh "$OPS_JOB"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_LARGE
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_REGION
+            Type: PLAINTEXT
+            Value: !Ref AWS::Region
+          - Name: AWS_ACCOUNT_ID
+            Type: PLAINTEXT
+            Value: !Ref AWS::AccountId
+          - Name: REPOSITORY_URL
+            Type: PLAINTEXT
+            Value: !Ref RepositoryUrl
+          - Name: REPOSITORY_REF
+            Type: PLAINTEXT
+            Value: !Ref RepositoryRef
+          - Name: AWS_BACKUP_BUCKET
+            Type: PLAINTEXT
+            Value: !Ref BackupBucketName
+          - Name: SUPABASE_URL
+            Type: PLAINTEXT
+            Value: !Ref SupabaseUrl
+          - Name: SUPABASE_STORAGE_ENDPOINT
+            Type: PLAINTEXT
+            Value: !Ref SupabaseStorageEndpoint
+          - Name: SUPABASE_STORAGE_REGION
+            Type: PLAINTEXT
+            Value: !Ref SupabaseStorageRegion
+          - Name: ECR_REPOSITORY
+            Type: PLAINTEXT
+            Value: theouthaven-search-ml
+          - Name: SEARCH_ML_STACK_NAME
+            Type: PLAINTEXT
+            Value: !Sub theouthaven-search-ml-${Environment}
+          - Name: MIN_TRAIN_EXAMPLES
+            Type: PLAINTEXT
+            Value: '500'
+          - Name: MIN_VALIDATION_EXAMPLES
+            Type: PLAINTEXT
+            Value: '50'
+          - Name: SUPABASE_DB_URL
+            Type: SECRETS_MANAGER
+            Value: !Sub '${OpsSecretName}:SUPABASE_DB_URL'
+          - Name: SUPABASE_SERVICE_ROLE_KEY
+            Type: SECRETS_MANAGER
+            Value: !Sub '${OpsSecretName}:SUPABASE_SERVICE_ROLE_KEY'
+          - Name: SUPABASE_STORAGE_ACCESS_KEY_ID
+            Type: SECRETS_MANAGER
+            Value: !Sub '${OpsSecretName}:SUPABASE_STORAGE_ACCESS_KEY_ID'
+          - Name: SUPABASE_STORAGE_SECRET_ACCESS_KEY
+            Type: SECRETS_MANAGER
+            Value: !Sub '${OpsSecretName}:SUPABASE_STORAGE_SECRET_ACCESS_KEY'
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Sub /aws/codebuild/toh-${Environment}-ops-scheduled-runtime
+          StreamName: scheduled
+      Tags:
+        - Key: Application
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Component
+          Value: scheduled-ops
+
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenOpsScheduler-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StartOpsCodeBuild
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codebuild:StartBuild
+                Resource: !GetAtt OpsCodeBuildProject.Arn
+
+  DatabaseBackupSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: production-database-backup
+      GroupName: !Ref OpsScheduleGroup
+      Description: Daily independent production PostgreSQL logical backup to S3.
+      ScheduleExpression: cron(15 8 * * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:codebuild:startBuild
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {"projectName":"${OpsCodeBuildProject}","environmentVariablesOverride":[{"name":"OPS_JOB","value":"database-backup","type":"PLAINTEXT"}]}
+
+  StorageBackupSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: production-storage-backup
+      GroupName: !Ref OpsScheduleGroup
+      Description: Daily Supabase Storage object backup to S3.
+      ScheduleExpression: cron(45 8 * * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:codebuild:startBuild
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {"projectName":"${OpsCodeBuildProject}","environmentVariablesOverride":[{"name":"OPS_JOB","value":"storage-backup","type":"PLAINTEXT"}]}
+
+  WorkerReliabilitySoakSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: worker-reliability-soak
+      GroupName: !Ref OpsScheduleGroup
+      Description: Daily seven-day worker reliability soak evaluation.
+      ScheduleExpression: cron(15 11 * * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:codebuild:startBuild
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {"projectName":"${OpsCodeBuildProject}","environmentVariablesOverride":[{"name":"OPS_JOB","value":"worker-reliability-soak","type":"PLAINTEXT"}]}
+
+  SearchMlTrainSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: search-ml-train-evaluate-promote
+      GroupName: !Ref OpsScheduleGroup
+      Description: Weekly guarded Search ML train, evaluate, and promote workflow.
+      ScheduleExpression: cron(15 9 ? * SUN *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: arn:aws:scheduler:::aws-sdk:codebuild:startBuild
+        RoleArn: !GetAtt SchedulerExecutionRole.Arn
+        Input: !Sub |
+          {"projectName":"${OpsCodeBuildProject}","environmentVariablesOverride":[{"name":"OPS_JOB","value":"search-ml-train-evaluate-promote","type":"PLAINTEXT"}]}
+
+Outputs:
+  ScheduleGroupName:
+    Value: !Ref OpsScheduleGroup
+  CodeBuildProjectName:
+    Value: !Ref OpsCodeBuildProject
+  CodeBuildProjectArn:
+    Value: !GetAtt OpsCodeBuildProject.Arn
+  OpsSecretName:
+    Value: !Ref OpsSecretName
