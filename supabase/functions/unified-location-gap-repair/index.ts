@@ -252,7 +252,7 @@ serve(async (req) => {
     const retryNoWebsite = reservationStatus === "no_website" && !blank(row.website);
     const unclassifiedWithWebsite = !reservationStatus && !blank(row.website);
     const reservationGap = blank(row.external_reservation_url) && blank(row.reservation_url) && blank(row.reservation_link) && blank(row.booking_url)
-      && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
+      && (!row.reservation_discovery_checked_at || ["failed", "blocked", "not_found"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
     return coreEligible || reservationGap;
   }).sort((left: any, right: any) => reservationRecoveryPriority(left) - reservationRecoveryPriority(right)).slice(0, limit);
 
@@ -268,7 +268,7 @@ serve(async (req) => {
     googleCalls: 0, googleSucceeded: 0, googleFailed: 0, googleTextSearchCalls: 0, googleTextSearchMatched: 0, googleTextSearchNoMatch: 0,
     googleDetailsCalls: 0, googleDeferred: 0, googleNoDataCooldowns: 0, cachedHoursFilled: 0, hoursFilled: 0, websitesFilled: 0, phonesFilled: 0,
     reservationAttempted: 0, reservationFound: 0, reservationNotFound: 0, reservationBlocked: 0, reservationFailed: 0, reservationRecovered: 0,
-    reservationProviderCounts: {} as Record<string, number>, reservationRetryFailed: 0, reservationRetryBlocked: 0, reservationRetryNoWebsite: 0,
+    reservationProviderCounts: {} as Record<string, number>, reservationRetryFailed: 0, reservationRetryBlocked: 0, reservationRetryNotFound: 0, reservationRetryNoWebsite: 0,
     menuAttempted: 0, menuFound: 0, menuNotFound: 0, menuBlocked: 0, menuFailed: 0, menuIntelligenceApplied: 0, menuIntelligenceUnchanged: 0, menuSkippedManaged: 0,
     embeddingsMarkedStale: 0,
     openTableApiEnabled: openTableAdapter.enabled, openTableApiConfigured: openTableAdapter.configured, openTableApiAttempted: 0, openTableApiFound: 0, openTableApiSkipped: 1,
@@ -353,10 +353,11 @@ serve(async (req) => {
       const reservationStatus = String(row.reservation_discovery_status || "");
       const retryNoWebsite = reservationStatus === "no_website" && Boolean(website);
       const unclassifiedWithWebsite = !reservationStatus && Boolean(website);
-      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
+      const needsReservationDiscovery = !alreadyHasReservation && (!row.reservation_discovery_checked_at || ["failed", "blocked", "not_found"].includes(reservationStatus) || retryNoWebsite || unclassifiedWithWebsite);
       if (needsReservationDiscovery) {
         if (reservationStatus === "failed") counters.reservationRetryFailed += 1;
         else if (reservationStatus === "blocked") counters.reservationRetryBlocked += 1;
+        else if (reservationStatus === "not_found") counters.reservationRetryNotFound += 1;
         else if (retryNoWebsite) counters.reservationRetryNoWebsite += 1;
 
         if (!website) {
@@ -373,9 +374,9 @@ serve(async (req) => {
             counters.reservationFound += 1;
             counters.reservationProviderCounts[match.provider] = (counters.reservationProviderCounts[match.provider] || 0) + 1;
             if (["failed", "blocked", "no_website"].includes(reservationStatus)) counters.reservationRecovered += 1;
-          } else if (discovery.status === "not_found") counters.reservationNotFound += 1;
-          else if (discovery.status === "blocked") { counters.reservationBlocked += 1; retryHours = 24 * 7; }
-          else { counters.reservationFailed += 1; retryHours = 24; }
+          } else if (discovery.status === "not_found") { counters.reservationNotFound += 1; retryHours = 24 * 7; }
+          else if (discovery.status === "blocked") { counters.reservationBlocked += 1; retryHours = 24 * 30; }
+          else { counters.reservationFailed += 1; retryHours = 24 * 7; }
         }
       }
 
