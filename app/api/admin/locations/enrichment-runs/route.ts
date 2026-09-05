@@ -20,6 +20,7 @@ const ALLOWED_GAPS = new Set([
   "missing_coordinates",
   "missing_google_place_id",
   "weak_search_metadata",
+  "never_enriched",
   "stale_google_enrichment",
 ]);
 const RUN_SIZES = new Set([25, 50, 100, 250]);
