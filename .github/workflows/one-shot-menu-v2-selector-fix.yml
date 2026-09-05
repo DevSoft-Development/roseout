@@ -1,0 +1,71 @@
+name: One-shot menu v2 selector fix
+
+on:
+  push:
+    branches: [fix/location-intelligence-menu-v2-selector]
+    paths:
+      - '.github/workflows/one-shot-menu-v2-selector-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/location-intelligence-menu-v2-selector
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Patch menu candidate selector
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'supabase/functions/unified-location-gap-repair/index.ts';
+          let s = fs.readFileSync(path, 'utf8');
+          const replace = (from, to) => {
+            if (!s.includes(from)) throw new Error(`expected source fragment not found:\n${from}`);
+            s = s.replace(from, to);
+          };
+
+          replace('const MAX_MENU_CONTENT_LIMIT = 5;', 'const MAX_MENU_CONTENT_LIMIT = 10;');
+
+          replace(
+`    { data: menuRows, error: menuError },\n  ] = await Promise.all([`,
+`    { data: menuRows, error: menuError },\n    { data: menuIntelligenceRows, error: menuIntelligenceError },\n  ] = await Promise.all([`
+          );
+
+          replace(
+`    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n  ]);\n  if (identityError || cachedError || backlogError || menuError) return json({ error: (identityError || cachedError || backlogError || menuError)?.message || "Failed to load repair candidates" }, 500);`,
+`    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n    supabase.from("locations")\n      .select(selectFields)\n      .is("deleted_at", null)\n      .eq("location_type", "restaurant")\n      .not("website", "is", null)\n      .not("menu_url", "is", null)\n      .or(\`menu_intelligence_version.is.null,menu_intelligence_version.neq.\${MENU_INTELLIGENCE_VERSION}\`)\n      .order("menu_intelligence_checked_at", { ascending: true, nullsFirst: true })\n      .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),\n  ]);\n  if (identityError || cachedError || backlogError || menuError || menuIntelligenceError) return json({ error: (identityError || cachedError || backlogError || menuError || menuIntelligenceError)?.message || "Failed to load repair candidates" }, 500);`
+          );
+
+          replace(
+`  const menuCandidates = (menuRows || [])\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))`,
+`  const menuCandidates = [...(menuIntelligenceRows || []), ...(menuRows || [])]\n    .filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index)\n    .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))`
+          );
+
+          fs.writeFileSync(path, s);
+          NODE
+          grep -F 'const MAX_MENU_CONTENT_LIMIT = 10;' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
+          grep -F 'menuIntelligenceRows' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
+          grep -F 'menu_intelligence_version.neq.${MENU_INTELLIGENCE_VERSION}' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
+          grep -F 'all.findIndex((candidate: any) => candidate.id === row.id) === index' supabase/functions/unified-location-gap-repair/index.ts >/dev/null
+      - name: Validate focused code
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run typecheck
+      - name: Commit patch and remove runner
+        run: |
+          set -euo pipefail
+          rm .github/workflows/one-shot-menu-v2-selector-fix.yml
+          git config user.name 'roseoutllc'
+          git config user.email 'nick@roseout.com'
+          git add supabase/functions/unified-location-gap-repair/index.ts .github/workflows/one-shot-menu-v2-selector-fix.yml
+          git commit -m 'fix: prevent menu v2 backfill starvation'
+          git push origin HEAD:fix/location-intelligence-menu-v2-selector
