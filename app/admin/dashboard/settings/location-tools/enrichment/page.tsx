@@ -5,6 +5,7 @@ import { CatalogEnrichmentRunner } from "@/components/admin/location-tools/Catal
 import { LocationToolShell, ToolCard } from "@/components/admin/location-tools/LocationToolShell";
 import { GoogleEnrichmentClient } from "@/components/admin/location-tools/GoogleEnrichmentClient";
 import { NoMatchReviewQueue } from "@/components/admin/location-tools/NoMatchReviewQueue";
+import { RecentImportsProcessing } from "@/components/admin/location-tools/RecentImportsProcessing";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,13 @@ export default async function Page() {
           </div>
         </ToolCard>
       ) : null}
+
+      <ToolCard
+        title="Recent Imports & Processing"
+        description="The latest locations entering the catalog with their live Location Intelligence, Google, discovery, Search Profile, dedupe, and publication state."
+      >
+        <RecentImportsProcessing />
+      </ToolCard>
 
       <ToolCard
         title="Catalog-wide enrichment runner"
