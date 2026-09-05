@@ -1,8 +1,6 @@
 name: Production Supabase Storage backup
 
 on:
-  schedule:
-    - cron: "45 8 * * *"
   workflow_dispatch:
 
 permissions:
