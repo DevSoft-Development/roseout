@@ -83,7 +83,9 @@ jobs:
                   "codebuild:DeleteProject",
                   "codebuild:BatchGetProjects",
                   "codebuild:StartBuild",
-                  "codebuild:BatchGetBuilds"
+                  "codebuild:BatchGetBuilds",
+                  "scheduler:ListSchedules",
+                  "scheduler:GetSchedule"
                 ],
                 "Resource":"*"
               }
