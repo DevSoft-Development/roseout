@@ -81,6 +81,7 @@ jobs:
                   "codebuild:CreateProject",
                   "codebuild:UpdateProject",
                   "codebuild:DeleteProject",
+                  "codebuild:BatchGetProjects",
                   "codebuild:StartBuild",
                   "codebuild:BatchGetBuilds"
                 ],
