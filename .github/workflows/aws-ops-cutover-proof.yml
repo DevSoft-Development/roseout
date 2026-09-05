@@ -1,0 +1,111 @@
+name: AWS ops cutover proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ops-cutover-proof.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-ops-cutover-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  OPS_STACK: theouthaven-ops-scheduled-runtime-production
+  OPS_GROUP: toh-production-ops-runtime
+  EDGE_GROUP: toh-production-edge-runtime
+  DR_SECRET_NAME: /theouthaven/production/dr-reconciler/env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests
+        run: |
+          set -euo pipefail
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '65'
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | sort -u | wc -l | tr -d ' ')" = '2'
+
+  prove:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS schedule ownership
+        run: |
+          set -euo pipefail
+
+          OPS_JSON="$(aws scheduler list-schedules --group-name "$OPS_GROUP" --max-items 100 --output json)"
+          test "$(printf '%s' "$OPS_JSON" | jq '.Schedules | length')" = '4'
+          for name in production-database-backup production-storage-backup worker-reliability-soak search-ml-train-evaluate-promote; do
+            state="$(aws scheduler get-schedule --group-name "$OPS_GROUP" --name "$name" --query State --output text)"
+            echo "ops $name=$state"
+            test "$state" = 'ENABLED'
+          done
+
+          EDGE_JSON="$(aws scheduler list-schedules --group-name "$EDGE_GROUP" --max-items 100 --output json)"
+          test "$(printf '%s' "$EDGE_JSON" | jq '.Schedules | length')" = '67'
+          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$RUNNER_TEMP/canonical.txt"
+          jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json | sort > "$RUNNER_TEMP/dr.txt"
+          cat "$RUNNER_TEMP/canonical.txt" "$RUNNER_TEMP/dr.txt" | sort > "$RUNNER_TEMP/expected.txt"
+          printf '%s' "$EDGE_JSON" | jq -r '.Schedules[].Name' | sort > "$RUNNER_TEMP/actual.txt"
+          diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt"
+
+          enabled=0
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$EDGE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "canonical $name=$state" >&2; exit 1; }
+            enabled=$((enabled + 1))
+          done < "$RUNNER_TEMP/canonical.txt"
+          echo "canonical enabled=$enabled"
+          test "$enabled" = '65'
+
+          mode="$(aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text | jq -r '.DR_MODE // empty')"
+          case "$mode" in
+            virginia_primary) desired=ENABLED ;;
+            promotion_in_progress|oregon_primary|failback_in_progress) desired=DISABLED ;;
+            *) echo "Unsafe or missing DR_MODE: $mode" >&2; exit 1 ;;
+          esac
+          echo "DR_MODE=$mode desired=$desired"
+          while IFS= read -r name; do
+            state="$(aws scheduler get-schedule --group-name "$EDGE_GROUP" --name "$name" --query State --output text)"
+            echo "dr $name=$state"
+            test "$state" = "$desired"
+          done < "$RUNNER_TEMP/dr.txt"
+
+      - name: Smoke AWS worker runtime
+        run: |
+          set -euo pipefail
+          project="$(aws cloudformation describe-stacks --stack-name "$OPS_STACK" --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" --output text)"
+          test -n "$project"
+          build_id="$(aws codebuild start-build --project-name "$project" --environment-variables-override name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT --query 'build.id' --output text)"
+          for attempt in $(seq 1 60); do
+            status="$(aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].buildStatus' --output text)"
+            echo "CodeBuild worker-soak smoke status: $status"
+            case "$status" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+            esac
+            sleep 10
+          done
+          exit 1
