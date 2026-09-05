@@ -118,7 +118,7 @@ jobs:
             curl --silent --show-error --fail -X PATCH "${AUTH[@]}" \
               -H 'Content-Type: application/json' -H 'Prefer: return=minimal' \
               "${SUPABASE_URL}/rest/v1/location_enrichment_runs?id=eq.${id}&status=in.(planned,queued)" \
-              -d '{"status":"running","started_at":"now()","updated_at":"now()","last_error":null}' >/dev/null
+              -d '{"status":"running","last_error":null}' >/dev/null
           }
 
           create_run() {
@@ -170,7 +170,6 @@ jobs:
 
             REMAINING="$(run_remaining "$RUN_ID")"
             test "$REMAINING" -eq 0 || { echo "Run $RUN_ID hit batch cap with $REMAINING remaining." >&2; exit 1; }
-            # One final invocation lets the canonical runner observe an empty queue and close the run if needed.
             REQUEST="$RUNNER_TEMP/google-final-close-${run_number}.json"
             RESPONSE="$RUNNER_TEMP/google-final-close-response-${run_number}.json"
             jq -nc '{function:"node:/api/cron/managed?job=catalog-enrichment-runner",body:{}}' > "$REQUEST"
