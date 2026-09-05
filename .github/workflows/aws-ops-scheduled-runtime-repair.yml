@@ -63,7 +63,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Bootstrap CodeBuild deployment and smoke permissions
+      - name: Bootstrap minimal CodeBuild deployment and smoke permissions
         env:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
         run: |
@@ -81,10 +81,6 @@ jobs:
                   "codebuild:CreateProject",
                   "codebuild:UpdateProject",
                   "codebuild:DeleteProject",
-                  "codebuild:BatchGetProjects",
-                  "codebuild:ListProjects",
-                  "codebuild:TagResource",
-                  "codebuild:UntagResource",
                   "codebuild:StartBuild",
                   "codebuild:BatchGetBuilds"
                 ],
