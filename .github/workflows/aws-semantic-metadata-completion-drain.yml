@@ -1,0 +1,181 @@
+name: AWS semantic metadata completion drain
+
+on:
+  pull_request:
+    paths:
+      - 'app/api/admin/semantic-nightly/route.ts'
+      - 'app/api/cron/semantic-nightly/route.ts'
+      - '.github/workflows/aws-semantic-metadata-completion-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/api/admin/semantic-nightly/route.ts'
+      - 'app/api/cron/semantic-nightly/route.ts'
+      - '.github/workflows/aws-semantic-metadata-completion-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-semantic-metadata-completion-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  BACKGROUND_FUNCTION: toh-production-background-runtime
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  BATCH_SIZE: '200'
+  MAX_BATCHES: '25'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deterministic semantic completion contract
+        run: |
+          set -euo pipefail
+          grep -F 'legacy_openai_embedding_generated: false' app/api/admin/semantic-nightly/route.ts >/dev/null
+          grep -F 'search_v2_embedding_provider: "hugging_face"' app/api/admin/semantic-nightly/route.ts >/dev/null
+          ! grep -F 'openai.embeddings.create' app/api/admin/semantic-nightly/route.ts >/dev/null
+          grep -F 'DEFAULT_SEMANTIC_BATCH_SIZE = 200' app/api/cron/semantic-nightly/route.ts >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' .github/workflows/aws-semantic-metadata-completion-drain.yml; then
+            echo 'Completion drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Wait for current background runtime deployment
+        run: |
+          set -euo pipefail
+          COMMIT_EPOCH="$(git show -s --format=%ct HEAD)"
+          for attempt in $(seq 1 40); do
+            MODIFIED="$(aws lambda get-function-configuration --function-name "$BACKGROUND_FUNCTION" --query LastModified --output text)"
+            MODIFIED_EPOCH="$(date -d "$MODIFIED" +%s)"
+            if [ "$MODIFIED_EPOCH" -ge "$COMMIT_EPOCH" ]; then
+              echo "Background runtime is current enough: $MODIFIED"
+              exit 0
+            fi
+            echo "Waiting for background runtime deployment ($attempt/40)..."
+            sleep 15
+          done
+          echo 'Background runtime did not update to the merged revision in time; failing closed.' >&2
+          exit 1
+
+      - name: Resolve invoker and Supabase credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain deterministic semantic metadata backlog
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+
+          count_pending() {
+            local headers="$RUNNER_TEMP/semantic-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&needs_semantic_refresh=eq.true&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL="$(count_pending)"
+          PENDING="$INITIAL"
+          echo "Semantic metadata backlog before drain: $PENDING"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            if [ "$PENDING" -eq 0 ]; then break; fi
+            BEFORE="$PENDING"
+            REQUEST="$RUNNER_TEMP/semantic-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/semantic-response-${batch}.json"
+            jq -nc --arg fn "node:/api/cron/semantic-nightly?limit=${BATCH_SIZE}" '{function:$fn,body:{}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.response.legacy_openai_embedding_generated == false) and (.response.search_v2_embedding_provider == "hugging_face")' "$RESPONSE" >/dev/null
+            PENDING="$(count_pending)"
+            test "$PENDING" -lt "$BEFORE" || { echo "Semantic metadata batch $batch made no progress: before=$BEFORE after=$PENDING" >&2; exit 1; }
+            echo "Semantic metadata batch $batch: $BEFORE -> $PENDING"
+          done
+
+          test "$PENDING" -eq 0 || { echo "Semantic metadata drain hit batch cap with $PENDING rows remaining." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+
+      - name: Verify completion state
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          for spec in \
+            'refresh:needs_semantic_refresh=eq.true' \
+            'missing_text:semantic_search_text=is.null' \
+            'missing_intent:intent_tags=is.null'; do
+            name="${spec%%:*}"
+            query="${spec#*:}"
+            headers="$RUNNER_TEMP/${name}.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&${query}&limit=1"
+            count="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1)"
+            echo "$name=$count"
+            if [ "$name" = refresh ]; then test "$count" -eq 0; fi
+          done
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Semantic metadata completion drain'
+            echo "- Backlog before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Backlog after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- OpenAI location embeddings: disabled.'
+            echo '- Search V2 semantic embeddings: Hugging Face.'
+            echo '- Recurring AWS schedule count unchanged.'
+          } >> "$GITHUB_STEP_SUMMARY"
