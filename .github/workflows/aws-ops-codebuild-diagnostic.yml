@@ -1,0 +1,62 @@
+name: AWS ops CodeBuild diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-ops-codebuild-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-ops-codebuild-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  OPS_STACK: theouthaven-ops-scheduled-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'CodeBuild diagnostic workflow validated'
+
+  diagnose:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Run worker smoke and print CodeBuild failure context
+        run: |
+          set -euo pipefail
+          project="$(aws cloudformation describe-stacks --stack-name "$OPS_STACK" --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" --output text)"
+          test -n "$project"
+          build_id="$(aws codebuild start-build --project-name "$project" --environment-variables-override name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT --query 'build.id' --output text)"
+          echo "CodeBuild ID: $build_id"
+          for attempt in $(seq 1 60); do
+            status="$(aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].buildStatus' --output text)"
+            echo "CodeBuild status: $status"
+            case "$status" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT)
+                aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].{Status:buildStatus,CurrentPhase:currentPhase,Phases:phases,Logs:logs}' --output json
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          aws codebuild batch-get-builds --ids "$build_id" --query 'builds[0].{Status:buildStatus,CurrentPhase:currentPhase,Phases:phases,Logs:logs}' --output json
+          exit 1
