@@ -25,6 +25,7 @@ env:
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   MAX_BATCHES: '70'
+  MAX_ATTEMPTS_PER_BATCH: '4'
 
 jobs:
   validate:
@@ -37,6 +38,7 @@ jobs:
           FILE=.github/workflows/aws-google-lifecycle-final-drain-v3.yml
           grep -F 'google-location-lifecycle-refresh?limit=100&stale_days=30' "$FILE" >/dev/null
           grep -F "MAX_BATCHES: '70'" "$FILE" >/dev/null
+          grep -F "MAX_ATTEMPTS_PER_BATCH: '4'" "$FILE" >/dev/null
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
             echo 'Lifecycle final drain must never add a recurring GitHub timer.' >&2
             exit 1
@@ -96,10 +98,39 @@ jobs:
             REQUEST="$RUNNER_TEMP/lifecycle-v3-${batch}.json"
             RESPONSE="$RUNNER_TEMP/lifecycle-v3-response-${batch}.json"
             jq -nc '{function:"node:/api/cron/google-location-lifecycle-refresh?limit=100&stale_days=30",body:{}}' > "$REQUEST"
-            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
-            jq -e '.ok == true and .runtime == "node" and (.response.success == true) and ((.response.updated // 0) > 0)' "$RESPONSE" >/dev/null
+
+            INVOKE_OK=false
+            for attempt in $(seq 1 "$MAX_ATTEMPTS_PER_BATCH"); do
+              if aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null \
+                && jq -e '.ok == true and .runtime == "node" and (.response.success == true) and ((.response.updated // 0) > 0)' "$RESPONSE" >/dev/null 2>&1; then
+                INVOKE_OK=true
+                break
+              fi
+
+              PENDING="$(count_missing)"
+              if [ "$PENDING" -lt "$BEFORE" ]; then
+                echo "Lifecycle batch $batch progressed despite a transient response failure: $BEFORE -> $PENDING"
+                INVOKE_OK=true
+                break
+              fi
+
+              if [ "$attempt" -lt "$MAX_ATTEMPTS_PER_BATCH" ]; then
+                sleep $((attempt * 5))
+              fi
+            done
+
+            if [ "$INVOKE_OK" != true ]; then
+              echo "Lifecycle batch $batch failed after $MAX_ATTEMPTS_PER_BATCH attempts with no persisted progress." >&2
+              if [ -s "$RESPONSE" ]; then jq . "$RESPONSE" || true; fi
+              exit 1
+            fi
+
             PENDING="$(count_missing)"
-            test "$PENDING" -lt "$BEFORE" || { echo "Lifecycle batch $batch made no progress: $BEFORE -> $PENDING" >&2; jq . "$RESPONSE"; exit 1; }
+            if [ "$PENDING" -ge "$BEFORE" ]; then
+              echo "Lifecycle batch $batch made no progress: $BEFORE -> $PENDING" >&2
+              if [ -s "$RESPONSE" ]; then jq . "$RESPONSE" || true; fi
+              exit 1
+            fi
             echo "Lifecycle batch $batch: $BEFORE -> $PENDING"
           done
           test "$PENDING" -eq 0 || { echo "Lifecycle drain hit batch cap with $PENDING remaining." >&2; exit 1; }
@@ -118,5 +149,6 @@ jobs:
             echo "- Backlog before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
             echo "- Backlog after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
             echo '- Uses the already-deployed hardened lifecycle worker.'
+            echo '- Retries transient invoker/runtime failures and preserves persisted progress.'
             echo '- No recurring scheduler added or changed.'
           } >> "$GITHUB_STEP_SUMMARY"
