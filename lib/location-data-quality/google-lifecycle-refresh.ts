@@ -53,7 +53,7 @@ export async function processGoogleLifecycleRefresh(limit = DEFAULT_LIMIT, stale
     if (!placeId) return { id: row.id, status: "skipped" as const, reason: "missing_place_id" };
 
     try {
-      const place = await getPlaceDetailsNew(placeId) as Record<string, unknown>;
+      const place = await getPlaceDetailsNew(placeId) as unknown as Record<string, unknown>;
       const businessStatus = clean(place.businessStatus) || "BUSINESS_STATUS_UNSPECIFIED";
       const movedPlace = clean(place.movedPlace) || null;
       const movedPlaceId = clean(place.movedPlaceId) || null;
