@@ -1,0 +1,162 @@
+name: AWS ops scheduled runtime
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/ops/**'
+      - 'infra/aws/cloudformation/ops-scheduled-runtime.yml'
+      - '.github/workflows/aws-ops-scheduled-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/ops/**'
+      - 'infra/aws/cloudformation/ops-scheduled-runtime.yml'
+      - '.github/workflows/aws-ops-scheduled-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-ops-scheduled-runtime-production
+  OPS_SECRET_NAME: /theouthaven/production/ops-scheduled-runtime
+  OPS_SCHEDULE_GROUP: toh-production-ops-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell jobs and AWS-only contract
+        run: |
+          set -euo pipefail
+          bash -n infra/aws/ops/database-backup.sh
+          bash -n infra/aws/ops/storage-backup.sh
+          bash -n infra/aws/ops/worker-reliability-soak.sh
+          bash -n infra/aws/ops/search-ml-train-evaluate-promote.sh
+          bash -n infra/aws/ops/run-scheduled-job.sh
+          grep -F 'toh-${Environment}-ops-runtime' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'production-database-backup' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'production-storage-backup' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'worker-reliability-soak' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'search-ml-train-evaluate-promote' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'arn:aws:scheduler:::aws-sdk:codebuild:startBuild' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '65'
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Validate required migration configuration
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_BACKUP_BUCKET" || { echo 'Missing AWS_BACKUP_BUCKET repository variable' >&2; exit 1; }
+          test -n "$SUPABASE_DB_URL" || { echo 'Missing SUPABASE_DB_URL repository secret' >&2; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo 'Missing SUPABASE_SERVICE_ROLE_KEY repository secret' >&2; exit 1; }
+          test -n "$SUPABASE_STORAGE_ACCESS_KEY_ID" || { echo 'Missing SUPABASE_STORAGE_ACCESS_KEY_ID repository secret' >&2; exit 1; }
+          test -n "$SUPABASE_STORAGE_SECRET_ACCESS_KEY" || { echo 'Missing SUPABASE_STORAGE_SECRET_ACCESS_KEY repository secret' >&2; exit 1; }
+
+      - name: Sync scheduled-ops secrets into AWS Secrets Manager
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_ACCESS_KEY_ID: ${{ secrets.SUPABASE_STORAGE_ACCESS_KEY_ID }}
+          SUPABASE_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_STORAGE_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/ops-secret.json"
+          jq -n \
+            --arg db "$SUPABASE_DB_URL" \
+            --arg service "$SUPABASE_SERVICE_ROLE_KEY" \
+            --arg storage_key "$SUPABASE_STORAGE_ACCESS_KEY_ID" \
+            --arg storage_secret "$SUPABASE_STORAGE_SECRET_ACCESS_KEY" \
+            '{SUPABASE_DB_URL:$db,SUPABASE_SERVICE_ROLE_KEY:$service,SUPABASE_STORAGE_ACCESS_KEY_ID:$storage_key,SUPABASE_STORAGE_SECRET_ACCESS_KEY:$storage_secret}' \
+            > "$SECRET_FILE"
+
+          if aws secretsmanager describe-secret --secret-id "$OPS_SECRET_NAME" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value --secret-id "$OPS_SECRET_NAME" --secret-string "file://$SECRET_FILE" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name "$OPS_SECRET_NAME" \
+              --description 'TheOutHaven AWS scheduled operations runtime credentials.' \
+              --secret-string "file://$SECRET_FILE" \
+              --tags Key=Application,Value=TheOutHaven Key=Environment,Value=production Key=Component,Value=scheduled-ops \
+              >/dev/null
+          fi
+          rm -f "$SECRET_FILE"
+
+      - name: Validate CloudFormation template
+        run: |
+          set -euo pipefail
+          aws cloudformation validate-template \
+            --template-body file://infra/aws/cloudformation/ops-scheduled-runtime.yml \
+            >/dev/null
+
+      - name: Deploy AWS scheduled operations runtime
+        env:
+          AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file infra/aws/cloudformation/ops-scheduled-runtime.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment=production \
+              BackupBucketName="$AWS_BACKUP_BUCKET" \
+              OpsSecretName="$OPS_SECRET_NAME" \
+              RepositoryRef=main
+
+      - name: Verify four enabled AWS ops schedules
+        run: |
+          set -euo pipefail
+          test "$(aws scheduler list-schedules --group-name "$OPS_SCHEDULE_GROUP" --query 'length(Schedules)' --output text)" = '4'
+          for name in production-database-backup production-storage-backup worker-reliability-soak search-ml-train-evaluate-promote; do
+            state="$(aws scheduler get-schedule --group-name "$OPS_SCHEDULE_GROUP" --name "$name" --query State --output text)"
+            test "$state" = 'ENABLED' || { echo "AWS ops schedule not enabled: $name ($state)" >&2; exit 1; }
+          done
+          test "$(aws scheduler list-schedules --group-name toh-production-edge-runtime --query 'length(Schedules)' --output text)" = '65'
+
+      - name: Smoke the lightweight AWS worker-soak job
+        run: |
+          set -euo pipefail
+          PROJECT="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" --output text)"
+          BUILD_ID="$(aws codebuild start-build \
+            --project-name "$PROJECT" \
+            --environment-variables-override name=OPS_JOB,value=worker-reliability-soak,type=PLAINTEXT \
+            --query 'build.id' --output text)"
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildStatus' --output text)"
+            echo "CodeBuild worker-soak smoke status: $STATUS"
+            case "$STATUS" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo 'Timed out waiting for worker-soak smoke build' >&2
+          exit 1
