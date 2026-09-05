@@ -23,6 +23,102 @@ create index if not exists locations_reservation_discovery_stale_idx
   on public.locations (reservation_discovery_stale_at)
   where reservation_discovery_stale_at is not null and deleted_at is null;
 
+-- Seed historical discovery state before the trigger exists. This makes older
+-- not-found/failed/blocked rows eligible on the new cadence instead of leaving
+-- them permanently stuck. Manual overrides are intentionally excluded.
+update public.locations
+set
+  reservation_discovery_last_attempt_at = coalesce(
+    reservation_discovery_last_attempt_at,
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ),
+  reservation_discovery_verified_at = coalesce(
+    reservation_discovery_verified_at,
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ),
+  reservation_discovery_stale_at = coalesce(
+    reservation_discovery_stale_at,
+    coalesce(reservation_discovery_checked_at, reservation_last_checked_at, updated_at) + interval '30 days'
+  ),
+  reservation_discovery_next_retry_at = coalesce(
+    reservation_discovery_next_retry_at,
+    coalesce(reservation_discovery_checked_at, reservation_last_checked_at, updated_at) + interval '30 days'
+  )
+where deleted_at is null
+  and coalesce(reservation_manual_override, false) = false
+  and reservation_discovery_status = 'found';
+
+update public.locations
+set
+  reservation_discovery_last_attempt_at = coalesce(
+    reservation_discovery_last_attempt_at,
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ),
+  reservation_discovery_next_retry_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '7 days',
+  gap_repair_next_attempt_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '7 days',
+  reservation_discovery_checked_at = null
+where deleted_at is null
+  and coalesce(reservation_manual_override, false) = false
+  and reservation_discovery_status = 'not_found';
+
+update public.locations
+set
+  reservation_discovery_last_attempt_at = coalesce(
+    reservation_discovery_last_attempt_at,
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ),
+  reservation_discovery_next_retry_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '7 days',
+  gap_repair_next_attempt_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '7 days'
+where deleted_at is null
+  and coalesce(reservation_manual_override, false) = false
+  and reservation_discovery_status = 'failed';
+
+update public.locations
+set
+  reservation_discovery_last_attempt_at = coalesce(
+    reservation_discovery_last_attempt_at,
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ),
+  reservation_discovery_next_retry_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '30 days',
+  gap_repair_next_attempt_at = coalesce(
+    reservation_discovery_checked_at,
+    reservation_last_checked_at,
+    updated_at
+  ) + interval '30 days'
+where deleted_at is null
+  and coalesce(reservation_manual_override, false) = false
+  and reservation_discovery_status = 'blocked';
+
 create or replace function public.apply_reservation_discovery_freshness()
 returns trigger
 language plpgsql
