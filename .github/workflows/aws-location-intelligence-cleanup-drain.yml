@@ -29,7 +29,7 @@ env:
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   CLEANUP_TARGET: /api/cron/managed?job=location-intelligence-cleanup-worker
-  BATCH_LIMIT: '25'
+  BATCH_LIMIT: '10'
   MAX_BATCHES: '40'
   OUTCOME_POLL_ATTEMPTS: '180'
   OUTCOME_POLL_INTERVAL_SECONDS: '4'
@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=.github/workflows/aws-location-intelligence-cleanup-drain.yml
-          grep -F "BATCH_LIMIT: '25'" "$FILE" >/dev/null
+          grep -F "BATCH_LIMIT: '10'" "$FILE" >/dev/null
           grep -F "MAX_BATCHES: '40'" "$FILE" >/dev/null
           grep -F 'sqs:background-cron' "$FILE" >/dev/null
           grep -F '/api/cron/managed?job=location-intelligence-cleanup-worker' "$FILE" >/dev/null
