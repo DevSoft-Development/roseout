@@ -136,10 +136,10 @@ describe("AWS Location Intelligence dedupe classifier", () => {
   });
 
   it("is AWS-background-only, capped at fifty, managed, non-manual, and unscheduled", () => {
-    expect(dedupeClassifier).toContain("const DEFAULT_BATCH_LIMIT = 50");
     expect(dedupeClassifier).toContain("const MAX_BATCH_LIMIT = 50");
     expect(dedupeRoute).toContain('provider === "aws-background"');
     expect(dedupeRoute).toContain('internal === "managed-dispatch"');
+    expect(dedupeRoute).toContain("Number(raw || 50)");
     expect(dedupeRoute).toContain("Math.min(50");
     const job = cronRegistry.find((entry) => entry.jobKey === "location-intelligence-dedupe-classifier");
     expect(job).toMatchObject({
