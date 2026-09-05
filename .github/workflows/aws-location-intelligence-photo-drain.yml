@@ -22,6 +22,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_PROJECT_REF: ftdsltatyqhtllyyefzp
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   TARGET: nightly-photo-backfill
@@ -41,6 +42,8 @@ jobs:
           grep -F "BATCH_SIZE: '100'" "$FILE" >/dev/null
           grep -F "MAX_BATCHES: '10'" "$FILE" >/dev/null
           grep -F 'TARGET: nightly-photo-backfill' "$FILE" >/dev/null
+          grep -F 'SUPABASE_PROJECT_REF: ftdsltatyqhtllyyefzp' "$FILE" >/dev/null
+          grep -F 'supabase functions deploy nightly-photo-backfill' "$FILE" >/dev/null
           grep -F '{function:$target,body:' "$FILE" >/dev/null
           grep -F '.runtime == "edge"' "$FILE" >/dev/null
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
@@ -56,6 +59,28 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate Supabase deploy secret
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.81.3
+
+      - name: Deploy photo worker to Virginia production
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          supabase functions deploy nightly-photo-backfill \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -105,7 +130,7 @@ jobs:
           for batch in $(seq 1 "$MAX_BATCHES"); do
             if [ "$MISSING" -eq 0 ]; then break; fi
             if [ "$LAST" -eq "$MISSING" ] && [ "$batch" -gt 2 ]; then
-              echo "Photo queue stalled at $MISSING; stopping without forcing blocked/no-photo records."
+              echo "Photo queue reached stable exceptions at $MISSING; stopping without forcing no-photo/rejected records."
               break
             fi
             LAST="$MISSING"
@@ -132,7 +157,7 @@ jobs:
           curl --silent --show-error --fail --get \
             --header "apikey: $SERVICE_ROLE" \
             --header "Authorization: Bearer $SERVICE_ROLE" \
-            --data-urlencode 'select=id,name,google_place_id,has_photos,google_photo_count,photo_discovery_status' \
+            --data-urlencode 'select=id,name,google_place_id,has_photos,photo_status,image_url,main_image' \
             --data-urlencode 'deleted_at=is.null' \
             --data-urlencode 'active=eq.true' \
             --data-urlencode 'is_hidden=eq.false' \
@@ -155,6 +180,7 @@ jobs:
             echo '### Location Intelligence photo drain'
             echo "- Missing-photo candidates before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
             echo "- Missing-photo candidates after accelerated pass: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
-            echo '- Existing photo selection, cooldown, blocked, closed, chain, and Google-photo safeguards remain authoritative.'
+            echo '- Virginia production function is deployed before the drain.'
+            echo '- Existing photo selection, blocked, closed, chain, and Google-photo safeguards remain authoritative.'
             echo '- No recurring scheduler added.'
           } >> "$GITHUB_STEP_SUMMARY"
