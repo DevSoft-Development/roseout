@@ -1,0 +1,202 @@
+name: AWS Google never-enriched final drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-google-never-enriched-final-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-google-never-enriched-final-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-google-never-enriched-final-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  MAX_RUNS: '6'
+  MAX_BATCHES_PER_RUN: '20'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate final Google drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-google-never-enriched-final-drain.yml
+          grep -F "MAX_RUNS: '6'" "$FILE" >/dev/null
+          grep -F 'never_enriched' "$FILE" >/dev/null
+          grep -F 'catalog-enrichment-runner' "$FILE" >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Final Google drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve invoker and Supabase credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain all never-enriched Google rows
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          AUTH=(-H "apikey: $SERVICE_ROLE" -H "Authorization: Bearer $SERVICE_ROLE")
+
+          count_never() {
+            local headers="$RUNNER_TEMP/never-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              "${AUTH[@]}" -H 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&active=eq.true&is_hidden=eq.false&duplicate_of=is.null&google_place_id=not.is.null&google_enriched_at=is.null&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          active_run() {
+            curl --silent --show-error --fail "${AUTH[@]}" \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_runs?select=id,status&status=in.(planned,queued,running,paused,budget_stopped)&order=created_at.asc&limit=1" \
+              | jq -r '.[0].id // empty'
+          }
+
+          run_status() {
+            local id="$1"
+            curl --silent --show-error --fail "${AUTH[@]}" \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_runs?id=eq.${id}&select=status,actual_api_calls,max_api_calls&limit=1"
+          }
+
+          run_remaining() {
+            local id="$1" headers="$RUNNER_TEMP/run-${id}.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              "${AUTH[@]}" -H 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_run_items?select=id&run_id=eq.${id}&status=in.(pending,processing)&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          start_run() {
+            local id="$1"
+            curl --silent --show-error --fail -X PATCH "${AUTH[@]}" \
+              -H 'Content-Type: application/json' -H 'Prefer: return=minimal' \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_runs?id=eq.${id}&status=in.(planned,queued)" \
+              -d '{"status":"running","last_error":null}' >/dev/null
+          }
+
+          create_run() {
+            local payload response id
+            payload="$(jq -nc '{status:"planned",mode:"repair",source_table:"locations",stale_days:90,batch_size:25,max_api_calls:1000,enable_food_probe:false,max_food_probes_per_row:0,settings:{createdFrom:"location-intelligence-completion-auto",googleAsEvidence:true,canonicalClassifier:"search-foundation-v3",market:"all",sourceType:"both",gaps:["never_enriched"],targetLimit:250,processingChunkSize:25}}')"
+            response="$(curl --silent --show-error --fail -X POST "${AUTH[@]}" \
+              -H 'Content-Type: application/json' -H 'Prefer: return=representation' \
+              "${SUPABASE_URL}/rest/v1/location_enrichment_runs?select=id" -d "$payload")"
+            id="$(jq -r '.[0].id // empty' <<<"$response")"
+            test -n "$id"
+            curl --silent --show-error --fail -X POST "${AUTH[@]}" \
+              -H 'Content-Type: application/json' \
+              "${SUPABASE_URL}/rest/v1/rpc/prepare_location_enrichment_run" \
+              -d "$(jq -nc --arg id "$id" '{p_run_id:$id}')" >/dev/null
+            start_run "$id"
+            echo "$id"
+          }
+
+          INITIAL="$(count_never)"
+          echo "Never-enriched live backlog before final drain: $INITIAL"
+          PENDING="$INITIAL"
+
+          for run_number in $(seq 1 "$MAX_RUNS"); do
+            if [ "$PENDING" -eq 0 ]; then break; fi
+            RUN_ID="$(active_run)"
+            if [ -z "$RUN_ID" ]; then RUN_ID="$(create_run)"; fi
+
+            STATUS_JSON="$(run_status "$RUN_ID")"
+            STATUS="$(jq -r '.[0].status // "missing"' <<<"$STATUS_JSON")"
+            if [ "$STATUS" = 'planned' ] || [ "$STATUS" = 'queued' ]; then start_run "$RUN_ID"; STATUS='running'; fi
+            if [ "$STATUS" = 'paused' ] || [ "$STATUS" = 'budget_stopped' ]; then
+              echo "Active run $RUN_ID requires manual budget/resume review (status=$STATUS)." >&2
+              exit 1
+            fi
+
+            for batch in $(seq 1 "$MAX_BATCHES_PER_RUN"); do
+              REMAINING="$(run_remaining "$RUN_ID")"
+              if [ "$REMAINING" -eq 0 ]; then break; fi
+              BEFORE="$REMAINING"
+              REQUEST="$RUNNER_TEMP/google-final-${run_number}-${batch}.json"
+              RESPONSE="$RUNNER_TEMP/google-final-response-${run_number}-${batch}.json"
+              jq -nc '{function:"node:/api/cron/managed?job=catalog-enrichment-runner",body:{}}' > "$REQUEST"
+              aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+              jq -e '.ok == true and .runtime == "node" and (.response.success != false)' "$RESPONSE" >/dev/null
+              AFTER="$(run_remaining "$RUN_ID")"
+              test "$AFTER" -lt "$BEFORE" || { echo "Run $RUN_ID batch $batch made no progress: $BEFORE -> $AFTER" >&2; exit 1; }
+              echo "Run $run_number batch $batch: $BEFORE -> $AFTER"
+            done
+
+            REMAINING="$(run_remaining "$RUN_ID")"
+            test "$REMAINING" -eq 0 || { echo "Run $RUN_ID hit batch cap with $REMAINING remaining." >&2; exit 1; }
+            REQUEST="$RUNNER_TEMP/google-final-close-${run_number}.json"
+            RESPONSE="$RUNNER_TEMP/google-final-close-response-${run_number}.json"
+            jq -nc '{function:"node:/api/cron/managed?job=catalog-enrichment-runner",body:{}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.response.success != false)' "$RESPONSE" >/dev/null
+
+            PENDING="$(count_never)"
+            echo "Never-enriched live backlog after run $run_number: $PENDING"
+          done
+
+          test "$PENDING" -eq 0 || { echo "Final Google drain exhausted run cap with $PENDING live never-enriched rows." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Google never-enriched final drain'
+            echo "- Live backlog before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Live backlog after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- Uses bounded 250-row audited runs and the canonical 25-row enrichment worker.'
+            echo '- No recurring scheduler added or changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
