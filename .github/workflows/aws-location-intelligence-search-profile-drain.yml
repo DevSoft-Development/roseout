@@ -1,0 +1,160 @@
+name: AWS Location Intelligence Search Profile drain
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-location-intelligence-search-profile-drain.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-location-intelligence-search-profile-drain.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-location-intelligence-search-profile-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  TARGET: /api/cron/managed?job=location-search-profile-worker
+  MAX_BATCHES: '80'
+  POLL_SECONDS: '8'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Search Profile drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-location-intelligence-search-profile-drain.yml
+          grep -F "MAX_BATCHES: '80'" "$FILE" >/dev/null
+          grep -F 'location-search-profile-worker' "$FILE" >/dev/null
+          grep -F 'needs_semantic_refresh=eq.true' "$FILE" >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Search Profile drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve runtime and credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Drain semantic refresh queue
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          count_pending() {
+            local headers="$RUNNER_TEMP/semantic-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&needs_semantic_refresh=eq.true&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+
+          INITIAL="$(count_pending)"
+          PENDING="$INITIAL"
+          LAST=-1
+          echo "Semantic refresh queue before drain: $PENDING"
+
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            if [ "$PENDING" -eq 0 ]; then break; fi
+            if [ "$LAST" -eq "$PENDING" ]; then
+              echo "Search Profile queue stalled at $PENDING; failing closed." >&2
+              exit 1
+            fi
+            LAST="$PENDING"
+            REQUEST="$RUNNER_TEMP/profile-request-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/profile-response-${batch}.json"
+            jq -nc --arg target "$TARGET" '{function:"sqs:background-cron",body:{target:$target,payload:{source:"location_intelligence_completion"}}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e --arg target "$TARGET" '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target' "$RESPONSE" >/dev/null
+            sleep "$POLL_SECONDS"
+            PENDING="$(count_pending)"
+            test "$PENDING" -lt "$LAST" || { echo "Search Profile batch $batch made no progress: before=$LAST after=$PENDING" >&2; exit 1; }
+            echo "Search Profile batch $batch: remaining=$PENDING"
+          done
+
+          test "$PENDING" -eq 0 || { echo "Search Profile drain hit batch cap with $PENDING rows remaining." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Search Profile acceptance state
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          for spec in \
+            'semantic:locations:deleted_at=is.null&needs_semantic_refresh=eq.true' \
+            'profile_review:location_search_profiles:needs_review=eq.true'; do
+            name="${spec%%:*}"
+            rest="${spec#*:}"
+            table="${rest%%:*}"
+            query="${rest#*:}"
+            headers="$RUNNER_TEMP/${name}.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" --header "Authorization: Bearer $SERVICE_ROLE" --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/${table}?select=id&${query}&limit=1"
+            count="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1)"
+            echo "$name=$count"
+            if [ "$name" = semantic ]; then test "$count" -eq 0; fi
+          done
+
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Location Intelligence Search Profile drain'
+            echo "- Semantic refresh before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Semantic refresh after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- Existing 50-row Search Profile worker preserved.'
+            echo '- No recurring scheduler added.'
+          } >> "$GITHUB_STEP_SUMMARY"
