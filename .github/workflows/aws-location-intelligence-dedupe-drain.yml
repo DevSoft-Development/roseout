@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - '.github/workflows/aws-location-intelligence-dedupe-drain.yml'
+      - 'app/api/cron/location-intelligence-dedupe-classifier/route.ts'
       - 'lib/location-intelligence/dedupeClassifier.ts'
+      - 'config/cron-jobs.json'
       - 'lib/__tests__/location-intelligence-cleanup-worker.test.ts'
   push:
     branches: [main]
@@ -27,7 +29,7 @@ env:
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
   CLASSIFIER_TARGET: /api/cron/managed?job=location-intelligence-dedupe-classifier
-  BATCH_LIMIT: '25'
+  BATCH_LIMIT: '50'
   OUTCOME_POLL_ATTEMPTS: '300'
   OUTCOME_POLL_INTERVAL_SECONDS: '4'
 
@@ -40,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=.github/workflows/aws-location-intelligence-dedupe-drain.yml
-          grep -F "BATCH_LIMIT: '25'" "$FILE" >/dev/null
+          grep -F "BATCH_LIMIT: '50'" "$FILE" >/dev/null
           grep -F "OUTCOME_POLL_ATTEMPTS: '300'" "$FILE" >/dev/null
           grep -F "OUTCOME_POLL_INTERVAL_SECONDS: '4'" "$FILE" >/dev/null
           grep -F 'sqs:background-cron' "$FILE" >/dev/null
@@ -49,11 +51,8 @@ jobs:
           grep -F 'googleCallsPerformed == 0' "$FILE" >/dev/null
           grep -F 'destructiveMergesPerformed == 0' "$FILE" >/dev/null
           grep -F 'AUTO_UNIQUE + REVIEW_DISPOSITIONED == SELECTED' "$FILE" >/dev/null
-          grep -F 'selected-published-ids.txt' "$FILE" >/dev/null
-          grep -F 'publish_ready_unique_canary' "$FILE" >/dev/null
-          grep -F 'cleanup publication provenance' "$FILE" >/dev/null
-          grep -F 'duplicate_status == "unique" or .duplicate_status == "possible_duplicate"' "$FILE" >/dev/null
-          grep -F 'priorDecisionConflicts' "$FILE" >/dev/null
+          grep -F 'diff -u "$RUNNER_TEMP/preflight-ids.txt" "$RUNNER_TEMP/outcome-ids.txt"' "$FILE" >/dev/null
+          grep -F 'all(.[]; .is_searchable == false)' "$FILE" >/dev/null
           grep -F 'location_intelligence_prior_' "$FILE" >/dev/null
           grep -F 'do not re-dispatch until late SQS execution is reconciled' "$FILE" >/dev/null
 
@@ -131,24 +130,14 @@ jobs:
             --header 'Prefer: count=exact' \
             "${SUPABASE_URL}/rest/v1/locations?select=id&quality_status=eq.publish_ready&is_searchable=eq.false&duplicate_status=eq.unknown&is_hidden=eq.false&active=eq.true&is_low_level=eq.false&deleted_at=is.null&duplicate_of=is.null&limit=1"
           UNKNOWN_BEFORE="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
-
-          SEARCH_HEADERS="$RUNNER_TEMP/searchable-before.headers"
-          curl --silent --show-error --fail \
-            --dump-header "$SEARCH_HEADERS" --output /dev/null \
-            --header "apikey: $SERVICE_ROLE" \
-            --header "Authorization: Bearer $SERVICE_ROLE" \
-            --header 'Prefer: count=exact' \
-            "${SUPABASE_URL}/rest/v1/locations?select=id&is_searchable=eq.true&deleted_at=is.null&limit=1"
-          SEARCHABLE_BEFORE="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$SEARCH_HEADERS" | tail -1)"
-
           STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
           echo "selected_expected=$SELECTED_EXPECTED" >> "$GITHUB_OUTPUT"
           echo "unknown_before=$UNKNOWN_BEFORE" >> "$GITHUB_OUTPUT"
-          echo "searchable_before=$SEARCHABLE_BEFORE" >> "$GITHUB_OUTPUT"
           echo "started_at=$STARTED_AT" >> "$GITHUB_OUTPUT"
-          echo "Guarded unknown before: $UNKNOWN_BEFORE; queue head: $SELECTED_EXPECTED; searchable: $SEARCHABLE_BEFORE"
+          echo "Guarded unknown before: $UNKNOWN_BEFORE; exact queue head: $SELECTED_EXPECTED"
 
-      - name: Enqueue one 25-row classifier batch
+      - name: Enqueue one 50-row classifier batch
         if: steps.before.outputs.selected_expected != '0'
         env:
           INVOKER: ${{ steps.runtime.outputs.invoker }}
@@ -204,7 +193,7 @@ jobs:
             and .[0].details.mode == "conservative_dedupe_classifier_v1"
             and .[0].details.googleCallsPerformed == 0
             and .[0].details.destructiveMergesPerformed == 0
-            and .[0].details.limit == 25
+            and .[0].details.limit == 50
             and .[0].details.selected == $expected
             and .[0].details.classified == $expected
             and .[0].details.failed == 0
@@ -241,7 +230,6 @@ jobs:
         env:
           KEY_FILE: ${{ steps.runtime.outputs.key_file }}
           SELECTED: ${{ steps.outcome.outputs.selected }}
-          STARTED_AT: ${{ steps.before.outputs.started_at }}
         run: |
           set -euo pipefail
           SERVICE_ROLE="$(cat "$KEY_FILE")"
@@ -253,8 +241,10 @@ jobs:
             --data-urlencode 'select=id,quality_status,is_searchable,is_hidden,active,is_low_level,deleted_at,duplicate_status,duplicate_of,last_deduped_at,duplicate_check_key' \
             --data-urlencode "id=in.(${IDS})" \
             "${SUPABASE_URL}/rest/v1/locations" > "$AUDIT"
+
           jq -e --argjson expected "$SELECTED" '
             length == $expected
+            and all(.[]; .is_searchable == false)
             and all(.[];
               (.duplicate_status == "unique" or .duplicate_status == "possible_duplicate")
               and .duplicate_of == null
@@ -262,20 +252,13 @@ jobs:
             )
           ' "$AUDIT" >/dev/null
 
-          : > "$RUNNER_TEMP/selected-published-ids.txt"
           while read -r id; do
             [ -n "$id" ] || continue
             jq -e --arg id "$id" '.[] | select(.id == $id) |
-              .duplicate_status == "unique" and .duplicate_of == null and .last_deduped_at != null' "$AUDIT" >/dev/null
-            if jq -e --arg id "$id" '.[] | select(.id == $id) | .is_searchable == true' "$AUDIT" >/dev/null; then
-              jq -e --arg id "$id" '.[] | select(.id == $id) |
-                .quality_status == "publish_ready"
-                and .is_hidden == false
-                and .active == true
-                and .is_low_level == false
-                and .deleted_at == null' "$AUDIT" >/dev/null
-              echo "$id" >> "$RUNNER_TEMP/selected-published-ids.txt"
-            fi
+              .duplicate_status == "unique"
+              and .is_searchable == false
+              and .duplicate_of == null
+              and .last_deduped_at != null' "$AUDIT" >/dev/null
           done < "$RUNNER_TEMP/auto-unique-ids.txt"
 
           while read -r id; do
@@ -302,58 +285,12 @@ jobs:
               and (.duplicate_check_key | startswith("location_intelligence_prior_"))' "$AUDIT" >/dev/null
           done < "$RUNNER_TEMP/prior-conflict-ids.txt"
 
-          if [ -s "$RUNNER_TEMP/selected-published-ids.txt" ]; then
-            PUBLISHED_IDS="$(paste -sd, "$RUNNER_TEMP/selected-published-ids.txt")"
-            PROFILES="$RUNNER_TEMP/selected-published-profiles.json"
-            curl --silent --show-error --fail --get \
-              --header "apikey: $SERVICE_ROLE" \
-              --header "Authorization: Bearer $SERVICE_ROLE" \
-              --data-urlencode 'select=location_id,needs_review,review_reasons' \
-              --data-urlencode "location_id=in.(${PUBLISHED_IDS})" \
-              "${SUPABASE_URL}/rest/v1/location_search_profiles" > "$PROFILES"
-            EXPECTED_PUBLISHED="$(grep -c . "$RUNNER_TEMP/selected-published-ids.txt")"
-            jq -e --argjson expected "$EXPECTED_PUBLISHED" '
-              length == $expected
-              and all(.[]; .needs_review == false and ((.review_reasons // []) | index("unsupported_non_outing") | not))
-            ' "$PROFILES" >/dev/null
-
-            while read -r id; do
-              [ -n "$id" ] || continue
-              CLEANUP="$RUNNER_TEMP/cleanup-provenance-${id}.json"
-              FOUND=0
-              for attempt in $(seq 1 12); do
-                curl --silent --show-error --fail --get \
-                  --header "apikey: $SERVICE_ROLE" \
-                  --header "Authorization: Bearer $SERVICE_ROLE" \
-                  --data-urlencode 'select=id,status,details' \
-                  --data-urlencode 'job_key=eq.location-intelligence-cleanup-worker' \
-                  --data-urlencode "started_at=gte.${STARTED_AT}" \
-                  --data-urlencode 'order=started_at.desc' \
-                  --data-urlencode 'limit=50' \
-                  "${SUPABASE_URL}/rest/v1/cron_job_runs" > "$CLEANUP"
-                if jq -e --arg id "$id" 'any(.[];
-                  .status == "success"
-                  and .details.mode == "publish_ready_unique_canary"
-                  and .details.googleCallsPerformed == 0
-                  and .details.failed == 0
-                  and ((.details.publishedLocationIds // []) | index($id) != null)
-                )' "$CLEANUP" >/dev/null; then
-                  FOUND=1
-                  break
-                fi
-                sleep 2
-              done
-              test "$FOUND" = 1 || { echo "selected searchable row lacks cleanup publication provenance: $id" >&2; exit 1; }
-            done < "$RUNNER_TEMP/selected-published-ids.txt"
-          fi
-
-      - name: Prove queue progress and cleanup publication provenance
+      - name: Prove exact queue progress and no destructive writes
         id: progress
         if: steps.before.outputs.selected_expected != '0'
         env:
           KEY_FILE: ${{ steps.runtime.outputs.key_file }}
           UNKNOWN_BEFORE: ${{ steps.before.outputs.unknown_before }}
-          SEARCHABLE_BEFORE: ${{ steps.before.outputs.searchable_before }}
           SELECTED: ${{ steps.outcome.outputs.selected }}
           STARTED_AT: ${{ steps.before.outputs.started_at }}
         run: |
@@ -369,16 +306,6 @@ jobs:
           UNKNOWN_AFTER="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$HEADERS" | tail -1)"
           test "$UNKNOWN_AFTER" -eq $((UNKNOWN_BEFORE - SELECTED)) || { echo "guarded unknown backlog did not decrease by exactly selected count: before=$UNKNOWN_BEFORE selected=$SELECTED after=$UNKNOWN_AFTER" >&2; exit 1; }
 
-          SEARCH_HEADERS="$RUNNER_TEMP/searchable-after.headers"
-          curl --silent --show-error --fail \
-            --dump-header "$SEARCH_HEADERS" --output /dev/null \
-            --header "apikey: $SERVICE_ROLE" \
-            --header "Authorization: Bearer $SERVICE_ROLE" \
-            --header 'Prefer: count=exact' \
-            "${SUPABASE_URL}/rest/v1/locations?select=id&is_searchable=eq.true&deleted_at=is.null&limit=1"
-          SEARCHABLE_AFTER="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$SEARCH_HEADERS" | tail -1)"
-          echo "Searchable inventory observed: before=$SEARCHABLE_BEFORE after=$SEARCHABLE_AFTER (cleanup may publish concurrently)."
-
           DUP_HEADERS="$RUNNER_TEMP/duplicate-writes.headers"
           curl --silent --show-error --fail \
             --dump-header "$DUP_HEADERS" --output /dev/null \
@@ -389,10 +316,7 @@ jobs:
           DUPLICATE_WRITES="$(awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$DUP_HEADERS" | tail -1)"
           test "$DUPLICATE_WRITES" = 0 || { echo 'classifier drain observed a duplicate-status write.' >&2; exit 1; }
 
-          PUBLISHED_SELECTED="$(grep -c . "$RUNNER_TEMP/selected-published-ids.txt" || true)"
           echo "unknown_after=$UNKNOWN_AFTER" >> "$GITHUB_OUTPUT"
-          echo "searchable_after=$SEARCHABLE_AFTER" >> "$GITHUB_OUTPUT"
-          echo "selected_published_by_cleanup=$PUBLISHED_SELECTED" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup credential file
         if: always()
@@ -410,13 +334,14 @@ jobs:
             echo "- Classifier outcome observation window: up to $((OUTCOME_POLL_ATTEMPTS * OUTCOME_POLL_INTERVAL_SECONDS / 60)) minutes"
             echo '- Execution: central AWS scheduler invoker → background SQS → private AWS background runtime'
             echo '- Activation: explicit workflow dispatch only; merge/push validates but does not classify'
+            echo '- Exact selected-ID audit: required for every row'
+            echo '- Selected rows must remain non-searchable during classifier audit'
             echo '- Google calls: 0'
             echo '- Destructive merges: 0'
-            echo '- Classifier never publishes locations; any selected searchable row must have successful guarded cleanup provenance'
             echo "- Guarded unknown before: \`${{ steps.before.outputs.unknown_before || 'unknown' }}\`"
+            echo "- Guarded unknown after: \`${{ steps.progress.outputs.unknown_after || 'unknown' }}\`"
             echo "- Selected: \`${{ steps.outcome.outputs.selected || '0' }}\`"
             echo "- Auto-unique: \`${{ steps.outcome.outputs.auto_unique || '0' }}\`"
             echo "- Review dispositions: \`${{ steps.outcome.outputs.review_dispositioned || '0' }}\`"
             echo "- Prior-decision conflicts quarantined: \`${{ steps.outcome.outputs.prior_conflicts || '0' }}\`"
-            echo "- Selected rows published by guarded cleanup during audit: \`${{ steps.progress.outputs.selected_published_by_cleanup || '0' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
