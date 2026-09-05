@@ -24,10 +24,10 @@ env:
   EDGE_STACK_NAME: theouthaven-edge-runtime-production
   SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
-  TARGET: edge:nightly-photo-backfill
+  TARGET: nightly-photo-backfill
   MAX_BATCHES: '10'
   BATCH_SIZE: '100'
-  POLL_SECONDS: '15'
+  POLL_SECONDS: '5'
 
 jobs:
   validate:
@@ -40,8 +40,9 @@ jobs:
           FILE=.github/workflows/aws-location-intelligence-photo-drain.yml
           grep -F "BATCH_SIZE: '100'" "$FILE" >/dev/null
           grep -F "MAX_BATCHES: '10'" "$FILE" >/dev/null
-          grep -F 'edge:nightly-photo-backfill' "$FILE" >/dev/null
-          grep -F 'textSearchLimit' "$FILE" >/dev/null || true
+          grep -F 'TARGET: nightly-photo-backfill' "$FILE" >/dev/null
+          grep -F '{function:$target,body:' "$FILE" >/dev/null
+          grep -F '.runtime == "edge"' "$FILE" >/dev/null
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
             echo 'Photo drain must never add a recurring GitHub timer.' >&2
             exit 1
@@ -111,9 +112,9 @@ jobs:
             REQUEST="$RUNNER_TEMP/photo-request-${batch}.json"
             RESPONSE="$RUNNER_TEMP/photo-response-${batch}.json"
             jq -nc --arg target "$TARGET" --argjson size "$BATCH_SIZE" \
-              '{function:"sqs:background-cron",body:{target:$target,payload:{source:"location_intelligence_completion",batchSize:$size,skipChains:true,includeChains:false,includeTheaters:false,includeLowPriority:false,onlySearchable:false,onlyPublishReady:false}}}' > "$REQUEST"
+              '{function:$target,body:{source:"location_intelligence_completion",batchSize:$size,skipChains:true,includeChains:false,includeTheaters:false,includeLowPriority:false,onlySearchable:false,onlyPublishReady:false}}' > "$REQUEST"
             aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
-            jq -e --arg target "$TARGET" '.ok == true and .runtime == "sqs" and .queue == "background-cron" and .target == $target and (.messageId | type == "string")' "$RESPONSE" >/dev/null
+            jq -e --arg target "$TARGET" '.ok == true and .runtime == "edge" and .function == $target and (.status >= 200 and .status < 300)' "$RESPONSE" >/dev/null
             sleep "$POLL_SECONDS"
             MISSING="$(count_missing)"
             echo "Photo batch $batch: missing=$MISSING"
