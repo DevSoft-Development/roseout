@@ -45,6 +45,8 @@ jobs:
           grep -F 'worker-reliability-soak' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
           grep -F 'search-ml-train-evaluate-promote' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
           grep -F 'arn:aws:scheduler:::aws-sdk:codebuild:startBuild' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
+          grep -F 'codebuild:CreateProject' .github/workflows/aws-ops-scheduled-runtime.yml >/dev/null
+          grep -F 'describe-stack-events' .github/workflows/aws-ops-scheduled-runtime.yml >/dev/null
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
           test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '65'
 
@@ -63,6 +65,44 @@ jobs:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Bootstrap CodeBuild deployment permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/ops-codebuild-bootstrap.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"OpsScheduledCodeBuildBootstrap",
+                "Effect":"Allow",
+                "Action":[
+                  "codebuild:CreateProject",
+                  "codebuild:UpdateProject",
+                  "codebuild:DeleteProject",
+                  "codebuild:BatchGetProjects",
+                  "codebuild:ListProjects",
+                  "codebuild:TagResource",
+                  "codebuild:UntagResource"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenOpsCodeBuildBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenOpsCodeBuildBootstrap \
+            --query PolicyName --output text >/dev/null
+          sleep 8
 
       - name: Validate required migration configuration
         env:
@@ -115,12 +155,26 @@ jobs:
             --template-body file://infra/aws/cloudformation/ops-scheduled-runtime.yml \
             >/dev/null
 
+      - name: Recover rolled-back ops stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = 'ROLLBACK_COMPLETE' ]; then
+            echo 'Previous create failure events:'
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            aws cloudformation delete-stack --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+          fi
+
       - name: Deploy AWS scheduled operations runtime
         env:
           AWS_BACKUP_BUCKET: ${{ vars.AWS_BACKUP_BUCKET }}
         run: |
           set -euo pipefail
-          aws cloudformation deploy \
+          if ! aws cloudformation deploy \
             --stack-name "$STACK_NAME" \
             --template-file infra/aws/cloudformation/ops-scheduled-runtime.yml \
             --capabilities CAPABILITY_NAMED_IAM \
@@ -129,7 +183,14 @@ jobs:
               Environment=production \
               BackupBucketName="$AWS_BACKUP_BUCKET" \
               OpsSecretName="$OPS_SECRET_NAME" \
-              RepositoryRef=main
+              RepositoryRef=main; then
+            echo 'CloudFormation failure events:' >&2
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+              --output table || true
+            exit 1
+          fi
 
       - name: Verify four enabled AWS ops schedules
         run: |
