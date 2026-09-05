@@ -5,11 +5,37 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
-const CONCURRENCY = 8;
+const CONCURRENCY = 2;
 const DEFAULT_STALE_DAYS = 30;
+const MAX_RATE_LIMIT_RETRIES = 3;
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /http_429|rate.?limit|too many requests/i.test(message);
+}
+
+async function getPlaceDetailsWithRetry(placeId: string) {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+    try {
+      return await getPlaceDetailsNew(placeId);
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimitError(error) || attempt === MAX_RATE_LIMIT_RETRIES) throw error;
+      await wait(attempt * 500);
+    }
+  }
+
+  throw lastError;
 }
 
 async function mapConcurrent<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>) {
@@ -53,7 +79,7 @@ export async function processGoogleLifecycleRefresh(limit = DEFAULT_LIMIT, stale
     if (!placeId) return { id: row.id, status: "skipped" as const, reason: "missing_place_id" };
 
     try {
-      const place = await getPlaceDetailsNew(placeId) as unknown as Record<string, unknown>;
+      const place = await getPlaceDetailsWithRetry(placeId) as unknown as Record<string, unknown>;
       const businessStatus = clean(place.businessStatus) || "BUSINESS_STATUS_UNSPECIFIED";
       const movedPlace = clean(place.movedPlace) || null;
       const movedPlaceId = clean(place.movedPlaceId) || null;
