@@ -50,6 +50,7 @@ jobs:
           grep -F 'CONCURRENCY = 2' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
           grep -F 'MAX_RATE_LIMIT_RETRIES = 3' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
           grep -F 'MAX_LIMIT = 100' lib/location-data-quality/google-lifecycle-refresh.ts >/dev/null
+          grep -F 'REQUIRE_INTEGRATION_DEPLOY=false' .github/workflows/aws-google-lifecycle-completion-drain.yml >/dev/null
           python -m py_compile infra/aws/lambda/google_places_provider.py
           if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' .github/workflows/aws-google-lifecycle-completion-drain.yml; then
             echo 'Lifecycle completion drain must never add a recurring GitHub timer.' >&2
@@ -65,7 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 2
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -74,25 +75,39 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Wait for background and Integration API deployments
+      - name: Wait for required lifecycle runtime deployments
         run: |
           set -euo pipefail
           COMMIT_EPOCH="$(git show -s --format=%ct HEAD)"
+          REQUIRE_INTEGRATION_DEPLOY=false
+          if git diff-tree --no-commit-id --name-only -r HEAD | grep -Fx 'infra/aws/lambda/google_places_provider.py' >/dev/null; then
+            REQUIRE_INTEGRATION_DEPLOY=true
+          fi
+
           INTEGRATION_FUNCTION="$(aws cloudformation describe-stacks --stack-name "$INTEGRATION_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='IntegrationApiFunctionName'].OutputValue" --output text)"
           test -n "$INTEGRATION_FUNCTION" && test "$INTEGRATION_FUNCTION" != 'None'
+
           for attempt in $(seq 1 60); do
             BG_MODIFIED="$(aws lambda get-function-configuration --function-name "$BACKGROUND_FUNCTION" --query LastModified --output text)"
-            INT_MODIFIED="$(aws lambda get-function-configuration --function-name "$INTEGRATION_FUNCTION" --query LastModified --output text)"
             BG_EPOCH="$(date -d "$BG_MODIFIED" +%s)"
-            INT_EPOCH="$(date -d "$INT_MODIFIED" +%s)"
-            if [ "$BG_EPOCH" -ge "$COMMIT_EPOCH" ] && [ "$INT_EPOCH" -ge "$COMMIT_EPOCH" ]; then
-              echo "Both runtimes are deployed."
+            BG_READY=false
+            if [ "$BG_EPOCH" -ge "$COMMIT_EPOCH" ]; then BG_READY=true; fi
+
+            INT_READY=true
+            if [ "$REQUIRE_INTEGRATION_DEPLOY" = true ]; then
+              INT_MODIFIED="$(aws lambda get-function-configuration --function-name "$INTEGRATION_FUNCTION" --query LastModified --output text)"
+              INT_EPOCH="$(date -d "$INT_MODIFIED" +%s)"
+              if [ "$INT_EPOCH" -lt "$COMMIT_EPOCH" ]; then INT_READY=false; fi
+            fi
+
+            if [ "$BG_READY" = true ] && [ "$INT_READY" = true ]; then
+              echo "Required lifecycle runtimes are deployed. integration_required=$REQUIRE_INTEGRATION_DEPLOY"
               exit 0
             fi
-            echo "Waiting for lifecycle runtimes ($attempt/60)..."
+            echo "Waiting for lifecycle runtimes ($attempt/60): background_ready=$BG_READY integration_required=$REQUIRE_INTEGRATION_DEPLOY integration_ready=$INT_READY"
             sleep 15
           done
-          echo 'Lifecycle runtimes did not deploy to the merged revision in time; failing closed.' >&2
+          echo 'Required lifecycle runtimes did not deploy to the merged revision in time; failing closed.' >&2
           exit 1
 
       - name: Resolve invoker and Supabase credential
@@ -184,5 +199,6 @@ jobs:
             echo '- Captures business status plus movedPlace/movedPlaceId.'
             echo '- Claimed-location closure safety remains database-enforced.'
             echo '- Existing hourly catalog schedule now maintains 30-day lifecycle freshness.'
+            echo '- Integration API deployment freshness is required only when the provider changed.'
             echo '- No recurring scheduler added.'
           } >> "$GITHUB_STEP_SUMMARY"
