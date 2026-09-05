@@ -17,8 +17,8 @@ function isPrivateAwsBackgroundRequest(request: Request) {
 
 function requestedLimit(request: Request) {
   const raw = new URL(request.url).searchParams.get("limit");
-  const parsed = Number(raw || 10);
-  return Number.isFinite(parsed) ? Math.max(1, Math.min(10, Math.trunc(parsed))) : 10;
+  const parsed = Number(raw || 25);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(25, Math.trunc(parsed))) : 25;
 }
 
 export async function GET(request: Request) {
