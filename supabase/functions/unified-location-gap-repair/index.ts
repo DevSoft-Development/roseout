@@ -27,7 +27,7 @@ const MAX_TEXT_SEARCH_LIMIT = 5;
 const DEFAULT_MENU_DISCOVERY_LIMIT = 5;
 const MAX_MENU_DISCOVERY_LIMIT = 10;
 const DEFAULT_MENU_CONTENT_LIMIT = 5;
-const MAX_MENU_CONTENT_LIMIT = 5;
+const MAX_MENU_CONTENT_LIMIT = 10;
 const MENU_REFRESH_DAYS = 30;
 const GOOGLE_NO_DATA_COOLDOWN_HOURS = 24 * 90;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -208,6 +208,7 @@ serve(async (req) => {
     { data: cachedRows, error: cachedError },
     { data: backlogRows, error: backlogError },
     { data: menuRows, error: menuError },
+    { data: menuIntelligenceRows, error: menuIntelligenceError },
   ] = await Promise.all([
     supabase.from("locations")
       .select(selectFields)
@@ -238,8 +239,17 @@ serve(async (req) => {
       .not("website", "is", null)
       .order("menu_discovery_checked_at", { ascending: true, nullsFirst: true })
       .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),
-  ]);
-  if (identityError || cachedError || backlogError || menuError) return json({ error: (identityError || cachedError || backlogError || menuError)?.message || "Failed to load repair candidates" }, 500);
+  supabase.from("locations")
+    .select(selectFields)
+    .is("deleted_at", null)
+    .eq("location_type", "restaurant")
+    .not("website", "is", null)
+    .not("menu_url", "is", null)
+    .or(`menu_intelligence_version.is.null,menu_intelligence_version.neq.${MENU_INTELLIGENCE_VERSION}`)
+    .order("menu_intelligence_checked_at", { ascending: true, nullsFirst: true })
+    .limit(Math.max(menuDiscoveryLimit * 6, menuDiscoveryLimit)),
+]);
+  if (identityError || cachedError || backlogError || menuError || menuIntelligenceError) return json({ error: (identityError || cachedError || backlogError || menuError || menuIntelligenceError)?.message || "Failed to load repair candidates" }, 500);
 
   const mergedRows = [...(identityRows || []), ...(cachedRows || []), ...(backlogRows || [])].filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index);
   const primaryCandidates = mergedRows.filter((row: any) => {
@@ -257,7 +267,8 @@ serve(async (req) => {
   }).sort((left: any, right: any) => reservationRecoveryPriority(left) - reservationRecoveryPriority(right)).slice(0, limit);
 
   const selectedIds = new Set(primaryCandidates.map((row: any) => String(row.id)));
-  const menuCandidates = (menuRows || [])
+  const menuCandidates = [...(menuIntelligenceRows || []), ...(menuRows || [])]
+    .filter((row: any, index, all) => all.findIndex((candidate: any) => candidate.id === row.id) === index)
     .filter((row: any) => row.is_demo !== true && menuDue(row, now.getTime()))
     .filter((row: any) => !selectedIds.has(String(row.id)))
     .slice(0, menuDiscoveryLimit);
