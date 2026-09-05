@@ -2,6 +2,7 @@ import {
   escapeRegex,
   type LocationFoodTermPatch,
 } from "../search/enterprise/location-food-terms";
+import { getPlaceDetailsNew, searchPlacesTextNew } from "./places-new-client";
 
 export type GoogleLocationLike = Record<string, any> & {
   id?: string;
@@ -193,12 +194,6 @@ const GOOGLE_EXPLICIT_FEATURE_TERMS = [
   "waterfront",
   "fireplace",
 ];
-
-function googleApiKey() {
-  const key = process.env.GOOGLE_PLACES_API_KEY?.trim();
-  if (!key) throw new Error("Missing GOOGLE_PLACES_API_KEY");
-  return key;
-}
 
 function locationName(location: GoogleLocationLike) {
   return [location.name, location.restaurant_name, location.activity_name]
@@ -458,20 +453,8 @@ export async function findGooglePlaceForLocation(location: GoogleLocationLike): 
     return { place: null, confidence: 0, status: "no_match", candidates: [], evidence: { reason: "missing_query" } };
   }
 
-  const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": googleApiKey(),
-      "X-Goog-FieldMask": GOOGLE_TEXT_SEARCH_FIELD_MASK,
-    },
-    body: JSON.stringify({ textQuery: query, maxResultCount: 5 }),
-  });
-
-  if (!response.ok) throw new Error(`Google Text Search failed: ${response.status} ${await response.text()}`);
-
-  const data = await response.json();
-  const candidates = ((data.places || []) as GooglePlace[])
+  const places = await searchPlacesTextNew(query, { pageSize: 5, regionCode: "US" });
+  const candidates = (places as GooglePlace[])
     .map((place) => ({ place, ...calculateGoogleMatchConfidence(location, place) }))
     .sort((a, b) => b.confidence - a.confidence);
   const best = candidates[0];
@@ -488,15 +471,7 @@ export async function findGooglePlaceForLocation(location: GoogleLocationLike): 
 }
 
 export async function getGooglePlaceDetails(placeId: string): Promise<GooglePlace> {
-  const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
-    headers: {
-      "X-Goog-Api-Key": googleApiKey(),
-      "X-Goog-FieldMask": GOOGLE_PLACE_DETAILS_FIELD_MASK,
-    },
-  });
-
-  if (!response.ok) throw new Error(`Google Place Details failed: ${response.status} ${await response.text()}`);
-  return response.json();
+  return await getPlaceDetailsNew(placeId) as GooglePlace;
 }
 
 function containsPhrase(haystack: string, phrase: string) {
