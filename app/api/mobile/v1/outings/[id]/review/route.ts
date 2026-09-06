@@ -73,52 +73,56 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
   if (updateError) return mobileError("REVIEW_SAVE_FAILED", "Your feedback could not be saved yet.", 500);
 
-  const reviews: Array<Record<string, unknown>> = [];
-  const addLocationReview = async (kind: "restaurant" | "activity", locationId: string | null, rating: number | null, reviewText: string | null) => {
-    if (!locationId || !rating || !reviewText || reviewText.length < 30) return;
-    const ai = await analyzeReview(reviewText);
-    const row: Record<string, unknown> = {
-      location_id: locationId,
-      location_type: kind,
-      user_id: identity.userId,
-      rating,
-      review_text: reviewText,
-      title: kind === "restaurant" ? "Restaurant review" : "Activity review",
-      body: reviewText,
-      status: "pending",
-      verified_visit: false,
-      verification_source: "mobile_completed_user_outing",
-      metadata: { user_outing_id: id, source: "mobile", completed_at: outing.completed_at || null },
-      ai_keywords: Array.isArray(ai.keywords) ? ai.keywords : [],
-      ai_sentiment: ai.sentiment || "neutral",
-      ai_score_boost: Math.max(-10, Math.min(10, Number(ai.score_boost || 0))),
-      vibe: ai.vibe || "casual",
-      noise_level: ai.noise_level || "moderate",
-      date_night: Boolean(ai.date_night),
-      group_friendly: Boolean(ai.group_friendly),
-      family_friendly: Boolean(ai.family_friendly),
-      occasion_fit: Array.isArray(ai.occasion_fit) ? ai.occasion_fit : [],
-      service_quality: ai.service_quality || "mixed",
-      food_quality: ai.food_quality || "mixed",
-      ambiance_quality: ai.ambiance_quality || "mixed",
-      price_feeling: ai.price_feeling || "fair",
-      wait_time: ai.wait_time || "unknown",
-      reservation_recommended: Boolean(ai.reservation_recommended),
-      best_for: Array.isArray(ai.best_for) ? ai.best_for : [],
-      avoid_if: Array.isArray(ai.avoid_if) ? ai.avoid_if : [],
-    };
-    if (kind === "restaurant") row.restaurant_id = locationId;
-    else row.activity_id = locationId;
-    reviews.push(row);
-  };
-
-  await addLocationReview("restaurant", outing.restaurant_id || null, restaurantRating, restaurantFeedback);
-  await addLocationReview("activity", outing.activity_id || null, activityRating, activityFeedback);
-
   let publicReviewIds: string[] = [];
-  if (reviews.length) {
-    const { data, error } = await admin.from("location_reviews").insert(reviews).select("id");
-    if (!error && data) publicReviewIds = data.map((item: any) => String(item.id));
+  try {
+    const reviews: Array<Record<string, unknown>> = [];
+    const addLocationReview = async (kind: "restaurant" | "activity", locationId: string | null, rating: number | null, reviewText: string | null) => {
+      if (!locationId || !rating || !reviewText || reviewText.length < 30) return;
+      const ai = await analyzeReview(reviewText);
+      const row: Record<string, unknown> = {
+        location_id: locationId,
+        location_type: kind,
+        user_id: identity.userId,
+        rating,
+        review_text: reviewText,
+        title: kind === "restaurant" ? "Restaurant review" : "Activity review",
+        body: reviewText,
+        status: "pending",
+        verified_visit: false,
+        verification_source: "mobile_completed_user_outing",
+        metadata: { user_outing_id: id, source: "mobile", completed_at: outing.completed_at || null },
+        ai_keywords: Array.isArray(ai.keywords) ? ai.keywords : [],
+        ai_sentiment: ai.sentiment || "neutral",
+        ai_score_boost: Math.max(-10, Math.min(10, Number(ai.score_boost || 0))),
+        vibe: ai.vibe || "casual",
+        noise_level: ai.noise_level || "moderate",
+        date_night: Boolean(ai.date_night),
+        group_friendly: Boolean(ai.group_friendly),
+        family_friendly: Boolean(ai.family_friendly),
+        occasion_fit: Array.isArray(ai.occasion_fit) ? ai.occasion_fit : [],
+        service_quality: ai.service_quality || "mixed",
+        food_quality: ai.food_quality || "mixed",
+        ambiance_quality: ai.ambiance_quality || "mixed",
+        price_feeling: ai.price_feeling || "fair",
+        wait_time: ai.wait_time || "unknown",
+        reservation_recommended: Boolean(ai.reservation_recommended),
+        best_for: Array.isArray(ai.best_for) ? ai.best_for : [],
+        avoid_if: Array.isArray(ai.avoid_if) ? ai.avoid_if : [],
+      };
+      if (kind === "restaurant") row.restaurant_id = locationId;
+      else row.activity_id = locationId;
+      reviews.push(row);
+    };
+
+    await addLocationReview("restaurant", outing.restaurant_id || null, restaurantRating, restaurantFeedback);
+    await addLocationReview("activity", outing.activity_id || null, activityRating, activityFeedback);
+
+    if (reviews.length) {
+      const { data, error } = await admin.from("location_reviews").insert(reviews).select("id");
+      if (!error && data) publicReviewIds = data.map((item: any) => String(item.id));
+    }
+  } catch (error) {
+    console.warn("MOBILE_LOCATION_REVIEW_ENRICHMENT_FAILED", error instanceof Error ? error.message : error);
   }
 
   await trackEvent({
