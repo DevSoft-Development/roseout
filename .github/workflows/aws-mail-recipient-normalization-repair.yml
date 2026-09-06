@@ -42,7 +42,8 @@ jobs:
             'recipient_domain_not_allowed' \
             'ADMIN_RESERVATION_DIGEST_EMAIL' \
             'SEARCH_HEALTH_ALERT_EMAILS' \
-            'put-secret-value'; do
+            'put-secret-value' \
+            'result.pop(key, None)'; do
             grep -F "$token" "$FILE" >/dev/null
           done
 
@@ -142,15 +143,21 @@ jobs:
                       raise SystemExit('recipient_domain_not_allowed')
                   if address not in addresses:
                       addresses.append(address)
-              if not addresses:
-                  raise SystemExit('configured_digest_recipient_list_empty')
               return ','.join(addresses)
 
           def canonicalize(doc):
               result = dict(doc)
               for key in recipient_keys:
-                  if key in result and result[key] not in (None, ''):
-                      result[key] = normalize(result[key])
+                  if key not in result or result[key] in (None, ''):
+                      continue
+                  normalized = normalize(result[key])
+                  if normalized:
+                      result[key] = normalized
+                  else:
+                      # Optional digest-specific overrides may intentionally be an
+                      # empty JSON/list value. Remove them so the runtime's normal
+                      # ADMIN/SUPERADMIN fallback chain remains authoritative.
+                      result.pop(key, None)
               return result
 
           edge = canonicalize(json.loads(Path(os.environ['EDGE_CURRENT']).read_text()))
@@ -175,6 +182,15 @@ jobs:
           missing = [name for name, value in groups.items() if not value]
           if missing:
               raise SystemExit('missing_configured_digest_recipient')
+
+          # Every final resolved group must still be canonical and internal.
+          for value in groups.values():
+              for _, address in getaddresses([value]):
+                  address = address.strip().lower()
+                  if not email_re.fullmatch(address):
+                      raise SystemExit('configured_digest_recipient_invalid')
+                  if address.rsplit('@', 1)[1] != expected_domain:
+                      raise SystemExit('recipient_domain_not_allowed')
 
           Path(os.environ['EDGE_NORMALIZED']).write_text(json.dumps(edge, separators=(',', ':'), sort_keys=True))
           Path(os.environ['SHARED_NORMALIZED']).write_text(json.dumps(shared, separators=(',', ':'), sort_keys=True))
