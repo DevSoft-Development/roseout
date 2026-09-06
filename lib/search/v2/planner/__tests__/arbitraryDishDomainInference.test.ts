@@ -21,6 +21,15 @@ describe("Search V2 system-wide arbitrary dish inference", () => {
     expect(plan.geo.borough).toBe("Queens");
   });
 
+  it("treats rasta pasta as a restaurant dish without forcing Italian cuisine", async () => {
+    const plan = await buildSearchPlan({ input: { query: "rasta pasta" } });
+
+    expect(plan.restaurant.required).toBe(true);
+    expect(plan.restaurant.foods).toContain("rasta pasta");
+    expect(plan.restaurant.foods).toContain("pasta");
+    expect(plan.restaurant.cuisines).not.toContain("italian");
+  });
+
   it("passes the full arbitrary dish phrase into retrieval evidence", async () => {
     const plan = await buildSearchPlan({ input: { query: "cacio e pepe in Queens" } });
     const request = buildRetrievalRequests(plan).find((item) => item.desiredRole === "restaurant");
