@@ -36,5 +36,5 @@ jobs:
       - name: Verify canonical AWS manifests
         run: |
           set -euo pipefail
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '61'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
