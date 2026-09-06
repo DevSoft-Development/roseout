@@ -19,35 +19,41 @@ type Opportunity = {
   reservation_upgrade_detected_at: string | null;
   reservation_outreach_status: string | null;
   reservation_outreach_notes?: string | null;
+  reservation_opportunity_score?: number | null;
+  reservation_opportunity_tier?: string | null;
+  reservation_opportunity_classification?: string | null;
+  reservation_opportunity_evidence?: unknown;
 };
 
 type OpportunitiesResponse = {
   success?: boolean;
   total?: number;
-  limit?: number;
-  offset?: number;
-  nextOffset?: number;
   summary?: Record<string, number>;
   opportunities?: Opportunity[];
   error?: string;
 };
 
-const statusOptions = [
-  "not_contacted",
-  "contacted",
-  "interested",
-  "not_interested",
-  "claimed",
-  "onboarded",
-];
+const statusOptions = ["not_contacted", "contacted", "interested", "not_interested", "claimed", "onboarded"];
+const tierOptions = ["high", "medium", "low"];
+const classificationOptions = ["takes_reservations_offline", "no_online_reservations", "walk_in_likely"];
 
-function prettyStatus(status: string | null | undefined) {
-  return (status || "not_contacted").replaceAll("_", " ");
+function pretty(value: string | null | undefined) {
+  return (value || "unknown").replaceAll("_", " ");
 }
 
-function getNumber(value: unknown) {
+function num(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function evidence(value: unknown) {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function tierClass(tier: string | null | undefined) {
+  if (tier === "high") return "border-emerald-300/20 bg-emerald-500/10 text-emerald-100";
+  if (tier === "medium") return "border-amber-300/20 bg-amber-500/10 text-amber-100";
+  return "border-white/10 bg-white/5 text-white/60";
 }
 
 export default function ReservationOpportunitiesClient() {
@@ -55,435 +61,138 @@ export default function ReservationOpportunitiesClient() {
   const [state, setState] = useState("");
   const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
-  const [minRating, setMinRating] = useState("");
+  const [tier, setTier] = useState("");
+  const [classification, setClassification] = useState("");
+  const [minScore, setMinScore] = useState("");
   const [q, setQ] = useState("");
-  const [limit] = useState(20);
   const [offset, setOffset] = useState(0);
+  const limit = 20;
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [data, setData] = useState<OpportunitiesResponse | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const params = useMemo(() => {
-    const search = new URLSearchParams({
-      limit: String(limit),
-      offset: String(offset),
-    });
-    if (city.trim()) search.set("city", city.trim());
-    if (state.trim()) search.set("state", state.trim());
-    if (category.trim()) search.set("category", category.trim());
-    if (status) search.set("status", status);
-    if (minRating.trim()) search.set("minRating", minRating.trim());
-    if (q.trim()) search.set("q", q.trim());
-    return search;
-  }, [category, city, limit, minRating, offset, q, state, status]);
+    const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (city.trim()) p.set("city", city.trim());
+    if (state.trim()) p.set("state", state.trim());
+    if (category.trim()) p.set("category", category.trim());
+    if (status) p.set("status", status);
+    if (tier) p.set("tier", tier);
+    if (classification) p.set("classification", classification);
+    if (minScore.trim()) p.set("minScore", minScore.trim());
+    if (q.trim()) p.set("q", q.trim());
+    return p;
+  }, [category, city, classification, minScore, offset, q, state, status, tier]);
 
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/admin/reservation-opportunities?${params.toString()}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch(`/api/admin/reservation-opportunities?${params.toString()}`, { cache: "no-store" });
       const json = (await response.json()) as OpportunitiesResponse;
       setData(json);
       const nextNotes: Record<string, string> = {};
-      for (const opportunity of json.opportunities || [])
-        nextNotes[opportunity.id] =
-          opportunity.reservation_outreach_notes || "";
+      for (const row of json.opportunities || []) nextNotes[row.id] = row.reservation_outreach_notes || "";
       setNotes(nextNotes);
-      if (!response.ok || json.success === false)
-        alert(json.error || "Failed to load opportunities");
+      if (!response.ok || json.success === false) alert(json.error || "Failed to load Reserve opportunities");
     } catch (error) {
-      console.error("Failed to load reservation opportunities:", error);
-      alert("Failed to load opportunities");
+      console.error("Failed to load Reserve opportunities", error);
+      alert("Failed to load Reserve opportunities");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
-
+    const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-    // Params intentionally captures filter and pagination state for this report request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  function applyFilters() {
-    setOffset(0);
-    void load();
-  }
-
-  function exportCsv() {
-    const csvParams = new URLSearchParams(params);
-    csvParams.set("export", "csv");
-    csvParams.set("limit", "5000");
-    window.location.href = `/api/admin/reservation-opportunities?${csvParams.toString()}`;
-  }
-
-  async function updateOpportunity(
-    opportunity: Opportunity,
-    nextStatus: string,
-  ) {
-    setSavingId(opportunity.id);
+  async function save(row: Opportunity, nextStatus: string) {
+    setSavingId(row.id);
     try {
-      const response = await fetch(
-        `/api/admin/reservation-opportunities/${encodeURIComponent(opportunity.id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            reservation_outreach_status: nextStatus,
-            reservation_outreach_notes: notes[opportunity.id] || "",
-          }),
-        },
-      );
+      const response = await fetch(`/api/admin/reservation-opportunities/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservation_outreach_status: nextStatus, reservation_outreach_notes: notes[row.id] || "" }),
+      });
       const json = await response.json();
-      if (!response.ok || json.success === false) {
-        alert(json.error || "Failed to update outreach status");
-        return;
-      }
-      await load();
-    } catch (error) {
-      console.error("Failed to update opportunity:", error);
-      alert("Failed to update outreach status");
+      if (!response.ok || json.success === false) alert(json.error || "Failed to update opportunity");
+      else await load();
     } finally {
       setSavingId(null);
     }
   }
 
-  const opportunities = data?.opportunities || [];
-  const total = getNumber(data?.total);
+  const rows = data?.opportunities || [];
+  const total = num(data?.total);
   const summary = data?.summary || {};
 
   return (
     <main className="min-h-screen bg-[#090506] px-4 py-8 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/30 sm:p-8">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">
-            Admin report
-          </p>
-          <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-            Reservation Opportunities
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-            Show businesses that do not have external reservation links and may
-            be good candidates to sell TheOutHaven’s internal reservation
-            system.
-          </p>
-          <p className="mt-4 rounded-2xl border border-rose-300/20 bg-rose-300/10 p-4 text-sm font-bold text-rose-100">
-            No reservation link found. This location may be a good fit for
-            TheOutHaven Reservations.
-          </p>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 sm:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">CRM · TheOutHaven Reserve</p>
+          <h1 className="mt-3 text-3xl font-black sm:text-4xl">Reserve Opportunities</h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">Prioritized restaurants where TheOutHaven Reserve can solve a real booking gap. Scores are evidence-based and automatically refreshed when reservation discovery or location intelligence changes.</p>
         </section>
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <SummaryCard label="Total opportunities" value={total} />
-          <SummaryCard
-            label="Not contacted"
-            value={getNumber(summary.not_contacted)}
-          />
-          <SummaryCard label="Contacted" value={getNumber(summary.contacted)} />
-          <SummaryCard
-            label="Interested"
-            value={getNumber(summary.interested)}
-          />
-          <SummaryCard
-            label="Claimed/onboarded"
-            value={getNumber(summary.claimed_onboarded)}
-          />
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryCard label="Total" value={total} />
+          <SummaryCard label="High" value={num(summary.tier_high)} />
+          <SummaryCard label="Medium" value={num(summary.tier_medium)} />
+          <SummaryCard label="Interested" value={num(summary.interested)} />
         </section>
 
-        <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Input label="Search" value={q} onChange={setQ} />
             <Input label="City" value={city} onChange={setCity} />
             <Input label="State" value={state} onChange={setState} />
             <Input label="Category" value={category} onChange={setCategory} />
-            <label className="block">
-              <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
-                Outreach status
-              </span>
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
-              >
-                <option value="">All</option>
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {prettyStatus(option)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Input
-              label="Min rating"
-              value={minRating}
-              onChange={setMinRating}
-              type="number"
-            />
-            <Input label="Search" value={q} onChange={setQ} />
+            <Select label="Tier" value={tier} onChange={setTier} options={tierOptions} />
+            <Select label="Classification" value={classification} onChange={setClassification} options={classificationOptions} />
+            <Select label="Outreach" value={status} onChange={setStatus} options={statusOptions} />
+            <Input label="Minimum score" value={minScore} onChange={setMinScore} type="number" />
           </div>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={applyFilters}
-              className="rounded-full bg-white px-6 py-3 text-sm font-black text-black transition hover:bg-rose-100"
-            >
-              Apply filters
-            </button>
-            <button
-              type="button"
-              onClick={exportCsv}
-              className="rounded-full border border-white/15 px-6 py-3 text-sm font-black text-white transition hover:border-rose-300 hover:bg-white/10"
-            >
-              Export CSV
-            </button>
+            <button type="button" onClick={() => { setOffset(0); void load(); }} className="rounded-full bg-white px-6 py-3 text-sm font-black text-black">Apply filters</button>
+            <button type="button" onClick={() => { const csv = new URLSearchParams(params); csv.set("export", "csv"); csv.set("limit", "5000"); window.location.href = `/api/admin/reservation-opportunities?${csv.toString()}`; }} className="rounded-full border border-white/15 px-6 py-3 text-sm font-black">Export CSV</button>
           </div>
         </section>
 
-        <section className="mt-6 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035]">
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-5">
-            <div>
-              <h2 className="text-xl font-black">Opportunity list</h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Sorted by highest rating, most reviews, then newest detected.
-              </p>
-            </div>
-            {loading ? (
-              <span className="text-sm font-bold text-rose-200">
-                Loading...
-              </span>
-            ) : null}
+        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035]">
+          <div className="flex items-center justify-between border-b border-white/10 p-5">
+            <div><h2 className="text-xl font-black">Prioritized opportunities</h2><p className="mt-1 text-sm text-zinc-500">Highest Reserve score first.</p></div>
+            {loading ? <span className="text-sm font-bold text-rose-200">Loading…</span> : null}
           </div>
-
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-white/10 text-left text-sm">
-              <thead className="bg-black/30 text-xs uppercase tracking-[0.18em] text-zinc-500">
-                <tr>
-                  <th className="px-5 py-4">Location name</th>
-                  <th className="px-5 py-4">City/state</th>
-                  <th className="px-5 py-4">Rating/reviews</th>
-                  <th className="px-5 py-4">Website</th>
-                  <th className="px-5 py-4">Google Maps</th>
-                  <th className="px-5 py-4">Discovery status</th>
-                  <th className="px-5 py-4">Outreach status</th>
-                  <th className="px-5 py-4">Action</th>
-                </tr>
-              </thead>
+            <table className="min-w-[1200px] w-full text-left text-sm">
+              <thead className="bg-black/30 text-xs uppercase tracking-[0.14em] text-zinc-500"><tr>
+                <th className="px-5 py-4">Location</th><th className="px-5 py-4">Reserve fit</th><th className="px-5 py-4">Evidence</th><th className="px-5 py-4">Discovery</th><th className="px-5 py-4">Outreach</th><th className="px-5 py-4">Links</th>
+              </tr></thead>
               <tbody className="divide-y divide-white/10">
-                {opportunities.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-5 py-10 text-center text-zinc-500"
-                    >
-                      No reservation opportunities found.
-                    </td>
+                {rows.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-zinc-500">No Reserve opportunities match these filters.</td></tr> : rows.map((row) => (
+                  <tr key={row.id} className="align-top text-zinc-200">
+                    <td className="max-w-xs px-5 py-5"><p className="font-black text-white">{row.name || "Unnamed location"}</p><p className="mt-1 text-xs text-zinc-500">{[row.city,row.state].filter(Boolean).join(", ") || "—"}</p><p className="mt-2 text-xs text-zinc-500">{row.primary_category || "Restaurant"} · {row.rating || "—"}★ · {row.review_count || 0} reviews</p></td>
+                    <td className="px-5 py-5"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${tierClass(row.reservation_opportunity_tier)}`}>{row.reservation_opportunity_tier || "low"} · {num(row.reservation_opportunity_score)}/100</span><p className="mt-3 text-xs font-bold capitalize text-white/70">{pretty(row.reservation_opportunity_classification)}</p></td>
+                    <td className="max-w-sm px-5 py-5"><div className="space-y-2">{evidence(row.reservation_opportunity_evidence).slice(0,5).map((item) => <p key={item} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/65">{item}</p>)}</div></td>
+                    <td className="px-5 py-5"><span className="capitalize">{pretty(row.reservation_discovery_status || "not_found")}</span><p className="mt-2 max-w-xs text-xs text-zinc-500">{row.reservation_upgrade_reason || "No online reservation path found"}</p></td>
+                    <td className="min-w-72 px-5 py-5"><select value={row.reservation_outreach_status || "not_contacted"} onChange={(e) => void save(row, e.target.value)} disabled={savingId === row.id} className="w-full rounded-xl border border-white/10 bg-black px-3 py-2 font-bold text-white">{statusOptions.map((option) => <option key={option} value={option}>{pretty(option)}</option>)}</select><textarea value={notes[row.id] || ""} onChange={(e) => setNotes((prev) => ({ ...prev, [row.id]: e.target.value }))} placeholder="Outreach notes" className="mt-3 min-h-20 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-white"/><button type="button" onClick={() => void save(row, row.reservation_outreach_status || "not_contacted")} disabled={savingId === row.id} className="mt-2 rounded-full border border-white/15 px-4 py-2 text-xs font-black">{savingId === row.id ? "Saving…" : "Save notes"}</button></td>
+                    <td className="px-5 py-5"><div className="flex flex-col gap-2">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-bold text-rose-200">Website</a> : null}{row.google_maps_url ? <a href={row.google_maps_url} target="_blank" rel="noreferrer" className="font-bold text-rose-200">Google Maps</a> : null}</div></td>
                   </tr>
-                ) : (
-                  opportunities.map((opportunity) => (
-                    <tr
-                      key={opportunity.id}
-                      className="align-top text-zinc-200"
-                    >
-                      <td className="max-w-xs px-5 py-5">
-                        <p className="font-black text-white">
-                          {opportunity.name || "Unnamed location"}
-                        </p>
-                        <p className="mt-2 text-xs leading-5 text-zinc-500">
-                          {opportunity.address || "No address"}
-                        </p>
-                        <p className="mt-3 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-xs font-bold leading-5 text-rose-100">
-                          Offer this business a claim + reservation setup so
-                          customers can book directly through TheOutHaven.
-                        </p>
-                      </td>
-                      <td className="px-5 py-5">
-                        {[opportunity.city, opportunity.state]
-                          .filter(Boolean)
-                          .join(", ") || "—"}
-                      </td>
-                      <td className="px-5 py-5">
-                        {opportunity.rating || "—"} /{" "}
-                        {opportunity.review_count || 0}
-                      </td>
-                      <td className="px-5 py-5">
-                        {opportunity.website ? (
-                          <a
-                            className="font-bold text-rose-200 hover:text-white"
-                            href={opportunity.website}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Open Website
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-5 py-5">
-                        {opportunity.google_maps_url ? (
-                          <a
-                            className="font-bold text-rose-200 hover:text-white"
-                            href={opportunity.google_maps_url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Google Maps
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="px-5 py-5">
-                        {opportunity.reservation_discovery_status ||
-                          "not_found"}
-                      </td>
-                      <td className="min-w-72 px-5 py-5">
-                        <select
-                          value={
-                            opportunity.reservation_outreach_status ||
-                            "not_contacted"
-                          }
-                          onChange={(event) =>
-                            updateOpportunity(opportunity, event.target.value)
-                          }
-                          disabled={savingId === opportunity.id}
-                          className="w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-sm font-bold text-white"
-                        >
-                          {statusOptions.map((option) => (
-                            <option key={option} value={option}>
-                              {prettyStatus(option)}
-                            </option>
-                          ))}
-                        </select>
-                        <textarea
-                          value={notes[opportunity.id] || ""}
-                          onChange={(event) =>
-                            setNotes((prev) => ({
-                              ...prev,
-                              [opportunity.id]: event.target.value,
-                            }))
-                          }
-                          placeholder="Outreach notes"
-                          className="mt-3 min-h-20 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-sm text-white outline-none focus:border-rose-400"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateOpportunity(
-                              opportunity,
-                              opportunity.reservation_outreach_status ||
-                                "not_contacted",
-                            )
-                          }
-                          disabled={savingId === opportunity.id}
-                          className="mt-2 rounded-full border border-white/15 px-4 py-2 text-xs font-black text-white transition hover:border-rose-300 disabled:opacity-50"
-                        >
-                          {savingId === opportunity.id
-                            ? "Saving..."
-                            : "Save notes"}
-                        </button>
-                      </td>
-                      <td className="px-5 py-5">
-                        {opportunity.website ? (
-                          <a
-                            className="rounded-full bg-white px-4 py-2 text-xs font-black text-black"
-                            href={opportunity.website}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Open Website
-                          </a>
-                        ) : opportunity.google_maps_url ? (
-                          <a
-                            className="rounded-full bg-white px-4 py-2 text-xs font-black text-black"
-                            href={opportunity.google_maps_url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            View Location
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-
-          <div className="flex flex-col gap-3 border-t border-white/10 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-bold text-zinc-500">
-              Showing {offset + 1}-
-              {Math.min(offset + opportunities.length, total)} of {total}
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setOffset(Math.max(0, offset - limit))}
-                disabled={offset === 0}
-                className="rounded-full border border-white/15 px-5 py-2 text-sm font-black text-white disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => setOffset(offset + limit)}
-                disabled={offset + opportunities.length >= total}
-                className="rounded-full border border-white/15 px-5 py-2 text-sm font-black text-white disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <div className="flex items-center justify-between border-t border-white/10 p-5"><p className="text-sm font-bold text-zinc-500">Showing {rows.length ? offset + 1 : 0}-{Math.min(offset + rows.length, total)} of {total}</p><div className="flex gap-3"><button type="button" onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset === 0} className="rounded-full border border-white/15 px-5 py-2 text-sm font-black disabled:opacity-40">Previous</button><button type="button" onClick={() => setOffset(offset + limit)} disabled={offset + rows.length >= total} className="rounded-full border border-white/15 px-5 py-2 text-sm font-black disabled:opacity-40">Next</button></div></div>
         </section>
       </div>
     </main>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5">
-      <p className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
-        {label}
-      </p>
-      <p className="mt-3 text-3xl font-black text-white">
-        {value.toLocaleString()}
-      </p>
-    </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.25em] text-zinc-500">
-        {label}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 text-sm font-black text-white outline-none transition focus:border-rose-400"
-      />
-    </label>
-  );
-}
+function SummaryCard({ label, value }: { label: string; value: number }) { return <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-5"><p className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p><p className="mt-3 text-3xl font-black">{value.toLocaleString()}</p></div>; }
+function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) { return <label><span className="mb-2 block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</span><input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 font-bold text-white"/></label>; }
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) { return <label><span className="mb-2 block text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-[#14090d] px-4 py-3 font-bold text-white"><option value="">All</option>{options.map((option) => <option key={option} value={option}>{pretty(option)}</option>)}</select></label>; }
