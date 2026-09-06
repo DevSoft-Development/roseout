@@ -37,16 +37,8 @@ jobs:
             MAIL_ENV_REFRESH_TOKEN; do
             grep -F "$token" "$FILE" >/dev/null
           done
-          for retired in \
-            admin-cron-digest-email \
-            reservation-daily-digest \
-            daily-admin-digest \
-            search-quality-digest; do
-            if grep -F "$retired" "$FILE" >/dev/null; then
-              echo "Retired daily email must not remain in recovery: $retired" >&2
-              exit 1
-            fi
-          done
+          test "$(grep -cE "^[[:space:]]+invoke_edge 'admin-(platform-error-digest|search-health-digest|daily-marketing-pulse)'" "$FILE")" = '3'
+          test "$(grep -cE "^[[:space:]]+invoke_edge '" "$FILE")" = '3'
 
   recover_and_send:
     needs: validate
