@@ -16,7 +16,21 @@ export function hasStrongRestaurantIdentity(location: EnterpriseLocation) {
   return Boolean(cuisine && !activityStored);
 }
 
+export function hasNightlifeIdentity(location: EnterpriseLocation) {
+  const storageType = text(location.location_type);
+  const combined = [
+    text(location.primary_category),
+    text(location.activity_type),
+    text(location.activity_name),
+    text((location as any).category),
+    text((location as any).nightlife_category),
+    text((location as any).nightlife_type),
+  ].join(" ");
+  return storageType === "nightlife" || /\b(nightlife|nightclub|dance club|club|bar|lounge|hookah|shisha|cigar lounge|rooftop bar|sports bar|cocktail|pub|tavern|wine bar|speakeasy)\b/.test(combined);
+}
+
 export function hasStrongActivityIdentity(location: EnterpriseLocation) {
+  if (hasNightlifeIdentity(location)) return false;
   const storageType = text(location.location_type);
   const category = text(location.primary_category);
   const activityType = text(location.activity_type);
@@ -25,9 +39,19 @@ export function hasStrongActivityIdentity(location: EnterpriseLocation) {
     activityName ||
       activityType ||
       storageType === "activity" ||
-      storageType === "nightlife" ||
-      /\b(activity|experience|entertainment|arcade|bowling|museum|gallery|karaoke|hookah|sports bar|theater|theatre|comedy|mini golf|live music|music venue|jazz|concert|nightclub|lounge|rooftop|spa|park)\b/.test(category),
+      /\b(activity|experience|entertainment|arcade|bowling|museum|gallery|karaoke|theater|theatre|comedy|mini golf|live music venue|concert hall|spa|park|escape room|axe throwing|pottery|workshop|zoo|aquarium|golf|skating|climbing|go kart|raceway|immersive)\b/.test(category),
   );
+}
+
+export function isGenericActivityEligible(location: EnterpriseLocation) {
+  const storageType = text(location.location_type);
+  const category = text(location.primary_category);
+  const activityType = text(location.activity_type);
+  const combined = [category, activityType, text(location.activity_name), text((location as any).category)].join(" ");
+  const diningFirst = storageType === "restaurant" || hasStrongRestaurantIdentity(location);
+  const nightlifeFirst = hasNightlifeIdentity(location);
+  const trueActivity = storageType === "activity" || /\b(arcade|bowling|museum|gallery|karaoke|theater|theatre|comedy|mini golf|escape room|escape game|axe throwing|pottery|art class|workshop|spa|park|zoo|aquarium|golf|skating|roller rink|trampoline|climbing|go kart|raceway|immersive|activity|experience|entertainment)\b/.test(combined);
+  return trueActivity && !diningFirst && !nightlifeFirst;
 }
 
 export function isFamilyUnsafeActivity(location: EnterpriseLocation) {

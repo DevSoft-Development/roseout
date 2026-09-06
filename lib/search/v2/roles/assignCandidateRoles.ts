@@ -4,7 +4,7 @@ import type { RetrievedCandidate } from "../retrieval/retrievalTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { collectRoleEvidence, evidenceConfidence } from "./roleEvidence";
 import type { CandidateRole, RoleEvidence, RoleQualifiedCandidate } from "./roleTypes";
-import { hasStrongActivityIdentity, hasStrongRestaurantIdentity, isFamilyUnsafeActivity } from "./domainIdentity";
+import { hasStrongActivityIdentity, hasStrongRestaurantIdentity, isFamilyUnsafeActivity, isGenericActivityEligible } from "./domainIdentity";
 
 function canonicalEvidence(candidate: RetrievedCandidate, role: string): RoleEvidence[] {
   return [{ field: "canonical_profile", value: `${role}:${candidate.matchedRetrievalTerms.join(",")}`, strength: "authoritative" }];
@@ -19,7 +19,7 @@ export function assignCandidateRoles({ plan, candidates, trace }: { plan: Search
     const canonicalRestaurant = isCanonicalFor(candidate, "restaurant");
     const requestedActivityRoles = new Set(candidate.requestedRoles.filter((role) => role.endsWith("_activity") || role === "general_activity"));
     const restaurantIdentity = canonicalRestaurant || hasStrongRestaurantIdentity(loc);
-    const activityIdentity = requestedActivityRoles.size > 0 || hasStrongActivityIdentity(loc);
+    const activityIdentity = hasStrongActivityIdentity(loc);
 
     const restaurantTerms = ["restaurant", "dining", ...plan.restaurant.cuisines.flatMap(runtimeRetrievalTerms), ...plan.restaurant.foods.flatMap(runtimeRetrievalTerms), ...plan.restaurant.features.flatMap(runtimeRetrievalTerms)];
     const restaurantEvidence = canonicalRestaurant ? canonicalEvidence(candidate, "restaurant") : collectRoleEvidence(loc, restaurantTerms);
@@ -35,7 +35,7 @@ export function assignCandidateRoles({ plan, candidates, trace }: { plan: Search
     }
 
     const genericActivityRequested = plan.activity.required && plan.activity.categories.length === 0;
-    if (genericActivityRequested && activityIdentity && !(plan.audience.minorsPresent && isFamilyUnsafeActivity(loc))) {
+    if (genericActivityRequested && isGenericActivityEligible(loc) && !(plan.audience.minorsPresent && isFamilyUnsafeActivity(loc))) {
       const retrievedGeneric = requestedActivityRoles.has("general_activity");
       const evidence = retrievedGeneric ? canonicalEvidence(candidate, "general_activity") : collectRoleEvidence(loc, ["activity", "entertainment", "experience", "things to do", "family friendly"]);
       roles.push({ role: "general_activity", confidence: retrievedGeneric ? 0.9 : Math.max(0.72, evidenceConfidence(evidence, false)), evidence });

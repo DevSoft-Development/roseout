@@ -43,6 +43,7 @@ const MEMORY_FOOD_CONTROL_TERMS = new Set([
 ]);
 
 const MEMORY_FOOD_CONTROL_PHRASE = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof|all in one place|walking distance|walkable|on foot|by car|car ride)\b/i;
+const EXPLICIT_ACTIVITY_CATEGORY_PATTERN = /\b(?:bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|cinema|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|nightclub|dance club|dancing|scenic walk|waterfront walk|pottery|axe throwing|art class|craft workshop|cooking class|candle making|spa|zoo|aquarium|golf|skating|roller rink|trampoline|climbing|go kart|raceway|immersive exhibit)\b/i;
 
 function normalizeMemoryFoodTerm(value: unknown) {
   return String(value ?? "")
@@ -61,6 +62,10 @@ export function sanitizeRememberedRestaurantFoods(values: unknown): string[] {
       const normalized = normalizeMemoryFoodTerm(value);
       return !MEMORY_FOOD_CONTROL_TERMS.has(normalized) && !MEMORY_FOOD_CONTROL_PHRASE.test(normalized);
     }))];
+}
+
+export function allowsInferredActivityCategories(query: string) {
+  return EXPLICIT_ACTIVITY_CATEGORY_PATTERN.test(String(query || ""));
 }
 
 function sanitizePlanRestaurantFoods(plan: SearchPlan): SearchPlan {
@@ -86,7 +91,7 @@ function mergeUnique(base: readonly string[], additions: unknown) {
   return [...out];
 }
 
-function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[]): SearchPlan {
+function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[], allowActivityCategories: boolean): SearchPlan {
   let next: any = plan;
   if (!plan.restaurant.cuisines.length && Array.isArray(memoryPlan?.restaurant?.cuisines) && memoryPlan.restaurant.cuisines.length) {
     next = { ...next, restaurant: { ...next.restaurant, cuisines: mergeUnique(next.restaurant.cuisines, memoryPlan.restaurant.cuisines) } };
@@ -99,7 +104,7 @@ function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[])
       additions.push("restaurant.foods");
     }
   }
-  if (plan.activity.required && !plan.activity.categories.length && Array.isArray(memoryPlan?.activity?.categories) && memoryPlan.activity.categories.length) {
+  if (allowActivityCategories && plan.activity.required && !plan.activity.categories.length && Array.isArray(memoryPlan?.activity?.categories) && memoryPlan.activity.categories.length) {
     next = { ...next, activity: { ...next.activity, categories: mergeUnique(next.activity.categories, memoryPlan.activity.categories) } };
     additions.push("activity.categories");
   }
@@ -111,7 +116,6 @@ function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[])
     next = { ...next, occasion: memoryPlan.occasion.trim() };
     additions.push("occasion");
   }
-  // Deliberately never copy mode, required domains, geo, exclusions, travel, anchor, pairing distance, or audience constraints.
   return next as SearchPlan;
 }
 
@@ -125,6 +129,7 @@ function errorMessage(error: unknown) {
 
 export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan; supabase: SupabaseClient }) {
   const safePlan = sanitizePlanRestaurantFoods(plan);
+  const allowActivityCategories = allowsInferredActivityCategories(safePlan.rawQuery);
   const config = await resolveSearchMlRuntimeConfig();
   const diagnostics: LearnedIntentDiagnostics = {
     intentMode: config.intentMode,
@@ -172,7 +177,7 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
     const memory = memoryResult.value;
     diagnostics.memorySimilarity = memory ? Number(memory.similarity ?? 0) : null;
     if (memory && Number(memory.similarity ?? 0) >= 0.93 && Number(memory.confidence ?? 0) >= 0.88) {
-      if (config.queryMemoryMode === "enabled") next = applySafeMemory(next, memory.search_plan, diagnostics.additions);
+      if (config.queryMemoryMode === "enabled") next = applySafeMemory(next, memory.search_plan, diagnostics.additions, allowActivityCategories);
       diagnostics.memoryUsed = config.queryMemoryMode === "enabled" && diagnostics.additions.length > 0;
     }
   }
@@ -184,7 +189,7 @@ export async function applyLearnedIntent({ plan, supabase }: { plan: SearchPlan;
     diagnostics.classifierUsed = true;
     diagnostics.classifierConfidence = classification.confidence;
     if (config.intentMode === "enabled" && classification.confidence >= 0.78) {
-      if (next.activity.required && !next.activity.categories.length && classification.activityTypes.length) {
+      if (allowActivityCategories && next.activity.required && !next.activity.categories.length && classification.activityTypes.length) {
         next = { ...next, activity: { ...next.activity, categories: mergeUnique(next.activity.categories, classification.activityTypes) } } as SearchPlan;
         diagnostics.additions.push("classifier.activity.categories");
       }
@@ -225,6 +230,5 @@ export async function rememberSuccessfulQuery({ plan, supabase, success }: { pla
       updated_at: new Date().toISOString(),
     }, { onConflict: "memory_key" });
   } catch {
-    // Memory must never block a search response.
   }
 }
