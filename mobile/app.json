@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "TheOutHaven",
+    "slug": "theouthaven",
+    "scheme": "theouthaven",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.theouthaven.app",
+      "associatedDomains": ["applinks:outhvn.com"]
+    },
+    "android": {
+      "package": "com.theouthaven.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "outhvn.com",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
