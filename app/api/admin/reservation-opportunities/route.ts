@@ -28,6 +28,8 @@ type OpportunityRow = {
   reservation_opportunity_classification?: string | null;
   reservation_opportunity_evidence?: unknown;
   reservation_opportunity_scored_at?: string | null;
+  crm_account_id?: string | null;
+  crm_opportunity_id?: string | null;
 };
 
 const OPPORTUNITY_SELECT =
@@ -104,13 +106,29 @@ function evidenceText(value: unknown) {
 }
 
 function toCsv(rows: OpportunityRow[]) {
-  const headers = ["Name","Address","City","State","Phone","Website","Google Maps","Rating","Reviews","Category","Reserve Score","Reserve Tier","Classification","Evidence","Discovery Status","Opportunity Reason","Outreach Status"];
+  const headers = ["Name","Address","City","State","Phone","Website","Google Maps","Rating","Reviews","Category","Reserve Score","Reserve Tier","Classification","Evidence","Discovery Status","Opportunity Reason","Outreach Status","CRM Account","CRM Opportunity"];
   const lines = rows.map((row) => [
     row.name,row.address,row.city,row.state,row.phone,row.website,row.google_maps_url,row.rating,row.review_count,row.primary_category,
     row.reservation_opportunity_score,row.reservation_opportunity_tier,row.reservation_opportunity_classification,evidenceText(row.reservation_opportunity_evidence),
-    row.reservation_discovery_status,row.reservation_upgrade_reason,row.reservation_outreach_status,
+    row.reservation_discovery_status,row.reservation_upgrade_reason,row.reservation_outreach_status,row.crm_account_id,row.crm_opportunity_id,
   ].map(csvCell).join(","));
   return [headers.map(csvCell).join(","), ...lines].join("\n");
+}
+
+async function attachCrmLinks(supabase: SupabaseClient, rows: OpportunityRow[]) {
+  if (!rows.length) return rows;
+  const ids = rows.map((row) => row.id);
+  const [{ data: links }, { data: opportunities }] = await Promise.all([
+    supabase.from("crm_account_locations").select("location_id,account_id,status").in("location_id", ids).neq("status", "inactive"),
+    supabase.from("crm_opportunities").select("id,primary_location_id,status,pipeline_key").in("primary_location_id", ids).eq("pipeline_key", "reserve_pro").eq("status", "open").is("archived_at", null),
+  ]);
+  const accountByLocation = new Map((links || []).map((link) => [link.location_id, link.account_id]));
+  const opportunityByLocation = new Map((opportunities || []).map((opportunity) => [opportunity.primary_location_id, opportunity.id]));
+  return rows.map((row) => ({
+    ...row,
+    crm_account_id: accountByLocation.get(row.id) || null,
+    crm_opportunity_id: opportunityByLocation.get(row.id) || null,
+  }));
 }
 
 async function getSummary(supabase: SupabaseClient) {
@@ -150,7 +168,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error, count } = await query;
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  const opportunities = (data || []) as OpportunityRow[];
+  const opportunities = await attachCrmLinks(supabase, (data || []) as OpportunityRow[]);
 
   if (isCsv) {
     return new NextResponse(toCsv(opportunities), {

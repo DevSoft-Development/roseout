@@ -23,6 +23,8 @@ type Opportunity = {
   reservation_opportunity_tier?: string | null;
   reservation_opportunity_classification?: string | null;
   reservation_opportunity_evidence?: unknown;
+  crm_account_id?: string | null;
+  crm_opportunity_id?: string | null;
 };
 
 type OpportunitiesResponse = {
@@ -35,7 +37,7 @@ type OpportunitiesResponse = {
 
 const statusOptions = ["not_contacted", "contacted", "interested", "not_interested", "claimed", "onboarded"];
 const tierOptions = ["high", "medium", "low"];
-const classificationOptions = ["takes_reservations_offline", "no_online_reservations", "walk_in_likely"];
+const classificationOptions = ["no_online_reservations", "needs_verification", "walk_in_likely", "takes_reservations_offline"];
 
 function pretty(value: string | null | undefined) {
   return (value || "unknown").replaceAll("_", " ");
@@ -56,6 +58,10 @@ function tierClass(tier: string | null | undefined) {
   return "border-white/10 bg-white/5 text-white/60";
 }
 
+function canPromote(row: Opportunity) {
+  return row.reservation_opportunity_tier === "high" && row.reservation_opportunity_classification === "no_online_reservations";
+}
+
 export default function ReservationOpportunitiesClient() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
@@ -69,6 +75,7 @@ export default function ReservationOpportunitiesClient() {
   const limit = 20;
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
   const [data, setData] = useState<OpportunitiesResponse | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
 
@@ -125,6 +132,24 @@ export default function ReservationOpportunitiesClient() {
     }
   }
 
+  async function promote(row: Opportunity) {
+    setPromotingId(row.id);
+    try {
+      const response = await fetch(`/api/admin/reservation-opportunities/${encodeURIComponent(row.id)}/promote`, { method: "POST" });
+      const json = await response.json();
+      if (!response.ok || json.success === false) {
+        alert(json.error || "Failed to add Reserve opportunity to CRM");
+        return;
+      }
+      await load();
+    } catch (error) {
+      console.error("Failed to add Reserve opportunity to CRM", error);
+      alert("Failed to add Reserve opportunity to CRM");
+    } finally {
+      setPromotingId(null);
+    }
+  }
+
   const rows = data?.opportunities || [];
   const total = num(data?.total);
   const summary = data?.summary || {};
@@ -135,7 +160,7 @@ export default function ReservationOpportunitiesClient() {
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-6 sm:p-8">
           <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">CRM · TheOutHaven Reserve</p>
           <h1 className="mt-3 text-3xl font-black sm:text-4xl">Reserve Opportunities</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">Prioritized restaurants where TheOutHaven Reserve can solve a real booking gap. Scores are evidence-based and automatically refreshed when reservation discovery or location intelligence changes.</p>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">Prioritized restaurants where TheOutHaven Reserve can solve a verified booking gap. High-confidence rows can be promoted directly into the existing Reserve CRM pipeline; blocked or failed discovery stays in verification instead of outreach.</p>
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -164,21 +189,24 @@ export default function ReservationOpportunitiesClient() {
 
         <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035]">
           <div className="flex items-center justify-between border-b border-white/10 p-5">
-            <div><h2 className="text-xl font-black">Prioritized opportunities</h2><p className="mt-1 text-sm text-zinc-500">Highest Reserve score first.</p></div>
+            <div><h2 className="text-xl font-black">Prioritized opportunities</h2><p className="mt-1 text-sm text-zinc-500">Highest verified Reserve score first.</p></div>
             {loading ? <span className="text-sm font-bold text-rose-200">Loading…</span> : null}
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-[1200px] w-full text-left text-sm">
+            <table className="min-w-[1380px] w-full text-left text-sm">
               <thead className="bg-black/30 text-xs uppercase tracking-[0.14em] text-zinc-500"><tr>
-                <th className="px-5 py-4">Location</th><th className="px-5 py-4">Reserve fit</th><th className="px-5 py-4">Evidence</th><th className="px-5 py-4">Discovery</th><th className="px-5 py-4">Outreach</th><th className="px-5 py-4">Links</th>
+                <th className="px-5 py-4">Location</th><th className="px-5 py-4">Reserve fit</th><th className="px-5 py-4">Evidence</th><th className="px-5 py-4">Discovery</th><th className="px-5 py-4">CRM</th><th className="px-5 py-4">Outreach</th><th className="px-5 py-4">Links</th>
               </tr></thead>
               <tbody className="divide-y divide-white/10">
-                {rows.length === 0 ? <tr><td colSpan={6} className="px-5 py-10 text-center text-zinc-500">No Reserve opportunities match these filters.</td></tr> : rows.map((row) => (
+                {rows.length === 0 ? <tr><td colSpan={7} className="px-5 py-10 text-center text-zinc-500">No Reserve opportunities match these filters.</td></tr> : rows.map((row) => (
                   <tr key={row.id} className="align-top text-zinc-200">
                     <td className="max-w-xs px-5 py-5"><p className="font-black text-white">{row.name || "Unnamed location"}</p><p className="mt-1 text-xs text-zinc-500">{[row.city,row.state].filter(Boolean).join(", ") || "—"}</p><p className="mt-2 text-xs text-zinc-500">{row.primary_category || "Restaurant"} · {row.rating || "—"}★ · {row.review_count || 0} reviews</p></td>
                     <td className="px-5 py-5"><span className={`inline-flex rounded-full border px-3 py-1 text-xs font-black uppercase ${tierClass(row.reservation_opportunity_tier)}`}>{row.reservation_opportunity_tier || "low"} · {num(row.reservation_opportunity_score)}/100</span><p className="mt-3 text-xs font-bold capitalize text-white/70">{pretty(row.reservation_opportunity_classification)}</p></td>
                     <td className="max-w-sm px-5 py-5"><div className="space-y-2">{evidence(row.reservation_opportunity_evidence).slice(0,5).map((item) => <p key={item} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/65">{item}</p>)}</div></td>
                     <td className="px-5 py-5"><span className="capitalize">{pretty(row.reservation_discovery_status || "not_found")}</span><p className="mt-2 max-w-xs text-xs text-zinc-500">{row.reservation_upgrade_reason || "No online reservation path found"}</p></td>
+                    <td className="min-w-48 px-5 py-5">
+                      {row.crm_opportunity_id ? <div className="space-y-2"><span className="inline-flex rounded-full border border-emerald-300/20 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-100">In CRM</span><a href={`/admin/dashboard/crm/opportunities/${row.crm_opportunity_id}`} className="block font-bold text-rose-200">Open opportunity</a>{row.crm_account_id ? <a href={`/admin/dashboard/crm/accounts/${row.crm_account_id}`} className="block text-xs font-bold text-zinc-400">Open account</a> : null}</div> : canPromote(row) ? <button type="button" onClick={() => void promote(row)} disabled={promotingId === row.id} className="rounded-full bg-rose-200 px-4 py-2 text-xs font-black text-black disabled:opacity-50">{promotingId === row.id ? "Adding…" : "Add to CRM"}</button> : <span className="text-xs font-bold text-zinc-500">Verification required</span>}
+                    </td>
                     <td className="min-w-72 px-5 py-5"><select value={row.reservation_outreach_status || "not_contacted"} onChange={(e) => void save(row, e.target.value)} disabled={savingId === row.id} className="w-full rounded-xl border border-white/10 bg-black px-3 py-2 font-bold text-white">{statusOptions.map((option) => <option key={option} value={option}>{pretty(option)}</option>)}</select><textarea value={notes[row.id] || ""} onChange={(e) => setNotes((prev) => ({ ...prev, [row.id]: e.target.value }))} placeholder="Outreach notes" className="mt-3 min-h-20 w-full rounded-xl border border-white/10 bg-black px-3 py-2 text-white"/><button type="button" onClick={() => void save(row, row.reservation_outreach_status || "not_contacted")} disabled={savingId === row.id} className="mt-2 rounded-full border border-white/15 px-4 py-2 text-xs font-black">{savingId === row.id ? "Saving…" : "Save notes"}</button></td>
                     <td className="px-5 py-5"><div className="flex flex-col gap-2">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-bold text-rose-200">Website</a> : null}{row.google_maps_url ? <a href={row.google_maps_url} target="_blank" rel="noreferrer" className="font-bold text-rose-200">Google Maps</a> : null}</div></td>
                   </tr>
