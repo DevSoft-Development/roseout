@@ -1,37 +1,11 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
+import { requestContainsTheOutHavenLoungeSearch } from "@/lib/demo/internal-demo-search";
 import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function normalizedSearchText(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function isTheOutHavenLoungeSearch(value: unknown) {
-  const normalized = normalizedSearchText(value);
-  const branded = normalized === "theouthaven lounge"
-    ? "theouthaven lounge"
-    : normalized === "the outhaven lounge"
-      ? "the outhaven lounge"
-      : normalized.startsWith("theouthaven lounge ")
-        ? "theouthaven lounge"
-        : normalized.startsWith("the outhaven lounge ")
-          ? "the outhaven lounge"
-          : null;
-  if (!branded) return false;
-
-  const suffix = normalized.slice(branded.length).trim();
-  if (!suffix) return true;
-
-  return /^(?:in|near|around|at|from)\b/.test(suffix);
-}
 
 async function internalDemoSearchResponse(request: Request) {
   let body: any = null;
@@ -41,8 +15,7 @@ async function internalDemoSearchResponse(request: Request) {
     return null;
   }
 
-  const queryCandidates = [body?.message, body?.input, body?.query, body?.prompt];
-  if (!queryCandidates.some(isTheOutHavenLoungeSearch)) return null;
+  if (!requestContainsTheOutHavenLoungeSearch(body)) return null;
 
   const viewer = await getInternalDemoViewer().catch(() => null);
   if (!viewer) return null;
