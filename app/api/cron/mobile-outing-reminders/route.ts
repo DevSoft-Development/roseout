@@ -43,18 +43,18 @@ async function deliver(kind: "two_hour" | "thirty_minute", minMinutes: number, m
     for (const device of devices || []) {
       const { data: existing } = await admin
         .from("mobile_push_deliveries")
-        .select("id")
+        .select("id,status")
         .eq("user_outing_id", outing.id)
         .eq("device_id", device.id)
         .eq("reminder_kind", kind)
         .maybeSingle();
-      if (existing) continue;
+      if (existing?.status === "sent") continue;
 
       const title = kind === "two_hour" ? "Your OUTing is coming up" : "Almost time for your OUTing";
       const place = outing.restaurant_name || outing.activity_name || outing.title || "your first stop";
       const body = kind === "two_hour"
         ? `About 2 hours to go. Your plan starts with ${place}.`
-        : `About 30 minutes to go. Open TheOutHaven for your NOW / NEXT plan.`;
+        : "About 30 minutes to go. Open TheOutHaven for your NOW / NEXT plan.";
 
       try {
         const ticket = await sendExpoPush({
@@ -64,14 +64,16 @@ async function deliver(kind: "two_hour" | "thirty_minute", minMinutes: number, m
           channelId: "outing-reminders",
           data: { type: "outing_reminder", outingId: String(outing.id), reminderKind: kind },
         });
-        await admin.from("mobile_push_deliveries").insert({
+        await admin.from("mobile_push_deliveries").upsert({
           user_id: outing.user_id,
           user_outing_id: outing.id,
           device_id: device.id,
           reminder_kind: kind,
           status: "sent",
           provider_message_id: ticket.id,
-        });
+          last_error: null,
+          sent_at: new Date().toISOString(),
+        }, { onConflict: "user_outing_id,device_id,reminder_kind" });
         sent += 1;
       } catch (pushError) {
         await admin.from("mobile_push_deliveries").upsert({
