@@ -122,7 +122,30 @@ export async function retrieveCandidates({ plan, supabase, trace, rolloutOverrid
   const hfInventoryCandidates = hfInventory.map(({ location, request }) => candidateFrom(location, request as any, "enterprise_search_hf_inventory", plan));
 
   const byLaneAndId = new Map<string, RetrievedCandidate>();
-  for (const item of [...lanes.flat(), ...eventCandidates, ...exactMenuCandidates, ...hfCandidates, ...hfInventoryCandidates]) { const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity"; const key = `${lane}:${String(item.location.id)}`; const previous = byLaneAndId.get(key); if (previous) { previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])]; previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])]; previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])]; if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) { previous.geoMatch = item.geoMatch; previous.retrievalGeoLevel = item.retrievalGeoLevel; } } else byLaneAndId.set(key, item); }
+  for (const item of [...lanes.flat(), ...eventCandidates, ...exactMenuCandidates, ...hfCandidates, ...hfInventoryCandidates]) {
+    const lane = item.requestedRoles.some((role) => retrievalDomain(role) === "restaurant") ? "restaurant" : "activity";
+    const key = `${lane}:${String(item.location.id)}`;
+    const previous = byLaneAndId.get(key);
+    if (previous) {
+      previous.retrievalSources = [...new Set([...previous.retrievalSources, ...item.retrievalSources])];
+      previous.requestedRoles = [...new Set([...previous.requestedRoles, ...item.requestedRoles])];
+      previous.matchedRetrievalTerms = [...new Set([...previous.matchedRetrievalTerms, ...item.matchedRetrievalTerms])];
+      if ((item.location as any)?.exact_menu_inventory_match === true) {
+        const previousItems = Array.isArray((previous.location as any)?.signature_items) ? (previous.location as any).signature_items : [];
+        const exactItems = Array.isArray((item.location as any)?.signature_items) ? (item.location as any).signature_items : [];
+        previous.location = {
+          ...previous.location,
+          signature_items: [...new Set([...previousItems, ...exactItems])],
+          exact_menu_inventory_match: true,
+          exact_menu_inventory_items: (item.location as any).exact_menu_inventory_items ?? [],
+        } as any;
+      }
+      if (geoTierRank(item.geoMatch.tier) < geoTierRank(previous.geoMatch.tier)) {
+        previous.geoMatch = item.geoMatch;
+        previous.retrievalGeoLevel = item.retrievalGeoLevel;
+      }
+    } else byLaneAndId.set(key, item);
+  }
   const allCandidates = [...byLaneAndId.values()].sort((a, b) => geoTierRank(a.geoMatch.tier) - geoTierRank(b.geoMatch.tier)); const candidates = allCandidates.filter((candidate) => candidate.geoMatch.accepted);
   const geoCounts = allCandidates.reduce((counts, candidate) => { const key = candidate.geoMatch.accepted ? candidate.geoMatch.tier : `rejected:${candidate.geoMatch.reason ?? "unknown"}`; counts[key] = (counts[key] ?? 0) + 1; return counts; }, {} as Record<string, number>);
   trace.decisions.push({ stage: "hf_semantic_candidates", decision: hfSemantic.mode === "enabled" ? "included_before_scoring" : "disabled", reason: JSON.stringify({ count: hfSemantic.candidateCount, totalMs: hfSemantic.totalMs, error: hfSemantic.error, inventoryCandidates: hfInventoryCandidates.length }) });
