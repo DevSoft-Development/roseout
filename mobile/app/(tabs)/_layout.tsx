@@ -1,16 +1,22 @@
 import { Tabs } from "expo-router";
-import { theme } from "@/lib/theme";
+import { useAppTheme } from "@/providers/ThemeProvider";
 
 export default function TabLayout() {
+  const { theme } = useAppTheme();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: theme.colors.text,
+        tabBarActiveTintColor: theme.colors.accent,
         tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: "700" },
         tabBarStyle: {
-          backgroundColor: theme.colors.surface,
+          backgroundColor: theme.colors.tabBar,
           borderTopColor: theme.colors.border,
+          borderTopWidth: 1,
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 8,
         },
       }}
     >
