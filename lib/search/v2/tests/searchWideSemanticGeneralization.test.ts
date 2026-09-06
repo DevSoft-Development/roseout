@@ -100,6 +100,65 @@ describe("search-wide semantic generalization", () => {
     expect(result.sameVenueResults.map((item) => item.candidate.candidate.location.id)).toContain("dual-role-target");
   });
 
+  it("qualifies activity-first venues globally when canonical evidence proves both same-venue roles", async () => {
+    const activityFirstVenue = scored("activity-first-dual-role", 92, {
+      location_type: "activity",
+      activity_type: "nightlife",
+      primary_category: "nightlife",
+      description: "A full-service restaurant and lounge with karaoke rooms under one roof.",
+      search_keywords: ["restaurant", "dining", "karaoke", "lounge"],
+      semantic_tags: ["activity", "nightlife", "karaoke", "restaurant"],
+    });
+
+    const result = await resolveFallback({
+      plan: {
+        rawQuery: "restaurant with karaoke under one roof",
+        mode: "same_venue",
+        occasion: null,
+        restaurant: { required: true, cuisines: [], foods: [], features: [], mealPeriods: [], exclusions: [] },
+        activity: { required: true, categories: ["karaoke"], features: [], exclusions: [] },
+        pairing: { required: true, sameVenuePreferred: true, sameVenueRequired: true },
+        fallback: { allowNearbyPair: false, allowPartial: true },
+      } as any,
+      scored: { restaurants: [], activities: [activityFirstVenue] },
+      pairs: [],
+      retrievedCount: 1,
+      trace: { decisions: [], fallback: { used: false, reason: null } } as any,
+    });
+
+    expect(result.requestFulfilled).toBe(true);
+    expect(result.sameVenueResults.map((item) => item.candidate.candidate.location.id)).toEqual(["activity-first-dual-role"]);
+  });
+
+  it("does not promote activity-first venues to same-venue results without restaurant evidence", async () => {
+    const activityOnlyVenue = scored("activity-only", 92, {
+      location_type: "activity",
+      activity_type: "karaoke",
+      primary_category: "karaoke",
+      description: "Private karaoke rooms and live entertainment.",
+      search_keywords: ["karaoke", "live entertainment"],
+    });
+
+    const result = await resolveFallback({
+      plan: {
+        rawQuery: "restaurant with karaoke under one roof",
+        mode: "same_venue",
+        occasion: null,
+        restaurant: { required: true, cuisines: [], foods: [], features: [], mealPeriods: [], exclusions: [] },
+        activity: { required: true, categories: ["karaoke"], features: [], exclusions: [] },
+        pairing: { required: true, sameVenuePreferred: true, sameVenueRequired: true },
+        fallback: { allowNearbyPair: false, allowPartial: true },
+      } as any,
+      scored: { restaurants: [], activities: [activityOnlyVenue] },
+      pairs: [],
+      retrievedCount: 1,
+      trace: { decisions: [], fallback: { used: false, reason: null } } as any,
+    });
+
+    expect(result.requestFulfilled).toBe(false);
+    expect(result.sameVenueResults).toEqual([]);
+  });
+
   it("filters hard exclusions across the full activity pool before public caps", async () => {
     const excluded = Array.from({ length: 24 }, (_, index) =>
       scored(`bowling-${index}`, 100 - index, {
