@@ -1,0 +1,197 @@
+name: AWS mail recipient normalization repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-mail-recipient-normalization-repair.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-mail-recipient-normalization-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-mail-recipient-normalization-repair-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  EDGE_RUNTIME_SECRET_REGION: us-east-1
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+  SHARED_APP_ENV_SECRET_REGION: us-west-2
+  EMAIL_IDENTITY: theouthaven.com
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate normalization contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-mail-recipient-normalization-repair.yml'
+          for token in \
+            'getaddresses' \
+            'json.loads' \
+            'recipient_domain_not_allowed' \
+            'ADMIN_RESERVATION_DIGEST_EMAIL' \
+            'SEARCH_HEALTH_ALERT_EMAILS' \
+            'put-secret-value'; do
+            grep -F "$token" "$FILE" >/dev/null
+          done
+
+  normalize:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Canonicalize configured digest recipients
+        run: |
+          set -euo pipefail
+          EDGE_CURRENT="$RUNNER_TEMP/edge-current.json"
+          SHARED_CURRENT="$RUNNER_TEMP/shared-current.json"
+          EDGE_NORMALIZED="$RUNNER_TEMP/edge-normalized.json"
+          SHARED_NORMALIZED="$RUNNER_TEMP/shared-normalized.json"
+
+          aws secretsmanager get-secret-value \
+            --region "$EDGE_RUNTIME_SECRET_REGION" \
+            --secret-id "$EDGE_RUNTIME_SECRET" \
+            --query SecretString --output text > "$EDGE_CURRENT"
+          aws secretsmanager get-secret-value \
+            --region "$SHARED_APP_ENV_SECRET_REGION" \
+            --secret-id "$SHARED_APP_ENV_SECRET" \
+            --query SecretString --output text > "$SHARED_CURRENT"
+          chmod 600 "$EDGE_CURRENT" "$SHARED_CURRENT"
+
+          EDGE_CURRENT="$EDGE_CURRENT" SHARED_CURRENT="$SHARED_CURRENT" \
+          EDGE_NORMALIZED="$EDGE_NORMALIZED" SHARED_NORMALIZED="$SHARED_NORMALIZED" \
+          EMAIL_IDENTITY="$EMAIL_IDENTITY" python <<'PY'
+          import json
+          import os
+          import re
+          from email.utils import getaddresses
+          from pathlib import Path
+
+          recipient_keys = {
+              'ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL','ADMIN_CRON_DIGEST_EMAIL',
+              'ADMIN_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO',
+              'SEARCH_HEALTH_ALERT_EMAILS','MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO',
+              'THEOUTHAVEN_ADMIN_EMAIL',
+          }
+          email_re = re.compile(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$')
+          expected_domain = os.environ['EMAIL_IDENTITY'].strip().lower()
+
+          def flatten(value):
+              if value is None:
+                  return []
+              if isinstance(value, str):
+                  text = value.strip()
+                  if not text:
+                      return []
+                  try:
+                      parsed = json.loads(text)
+                  except Exception:
+                      parsed = None
+                  if parsed is not None and parsed != value:
+                      return flatten(parsed)
+                  return [text]
+              if isinstance(value, (list, tuple, set)):
+                  result = []
+                  for item in value:
+                      result.extend(flatten(item))
+                  return result
+              if isinstance(value, dict):
+                  result = []
+                  preferred = [key for key in ('to','emails','email','recipients','addresses','value') if key in value]
+                  source = preferred if preferred else list(value.keys())
+                  for key in source:
+                      result.extend(flatten(value.get(key)))
+                  return result
+              return [str(value).strip()]
+
+          def normalize(value):
+              chunks = []
+              for raw in flatten(value):
+                  # getaddresses handles display names and comma lists. Normalize
+                  # alternate separators first without exposing the actual values.
+                  chunks.append(raw.replace(';', ',').replace('\r', ',').replace('\n', ','))
+              addresses = []
+              for _, address in getaddresses(chunks):
+                  address = address.strip().lower()
+                  if not address:
+                      continue
+                  if not email_re.fullmatch(address):
+                      raise SystemExit('configured_digest_recipient_invalid')
+                  if address.rsplit('@', 1)[1] != expected_domain:
+                      raise SystemExit('recipient_domain_not_allowed')
+                  if address not in addresses:
+                      addresses.append(address)
+              if not addresses:
+                  raise SystemExit('configured_digest_recipient_list_empty')
+              return ','.join(addresses)
+
+          def canonicalize(doc):
+              result = dict(doc)
+              for key in recipient_keys:
+                  if key in result and result[key] not in (None, ''):
+                      result[key] = normalize(result[key])
+              return result
+
+          edge = canonicalize(json.loads(Path(os.environ['EDGE_CURRENT']).read_text()))
+          shared = canonicalize(json.loads(Path(os.environ['SHARED_CURRENT']).read_text()))
+
+          def first(env, *keys):
+              for key in keys:
+                  value = env.get(key)
+                  if isinstance(value, str) and value.strip():
+                      return value.strip()
+              return ''
+
+          groups = {
+              'admin-cron-digest-email': first(edge, 'ADMIN_CRON_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'reservation-daily-digest': first(edge, 'ADMIN_RESERVATION_DIGEST_EMAIL', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'ADMIN_ALERT_EMAIL'),
+              'admin-platform-error-digest': first(edge, 'PLATFORM_ERROR_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': first(edge, 'SEARCH_HEALTH_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': first(edge, 'MARKETING_PULSE_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'daily-admin-digest': first(shared, 'ADMIN_DIGEST_EMAIL', 'THEOUTHAVEN_ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'search-quality-digest': first(shared, 'SEARCH_HEALTH_ALERT_EMAILS', 'ADMIN_EMAIL'),
+          }
+          missing = [name for name, value in groups.items() if not value]
+          if missing:
+              raise SystemExit('missing_configured_digest_recipient')
+
+          Path(os.environ['EDGE_NORMALIZED']).write_text(json.dumps(edge, separators=(',', ':'), sort_keys=True))
+          Path(os.environ['SHARED_NORMALIZED']).write_text(json.dumps(shared, separators=(',', ':'), sort_keys=True))
+          print('digest_recipient_configuration=canonical')
+          print('digest_recipient_groups=7')
+          PY
+
+          aws secretsmanager put-secret-value \
+            --region "$EDGE_RUNTIME_SECRET_REGION" \
+            --secret-id "$EDGE_RUNTIME_SECRET" \
+            --secret-string "file://$EDGE_NORMALIZED" \
+            --query VersionId --output text >/dev/null
+          aws secretsmanager put-secret-value \
+            --region "$SHARED_APP_ENV_SECRET_REGION" \
+            --secret-id "$SHARED_APP_ENV_SECRET" \
+            --secret-string "file://$SHARED_NORMALIZED" \
+            --query VersionId --output text >/dev/null
+
+          rm -f "$EDGE_CURRENT" "$SHARED_CURRENT" "$EDGE_NORMALIZED" "$SHARED_NORMALIZED"
+          echo 'aws_digest_recipient_secrets=normalized'
