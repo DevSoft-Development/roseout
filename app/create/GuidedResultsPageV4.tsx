@@ -63,6 +63,27 @@ const JOURNEY_VERSION = "four_step";
 const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation/i;
 const WALKING_INTENT = /\b(?:walk|walking|walkable|walkability)\b|\bon\s+foot\b/i;
 
+const LOADING_LINES: Record<PlanType, string[]> = {
+  outing: [
+    "Finding your perfect outing...",
+    "Matching restaurants and activities...",
+    "Checking distance, ratings, and fit...",
+    "Building your strongest complete picks...",
+  ],
+  restaurant: [
+    "Finding your perfect restaurant...",
+    "Matching the food, vibe, and area...",
+    "Checking ratings and fit...",
+    "Building your strongest restaurant picks...",
+  ],
+  activity: [
+    "Finding your perfect activity...",
+    "Matching the vibe, area, and experience...",
+    "Checking ratings and fit...",
+    "Building your strongest activity picks...",
+  ],
+};
+
 function track(eventName: string, metadata: Record<string, unknown>) {
   try { trackClientEvent({ event_name: eventName, source: "guided_create", metadata }); } catch { /* analytics never blocks */ }
 }
@@ -83,17 +104,70 @@ function ratingFor(location: LocationCard) {
   const reviews = numeric(location.review_count ?? location.user_ratings_total ?? location.google_review_count);
   return { value: rating.toFixed(1), reviews: reviews && reviews > 0 ? Math.round(reviews) : null };
 }
+function rawReasons(value: PairCard | LocationCard | null | undefined) {
+  if (!value) return [];
+  return [value.whyMatched, value.why_it_matched, ...(Array.isArray(value.matchReasons) ? value.matchReasons : [])]
+    .filter((reason): reason is string => typeof reason === "string" && Boolean(reason.trim()))
+    .flatMap((reason) => reason.split(/[;•]|\s+·\s+/).map((piece) => piece.trim()).filter(Boolean));
+}
+function humanTerm(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+function requestedTerms(value: PairCard | LocationCard | null | undefined) {
+  const terms: string[] = [];
+  for (const piece of rawReasons(value)) {
+    const match = piece.match(/^(?:matched|matches?) requested (?:activity|restaurant|cuisine|food|experience|feature|amenity|vibe)?\s*terms?:\s*(.+)$/i)
+      || piece.match(/^(?:matched|matches?) (?:activity|restaurant|cuisine|food|experience|feature|amenity|vibe)?\s*(?:term|preference):\s*(.+)$/i);
+    if (!match?.[1]) continue;
+    match[1].split(",").map(humanTerm).filter(Boolean).forEach((term) => terms.push(term));
+  }
+  const unique = [...new Set(terms)].filter((term) => !terms.some((other) => other !== term && other.includes(term) && other.length > term.length));
+  return unique.slice(0, 2);
+}
 function cleanReason(value: unknown) {
   if (typeof value !== "string") return null;
-  const pieces = value.split(/[;•]|\s+·\s+/).map((piece) => piece.trim()).filter(Boolean).filter((piece) => !INTERNAL_REASON.test(piece));
-  return pieces.length ? pieces.slice(0, 2).join(" · ") : null;
+  const pieces = value
+    .split(/[;•]|\s+·\s+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean)
+    .filter((piece) => !/requested locality|matched requested|matches? requested/i.test(piece))
+    .filter((piece) => !INTERNAL_REASON.test(piece));
+  return pieces.length ? pieces.slice(0, 1).join(" · ") : null;
 }
 function customerWhy(value: PairCard | LocationCard | null) {
   if (!value) return null;
   const direct = cleanReason(value.whyMatched) || cleanReason(value.why_it_matched);
   if (direct) return direct;
-  const reasons = Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).filter((reason): reason is string => Boolean(reason)).slice(0, 2) : [];
+  const reasons = Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).filter((reason): reason is string => Boolean(reason)).slice(0, 1) : [];
   return reasons.length ? reasons.join(" · ") : null;
+}
+function matchLabel(term: string) {
+  return term.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function pairMatchSummary(item: CompletePair) {
+  const terms = [...requestedTerms(item.pair), ...requestedTerms(item.restaurant), ...requestedTerms(item.activity)]
+    .filter((term, index, all) => all.indexOf(term) === index)
+    .filter((term, _, all) => !all.some((other) => other !== term && other.includes(term) && other.length > term.length))
+    .slice(0, 2);
+  const miles = Number(item.pair?.distanceMiles);
+  const walking = Number(item.pair?.walkingMinutes);
+  const distanceText = Number.isFinite(walking) && walking > 0 && walking <= 60
+    ? `${Math.round(walking)} min apart on foot`
+    : Number.isFinite(miles) && miles >= 0
+      ? `${miles.toFixed(1)} ${Math.abs(miles - 1) < 0.05 ? "mile" : "miles"} apart`
+      : null;
+  const termText = terms.map(matchLabel).join(" + ");
+  if (item.resultType === "same_venue") {
+    return termText ? `${termText}, together in one venue.` : "Dinner + activity together in one venue.";
+  }
+  if (termText && distanceText) return `${termText}, with both stops ${distanceText}.`;
+  if (termText) return `${termText}, matched together from what you asked for.`;
+  if (distanceText) return `Restaurant + activity, with both stops ${distanceText}.`;
+  return "Restaurant + activity, paired from your strongest search matches.";
 }
 function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
@@ -147,7 +221,7 @@ function VenuePanel({ location, label, large = false }: { location: LocationCard
 function PairCardView({ item, rank, premium, walkingRequested, planType, returnToResults, onUse }: { item: CompletePair; rank: number; premium: boolean; walkingRequested: boolean; planType: PlanType; returnToResults: string; onUse: () => void }) {
   const sponsored = sponsoredPair(item);
   const distance = distanceFor(item.pair, walkingRequested);
-  const reason = customerWhy(item.pair || item.restaurant) || "A strong match for the outing you described.";
+  const reason = pairMatchSummary(item);
   const placementGroup = sponsored ? "sponsored" : premium ? "top_pick" : "organic";
   const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   const trackProfile = (location: LocationCard, locationType: "restaurant" | "activity") => {
@@ -173,7 +247,7 @@ function PairCardView({ item, rank, premium, walkingRequested, planType, returnT
         <Link href={profileHref(item.restaurant, returnToResults)} onClick={() => trackProfile(item.restaurant, "restaurant")} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.08em] text-white/65 transition hover:border-white/20 hover:text-white">View {item.resultType === "same_venue" ? "Profile" : "Restaurant Profile"}</Link>
         {item.resultType !== "same_venue" ? <Link href={profileHref(item.activity, returnToResults)} onClick={() => trackProfile(item.activity, "activity")} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.08em] text-white/65 transition hover:border-white/20 hover:text-white">View Activity Profile</Link> : null}
       </div>
-      <p className="mt-4 min-h-12 text-sm font-semibold leading-6 text-white/50">{reason}</p>
+      <div className="mt-4 min-h-14 rounded-2xl border border-white/8 bg-white/[0.025] px-3.5 py-3"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#e1062a]">The match</p><p className="mt-1.5 text-sm font-semibold leading-5 text-white/58">{reason}</p></div>
       <div className="mt-auto flex items-center gap-2 pt-5"><button type="button" onClick={onUse} className="flex-1 rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.1em] transition hover:bg-[#ff1744]">Use This Plan →</button>{route ? <a href={route} target="_blank" rel="noopener noreferrer" onClick={() => track("planner_pick_route_clicked", { step: 3, rank, placement_group: placementGroup, sponsored })} className="rounded-full border border-white/10 px-4 py-3 text-xs font-black text-white/65 hover:border-white/20 hover:text-white">Route</a> : null}</div>
     </article>
   );
@@ -200,6 +274,41 @@ function SelectedSummary({ location, label }: { location: LocationCard | null; l
   return <div className="rounded-2xl border border-white/10 bg-black/30 p-3"><p className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p>{location ? <div className="mt-2 flex items-center gap-3"><div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-white/[0.05]">{image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover" /> : null}</div><div className="min-w-0"><p className="truncate text-sm font-black">{nameFor(location)}</p><p className="mt-0.5 truncate text-[11px] font-semibold text-white/40">{metaFor(location)}</p></div></div> : <p className="mt-2 text-sm font-semibold text-white/35">Not selected yet</p>}</div>;
 }
 
+function LoadingResults({ planType, loadingIndex }: { planType: PlanType; loadingIndex: number }) {
+  const label = LOADING_LINES[planType][loadingIndex % LOADING_LINES[planType].length];
+  return (
+    <div className="w-full overflow-hidden rounded-[1.5rem] border border-white/15 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.13),transparent_34%),#090909] p-4 shadow-2xl shadow-black/45 sm:p-5">
+      <div className="mb-5 flex items-start gap-4 sm:mb-6">
+        <div className="relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e1062a]/40 bg-[#e1062a]/10 shadow-[0_0_28px_rgba(225,6,42,0.18)]">
+          <span className="absolute inset-1.5 animate-ping rounded-full bg-[#e1062a]/15" />
+          <span className="relative h-2.5 w-2.5 animate-pulse rounded-full bg-[#e1062a]" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#e1062a]">TheOutHaven is searching</p>
+          <h2 className="mt-1.5 text-xl font-black tracking-[-0.035em] text-white sm:text-2xl">{label}</h2>
+          <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-white/45 sm:text-sm">We’re comparing the best matches for the plan you just created. Your picks will appear here as soon as they’re ready.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        {[0, 1, 2, 3, 4, 5].map((item) => (
+          <div key={item} className="overflow-hidden rounded-[1.35rem] border border-white/15 bg-[#101010] shadow-lg shadow-black/25">
+            <div className="h-40 animate-pulse bg-white/[0.11] sm:h-44" />
+            <div className="space-y-3.5 p-4">
+              <div className="h-3 w-24 animate-pulse rounded-full bg-[#e1062a]/35" />
+              <div className="h-5 w-3/4 animate-pulse rounded-full bg-white/[0.16]" />
+              <div className="h-4 w-full animate-pulse rounded-full bg-white/[0.11]" />
+              <div className="h-4 w-4/5 animate-pulse rounded-full bg-white/[0.09]" />
+              <div className="h-24 animate-pulse rounded-2xl border border-white/5 bg-white/[0.075]" />
+              <div className="h-11 animate-pulse rounded-full bg-white/[0.12]" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GuidedResultsPageV4() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -210,11 +319,21 @@ export default function GuidedResultsPageV4() {
   const builderRef = useRef<HTMLElement | null>(null);
   const [payload, setPayload] = useState<SearchPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingIndex, setLoadingIndex] = useState(0);
   const [error, setError] = useState("");
   const [retryKey, setRetryKey] = useState(0);
   const [showBuilder, setShowBuilder] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState<LocationCard | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<LocationCard | null>(null);
+
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingIndex(0);
+    const interval = window.setInterval(() => {
+      setLoadingIndex((current) => (current + 1) % LOADING_LINES[planType].length);
+    }, 1800);
+    return () => window.clearInterval(interval);
+  }, [loading, planType]);
 
   useEffect(() => {
     document.title = "Pick Your Plan | TheOutHaven";
@@ -272,7 +391,7 @@ export default function GuidedResultsPageV4() {
       <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top,rgba(225,6,42,0.14),transparent_36%),linear-gradient(180deg,#050505_0%,#090706_100%)] px-4 pb-7 pt-6 sm:px-6 sm:pb-9 sm:pt-8"><div className="mx-auto max-w-6xl"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step 3 of 4 · Pick</p><h1 className="mt-2 text-3xl font-black tracking-[-0.045em] sm:text-5xl">{planType === "outing" ? "Pick your complete outing." : planType === "restaurant" ? "Pick your restaurant." : "Pick your activity."}</h1><p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/50 sm:text-base">{planType === "outing" ? "Start with our strongest complete pairs. If none feel right, build your own combination." : "Choose the option that fits best and move straight to completing your outing."}</p></div><Link href="/create" className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs font-black text-white/65 hover:text-white">Start over</Link></div></div></section>
 
       <section className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
-        {loading ? <div className="grid gap-5 lg:grid-cols-3">{[0,1,2,3,4,5].map((item) => <div key={item} className="h-[560px] animate-pulse rounded-[1.5rem] border border-white/10 bg-white/[0.035]" />)}</div> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Try Again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Adjust My Plan</Link></div> : planType === "outing" ? <>
+        {loading ? <LoadingResults planType={planType} loadingIndex={loadingIndex} /> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Try Again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.1em]">Adjust My Plan</Link></div> : planType === "outing" ? <>
           <div><div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a]">Curated for your plan</p><h2 className="mt-1 text-2xl font-black">TheOutHaven Top Picks</h2></div><p className="max-w-md text-xs font-semibold leading-5 text-white/35">Paid placements will always be clearly marked Sponsored.</p></div><div className="grid items-stretch gap-5 lg:grid-cols-3">{topPicks.map((item, index) => { const sponsored = sponsoredPair(item); return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} premium walkingRequested={walkingRequested} planType={planType} returnToResults={returnToResults} onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsored ? "sponsored" : "top_pick", sponsored, sponsorId(item))} />; })}</div></div>
           {morePairs.length ? <div className="mt-10"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/35">More strong matches</p><h2 className="mt-1 text-2xl font-black">More complete outings</h2><div className="mt-5 grid items-stretch gap-5 lg:grid-cols-3">{morePairs.map((item, index) => { const rank = index + 4; return <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${rank}`} item={item} rank={rank} premium={false} walkingRequested={walkingRequested} planType={planType} returnToResults={returnToResults} onUse={() => openPlan(item.restaurant, item.activity, item.pair, rank, item.resultType, "organic")} />; })}</div></div> : null}
           {restaurants.length && activities.length ? <div className="mt-10 rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.045),rgba(255,255,255,0.015))] p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6"><div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e1062a]">Prefer to choose each stop?</p><h2 className="mt-1 text-xl font-black">Build your own complete outing.</h2><p className="mt-1 text-sm font-semibold text-white/45">Mix a restaurant and activity from the same search results.</p></div><button type="button" onClick={revealBuilder} className="mt-4 shrink-0 rounded-full border border-[#e1062a]/45 bg-[#e1062a]/10 px-6 py-3 text-xs font-black uppercase tracking-[0.1em] transition hover:bg-[#e1062a]/20 sm:mt-0">Build My Own Outing ↓</button></div> : null}
