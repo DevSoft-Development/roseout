@@ -111,16 +111,9 @@ export async function POST(request: Request) {
   }
 
   if (!canonicalResponse.ok) {
-    return mobileJson(
-      {
-        ok: false,
-        error: {
-          code: payload?.error?.code || payload?.code || "SEARCH_FAILED",
-          message: payload?.error?.message || payload?.message || "TheOutHaven could not complete that search.",
-        },
-      },
-      { status: canonicalResponse.status },
-    );
+    const code = payload?.error?.code || payload?.code || "SEARCH_FAILED";
+    const messageText = payload?.error?.message || payload?.message || "TheOutHaven could not complete that search.";
+    return mobileError(String(code), String(messageText), canonicalResponse.status);
   }
 
   const restaurants = Array.isArray(payload?.restaurants) ? payload.restaurants.map((item: any) => shapePlace(item, "restaurant")) : [];
