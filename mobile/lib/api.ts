@@ -1,4 +1,6 @@
 import { mobileConfig } from "@/lib/config";
+import { getOrCreateGuestId } from "@/lib/auth/storage";
+import { supabase } from "@/lib/auth/supabase";
 
 export type ApiErrorPayload = {
   error?: string;
@@ -22,11 +24,24 @@ export async function mobileApi<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const [{ data }, guestId] = await Promise.all([
+    supabase ? supabase.auth.getSession() : Promise.resolve({ data: { session: null } }),
+    getOrCreateGuestId(),
+  ]);
+
+  const authHeaders: Record<string, string> = {
+    "X-TheOutHaven-Guest": guestId,
+  };
+  if (data.session?.access_token) {
+    authHeaders.Authorization = `Bearer ${data.session.access_token}`;
+  }
+
   const response = await fetch(`${mobileConfig.apiBaseUrl}${normalizedPath}`, {
     ...init,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...authHeaders,
       ...init.headers,
     },
   });
