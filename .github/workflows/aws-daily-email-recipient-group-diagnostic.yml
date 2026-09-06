@@ -1,0 +1,76 @@
+name: AWS daily email recipient group diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-daily-email-recipient-group-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-daily-email-recipient-group-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+
+jobs:
+  diagnose:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Report missing recipient group names only
+        run: |
+          set -euo pipefail
+          EDGE="$RUNNER_TEMP/edge.json"
+          SHARED="$RUNNER_TEMP/shared.json"
+          aws secretsmanager get-secret-value --region us-east-1 --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
+          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
+          chmod 600 "$EDGE" "$SHARED"
+          EDGE="$EDGE" SHARED="$SHARED" python <<'PY'
+          import json, os
+          from pathlib import Path
+
+          edge=json.loads(Path(os.environ['EDGE']).read_text())
+          shared=json.loads(Path(os.environ['SHARED']).read_text())
+
+          def nonempty(env, *keys):
+              for key in keys:
+                  value=env.get(key)
+                  if isinstance(value, str) and value.strip() and value.strip() not in ('[]','{}','null','""'):
+                      return True
+                  if isinstance(value, (list, tuple, dict)) and len(value) > 0:
+                      return True
+              return False
+
+          groups={
+              'admin-cron-digest-email': nonempty(edge,'ADMIN_CRON_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
+              'reservation-daily-digest': nonempty(edge,'ADMIN_RESERVATION_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
+              'admin-platform-error-digest': nonempty(edge,'PLATFORM_ERROR_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': nonempty(edge,'SEARCH_HEALTH_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': nonempty(edge,'MARKETING_PULSE_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'daily-admin-digest': nonempty(shared,'ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'search-quality-digest': nonempty(shared,'SEARCH_HEALTH_ALERT_EMAILS','ADMIN_EMAIL'),
+          }
+          missing=[name for name, ready in groups.items() if not ready]
+          print('configured_group_count=' + str(sum(1 for ready in groups.values() if ready)))
+          print('missing_group_count=' + str(len(missing)))
+          for name in missing:
+              print('missing_group=' + name)
+          if missing:
+              raise SystemExit(1)
+          PY
+          rm -f "$EDGE" "$SHARED"
