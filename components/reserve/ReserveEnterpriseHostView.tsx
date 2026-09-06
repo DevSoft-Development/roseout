@@ -66,7 +66,7 @@ function isBarResource(resource: any) {
 
 function statusClass(status: string) {
   if (status === "Open") return "border-emerald-400/55 bg-emerald-500/10 text-emerald-200";
-  if (status === "Seated") return "border-emerald-300/25 bg-emerald-500/[0.08] text-emerald-100";
+  if (status === "Seated") return "border-[#e1062a]/70 bg-[#e1062a]/18 text-[#ff8aa0] shadow-[0_0_0_1px_rgba(225,6,42,0.08)]";
   if (["Waiting", "Ready sent", "Due now"].includes(status)) return "border-[#e1062a]/50 bg-[#e1062a]/12 text-[#ff8aa0]";
   if (["Blocked"].includes(status)) return "border-red-500/60 bg-red-500/10 text-red-200";
   return "border-white/15 bg-white/[0.045] text-white/80";

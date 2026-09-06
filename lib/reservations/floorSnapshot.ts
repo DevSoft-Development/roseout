@@ -73,7 +73,7 @@ function reservationLabels(reservation: FloorReservation) {
     .map((label) => normalizedLabel(label))
     .filter(Boolean);
 }
-const reservationStatusPriority: Record<string, number> = { seated: 1, checked_in: 2, waiting: 2, arrived: 3, confirmed: 4, pending: 5 };
+const reservationStatusPriority: Record<string, number> = { seated: 1, occupied: 1, checked_in: 2, waiting: 2, arrived: 3, confirmed: 4, pending: 5 };
 function statusPriority(reservation: FloorReservation) { return reservationStatusPriority[String(reservation.status || '').toLowerCase()] || 99; }
 function dateDistance(reservation: FloorReservation, now = Date.now()) {
   const date = cleanString((reservation as any).reservation_date);
@@ -102,7 +102,7 @@ export function getFloorSnapshotState(resource: FloorResource, reservations: Flo
   if (base === 'closed' || resource.is_active === false) return { status:'Closed', available:false };
   const reservation = getFloorResourceReservation(resource,reservations);
   if (!reservation) return { status:'Open', available:true };
-  if (reservation.status === 'seated') return { status:'Seated', available:false, reservation };
+  if (reservation.status === 'seated' || reservation.status === 'occupied') return { status:'Seated', available:false, reservation };
   if ((reservation.status === 'checked_in' || reservation.status === 'waiting' || reservation.status === 'arrived') && (reservation as any).table_ready_sms_sent) return { status:'Ready sent', available:false, reservation };
   if (reservation.status === 'checked_in' || reservation.status === 'waiting' || reservation.status === 'arrived') return { status:'Waiting', available:false, reservation };
   if (reservation.status === 'confirmed') return { status:'Confirmed', available:false, reservation };
