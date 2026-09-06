@@ -10,4 +10,10 @@ export const mobileConfig = {
   shortLinkBaseUrl: trimTrailingSlash(
     process.env.EXPO_PUBLIC_SHORT_LINK_BASE_URL || "https://outhvn.com",
   ),
+  supabaseUrl: String(process.env.EXPO_PUBLIC_SUPABASE_URL || "").trim(),
+  supabaseAnonKey: String(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "").trim(),
 } as const;
+
+export const hasMobileAuthConfig = Boolean(
+  mobileConfig.supabaseUrl && mobileConfig.supabaseAnonKey,
+);
