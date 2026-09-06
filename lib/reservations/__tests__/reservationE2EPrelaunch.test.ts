@@ -32,7 +32,7 @@ const demoRoute = readFileSync(
   "utf8",
 );
 const dedupeMigration = readFileSync(
-  "supabase/migrations/20260807163325_dedupe_theouthaven_lounge_reservation_inventory.sql",
+  "supabase/migrations_archive/pre_virginia_baseline/20260807163325_dedupe_theouthaven_lounge_reservation_inventory.sql",
   "utf8",
 );
 
