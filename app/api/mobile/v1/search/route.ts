@@ -17,6 +17,18 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function numberOrNull(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 function buildCanonicalMessage(body: MobileSearchBody) {
   const query = text(body.query);
   if (!query) return "";
@@ -45,15 +57,23 @@ function pickImage(value: any) {
 }
 
 function shapePlace(value: any, kind: "restaurant" | "activity") {
+  const id = String(value?.id || value?.location_id || value?.source_id || "");
   return {
-    id: String(value?.id || value?.location_id || value?.source_id || ""),
+    id,
     name: pickName(value),
     kind,
     category: pickCategory(value),
     imageUrl: pickImage(value),
-    rating: Number.isFinite(Number(value?.rating)) ? Number(value.rating) : null,
-    priceLevel: typeof value?.price_level === "string" ? value.price_level : typeof value?.price === "string" ? value.price : null,
-    distanceMiles: Number.isFinite(Number(value?.distance_miles)) ? Number(value.distance_miles) : Number.isFinite(Number(value?.distanceMiles)) ? Number(value.distanceMiles) : null,
+    rating: numberOrNull(value?.rating),
+    priceLevel: firstText(value?.price_level, value?.price),
+    distanceMiles: numberOrNull(value?.distance_miles ?? value?.distanceMiles),
+    publicUrl: firstText(value?.public_url, value?.detail_url, value?.profile_href),
+    reservationUrl: firstText(value?.reservation_url, value?.reservation_link, value?.external_reservation_url),
+    websiteUrl: firstText(value?.website, value?.website_url, value?.official_website),
+    phone: firstText(value?.phone, value?.phone_number, value?.formatted_phone),
+    address: firstText(value?.formatted_address, value?.full_address, value?.address),
+    latitude: numberOrNull(value?.latitude ?? value?.lat),
+    longitude: numberOrNull(value?.longitude ?? value?.lng ?? value?.lon),
   };
 }
 
@@ -64,9 +84,9 @@ function shapePair(value: any, index: number) {
     id: String(value?.id || value?.pair_id || `pair-${index}`),
     restaurant: restaurant ? shapePlace(restaurant, "restaurant") : null,
     activity: activity ? shapePlace(activity, "activity") : null,
-    distanceMiles: Number.isFinite(Number(value?.distance_miles)) ? Number(value.distance_miles) : Number.isFinite(Number(value?.distanceMiles)) ? Number(value.distanceMiles) : null,
-    walkMinutes: Number.isFinite(Number(value?.walk_minutes)) ? Number(value.walk_minutes) : Number.isFinite(Number(value?.walkMinutes)) ? Number(value.walkMinutes) : null,
-    reason: typeof value?.reason === "string" ? value.reason : typeof value?.pairing_reason === "string" ? value.pairing_reason : null,
+    distanceMiles: numberOrNull(value?.distance_miles ?? value?.distanceMiles),
+    walkMinutes: numberOrNull(value?.walk_minutes ?? value?.walkMinutes),
+    reason: firstText(value?.reason, value?.pairing_reason),
   };
 }
 
