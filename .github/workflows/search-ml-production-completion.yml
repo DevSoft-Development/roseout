@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - 'app/api/admin/ml/recalculate-location-scores/route.ts'
       - 'app/api/admin/ml/recalculate-advanced-all/route.ts'
       - 'app/api/cron/search-hf-inventory-maintenance/route.ts'
       - 'app/api/cron/search-hf-photo-intelligence/route.ts'
@@ -113,6 +114,28 @@ jobs:
           curl --fail --silent --show-error --max-time 300 \
             --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
             "$PRODUCTION_ORIGIN/api/cron/search-hf-inventory-maintenance?batch=100&scan=5000" | tee "$RUNNER_TEMP/inventory.json"
+
+      - name: Recalculate ml_rank_v1
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/ml-rank-v1.json" --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+            "$PRODUCTION_ORIGIN/api/admin/ml/recalculate-location-scores" || true)"
+          echo "ml_rank_v1 recalculation HTTP $CODE"
+          python - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/ml-rank-v1.json') as f: data=json.load(f)
+          print(json.dumps({'success':data.get('success'),'processed':data.get('processed'),'updated':data.get('updated'),'errors':data.get('errors'),'score_version':data.get('score_version')},indent=2))
+          assert data.get('success') is True, data
+          assert data.get('score_version') == 'ml_rank_v1', data
+          assert int(data.get('processed') or 0) > 0, data
+          assert int(data.get('updated') or 0) > 0, data
+          assert int(data.get('errors') or 0) == 0, data
+          PY
+          test "$CODE" = "200" || exit 1
 
       - name: Run advanced recalculation
         env:

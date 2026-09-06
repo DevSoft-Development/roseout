@@ -5,12 +5,13 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { calculateLocationMlScore, ML_SCORE_VERSION } from "@/lib/ml/locationRanking";
 import { calculateReviewQualityScore } from "@/lib/ml/reviewIntelligence";
 import { CALL_EVENTS, CLICK_EVENTS, Diagnostics, NEGATIVE_EVENTS, RESERVE_EVENTS, SAVE_EVENTS, VIEW_EVENTS, bump, isUuid, locationIdsFromAnalytics, mlPairs, mlResults, normalizeEventName, pairFromAnalytics, pick, recommendation } from "@/lib/ml/recalculationSignals";
+import { resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
 
 export const runtime = "nodejs"; export const dynamic = "force-dynamic"; export const maxDuration = 300;
 type Agg = { impressions_7d: number; impressions_30d: number; views_7d: number; views_30d: number; clicks_7d: number; clicks_30d: number; reservation_clicks_30d: number; call_clicks_30d: number; website_clicks_30d: number; saves_30d: number; completed_outings_30d: number; negative_signals_30d: number; last_engaged_at?: string | null };
 function getBearerToken(request: NextRequest) { const auth = request.headers.get("authorization") || ""; return auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : null; }
 function isCronAuthorized(request: NextRequest) { return Boolean(process.env.CRON_SECRET && getBearerToken(request) === process.env.CRON_SECRET); }
-async function authorize(request: NextRequest) { if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null; const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth); return error; }
+async function authorize(request: NextRequest) { if (process.env.NODE_ENV === "development" || isCronAuthorized(request)) return null; const provided=request.headers.get("authorization"); const config=await resolveSearchMlRuntimeConfig().catch(()=>null); if(config?.token && provided===`Bearer ${config.token}`) return null; const { error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth); return error; }
 function emptyAgg(): Agg { return { impressions_7d: 0, impressions_30d: 0, views_7d: 0, views_30d: 0, clicks_7d: 0, clicks_30d: 0, reservation_clicks_30d: 0, call_clicks_30d: 0, website_clicks_30d: 0, saves_30d: 0, completed_outings_30d: 0, negative_signals_30d: 0 }; }
 function aggFor(map: Map<string, Agg>, id: unknown) { const key = typeof id === "string" ? id : ""; if (!isUuid(key)) return null; if (!map.has(key)) map.set(key, emptyAgg()); return map.get(key)!; }
 function is7d(createdAt: string | null | undefined, since7d: Date) { const date = new Date(createdAt || 0); return !Number.isNaN(date.getTime()) && date >= since7d; }
