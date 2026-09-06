@@ -18,9 +18,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
-  BACKGROUND_RUNTIME_FUNCTION: toh-production-background-runtime
   EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
-  BACKGROUND_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
 
 jobs:
   validate:
@@ -32,16 +30,22 @@ jobs:
           set -euo pipefail
           FILE='.github/workflows/aws-daily-email-aws-recovery.yml'
           for token in \
-            admin-cron-digest-email \
-            reservation-daily-digest \
             admin-platform-error-digest \
             admin-search-health-digest \
             admin-daily-marketing-pulse \
-            '/api/cron/daily-admin-digest' \
-            'job=search-quality-digest' \
             resend_not_configured \
             MAIL_ENV_REFRESH_TOKEN; do
             grep -F "$token" "$FILE" >/dev/null
+          done
+          for retired in \
+            admin-cron-digest-email \
+            reservation-daily-digest \
+            daily-admin-digest \
+            search-quality-digest; do
+            if grep -F "$retired" "$FILE" >/dev/null; then
+              echo "Retired daily email must not remain in recovery: $retired" >&2
+              exit 1
+            fi
           done
 
   recover_and_send:
@@ -51,6 +55,7 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -58,67 +63,75 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Prove AWS recipient configuration without exposing values
+      - name: Prove retained recipient configuration without exposing values
         run: |
           set -euo pipefail
           EDGE="$RUNNER_TEMP/edge.json"
-          SHARED="$RUNNER_TEMP/shared.json"
-          aws secretsmanager get-secret-value --region us-east-1 --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
-          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$BACKGROUND_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
-          EDGE="$EDGE" SHARED="$SHARED" python <<'PY'
+          aws secretsmanager get-secret-value \
+            --region "$AWS_REGION" \
+            --secret-id "$EDGE_RUNTIME_SECRET" \
+            --query SecretString --output text > "$EDGE"
+          EDGE="$EDGE" python <<'PY'
           import json, os, re
           from email.utils import getaddresses
           from pathlib import Path
-          rx=re.compile(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$')
-          def norm(value):
-              if value is None: return ''
-              if isinstance(value,(list,tuple,set)): raw=','.join(str(v) for v in value)
-              elif isinstance(value,dict): raw=','.join(str(value.get(k,'')) for k in ('to','emails','email','recipients','addresses','value'))
-              else: raw=str(value)
-              out=[]
-              for _,addr in getaddresses([raw.replace(';',',').replace('\r',',').replace('\n',',')]):
-                  addr=addr.strip().lower()
-                  if addr and rx.fullmatch(addr) and addr.endswith('@theouthaven.com') and addr not in out: out.append(addr)
-              return ','.join(out)
-          edge=json.loads(Path(os.environ['EDGE']).read_text())
-          shared=json.loads(Path(os.environ['SHARED']).read_text())
-          def first(env,*keys):
-              for key in keys:
-                  value=norm(env.get(key))
-                  if value: return value
-              return ''
-          groups={
-            'admin-cron-digest-email':first(edge,'ADMIN_CRON_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
-            'reservation-daily-digest':first(edge,'ADMIN_RESERVATION_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
-            'admin-platform-error-digest':first(edge,'PLATFORM_ERROR_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
-            'admin-search-health-digest':first(edge,'SEARCH_HEALTH_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
-            'admin-daily-marketing-pulse':first(edge,'MARKETING_PULSE_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
-            'daily-admin-digest':first(shared,'ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SUPERADMIN_EMAIL'),
-            'search-quality-digest':first(shared,'SEARCH_HEALTH_ALERT_EMAILS','ADMIN_EMAIL'),
-          }
-          missing=[name for name,value in groups.items() if not value]
-          if missing: raise SystemExit('aws_daily_email_recipient_configuration_incomplete')
-          print('aws_daily_email_recipient_groups=7')
-          PY
-          rm -f "$EDGE" "$SHARED"
 
-      - name: Refresh AWS mail runtime generations
+          rx = re.compile(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$')
+
+          def norm(value):
+              if value is None:
+                  return ''
+              if isinstance(value, (list, tuple, set)):
+                  raw = ','.join(str(v) for v in value)
+              elif isinstance(value, dict):
+                  raw = ','.join(str(value.get(k, '')) for k in ('to','emails','email','recipients','addresses','value'))
+              else:
+                  raw = str(value)
+              out = []
+              for _, addr in getaddresses([raw.replace(';', ',').replace('\r', ',').replace('\n', ',')]):
+                  addr = addr.strip().lower()
+                  if addr and rx.fullmatch(addr) and addr.endswith('@theouthaven.com') and addr not in out:
+                      out.append(addr)
+              return ','.join(out)
+
+          edge = json.loads(Path(os.environ['EDGE']).read_text())
+
+          def first(*keys):
+              for key in keys:
+                  value = norm(edge.get(key))
+                  if value:
+                      return value
+              return ''
+
+          groups = {
+              'admin-platform-error-digest': first('PLATFORM_ERROR_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': first('SEARCH_HEALTH_DIGEST_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': first('MARKETING_PULSE_TO', 'ADMIN_EMAIL', 'SUPERADMIN_EMAIL'),
+          }
+          missing = [name for name, value in groups.items() if not value]
+          if missing:
+              raise SystemExit('retained_daily_email_recipient_configuration_incomplete')
+          print('retained_daily_email_recipient_groups=3')
+          PY
+          rm -f "$EDGE"
+
+      - name: Refresh Edge mail runtime generation
         run: |
           set -euo pipefail
-          refresh_function() {
-            local fn="$1" label="$2"
-            local vars="$RUNNER_TEMP/${label}-vars.json"
-            local envdoc="$RUNNER_TEMP/${label}-env.json"
-            aws lambda get-function-configuration --function-name "$fn" --query 'Environment.Variables' --output json > "$vars"
-            jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${label}" '{Variables:(. + {MAIL_ENV_REFRESH_TOKEN:$token})}' "$vars" > "$envdoc"
-            aws lambda update-function-configuration --function-name "$fn" --environment "file://$envdoc" >/dev/null
-            aws lambda wait function-updated-v2 --function-name "$fn"
-            rm -f "$vars" "$envdoc"
-          }
-          refresh_function "$EDGE_RUNTIME_FUNCTION" edge
-          refresh_function "$BACKGROUND_RUNTIME_FUNCTION" background
+          VARS="$RUNNER_TEMP/edge-vars.json"
+          ENVDOC="$RUNNER_TEMP/edge-env.json"
+          aws lambda get-function-configuration \
+            --function-name "$EDGE_RUNTIME_FUNCTION" \
+            --query 'Environment.Variables' --output json > "$VARS"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-edge" \
+            '{Variables:(. + {MAIL_ENV_REFRESH_TOKEN:$token})}' "$VARS" > "$ENVDOC"
+          aws lambda update-function-configuration \
+            --function-name "$EDGE_RUNTIME_FUNCTION" \
+            --environment "file://$ENVDOC" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$EDGE_RUNTIME_FUNCTION"
+          rm -f "$VARS" "$ENVDOC"
 
-      - name: Replay missed Edge daily emails
+      - name: Replay retained daily emails
         run: |
           set -euo pipefail
           invoke_edge() {
@@ -127,52 +140,41 @@ jobs:
             local response="$RUNNER_TEMP/${fn}-response.json"
             FN="$fn" BODY="$body" EVENT="$event" python <<'PY'
           import json, os, time
-          fn=os.environ['FN']; body=json.loads(os.environ['BODY']); path=f'/functions/v1/{fn}'
-          event={'version':'2.0','routeKey':f'POST {path}','rawPath':path,'rawQueryString':'','headers':{'content-type':'application/json','x-toh-aws-internal':'eventbridge'},'requestContext':{'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal','http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':f'email-recovery-{fn}','routeKey':f'POST {path}','stage':'$default','time':'06/Sep/2026:13:00:00 +0000','timeEpoch':int(time.time()*1000)},'body':json.dumps(body,separators=(',',':')),'isBase64Encoded':False}
+          fn = os.environ['FN']
+          body = json.loads(os.environ['BODY'])
+          path = f'/functions/v1/{fn}'
+          event = {
+              'version':'2.0',
+              'routeKey':f'POST {path}',
+              'rawPath':path,
+              'rawQueryString':'',
+              'headers':{'content-type':'application/json','x-toh-aws-internal':'eventbridge'},
+              'requestContext':{
+                  'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal',
+                  'http':{'method':'POST','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},
+                  'requestId':f'email-recovery-{fn}','routeKey':f'POST {path}','stage':'$default',
+                  'time':'06/Sep/2026:13:00:00 +0000','timeEpoch':int(time.time()*1000)
+              },
+              'body':json.dumps(body,separators=(',',':')),
+              'isBase64Encoded':False,
+          }
           open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
           PY
-            aws lambda invoke --function-name "$EDGE_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+            aws lambda invoke \
+              --function-name "$EDGE_RUNTIME_FUNCTION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "fileb://$event" "$response" >/dev/null
             jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
             jq -e '(.body | fromjson | (.success // true) != false)' "$response" >/dev/null
             ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
             ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false)))' "$response" >/dev/null
             echo "email_replay=${fn}:passed"
           }
-          invoke_edge 'admin-cron-digest-email' '{"source":"cron","hours":24,"force":true}'
-          invoke_edge 'reservation-daily-digest' '{"source":"cron","force":true}'
+
           invoke_edge 'admin-platform-error-digest' '{"source":"cron","hours":24,"force":true}'
           invoke_edge 'admin-search-health-digest' '{"source":"cron","hours":24,"force":true}'
           invoke_edge 'admin-daily-marketing-pulse' '{"source":"cron","hours":24,"force":true}'
 
-      - name: Replay missed background daily emails
-        run: |
-          set -euo pipefail
-          SECRET_FILE="$RUNNER_TEMP/background-secret.json"
-          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$BACKGROUND_APP_ENV_SECRET" --query SecretString --output text > "$SECRET_FILE"
-          CRON_SECRET="$(jq -r '.CRON_SECRET // empty' "$SECRET_FILE")"
-          rm -f "$SECRET_FILE"
-          test -n "$CRON_SECRET"
-          echo "::add-mask::$CRON_SECRET"
-          invoke_background() {
-            local label="$1" path="$2" query="$3"
-            local event="$RUNNER_TEMP/${label}-event.json"
-            local response="$RUNNER_TEMP/${label}-response.json"
-            LABEL="$label" PATH_VALUE="$path" QUERY_VALUE="$query" CRON_VALUE="$CRON_SECRET" EVENT="$event" python <<'PY'
-          import json, os, time
-          path=os.environ['PATH_VALUE']; query=os.environ['QUERY_VALUE']; secret=os.environ['CRON_VALUE']; label=os.environ['LABEL']
-          event={'version':'2.0','routeKey':f'GET {path}','rawPath':path,'rawQueryString':query,'headers':{'content-type':'application/json','authorization':f'Bearer {secret}','x-cron-secret':secret,'x-toh-aws-internal':'eventbridge'},'requestContext':{'accountId':'email-recovery','apiId':'email-recovery','domainName':'internal','domainPrefix':'internal','http':{'method':'GET','path':path,'protocol':'HTTP/1.1','sourceIp':'127.0.0.1','userAgent':'github-actions'},'requestId':f'email-recovery-{label}','routeKey':f'GET {path}','stage':'$default','time':'06/Sep/2026:13:00:00 +0000','timeEpoch':int(time.time()*1000)},'isBase64Encoded':False}
-          open(os.environ['EVENT'],'w').write(json.dumps(event,separators=(',',':')))
-          PY
-            aws lambda invoke --function-name "$BACKGROUND_RUNTIME_FUNCTION" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
-            jq -e '.statusCode >= 200 and .statusCode < 300' "$response" >/dev/null
-            jq -e '(.body | fromjson | (.success // true) != false)' "$response" >/dev/null
-            ! jq -e '(.body | fromjson | tostring | contains("resend_not_configured"))' "$response" >/dev/null
-            ! jq -e '(.body | fromjson | .. | objects | select((has("sent") and .sent == false) or (has("emailSent") and .emailSent == false)))' "$response" >/dev/null
-            echo "email_replay=${label}:passed"
-          }
-          invoke_background 'daily-admin-digest' '/api/cron/daily-admin-digest' ''
-          invoke_background 'search-quality-digest' '/api/cron/managed' 'job=search-quality-digest'
-
       - name: Recovery summary
         run: |
-          echo 'Seven AWS daily admin/report emails replayed successfully.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Three retained AWS daily admin/report emails replayed successfully.' >> "$GITHUB_STEP_SUMMARY"
