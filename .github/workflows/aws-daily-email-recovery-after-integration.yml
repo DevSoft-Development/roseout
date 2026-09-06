@@ -16,12 +16,12 @@ jobs:
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch canonical daily email recovery
+      - name: Dispatch retained daily email recovery
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh workflow run aws-daily-email-recovery.yml \
+          gh workflow run aws-daily-email-aws-recovery.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-          echo 'daily_email_recovery=dispatched'
+          echo 'retained_daily_email_recovery=dispatched'
