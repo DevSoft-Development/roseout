@@ -121,11 +121,26 @@ function requestedActivityEvidenceTerms(plan: SearchPlan) {
   return [...new Set([...taxonomyTerms, ...genericActivityCapabilityTerms(plan.rawQuery)])];
 }
 
+function requestedRestaurantEvidenceTerms(plan: SearchPlan) {
+  const specificTerms = [
+    ...plan.restaurant.cuisines.flatMap((value) => runtimeRetrievalTerms(value)),
+    ...plan.restaurant.foods.flatMap((value) => runtimeRetrievalTerms(value)),
+    ...plan.restaurant.features.flatMap((value) => runtimeRetrievalTerms(value)),
+  ];
+  return [...new Set(["restaurant", "dining", "eatery", "bistro", "cafe", "café", ...specificTerms])];
+}
+
 function candidateSupportsActivityPlan(item: ScoredCandidate, plan: SearchPlan) {
   const terms = requestedActivityEvidenceTerms(plan);
   if (!terms.length) return false;
   const text = evidenceText(item);
   return terms.some((term) => containsEvidence(text, term));
+}
+
+function candidateSupportsRestaurantPlan(item: ScoredCandidate, plan: SearchPlan) {
+  if (!plan.restaurant.required) return true;
+  const text = evidenceText(item);
+  return requestedRestaurantEvidenceTerms(plan).some((term) => containsEvidence(text, term));
 }
 
 function diversify(items: ScoredCandidate[], limit = 8) {
@@ -153,29 +168,53 @@ function sameVenueCandidates(
   plan: SearchPlan,
   limit = 20,
 ) {
+  const restaurantById = new Map<string, ScoredCandidate>();
   const activityById = new Map<string, ScoredCandidate>();
+  const candidateById = new Map<string, ScoredCandidate>();
+
+  for (const restaurant of restaurants) {
+    const id = locationId(restaurant);
+    if (!id) continue;
+    const current = restaurantById.get(id);
+    if (!current || restaurant.scores.total > current.scores.total) restaurantById.set(id, restaurant);
+    const representative = candidateById.get(id);
+    if (!representative || restaurant.scores.total > representative.scores.total) candidateById.set(id, restaurant);
+  }
+
   for (const activity of activities) {
     const id = locationId(activity);
     if (!id) continue;
     const current = activityById.get(id);
     if (!current || activity.scores.total > current.scores.total) activityById.set(id, activity);
+    const representative = candidateById.get(id);
+    if (!representative || activity.scores.total > representative.scores.total) candidateById.set(id, activity);
   }
 
+  const qualified = [...candidateById.values()].filter((candidate) => {
+    const id = locationId(candidate);
+    const hasRestaurantLane = restaurantById.has(id);
+    const hasActivityLane = activityById.has(id);
+    const restaurantCapable = hasRestaurantLane || candidateSupportsRestaurantPlan(candidate, plan);
+    const activityCapable = hasActivityLane || candidateSupportsActivityPlan(candidate, plan);
+    return restaurantCapable && activityCapable;
+  });
+
   return diversify(
-    restaurants
-      .filter((restaurant) => {
-        const id = locationId(restaurant);
-        return activityById.has(id) || candidateSupportsActivityPlan(restaurant, plan);
-      })
-      .sort((left, right) => {
-        const leftActivity = activityById.get(locationId(left));
-        const rightActivity = activityById.get(locationId(right));
-        const leftCapabilityBoost = candidateSupportsActivityPlan(left, plan) ? 20 : 0;
-        const rightCapabilityBoost = candidateSupportsActivityPlan(right, plan) ? 20 : 0;
-        const leftScore = left.scores.total + (leftActivity?.scores.total ?? 0) + leftCapabilityBoost;
-        const rightScore = right.scores.total + (rightActivity?.scores.total ?? 0) + rightCapabilityBoost;
-        return rightScore - leftScore;
-      }),
+    qualified.sort((left, right) => {
+      const leftId = locationId(left);
+      const rightId = locationId(right);
+      const leftRestaurant = restaurantById.get(leftId);
+      const rightRestaurant = restaurantById.get(rightId);
+      const leftActivity = activityById.get(leftId);
+      const rightActivity = activityById.get(rightId);
+      const leftDualLaneBoost = leftRestaurant && leftActivity ? 25 : 0;
+      const rightDualLaneBoost = rightRestaurant && rightActivity ? 25 : 0;
+      const leftEvidenceBoost = candidateSupportsRestaurantPlan(left, plan) && candidateSupportsActivityPlan(left, plan) ? 20 : 0;
+      const rightEvidenceBoost = candidateSupportsRestaurantPlan(right, plan) && candidateSupportsActivityPlan(right, plan) ? 20 : 0;
+      const leftScore = Math.max(leftRestaurant?.scores.total ?? 0, leftActivity?.scores.total ?? 0, left.scores.total) + leftDualLaneBoost + leftEvidenceBoost;
+      const rightScore = Math.max(rightRestaurant?.scores.total ?? 0, rightActivity?.scores.total ?? 0, right.scores.total) + rightDualLaneBoost + rightEvidenceBoost;
+      return rightScore - leftScore;
+    }),
     limit,
   );
 }
@@ -286,9 +325,10 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
     }),
   });
 
-  // Search the complete qualified pools before card truncation. A valid dual-role
-  // venue may rank outside the first 20 in one lane, and a restaurant can prove a
-  // same-venue activity capability directly from its canonical profile evidence.
+  // Search the complete qualified pools before card truncation. Same-venue
+  // qualification is symmetric across retrieval lanes: a venue discovered as an
+  // activity can still satisfy the restaurant role (and vice versa) when its
+  // canonical profile contains evidence for both requested roles.
   const dual = sameVenueCandidates(restaurantPool, activityPool, plan, 20);
   const compatiblePairs = (effectiveSameVenueRequired ? pairs.filter(sameLocationPair) : pairs)
     .filter((pair) => pairPassesExclusions(pair, plan));
@@ -363,6 +403,7 @@ export async function resolveFallback({ plan, scored, pairs, retrievedCount, tra
       allowNearbyPair,
       restaurantPoolCount: restaurantPool.length,
       activityPoolCount: activityPool.length,
+      restaurantEvidenceTerms: requestedRestaurantEvidenceTerms(plan),
       activityEvidenceTerms: requestedActivityEvidenceTerms(plan),
       sameVenueCandidateCount: dual.length,
       compatiblePairCount: compatiblePairs.length,
