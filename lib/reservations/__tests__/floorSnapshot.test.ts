@@ -57,6 +57,13 @@ describe("floor snapshot reservation matching", () => {
     expect(state.available).toBe(false);
   });
 
+  it("treats occupied reservations as seated and unavailable", () => {
+    const uuid = "123e4567-e89b-12d3-a456-426614174000";
+    const state = getFloorSnapshotState({ id: uuid, label: "Table 1" }, [{ id: "r1", status: "occupied", bookable_item_id: uuid }]);
+    expect(state.status).toBe("Seated");
+    expect(state.available).toBe(false);
+  });
+
   it("matches reservations by normalized bookable item name fallback", () => {
     const state = getFloorSnapshotState({ id: "table-1", item_name: "Table 1" }, [{ id: "r1", status: "seated", bookable_item_name: " table   1 " }]);
     expect(state.status).toBe("Seated");
