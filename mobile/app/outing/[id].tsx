@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { Share, View } from "react-native";
+import { Alert, Share, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { FoundationScreen } from "@/components/FoundationScreen";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { mobileApi } from "@/lib/api";
 import { placeRouteParams } from "@/lib/result-navigation";
 import type { MobilePlaceResult } from "@/lib/search-results";
 import { useAppTheme } from "@/providers/ThemeProvider";
@@ -43,6 +44,8 @@ export default function OutingDetailScreen() {
   const requireAuth = useRequireAuth();
   const { theme } = useAppTheme();
   const [saved, setSaved] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const restaurant = useMemo(() => parsePlace(value(params.restaurant)), [params.restaurant]);
   const activity = useMemo(() => parsePlace(value(params.activity)), [params.activity]);
   const walkMinutes = value(params.walkMinutes);
@@ -55,7 +58,39 @@ export default function OutingDetailScreen() {
       ? `${Number(distanceMiles).toFixed(1)} mi between stops`
       : "Nearby stops";
 
-  const save = () => requireAuth(() => setSaved((current) => !current));
+  const save = () => requireAuth(async () => {
+    setSaving(true);
+    try {
+      if (saved && savedId) {
+        await mobileApi(`/outings?id=${encodeURIComponent(savedId)}`, { method: "DELETE" });
+        setSaved(false);
+        setSavedId(null);
+        return;
+      }
+
+      const result = await mobileApi<{ ok: true; outingId: string }>("/outings", {
+        method: "POST",
+        body: JSON.stringify({
+          title: "My TheOutHaven OUTing",
+          status: "saved",
+          restaurant,
+          activity,
+          dedupeKey: value(params.id) || undefined,
+          planPayload: {
+            walkMinutes: walkMinutes ? Number(walkMinutes) : null,
+            distanceMiles: distanceMiles ? Number(distanceMiles) : null,
+            reason: reason || null,
+          },
+        }),
+      });
+      setSavedId(result.outingId);
+      setSaved(true);
+    } catch {
+      Alert.alert("Save unavailable", "This OUTing could not be synced yet.");
+    } finally {
+      setSaving(false);
+    }
+  });
 
   const share = async () => {
     const lines = ["My TheOutHaven OUTing"];
@@ -99,7 +134,7 @@ export default function OutingDetailScreen() {
           onOpen={() => activity && router.push(placeRouteParams(activity))}
         />
 
-        <Button onPress={save}>{saved ? "Saved" : "Save OUTing"}</Button>
+        <Button disabled={saving} onPress={save}>{saving ? "Saving..." : saved ? "Saved" : "Save OUTing"}</Button>
         <Button variant="secondary" onPress={share}>Share OUTing</Button>
         {restaurant ? <Button variant="ghost" onPress={swapRestaurant}>Swap restaurant</Button> : null}
         {activity ? <Button variant="ghost" onPress={swapActivity}>Swap activity</Button> : null}
