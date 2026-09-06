@@ -12,6 +12,8 @@ export const mobileConfig = {
   ),
   supabaseUrl: String(process.env.EXPO_PUBLIC_SUPABASE_URL || "").trim(),
   supabaseAnonKey: String(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "").trim(),
+  sentryDsn: String(process.env.EXPO_PUBLIC_SENTRY_DSN || "").trim(),
+  releaseChannel: String(process.env.EXPO_PUBLIC_RELEASE_CHANNEL || "development").trim(),
 } as const;
 
 export const hasMobileAuthConfig = Boolean(
