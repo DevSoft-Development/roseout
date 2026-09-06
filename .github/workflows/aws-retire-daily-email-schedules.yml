@@ -1,0 +1,101 @@
+name: AWS retire daily email schedules
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-retire-daily-email-schedules.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-retire-daily-email-schedules.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate retirement contract
+        run: |
+          set -euo pipefail
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+          test "$(jq 'length' "$SCHEDULES")" = '61'
+          for retained in daily-search-health-digest daily-platform-error-digest daily-marketing-pulse; do
+            jq -e --arg name "$retained" 'any(.[]; .name == $name)' "$SCHEDULES" >/dev/null
+          done
+          for retired in admin-cron-digest-email reservation-daily-digest daily-admin-digest search-quality-digest; do
+            if jq -e --arg name "$retired" 'any(.[]; .name == $name)' "$SCHEDULES" >/dev/null; then
+              echo "Retired schedule still exists in canonical manifest: $retired" >&2
+              exit 1
+            fi
+          done
+
+  retire:
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Delete retired daily email schedules
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          for name in admin-cron-digest-email reservation-daily-digest daily-admin-digest search-quality-digest; do
+            if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" >/dev/null 2>&1; then
+              aws scheduler delete-schedule --group-name "$SCHEDULE_GROUP" --name "$name"
+              echo "retired_schedule=${name}:deleted"
+            else
+              echo "retired_schedule=${name}:already_absent"
+            fi
+          done
+
+      - name: Verify exact production scheduler state
+        run: |
+          set -euo pipefail
+          SCHEDULES='infra/aws/edge-runtime/schedules.json'
+          jq -r '.[].name' "$SCHEDULES" | sort > "$RUNNER_TEMP/expected.txt"
+          aws scheduler list-schedules \
+            --group-name "$SCHEDULE_GROUP" \
+            --query 'Schedules[].Name' \
+            --output text | tr '\t' '\n' | sed '/^$/d' | sort > "$RUNNER_TEMP/actual.txt"
+          test "$(wc -l < "$RUNNER_TEMP/actual.txt" | tr -d ' ')" = '61'
+          diff -u "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt"
+          for retained in daily-search-health-digest daily-platform-error-digest daily-marketing-pulse; do
+            grep -Fx "$retained" "$RUNNER_TEMP/actual.txt" >/dev/null
+          done
+          for retired in admin-cron-digest-email reservation-daily-digest daily-admin-digest search-quality-digest; do
+            if grep -Fx "$retired" "$RUNNER_TEMP/actual.txt" >/dev/null; then
+              echo "Retired schedule remains live: $retired" >&2
+              exit 1
+            fi
+          done
+          echo 'production_schedule_count=61'
+          echo 'retained_daily_email_schedule_count=3'
+          echo 'retired_daily_email_schedule_count=0'
+
+      - name: Retirement summary
+        run: |
+          {
+            echo '### Daily email schedule retirement'
+            echo ''
+            echo '- Live AWS scheduler group verified at exactly 61 schedules.'
+            echo '- Search Ops, Platform Errors, and Marketing Pulse remain scheduled.'
+            echo '- Four retired daily email schedules are absent.'
+          } >> "$GITHUB_STEP_SUMMARY"
