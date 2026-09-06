@@ -59,6 +59,17 @@ export async function POST(
   let accountCreated = false;
 
   if (!accountId) {
+    const { data: existingAccount } = await supabaseAdmin
+      .from("crm_accounts")
+      .select("id")
+      .eq("external_reference", location.id)
+      .is("archived_at", null)
+      .limit(1)
+      .maybeSingle();
+    accountId = existingAccount?.id ?? null;
+  }
+
+  if (!accountId) {
     const account = await createAccount(
       {
         name: location.name || "Unnamed restaurant",
@@ -82,7 +93,9 @@ export async function POST(
         updated_by: actor.user_id,
       })
       .eq("id", accountId);
+  }
 
+  if (!existingLink) {
     const { error: linkError } = await supabaseAdmin.from("crm_account_locations").insert({
       account_id: accountId,
       location_id: location.id,
