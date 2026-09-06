@@ -25,7 +25,7 @@ async function sendSms(to: string | null | undefined, body: string) {
   return sendAppSms({ to, body });
 }
 
-const controls = " Reply CHANGE to reschedule/change guests, CANCEL to cancel, DETAILS for details, or HELP for options.";
+const controls = " You can manage this by text — just tell us naturally if you want to reschedule, change the date/time or guest count, review details, or cancel. Reply HELP for options.";
 
 export function sendReservationConfirmationSMS(input: ReservationSmsInput) {
   return sendSms(input.to, `Your reservation at ${input.locationName} is confirmed for ${formatDate(input.reservationDate)} at ${formatTime(input.reservationTime)}.${controls}`);

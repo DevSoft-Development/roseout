@@ -5,12 +5,14 @@ import {
   normalizePhone,
   sendConciergeSms,
   sendCrmSms,
+  sendMarketingSms,
   sendReservationSms,
   sendSupportSms,
   sendTelnyxSmsFromNumber,
   TELNYX_CHANNEL_NUMBERS,
 } from "@/lib/sms/telnyx";
 import { classifySmsDepartment, type SmsDepartment } from "@/lib/communications/sms-intent-routing";
+import { canonicalizeNaturalSmsContinuation } from "@/lib/communications/sms-natural-response";
 import {
   appendReservationSmsContinuation,
   clearReservationSmsSession,
@@ -374,10 +376,11 @@ export async function POST(req: Request) {
         ? await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId, complianceKeyword: "start" })
         : null;
 
-      if (firstDelivery && channel === "concierge") await sendConciergeSms({ to: from, body: "TheOutHaven Concierge texts are enabled. Reply STOP to stop messages or HELP for help." });
-      if (firstDelivery && channel === "crm") await sendCrmSms({ to: from, body: "TheOutHaven CRM SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
-      if (firstDelivery && channel === "reservations") await sendReservationSms({ to: from, body: "TheOutHaven reservation SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
-      if (firstDelivery && channel === "support") await sendSupportSms({ to: from, body: "TheOutHaven support SMS updates are enabled. Reply STOP to stop messages or HELP for help." });
+      if (firstDelivery && channel === "concierge") await sendConciergeSms({ to: from, body: "TheOutHaven Concierge texts are enabled. Just text naturally for outing help, directions, hours, recommendations, booking follow-ups, or reviews. Reply HELP for options or STOP to stop messages." });
+      if (firstDelivery && channel === "crm") await sendCrmSms({ to: from, body: "TheOutHaven CRM texts are enabled. Reply naturally with your question or update and our team will keep it with your conversation. Reply HELP for options or STOP to stop messages." });
+      if (firstDelivery && channel === "reservations") await sendReservationSms({ to: from, body: "TheOutHaven reservation texts are enabled. Reply naturally to reschedule, change date/time or guest count, review details, or cancel. Reply HELP for options or STOP to stop messages." });
+      if (firstDelivery && channel === "support") await sendSupportSms({ to: from, body: "TheOutHaven support texts are enabled. Send your question naturally here and it will stay with your support conversation. Reply HELP for options or STOP to stop messages." });
+      if (firstDelivery && channel === "marketing") await sendMarketingSms({ to: from, body: "TheOutHaven updates are enabled. You can reply naturally with a question or request, HELP for options, or STOP to opt out." });
 
       return NextResponse.json({
         received: true,
@@ -420,18 +423,20 @@ export async function POST(req: Request) {
       if (continuation) return continuation;
     }
 
+    const conversationalText = canonicalizeNaturalSmsContinuation(rawText);
+
     if (channel === "concierge") {
       if (text === "HELP") {
         await sendConciergeSms({
           to: from,
-          body: "TheOutHaven Concierge: ask me for an address, hours, directions, or other information about a location or your outing. If I asked about a booking or review, you can reply naturally. Reply STOP to stop messages.",
+          body: "TheOutHaven Concierge: just text naturally. I can help with outing ideas, locations, hours, directions, booking follow-ups, and review replies. Reply STOP to stop messages.",
         });
         return NextResponse.json({ received: true, action: "concierge_help" });
       }
 
       const consentResult = await processInternalReservationReviewConsentReply({
         from,
-        body: rawText,
+        body: conversationalText,
         providerMessageId,
       });
       if (consentResult.handled) {
@@ -442,7 +447,7 @@ export async function POST(req: Request) {
         });
       }
 
-      const reviewResult = await processSmsReviewReply({ from, body: rawText, eventId, providerMessageId });
+      const reviewResult = await processSmsReviewReply({ from, body: conversationalText, eventId, providerMessageId });
       if (reviewResult.handled) return NextResponse.json({ received: true, action: reviewResult.action || "concierge_review_reply", review: reviewResult });
 
       const conciergeResult = await routeConciergeInboundAtEdge({ from, body: rawText });
@@ -477,7 +482,7 @@ export async function POST(req: Request) {
 
     if (channel === "support") {
       if (firstDelivery && text === "HELP") {
-        await sendSupportSms({ to: from, body: "TheOutHaven Support: send your question here and it will be added to your support ticket. Reply STOP to stop SMS replies." });
+        await sendSupportSms({ to: from, body: "TheOutHaven Support: send your question or update naturally here and it will be added to your support conversation. Reply STOP to stop SMS replies." });
         return NextResponse.json({ received: true, action: "support_help" });
       }
       const supportRoute = await routeSupportFromSmsChannel({ from, to, body: rawText, eventId, providerMessageId });
@@ -494,7 +499,7 @@ export async function POST(req: Request) {
 
     if (isCrmMainNumber) {
       const crmRoute = await routeInboundCrmSms({ from, to, body: rawText, eventId, providerMessageId });
-      if (firstDelivery && text === "HELP") await sendCrmSms({ to: from, body: "TheOutHaven CRM: reply STOP to stop CRM messages or visit theouthaven.com for support." });
+      if (firstDelivery && text === "HELP") await sendCrmSms({ to: from, body: "TheOutHaven CRM: reply naturally with a question or update and we’ll keep it with your conversation. For support, just say what you need and I’ll route it. Reply STOP to stop CRM messages." });
       if (firstDelivery) {
         await supabaseAdmin.from("sms_logs").insert({
           location_id: crmRoute?.locationId || null,
@@ -517,7 +522,10 @@ export async function POST(req: Request) {
     }
 
     if (channel === "marketing") {
-      if (text === "HELP") return NextResponse.json({ received: true, action: "marketing_help_recorded" });
+      if (text === "HELP") {
+        await sendMarketingSms({ to: from, body: "TheOutHaven Updates: reply naturally with a question or request. For reservations, support, or outing help, just say what you need and I’ll route it. Reply STOP to opt out." });
+        return NextResponse.json({ received: true, action: "marketing_help_recorded" });
+      }
       await supabaseAdmin.from("sms_logs").insert({
         customer_phone: from,
         message_type: "incoming_marketing_message",
@@ -532,13 +540,13 @@ export async function POST(req: Request) {
 
     if (channel === "reservations") {
       if (text === "HELP") {
-        await sendReservationSms({ to: from, body: "TheOutHaven Reservations: reply CHANGE to reschedule or change party size, CANCEL to cancel, DETAILS for your reservation, STOP to stop SMS updates, or just text your request naturally." });
+        await sendReservationSms({ to: from, body: "TheOutHaven Reservations: just text naturally to reschedule, change date/time or guest count, review details, or cancel. For example: “move it to 8,” “make it for 4,” or “cancel my reservation.” Reply STOP to stop SMS updates." });
         return NextResponse.json({ received: true, action: "reservation_help" });
       }
 
       const actionResult = await processReservationSmsAction({
         from,
-        text: rawText,
+        text: conversationalText,
         providerMessageId,
         eventId,
         to,
