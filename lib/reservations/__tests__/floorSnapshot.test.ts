@@ -76,7 +76,6 @@ describe("floor snapshot reservation matching", () => {
   });
 });
 
-
 describe("floor snapshot status priority", () => {
   it("keeps seated ahead of arrived for the same label-only resource", () => {
     const state = getFloorSnapshotState({ id: "demo", item_name: "Demo Table" }, [
@@ -108,8 +107,8 @@ describe("reserve vocabulary", () => {
     expect(getReserveVocabulary("karaoke")).toMatchObject({ assignResource: "Assign room", seatAction: "Start room", seatedStatus: "In room" });
   });
 
-  it("returns generic labels by default", () => {
-    expect(getReserveVocabulary()).toMatchObject({ assignResource: "Assign space", seatAction: "Mark in place", seatedStatus: "In place" });
+  it("returns neutral visit labels by default", () => {
+    expect(getReserveVocabulary()).toMatchObject({ assignResource: "Assign space", seatAction: "Start visit", seatedStatus: "In progress" });
   });
 
   it("uses item type when the location type is generic", () => {
@@ -129,9 +128,9 @@ describe("reserve action links", () => {
     expect(links.bookingHref).toBe("/reserve/location/loc_123");
   });
 
-  it("normalizes Reserve QR links to the command center instead of claim QR admin pages", () => {
+  it("normalizes Reserve QR links to the location reservation settings page instead of claim QR admin pages", () => {
     const links = getReserveActionLinks({ locationId: "loc_123", locationType: "restaurant" });
-    expect(links.qrHref).toBe("/reserve/dashboard?locationId=loc_123&type=restaurant&tab=settings&section=qr");
+    expect(links.qrHref).toBe("/locations/dashboard/reservations/settings?locationId=loc_123&type=restaurant&section=qr");
     expect(links.qrHref).not.toContain("claim-qrs");
   });
 });
