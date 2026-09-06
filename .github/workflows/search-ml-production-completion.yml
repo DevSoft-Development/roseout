@@ -232,16 +232,19 @@ jobs:
           path: final-search-ml-production-qa.json
           retention-days: 14
 
-      - name: Dispatch reranker training data gate
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Start AWS reranker training data gate
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            --data '{"ref":"main"}' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/search-ml-train-evaluate-promote.yml/dispatches"
-          echo "Reranker training workflow dispatched; its 500 train / 50 validation gate remains unchanged."
+          OPS_STACK=theouthaven-ops-scheduled-runtime-production
+          PROJECT="$(aws cloudformation describe-stacks \
+            --stack-name "$OPS_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='CodeBuildProjectName'].OutputValue" \
+            --output text)"
+          test -n "$PROJECT"
+          BUILD_ID="$(aws codebuild start-build \
+            --project-name "$PROJECT" \
+            --environment-variables-override name=OPS_JOB,value=search-ml-train-evaluate-promote,type=PLAINTEXT \
+            --query 'build.id' --output text)"
+          test -n "$BUILD_ID"
+          echo "AWS reranker training job started: $BUILD_ID"
+          echo "The AWS runtime retains the 500 training / 50 validation gate."
