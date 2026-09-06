@@ -30,7 +30,7 @@ export async function mobileApi<T>(
   ]);
 
   const authHeaders: Record<string, string> = {
-    "X-TheOutHaven-Guest": guestId,
+    "X-TheOutHaven-Guest-ID": guestId,
   };
   if (data.session?.access_token) {
     authHeaders.Authorization = `Bearer ${data.session.access_token}`;
