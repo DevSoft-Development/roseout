@@ -104,17 +104,70 @@ function ratingFor(location: LocationCard) {
   const reviews = numeric(location.review_count ?? location.user_ratings_total ?? location.google_review_count);
   return { value: rating.toFixed(1), reviews: reviews && reviews > 0 ? Math.round(reviews) : null };
 }
+function rawReasons(value: PairCard | LocationCard | null | undefined) {
+  if (!value) return [];
+  return [value.whyMatched, value.why_it_matched, ...(Array.isArray(value.matchReasons) ? value.matchReasons : [])]
+    .filter((reason): reason is string => typeof reason === "string" && Boolean(reason.trim()))
+    .flatMap((reason) => reason.split(/[;•]|\s+·\s+/).map((piece) => piece.trim()).filter(Boolean));
+}
+function humanTerm(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+function requestedTerms(value: PairCard | LocationCard | null | undefined) {
+  const terms: string[] = [];
+  for (const piece of rawReasons(value)) {
+    const match = piece.match(/^(?:matched|matches?) requested (?:activity|restaurant|cuisine|food|experience|feature|amenity|vibe)?\s*terms?:\s*(.+)$/i)
+      || piece.match(/^(?:matched|matches?) (?:activity|restaurant|cuisine|food|experience|feature|amenity|vibe)?\s*(?:term|preference):\s*(.+)$/i);
+    if (!match?.[1]) continue;
+    match[1].split(",").map(humanTerm).filter(Boolean).forEach((term) => terms.push(term));
+  }
+  const unique = [...new Set(terms)].filter((term) => !terms.some((other) => other !== term && other.includes(term) && other.length > term.length));
+  return unique.slice(0, 2);
+}
 function cleanReason(value: unknown) {
   if (typeof value !== "string") return null;
-  const pieces = value.split(/[;•]|\s+·\s+/).map((piece) => piece.trim()).filter(Boolean).filter((piece) => !INTERNAL_REASON.test(piece));
-  return pieces.length ? pieces.slice(0, 2).join(" · ") : null;
+  const pieces = value
+    .split(/[;•]|\s+·\s+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean)
+    .filter((piece) => !/requested locality|matched requested|matches? requested/i.test(piece))
+    .filter((piece) => !INTERNAL_REASON.test(piece));
+  return pieces.length ? pieces.slice(0, 1).join(" · ") : null;
 }
 function customerWhy(value: PairCard | LocationCard | null) {
   if (!value) return null;
   const direct = cleanReason(value.whyMatched) || cleanReason(value.why_it_matched);
   if (direct) return direct;
-  const reasons = Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).filter((reason): reason is string => Boolean(reason)).slice(0, 2) : [];
+  const reasons = Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).filter((reason): reason is string => Boolean(reason)).slice(0, 1) : [];
   return reasons.length ? reasons.join(" · ") : null;
+}
+function matchLabel(term: string) {
+  return term.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function pairMatchSummary(item: CompletePair) {
+  const terms = [...requestedTerms(item.pair), ...requestedTerms(item.restaurant), ...requestedTerms(item.activity)]
+    .filter((term, index, all) => all.indexOf(term) === index)
+    .filter((term, _, all) => !all.some((other) => other !== term && other.includes(term) && other.length > term.length))
+    .slice(0, 2);
+  const miles = Number(item.pair?.distanceMiles);
+  const walking = Number(item.pair?.walkingMinutes);
+  const distanceText = Number.isFinite(walking) && walking > 0 && walking <= 60
+    ? `${Math.round(walking)} min apart on foot`
+    : Number.isFinite(miles) && miles >= 0
+      ? `${miles.toFixed(1)} ${Math.abs(miles - 1) < 0.05 ? "mile" : "miles"} apart`
+      : null;
+  const termText = terms.map(matchLabel).join(" + ");
+  if (item.resultType === "same_venue") {
+    return termText ? `${termText}, together in one venue.` : "Dinner + activity together in one venue.";
+  }
+  if (termText && distanceText) return `${termText}, with both stops ${distanceText}.`;
+  if (termText) return `${termText}, matched together from what you asked for.`;
+  if (distanceText) return `Restaurant + activity, with both stops ${distanceText}.`;
+  return "Restaurant + activity, paired from your strongest search matches.";
 }
 function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
@@ -168,7 +221,7 @@ function VenuePanel({ location, label, large = false }: { location: LocationCard
 function PairCardView({ item, rank, premium, walkingRequested, planType, returnToResults, onUse }: { item: CompletePair; rank: number; premium: boolean; walkingRequested: boolean; planType: PlanType; returnToResults: string; onUse: () => void }) {
   const sponsored = sponsoredPair(item);
   const distance = distanceFor(item.pair, walkingRequested);
-  const reason = customerWhy(item.pair || item.restaurant) || "A strong match for the outing you described.";
+  const reason = pairMatchSummary(item);
   const placementGroup = sponsored ? "sponsored" : premium ? "top_pick" : "organic";
   const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   const trackProfile = (location: LocationCard, locationType: "restaurant" | "activity") => {
@@ -194,7 +247,7 @@ function PairCardView({ item, rank, premium, walkingRequested, planType, returnT
         <Link href={profileHref(item.restaurant, returnToResults)} onClick={() => trackProfile(item.restaurant, "restaurant")} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.08em] text-white/65 transition hover:border-white/20 hover:text-white">View {item.resultType === "same_venue" ? "Profile" : "Restaurant Profile"}</Link>
         {item.resultType !== "same_venue" ? <Link href={profileHref(item.activity, returnToResults)} onClick={() => trackProfile(item.activity, "activity")} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.08em] text-white/65 transition hover:border-white/20 hover:text-white">View Activity Profile</Link> : null}
       </div>
-      <p className="mt-4 min-h-12 text-sm font-semibold leading-6 text-white/50">{reason}</p>
+      <div className="mt-4 min-h-14 rounded-2xl border border-white/8 bg-white/[0.025] px-3.5 py-3"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#e1062a]">The match</p><p className="mt-1.5 text-sm font-semibold leading-5 text-white/58">{reason}</p></div>
       <div className="mt-auto flex items-center gap-2 pt-5"><button type="button" onClick={onUse} className="flex-1 rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.1em] transition hover:bg-[#ff1744]">Use This Plan →</button>{route ? <a href={route} target="_blank" rel="noopener noreferrer" onClick={() => track("planner_pick_route_clicked", { step: 3, rank, placement_group: placementGroup, sponsored })} className="rounded-full border border-white/10 px-4 py-3 text-xs font-black text-white/65 hover:border-white/20 hover:text-white">Route</a> : null}</div>
     </article>
   );
