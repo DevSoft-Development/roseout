@@ -178,6 +178,10 @@ def build_http_event(method, path, query, body, headers, request_id):
 
 def invoke_edge(function_name, body, context):
     body = dict(body)
+    background_target = str(body.pop("_enqueue_background_target", "") or "").strip()
+    background_payload = body.pop("_enqueue_background_payload", {}) or {}
+    if background_target and not isinstance(background_payload, dict):
+        raise ValueError("Background sidecar payload must be an object")
     if body.pop("_inject_scheduled_at", False):
         body["scheduled_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -203,12 +207,21 @@ def invoke_edge(function_name, body, context):
         raise RuntimeError(f"{function_name} returned HTTP {status}: {str(parsed_body)[:2000]}")
     if isinstance(parsed_body, dict) and parsed_body.get("success") is False:
         raise RuntimeError(f"{function_name} returned success=false: {str(parsed_body)[:2000]}")
+
+    background_wake = None
+    if background_target:
+        background_wake = enqueue_background_cron({
+            "target": background_target,
+            "payload": background_payload,
+        })
+
     return {
         "ok": True,
         "runtime": "edge",
         "function": function_name,
         "status": status,
         "response": parsed_body,
+        "backgroundWake": background_wake,
     }
 
 

@@ -12,7 +12,7 @@
   {"name":"marketing-report-scheduler","expression":"cron(0 * * * ? *)","function":"sqs:background-cron","body":{"target":"edge:admin-marketing-report-scheduler","payload":{"source":"eventbridge_recovery"}}},
   {"name":"nightly-demo-reset","expression":"cron(15 7 * * ? *)","function":"nightly-demo-reset","body":{"source":"cron"}},
   {"name":"nightly-photo-backfill","expression":"cron(30 6 * * ? *)","function":"nightly-photo-backfill","body":{"source":"cron","batchSize":50,"skipChains":true,"includeChains":false,"includeTheaters":false,"includeLowPriority":false,"onlySearchable":false,"onlyPublishReady":false}},
-  {"name":"reservation-reminder-cron","expression":"cron(0/15 * * * ? *)","function":"reservation-reminder-cron","body":{"source":"cron"}},
+  {"name":"reservation-reminder-cron","expression":"cron(0/15 * * * ? *)","function":"reservation-reminder-cron","body":{"source":"cron","_enqueue_background_target":"/api/cron/mobile-outing-reminders","_enqueue_background_payload":{"source":"reservation_reminder_sidecar"}}},
   {"name":"reservation-sms-phrase-learning","expression":"cron(17 * * * ? *)","function":"reservation-sms-phrase-learning","body":{"source":"cron"}},
   {"name":"reservation-status-cleanup","expression":"cron(10 * * * ? *)","function":"reservation-status-cleanup","body":{"source":"cron"}},
   {"name":"support-resolved-auto-close-hourly","expression":"cron(7 * * * ? *)","function":"support-automation-worker","body":{"operation":"automations","limit":250}},

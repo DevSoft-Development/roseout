@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { requireCronRequest } from "@/lib/cron-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { sendExpoPush } from "@/lib/mobile/push";
 
@@ -7,11 +8,6 @@ export const dynamic = "force-dynamic";
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-}
-
-function authorized(request: NextRequest) {
-  const expected = process.env.MOBILE_OUTING_REMINDER_CRON_SECRET;
-  return Boolean(expected && request.headers.get("x-cron-secret") === expected);
 }
 
 async function deliver(kind: "two_hour" | "thirty_minute", minMinutes: number, maxMinutes: number) {
@@ -93,7 +89,8 @@ async function deliver(kind: "two_hour" | "thirty_minute", minMinutes: number, m
 }
 
 export async function POST(request: NextRequest) {
-  if (!authorized(request)) return json({ ok: false, error: "unauthorized" }, 401);
+  const unauthorized = requireCronRequest(request);
+  if (unauthorized) return unauthorized;
 
   try {
     const [twoHour, thirtyMinute] = await Promise.all([
