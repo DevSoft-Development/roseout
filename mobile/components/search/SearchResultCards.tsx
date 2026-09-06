@@ -1,7 +1,10 @@
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
 import { AppText } from "@/components/ui/AppText";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
+import { outingRouteParams, placeRouteParams } from "@/lib/result-navigation";
 import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 function PlaceSummary({ place }: { place: MobilePlaceResult }) {
@@ -21,11 +24,16 @@ function PlaceSummary({ place }: { place: MobilePlaceResult }) {
 
 export function OutingResultCard({ outing }: { outing: MobileOutingResult }) {
   const { theme } = useAppTheme();
+  const router = useRouter();
   return (
     <Card elevated>
       <AppText variant="eyebrow" accent>YOUR OUTING</AppText>
       <View style={{ marginTop: theme.spacing.md, gap: theme.spacing.md }}>
-        {outing.restaurant ? <PlaceSummary place={outing.restaurant} /> : null}
+        {outing.restaurant ? (
+          <Pressable onPress={() => router.push(placeRouteParams(outing.restaurant!))}>
+            <PlaceSummary place={outing.restaurant} />
+          </Pressable>
+        ) : null}
         {outing.restaurant && outing.activity ? (
           <View style={{ alignItems: "center", gap: 4 }}>
             <AppText accent>↓</AppText>
@@ -34,20 +42,28 @@ export function OutingResultCard({ outing }: { outing: MobileOutingResult }) {
             </AppText>
           </View>
         ) : null}
-        {outing.activity ? <PlaceSummary place={outing.activity} /> : null}
+        {outing.activity ? (
+          <Pressable onPress={() => router.push(placeRouteParams(outing.activity!))}>
+            <PlaceSummary place={outing.activity} />
+          </Pressable>
+        ) : null}
         {outing.reason ? <AppText muted>{outing.reason}</AppText> : null}
+        <Button onPress={() => router.push(outingRouteParams(outing))}>View OUTing</Button>
       </View>
     </Card>
   );
 }
 
 export function PlaceResultCard({ place }: { place: MobilePlaceResult }) {
+  const router = useRouter();
   return (
-    <Card elevated>
-      <AppText variant="eyebrow" accent>{place.kind === "restaurant" ? "RESTAURANT" : "THING TO DO"}</AppText>
-      <View style={{ marginTop: 10 }}>
-        <PlaceSummary place={place} />
-      </View>
-    </Card>
+    <Pressable onPress={() => router.push(placeRouteParams(place))}>
+      <Card elevated>
+        <AppText variant="eyebrow" accent>{place.kind === "restaurant" ? "RESTAURANT" : "THING TO DO"}</AppText>
+        <View style={{ marginTop: 10 }}>
+          <PlaceSummary place={place} />
+        </View>
+      </Card>
+    </Pressable>
   );
 }
