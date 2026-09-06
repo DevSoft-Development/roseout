@@ -139,6 +139,11 @@ def install(namespace: dict) -> None:
         return {"ok": True, "provider": "ses", "id": result.get("MessageId")}
 
     def provider_send(payload: dict):
+        # Runtime provider secrets are mutable operational configuration. The core
+        # Integration API caches them for warm-invocation efficiency, but email must
+        # observe rotations/recovery immediately or a warm Lambda can remain stuck
+        # on a previously empty RESEND_API_KEY indefinitely.
+        namespace["_cached_runtime_provider_secret"] = None
         # Do not fall back after a valid Resend request is attempted: an upstream
         # timeout can be ambiguous and retrying through SES could duplicate mail.
         if _valid_resend_key(runtime_value("RESEND_API_KEY")):
