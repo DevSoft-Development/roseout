@@ -1,0 +1,124 @@
+name: AWS Node digest recipient repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-node-digest-recipient-repair.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-node-digest-recipient-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+  BACKGROUND_RUNTIME_FUNCTION: toh-production-background-runtime
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repair contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-node-digest-recipient-repair.yml'
+          for token in ADMIN_DIGEST_EMAIL SEARCH_HEALTH_ALERT_EMAILS ADMIN_EMAIL SUPERADMIN_EMAIL put-secret-value MAIL_ENV_REFRESH_TOKEN; do
+            grep -F "$token" "$FILE" >/dev/null
+          done
+
+  repair:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Restore Node digest recipient authority
+        run: |
+          set -euo pipefail
+          EDGE="$RUNNER_TEMP/edge.json"
+          SHARED="$RUNNER_TEMP/shared.json"
+          FIXED="$RUNNER_TEMP/shared-fixed.json"
+          aws secretsmanager get-secret-value --region us-east-1 --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
+          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
+          chmod 600 "$EDGE" "$SHARED"
+          EDGE="$EDGE" SHARED="$SHARED" FIXED="$FIXED" python <<'PY'
+          import json, os, re
+          from email.utils import getaddresses
+          from pathlib import Path
+
+          email_re=re.compile(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$')
+          def normalize(value):
+              if value is None: return ''
+              if isinstance(value,(list,tuple,set)):
+                  raw=','.join(str(v) for v in value)
+              elif isinstance(value,dict):
+                  raw=','.join(str(value.get(k,'')) for k in ('to','emails','email','recipients','addresses','value'))
+              else:
+                  raw=str(value)
+              raw=raw.replace(';',',').replace('\r',',').replace('\n',',')
+              out=[]
+              for _,addr in getaddresses([raw]):
+                  addr=addr.strip().lower()
+                  if addr and email_re.fullmatch(addr) and addr.endswith('@theouthaven.com') and addr not in out:
+                      out.append(addr)
+              return ','.join(out)
+
+          edge=json.loads(Path(os.environ['EDGE']).read_text())
+          shared=json.loads(Path(os.environ['SHARED']).read_text())
+          authority=''
+          for key in ('ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL','ADMIN_CRON_DIGEST_EMAIL'):
+              authority=normalize(edge.get(key))
+              if authority: break
+          if not authority:
+              raise SystemExit('edge_admin_recipient_authority_missing')
+
+          daily=''
+          for key in ('ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SUPERADMIN_EMAIL'):
+              daily=normalize(shared.get(key))
+              if daily: break
+          quality=''
+          for key in ('SEARCH_HEALTH_ALERT_EMAILS','ADMIN_EMAIL'):
+              quality=normalize(shared.get(key))
+              if quality: break
+          if not daily:
+              shared['ADMIN_DIGEST_EMAIL']=authority
+          if not quality:
+              shared['SEARCH_HEALTH_ALERT_EMAILS']=authority
+
+          if not normalize(shared.get('ADMIN_DIGEST_EMAIL')):
+              raise SystemExit('daily_admin_digest_recipient_unresolved')
+          if not normalize(shared.get('SEARCH_HEALTH_ALERT_EMAILS')):
+              raise SystemExit('search_quality_digest_recipient_unresolved')
+          Path(os.environ['FIXED']).write_text(json.dumps(shared,separators=(',',':'),sort_keys=True))
+          print('node_digest_recipient_groups=2')
+          print('node_digest_recipient_authority=restored')
+          PY
+          aws secretsmanager put-secret-value --region us-west-2 --secret-id "$SHARED_APP_ENV_SECRET" --secret-string "file://$FIXED" --query VersionId --output text >/dev/null
+          rm -f "$EDGE" "$SHARED" "$FIXED"
+
+      - name: Refresh background mail generation
+        run: |
+          set -euo pipefail
+          VARS="$RUNNER_TEMP/vars.json"
+          ENVDOC="$RUNNER_TEMP/env.json"
+          aws lambda get-function-configuration --function-name "$BACKGROUND_RUNTIME_FUNCTION" --query 'Environment.Variables' --output json > "$VARS"
+          jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-node-digest" '{Variables:(. + {MAIL_ENV_REFRESH_TOKEN:$token})}' "$VARS" > "$ENVDOC"
+          aws lambda update-function-configuration --function-name "$BACKGROUND_RUNTIME_FUNCTION" --environment "file://$ENVDOC" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$BACKGROUND_RUNTIME_FUNCTION"
+          rm -f "$VARS" "$ENVDOC"
+          echo 'background_mail_generation=refreshed'
