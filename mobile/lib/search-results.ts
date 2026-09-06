@@ -7,6 +7,13 @@ export type MobilePlaceResult = {
   rating: number | null;
   priceLevel: string | null;
   distanceMiles: number | null;
+  publicUrl: string | null;
+  reservationUrl: string | null;
+  websiteUrl: string | null;
+  phone: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type MobileOutingResult = {
