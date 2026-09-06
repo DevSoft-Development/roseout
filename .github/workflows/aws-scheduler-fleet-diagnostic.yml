@@ -1,0 +1,51 @@
+name: AWS scheduler fleet diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-scheduler-fleet-diagnostic.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-scheduler-fleet-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SCHEDULE_GROUP: toh-production-edge-runtime
+
+jobs:
+  diagnose:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Compare live and canonical scheduler names
+        run: |
+          set -euo pipefail
+          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$RUNNER_TEMP/expected.txt"
+          aws scheduler list-schedules --group-name "$SCHEDULE_GROUP" --query 'Schedules[].Name' --output text \
+            | tr '\t' '\n' | sed '/^$/d' | sort > "$RUNNER_TEMP/actual.txt"
+          EXPECTED_COUNT="$(wc -l < "$RUNNER_TEMP/expected.txt" | tr -d ' ')"
+          ACTUAL_COUNT="$(wc -l < "$RUNNER_TEMP/actual.txt" | tr -d ' ')"
+          echo "canonical_schedule_count=$EXPECTED_COUNT"
+          echo "live_schedule_count=$ACTUAL_COUNT"
+          comm -23 "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt" | sed 's/^/missing_live_schedule=/' || true
+          comm -13 "$RUNNER_TEMP/expected.txt" "$RUNNER_TEMP/actual.txt" | sed 's/^/extra_live_schedule=/' || true
+          for name in admin-cron-digest-email reservation-daily-digest daily-admin-digest search-quality-digest; do
+            if grep -Fx "$name" "$RUNNER_TEMP/actual.txt" >/dev/null; then
+              echo "retired_schedule_still_live=$name"
+              exit 1
+            fi
+          done
+          echo 'retired_daily_email_schedules=absent'
