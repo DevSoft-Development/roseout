@@ -20,16 +20,19 @@ export function Button({ children, variant = "primary", fullWidth = true, disabl
     <Pressable
       {...props}
       disabled={disabled}
-      style={({ pressed }) => [
-        styles.base,
-        {
-          width: fullWidth ? "100%" : undefined,
-          backgroundColor: pressed && variant === "primary" ? theme.colors.accentPressed : backgroundColor,
-          borderColor,
-          opacity: disabled ? 0.45 : pressed && variant !== "primary" ? 0.72 : 1,
-        },
-        typeof style === "function" ? style({ pressed }) : style,
-      ]}
+      style={(state) => {
+        const { pressed } = state;
+        return [
+          styles.base,
+          {
+            width: fullWidth ? "100%" : undefined,
+            backgroundColor: pressed && variant === "primary" ? theme.colors.accentPressed : backgroundColor,
+            borderColor,
+            opacity: disabled ? 0.45 : pressed && variant !== "primary" ? 0.72 : 1,
+          },
+          typeof style === "function" ? style(state) : style,
+        ];
+      }}
     >
       <View style={styles.content}>
         <AppText variant="bodyStrong" style={{ color: variant === "primary" ? theme.colors.onAccent : theme.colors.text }}>
