@@ -67,15 +67,17 @@ export async function GET(request: NextRequest) {
 
   const now = Date.now();
   const shaped = (outings || []).map(shapeOuting);
-  const upcoming = shaped.filter((item) => item.status !== "completed" && !item.completedAt && (!item.outingDate || Date.parse(item.outingDate) >= now));
   const completed = shaped.filter((item) => item.status === "completed" || Boolean(item.completedAt) || (item.outingDate && Date.parse(item.outingDate) < now));
-  const saved = (plans || []).filter((item: any) => item?.plan_data?.mobileKind !== "favorite_location").map((item: any) => ({
+  const savedOutings = shaped.filter((item) => item.status === "saved" && !item.completedAt);
+  const upcoming = shaped.filter((item) => item.status !== "saved" && item.status !== "completed" && !item.completedAt && (!item.outingDate || Date.parse(item.outingDate) >= now));
+  const savedPlans = (plans || []).filter((item: any) => item?.plan_data?.mobileKind !== "favorite_location").map((item: any) => ({
     id: String(item.id),
     title: item.title || "Saved OUTing",
     summary: item.summary || null,
     planData: item.plan_data || {},
     createdAt: item.created_at || null,
   }));
+  const saved = [...savedOutings, ...savedPlans];
   const favorites = (plans || []).filter((item: any) => item?.plan_data?.mobileKind === "favorite_location").map((item: any) => ({
     id: String(item.id),
     locationId: item.plan_data?.locationId || null,
