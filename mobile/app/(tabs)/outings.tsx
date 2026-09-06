@@ -51,9 +51,7 @@ export default function OutingsScreen() {
     }
   };
 
-  useEffect(() => {
-    void load();
-  }, [user?.id]);
+  useEffect(() => { void load(); }, [user?.id]);
 
   if (!authLoading && !user) {
     return (
@@ -101,6 +99,13 @@ export default function OutingsScreen() {
             {item.restaurant?.name ? <AppText muted style={{ marginTop: 4 }}>Dinner: {item.restaurant.name}</AppText> : null}
             {item.activity?.name ? <AppText muted>Then: {item.activity.name}</AppText> : null}
             {item.outingDate ? <AppText variant="caption" muted style={{ marginTop: 8 }}>{new Date(item.outingDate).toLocaleString()}</AppText> : null}
+            {tab === "upcoming" || tab === "completed" ? (
+              <View style={{ marginTop: theme.spacing.md }}>
+                <Button variant={tab === "completed" ? "secondary" : "primary"} onPress={() => router.push({ pathname: "/outing/[id]/active", params: { id: item.id } })}>
+                  {tab === "completed" ? "View OUTing" : item.status === "active" ? "Continue OUTing" : "Open OUTing"}
+                </Button>
+              </View>
+            ) : null}
           </Card>
         ))}
       </View>
