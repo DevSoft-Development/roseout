@@ -16,7 +16,21 @@ function normalizedSearchText(value: unknown) {
 
 function isTheOutHavenLoungeSearch(value: unknown) {
   const normalized = normalizedSearchText(value);
-  return normalized === "theouthaven lounge" || normalized === "the outhaven lounge";
+  const branded = normalized === "theouthaven lounge"
+    ? "theouthaven lounge"
+    : normalized === "the outhaven lounge"
+      ? "the outhaven lounge"
+      : normalized.startsWith("theouthaven lounge ")
+        ? "theouthaven lounge"
+        : normalized.startsWith("the outhaven lounge ")
+          ? "the outhaven lounge"
+          : null;
+  if (!branded) return false;
+
+  const suffix = normalized.slice(branded.length).trim();
+  if (!suffix) return true;
+
+  return /^(?:in|near|around|at|from)\b/.test(suffix);
 }
 
 async function internalDemoSearchResponse(request: Request) {
@@ -27,8 +41,8 @@ async function internalDemoSearchResponse(request: Request) {
     return null;
   }
 
-  const query = body?.message ?? body?.input ?? body?.query ?? body?.prompt;
-  if (!isTheOutHavenLoungeSearch(query)) return null;
+  const queryCandidates = [body?.message, body?.input, body?.query, body?.prompt];
+  if (!queryCandidates.some(isTheOutHavenLoungeSearch)) return null;
 
   const viewer = await getInternalDemoViewer().catch(() => null);
   if (!viewer) return null;
