@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasStrongActivityIdentity, hasStrongRestaurantIdentity, isFamilyUnsafeActivity, isGenericActivityEligible } from "../roles/domainIdentity";
+import { hasNightlifeIdentity, hasStrongActivityIdentity, hasStrongRestaurantIdentity, isFamilyUnsafeActivity, isGenericActivityEligible } from "../roles/domainIdentity";
 import { assignCandidateRoles } from "../roles/assignCandidateRoles";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 
@@ -16,10 +16,11 @@ const basePlan = {
 } as unknown as SearchPlan;
 
 describe("V2 domain, anchor and builder E2E contracts", () => {
-  it("does not classify nightlife activity with cuisine metadata as a restaurant", () => {
+  it("classifies nightlife separately from restaurant and activity identity", () => {
     const location = { id: "nightlife", location_type: "activity", activity_type: "nightlife", activity_name: "Taj Mahal Lounge", cuisine: "cafe", primary_category: "nightlife" } as any;
     expect(hasStrongRestaurantIdentity(location)).toBe(false);
-    expect(hasStrongActivityIdentity(location)).toBe(true);
+    expect(hasNightlifeIdentity(location)).toBe(true);
+    expect(hasStrongActivityIdentity(location)).toBe(false);
   });
 
   it("qualifies a generic family-safe activity from requested general activity role", () => {
