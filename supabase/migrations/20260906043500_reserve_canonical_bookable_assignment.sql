@@ -61,12 +61,16 @@ begin
 
   -- Allow a unique same-name fallback when legacy layout/bookable type labels differ.
   if v_bookable_item_id is null and nullif(trim(coalesce(p_resource_label,'')),'') is not null then
-    select min(b.id) into v_bookable_item_id
-      from public.location_bookable_items b
-     where b.location_id = p_location_id
-       and coalesce(b.is_active,true) = true
-       and lower(trim(coalesce(b.item_name,''))) = lower(trim(p_resource_label))
-    having count(*) = 1;
+    select q.id into v_bookable_item_id
+      from (
+        select b.id, count(*) over () as match_count
+          from public.location_bookable_items b
+         where b.location_id = p_location_id
+           and coalesce(b.is_active,true) = true
+           and lower(trim(coalesce(b.item_name,''))) = lower(trim(p_resource_label))
+      ) q
+     where q.match_count = 1
+     limit 1;
   end if;
 
   perform pg_advisory_xact_lock(hashtextextended(p_location_id::text || ':' || lower(coalesce(p_resource_label,'')), 0));
