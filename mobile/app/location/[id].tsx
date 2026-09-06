@@ -19,6 +19,8 @@ export default function LocationDetailScreen() {
   const { theme } = useAppTheme();
   const requireAuth = useRequireAuth();
   const [saved, setSaved] = useState(false);
+  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [sharing, setSharing] = useState(false);
   const id = value(params.id);
   const name = value(params.name) || "TheOutHaven location";
@@ -36,7 +38,34 @@ export default function LocationDetailScreen() {
   };
 
   const save = () => {
-    requireAuth(() => setSaved((current) => !current));
+    requireAuth(async () => {
+      setSaving(true);
+      try {
+        if (saved && favoriteId) {
+          await mobileApi(`/favorites?id=${encodeURIComponent(favoriteId)}`, { method: "DELETE" });
+          setSaved(false);
+          setFavoriteId(null);
+          return;
+        }
+
+        const result = await mobileApi<{ ok: true; favoriteId: string }>("/favorites", {
+          method: "POST",
+          body: JSON.stringify({
+            locationId: id,
+            name,
+            kind: value(params.kind),
+            category: value(params.category),
+            publicUrl,
+          }),
+        });
+        setFavoriteId(result.favoriteId);
+        setSaved(true);
+      } catch {
+        Alert.alert("Save unavailable", "This favorite could not be synced yet.");
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const share = async () => {
@@ -82,7 +111,7 @@ export default function LocationDetailScreen() {
         {!reservationUrl && websiteUrl ? <Button onPress={() => Linking.openURL(websiteUrl)}>Official website</Button> : null}
         {phone ? <Button variant="secondary" onPress={() => Linking.openURL(`tel:${phone.replace(/[^+\d]/g, "")}`)}>Call</Button> : null}
         {(latitude && longitude) || address ? <Button variant="secondary" onPress={openDirections}>Directions</Button> : null}
-        <Button variant="secondary" onPress={save}>{saved ? "Saved" : "Save"}</Button>
+        <Button variant="secondary" disabled={saving} onPress={save}>{saving ? "Saving..." : saved ? "Saved" : "Save"}</Button>
         <Button variant="ghost" disabled={sharing} onPress={share}>{sharing ? "Preparing link..." : "Share"}</Button>
       </View>
     </FoundationScreen>
