@@ -1,7 +1,6 @@
 {
   "batch": 15,
   "enabled": [
-    "admin-cron-digest-email",
     "billing-reconciliation",
     "career-automation-worker",
     "claim-qr-repair-worker",
@@ -15,7 +14,6 @@
     "marketing-report-scheduler",
     "nightly-demo-reset",
     "nightly-photo-backfill",
-    "reservation-daily-digest",
     "reservation-reminder-cron",
     "reservation-sms-phrase-learning",
     "reservation-status-cleanup",
@@ -56,8 +54,6 @@
     "marketing-attribution",
     "website-dr-readiness",
     "stripe-connect-status-sync",
-    "daily-admin-digest",
-    "search-quality-digest",
     "beta-reminders",
     "post-visit-followups",
     "profile-completion-nurture",
@@ -68,7 +64,6 @@
     "domain-lifecycle"
   ],
   "rollback_enabled": [
-    "admin-cron-digest-email",
     "billing-reconciliation",
     "career-automation-worker",
     "claim-qr-repair-worker",
@@ -82,7 +77,6 @@
     "marketing-report-scheduler",
     "nightly-demo-reset",
     "nightly-photo-backfill",
-    "reservation-daily-digest",
     "reservation-reminder-cron",
     "reservation-sms-phrase-learning",
     "reservation-status-cleanup",
@@ -123,8 +117,6 @@
     "marketing-attribution",
     "website-dr-readiness",
     "stripe-connect-status-sync",
-    "daily-admin-digest",
-    "search-quality-digest",
     "beta-reminders",
     "post-visit-followups",
     "profile-completion-nurture",
