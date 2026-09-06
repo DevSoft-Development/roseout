@@ -15,7 +15,7 @@ function value(input: string | string[] | undefined) {
 }
 
 export default function LocationDetailScreen() {
-  const params = useLocalSearchParams<Record<string, string | string[] | undefined>>();
+  const params = useLocalSearchParams();
   const { theme } = useAppTheme();
   const requireAuth = useRequireAuth();
   const [saved, setSaved] = useState(false);
