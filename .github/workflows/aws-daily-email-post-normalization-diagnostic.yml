@@ -1,0 +1,115 @@
+name: AWS daily email post-normalization diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-daily-email-post-normalization-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  SHARED_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Report missing groups after exact normalization
+        run: |
+          set -euo pipefail
+          EDGE="$RUNNER_TEMP/edge.json"
+          SHARED="$RUNNER_TEMP/shared.json"
+          aws secretsmanager get-secret-value --region us-east-1 --secret-id "$EDGE_RUNTIME_SECRET" --query SecretString --output text > "$EDGE"
+          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$SHARED_APP_ENV_SECRET" --query SecretString --output text > "$SHARED"
+          chmod 600 "$EDGE" "$SHARED"
+          EDGE="$EDGE" SHARED="$SHARED" python <<'PY'
+          import json, os, re
+          from email.utils import getaddresses
+          from pathlib import Path
+
+          recipient_keys={
+              'ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL','ADMIN_CRON_DIGEST_EMAIL',
+              'ADMIN_DIGEST_EMAIL','ADMIN_RESERVATION_DIGEST_EMAIL','SEARCH_HEALTH_DIGEST_TO',
+              'SEARCH_HEALTH_ALERT_EMAILS','MARKETING_PULSE_TO','PLATFORM_ERROR_DIGEST_TO',
+              'THEOUTHAVEN_ADMIN_EMAIL',
+          }
+          email_re=re.compile(r'^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$')
+
+          def flatten(value):
+              if value is None: return []
+              if isinstance(value,str):
+                  text=value.strip()
+                  if not text: return []
+                  try: parsed=json.loads(text)
+                  except Exception: parsed=None
+                  if parsed is not None and parsed != value: return flatten(parsed)
+                  return [text]
+              if isinstance(value,(list,tuple,set)):
+                  out=[]
+                  for item in value: out.extend(flatten(item))
+                  return out
+              if isinstance(value,dict):
+                  out=[]
+                  preferred=[k for k in ('to','emails','email','recipients','addresses','value') if k in value]
+                  source=preferred if preferred else list(value.keys())
+                  for key in source: out.extend(flatten(value.get(key)))
+                  return out
+              return [str(value).strip()]
+
+          def normalize(value):
+              chunks=[raw.replace(';',',').replace('\r',',').replace('\n',',') for raw in flatten(value)]
+              addresses=[]
+              for _,address in getaddresses(chunks):
+                  address=address.strip().lower()
+                  if address and email_re.fullmatch(address) and address.endswith('@theouthaven.com') and address not in addresses:
+                      addresses.append(address)
+              return ','.join(addresses)
+
+          def canonicalize(doc):
+              result=dict(doc)
+              for key in recipient_keys:
+                  if key not in result or result[key] in (None,''): continue
+                  normalized=normalize(result[key])
+                  if normalized: result[key]=normalized
+                  else: result.pop(key,None)
+              return result
+
+          edge=canonicalize(json.loads(Path(os.environ['EDGE']).read_text()))
+          shared=canonicalize(json.loads(Path(os.environ['SHARED']).read_text()))
+
+          def first(env,*keys):
+              for key in keys:
+                  value=env.get(key)
+                  if isinstance(value,str) and value.strip(): return value.strip()
+              return ''
+
+          groups={
+              'admin-cron-digest-email': first(edge,'ADMIN_CRON_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
+              'reservation-daily-digest': first(edge,'ADMIN_RESERVATION_DIGEST_EMAIL','ADMIN_EMAIL','SUPERADMIN_EMAIL','ADMIN_ALERT_EMAIL'),
+              'admin-platform-error-digest': first(edge,'PLATFORM_ERROR_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'admin-search-health-digest': first(edge,'SEARCH_HEALTH_DIGEST_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'admin-daily-marketing-pulse': first(edge,'MARKETING_PULSE_TO','ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'daily-admin-digest': first(shared,'ADMIN_DIGEST_EMAIL','THEOUTHAVEN_ADMIN_EMAIL','SUPERADMIN_EMAIL'),
+              'search-quality-digest': first(shared,'SEARCH_HEALTH_ALERT_EMAILS','ADMIN_EMAIL'),
+          }
+          missing=[name for name,value in groups.items() if not value]
+          print('post_normalization_configured_group_count=' + str(7-len(missing)))
+          print('post_normalization_missing_group_count=' + str(len(missing)))
+          for name in missing: print('post_normalization_missing_group=' + name)
+          if missing: raise SystemExit(1)
+          PY
+          rm -f "$EDGE" "$SHARED"
