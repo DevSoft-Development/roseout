@@ -3,6 +3,6 @@
   "sourceFile": "supabase/functions/create-search/index.ts",
   "startMarker": "// EDGE_SEARCH_QUERY_RULES_FROZEN_START",
   "endMarker": "// EDGE_SEARCH_QUERY_RULES_FROZEN_END",
-  "sha256": "406f86c70c2c2211d77993c00df74d031bd3f857716cc7c107449ed8dabaa8e9",
+  "sha256": "20ec247180a0d85eea4173133e295e53363a707a292c4b0ff3e622e68ca9924f",
   "note": "This snapshot freezes legacy query-specific rules in create-search. Update only for a reviewed emergency exception with canonical regression coverage."
 }

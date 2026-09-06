@@ -21,6 +21,13 @@ type AliasSpan = Readonly<{
 
 const ACTIVITY_DOMAINS = new Set(["activity", "nightlife"]);
 const AMBIGUOUS_QUERY_ALIASES = new Set(["show"]);
+const LEGACY_STRICT_QUALIFICATION_IDS = new Set([
+  "bowling",
+  "golf",
+  "museum",
+  "cinema",
+  "comedy",
+]);
 const NEGATIVE_MODIFIER_PATTERN = /\b(?:loud|noisy|rowdy|clubby|party)\s*$/i;
 const NEGATION_CONTEXT_PATTERN = /\b(?:no|not|without|nothing|anything\s+but|except|isn't|is\s+not|aren't|are\s+not)\b[^.;!?]*$/i;
 const CANDIDATE_EVIDENCE_FIELDS = [
@@ -186,8 +193,20 @@ export function candidateMatchesExplicitActivityConstraint(
   constraint: ExplicitActivityConstraint,
 ): boolean {
   if (!constraint.applied) return true;
-  const structuredTerms = constraint.requestedIds.map((id) => id.replaceAll("_", " "));
-  if (!qualifyExplicitActivityIntent(candidate, structuredTerms).matches) return false;
+
+  const strictRequestedIds = constraint.requestedIds.filter((id) =>
+    LEGACY_STRICT_QUALIFICATION_IDS.has(id),
+  );
+  if (
+    strictRequestedIds.length > 0 &&
+    !qualifyExplicitActivityIntent(
+      candidate,
+      strictRequestedIds.map((id) => id.replaceAll("_", " ")),
+    ).matches
+  ) {
+    return false;
+  }
+
   const evidence = candidateEvidenceText(candidate);
   if (!evidence) return false;
 
