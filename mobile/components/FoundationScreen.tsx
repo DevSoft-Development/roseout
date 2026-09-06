@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
-import { theme } from "@/lib/theme";
+import { SafeAreaView, ScrollView, View } from "react-native";
+import { AppText } from "@/components/ui/AppText";
+import { useAppTheme } from "@/providers/ThemeProvider";
 
 type FoundationScreenProps = {
   eyebrow?: string;
@@ -10,34 +11,18 @@ type FoundationScreenProps = {
 };
 
 export function FoundationScreen({ eyebrow, title, description, children }: FoundationScreenProps) {
+  const { theme } = useAppTheme();
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.description}>{description}</Text>
-        {children ? <View style={styles.body}>{children}</View> : null}
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ padding: theme.spacing.lg, paddingBottom: 112 }}
+      >
+        {eyebrow ? <AppText variant="eyebrow" accent>{eyebrow}</AppText> : null}
+        <AppText variant="h1" style={{ marginTop: eyebrow ? theme.spacing.sm : 0 }}>{title}</AppText>
+        <AppText muted style={{ marginTop: theme.spacing.sm }}>{description}</AppText>
+        {children ? <View style={{ marginTop: theme.spacing.xl }}>{children}</View> : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: theme.spacing.lg, paddingBottom: 96 },
-  eyebrow: {
-    color: theme.colors.accent,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.4,
-    marginBottom: theme.spacing.sm,
-  },
-  title: { color: theme.colors.text, fontSize: 34, fontWeight: "800" },
-  description: {
-    color: theme.colors.textMuted,
-    fontSize: 17,
-    lineHeight: 25,
-    marginTop: theme.spacing.sm,
-  },
-  body: { marginTop: theme.spacing.xl },
-});
