@@ -12,6 +12,7 @@ const RESTAURANT_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["meal", /\b(?:breakfast|brunch|lunch|dinner|supper)\b/i],
   ["food", /\b(?:food|eat|eating|meal)\b/i],
   ["cuisine", /\b(?:sushi|italian|mexican|chinese|japanese|thai|indian|halal|steak|seafood|pizza|tacos?|burgers?)\b/i],
+  ["dish", /\bpasta\b/i],
 ];
 
 const ACTIVITY_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
