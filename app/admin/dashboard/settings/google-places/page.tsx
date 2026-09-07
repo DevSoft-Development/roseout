@@ -5,6 +5,7 @@ import {
   locationIntelligenceApiConfigured,
   readGoogleBudgetSummaryViaLocationIntelligenceApi,
 } from "@/lib/aws/location-intelligence-api";
+import { getGoogleCostControlAdminSnapshot } from "@/lib/google/google-places-cost-control";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export default async function GooglePlacesSettingsPage() {
       summary = await readGoogleBudgetSummaryViaLocationIntelligenceApi();
     } catch {}
   }
+
+  const controls = await getGoogleCostControlAdminSnapshot().catch(() => null);
 
   return (
     <main className="admin-page min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
@@ -32,7 +35,7 @@ export default async function GooglePlacesSettingsPage() {
             Back to Settings
           </Link>
         </div>
-        <GooglePlacesBudgetClient initialSettings={settings} initialSummary={summary} />
+        <GooglePlacesBudgetClient initialSettings={settings} initialSummary={summary} initialControls={controls} />
       </div>
     </main>
   );

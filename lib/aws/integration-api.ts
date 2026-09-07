@@ -348,11 +348,11 @@ export async function createStampsPostcardProductionProofViaIntegrationApi(
 
 export async function searchGooglePlacesTextViaIntegrationApi<T>(
   textQuery: string,
-  options: { pageSize?: number; regionCode?: string } = {},
+  options: { pageSize?: number; regionCode?: string; fieldMode?: "ids-only" | "rich" } = {},
 ): Promise<T[]> {
   const result = await signedJson<IntegrationGooglePlacesSearchResponse<T>>(
     "/v1/google-places/search-text",
-    { mode: "text-search", textQuery, pageSize: options.pageSize, regionCode: options.regionCode },
+    { mode: "text-search", textQuery, pageSize: options.pageSize, regionCode: options.regionCode, fieldMode: options.fieldMode },
     15_000,
   );
   return Array.isArray(result.places) ? result.places : [];
@@ -367,10 +367,10 @@ export async function autocompleteGooglePlacesViaIntegrationApi<T>(input: string
   return Array.isArray(result.suggestions) ? result.suggestions : [];
 }
 
-export async function getGooglePlaceDetailsViaIntegrationApi<T>(placeId: string, options: { sessionToken?: string } = {}): Promise<T> {
+export async function getGooglePlaceDetailsViaIntegrationApi<T>(placeId: string, options: { sessionToken?: string; fieldMode?: "address" | "rich" } = {}): Promise<T> {
   const result = await signedJson<IntegrationGooglePlaceDetailsResponse<T>>(
     "/v1/google-places/details",
-    { placeId, sessionToken: options.sessionToken || undefined },
+    { placeId, sessionToken: options.sessionToken || undefined, fieldMode: options.fieldMode },
     15_000,
   );
   return result.place;

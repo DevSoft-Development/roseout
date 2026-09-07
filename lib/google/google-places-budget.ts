@@ -9,6 +9,7 @@ export const DEFAULT_GOOGLE_PLACES_BUDGET = {
   creditBalanceUsd: 300,
   openingSpendUsd: 0,
   openingSpendMonth: null as string | null,
+  minimumCreditReserveUsd: 15,
   enabled: true,
 } as const;
 
@@ -19,6 +20,7 @@ export type GooglePlacesBudgetConfig = {
   creditBalanceUsd: number;
   openingSpendUsd: number;
   openingSpendMonth: string | null;
+  minimumCreditReserveUsd: number;
   enabled: boolean;
 };
 
@@ -47,6 +49,7 @@ export function normalizeGooglePlacesBudget(value: unknown): GooglePlacesBudgetC
     creditBalanceUsd: money(raw.creditBalanceUsd, DEFAULT_GOOGLE_PLACES_BUDGET.creditBalanceUsd),
     openingSpendUsd: money(raw.openingSpendUsd, DEFAULT_GOOGLE_PLACES_BUDGET.openingSpendUsd),
     openingSpendMonth: month(raw.openingSpendMonth),
+    minimumCreditReserveUsd: money(raw.minimumCreditReserveUsd, DEFAULT_GOOGLE_PLACES_BUDGET.minimumCreditReserveUsd),
     enabled: raw.enabled !== false,
   };
 }

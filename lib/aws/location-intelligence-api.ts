@@ -17,6 +17,7 @@ export type GooglePlacesBudgetSettings = {
   creditBalanceUsd: number;
   openingSpendUsd: number;
   openingSpendMonth: string | null;
+  minimumCreditReserveUsd: number;
   enabled: boolean;
   updatedAt?: string | null;
 };
@@ -34,6 +35,7 @@ export type GoogleBudgetSummary = {
   targetRemainingUsd: number;
   estimatedCreditsRemainingUsd: number;
   percentOfHardCapUsed: number;
+  percentOfCreditUsed: number;
   operatingMode: "normal" | "reduce_low_priority" | "critical_only" | "stop_optional_paid_google" | "disabled";
   optionalPaidWorkAllowed: boolean;
   usage: GoogleBudgetUsageItem[];
