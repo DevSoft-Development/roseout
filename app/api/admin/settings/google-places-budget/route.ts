@@ -7,6 +7,7 @@ import {
   getGooglePlacesBudgetConfig,
   normalizeGooglePlacesBudget,
 } from "@/lib/google/google-places-budget";
+import { getGoogleCostControlAdminSnapshot } from "@/lib/google/google-places-cost-control";
 import {
   locationIntelligenceApiConfigured,
   readGoogleBudgetSummaryViaLocationIntelligenceApi,
@@ -36,11 +37,12 @@ async function readSummary() {
 export async function GET() {
   const access = await requireBudgetAdmin();
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const [settings, summary] = await Promise.all([
+  const [settings, summary, controls] = await Promise.all([
     getGooglePlacesBudgetConfig(),
     readSummary(),
+    getGoogleCostControlAdminSnapshot().catch(() => null),
   ]);
-  return NextResponse.json({ settings, summary });
+  return NextResponse.json({ settings, summary, controls });
 }
 
 export async function PATCH(request: Request) {
@@ -60,6 +62,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unable to save Google Places budget settings." }, { status: 500 });
   }
 
-  const summary = await readSummary();
-  return NextResponse.json({ success: true, settings: value, summary });
+  const [summary, controls] = await Promise.all([
+    readSummary(),
+    getGoogleCostControlAdminSnapshot().catch(() => null),
+  ]);
+  return NextResponse.json({ success: true, settings: value, summary, controls });
 }
