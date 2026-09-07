@@ -7,9 +7,16 @@ const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
+type ControlsSnapshot = {
+  jobs: Array<{ job_key: string; daily_paid_call_limit: number; priority: string; enabled: boolean; notes?: string | null }>;
+  usageByJobToday: Array<{ jobKey: string; calls: number; paidCalls: number; blocked: number; cacheHits: number; estimatedUnitSpendUsd: number }>;
+  alerts: Array<{ billing_month: string; threshold_pct: number; spend_usd: number; credits_remaining_usd: number; operating_mode: string; email_sent: boolean; created_at: string }>;
+};
+
 type Props = {
   initialSettings: GooglePlacesBudgetSettings;
   initialSummary: GoogleBudgetSummary | null;
+  initialControls: ControlsSnapshot | null;
 };
 
 function NumberField({ label, value, onChange, help }: { label: string; value: number; onChange: (value: number) => void; help: string }) {
@@ -29,9 +36,10 @@ function NumberField({ label, value, onChange, help }: { label: string; value: n
   );
 }
 
-export default function GooglePlacesBudgetClient({ initialSettings, initialSummary }: Props) {
+export default function GooglePlacesBudgetClient({ initialSettings, initialSummary, initialControls }: Props) {
   const [settings, setSettings] = useState(initialSettings);
   const [summary, setSummary] = useState(initialSummary);
+  const [controls, setControls] = useState(initialControls);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -55,6 +63,7 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
       if (!response.ok) throw new Error(payload?.error || "Unable to save Google budget settings.");
       if (payload?.settings) setSettings(payload.settings);
       if (payload?.summary) setSummary(payload.summary);
+      if (payload?.controls) setControls(payload.controls);
       setMessage("Google Places budget controls saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to save Google budget settings.");
@@ -113,11 +122,12 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
           </label>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <NumberField label="Target" value={settings.targetUsd} onChange={(targetUsd) => setSettings((current) => ({ ...current, targetUsd }))} help="Normal operating target before low-priority refreshes are reduced." />
           <NumberField label="Soft cap" value={settings.softCapUsd} onChange={(softCapUsd) => setSettings((current) => ({ ...current, softCapUsd }))} help="Above this point, only higher-priority paid work should continue." />
           <NumberField label="Hard cap" value={settings.hardCapUsd} onChange={(hardCapUsd) => setSettings((current) => ({ ...current, hardCapUsd }))} help="Optional paid Location Intelligence work stops here." />
           <NumberField label="Google credits" value={settings.creditBalanceUsd} onChange={(creditBalanceUsd) => setSettings((current) => ({ ...current, creditBalanceUsd }))} help="Used to estimate remaining promotional credits in this dashboard." />
+          <NumberField label="Protected credit reserve" value={settings.minimumCreditReserveUsd} onChange={(minimumCreditReserveUsd) => setSettings((current) => ({ ...current, minimumCreditReserveUsd }))} help="Optional paid Google calls stop when estimated promotional credit reaches this reserve." />
           <NumberField
             label="Opening spend"
             value={settings.openingSpendMonth === currentMonth() ? settings.openingSpendUsd : 0}
@@ -136,6 +146,20 @@ export default function GooglePlacesBudgetClient({ initialSettings, initialSumma
         >
           {saving ? "Saving…" : "Save Google Budget"}
         </button>
+      </section>
+
+      <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-300">Cost controls</p>
+        <h2 className="mt-2 text-2xl font-black text-white">Paid calls by job today</h2>
+        <p className="mt-2 text-sm text-white/60">Each background workload has its own daily paid-call ceiling. IDs-only lookups and cache hits do not consume the paid-call quota.</p>
+        <div className="mt-5 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase tracking-[0.14em] text-white/45"><tr><th className="pb-3 pr-5">Job</th><th className="pb-3 pr-5">Priority</th><th className="pb-3 pr-5">Paid / limit</th><th className="pb-3 pr-5">Blocked</th><th className="pb-3">Cache hits</th></tr></thead>
+            <tbody>{(controls?.jobs || []).map((job) => { const usage = controls?.usageByJobToday?.find((row) => row.jobKey === job.job_key); return (
+              <tr key={job.job_key} className="border-t border-white/10"><td className="py-4 pr-5 font-bold text-white">{job.job_key}</td><td className="py-4 pr-5 text-white/65">{job.priority}</td><td className="py-4 pr-5 text-white/80">{usage?.paidCalls || 0} / {job.daily_paid_call_limit}</td><td className="py-4 pr-5 text-white/70">{usage?.blocked || 0}</td><td className="py-4 text-white/70">{usage?.cacheHits || 0}</td></tr>
+            ); })}</tbody>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
