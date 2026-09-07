@@ -5,6 +5,14 @@ import {
   platformIntegrationApiConfigured,
   searchGooglePlacesTextViaIntegrationApi,
 } from "@/lib/aws/integration-api";
+import {
+  enforceGoogleOperation,
+  googleSearchCacheKey,
+  readIdSearchCache,
+  recordGoogleOperation,
+  writeIdSearchCache,
+  type GoogleCostPriority,
+} from "@/lib/google/google-places-cost-control";
 
 export type PlacesNewPhoto = {
   name?: string;
@@ -144,32 +152,92 @@ function rethrowPlaceDetailsError(error: unknown): never {
   throw error;
 }
 
+export type GooglePlacesRequestOptions = {
+  jobKey?: string;
+  priority?: GoogleCostPriority;
+};
+
 export async function searchPlacesTextNew(
   textQuery: string,
-  options: { pageSize?: number; regionCode?: string } = {},
+  options: GooglePlacesRequestOptions & {
+    pageSize?: number;
+    regionCode?: string;
+    fieldMode?: "ids-only" | "rich";
+    cacheTtlDays?: number;
+    bypassIdCache?: boolean;
+  } = {},
 ) {
   const query = clean(textQuery);
   if (!query) return [] as PlacesNewPlace[];
+  const regionCode = clean(options.regionCode || "US").toUpperCase();
+  const fieldMode = options.fieldMode || "rich";
+  const operation = fieldMode === "ids-only" ? "text_search_ids_only" : "text_search_rich";
+  const queryKey = googleSearchCacheKey(query, regionCode);
+  const context = {
+    jobKey: options.jobKey || "unknown",
+    priority: options.priority,
+    queryKey,
+    metadata: { fieldMode, pageSize: options.pageSize || null, regionCode },
+  };
+
+  if (fieldMode === "ids-only" && options.bypassIdCache !== true) {
+    const cached = await readIdSearchCache(query, regionCode);
+    if (cached.placeIds) {
+      await recordGoogleOperation(operation, context, { cacheHit: true, reason: "id_search_cache_hit" });
+      return cached.placeIds.map((id) => ({ id }));
+    }
+  }
+
+  await enforceGoogleOperation(operation, context);
   requireIntegrationApi();
-  return searchGooglePlacesTextViaIntegrationApi<PlacesNewPlace>(query, options);
+  const places = await searchGooglePlacesTextViaIntegrationApi<PlacesNewPlace>(query, {
+    pageSize: options.pageSize,
+    regionCode,
+    fieldMode,
+  });
+  await recordGoogleOperation(operation, context, { reason: "provider_call" });
+
+  if (fieldMode === "ids-only") {
+    await writeIdSearchCache(
+      query,
+      regionCode,
+      places.map((place) => clean(place.id)).filter(Boolean),
+      options.cacheTtlDays ?? 14,
+      { jobKey: context.jobKey },
+    );
+  }
+  return places;
 }
 
-export async function getPlaceDetailsNew(placeId: string) {
+export async function getPlaceDetailsNew(
+  placeId: string,
+  options: GooglePlacesRequestOptions & { fieldMode?: "address" | "rich"; sessionToken?: string } = {},
+) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
+  const fieldMode = options.fieldMode || "rich";
+  const operation = fieldMode === "address" ? "place_details_address" : "place_details_rich";
+  const context = { jobKey: options.jobKey || "unknown", priority: options.priority, placeId: id, metadata: { fieldMode } };
+  await enforceGoogleOperation(operation, context);
   requireIntegrationApi();
   try {
-    return await getGooglePlaceDetailsViaIntegrationApi<PlacesNewPlace>(id);
+    const result = await getGooglePlaceDetailsViaIntegrationApi<PlacesNewPlace>(id, { sessionToken: options.sessionToken, fieldMode });
+    await recordGoogleOperation(operation, context, { reason: "provider_call" });
+    return result;
   } catch (error) {
     rethrowPlaceDetailsError(error);
   }
 }
 
-export async function getPlacePhotosNew(placeId: string) {
+export async function getPlacePhotosNew(placeId: string, options: GooglePlacesRequestOptions = {}) {
   const id = clean(placeId);
   if (!id) throw new Error("Missing Google Place ID.");
+  const context = { jobKey: options.jobKey || "unknown", priority: options.priority, placeId: id };
+  await enforceGoogleOperation("photo_metadata", context);
   requireIntegrationApi();
-  return getGooglePlacePhotosViaIntegrationApi<PlacesNewPhoto>(id);
+  const photos = await getGooglePlacePhotosViaIntegrationApi<PlacesNewPhoto>(id);
+  await recordGoogleOperation("photo_metadata", context, { reason: "provider_call" });
+  return photos;
 }
 
 export async function getPlacePhotoMetadataNew(placeId: string) {
@@ -189,15 +257,25 @@ export async function getPlacePhotoNameNew(placeId: string) {
 
 export async function fetchPlacePhotoNew(
   photoName: string,
-  options: { maxWidthPx?: number; cache?: RequestCache; revalidateSeconds?: number } = {},
+  options: GooglePlacesRequestOptions & { maxWidthPx?: number; cache?: RequestCache; revalidateSeconds?: number } = {},
 ) {
   const name = clean(photoName).replace(/^\/+/, "");
   if (!name || !name.startsWith("places/") || !name.includes("/photos/")) {
     throw new Error("Invalid Google Places photo resource name.");
   }
   const maxWidthPx = Math.max(1, Math.min(4800, Math.floor(options.maxWidthPx || 1200)));
+  const placeId = name.split("/")[1] || null;
+  const context = {
+    jobKey: options.jobKey || "public-google-place-photo",
+    priority: (options.priority || "high") as GoogleCostPriority,
+    placeId,
+    metadata: { maxWidthPx },
+  };
+  await enforceGoogleOperation("photo_media", context);
   requireIntegrationApi();
-  return fetchGooglePlacePhotoViaIntegrationApi(name, maxWidthPx);
+  const response = await fetchGooglePlacePhotoViaIntegrationApi(name, maxWidthPx);
+  await recordGoogleOperation("photo_media", context, { reason: "provider_call" });
+  return response;
 }
 
 function priceLevelNumber(value?: string) {
@@ -275,12 +353,12 @@ export function toLegacyGooglePlace(place: PlacesNewPlace): GooglePlaceLegacyCom
   };
 }
 
-export async function searchPlacesTextLegacyCompat(textQuery: string) {
-  return (await searchPlacesTextNew(textQuery)).map(toLegacyGooglePlace);
+export async function searchPlacesTextLegacyCompat(textQuery: string, options: Parameters<typeof searchPlacesTextNew>[1] = {}) {
+  return (await searchPlacesTextNew(textQuery, options)).map(toLegacyGooglePlace);
 }
 
-export async function getPlaceDetailsLegacyCompat(placeId: string) {
-  return toLegacyGooglePlace(await getPlaceDetailsNew(placeId));
+export async function getPlaceDetailsLegacyCompat(placeId: string, options: Parameters<typeof getPlaceDetailsNew>[1] = {}) {
+  return toLegacyGooglePlace(await getPlaceDetailsNew(placeId, options));
 }
 
 export function publicGooglePlacePhotoUrl(placeId: string, maxwidth = 1200) {
