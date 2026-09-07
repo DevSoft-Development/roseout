@@ -19,6 +19,14 @@ import {
   evaluateGoogleDiscoveryCandidate,
   type GoogleDiscoveryKind,
 } from "@/lib/location-growth/googleDiscoveryQuality";
+import {
+  googleCandidateMemoryKey,
+  isGoogleCostControlError,
+  readCandidateMemory,
+  writeCandidateMemory,
+} from "@/lib/google/google-places-cost-control";
+import { importOsmActivities } from "@/lib/location-growth/osmActivities";
+import { importNycRestaurants } from "@/lib/location-growth/nycOpenData";
 
 const SOURCE = "google_curated_discovery";
 const PIPELINE = "gap_driven_v2_enriched";
@@ -388,19 +396,16 @@ export async function buildGoogleDiscoveryPlan(
 
   const limit = Math.max(1, maxPlans);
   const selected: DiscoveryPlan[] = [];
+  const openCandidates = candidates.filter((candidate) => candidate.gapRatio < 1);
 
-  // Core coverage gets the first slot in each market so ordinary searches do
-  // not become thin while we add more distinctive curated inventory.
   for (const market of ACTIVE_DISCOVERY_MARKETS) {
     if (selected.length >= limit) break;
     const coreCandidate = candidates
-      .filter((candidate) => candidate.market === market && candidate.lane === "core")
+      .filter((candidate) => candidate.market === market && candidate.lane === "core" && candidate.gapRatio < 1)
       .sort(compareGap)[0];
     if (coreCandidate) selected.push(coreCandidate);
   }
 
-  // Reserve about one third of each run for hidden gems and first-time ideas,
-  // spreading them across markets before filling the remaining slots.
   const curatedGoal = Math.min(
     Math.max(0, limit - selected.length),
     Math.max(1, Math.round(limit * 0.35)),
@@ -409,14 +414,14 @@ export async function buildGoogleDiscoveryPlan(
   for (const market of ACTIVE_DISCOVERY_MARKETS) {
     if (curatedAdded >= curatedGoal || selected.length >= limit) break;
     const curatedCandidate = candidates
-      .filter((candidate) => candidate.market === market && candidate.lane === "curated")
+      .filter((candidate) => candidate.market === market && candidate.lane === "curated" && candidate.gapRatio < 1)
       .sort(compareGap)[0];
     if (!curatedCandidate) continue;
     selected.push(curatedCandidate);
     curatedAdded += 1;
   }
 
-  for (const candidate of candidates.sort(compareGap)) {
+  for (const candidate of openCandidates.sort(compareGap)) {
     if (selected.length >= limit) break;
     if (selected.some((item) => item.market === candidate.market && item.category === candidate.category)) continue;
     selected.push(candidate);
@@ -611,8 +616,6 @@ async function stageCandidate({
   const firstPhoto = place.photos?.[0];
   const hasGooglePhoto = Boolean(firstPhoto?.photo_reference || firstPhoto?.name);
   const photoRequiresAttribution = Boolean(firstPhoto?.authorAttributions?.length);
-  // Until the public card surface renders photo-author attribution, only
-  // auto-publish Google photos that carry no additional attribution requirement.
   const hasPhoto = hasGooglePhoto && !photoRequiresAttribution;
   const hasPhone = Boolean(place.formatted_phone_number || place.international_phone_number);
   const hasWebsite = Boolean(place.website || place.websiteUri);
@@ -776,6 +779,30 @@ async function backfillPublishedGooglePlaceIds() {
   return updated;
 }
 
+async function runNonGoogleBudgetFallback(kind: GoogleDiscoveryKind) {
+  try {
+    if (kind === "activity") {
+      const result = await importOsmActivities({
+        limit: 25,
+        categoryGroup: "all",
+        filterIndex: daySeed() % 8,
+      });
+      return { provider: "openstreetmap", success: true, result };
+    }
+    const result = await importNycRestaurants({
+      limit: 100,
+      offset: (daySeed() % 20) * 100,
+    });
+    return { provider: "nyc_open_data", success: true, result };
+  } catch (error) {
+    return {
+      provider: kind === "activity" ? "openstreetmap" : "nyc_open_data",
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function runGoogleCuratedDiscovery(
   options: GoogleCuratedDiscoveryOptions,
 ) {
@@ -786,6 +813,7 @@ export async function runGoogleCuratedDiscovery(
   const maxRuntimeMs = Math.min(270_000, Math.max(30_000, Number(options.maxRuntimeMs || 240_000)));
   const autoPublish = options.autoPublish !== false;
   const startedAtMs = Date.now();
+  const jobKey = `curated-location-discovery-${kind}`;
   const plans = await buildGoogleDiscoveryPlan(kind, maxPlans);
 
   const { data: batch, error: batchError } = await supabaseAdmin
@@ -811,16 +839,28 @@ export async function runGoogleCuratedDiscovery(
     duplicates: 0,
     failed: 0,
     published: 0,
+    memorySkips: 0,
+    paidDetailsAvoided: 0,
+    budgetBlocks: 0,
   };
   const errors: string[] = [];
   const seen = new Set<string>();
+  let budgetFallbackReason: string | null = null;
+  let fallback: Awaited<ReturnType<typeof runNonGoogleBudgetFallback>> | null = null;
 
   try {
     outer: for (const plan of plans) {
       if (Date.now() - startedAtMs >= maxRuntimeMs) break;
       let searchResults: GooglePlaceLegacyCompat[] = [];
       try {
-        searchResults = (await searchPlacesTextLegacyCompat(plan.query)).slice(0, resultsPerPlan);
+        searchResults = (await searchPlacesTextLegacyCompat(plan.query, {
+          fieldMode: "ids-only",
+          pageSize: resultsPerPlan,
+          regionCode: "US",
+          jobKey,
+          priority: "low",
+          cacheTtlDays: 14,
+        })).slice(0, resultsPerPlan);
       } catch (error) {
         counts.failed += 1;
         errors.push(`${plan.query}: ${error instanceof Error ? error.message : String(error)}`);
@@ -834,11 +874,44 @@ export async function runGoogleCuratedDiscovery(
         seen.add(placeId);
         counts.checked += 1;
 
+        const memoryKey = googleCandidateMemoryKey({
+          placeId,
+          jobKey,
+          market: plan.market,
+          area: plan.area,
+          category: plan.category,
+        });
+        const memory = await readCandidateMemory(memoryKey);
+        if (memory) {
+          counts.memorySkips += 1;
+          counts.paidDetailsAvoided += 1;
+          continue;
+        }
+
         try {
-          const details = await getPlaceDetailsLegacyCompat(placeId);
+          const duplicate = await findLiveDuplicate(placeId);
+          if (duplicate) {
+            counts.duplicates += 1;
+            counts.paidDetailsAvoided += 1;
+            await writeCandidateMemory({
+              memoryKey, placeId, jobKey, market: plan.market, area: plan.area, category: plan.category,
+              outcome: "duplicate", ttlDays: 90, metadata: { matchedLocationId: duplicate.id },
+            });
+            continue;
+          }
+
+          const details = await getPlaceDetailsLegacyCompat(placeId, {
+            fieldMode: "rich",
+            jobKey,
+            priority: "low",
+          });
           const place = { ...searchResult, ...details };
           if (place.business_status && place.business_status !== "OPERATIONAL") {
             counts.rejected += 1;
+            await writeCandidateMemory({
+              memoryKey, placeId, jobKey, market: plan.market, area: plan.area, category: plan.category,
+              outcome: "not_operational", ttlDays: 90,
+            });
             continue;
           }
           const result = await stageCandidate({ batchId: batch.id, kind, plan, place });
@@ -852,11 +925,30 @@ export async function runGoogleCuratedDiscovery(
             counts.staged += 1;
           }
           if (result.outcome === "rejected") counts.rejected += 1;
+          await writeCandidateMemory({
+            memoryKey, placeId, jobKey, market: plan.market, area: plan.area, category: plan.category,
+            outcome: result.outcome,
+            ttlDays: result.outcome === "auto_import" ? 180 : result.outcome === "duplicate" ? 90 : result.outcome === "rejected" ? 30 : 14,
+            metadata: { reason: "reason" in result ? result.reason : null },
+          });
         } catch (error) {
+          if (isGoogleCostControlError(error)) {
+            counts.budgetBlocks += 1;
+            budgetFallbackReason = error.reason || "google_budget_control";
+            break outer;
+          }
           counts.failed += 1;
+          await writeCandidateMemory({
+            memoryKey, placeId, jobKey, market: plan.market, area: plan.area, category: plan.category,
+            outcome: "failed", ttlDays: 7, metadata: { error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300) },
+          });
           errors.push(`${searchResult.name || placeId}: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
+    }
+
+    if (budgetFallbackReason) {
+      fallback = await runNonGoogleBudgetFallback(kind);
     }
 
     if (autoPublish && counts.autoImport > 0) {
@@ -888,6 +980,8 @@ export async function runGoogleCuratedDiscovery(
           pipeline: PIPELINE,
           counts,
           errors: errors.slice(0, 20),
+          budgetFallbackReason,
+          fallback,
         },
       })
       .eq("id", batch.id);
@@ -900,6 +994,8 @@ export async function runGoogleCuratedDiscovery(
       plans,
       counts,
       errors: errors.slice(0, 20),
+      budgetFallbackReason,
+      fallback,
       durationMs: Date.now() - startedAtMs,
     };
   } catch (error) {
@@ -915,7 +1011,7 @@ export async function runGoogleCuratedDiscovery(
         total_published: counts.published,
         completed_at: new Date().toISOString(),
         error_message: error instanceof Error ? error.message : String(error),
-        metadata: { kind, plans, counts, errors: errors.slice(0, 20), pipeline: PIPELINE },
+        metadata: { kind, plans, counts, errors: errors.slice(0, 20), pipeline: PIPELINE, budgetFallbackReason, fallback },
       })
       .eq("id", batch.id);
     throw error;
