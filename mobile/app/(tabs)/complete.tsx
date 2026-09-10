@@ -28,18 +28,24 @@ function PlaceBlock({ label, place, onOpen }: { label: string; place: MobilePlac
   const { theme } = useAppTheme();
   if (!place) return null;
   return (
-    <Card elevated>
-      <Image source={{ uri: place.imageUrl || FALLBACK_IMAGE }} style={{ width: "100%", height: 180, borderRadius: 16 }} resizeMode="cover" />
-      <AppText variant="eyebrow" accent style={{ marginTop: theme.spacing.md }}>{label}</AppText>
-      <AppText variant="h3" style={{ marginTop: 6 }}>{place.name}</AppText>
-      {place.category ? <AppText muted style={{ marginTop: 4 }}>{place.category}</AppText> : null}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-        {place.rating != null ? <AppText variant="caption">★ {place.rating.toFixed(1)}</AppText> : null}
-        {place.priceLevel ? <AppText variant="caption">{place.priceLevel}</AppText> : null}
-        {place.reservationUrl ? <AppText variant="caption" style={{ color: theme.colors.accent }}>Reservation link found</AppText> : null}
-      </View>
-      <View style={{ marginTop: 14 }}>
-        <Button variant="secondary" onPress={onOpen}>View {label.toLowerCase()}</Button>
+    <Card elevated style={{ padding: 0, overflow: "hidden" }}>
+      <Image source={{ uri: place.imageUrl || FALLBACK_IMAGE }} style={{ width: "100%", height: 214 }} resizeMode="cover" />
+      <View style={{ padding: theme.spacing.md }}>
+        <AppText variant="eyebrow" accent>{label}</AppText>
+        <AppText variant="h2" style={{ marginTop: 6 }}>{place.name}</AppText>
+        {place.category ? <AppText muted style={{ marginTop: 4 }}>{place.category}</AppText> : null}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+          {place.rating != null ? <AppText variant="caption">★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${Math.round(place.reviewCount).toLocaleString()})` : ""}</AppText> : null}
+          {place.priceLevel ? <AppText variant="caption">{place.priceLevel}</AppText> : null}
+          {place.reservationUrl ? (
+            <View style={{ borderRadius: 999, backgroundColor: theme.colors.accentSoft, paddingHorizontal: 9, paddingVertical: 4 }}>
+              <AppText variant="caption" accent>Reservation ready</AppText>
+            </View>
+          ) : null}
+        </View>
+        <View style={{ marginTop: 16 }}>
+          <Button variant="secondary" onPress={onOpen}>View {label.toLowerCase()}</Button>
+        </View>
       </View>
     </Card>
   );
@@ -111,28 +117,41 @@ export default function CompleteOutingScreen() {
   };
 
   return (
-    <FoundationScreen title="Complete your OUTing" description={reason || travelLabel}>
+    <FoundationScreen title="Your OUTing is coming together." description={reason || "Everything you need to turn the picks into a real plan."}>
       <View style={{ gap: theme.spacing.lg }}>
         <BrandHeader compact />
         <JourneySteps activeStep={4} />
         <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back to picks</Button>
 
+        <Card elevated style={{ backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }}>
+          <View style={{ gap: 8 }}>
+            <AppText variant="eyebrow" accent>YOUR OUTING</AppText>
+            <AppText variant="h2">{restaurant?.name || "Your first stop"}{activity && activity.id !== restaurant?.id ? ` + ${activity.name}` : ""}</AppText>
+            <AppText muted>{travelLabel}</AppText>
+          </View>
+        </Card>
+
         <PlaceBlock label={resultType === "same_venue" ? "RESTAURANT + ACTIVITY" : "RESTAURANT"} place={restaurant} onOpen={() => restaurant && router.push(placeRouteParams(restaurant))} />
         {restaurant && activity && activity.id !== restaurant.id ? (
-          <View style={{ alignItems: "center", gap: 4 }}>
-            <AppText accent>↓</AppText>
-            <AppText muted>{travelLabel}</AppText>
+          <View style={{ alignItems: "center", gap: 6, paddingVertical: 2 }}>
+            <View style={{ width: 1, height: 20, backgroundColor: theme.colors.accent }} />
+            <View style={{ borderRadius: 999, borderWidth: 1, borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <AppText variant="caption" muted>{travelLabel}</AppText>
+            </View>
+            <View style={{ width: 1, height: 20, backgroundColor: theme.colors.accent }} />
           </View>
         ) : null}
         {activity && activity.id !== restaurant?.id ? <PlaceBlock label="THING TO DO" place={activity} onOpen={() => activity && router.push(placeRouteParams(activity))} /> : null}
 
-        <Card>
-          <AppText variant="eyebrow" accent>NEXT</AppText>
-          <AppText variant="h3" style={{ marginTop: 6 }}>Lock in the plan</AppText>
-          <AppText muted style={{ marginTop: 6 }}>Open venue details for reservation or booking links, then save the OUTing for reminders and easy return access.</AppText>
+        <Card elevated>
+          <View style={{ gap: 8 }}>
+            <AppText variant="eyebrow" accent>READY WHEN YOU ARE</AppText>
+            <AppText variant="h3">Lock in the plan.</AppText>
+            <AppText muted>Open each venue for reservation or booking options, then save this OUTing so it’s easy to return to and eligible for reminders.</AppText>
+          </View>
         </Card>
 
-        <Button disabled={saving} onPress={save}>{saving ? "Saving..." : saved ? "Saved" : "Save OUTing"}</Button>
+        <Button disabled={saving} onPress={save}>{saving ? "Saving…" : saved ? "✓ OUTing saved" : "Save OUTing"}</Button>
         <Button variant="secondary" onPress={share}>Share OUTing</Button>
       </View>
     </FoundationScreen>
