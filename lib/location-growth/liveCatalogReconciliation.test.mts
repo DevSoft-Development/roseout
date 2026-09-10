@@ -30,7 +30,7 @@ test("duplicate automation only merges exact identity with the same venue name",
   assert.match(source, /same_location_key/);
   assert.match(source, /same_normalized_name_address/);
   assert.match(source, /sameVenueName\(left, right\)/);
-  assert.match(source, /location_intelligence_shared_phone_conservative/);
+  assert.doesNotMatch(source, /"same_phone"/);
   assert.doesNotMatch(source, /duplicate_score\) >= 70.*oh_merge_live_location_duplicate/s);
 });
 
