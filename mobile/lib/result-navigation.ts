@@ -8,7 +8,9 @@ export function placeRouteParams(place: MobilePlaceResult) {
       name: place.name,
       kind: place.kind,
       category: place.category,
+      imageUrl: place.imageUrl || "",
       rating: place.rating == null ? "" : String(place.rating),
+      reviewCount: place.reviewCount == null ? "" : String(place.reviewCount),
       priceLevel: place.priceLevel || "",
       distanceMiles: place.distanceMiles == null ? "" : String(place.distanceMiles),
       publicUrl: place.publicUrl || "",
@@ -24,7 +26,7 @@ export function placeRouteParams(place: MobilePlaceResult) {
 
 export function outingRouteParams(outing: MobileOutingResult) {
   return {
-    pathname: "/outing/[id]" as const,
+    pathname: "/(tabs)/complete" as const,
     params: {
       id: outing.id,
       restaurant: outing.restaurant ? JSON.stringify(outing.restaurant) : "",
@@ -32,6 +34,7 @@ export function outingRouteParams(outing: MobileOutingResult) {
       distanceMiles: outing.distanceMiles == null ? "" : String(outing.distanceMiles),
       walkMinutes: outing.walkMinutes == null ? "" : String(outing.walkMinutes),
       reason: outing.reason || "",
+      resultType: outing.resultType || "pair",
     },
   };
 }
