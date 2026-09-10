@@ -82,7 +82,7 @@ export default function ResultsScreen() {
     activity: selectedActivity,
     distanceMiles: null,
     walkMinutes: null,
-    reason: "Your custom restaurant + activity combination.",
+    reason: "Built by you from this search. TheOutHaven keeps the same plan and preferences intact.",
     resultType: "pair",
   } : null;
 
@@ -100,53 +100,94 @@ export default function ResultsScreen() {
 
   if (error) {
     return (
-      <FoundationScreen title="We hit a snag" description={error}>
-        <View style={{ gap: theme.spacing.md }}>
+      <FoundationScreen title="We couldn’t finish that search" description="Your plan is still here. Try again, or go back and adjust one detail.">
+        <View style={{ gap: theme.spacing.lg }}>
           <BrandHeader compact />
           <JourneySteps activeStep={3} />
-          <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back to Make It Yours</Button>
-          <Button onPress={() => void runSearch()}>Try again</Button>
+          <Card elevated>
+            <AppText variant="eyebrow" accent>SEARCH PAUSED</AppText>
+            <AppText variant="h3" style={{ marginTop: 8 }}>Nothing was lost</AppText>
+            <AppText muted style={{ marginTop: 8 }}>{error}</AppText>
+            <View style={{ gap: 10, marginTop: theme.spacing.lg }}>
+              <Button onPress={() => void runSearch()}>Try again</Button>
+              <Button variant="secondary" onPress={() => router.back()}>Edit Make It Yours</Button>
+            </View>
+          </Card>
         </View>
       </FoundationScreen>
     );
   }
 
+  const hasAnyResults = recommended.length > 0 || singlePlaces.length > 0;
+
   return (
-    <FoundationScreen title={requestBody.planType === "outing" ? "Your strongest OUTings" : "Your strongest picks"} description={result?.reply || "Ranked for the plan you asked for."}>
+    <FoundationScreen title={requestBody.planType === "outing" ? "Pick your OUTing" : "Pick your place"} description={result?.reply || "Ranked for the plan you asked for."}>
       <View style={{ gap: theme.spacing.lg }}>
         <BrandHeader compact />
         <JourneySteps activeStep={3} />
         <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Edit Make It Yours</Button>
 
-        <Card>
-          <AppText variant="eyebrow" accent>YOUR SEARCH</AppText>
-          <AppText variant="bodyStrong" style={{ marginTop: 6 }}>{requestBody.query}</AppText>
-          <AppText variant="caption" muted style={{ marginTop: 4 }}>{requestBody.area} · {requestBody.when === "none" ? "Flexible time" : requestBody.when}</AppText>
+        <Card elevated>
+          <AppText variant="eyebrow" accent>YOUR PLAN</AppText>
+          <AppText variant="h3" style={{ marginTop: 8 }}>{requestBody.query}</AppText>
+          <AppText variant="caption" muted style={{ marginTop: 6 }}>
+            {requestBody.area} · {requestBody.when === "none" ? "Flexible time" : requestBody.when} · Party {requestBody.partySize} · {requestBody.budget}
+          </AppText>
         </Card>
 
-        {requestBody.planType === "outing" ? (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Chip label="Recommended pairs" selected={mode === "recommended"} disabled={!recommended.length} onPress={() => setMode("recommended")} />
-            <Chip label="Build your own" selected={mode === "build"} disabled={!restaurants.length || !activities.length} onPress={() => setMode("build")} />
-            <Chip label="All places" selected={mode === "places"} disabled={!singlePlaces.length} onPress={() => setMode("places")} />
-          </View>
+        {requestBody.planType === "outing" && hasAnyResults ? (
+          <Card>
+            <AppText variant="eyebrow" accent>HOW DO YOU WANT TO PICK?</AppText>
+            <AppText muted style={{ marginTop: 6 }}>Start with TheOutHaven’s strongest pairs, or build the combination yourself.</AppText>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.md }}>
+              <Chip label={`Recommended${recommended.length ? ` · ${recommended.length}` : ""}`} selected={mode === "recommended"} disabled={!recommended.length} onPress={() => setMode("recommended")} />
+              <Chip label="Build your own" selected={mode === "build"} disabled={!restaurants.length || !activities.length} onPress={() => setMode("build")} />
+              <Chip label={`All places${singlePlaces.length ? ` · ${singlePlaces.length}` : ""}`} selected={mode === "places"} disabled={!singlePlaces.length} onPress={() => setMode("places")} />
+            </View>
+          </Card>
         ) : null}
 
         {mode === "recommended" && recommended.length ? (
           <View style={{ gap: theme.spacing.md }}>
+            <View style={{ gap: 5 }}>
+              <AppText variant="eyebrow" accent>RECOMMENDED OUTINGS</AppText>
+              <AppText variant="h2">Built to work together</AppText>
+              <AppText muted>Complete restaurant + activity combinations, ranked for your plan.</AppText>
+            </View>
             {recommended.map((outing, index) => <OutingResultCard key={outing.id} outing={outing} rank={index + 1} />)}
           </View>
         ) : null}
 
         {mode === "build" ? (
           <View style={{ gap: theme.spacing.lg }}>
-            <View style={{ gap: theme.spacing.sm }}>
-              <AppText variant="h2">Build your own OUTing</AppText>
-              <AppText muted>Choose one restaurant and one activity from this same result set. Your search stays intact.</AppText>
-            </View>
+            <Card elevated>
+              <AppText variant="eyebrow" accent>BUILD YOUR OWN OUTING</AppText>
+              <AppText variant="h2" style={{ marginTop: 8 }}>You choose both stops.</AppText>
+              <AppText muted style={{ marginTop: 8 }}>Pick a restaurant and an activity from the same search. We keep your location, timing, budget, and preferences in place.</AppText>
+
+              <View style={{ gap: 10, marginTop: theme.spacing.lg }}>
+                <View style={{ borderWidth: 1, borderColor: selectedRestaurant ? theme.colors.accent : theme.colors.border, backgroundColor: selectedRestaurant ? theme.colors.accentSoft : theme.colors.surface, borderRadius: 18, padding: 14 }}>
+                  <AppText variant="caption" accent>1 · RESTAURANT</AppText>
+                  <AppText variant="bodyStrong" style={{ marginTop: 4 }}>{selectedRestaurant?.name || "Choose your dinner stop"}</AppText>
+                </View>
+                <View style={{ borderWidth: 1, borderColor: selectedActivity ? theme.colors.accent : theme.colors.border, backgroundColor: selectedActivity ? theme.colors.accentSoft : theme.colors.surface, borderRadius: 18, padding: 14 }}>
+                  <AppText variant="caption" accent>2 · ACTIVITY</AppText>
+                  <AppText variant="bodyStrong" style={{ marginTop: 4 }}>{selectedActivity?.name || "Choose what happens next"}</AppText>
+                </View>
+              </View>
+
+              {customPair ? (
+                <View style={{ marginTop: theme.spacing.lg }}>
+                  <Button onPress={() => router.push(outingRouteParams(customPair))}>Continue with this OUTing →</Button>
+                </View>
+              ) : null}
+            </Card>
 
             <View style={{ gap: theme.spacing.md }}>
-              <AppText variant="h3">1. Pick a restaurant</AppText>
+              <View style={{ gap: 4 }}>
+                <AppText variant="h2">1. Pick a restaurant</AppText>
+                <AppText muted>{selectedRestaurant ? "Restaurant selected. Change it anytime." : "Choose the first stop for your OUTing."}</AppText>
+              </View>
               {restaurants.map((place) => (
                 <PlaceResultCard
                   key={place.id}
@@ -159,7 +200,10 @@ export default function ResultsScreen() {
             </View>
 
             <View style={{ gap: theme.spacing.md }}>
-              <AppText variant="h3">2. Pick an activity</AppText>
+              <View style={{ gap: 4 }}>
+                <AppText variant="h2">2. Pick an activity</AppText>
+                <AppText muted>{selectedActivity ? "Activity selected. Your custom OUTing is ready." : "Now choose what you want to do next."}</AppText>
+              </View>
               {activities.map((place) => (
                 <PlaceResultCard
                   key={place.id}
@@ -170,31 +214,29 @@ export default function ResultsScreen() {
                 />
               ))}
             </View>
-
-            {customPair ? (
-              <Card elevated>
-                <View style={{ gap: theme.spacing.md }}>
-                  <AppText variant="eyebrow" accent>YOUR CUSTOM OUTING</AppText>
-                  <AppText variant="h3">{selectedRestaurant?.name} + {selectedActivity?.name}</AppText>
-                  <AppText muted>You can continue with this combination without restarting your search.</AppText>
-                  <Button onPress={() => router.push(outingRouteParams(customPair))}>Choose this OUTing →</Button>
-                </View>
-              </Card>
-            ) : null}
           </View>
         ) : null}
 
         {mode === "places" || requestBody.planType !== "outing" ? (
           <View style={{ gap: theme.spacing.md }}>
+            <View style={{ gap: 5 }}>
+              <AppText variant="eyebrow" accent>{requestBody.planType === "outing" ? "ALL MATCHES" : "BEST MATCHES"}</AppText>
+              <AppText variant="h2">Explore the individual places</AppText>
+            </View>
             {singlePlaces.map((place) => <PlaceResultCard key={`${place.kind}-${place.id}`} place={place} />)}
           </View>
         ) : null}
 
-        {!recommended.length && !singlePlaces.length ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            <AppText variant="h2">No strong match yet</AppText>
-            <AppText muted>Try a nearby area or loosen one preference, then run the search again.</AppText>
-          </View>
+        {!hasAnyResults ? (
+          <Card elevated>
+            <AppText variant="eyebrow" accent>NO STRONG MATCH YET</AppText>
+            <AppText variant="h2" style={{ marginTop: 8 }}>Keep the plan. Loosen one thing.</AppText>
+            <AppText muted style={{ marginTop: 8 }}>Try a nearby area, a wider travel range, or one fewer preference. You don’t need to start over.</AppText>
+            <View style={{ gap: 10, marginTop: theme.spacing.lg }}>
+              <Button onPress={() => router.back()}>Adjust my plan</Button>
+              <Button variant="secondary" onPress={() => void runSearch()}>Search again</Button>
+            </View>
+          </Card>
         ) : null}
       </View>
     </FoundationScreen>
