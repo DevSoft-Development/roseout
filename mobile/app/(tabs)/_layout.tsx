@@ -1,5 +1,10 @@
+import { Text } from "react-native";
 import { Tabs } from "expo-router";
 import { useAppTheme } from "@/providers/ThemeProvider";
+
+function TabGlyph({ glyph, color }: { glyph: string; color: string }) {
+  return <Text style={{ color, fontSize: 19, lineHeight: 22 }}>{glyph}</Text>;
+}
 
 export default function TabLayout() {
   const { theme } = useAppTheme();
@@ -20,11 +25,26 @@ export default function TabLayout() {
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: "Home" }} />
-      <Tabs.Screen name="explore" options={{ title: "Explore" }} />
-      <Tabs.Screen name="plan" options={{ title: "Plan" }} />
-      <Tabs.Screen name="outings" options={{ title: "Outings" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile" }} />
+      <Tabs.Screen
+        name="index"
+        options={{ title: "Home", tabBarIcon: ({ color }) => <TabGlyph glyph="⌂" color={color} /> }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{ title: "Explore", tabBarIcon: ({ color }) => <TabGlyph glyph="⌕" color={color} /> }}
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{ title: "Plan", tabBarIcon: ({ color }) => <TabGlyph glyph="✦" color={color} /> }}
+      />
+      <Tabs.Screen
+        name="outings"
+        options={{ title: "Outings", tabBarIcon: ({ color }) => <TabGlyph glyph="♡" color={color} /> }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: "Profile", tabBarIcon: ({ color }) => <TabGlyph glyph="◉" color={color} /> }}
+      />
     </Tabs>
   );
 }
