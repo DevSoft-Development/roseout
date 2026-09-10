@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     .select("id")
     .eq("channel", "email")
     .eq("address", normalized)
-    .eq("suppression_type", "manual_unsubscribe")
+    .eq("suppression_type", "unsubscribe")
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
@@ -42,7 +42,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
       contact_id: row.contact_id,
       channel: "email",
       address: normalized,
-      suppression_type: "manual_unsubscribe",
+      suppression_type: "unsubscribe",
       reason: "Recipient unsubscribed from TheOutHaven business outreach",
       source: "gtm_unsubscribe",
       provider: "theouthaven",
