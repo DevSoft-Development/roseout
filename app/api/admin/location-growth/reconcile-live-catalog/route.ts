@@ -5,12 +5,13 @@ import {
   reconcileImportedUnverified,
   reconcilePublishReadyNonSearchable,
 } from "@/lib/location-growth/liveCatalogReconciliation";
+import { reconcileCanonicalDuplicateMasters } from "@/lib/location-growth/canonicalMasterReconciliation";
 import { resolveLiveDuplicateBacklog } from "@/lib/location-growth/liveDuplicateReconciliation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Mode = "imported_unverified" | "duplicates" | "publish_ready" | "all";
+type Mode = "imported_unverified" | "duplicates" | "publish_ready" | "canonical_masters" | "all";
 
 export async function POST(request: NextRequest) {
   const { error: authError } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.locationGrowth);
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
   const dryRun = body.dryRun !== false;
   const limit = Number(body.limit || 1000);
 
-  if (!["imported_unverified", "duplicates", "publish_ready", "all"].includes(mode)) {
+  if (!["imported_unverified", "duplicates", "publish_ready", "canonical_masters", "all"].includes(mode)) {
     return NextResponse.json({ success: false, error: "Invalid reconciliation mode." }, { status: 400 });
   }
 
@@ -35,6 +36,9 @@ export async function POST(request: NextRequest) {
     }
     if (mode === "publish_ready" || mode === "all") {
       result.publishReady = await reconcilePublishReadyNonSearchable({ limit: Math.min(limit, 500), dryRun });
+    }
+    if (mode === "canonical_masters" || mode === "all") {
+      result.canonicalMasters = await reconcileCanonicalDuplicateMasters({ limit: Math.min(limit, 500), dryRun });
     }
 
     return NextResponse.json({ success: true, mode, dryRun, result });
