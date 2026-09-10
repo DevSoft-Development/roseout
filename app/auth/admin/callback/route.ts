@@ -126,7 +126,7 @@ export async function GET(request: Request) {
     console.error("ADMIN_M365_CONNECTION_LOOKUP_FAILED", m365ConnectionError);
   } else if (m365Connection?.status !== "active") {
     const connectUrl = new URL("/api/admin/integrations/microsoft-365/connect", origin);
-    connectUrl.searchParams.set("silent", "1");
+    connectUrl.searchParams.set("auto", "1");
     connectUrl.searchParams.set("next", next);
     return NextResponse.redirect(connectUrl);
   }

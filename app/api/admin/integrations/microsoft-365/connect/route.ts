@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   const admin = await getCurrentAdmin();
   const config = await getMicrosoft365Config();
   const silent = request.nextUrl.searchParams.get("silent") === "1";
+  const automatic = request.nextUrl.searchParams.get("auto") === "1";
   const requestedNext = sanitizeIntendedPath(request.nextUrl.searchParams.get("next"));
   const next = requestedNext?.startsWith("/admin")
     ? requestedNext
@@ -30,7 +31,11 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("prompt", silent ? "none" : "select_account");
+  if (silent) {
+    url.searchParams.set("prompt", "none");
+  } else if (!automatic) {
+    url.searchParams.set("prompt", "select_account");
+  }
   if (admin.email) url.searchParams.set("login_hint", admin.email);
 
   const response = NextResponse.redirect(url);
