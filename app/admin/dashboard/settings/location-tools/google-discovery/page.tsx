@@ -71,7 +71,7 @@ async function loadData() {
       .select("id,batch_id,name,location_type,address,city,state,zip_code,phone,website,primary_category,cuisine,activity_type,rating,review_count,quality_score,quality_status,import_status,duplicate_status,rejection_reason,main_image,source_url,has_photos,photo_status,import_confidence,source_quality_status,public_visibility_tier,latitude,longitude,raw_payload,created_at")
       .eq("source", SOURCE)
       .order("created_at", { ascending: false })
-      .limit(100),
+      .limit(500),
   ]);
 
   return {
@@ -107,16 +107,16 @@ export default async function GoogleDiscoveryPage() {
   await requireAdminRole(["superadmin", "admin"]);
   const { batches, candidates, error } = await loadData();
   const published = candidates.filter((row) => row.import_status === "published").length;
-  const review = candidates.filter((row) => row.import_status === "staged" && row.quality_status !== "publish_ready").length;
+  const review = candidates.filter((row) => row.import_status === "staged" && row.quality_status === "review").length;
   const rejected = candidates.filter((row) => row.import_status === "rejected").length;
   const duplicates = candidates.filter((row) => row.import_status === "duplicate").length;
 
   return (
     <LocationToolShell
       title="Curated Google Discovery"
-      description="Google is a discovery source, not an automatic directory feed. TheOutHaven now fills neighborhood and town gaps with both core coverage and curated finds, blocks chains and low-quality results, enriches approved locations, and keeps borderline candidates here for review."
+      description="Google is a discovery source, not an automatic directory feed. Use the review workspace to make evidence-based publish, hide, reject, category-correction and batch decisions across the current queue."
       stats={[
-        { label: "Recent published", value: published, tone: "emerald" },
+        { label: "Published in loaded set", value: published, tone: "emerald" },
         { label: "Needs review", value: review, tone: "amber" },
         { label: "Rejected", value: rejected, tone: "rose" },
         { label: "Duplicates blocked", value: duplicates, tone: "white" },
@@ -159,7 +159,7 @@ export default async function GoogleDiscoveryPage() {
             <p><span className="text-white">Hidden gems:</span> 4.4 stars / 25 reviews can enter manual review, but the subjective hidden-gem label never auto-publishes from the search phrase alone.</p>
             <p><span className="text-white">First-time activities:</span> niche workshops can enter review at 4.3 stars / 20 reviews and can auto-publish at 4.5 stars / 50 reviews when the venue itself provides strong activity evidence.</p>
             <p><span className="text-white">Automatic rejection:</span> missing reputation, rating below the applicable floor, very low review volume, wrong market, known chains, quick-service patterns, or invalid location data.</p>
-            <p><span className="text-white">Before publication:</span> Google photos use a live Place-ID proxy rather than permanent photo storage. Photos requiring author attribution stay in review until the UI can render that attribution. Published locations immediately run reservation-link discovery without overwriting owner or internal reservation settings.</p>
+            <p><span className="text-white">Manual correction:</span> fixing a category immediately re-runs the same quality evaluator against stored Google evidence. It does not make another Google API call.</p>
           </div>
         </ToolCard>
       </div>
@@ -194,7 +194,7 @@ export default async function GoogleDiscoveryPage() {
         )}
       </ToolCard>
 
-      <ToolCard title="Recent Google candidates" description="Click a candidate to review its details, Google evidence, quality state and duplicate status. Manual approval moves it into the normal publish-ready pipeline; keeping it hidden records a persistent review decision.">
+      <ToolCard title="Google review decision workspace" description="Filter by review reason, inspect the exact Google evidence, correct categories, and take single or batch decisions. Approvals enter the normal publish pipeline immediately; ambiguous candidates can remain hidden without being deleted.">
         {candidates.length ? (
           <GoogleDiscoveryReviewList candidates={candidates} />
         ) : (
