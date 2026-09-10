@@ -50,8 +50,8 @@ begin
         returning id into v_contact_id;
       end if;
       if not exists(select 1 from public.crm_account_contacts where account_id=v_account_id and contact_id=v_contact_id and is_active=true) then
-        insert into public.crm_account_contacts(account_id,contact_id,relationship_type,role_label,is_primary,is_active,source)
-        values(v_account_id,v_contact_id,'owner','Owner / authorized business contact',true,true,'verified_claim_contact');
+        insert into public.crm_account_contacts(account_id,contact_id,relationship_type,role_label,is_primary,is_active)
+        values(v_account_id,v_contact_id,'owner','Owner / authorized business contact',true,true);
       end if;
     end if;
   end if;
