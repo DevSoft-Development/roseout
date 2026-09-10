@@ -5,8 +5,10 @@ export type MobilePlaceResult = {
   category: string;
   imageUrl: string | null;
   rating: number | null;
+  reviewCount: number | null;
   priceLevel: string | null;
   distanceMiles: number | null;
+  whyMatched: string | null;
   publicUrl: string | null;
   reservationUrl: string | null;
   websiteUrl: string | null;
@@ -23,6 +25,7 @@ export type MobileOutingResult = {
   distanceMiles: number | null;
   walkMinutes: number | null;
   reason: string | null;
+  resultType?: "pair" | "same_venue";
 };
 
 export type MobileSearchResponse = {
@@ -31,6 +34,7 @@ export type MobileSearchResponse = {
   reply: string | null;
   renderMode: string;
   pairs: MobileOutingResult[];
+  sameVenueResults: MobileOutingResult[];
   restaurants: MobilePlaceResult[];
   activities: MobilePlaceResult[];
 };
