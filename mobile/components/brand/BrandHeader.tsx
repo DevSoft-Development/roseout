@@ -13,7 +13,7 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="TheOutHaven home"
-      onPress={() => router.replace("/(tabs)")}
+      onPress={() => router.replace("/")}
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.72 : 1 }]}
     >
       <View style={[styles.logoShell, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }]}> 
