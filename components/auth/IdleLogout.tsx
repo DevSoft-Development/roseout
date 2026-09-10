@@ -36,9 +36,9 @@ export default function IdleLogout() {
     setShowWarning(false);
     setHasUser(false);
     await createClient().auth.signOut();
-    router.push("/login");
+    router.push(pathname?.startsWith("/admin") || pathname?.startsWith("/reserve/dashboard") ? "/admin/login" : "/login");
     router.refresh();
-  }, [clearTimers, router]);
+  }, [clearTimers, pathname, router]);
 
   const resetTimers = useCallback(() => {
     clearTimers();

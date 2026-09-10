@@ -45,7 +45,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {showGlobalChrome && <TheOutHavenHeader />}
-      {mounted && !hidesGlobalChrome && <IdleLogout />}
+      {mounted && <IdleLogout />}
       {children}
       {showGlobalChrome && <TheOutHavenFooter />}
     </>
