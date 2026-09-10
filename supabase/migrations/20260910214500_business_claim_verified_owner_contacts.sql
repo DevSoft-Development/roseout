@@ -8,7 +8,7 @@ set search_path=public,pg_temp
 as $$
 declare
   v_sequence_id uuid; v_account_id uuid; v_contact_id uuid; v_owner uuid; v_existing uuid; v_source text;
-  v_claim_email text; v_contact_discovery_required boolean;
+  v_claim_email text; v_contact_discovery_required boolean; v_make_primary boolean;
 begin
   select id into v_sequence_id from public.crm_sequences where sequence_key=p_sequence_key and status='active' and archived_at is null;
   if v_sequence_id is null then return null; end if;
@@ -50,8 +50,9 @@ begin
         returning id into v_contact_id;
       end if;
       if not exists(select 1 from public.crm_account_contacts where account_id=v_account_id and contact_id=v_contact_id and is_active=true) then
+        select not exists(select 1 from public.crm_account_contacts where account_id=v_account_id and is_active=true and is_primary=true) into v_make_primary;
         insert into public.crm_account_contacts(account_id,contact_id,relationship_type,role_label,is_primary,is_active)
-        values(v_account_id,v_contact_id,'owner','Owner / authorized business contact',true,true);
+        values(v_account_id,v_contact_id,'owner','Owner / authorized business contact',v_make_primary,true);
       end if;
     end if;
   end if;
