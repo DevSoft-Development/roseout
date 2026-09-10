@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TextInput, View } from "react-native";
+import DateTimePicker from "@expo/ui/community/datetime-picker";
+import { Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { JourneySteps } from "@/components/planner/JourneySteps";
@@ -39,6 +40,52 @@ type PlannerIntentResponse = {
   detectedLocation: { area: string; geoType: string; requestedMarket: string | null } | null;
 };
 
+type ActivePicker = "date" | "time" | null;
+
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function toDateValue(value: string, fallback: Date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return fallback;
+  const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), fallback.getHours(), fallback.getMinutes());
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function withTimeValue(value: string, fallback: Date) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value);
+  if (!match) return fallback;
+  const parsed = new Date(fallback);
+  parsed.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function formatDateStorage(value: Date) {
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+}
+
+function formatTimeStorage(value: Date) {
+  return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function formatDateLabel(value: string) {
+  if (!value) return "Choose date";
+  return toDateValue(value, new Date()).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatTimeLabel(value: string) {
+  if (!value) return "Choose time";
+  return withTimeValue(value, new Date()).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function PlanScreen() {
   const params = useLocalSearchParams<{ prompt?: string; planType?: string; startAt?: string }>();
   const router = useRouter();
@@ -47,6 +94,7 @@ export default function PlanScreen() {
   const incomingPlanType: MobilePlanType = params.planType === "restaurant" || params.planType === "activity" ? params.planType : "outing";
   const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt));
   const [error, setError] = useState<string | null>(null);
+  const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const detectedForPrompt = useRef<string | null>(null);
   const [customMatter, setCustomMatter] = useState("");
   const [draft, setDraft] = useState<MobileSearchDraft>({
@@ -58,6 +106,12 @@ export default function PlanScreen() {
   const summary = useMemo(() => serializeSearchDraft(draft), [draft]);
   const set = <K extends keyof MobileSearchDraft>(key: K, value: MobileSearchDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  const nativePickerValue = useMemo(() => {
+    const now = new Date();
+    const dated = toDateValue(draft.customDate, now);
+    return withTimeValue(draft.customTime, dated);
+  }, [draft.customDate, draft.customTime]);
 
   useEffect(() => {
     if (!incomingPrompt || detectedForPrompt.current === incomingPrompt) {
@@ -105,6 +159,15 @@ export default function PlanScreen() {
     setCustomMatter("");
   }
 
+  function applyNativeDate(selectedDate: Date) {
+    if (activePicker === "date") {
+      setDraft((current) => ({ ...current, when: "custom", customDate: formatDateStorage(selectedDate) }));
+    } else if (activePicker === "time") {
+      setDraft((current) => ({ ...current, when: "custom", customTime: formatTimeStorage(selectedDate) }));
+    }
+    if (Platform.OS === "android") setActivePicker(null);
+  }
+
   function submit() {
     if (!summary.query) return;
     router.push({
@@ -125,6 +188,18 @@ export default function PlanScreen() {
       },
     });
   }
+
+  const pickerFieldStyle = {
+    flex: 1,
+    minHeight: 58,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderColor: theme.colors.borderStrong,
+    backgroundColor: theme.colors.surface,
+    justifyContent: "center" as const,
+  };
 
   return (
     <FoundationScreen title="Make it yours" description="Confirm the details that matter. We’ll use the same planning logic as TheOutHaven on the web.">
@@ -157,22 +232,86 @@ export default function PlanScreen() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
             {WHEN_OPTIONS.map(([value, label]) => <Chip key={value} label={label} selected={draft.when === value} onPress={() => set("when", value)} />)}
           </View>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: theme.spacing.sm }}>
-            <TextInput
-              value={draft.customDate}
-              onChangeText={(value) => set("customDate", value)}
-              placeholder="Exact date (YYYY-MM-DD)"
-              placeholderTextColor={theme.colors.textMuted}
-              style={{ flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, borderColor: theme.colors.borderStrong, color: theme.colors.text, backgroundColor: theme.colors.surface }}
-            />
-            <TextInput
-              value={draft.customTime}
-              onChangeText={(value) => set("customTime", value)}
-              placeholder="Time"
-              placeholderTextColor={theme.colors.textMuted}
-              style={{ width: 105, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, borderColor: theme.colors.borderStrong, color: theme.colors.text, backgroundColor: theme.colors.surface }}
-            />
+
+          <View style={{ flexDirection: "row", gap: 10, marginTop: theme.spacing.md }}>
+            {Platform.OS === "ios" ? (
+              <>
+                <View style={pickerFieldStyle}>
+                  <AppText variant="caption" muted>Date</AppText>
+                  <DateTimePicker
+                    value={nativePickerValue}
+                    onValueChange={(_, selectedDate) => {
+                      setActivePicker("date");
+                      setDraft((current) => ({ ...current, when: "custom", customDate: formatDateStorage(selectedDate) }));
+                    }}
+                    mode="date"
+                    display="compact"
+                    minimumDate={new Date()}
+                    accentColor={theme.colors.accent}
+                    themeVariant="dark"
+                    timeZoneName="America/New_York"
+                    style={{ marginTop: 4 }}
+                  />
+                </View>
+                <View style={pickerFieldStyle}>
+                  <AppText variant="caption" muted>Time</AppText>
+                  <DateTimePicker
+                    value={nativePickerValue}
+                    onValueChange={(_, selectedDate) => {
+                      setActivePicker("time");
+                      setDraft((current) => ({ ...current, when: "custom", customTime: formatTimeStorage(selectedDate) }));
+                    }}
+                    mode="time"
+                    display="compact"
+                    accentColor={theme.colors.accent}
+                    themeVariant="dark"
+                    timeZoneName="America/New_York"
+                    style={{ marginTop: 4 }}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose exact date"
+                  onPress={() => setActivePicker("date")}
+                  style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}
+                >
+                  <AppText variant="caption" muted>Date</AppText>
+                  <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatDateLabel(draft.customDate)}</AppText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose exact time"
+                  onPress={() => setActivePicker("time")}
+                  style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}
+                >
+                  <AppText variant="caption" muted>Time</AppText>
+                  <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatTimeLabel(draft.customTime)}</AppText>
+                </Pressable>
+              </>
+            )}
           </View>
+
+          {draft.when === "custom" ? (
+            <AppText variant="caption" style={{ color: theme.colors.accentAlt, marginTop: theme.spacing.xs }}>
+              Exact timing selected{draft.customDate ? ` · ${formatDateLabel(draft.customDate)}` : ""}{draft.customTime ? ` at ${formatTimeLabel(draft.customTime)}` : ""}
+            </AppText>
+          ) : null}
+
+          {Platform.OS === "android" && activePicker ? (
+            <DateTimePicker
+              value={nativePickerValue}
+              onValueChange={(_, selectedDate) => applyNativeDate(selectedDate)}
+              onDismiss={() => setActivePicker(null)}
+              mode={activePicker}
+              presentation="dialog"
+              minimumDate={activePicker === "date" ? new Date() : undefined}
+              accentColor={theme.colors.accent}
+              is24Hour={false}
+            />
+          ) : null}
         </View>
 
         <View>
