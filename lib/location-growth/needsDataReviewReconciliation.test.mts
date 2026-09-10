@@ -35,6 +35,14 @@ test("generic retail and creative activity rows require category evidence", () =
   assert.match(source, /&& hasActivityCategoryEvidence\(row\)/);
 });
 
+test("perfume-making labels require stored experiential text", () => {
+  assert.match(source, /hasScentExperienceEvidence/);
+  assert.match(source, /category !== "perfume_making"/);
+  assert.match(source, /row\.description/);
+  assert.match(source, /row\.short_description/);
+  assert.match(source, /workshop\|experience\|class\|session\|appointment\|reservation/);
+});
+
 test("canonical publishability is the final authority", () => {
   assert.match(source, /buildPublishabilityUpdate/);
   assert.match(source, /if \(!result\.isSearchable\)/);

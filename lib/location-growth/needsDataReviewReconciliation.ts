@@ -46,11 +46,19 @@ function meetsCurrentNumericFloor(row: any) {
   return false;
 }
 
+function hasScentExperienceEvidence(row: any) {
+  const category = lower(row.primary_category || row.category).replace(/[\s-]+/g, "_");
+  if (category !== "perfume_making") return true;
+  const evidence = lower([row.description, row.short_description].filter(Boolean).join(" "));
+  return /(perfume|fragrance|scent).*(make|making|create|custom|blend|workshop|experience|class|session|appointment|reservation)|(?:make|making|create|custom|blend|workshop|experience|class|session|appointment|reservation).*(perfume|fragrance|scent)/.test(evidence);
+}
+
 function hasActivityCategoryEvidence(row: any) {
   if (lower(row.location_type) !== "activity") return true;
   const category = lower(row.primary_category || row.category).replace(/[\s-]+/g, "_");
   if (["retail_store", "store", "shopping", "shop"].includes(category)) return false;
   if (category === "creative") return false;
+  if (!hasScentExperienceEvidence(row)) return false;
   return true;
 }
 
