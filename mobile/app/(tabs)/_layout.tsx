@@ -25,26 +25,13 @@ export default function TabLayout() {
         },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{ title: "Home", tabBarIcon: ({ color }) => <TabGlyph glyph="⌂" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{ title: "Explore", tabBarIcon: ({ color }) => <TabGlyph glyph="⌕" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="plan"
-        options={{ title: "Plan", tabBarIcon: ({ color }) => <TabGlyph glyph="✦" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="outings"
-        options={{ title: "Outings", tabBarIcon: ({ color }) => <TabGlyph glyph="♡" color={color} /> }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{ title: "Profile", tabBarIcon: ({ color }) => <TabGlyph glyph="◉" color={color} /> }}
-      />
+      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color }) => <TabGlyph glyph="⌂" color={color} /> }} />
+      <Tabs.Screen name="explore" options={{ title: "Explore", tabBarIcon: ({ color }) => <TabGlyph glyph="⌕" color={color} /> }} />
+      <Tabs.Screen name="plan" options={{ title: "Plan", tabBarIcon: ({ color }) => <TabGlyph glyph="✦" color={color} /> }} />
+      <Tabs.Screen name="outings" options={{ title: "Outings", tabBarIcon: ({ color }) => <TabGlyph glyph="♡" color={color} /> }} />
+      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color }) => <TabGlyph glyph="◉" color={color} /> }} />
+      <Tabs.Screen name="results" options={{ href: null }} />
+      <Tabs.Screen name="complete" options={{ href: null }} />
     </Tabs>
   );
 }
