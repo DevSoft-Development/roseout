@@ -16,6 +16,7 @@ import type { MobileOutingResult, MobilePlaceResult, MobileSearchResponse } from
 import { useAppTheme } from "@/providers/ThemeProvider";
 
 type ResultsMode = "recommended" | "build" | "places";
+type ResultParams = Record<string, string | undefined>;
 
 function parseArray(raw: string | undefined) {
   if (!raw) return [] as string[];
@@ -28,7 +29,7 @@ function parseArray(raw: string | undefined) {
 }
 
 export default function ResultsScreen() {
-  const params = useLocalSearchParams<Record<string, string | undefined>>();
+  const params = useLocalSearchParams() as ResultParams;
   const router = useRouter();
   const { theme } = useAppTheme();
   const [loading, setLoading] = useState(true);
