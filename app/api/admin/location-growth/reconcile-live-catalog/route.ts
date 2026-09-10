@@ -4,8 +4,8 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import {
   reconcileImportedUnverified,
   reconcilePublishReadyNonSearchable,
-  resolveLiveDuplicateBacklog,
 } from "@/lib/location-growth/liveCatalogReconciliation";
+import { resolveLiveDuplicateBacklog } from "@/lib/location-growth/liveDuplicateReconciliation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
