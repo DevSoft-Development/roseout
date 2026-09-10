@@ -12,18 +12,29 @@ const FALLBACK_IMAGE = "https://theouthaven.com/toh_logo.png";
 function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: string }) {
   const { theme } = useAppTheme();
   return (
-    <View style={[styles.venueRow, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}> 
-      <Image source={{ uri: place.imageUrl || FALLBACK_IMAGE }} style={styles.thumb} resizeMode="cover" />
+    <View style={[styles.venue, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}> 
+      <Image source={{ uri: place.imageUrl || FALLBACK_IMAGE }} style={[styles.heroImage, { backgroundColor: theme.colors.surfaceMuted }]} resizeMode="cover" />
       <View style={styles.venueCopy}>
-        {label ? <AppText variant="eyebrow" accent>{label}</AppText> : null}
-        <AppText variant="h3" numberOfLines={1}>{place.name}</AppText>
-        {place.category ? <AppText variant="caption" muted numberOfLines={1}>{place.category}</AppText> : null}
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            {label ? <AppText variant="eyebrow" accent>{label}</AppText> : null}
+            <AppText variant="h3" numberOfLines={2} style={{ marginTop: label ? 4 : 0 }}>{place.name}</AppText>
+            {place.category ? <AppText variant="caption" muted numberOfLines={1} style={{ marginTop: 3 }}>{place.category}</AppText> : null}
+          </View>
+          <View style={[styles.openBadge, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }]}>
+            <AppText variant="caption">↗</AppText>
+          </View>
+        </View>
         <View style={styles.metaRow}>
           {place.rating != null ? <AppText variant="caption">★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${Math.round(place.reviewCount).toLocaleString()})` : ""}</AppText> : null}
           {place.priceLevel ? <AppText variant="caption">{place.priceLevel}</AppText> : null}
           {place.distanceMiles != null ? <AppText variant="caption">{place.distanceMiles.toFixed(1)} mi</AppText> : null}
         </View>
-        {place.reservationUrl ? <AppText variant="caption" style={{ color: theme.colors.accent }}>Reservation link found</AppText> : null}
+        {place.reservationUrl ? (
+          <View style={[styles.signal, { backgroundColor: theme.colors.accentSoft }]}>
+            <AppText variant="caption" accent>Reservation ready</AppText>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -41,32 +52,37 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         : "Nearby";
 
   return (
-    <Card elevated>
+    <Card elevated style={{ padding: 12 }}>
       <View style={styles.cardTopline}>
-        <AppText variant="eyebrow" accent>{rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
+        <View style={[styles.rankBadge, { backgroundColor: rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
+          <AppText variant="eyebrow" style={{ color: rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
+        </View>
         <AppText variant="caption" muted>{distance}</AppText>
       </View>
       <View style={{ marginTop: theme.spacing.md, gap: theme.spacing.md }}>
         {outing.restaurant ? (
-          <Pressable onPress={() => router.push(placeRouteParams(outing.restaurant!))}>
+          <Pressable onPress={() => router.push(placeRouteParams(outing.restaurant!))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1, transform: [{ scale: pressed ? 0.992 : 1 }] })}>
             <PlaceSummary place={outing.restaurant} label={outing.resultType === "same_venue" ? "RESTAURANT + ACTIVITY" : "RESTAURANT"} />
           </Pressable>
         ) : null}
         {outing.restaurant && outing.activity && outing.resultType !== "same_venue" ? (
           <View style={styles.connector}>
-            <AppText accent>↓</AppText>
-            <AppText variant="caption" muted>{distance}</AppText>
+            <View style={[styles.connectorLine, { backgroundColor: theme.colors.borderStrong }]} />
+            <View style={[styles.distancePill, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.borderStrong }]}>
+              <AppText variant="caption" muted>{distance}</AppText>
+            </View>
+            <View style={[styles.connectorLine, { backgroundColor: theme.colors.borderStrong }]} />
           </View>
         ) : null}
         {outing.activity && outing.resultType !== "same_venue" ? (
-          <Pressable onPress={() => router.push(placeRouteParams(outing.activity!))}>
+          <Pressable onPress={() => router.push(placeRouteParams(outing.activity!))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1, transform: [{ scale: pressed ? 0.992 : 1 }] })}>
             <PlaceSummary place={outing.activity} label="ACTIVITY" />
           </Pressable>
         ) : null}
         {outing.reason ? (
-          <View style={[styles.why, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}> 
+          <View style={[styles.why, { borderColor: theme.colors.border, backgroundColor: theme.colors.surfaceMuted }]}> 
             <AppText variant="eyebrow" accent>WHY IT FITS</AppText>
-            <AppText muted style={{ marginTop: 4 }}>{outing.reason}</AppText>
+            <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{outing.reason}</AppText>
           </View>
         ) : null}
         <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this OUTing →</Button>
@@ -79,14 +95,14 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   const router = useRouter();
   const { theme } = useAppTheme();
   return (
-    <Card elevated>
-      <Pressable onPress={() => router.push(placeRouteParams(place))}>
+    <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
+      <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "THING TO DO"} />
       </Pressable>
-      {place.whyMatched ? <AppText muted style={{ marginTop: theme.spacing.sm }}>{place.whyMatched}</AppText> : null}
+      {place.whyMatched ? <AppText muted style={{ marginTop: theme.spacing.sm, lineHeight: 22 }}>{place.whyMatched}</AppText> : null}
       {onAction ? (
         <View style={{ marginTop: theme.spacing.md }}>
-          <Button variant={selected ? "secondary" : "primary"} onPress={onAction}>{selected ? "Selected" : actionLabel || "Select"}</Button>
+          <Button variant={selected ? "secondary" : "primary"} onPress={onAction}>{selected ? "✓ Selected" : actionLabel || "Select"}</Button>
         </View>
       ) : null}
     </Card>
@@ -95,10 +111,16 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
 
 const styles = StyleSheet.create({
   cardTopline: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  venueRow: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 18, padding: 10 },
-  thumb: { width: 92, height: 92, borderRadius: 14 },
-  venueCopy: { flex: 1, gap: 4, justifyContent: "center" },
-  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  connector: { alignItems: "center", gap: 2 },
-  why: { borderWidth: 1, borderRadius: 16, padding: 12 },
+  rankBadge: { minHeight: 30, paddingHorizontal: 11, borderRadius: 999, borderWidth: 1, justifyContent: "center" },
+  venue: { overflow: "hidden", borderWidth: 1, borderRadius: 22 },
+  heroImage: { width: "100%", height: 176 },
+  venueCopy: { gap: 9, padding: 14 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  openBadge: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  signal: { alignSelf: "flex-start", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  connector: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 8 },
+  connectorLine: { height: 1, flex: 1 },
+  distancePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  why: { borderWidth: 1, borderRadius: 18, padding: 14 },
 });
