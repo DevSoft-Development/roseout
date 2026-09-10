@@ -16,7 +16,7 @@ export async function getClaimOutreachReadiness(locationId:string){
   const emailSteps=(steps||[]).filter((s:any)=>s.step_type==='email'); if(!emailSteps.length)return{ready:false,reason:'claim_sequence_has_no_email_step'};
   const templateIds=emailSteps.map((s:any)=>s.template_id).filter(Boolean); if(templateIds.length!==emailSteps.length)return{ready:false,reason:'email_template_missing'};
   const {data:templates,error:templateError}=await supabaseAdmin.from('crm_templates').select('id,status,active_version_id').in('id',templateIds); if(templateError)throw templateError;
-  if((templates||[]).some((t:any)=>t.status!=='active'||!t.active_version_id))return{ready:false,reason:'approved_active_email_template_required'};
+  if((templates||[]).length!==templateIds.length||(templates||[]).some((t:any)=>t.status!=='approved'||!t.active_version_id))return{ready:false,reason:'approved_active_email_template_required'};
   return{ready:true,sequenceId:sequence.id,contactId:contact.contact_id,accountId:state.crm_account_id,locationId};
 }
 
