@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { SearchField } from "@/components/ui/SearchField";
+import { mobileApi, MobileApiError } from "@/lib/api";
 import {
   DEFAULT_MOBILE_SEARCH_DRAFT,
   serializeSearchDraft,
@@ -28,11 +29,23 @@ const TRAVEL_OPTIONS: Array<[MobileSearchDraft["travel"], string]> = [
   ["reasonable", "Any reasonable distance"],
 ];
 
+type PlannerIntentResponse = {
+  ok: true;
+  detectedLocation: {
+    area: string;
+    geoType: string;
+    requestedMarket: string | null;
+  } | null;
+};
+
 export default function PlanScreen() {
   const params = useLocalSearchParams<{ prompt?: string }>();
   const router = useRouter();
   const { theme } = useAppTheme();
   const incomingPrompt = typeof params.prompt === "string" ? params.prompt.trim() : "";
+  const [activeStep, setActiveStep] = useState<1 | 2>(1);
+  const [resolvingIntent, setResolvingIntent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<MobileSearchDraft>({
     ...DEFAULT_MOBILE_SEARCH_DRAFT,
     query: incomingPrompt,
@@ -46,6 +59,33 @@ export default function PlanScreen() {
   const summary = useMemo(() => serializeSearchDraft(draft), [draft]);
   const set = <K extends keyof MobileSearchDraft>(key: K, value: MobileSearchDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  async function continueToMakeItYours() {
+    if (!canContinue || resolvingIntent) return;
+    setResolvingIntent(true);
+    setError(null);
+
+    try {
+      const response = await mobileApi<PlannerIntentResponse>("/search/intent", {
+        method: "POST",
+        body: JSON.stringify({ query: draft.query.trim() }),
+      });
+      const detectedArea = response.detectedLocation?.area?.trim();
+      if (detectedArea) {
+        setDraft((current) => ({ ...current, area: detectedArea }));
+      }
+      setActiveStep(2);
+    } catch (intentError) {
+      setError(
+        intentError instanceof MobileApiError
+          ? intentError.message
+          : "We could not read that plan yet. You can still add the location manually.",
+      );
+      setActiveStep(2);
+    } finally {
+      setResolvingIntent(false);
+    }
+  }
 
   function submit() {
     if (!canContinue) return;
@@ -62,28 +102,42 @@ export default function PlanScreen() {
     });
   }
 
-  return (
-    <FoundationScreen
-      eyebrow="PLAN"
-      title="Plan your next OUTing"
-      description="Tell us what you want, then add only the details that matter. The search engine handles the rest."
-    >
-      <View style={{ gap: theme.spacing.xl }}>
-        <View>
-          <AppText variant="eyebrow" accent>1 · PLAN</AppText>
-          <AppText variant="h3" style={{ marginTop: theme.spacing.xs }}>What are we doing?</AppText>
+  if (activeStep === 1) {
+    return (
+      <FoundationScreen
+        eyebrow="1 · PLAN"
+        title="What are we doing?"
+        description="Describe the outing you have in mind. If you include a location, we’ll carry it into the next step automatically."
+      >
+        <View style={{ gap: theme.spacing.lg }}>
           <SearchField
             value={draft.query}
             onChangeText={(value) => set("query", value)}
             placeholder="Seafood dinner and jazz in Brooklyn"
             returnKeyType="next"
-            style={{ marginTop: theme.spacing.sm }}
+            onSubmitEditing={() => void continueToMakeItYours()}
           />
+          {error ? <AppText muted>{error}</AppText> : null}
+          <Button onPress={() => void continueToMakeItYours()} disabled={!canContinue || resolvingIntent}>
+            {resolvingIntent ? "Reading your plan..." : "Continue"}
+          </Button>
+          <Button variant="ghost" onPress={() => router.back()}>Back</Button>
         </View>
+      </FoundationScreen>
+    );
+  }
+
+  return (
+    <FoundationScreen
+      eyebrow="2 · MAKE IT YOURS"
+      title="Make it yours"
+      description="Confirm the details that matter before we build your OUTing."
+    >
+      <View style={{ gap: theme.spacing.xl }}>
+        <Button variant="ghost" fullWidth={false} onPress={() => setActiveStep(1)}>← Back to plan</Button>
 
         <View>
-          <AppText variant="eyebrow" accent>2 · MAKE IT YOURS</AppText>
-          <AppText variant="h3" style={{ marginTop: theme.spacing.xs }}>When?</AppText>
+          <AppText variant="h3">When?</AppText>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
             {WHEN_OPTIONS.map(([value, label]) => (
               <Chip key={value} label={label} selected={draft.when === value} onPress={() => set("when", value)} />
@@ -99,6 +153,9 @@ export default function PlanScreen() {
             placeholder="Near me, Astoria, Brooklyn..."
             style={{ marginTop: theme.spacing.sm }}
           />
+          <AppText variant="caption" muted style={{ marginTop: theme.spacing.xs }}>
+            Location from your first step is carried here automatically when we detect one.
+          </AppText>
         </View>
 
         <View>
@@ -127,6 +184,8 @@ export default function PlanScreen() {
             ))}
           </View>
         </View>
+
+        {error ? <AppText muted>{error}</AppText> : null}
 
         <Card elevated>
           <AppText variant="eyebrow" accent>READY TO SEARCH</AppText>
