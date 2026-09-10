@@ -1,8 +1,8 @@
-import { Text, View } from "react-native";
+import { Text, View, type ColorValue } from "react-native";
 import { Tabs } from "expo-router";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
-function TabGlyph({ glyph, color, focused }: { glyph: string; color: string; focused: boolean }) {
+function TabGlyph({ glyph, color, focused }: { glyph: string; color: ColorValue; focused: boolean }) {
   return (
     <View
       style={{
