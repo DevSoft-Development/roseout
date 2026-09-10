@@ -46,6 +46,14 @@ function meetsCurrentNumericFloor(row: any) {
   return false;
 }
 
+function hasActivityCategoryEvidence(row: any) {
+  if (lower(row.location_type) !== "activity") return true;
+  const category = lower(row.primary_category || row.category).replace(/[\s-]+/g, "_");
+  if (["retail_store", "store", "shopping", "shop"].includes(category)) return false;
+  if (category === "creative") return false;
+  return true;
+}
+
 function reviewReason(row: any) {
   const businessStatus = text(row.google_business_status).toUpperCase();
   if (businessStatus !== "OPERATIONAL") return "business_status_not_operational";
@@ -56,6 +64,7 @@ function reviewReason(row: any) {
   if (!hasPublicPhoto(row)) return "missing_public_photo";
   if (row.rating == null || row.review_count == null) return "missing_reputation";
   if (!meetsCurrentNumericFloor(row)) return "below_current_quality_floor";
+  if (!hasActivityCategoryEvidence(row)) return "activity_category_evidence_missing";
   if (lower(row.curation_tier) === "low_level" || isStorefrontTakeoutRestaurant(row) || isWeakGenericRestaurant(row)) return "quick_service_or_low_level";
   if (lower(row.public_visibility_tier) !== "standard" || row.is_hidden === true || row.is_low_level === true) return "visibility_review_required";
   return "canonical_publishability_review";
@@ -75,6 +84,7 @@ function canRecover(row: any) {
     && hasCompleteLocation(row)
     && hasPublicPhoto(row)
     && meetsCurrentNumericFloor(row)
+    && hasActivityCategoryEvidence(row)
     && lower(row.curation_tier) !== "low_level"
     && !isStorefrontTakeoutRestaurant(row)
     && !isWeakGenericRestaurant(row);
