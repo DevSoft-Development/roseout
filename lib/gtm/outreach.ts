@@ -24,6 +24,6 @@ export async function enrollClaimOutreach(locationId:string){
   const ready:any=await getClaimOutreachReadiness(locationId); if(!ready.ready)return ready;
   const sourceRecordId=`gtm:${locationId}:business-claim-outreach`;
   const {data:existing,error:existingError}=await supabaseAdmin.from('crm_sequence_enrollments').select('id,status').eq('source_system','gtm').eq('source_record_id',sourceRecordId).limit(1).maybeSingle(); if(existingError)throw existingError; if(existing)return{ready:true,enrolled:true,existing:true,enrollmentId:existing.id,status:existing.status};
-  const {data,error}=await supabaseAdmin.from('crm_sequence_enrollments').insert({sequence_id:ready.sequenceId,contact_id:ready.contactId,account_id:ready.accountId,location_id,source_system:'gtm',source_record_id:sourceRecordId,status:'active',current_step_order:1,next_step_at:new Date().toISOString()}).select('id,status').single(); if(error)throw error;
+  const {data,error}=await supabaseAdmin.from('crm_sequence_enrollments').insert({sequence_id:ready.sequenceId,contact_id:ready.contactId,account_id:ready.accountId,location_id:locationId,source_system:'gtm',source_record_id:sourceRecordId,status:'active',current_step_order:1,next_step_at:new Date().toISOString()}).select('id,status').single(); if(error)throw error;
   return{ready:true,enrolled:true,existing:false,enrollmentId:data.id,status:data.status};
 }
