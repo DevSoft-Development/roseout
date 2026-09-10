@@ -11,12 +11,16 @@ import type { AutomationRunResult,ClaimedStep,StepOutcome } from "./types";
 async function persistOutcome(step:ClaimedStep,outcome:StepOutcome){
   const now=new Date().toISOString();
   const terminal=["completed","suppressed","exited","failed","skipped"].includes(outcome.status);
-  const {error}=await supabaseAdmin.from("crm_sequence_step_executions").update({status:outcome.status,completed_at:terminal?now:null,failed_at:outcome.status==="failed"?now:null,next_retry_at:outcome.status==="retry_scheduled"?outcome.nextStepAt:null,lease_expires_at:null,result_snapshot:outcome.result??{}}).eq("id",step.execution_id);
+  // crm_sequence_step_executions intentionally has no `exited` status. An exit means the
+  // current execution completed successfully while the enrollment itself terminates.
+  const executionStatus=outcome.status==="exited"?"completed":outcome.status;
+  const {error}=await supabaseAdmin.from("crm_sequence_step_executions").update({status:executionStatus,completed_at:terminal?now:null,failed_at:outcome.status==="failed"?now:null,next_retry_at:outcome.status==="retry_scheduled"?outcome.nextStepAt:null,lease_expires_at:null,result_snapshot:outcome.result??{}}).eq("id",step.execution_id);
   // The execution id and database claim are the idempotency boundary; do not repeat a completed side effect.
   if(error)throw normalizeAutomationError(error);
   if(outcome.status==="waiting"||outcome.status==="retry_scheduled")await supabaseAdmin.from("crm_sequence_enrollments").update({next_step_at:outcome.nextStepAt,status:"active"}).eq("id",step.enrollment_id);
-  else if(outcome.status==="pending_approval")await supabaseAdmin.from("crm_sequence_enrollments").update({status:"paused",next_step_at:null}).eq("id",step.enrollment_id);
-  else if(outcome.status==="exited"||outcome.status==="suppressed")await supabaseAdmin.from("crm_sequence_enrollments").update({status:"exited",next_step_at:null,exit_reason:String(outcome.result?.reason??outcome.status)}).eq("id",step.enrollment_id);
+  else if(outcome.status==="pending_approval")await supabaseAdmin.from("crm_sequence_enrollments").update({status:"paused",paused_at:now,pause_reason:String(outcome.result?.reason??"manual_review"),next_step_at:null}).eq("id",step.enrollment_id);
+  else if(outcome.status==="exited")await supabaseAdmin.from("crm_sequence_enrollments").update({status:"exited",next_step_at:null,exit_reason:String(outcome.result?.reason??outcome.status)}).eq("id",step.enrollment_id);
+  else if(outcome.status==="suppressed")await supabaseAdmin.from("crm_sequence_enrollments").update({status:"suppressed",next_step_at:null,exit_reason:String(outcome.result?.reason??outcome.status)}).eq("id",step.enrollment_id);
   else if(outcome.status==="completed"){
     const {data}=await supabaseAdmin.from("crm_sequence_steps").select("step_order").eq("sequence_id",step.sequence_id).gt("step_order",step.step_order).order("step_order").limit(1).maybeSingle();
     await supabaseAdmin.from("crm_sequence_enrollments").update(data?{current_step_order:data.step_order,next_step_at:outcome.nextStepAt??now,status:"active"}:{status:"completed",next_step_at:null,completed_at:now}).eq("id",step.enrollment_id).eq("current_step_order",step.step_order);
