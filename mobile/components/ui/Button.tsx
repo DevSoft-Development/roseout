@@ -28,14 +28,20 @@ export function Button({ children, variant = "primary", fullWidth = true, disabl
             width: fullWidth ? "100%" : undefined,
             backgroundColor: pressed && variant === "primary" ? theme.colors.accentPressed : backgroundColor,
             borderColor,
-            opacity: disabled ? 0.45 : pressed && variant !== "primary" ? 0.72 : 1,
+            opacity: disabled ? 0.42 : 1,
+            transform: [{ scale: pressed && !disabled ? 0.985 : 1 }],
+            shadowColor: variant === "primary" ? theme.colors.accent : "#000000",
+            shadowOpacity: variant === "primary" && !disabled ? 0.28 : 0,
+            shadowRadius: variant === "primary" ? 18 : 0,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: variant === "primary" && !disabled ? 4 : 0,
           },
           typeof style === "function" ? style(state) : style,
         ];
       }}
     >
       <View style={styles.content}>
-        <AppText variant="bodyStrong" style={{ color: variant === "primary" ? theme.colors.onAccent : theme.colors.text }}>
+        <AppText variant="bodyStrong" style={{ color: variant === "primary" ? theme.colors.onAccent : theme.colors.text, fontWeight: "900" }}>
           {children}
         </AppText>
       </View>
@@ -44,6 +50,6 @@ export function Button({ children, variant = "primary", fullWidth = true, disabl
 }
 
 const styles = StyleSheet.create({
-  base: { minHeight: 52, borderWidth: 1, borderRadius: 16, justifyContent: "center", alignItems: "center" },
-  content: { paddingHorizontal: 20, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  base: { minHeight: 54, borderWidth: 1, borderRadius: 999, justifyContent: "center", alignItems: "center" },
+  content: { paddingHorizontal: 22, paddingVertical: 13, alignItems: "center", justifyContent: "center" },
 });

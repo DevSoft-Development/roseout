@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Alert, StyleSheet, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
+import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -38,49 +39,73 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={[styles.page, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.content}>
-        <AppText variant="eyebrow" accent>PROFILE</AppText>
-        <AppText variant="h1">Your TheOutHaven</AppText>
-        <AppText muted>Manage the consumer account that follows you across web and mobile.</AppText>
+    <ScrollView
+      style={[styles.page, { backgroundColor: theme.colors.background }]}
+      contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]}
+      showsVerticalScrollIndicator={false}
+    >
+      <BrandHeader />
+      <View style={styles.hero}>
+        <AppText variant="eyebrow" accent>YOUR THEOUTHAVEN</AppText>
+        <AppText variant="h1">Everything you save, in one place.</AppText>
+        <AppText muted>Keep OUTings synced, get reminders, and move between web and mobile without losing your plans.</AppText>
+      </View>
 
-        <Card>
-          {loading ? (
-            <AppText muted>Restoring your session...</AppText>
-          ) : user ? (
-            <View style={styles.stack}>
+      <Card elevated style={styles.accountCard}>
+        {loading ? (
+          <View style={styles.stack}>
+            <AppText variant="eyebrow" accent>ACCOUNT</AppText>
+            <AppText variant="h3">Restoring your session…</AppText>
+          </View>
+        ) : user ? (
+          <View style={styles.stack}>
+            <View style={[styles.avatar, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}> 
+              <AppText variant="h2" accent>{(user.email || "T").slice(0, 1).toUpperCase()}</AppText>
+            </View>
+            <View style={{ gap: 4 }}>
+              <AppText variant="eyebrow" accent>MEMBER</AppText>
               <AppText variant="h3">Signed in</AppText>
               <AppText muted>{user.email || "TheOutHaven member"}</AppText>
-              <Button variant="secondary" onPress={() => void signOut()}>Sign Out</Button>
             </View>
-          ) : (
-            <View style={styles.stack}>
-              <AppText variant="h3">Guest mode</AppText>
-              <AppText muted>You can search and explore without an account. Sign in when you want to save, sync, receive reminders, or review.</AppText>
-              {guestId ? <AppText variant="caption" muted>Guest session {guestId.slice(-8)}</AppText> : null}
-              <Button onPress={() => router.push("/auth")}>Sign In or Create Account</Button>
+            <Button variant="secondary" onPress={() => void signOut()}>Sign Out</Button>
+          </View>
+        ) : (
+          <View style={styles.stack}>
+            <View style={[styles.avatar, { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}> 
+              <AppText variant="h2" accent>✦</AppText>
             </View>
-          )}
-        </Card>
+            <View style={{ gap: 5 }}>
+              <AppText variant="eyebrow" accent>GUEST MODE</AppText>
+              <AppText variant="h2">Ready when you are.</AppText>
+              <AppText muted>You can explore without an account. Sign in to save OUTings, sync across devices, receive reminders, and leave reviews.</AppText>
+            </View>
+            {guestId ? <AppText variant="caption" muted>Guest session {guestId.slice(-8)}</AppText> : null}
+            <Button onPress={() => router.push("/auth")}>Sign In or Create Account</Button>
+          </View>
+        )}
+      </Card>
 
-        {user ? (
-          <Card>
-            <View style={styles.stack}>
-              <AppText variant="h3">OUTing reminders</AppText>
-              <AppText muted>Get important timing, reservation, and upcoming OUTing notifications on this device. Marketing notifications remain off by default.</AppText>
-              <Button disabled={enablingPush || pushEnabled} onPress={enableReminders}>
-                {pushEnabled ? "Reminders enabled" : enablingPush ? "Enabling..." : "Enable reminders"}
-              </Button>
-            </View>
-          </Card>
-        ) : null}
-      </View>
-    </View>
+      {user ? (
+        <Card elevated>
+          <View style={styles.stack}>
+            <AppText variant="eyebrow" accent>OUTING REMINDERS</AppText>
+            <AppText variant="h3">Stay ahead of the plan.</AppText>
+            <AppText muted>Get important timing, reservation, and upcoming OUTing notifications on this device. Marketing notifications remain off by default.</AppText>
+            <Button disabled={enablingPush || pushEnabled} onPress={enableReminders}>
+              {pushEnabled ? "Reminders enabled" : enablingPush ? "Enabling…" : "Enable reminders"}
+            </Button>
+          </View>
+        </Card>
+      ) : null}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1 },
-  content: { flex: 1, gap: 12, paddingHorizontal: 20, paddingTop: 72 },
-  stack: { gap: 12 },
+  content: { paddingTop: 24, paddingBottom: 118, gap: 24 },
+  hero: { gap: 8, paddingTop: 10 },
+  accountCard: { marginTop: 4 },
+  stack: { gap: 14 },
+  avatar: { width: 58, height: 58, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });
