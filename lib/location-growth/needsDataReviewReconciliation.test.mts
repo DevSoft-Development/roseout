@@ -27,6 +27,14 @@ test("low-level and storefront signals cannot be auto-recovered", () => {
   assert.match(source, /is_low_level/);
 });
 
+test("generic retail and creative activity rows require category evidence", () => {
+  assert.match(source, /hasActivityCategoryEvidence/);
+  assert.match(source, /retail_store/);
+  assert.match(source, /category === "creative"/);
+  assert.match(source, /activity_category_evidence_missing/);
+  assert.match(source, /&& hasActivityCategoryEvidence\(row\)/);
+});
+
 test("canonical publishability is the final authority", () => {
   assert.match(source, /buildPublishabilityUpdate/);
   assert.match(source, /if \(!result\.isSearchable\)/);
