@@ -1,5 +1,6 @@
 import { logClaimFunnelEvent, lookupSecureClaim } from "@/lib/business-claim/secureClaim";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
+import { recordGtmEvent } from "@/lib/gtm/events";
 import { sendAdminNewClaimEmail, sendClaimCodeSubmittedEmail } from "@/lib/notifications";
 import { sendSms } from "@/lib/sms/sendSms";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -179,6 +180,14 @@ export async function POST(req: Request) {
       eventType: "claim_completed",
       metadata: { contactMatch: Boolean(challenge.contact_match), channel: challenge.channel },
     });
+
+    await recordGtmEvent({
+      locationId: String(lookup.location.id),
+      eventType: "claim_submitted",
+      channel: challenge.channel,
+      source: "secure_claim_code",
+      metadata: { claimRequestId: String(claim.id), contactMatch: Boolean(challenge.contact_match) },
+    }).catch((error) => console.warn("GTM claim event write failed", error));
 
     await Promise.allSettled([
       ownerEmail

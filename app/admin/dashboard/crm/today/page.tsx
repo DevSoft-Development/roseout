@@ -1,9 +1,11 @@
 import Link from "next/link";
 import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
 import TodayUnreadMessages from "@/components/admin/crm/TodayUnreadMessages";
+import GtmPriorityPanel from "@/components/admin/crm/GtmPriorityPanel";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { queryWorkQueue } from "@/lib/crm/tasks/queries";
+import { getGtmPriorityQueue } from "@/lib/gtm/queries";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +106,7 @@ export default async function CrmTodayPage() {
   const calendarWindowStart = new Date(now.getTime() - 36 * 60 * 60 * 1000);
   const calendarWindowEnd = new Date(now.getTime() + 36 * 60 * 60 * 1000);
 
-  const [dueToday, overdue, followUps, attention, calendarResult] = await Promise.all([
+  const [dueToday, overdue, followUps, attention, calendarResult, gtmPriority] = await Promise.all([
     queryWorkQueue(actor.user_id, "due-today", {}),
     queryWorkQueue(actor.user_id, "overdue", {}),
     queryWorkQueue(actor.user_id, "follow-ups", {}),
@@ -117,6 +119,7 @@ export default async function CrmTodayPage() {
       .gte("starts_at", calendarWindowStart.toISOString())
       .lt("starts_at", calendarWindowEnd.toISOString())
       .order("starts_at", { ascending: true }),
+    getGtmPriorityQueue(20),
   ]);
 
   const todayCalendarEvents = ((calendarResult.data || []) as TodayCalendarEvent[])
@@ -129,9 +132,10 @@ export default async function CrmTodayPage() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">TheOutHaven CRM</p>
             <h1 className="mt-1 text-3xl font-black">Today</h1>
-            <p className="mt-1 text-white/55">Start here. Messages, calendar events, and work that need attention now, without the full CRM reporting dashboard.</p>
+            <p className="mt-1 text-white/55">Start here. Priority GTM opportunities, messages, calendar events, and work that need attention now.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href="/admin/dashboard/crm/gtm" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">Revenue intelligence</Link>
             <Link href="/admin/dashboard/crm/locations" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">Find a location</Link>
             <Link href="/admin/dashboard/crm/tasks?create=task" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white hover:bg-rose-500">Create task</Link>
           </div>
@@ -150,6 +154,8 @@ export default async function CrmTodayPage() {
             </Link>
           ))}
         </section>
+
+        <GtmPriorityPanel rows={gtmPriority} />
 
         <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0e0e11]">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 p-5">
