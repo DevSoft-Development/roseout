@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
+import { detectWebsiteImportAdapter, extractImportSignals } from "@/lib/websites/import-provider-adapters";
 
 export const runtime = "nodejs";
 
@@ -28,20 +29,6 @@ async function assertPublicUrl(raw: string) {
   return url;
 }
 
-function providerFromHtml(html: string, hostname: string) {
-  const haystack = `${hostname}\n${html}`.toLowerCase();
-  if (haystack.includes("wp-content") || haystack.includes("wordpress")) return "WordPress";
-  if (haystack.includes("wixstatic") || haystack.includes("wix.com")) return "Wix";
-  if (haystack.includes("squarespace")) return "Squarespace";
-  if (haystack.includes("toasttab") || haystack.includes("toast.site")) return "Toast";
-  if (haystack.includes("bentobox")) return "BentoBox";
-  if (haystack.includes("popmenu")) return "Popmenu";
-  if (haystack.includes("webflow")) return "Webflow";
-  if (haystack.includes("shopify")) return "Shopify";
-  if (haystack.includes("square.site") || haystack.includes("weebly")) return "Square / Weebly";
-  return "Website";
-}
-
 function textMatch(html: string, pattern: RegExp) {
   return html.match(pattern)?.[1]?.replace(/\s+/g, " ").trim() || null;
 }
@@ -63,6 +50,17 @@ function extractLinks(html: string, base: URL) {
   return [...links];
 }
 
+function extractAssets(html: string, base: URL) {
+  const assets = new Set<string>();
+  for (const match of html.matchAll(/(?:src|srcset|data-src)=["']([^"']+)["']/gi)) {
+    const first = match[1].split(",")[0]?.trim().split(/\s+/)[0] || "";
+    const resolved = absoluteUrl(first, base);
+    if (resolved && /^https?:/i.test(resolved)) assets.add(resolved);
+    if (assets.size >= 80) break;
+  }
+  return [...assets];
+}
+
 function detectReservationLink(html: string, base: URL) {
   for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
     const href = absoluteUrl(match[1], base);
@@ -80,6 +78,7 @@ function reservationProvider(url: string | null) {
   if (/exploretock|tock/i.test(url)) return "Tock";
   if (/toasttab/i.test(url)) return "Toast Tables";
   if (/yelp/i.test(url)) return "Yelp Reservations";
+  if (/quandoo/i.test(url)) return "Quandoo";
   return "External";
 }
 
@@ -102,7 +101,7 @@ export async function POST(request: Request) {
     const location = await getAuthorizedWebsiteLocation(user, locationId, "id");
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
-    const response = await fetch(sourceUrl, { redirect: "manual", headers: { "user-agent": "TheOutHaven Website Migration/1.0" }, signal: AbortSignal.timeout(12000) });
+    const response = await fetch(sourceUrl, { redirect: "manual", headers: { "user-agent": "TheOutHaven Website Migration/1.1" }, signal: AbortSignal.timeout(12000) });
     if (response.status >= 300 && response.status < 400) {
       const next = response.headers.get("location");
       if (!next) throw new Error("website_redirect_missing");
@@ -114,22 +113,22 @@ export async function POST(request: Request) {
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("text/html")) throw new Error("website_not_html");
     const html = (await response.text()).slice(0, 2_000_000);
+    const adapter = detectWebsiteImportAdapter(html, sourceUrl.hostname);
+    const adapterSignals = extractImportSignals(html, adapter);
     const title = textMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
     const description = textMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || textMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i);
     const themeColor = textMatch(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i);
     const reservationUrl = detectReservationLink(html, sourceUrl);
     const pages = extractLinks(html, sourceUrl);
-    const provider = providerFromHtml(html, sourceUrl.hostname);
+    const assets = extractAssets(html, sourceUrl);
     const importedAt = new Date().toISOString();
 
     const { data: website, error: readError } = await supabaseAdmin.from("business_websites").select("id,theme,custom_content,site_title").eq("location_id", locationId).maybeSingle();
     if (readError) throw readError;
     if (!website) return NextResponse.json({ error: "Create the website draft before importing." }, { status: 409 });
-    const theme = { ...(website.theme || {}), migration_mode: mode, design_lock: mode === "preserve_exact", imported_theme_color: themeColor, imported_provider: provider };
-    const customContent = {
-      ...(website.custom_content || {}),
-      website_import: { source_url: sourceUrl.toString(), provider, mode, imported_at: importedAt, title, description, discovered_pages: pages, reservation_url: reservationUrl, reservation_provider: reservationProvider(reservationUrl) },
-    };
+    const theme = { ...(website.theme || {}), migration_mode: mode, design_lock: mode === "preserve_exact", imported_theme_color: themeColor, imported_provider: adapter.label, import_adapter_id: adapter.id };
+    const importAnalysis = { source_url: sourceUrl.toString(), ...adapterSignals, mode, imported_at: importedAt, title, description, discovered_pages: pages, discovered_assets: assets, reservation_url: reservationUrl, reservation_provider: reservationProvider(reservationUrl) };
+    const customContent = { ...(website.custom_content || {}), website_import: importAnalysis };
     const { data: updated, error: updateError } = await supabaseAdmin.from("business_websites").update({ theme, custom_content: customContent, site_title: website.site_title || title, updated_at: importedAt }).eq("id", website.id).select("*").single();
     if (updateError) throw updateError;
 
@@ -137,7 +136,7 @@ export async function POST(request: Request) {
       await supabaseAdmin.from("locations").update({ reservation_link: reservationUrl, reservation_provider: reservationProvider(reservationUrl), reservation_source: "external", allow_external_reservations: true, updated_at: importedAt }).eq("id", locationId);
     }
 
-    return NextResponse.json({ ok: true, website: updated, analysis: { provider, title, description, theme_color: themeColor, page_count: pages.length, pages, reservation_url: reservationUrl, reservation_provider: reservationProvider(reservationUrl), mode } });
+    return NextResponse.json({ ok: true, website: updated, analysis: { ...importAnalysis, page_count: pages.length, asset_count: assets.length, theme_color: themeColor } });
   } catch (error) {
     console.error("Website import failed", { locationId, error: error instanceof Error ? error.message : error });
     return NextResponse.json({ error: "We could not analyze that website. Check the URL and try again." }, { status: 400 });
