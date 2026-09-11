@@ -1,9 +1,10 @@
 import Link from "next/link";
 
-export function WebsiteHostingTabs({ active }: { active: "overview" | "migrations" | "testing" }) {
+export function WebsiteHostingTabs({ active }: { active: "overview" | "migrations" | "verification" | "testing" }) {
   const tabs = [
     { key: "overview" as const, label: "Overview", href: "/admin/dashboard/website-hosting" },
     { key: "migrations" as const, label: "Migrations", href: "/admin/dashboard/website-hosting/migrations" },
+    { key: "verification" as const, label: "Verification", href: "/admin/dashboard/website-hosting/verification" },
     { key: "testing" as const, label: "Testing", href: "/admin/dashboard/website-hosting/testing" },
   ];
 
