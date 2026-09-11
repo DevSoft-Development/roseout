@@ -15,7 +15,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const metadata: Metadata = {
   title: "Website Migrations | Admin",
-  description: "Monitor hosted website imports, review, domain connection, and cutover readiness.",
+  description: "Monitor hosted website imports, review, domain connection, live health, and cutover readiness.",
 };
 
 export const dynamic = "force-dynamic";
@@ -31,28 +31,40 @@ type WebsiteRow = {
   ssl_status: string | null;
   last_publish_status: string | null;
   last_error: string | null;
+  last_health_check_at: string | null;
   updated_at: string | null;
   custom_content: Record<string, any> | null;
 };
 
+const STALE_CONNECTION_MS = 60 * 60 * 1000;
+const STALE_HEALTH_MS = 30 * 60 * 1000;
+
+function ageMs(value: string | null) {
+  const parsed = value ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? Date.now() - parsed : Number.POSITIVE_INFINITY;
+}
+
 function migrationState(site: WebsiteRow) {
   const imported = site.custom_content?.website_import;
   if (!imported) return null;
-  if (site.last_error || site.deployment_status === "failed") return "failed";
+  if (site.deployment_status === "failed" || site.last_publish_status === "failed") return "failed";
+  if (site.last_error === "website_unreachable") return "site_unreachable";
+  if (site.last_error === "reservation_link_unreachable") return "booking_link_broken";
+  if (site.last_error === "website_seo_endpoint_unhealthy") return "seo_attention";
   if (imported.review_status !== "approved") return imported.review_status === "needs_changes" ? "needs_changes" : "review_required";
   if (site.domain) {
-    if (!["verified", "configured", "active"].includes(String(site.dns_status || "").toLowerCase())) return "dns_pending";
-    if (String(site.ssl_status || "").toLowerCase() !== "active") return "ssl_pending";
+    if (!["verified", "configured", "active"].includes(String(site.dns_status || "").toLowerCase())) return ageMs(site.updated_at) > STALE_CONNECTION_MS ? "dns_stalled" : "dns_pending";
+    if (String(site.ssl_status || "").toLowerCase() !== "active") return ageMs(site.updated_at) > STALE_CONNECTION_MS ? "ssl_stalled" : "ssl_pending";
   }
-  if (site.status === "live" && site.last_publish_status === "published") return "live";
+  if (site.status === "live" && site.last_publish_status === "published") return ageMs(site.last_health_check_at) > STALE_HEALTH_MS ? "health_stale" : "live";
   if (site.deployment_status === "deploying" || site.last_publish_status === "publishing") return "publishing";
   return "ready_for_publish";
 }
 
 function tone(value: string): "green" | "amber" | "rose" | "muted" {
   if (value === "live") return "green";
-  if (value === "failed") return "rose";
-  if (["needs_changes", "review_required", "dns_pending", "ssl_pending", "publishing"].includes(value)) return "amber";
+  if (["failed", "site_unreachable", "booking_link_broken", "dns_stalled", "ssl_stalled"].includes(value)) return "rose";
+  if (["needs_changes", "review_required", "dns_pending", "ssl_pending", "publishing", "seo_attention", "health_stale"].includes(value)) return "amber";
   return "muted";
 }
 
@@ -65,7 +77,7 @@ export default async function WebsiteMigrationsPage() {
 
   const { data, error } = await supabaseAdmin
     .from("business_websites")
-    .select("id,location_id,domain,platform_domain,status,deployment_status,dns_status,ssl_status,last_publish_status,last_error,updated_at,custom_content")
+    .select("id,location_id,domain,platform_domain,status,deployment_status,dns_status,ssl_status,last_publish_status,last_error,last_health_check_at,updated_at,custom_content")
     .order("updated_at", { ascending: false });
 
   const rows = ((data || []) as WebsiteRow[])
@@ -73,16 +85,16 @@ export default async function WebsiteMigrationsPage() {
     .filter((entry): entry is { site: WebsiteRow; state: string } => Boolean(entry.state));
 
   const review = rows.filter((entry) => ["review_required", "needs_changes"].includes(entry.state)).length;
-  const domainPending = rows.filter((entry) => ["dns_pending", "ssl_pending"].includes(entry.state)).length;
-  const ready = rows.filter((entry) => entry.state === "ready_for_publish").length;
+  const domainPending = rows.filter((entry) => ["dns_pending", "ssl_pending", "dns_stalled", "ssl_stalled"].includes(entry.state)).length;
   const live = rows.filter((entry) => entry.state === "live").length;
+  const healthAttention = rows.filter((entry) => ["site_unreachable", "booking_link_broken", "seo_attention", "health_stale"].includes(entry.state)).length;
   const failed = rows.filter((entry) => entry.state === "failed").length;
 
   return <AdminPageShell>
     <AdminPageHeader
       eyebrow="Website Operations"
       title="Website Migrations"
-      subtitle="Track imported websites from analysis through review, domain setup, publish, and cutover without leaving the existing hosting control plane."
+      subtitle="Track imported websites from analysis through review, domain setup, publish, cutover, and live health without leaving the hosting control plane."
       actions={<><AdminActionButton href="/admin/dashboard/website-hosting">Hosting Overview</AdminActionButton><AdminActionButton href="/admin/dashboard/website-hosting/migrations" variant="primary">Refresh</AdminActionButton></>}
     />
 
@@ -91,31 +103,32 @@ export default async function WebsiteMigrationsPage() {
     {error ? <AdminSectionCard className="border-rose-300/30 bg-rose-500/10 p-5"><p className="font-black text-rose-100">Migration telemetry could not be loaded.</p><p className="mt-2 text-sm text-rose-100/70">{error.message}</p></AdminSectionCard> : null}
 
     <AdminKpiGrid>
-      <AdminKpiCard label="Imported sites" value={rows.length} helper={`${live} live`} />
+      <AdminKpiCard label="Imported sites" value={rows.length} helper={`${live} healthy live`} />
       <AdminKpiCard label="Needs review" value={review} helper="Owner approval required before publish" />
-      <AdminKpiCard label="Domain pending" value={domainPending} helper="DNS or SSL still connecting" />
-      <AdminKpiCard label="Ready to publish" value={ready} helper="Review complete and no domain blocker" />
-      <AdminKpiCard label="Failed" value={failed} helper="Needs operational attention" />
+      <AdminKpiCard label="Domain attention" value={domainPending} helper="DNS or SSL pending/stalled" />
+      <AdminKpiCard label="Live health attention" value={healthAttention} helper="Site, booking, SEO, or stale-check issue" />
+      <AdminKpiCard label="Failed deployment" value={failed} helper="Needs operational attention" />
     </AdminKpiGrid>
 
     <AdminSectionCard className="p-5">
-      <div className="mb-5"><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Migration queue</p><h2 className="mt-1 text-2xl font-black">Imported website status</h2></div>
+      <div className="mb-5"><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Migration queue</p><h2 className="mt-1 text-2xl font-black">Imported website status</h2><p className="mt-1 text-sm text-white/50">The existing failover lifecycle now checks live website, booking-link, sitemap, and robots health on its normal schedule.</p></div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-[0.12em] text-white/35"><tr><th className="px-3 py-3">Location</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3">Domain</th><th className="px-3 py-3">Migration</th><th className="px-3 py-3">Pages</th><th className="px-3 py-3">Redirects</th><th className="px-3 py-3">Updated</th></tr></thead>
+          <thead className="text-xs uppercase tracking-[0.12em] text-white/35"><tr><th className="px-3 py-3">Location</th><th className="px-3 py-3">Platform</th><th className="px-3 py-3">Domain</th><th className="px-3 py-3">State</th><th className="px-3 py-3">Issues</th><th className="px-3 py-3">Pages</th><th className="px-3 py-3">Health checked</th></tr></thead>
           <tbody className="divide-y divide-white/10">
             {rows.map(({ site, state }) => {
               const imported = site.custom_content?.website_import || {};
               const manifest = imported.migration_manifest || {};
+              const exceptionCount = Array.isArray(imported.exceptions) ? imported.exceptions.length : 0;
               const domain = site.domain || site.platform_domain || "Subdomain assigned on publish";
               return <tr key={site.id} className="align-top">
-                <td className="px-3 py-4"><p className="font-black text-white">{site.location_id}</p>{site.last_error ? <p className="mt-1 max-w-xs text-xs text-rose-200">{site.last_error}</p> : null}</td>
+                <td className="px-3 py-4"><p className="font-black text-white">{site.location_id}</p>{site.last_error ? <p className="mt-1 max-w-xs text-xs text-rose-200">{site.last_error.replace(/_/g, " ")}</p> : null}</td>
                 <td className="px-3 py-4 text-white/65">{imported.provider || imported.adapter_id || "Detected"}</td>
                 <td className="px-3 py-4 text-white/65">{domain}</td>
                 <td className="px-3 py-4"><AdminStatusBadge tone={tone(state)}>{label(state)}</AdminStatusBadge></td>
+                <td className="px-3 py-4 text-white/65">{exceptionCount ? `${exceptionCount} migration` : "—"}</td>
                 <td className="px-3 py-4 text-white/65">{manifest.page_count || 0}</td>
-                <td className="px-3 py-4 text-white/65">{Array.isArray(manifest.redirect_map) ? manifest.redirect_map.length : 0}</td>
-                <td className="px-3 py-4 text-white/45">{site.updated_at ? new Date(site.updated_at).toLocaleString() : "—"}</td>
+                <td className="px-3 py-4 text-white/45">{site.last_health_check_at ? new Date(site.last_health_check_at).toLocaleString() : "Never"}</td>
               </tr>;
             })}
             {!rows.length ? <tr><td className="px-3 py-6 text-white/45" colSpan={7}>No imported websites are currently in the migration pipeline.</td></tr> : null}
