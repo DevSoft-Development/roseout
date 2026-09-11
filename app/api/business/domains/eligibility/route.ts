@@ -38,19 +38,19 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (error) {
-      console.error("Partner Pro domain eligibility location lookup failed", error);
+      console.error("Essentials domain eligibility location lookup failed", error);
       return NextResponse.json({ error: "Unable to check domain eligibility right now." }, { status: 500 });
     }
     if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
-    const isPartnerPro = isBusinessProPlan(location.subscription_plan);
+    const isEligiblePlan = isBusinessProPlan(location.subscription_plan);
     const isActive = hasPaidEntitlement({
       plan: location.subscription_plan,
       status: location.subscription_status,
       billingGraceEndsAt: location.billing_grace_ends_at,
     });
-    if (!isPartnerPro || !isActive) {
-      return publicResult(domain, false, "partner_pro_required", "An active Partner Pro membership is required for an included domain.");
+    if (!isEligiblePlan || !isActive) {
+      return publicResult(domain, false, "essentials_required", "An active Essentials membership is required for an included domain.");
     }
 
     if (location.included_domain_claimed_at && location.included_domain_name) {
@@ -73,18 +73,18 @@ export async function POST(request: NextRequest) {
       (!renewal || renewal.wholesalePrice <= INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD);
 
     if (premium) {
-      return publicResult(domain, false, "premium_domain", "Premium domains are not included with Partner Pro.", { available: true });
+      return publicResult(domain, false, "premium_domain", "Premium domains are not included with Essentials.", { available: true });
     }
 
     if (!withinInternalCostPolicy) {
-      return publicResult(domain, false, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.", { available: true });
+      return publicResult(domain, false, "domain_not_included", "This domain is not eligible for the included Essentials domain benefit.", { available: true });
     }
 
     return publicResult(
       domain,
       true,
-      "included_with_partner_pro",
-      settings.renewalIncluded ? "First year and eligible renewals are included with Partner Pro." : "Your first year is included with Partner Pro. Renewal is not included.",
+      "included_with_essentials",
+      settings.renewalIncluded ? "First year and eligible renewals are included with Essentials." : "Your first year is included with Essentials. Renewal is not included.",
       {
         available: true,
         benefit: "one_included_domain_per_location",
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       },
     );
   } catch (error) {
-    console.error("Partner Pro domain eligibility failed", error);
+    console.error("Essentials domain eligibility failed", error);
     return NextResponse.json({ error: "Unable to check domain eligibility right now." }, { status: 502 });
   }
 }
