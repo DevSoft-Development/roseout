@@ -51,7 +51,19 @@ export default function ResultsScreen() {
     travel: params.travel || "nearby",
     preferences: parseArray(params.preferences),
     customMatters: parseArray(params.customMatters),
-  }), [params]);
+  }), [
+    params.query,
+    params.planType,
+    params.when,
+    params.customDate,
+    params.customTime,
+    params.area,
+    params.partySize,
+    params.budget,
+    params.travel,
+    params.preferences,
+    params.customMatters,
+  ]);
 
   const runSearch = useCallback(async () => {
     setLoading(true);
