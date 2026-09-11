@@ -10,6 +10,7 @@ type FoundationScreenProps = {
   title: string;
   description: string;
   children?: ReactNode;
+  beforeTitle?: ReactNode;
   showHomeShortcut?: boolean;
   showBrandHeader?: boolean;
   showBack?: boolean;
@@ -21,6 +22,7 @@ export function FoundationScreen({
   title,
   description,
   children,
+  beforeTitle,
   showHomeShortcut = true,
   showBrandHeader = false,
   showBack = false,
@@ -93,6 +95,7 @@ export function FoundationScreen({
           </View>
         ) : null}
 
+        {beforeTitle ? <View style={{ marginBottom: theme.spacing.lg }}>{beforeTitle}</View> : null}
         {eyebrow ? <AppText variant="eyebrow" accent>{eyebrow}</AppText> : null}
         <AppText variant="h1" style={{ marginTop: eyebrow ? theme.spacing.sm : 0, maxWidth: 620 }}>{title}</AppText>
         <AppText muted style={{ marginTop: theme.spacing.sm, maxWidth: 620, lineHeight: 26 }}>{description}</AppText>
