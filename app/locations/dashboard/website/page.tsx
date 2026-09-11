@@ -40,7 +40,8 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
     getGeneratedWebsiteLocationSnapshot(location as unknown as Record<string, unknown>),
   ]);
   const hydratedWebsite = website ? { ...website, live_url: getWebsiteLiveUrl(website) } : null;
-  const type = String((location as any).location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
+  const locationRecord = location as unknown as Record<string, any>;
+  const type = String(locationRecord.location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
   const backHref = dashboardHref(params, location.id, type);
   const editHref = `/locations/${type === "activity" ? "activities" : "restaurants"}/${encodeURIComponent(location.id)}/edit?from=${encodeURIComponent("/locations/dashboard/website")}`;
 
@@ -69,7 +70,14 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         {demoContext?.demoMode ? <div className="mb-5 rounded-2xl border border-[#ff2142]/25 bg-[#ff2142]/10 px-4 py-3 text-sm font-bold text-rose-100">Internal demo mode — publishing is allowed only for the protected TheOutHaven Lounge demo location.</div> : null}
         {hydratedWebsite ? (
           <div className="website-builder-brand">
-            <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteDomainSelector
+              initialWebsite={hydratedWebsite}
+              locationName={locationName}
+              includedDomainName={locationRecord.included_domain_name || null}
+              includedDomainStatus={locationRecord.included_domain_status || null}
+              includedDomainConnectionStatus={locationRecord.included_domain_connection_status || null}
+              includedDomainRenewalDueAt={locationRecord.included_domain_renewal_due_at || null}
+            />
             <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
             <WebsiteHealthPanel locationId={location.id} />
             <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
