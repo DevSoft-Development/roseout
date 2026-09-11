@@ -14,6 +14,7 @@ import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import { getMigrationRedirectRules } from "@/lib/websites/migration-redirect-artifact";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
@@ -159,6 +160,7 @@ export async function POST(request: Request) {
     if (snapshotError) throw snapshotError;
 
     const files = renderEnhancedWebsiteArtifact(website, renderLocation);
+    const redirects = getMigrationRedirectRules(website);
     const awsReleaseInput = {
       websiteId: website.id,
       locationId,
@@ -191,6 +193,7 @@ export async function POST(request: Request) {
         sitePath: allocation.website.site_path || `/srv/sites/${locationId}`,
         domain: publishDomain,
         files,
+        redirects,
       };
       const result = await deployWebsiteArtifact(deployInput);
       await recordWebsiteReplicaSynced(website.id, allocation.node.id, version);
@@ -262,6 +265,7 @@ export async function POST(request: Request) {
       platform_domain: platformDomain,
       live_domain: publishDomain,
       live_url: `https://${publishDomain}`,
+      redirects: redirects.length,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "website_publish_failed";
