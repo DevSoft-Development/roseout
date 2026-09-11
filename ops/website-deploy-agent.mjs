@@ -26,9 +26,41 @@ function safeArtifactPath(value) {
   return typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.includes("..") && !value.includes("\\");
 }
 
+function safeRedirectPath(value, source = false) {
+  return typeof value === "string"
+    && value.startsWith("/")
+    && !value.startsWith("//")
+    && !value.includes("..")
+    && !value.includes("\\")
+    && !value.includes("\n")
+    && !value.includes("\r")
+    && (!source || !value.includes("?"));
+}
+
+function normalizeRedirects(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 30) throw new Error("invalid_redirects");
+  const seen = new Set();
+  const redirects = [];
+  for (const entry of value) {
+    if (!entry || !safeRedirectPath(entry.from, true) || !safeRedirectPath(entry.to, false)) throw new Error("invalid_redirect_rule");
+    if (entry.from === "/" || entry.from === entry.to || seen.has(entry.from)) continue;
+    seen.add(entry.from);
+    redirects.push({ from: entry.from, to: entry.to });
+  }
+  return redirects;
+}
+
 function isPlatformDomain(domain) {
   const value = String(domain || "").toLowerCase();
   return value.endsWith(`.${platformDomainSuffix}`);
+}
+
+function caddyHosts(domain) {
+  const value = String(domain || "").toLowerCase();
+  if (isPlatformDomain(value)) return value;
+  const apex = value.replace(/^www\./, "");
+  return `${apex}, www.${apex}`;
 }
 
 function verifySignature(timestamp, body, signature) {
@@ -56,6 +88,7 @@ async function deploy(payload) {
   if (payload.sitePath !== `/srv/sites/${payload.locationId}`) throw new Error("invalid_site_path");
   if (!safeDomain(payload.domain)) throw new Error("invalid_domain");
   if (!Array.isArray(payload.files) || payload.files.length < 1 || payload.files.length > 50) throw new Error("invalid_files");
+  const redirects = normalizeRedirects(payload.redirects);
 
   const siteRoot = `/srv/sites/${payload.locationId}`;
   const releaseRoot = join(siteRoot, "releases", String(payload.version));
@@ -78,14 +111,14 @@ async function deploy(payload) {
 
   if (payload.domain) {
     const caddyPath = `/etc/caddy/sites/${payload.websiteId}.caddy`;
-    const hosts = isPlatformDomain(payload.domain) ? payload.domain : `${payload.domain}, www.${payload.domain}`;
-    const config = `${hosts} {\n  root * ${currentLink}\n  encode zstd gzip\n  file_server\n}\n`;
+    const redirectRules = redirects.map((rule) => `  redir ${rule.from} ${rule.to} 301`).join("\n");
+    const config = `${caddyHosts(payload.domain)} {\n${redirectRules ? `${redirectRules}\n` : ""}  root * ${currentLink}\n  encode zstd gzip\n  file_server\n}\n`;
     await writeFile(caddyPath, config, "utf8");
     await execFileAsync("caddy", ["validate", "--config", "/etc/caddy/Caddyfile"]);
     await execFileAsync("systemctl", ["reload", "caddy"]);
   }
 
-  return { ok: true, version: payload.version, currentPath: currentLink };
+  return { ok: true, version: payload.version, currentPath: currentLink, redirects: redirects.length };
 }
 
 const server = createServer(async (req, res) => {
