@@ -66,7 +66,7 @@ const LOCATION_KEY = "theouthaven_user_location";
 const FLOW_VERSION = "guided_create_v1";
 const JOURNEY_VERSION = "four_step";
 const WALKING_INTENT = /\b(?:walk|walking|walkable|walkability)\b|\bon\s+foot\b/i;
-const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested/i;
+const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested|date[-\s]?night\s+fit|occasion\s+fit|\b(?:fit|boost|penalty|adjustment)\s*[+-]?\s*\d/i;
 
 const LOADING_LINES: Record<PlanType, string[]> = {
   outing: ["Finding your perfect outing...", "Matching restaurants and activities...", "Checking distance, ratings, and fit...", "Building your strongest complete picks..."],
@@ -100,7 +100,8 @@ function cleanReason(value: unknown) {
     .map((part) => part.trim())
     .filter(Boolean)
     .filter((part) => !INTERNAL_REASON.test(part))
-    .filter((part) => !/[A-Za-z]+_[A-Za-z]+|\b(?:true|false|null|undefined)\b/i.test(part));
+    .filter((part) => !/[A-Za-z]+_[A-Za-z]+|\b(?:true|false|null|undefined)\b/i.test(part))
+    .filter((part) => !/\b(?:fit|boost|penalty|adjustment)\b.*[+-]?\d+(?:\.\d+)?/i.test(part));
   const reason = pieces[0];
   if (!reason || reason.length < 10 || reason.length > 150) return null;
   return reason.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
@@ -231,12 +232,29 @@ function SingleCard({ location, rank, planType, returnToResults, onUse }: { loca
 }
 
 function BuilderChoice({ location, selected, label, onSelect }: { location: LocationCard; selected: boolean; label: string; onSelect: () => void }) {
+  const image = imageFor(location);
   const rating = ratingFor(location);
+  const price = priceFor(location);
   return (
-    <button type="button" onClick={onSelect} aria-pressed={selected} className={`w-full rounded-2xl border p-3 text-left transition ${selected ? "border-[#e1062a]/65 bg-[#e1062a]/10" : "border-white/10 bg-black/25 hover:border-white/20"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p><p className="mt-1 truncate text-sm font-black">{nameFor(location)}</p><p className="mt-1 truncate text-[11px] font-semibold text-white/40">{metaFor(location)}</p></div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${selected ? "bg-[#e1062a] text-white" : "bg-white/[0.05] text-white/45"}`}>{selected ? "✓" : rating ? `★ ${rating.value}` : "+"}</span>
+    <button type="button" onClick={onSelect} aria-pressed={selected} className={`group w-full overflow-hidden rounded-[1.15rem] border text-left transition duration-200 ${selected ? "border-[#e1062a]/70 bg-[#e1062a]/10 ring-1 ring-[#e1062a]/15" : "border-white/[0.09] bg-[#0a0a0a] hover:border-white/20 hover:bg-white/[0.025]"}`}>
+      <div className="flex min-h-24 items-stretch">
+        <div className="relative w-28 shrink-0 bg-white/[0.04] sm:w-32">
+          {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-2xl">📍</div>}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20" />
+          <span className="absolute left-2 top-2 rounded-full border border-white/15 bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-white/85">{label}</span>
+        </div>
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-3 p-3.5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black tracking-[-0.015em] text-white">{nameFor(location)}</p>
+            {metaFor(location) ? <p className="mt-1 truncate text-[11px] font-semibold text-white/45">{metaFor(location)}</p> : null}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-white/50">
+              {rating ? <span>★ {rating.value}</span> : null}
+              {rating && price ? <span className="text-white/20">•</span> : null}
+              {price ? <span>{price}</span> : null}
+            </div>
+          </div>
+          <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-black transition ${selected ? "bg-[#e1062a] text-white" : "border border-white/10 bg-white/[0.04] text-white/45 group-hover:text-white/75"}`}>{selected ? "✓" : "+"}</span>
+        </div>
       </div>
     </button>
   );
@@ -315,8 +333,8 @@ export default function GuidedResultsPageV4() {
                 <div className="flex items-center justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Want more control?</p><h2 className="mt-1 text-xl font-black">Build your own outing</h2><p className="mt-1 text-sm font-semibold text-white/45">Choose one restaurant and one activity from these same results.</p></div><span className="text-2xl text-white/30">+</span></div>
               </summary>
               <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Restaurant</p><div className="space-y-2">{restaurants.map((location) => <BuilderChoice key={`restaurant-${location.id}`} location={location} label="Restaurant" selected={String(selectedRestaurant?.id) === String(location.id)} onSelect={() => { setSelectedRestaurant(location); track("planner_custom_restaurant_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
-                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Activity</p><div className="space-y-2">{activities.map((location) => <BuilderChoice key={`activity-${location.id}`} location={location} label="Activity" selected={String(selectedActivity?.id) === String(location.id)} onSelect={() => { setSelectedActivity(location); track("planner_custom_activity_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
+                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Restaurant</p><div className="space-y-2.5">{restaurants.map((location) => <BuilderChoice key={`restaurant-${location.id}`} location={location} label="Restaurant" selected={String(selectedRestaurant?.id) === String(location.id)} onSelect={() => { setSelectedRestaurant(location); track("planner_custom_restaurant_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
+                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Activity</p><div className="space-y-2.5">{activities.map((location) => <BuilderChoice key={`activity-${location.id}`} location={location} label="Activity" selected={String(selectedActivity?.id) === String(location.id)} onSelect={() => { setSelectedActivity(location); track("planner_custom_activity_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/[0.05] p-4"><p className="text-sm font-semibold text-white/55">{selectedRestaurant && selectedActivity ? `${nameFor(selectedRestaurant)} + ${nameFor(selectedActivity)}` : "Choose one restaurant and one activity."}</p><button type="button" disabled={!selectedRestaurant || !selectedActivity} onClick={() => { if (selectedRestaurant && selectedActivity) { track("planner_custom_pair_selected", { step: 3, restaurant_id: selectedRestaurant.id || null, activity_id: selectedActivity.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); openPlan(selectedRestaurant, selectedActivity, null, null, "custom_pair"); } }} className="rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-35">Choose my outing →</button></div>
             </details>
