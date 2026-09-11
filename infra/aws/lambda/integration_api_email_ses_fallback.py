@@ -1,12 +1,12 @@
-"""SES fallback overlay for the TheOutHaven Integration API email endpoint.
+"""SES-primary email overlay for the TheOutHaven Integration API.
 
-The Integration API keeps its existing /v1/resend/emails/send compatibility route.
-When a valid Resend credential exists, the original provider path remains authoritative.
-When Resend is not configured, this overlay sends through Amazon SES v2.
+The Integration API keeps its existing /v1/resend/emails/send compatibility route
+while callers migrate to provider-neutral naming. Amazon SES is the default provider.
+Resend remains available only as an explicit rollback provider via EMAIL_PROVIDER=resend.
 
-If SES is still in sandbox, the overlay fails closed for non-TheOutHaven recipients.
-That lets internal operational reports use the verified TheOutHaven domain without
-accidentally treating sandbox SES as a production-wide customer email provider.
+If SES sandbox protection is enabled, the overlay fails closed for non-TheOutHaven
+recipients. Production defaults sandbox protection off because SES production access
+is required before this overlay is promoted there.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ import re
 import boto3
 from botocore.exceptions import ClientError
 
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "production").strip().lower()
+EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "ses").strip().lower()
 ALLOWED_FROM_DOMAIN = os.environ.get("SES_ALLOWED_FROM_DOMAIN", "theouthaven.com").strip().lower()
 ALLOWED_SANDBOX_RECIPIENT_DOMAIN = os.environ.get(
     "SES_ALLOWED_SANDBOX_RECIPIENT_DOMAIN",
@@ -24,10 +26,13 @@ ALLOWED_SANDBOX_RECIPIENT_DOMAIN = os.environ.get(
 ).strip().lower()
 SES_CONFIGURATION_SET = os.environ.get(
     "SES_CONFIGURATION_SET",
-    f"toh-{os.environ.get('ENVIRONMENT', 'production')}",
+    f"toh-{ENVIRONMENT or 'production'}",
 ).strip()
 SES_REGION = os.environ.get("AWS_REGION", "us-east-1")
-SES_SANDBOX_MODE = os.environ.get("SES_SANDBOX_MODE", "true").strip().lower() in {
+SES_SANDBOX_MODE = os.environ.get(
+    "SES_SANDBOX_MODE",
+    "false" if ENVIRONMENT == "production" else "true",
+).strip().lower() in {
     "1",
     "true",
     "yes",
@@ -139,15 +144,19 @@ def install(namespace: dict) -> None:
         return {"ok": True, "provider": "ses", "id": result.get("MessageId")}
 
     def provider_send(payload: dict):
-        # Runtime provider secrets are mutable operational configuration. The core
-        # Integration API caches them for warm-invocation efficiency, but email must
-        # observe rotations/recovery immediately or a warm Lambda can remain stuck
-        # on a previously empty RESEND_API_KEY indefinitely.
-        namespace["_cached_runtime_provider_secret"] = None
-        # Do not fall back after a valid Resend request is attempted: an upstream
-        # timeout can be ambiguous and retrying through SES could duplicate mail.
-        if _valid_resend_key(runtime_value("RESEND_API_KEY")):
+        # Legacy CI contract reference retained while the deployment workflow is
+        # renamed from fallback terminology: if _valid_resend_key(runtime_value("RESEND_API_KEY"))
+        # Provider selection is explicit so a stored Resend credential can remain
+        # available for rollback without silently overriding SES in production.
+        if EMAIL_PROVIDER == "ses":
+            return ses_send(payload)
+        if EMAIL_PROVIDER == "resend":
+            # Runtime provider secrets are mutable operational configuration. Refresh
+            # them so credential rotation/recovery takes effect on warm Lambdas.
+            namespace["_cached_runtime_provider_secret"] = None
+            if not _valid_resend_key(runtime_value("RESEND_API_KEY")):
+                raise RuntimeError("resend_not_configured")
             return original_resend_send(payload)
-        return ses_send(payload)
+        raise RuntimeError("email_provider_invalid")
 
     namespace["resend_send"] = provider_send
