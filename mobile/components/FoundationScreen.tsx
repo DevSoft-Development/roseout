@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, SafeAreaView, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
+import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
@@ -10,9 +11,21 @@ type FoundationScreenProps = {
   description: string;
   children?: ReactNode;
   showHomeShortcut?: boolean;
+  showBrandHeader?: boolean;
+  showBack?: boolean;
+  backLabel?: string;
 };
 
-export function FoundationScreen({ eyebrow, title, description, children, showHomeShortcut = true }: FoundationScreenProps) {
+export function FoundationScreen({
+  eyebrow,
+  title,
+  description,
+  children,
+  showHomeShortcut = true,
+  showBrandHeader = false,
+  showBack = false,
+  backLabel = "Back",
+}: FoundationScreenProps) {
   const { theme } = useAppTheme();
   const router = useRouter();
 
@@ -26,36 +39,60 @@ export function FoundationScreen({ eyebrow, title, description, children, showHo
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {showHomeShortcut ? (
-          <View style={{ alignItems: "flex-end", marginBottom: theme.spacing.sm }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Return to TheOutHaven home"
-              hitSlop={10}
-              onPress={() => router.replace("/")}
-              style={({ pressed }) => ({
-                minWidth: 46,
-                height: 46,
-                paddingHorizontal: 14,
-                borderRadius: 23,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: theme.colors.surface,
-                borderWidth: 1,
-                borderColor: theme.colors.borderStrong,
-                opacity: pressed ? 0.82 : 1,
-                transform: [{ scale: pressed ? 0.96 : 1 }],
-                shadowColor: "#000000",
-                shadowOpacity: 0.24,
-                shadowRadius: 14,
-                shadowOffset: { width: 0, height: 7 },
-                elevation: 4,
-              })}
-            >
-              <AppText variant="bodyStrong">⌂</AppText>
-            </Pressable>
+        {(showBrandHeader || showBack || showHomeShortcut) ? (
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: theme.spacing.lg }}>
+            <View style={{ minWidth: 74, alignItems: "flex-start" }}>
+              {showBack ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={backLabel}
+                  hitSlop={10}
+                  onPress={() => router.back()}
+                  style={({ pressed }) => ({
+                    minHeight: 42,
+                    paddingHorizontal: 12,
+                    borderRadius: 21,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: theme.colors.surface,
+                    borderWidth: 1,
+                    borderColor: theme.colors.borderStrong,
+                    opacity: pressed ? 0.78 : 1,
+                  })}
+                >
+                  <AppText variant="caption">← {backLabel}</AppText>
+                </Pressable>
+              ) : null}
+            </View>
+
+            {showBrandHeader ? <BrandHeader compact /> : <View style={{ flex: 1 }} />}
+
+            <View style={{ minWidth: 74, alignItems: "flex-end" }}>
+              {showHomeShortcut ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Return to TheOutHaven home"
+                  hitSlop={10}
+                  onPress={() => router.replace("/")}
+                  style={({ pressed }) => ({
+                    width: 42,
+                    height: 42,
+                    borderRadius: 21,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: theme.colors.surface,
+                    borderWidth: 1,
+                    borderColor: theme.colors.borderStrong,
+                    opacity: pressed ? 0.82 : 1,
+                  })}
+                >
+                  <AppText variant="bodyStrong">⌂</AppText>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
         ) : null}
+
         {eyebrow ? <AppText variant="eyebrow" accent>{eyebrow}</AppText> : null}
         <AppText variant="h1" style={{ marginTop: eyebrow ? theme.spacing.sm : 0, maxWidth: 620 }}>{title}</AppText>
         <AppText muted style={{ marginTop: theme.spacing.sm, maxWidth: 620, lineHeight: 26 }}>{description}</AppText>
