@@ -373,7 +373,7 @@ export default function PlanScreen() {
                 </View>
               ) : null}
               <TextInput
-                disabled={draft.customMatters.length >= 5}
+                editable={draft.customMatters.length < 5}
                 value={customMatter}
                 onChangeText={(value) => setCustomMatter(value.replace(/^\s+/, ""))}
                 onSubmitEditing={addCustomMatter}
