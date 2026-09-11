@@ -4,6 +4,7 @@ import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWor
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
 import { WebsiteImportPanel } from "@/components/websites/WebsiteImportPanel";
 import { WebsiteHealthPanel } from "@/components/websites/WebsiteHealthPanel";
+import { WebsiteCutoverReadinessPanel } from "@/components/websites/WebsiteCutoverReadinessPanel";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams } from "@/lib/demo/owner-context";
@@ -68,6 +69,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         {hydratedWebsite ? (
           <div className="website-builder-brand">
             <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
             <WebsiteHealthPanel locationId={location.id} />
             <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Live website content</p><h2 className="mt-2 text-xl font-black">Connected from Edit Location and your existing business tools</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Business facts are edited once in Edit Location. Hours, photos, menu items, published events, experiences, contact details, and reservation settings automatically feed the website; this page controls presentation, migration, domain, preview, and publishing.</p></div><span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">Auto-sync on</span></div>

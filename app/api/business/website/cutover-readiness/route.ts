@@ -1,0 +1,86 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
+import { assertPublicWebsiteUrl } from "@/lib/websites/import-crawler";
+
+export const runtime = "nodejs";
+
+async function getUser() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+async function probe(url: string) {
+  const started = Date.now();
+  try {
+    const safe = await assertPublicWebsiteUrl(url);
+    const response = await fetch(safe, { method: "HEAD", redirect: "manual", headers: { "user-agent": "TheOutHaven Domain Cutover/1.0" }, signal: AbortSignal.timeout(8000) });
+    return { ok: response.status >= 200 && response.status < 500, status: response.status, ms: Date.now() - started, location: response.headers.get("location") };
+  } catch (error) {
+    return { ok: false, status: null, ms: Date.now() - started, location: null, error: error instanceof Error ? error.message : "probe_failed" };
+  }
+}
+
+export async function GET(request: Request) {
+  const user = await getUser();
+  if (!user) return NextResponse.json({ error: "Please log in to continue." }, { status: 401 });
+  const locationId = new URL(request.url).searchParams.get("location_id")?.trim() || "";
+  if (!locationId) return NextResponse.json({ error: "Missing location." }, { status: 400 });
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "id");
+  if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+
+  const { data: website, error } = await supabaseAdmin
+    .from("business_websites")
+    .select("id,domain,platform_domain,published_version,dns_status,ssl_status,last_publish_status,last_error,custom_content")
+    .eq("location_id", locationId)
+    .maybeSingle();
+  if (error) return NextResponse.json({ error: "Unable to load website domain status." }, { status: 500 });
+  if (!website) return NextResponse.json({ error: "Website not found." }, { status: 404 });
+
+  const domain = String(website.domain || "").trim().toLowerCase();
+  if (!domain) {
+    return NextResponse.json({
+      ok: true,
+      ready: false,
+      domain: null,
+      checks: [{ key: "custom_domain", label: "Custom domain selected", ok: false, detail: "Choose a domain you own before cutover." }],
+    });
+  }
+
+  const apex = domain.replace(/^www\./, "");
+  const www = `www.${apex}`;
+  const [apexProbe, wwwProbe, sitemapProbe, robotsProbe] = await Promise.all([
+    probe(`https://${apex}`),
+    probe(`https://${www}`),
+    probe(`https://${domain}/sitemap.xml`),
+    probe(`https://${domain}/robots.txt`),
+  ]);
+
+  const migrationManifest = (website.custom_content as any)?.website_import?.migration_manifest;
+  const redirectCount = Array.isArray(migrationManifest?.redirect_map) ? migrationManifest.redirect_map.length : 0;
+  const checks = [
+    { key: "published", label: "Website version published", ok: Boolean(website.published_version), detail: website.published_version ? `Version ${website.published_version}` : "Publish a version before domain cutover." },
+    { key: "dns", label: "DNS verified", ok: ["verified", "configured", "active"].includes(String(website.dns_status || "").toLowerCase()), detail: String(website.dns_status || "pending") },
+    { key: "ssl", label: "SSL active", ok: String(website.ssl_status || "").toLowerCase() === "active", detail: String(website.ssl_status || "pending") },
+    { key: "apex", label: "Apex domain responds", ok: apexProbe.ok, detail: apexProbe.status ? `HTTP ${apexProbe.status} · ${apexProbe.ms} ms` : "Not reachable yet" },
+    { key: "www", label: "www domain responds or redirects", ok: wwwProbe.ok || Boolean(wwwProbe.location), detail: wwwProbe.status ? `HTTP ${wwwProbe.status} · ${wwwProbe.ms} ms` : "Not reachable yet" },
+    { key: "sitemap", label: "Sitemap available", ok: sitemapProbe.ok && sitemapProbe.status === 200, detail: sitemapProbe.status ? `HTTP ${sitemapProbe.status}` : "Not reachable yet" },
+    { key: "robots", label: "robots.txt available", ok: robotsProbe.ok && robotsProbe.status === 200, detail: robotsProbe.status ? `HTTP ${robotsProbe.status}` : "Not reachable yet" },
+    { key: "redirects", label: "Migration redirect plan ready", ok: redirectCount > 0 || !migrationManifest, detail: migrationManifest ? `${redirectCount} source paths mapped` : "No imported website detected" },
+    { key: "publish_status", label: "Last publish healthy", ok: !website.last_error && String(website.last_publish_status || "").toLowerCase() !== "failed", detail: website.last_error || String(website.last_publish_status || "ready") },
+  ];
+
+  const blocking = checks.filter((check) => ["published", "dns", "ssl", "apex", "sitemap", "robots", "publish_status"].includes(check.key) && !check.ok);
+  return NextResponse.json({
+    ok: true,
+    ready: blocking.length === 0,
+    domain,
+    apex,
+    www,
+    redirect_count: redirectCount,
+    checks,
+    blocking: blocking.map((check) => check.key),
+  });
+}
