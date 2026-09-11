@@ -41,6 +41,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow TheOutHaven to use your location to find outings near you."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "defaultChannel": "outing-reminders"

@@ -14,6 +14,9 @@ type MobileSearchBody = {
   customDate?: string;
   customTime?: string;
   area?: string;
+  areaSource?: "search" | "manual" | "device" | "default";
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   partySize?: number | string;
   budget?: string;
   travel?: string;
@@ -26,6 +29,7 @@ function text(value: unknown) {
 }
 
 function numberOrNull(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -144,6 +148,10 @@ export async function POST(request: Request) {
     headers.set("cookie", `guest_search_id=${encodeURIComponent(guestId)}`);
   }
 
+  const latitude = numberOrNull(body.latitude);
+  const longitude = numberOrNull(body.longitude);
+  const useCurrentLocation = body.areaSource === "device" && latitude !== null && longitude !== null;
+
   // Match GuidedResultsPageV4: mobile is only an auth/response-shaping adapter.
   const canonicalRequest = new Request(request.url, {
     method: "POST",
@@ -152,7 +160,9 @@ export async function POST(request: Request) {
       input: prompt,
       selectedSearchLane: laneFor(body.planType),
       timezone: WEB_TIMEZONE,
-      useCurrentLocation: false,
+      useCurrentLocation,
+      userLatitude: useCurrentLocation ? latitude : undefined,
+      userLongitude: useCurrentLocation ? longitude : undefined,
       guidedFlow: GUIDED_FLOW_VERSION,
     }),
   });
