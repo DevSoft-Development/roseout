@@ -109,13 +109,13 @@ export async function POST(request: NextRequest) {
     const renewalQuote = settings.renewalIncluded ? await quoteDomain(domain, "renewal", 1) : null;
 
     if (registrationQuote.isRegistryPremium || Boolean(renewalQuote?.isRegistryPremium)) {
-      return fail(409, "premium_domain", "Premium domains are not included with Partner Pro.");
+      return fail(409, "premium_domain", "Premium domains are not included with Essentials.");
     }
     if (
       registrationQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD ||
       (renewalQuote && renewalQuote.wholesalePrice > INTERNAL_INCLUDED_DOMAIN_MAX_WHOLESALE_USD)
     ) {
-      return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
+      return fail(409, "domain_not_included", "This domain is not eligible for the included Essentials domain benefit.");
     }
   } catch (error) {
     console.error("Domain provisioning eligibility recheck failed", error);
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
   if (reserveError || !operation) {
     console.error("Domain claim reservation failed", reserveError);
     const reason = String(reserveError?.message || "");
-    if (reason.includes("partner_pro_required")) return fail(403, "partner_pro_required", "An active Partner Pro membership is required.");
+    if (reason.includes("partner_pro_required")) return fail(403, "essentials_required", "An active Essentials membership is required.");
     if (reason.includes("included_domain_already_claimed")) return fail(409, "included_domain_already_claimed", "This location has already used its included domain benefit.");
     if (reason.includes("domain_claim_in_progress")) return fail(409, "domain_claim_in_progress", "Another domain claim is already in progress for this location.");
     if (reason.includes("idempotency_key_reused")) return fail(409, "idempotency_conflict", "Unable to continue this domain claim.");
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
       if (error.code === "registration_disabled") return fail(503, "registration_not_enabled", "Domain registration is not available yet.");
       if (error.code === "domain_unavailable") return fail(409, "domain_unavailable", "This domain is no longer available.");
       if (error.code === "premium_domain" || error.code === "domain_not_included") {
-        return fail(409, "domain_not_included", "This domain is not eligible for the included Partner Pro domain benefit.");
+        return fail(409, "domain_not_included", "This domain is not eligible for the included Essentials domain benefit.");
       }
       return fail(502, "registration_failed", "We could not register this domain right now. Please try again.");
     }
@@ -229,9 +229,10 @@ export async function POST(request: NextRequest) {
       status: "active",
       operation_id: operation.id,
       code: "domain_registered_and_connected",
-      message: "Your included domain has been registered and connected to your website.",
+      message: "Your included first-year domain has been registered through our OpenSRS connection and attached to your website. DNS and SSL readiness will continue automatically.",
       hosting: {
         provider: "lightsail",
+        registrar: "opensrs",
         node: hosting.nodeName,
         deployment_status: hosting.deploymentStatus,
         dns_status: hosting.dnsStatus,
@@ -256,7 +257,7 @@ export async function POST(request: NextRequest) {
       status: "active",
       operation_id: operation.id,
       code: "domain_registered_connection_pending",
-      message: "Your domain is registered. Website connection is still being completed.",
+      message: "Your domain is registered through our OpenSRS connection. Website DNS and SSL connection is still being completed automatically.",
       connection_pending: true,
     }, { status: 202 });
   }
