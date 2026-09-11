@@ -5,6 +5,7 @@ import { connectGeneratedSiteDomain } from "@/lib/domains/connect-generated-site
 import { switchPlatformWildcardToNode } from "@/lib/domains/vercel-wildcard-failover";
 import { failoverWebsiteToHealthyNode } from "@/lib/hosting/lightsail-failover";
 import { claimWebsiteMutationLease, releaseWebsiteMutationLease } from "@/lib/hosting/website-mutation-lease";
+import { checkHostedWebsiteLiveHealth } from "@/lib/websites/live-health";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,48 +57,31 @@ async function requestWebsiteReplicaRepair(
 }
 
 async function finishRouting(
-  website: {
-    id: string;
-    location_id: string;
-    domain: string | null;
-    platform_domain: string | null;
-  },
+  website: { id: string; location_id: string; domain: string | null; platform_domain: string | null },
   node: { id: string; public_ip: string },
 ) {
   const customDomain = String(website.domain || "").trim().toLowerCase();
   const platformDomain = String(website.platform_domain || "").trim().toLowerCase();
-
-  if (customDomain) {
-    await connectGeneratedSiteDomain(String(website.location_id), customDomain);
-  } else if (platformDomain) {
-    await switchPlatformWildcardToNode(node.id, node.public_ip);
-  } else {
-    throw new Error("website_domain_missing");
-  }
+  if (customDomain) await connectGeneratedSiteDomain(String(website.location_id), customDomain);
+  else if (platformDomain) await switchPlatformWildcardToNode(node.id, node.public_ip);
+  else throw new Error("website_domain_missing");
 
   const now = new Date().toISOString();
-  await supabaseAdmin
-    .from("business_websites")
-    .update({
-      deployment_status: "deployed",
-      status: customDomain ? "provisioning" : "live",
-      last_deployed_at: now,
-      last_error: null,
-      updated_at: now,
-    })
-    .eq("id", website.id);
+  await supabaseAdmin.from("business_websites").update({
+    deployment_status: "deployed",
+    status: customDomain ? "provisioning" : "live",
+    last_deployed_at: now,
+    last_error: null,
+    updated_at: now,
+  }).eq("id", website.id);
 
   if (customDomain) {
-    await supabaseAdmin
-      .from("locations")
-      .update({
-        included_domain_connection_status: "awaiting_dns",
-        included_domain_verification_checked_at: now,
-        updated_at: now,
-      })
-      .eq("id", website.location_id);
+    await supabaseAdmin.from("locations").update({
+      included_domain_connection_status: "awaiting_dns",
+      included_domain_verification_checked_at: now,
+      updated_at: now,
+    }).eq("id", website.location_id);
   }
-
   return { customDomain, platformDomain };
 }
 
@@ -111,31 +95,16 @@ async function tryAutomaticFailback(website: {
   published_version: number | null;
 }) {
   const sourceNodeId = String(website.failover_source_node_id || "");
-  if (!sourceNodeId || !website.platform_domain || sourceNodeId === String(website.hosting_node_id || "")) {
-    return null;
-  }
+  if (!sourceNodeId || !website.platform_domain || sourceNodeId === String(website.hosting_node_id || "")) return null;
 
   const { data: sourceNode, error: sourceError } = await supabaseAdmin
     .from("website_hosting_nodes")
     .select("id,name,status,public_ip,last_health_check_at,healthy_since")
     .eq("id", sourceNodeId)
     .maybeSingle();
-
-  if (sourceError || !sourceNode) {
-    return { state: "failback_source_unavailable" as const };
-  }
-
-  if (
-    sourceNode.status !== "healthy"
-    || !sourceNode.public_ip
-    || !healthIsFresh(sourceNode.last_health_check_at)
-  ) {
-    return { state: "failback_waiting_primary" as const, node: sourceNode.name };
-  }
-
-  if (!healthIsSustained(sourceNode.healthy_since)) {
-    return { state: "failback_stabilizing" as const, node: sourceNode.name, healthySince: sourceNode.healthy_since };
-  }
+  if (sourceError || !sourceNode) return { state: "failback_source_unavailable" as const };
+  if (sourceNode.status !== "healthy" || !sourceNode.public_ip || !healthIsFresh(sourceNode.last_health_check_at)) return { state: "failback_waiting_primary" as const, node: sourceNode.name };
+  if (!healthIsSustained(sourceNode.healthy_since)) return { state: "failback_stabilizing" as const, node: sourceNode.name, healthySince: sourceNode.healthy_since };
 
   const version = Number(website.published_version || 0);
   const { data: replica, error: replicaError } = await supabaseAdmin
@@ -144,7 +113,6 @@ async function tryAutomaticFailback(website: {
     .eq("website_id", website.id)
     .eq("node_id", sourceNode.id)
     .maybeSingle();
-
   if (replicaError || !replica || replica.status !== "synced" || Number(replica.version) !== version) {
     const repairSignaled = await requestWebsiteReplicaRepair(website, "failback_waiting_replica");
     return { state: "failback_waiting_replica" as const, node: sourceNode.name, version, repairSignaled };
@@ -153,32 +121,53 @@ async function tryAutomaticFailback(website: {
   try {
     const routing = await switchPlatformWildcardToNode(sourceNode.id, String(sourceNode.public_ip));
     const now = new Date().toISOString();
-    const { error: updateError } = await supabaseAdmin
-      .from("business_websites")
-      .update({
-        hosting_node_id: sourceNode.id,
-        failover_source_node_id: null,
-        status: "live",
-        deployment_status: "deployed",
-        last_error: null,
-        last_deployed_at: now,
-        updated_at: now,
-      })
-      .eq("id", website.id);
-
-    if (updateError) {
-      return { state: "failback_state_retry" as const, node: sourceNode.name, version, routingChanged: routing.changed };
-    }
-
+    const { error: updateError } = await supabaseAdmin.from("business_websites").update({
+      hosting_node_id: sourceNode.id,
+      failover_source_node_id: null,
+      status: "live",
+      deployment_status: "deployed",
+      last_error: null,
+      last_deployed_at: now,
+      updated_at: now,
+    }).eq("id", website.id);
+    if (updateError) return { state: "failback_state_retry" as const, node: sourceNode.name, version, routingChanged: routing.changed };
     return { state: "failed_back" as const, node: sourceNode.name, version, routingChanged: routing.changed };
   } catch (failbackError) {
-    return {
-      state: "failback_retry" as const,
-      node: sourceNode.name,
-      version,
-      error: failbackError instanceof Error ? failbackError.message : "automatic_failback_failed",
-    };
+    return { state: "failback_retry" as const, node: sourceNode.name, version, error: failbackError instanceof Error ? failbackError.message : "automatic_failback_failed" };
   }
+}
+
+async function auditLiveWebsite(website: { id: string; location_id: string; domain: string | null; platform_domain: string | null }) {
+  const domain = String(website.domain || website.platform_domain || "").trim().toLowerCase();
+  if (!domain) return { state: "live_address_missing" as const };
+
+  const { data: location } = await supabaseAdmin.from("locations")
+    .select("reservation_link,reservation_url,external_reservation_url,booking_url,uses_internal_reservations,internal_reservations_enabled")
+    .eq("id", website.location_id)
+    .maybeSingle();
+  const internalReservations = Boolean(location?.uses_internal_reservations || location?.internal_reservations_enabled);
+  const reservationUrl = internalReservations ? null : String(location?.external_reservation_url || location?.reservation_url || location?.reservation_link || location?.booking_url || "").trim() || null;
+  const health = await checkHostedWebsiteLiveHealth({ liveUrl: `https://${domain}`, reservationUrl });
+  const now = new Date().toISOString();
+  const errorCode = !health.site?.ok
+    ? "website_unreachable"
+    : reservationUrl && !health.reservation?.ok
+      ? "reservation_link_unreachable"
+      : !health.sitemap?.ok || !health.robots?.ok
+        ? "website_seo_endpoint_unhealthy"
+        : null;
+  await supabaseAdmin.from("business_websites").update({
+    last_health_check_at: now,
+    last_error: errorCode,
+    updated_at: now,
+  }).eq("id", website.id);
+  return {
+    state: errorCode || "healthy",
+    siteStatus: health.site?.status ?? null,
+    reservationStatus: health.reservation?.status ?? null,
+    sitemapOk: Boolean(health.sitemap?.ok),
+    robotsOk: Boolean(health.robots?.ok),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -215,12 +204,10 @@ export async function GET(request: NextRequest) {
       }
 
       const nodeId = String(website.hosting_node_id || "");
-      const { data: node, error: nodeError } = await supabaseAdmin
-        .from("website_hosting_nodes")
+      const { data: node, error: nodeError } = await supabaseAdmin.from("website_hosting_nodes")
         .select("id,name,status,last_health_check_at,public_ip")
         .eq("id", nodeId)
         .maybeSingle();
-
       if (nodeError) {
         results.push({ websiteId: website.id, state: "node_read_error" });
         continue;
@@ -228,63 +215,31 @@ export async function GET(request: NextRequest) {
 
       const healthy = Boolean(node && node.status === "healthy" && healthIsFresh(node.last_health_check_at) && node.public_ip);
       const isRoutingRecovery = website.status === "deploying" && Boolean(website.failover_source_node_id) && healthy;
-
       if (isRoutingRecovery && node) {
         try {
           const routing = await finishRouting(website, { id: node.id, public_ip: node.public_ip });
-          results.push({
-            websiteId: website.id,
-            locationId: website.location_id,
-            domainType: routing.customDomain ? "custom" : "platform",
-            state: "routing_recovered",
-            node: node.name,
-            version: Number(website.published_version || 0),
-          });
+          results.push({ websiteId: website.id, locationId: website.location_id, domainType: routing.customDomain ? "custom" : "platform", state: "routing_recovered", node: node.name, version: Number(website.published_version || 0) });
         } catch (routingError) {
           const message = routingError instanceof Error ? routingError.message : "website_routing_recovery_failed";
-          await supabaseAdmin
-            .from("business_websites")
-            .update({
-              deployment_status: "failed",
-              last_error: `routing_retry_failed:${message}`.slice(0, 500),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", website.id);
+          await supabaseAdmin.from("business_websites").update({ deployment_status: "failed", last_error: `routing_retry_failed:${message}`.slice(0, 500), updated_at: new Date().toISOString() }).eq("id", website.id);
           results.push({ websiteId: website.id, state: "routing_retry", error: message });
         }
         continue;
       }
 
-      const unhealthy = !healthy;
-      if (!unhealthy) {
-        results.push({ websiteId: website.id, state: website.status === "live" ? "healthy" : "deploying", node: node?.name });
+      if (healthy) {
+        const liveAudit = website.status === "live" ? await auditLiveWebsite(website) : { state: "deploying" as const };
+        results.push({ websiteId: website.id, locationId: website.location_id, node: node?.name, ...liveAudit });
         continue;
       }
 
       try {
         const recovery = await failoverWebsiteToHealthyNode(String(website.location_id));
         const routing = await finishRouting(website, { id: recovery.node.id, public_ip: recovery.node.public_ip });
-
-        results.push({
-          websiteId: website.id,
-          locationId: website.location_id,
-          domainType: routing.customDomain ? "custom" : "platform",
-          state: "failed_over",
-          fromNode: node?.name || nodeId,
-          toNode: recovery.node.name,
-          version: recovery.version,
-          recoveryMode: recovery.recoveryMode,
-        });
+        results.push({ websiteId: website.id, locationId: website.location_id, domainType: routing.customDomain ? "custom" : "platform", state: "failed_over", fromNode: node?.name || nodeId, toNode: recovery.node.name, version: recovery.version, recoveryMode: recovery.recoveryMode });
       } catch (failoverError) {
         const message = failoverError instanceof Error ? failoverError.message : "website_failover_failed";
-        await supabaseAdmin
-          .from("business_websites")
-          .update({
-            deployment_status: "failed",
-            last_error: message.slice(0, 500),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", website.id);
+        await supabaseAdmin.from("business_websites").update({ deployment_status: "failed", last_error: message.slice(0, 500), updated_at: new Date().toISOString() }).eq("id", website.id);
         results.push({ websiteId: website.id, state: "failover_retry", error: message });
       }
     } finally {
@@ -295,10 +250,14 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     ok: true,
     processed: results.length,
+    healthy: results.filter((item) => item.state === "healthy").length,
+    brokenSites: results.filter((item) => item.state === "website_unreachable").length,
+    brokenReservations: results.filter((item) => item.state === "reservation_link_unreachable").length,
+    seoAttention: results.filter((item) => item.state === "website_seo_endpoint_unhealthy").length,
     failedOver: results.filter((item) => item.state === "failed_over").length,
     failedBack: results.filter((item) => item.state === "failed_back").length,
     recoveredRouting: results.filter((item) => item.state === "routing_recovered").length,
-    retrying: results.filter((item) => item.state === "failover_retry" || item.state === "routing_retry" || item.state === "failback_retry" || item.state === "failback_state_retry").length,
+    retrying: results.filter((item) => ["failover_retry", "routing_retry", "failback_retry", "failback_state_retry"].includes(String(item.state))).length,
     results,
   });
 }
