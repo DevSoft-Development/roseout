@@ -363,7 +363,7 @@ function mapError(error: unknown): SendCrmEmailResult {
 async function sendThroughPlatform(input: {
   from: string;
   to: string;
-  replyTo: string;
+  replyTo: string[];
   subject: string;
   html: string;
   text: string;
