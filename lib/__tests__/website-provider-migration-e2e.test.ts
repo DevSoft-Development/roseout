@@ -9,7 +9,7 @@ type Fixture = {
 };
 
 const fixtures: Fixture[] = [
-  { host: "restaurant.example", html: '<html><link href="/wp-content/uploads/hero.jpg"><script src="/wp-includes/app.js"></script><a href="/wp-json/wp/v2/pages">Pages</a><a href="https://resy.com/cities/ny/example">Reserve</a></html>', expected: "wordpress", contentHint: "wp-json/wp/v2/pages", reservationHint: "reservation" },
+  { host: "restaurant.example", html: '<html><link href="/wp-content/uploads/hero.jpg"><script src="/wp-includes/app.js"></script><a href="/wp-json/wp/v2/pages">Pages</a><a href="https://resy.com/cities/ny/example">Reserve</a></html>', expected: "wordpress", contentHint: "wp-json/wp/v2/pages", reservationHint: "reserve" },
   { host: "restaurant.example", html: '<html><img src="https://static.wixstatic.com/media/abc.jpg"><a href="/wix-data/menu">Menu</a><a href="/wixbookings">Book</a></html>', expected: "wix", contentHint: "wix-data", reservationHint: "wixbookings" },
   { host: "restaurant.example", html: '<html><div class="sqs-layout"><div class="sqs-block">Menu</div></div><img src="https://images.squarespace-cdn.com/a.jpg"><a href="https://acuityscheduling.com/schedule.php">Book</a></html>', expected: "squarespace", contentHint: "sqs-block", reservationHint: "acuityscheduling" },
   { host: "eat.toast.site", html: '<html><a href="/menus">Menus</a><a href="https://www.toasttab.com/reserve/example">Reserve</a><img src="https://toasttab.com/assets/hero.jpg"></html>', expected: "toast", contentHint: "menus", reservationHint: "toasttab.com/reserve" },
