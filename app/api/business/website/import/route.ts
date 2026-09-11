@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { crawlWebsiteForMigration, assertPublicWebsiteUrl } from "@/lib/websites/import-crawler";
 import { buildMigrationContentInventory } from "@/lib/websites/import-content-inventory";
+import { buildMigrationExceptions } from "@/lib/websites/migration-exceptions";
 import { detectWebsiteImportAdapter, extractImportSignals } from "@/lib/websites/import-provider-adapters";
 
 export const runtime = "nodejs";
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
     const description = textMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || textMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i);
     const themeColor = textMatch(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i);
     const reservationUrl = manifest.reservation_links[0] || null;
+    const detectedReservationProvider = reservationProvider(reservationUrl);
+    const exceptions = buildMigrationExceptions(manifest, contentInventory, detectedReservationProvider);
     const importedAt = new Date().toISOString();
 
     const { data: website, error: readError } = await supabaseAdmin.from("business_websites").select("id,theme,custom_content,site_title").eq("location_id", locationId).maybeSingle();
@@ -84,8 +87,11 @@ export async function POST(request: Request) {
       discovered_pages: manifest.crawled_pages.map((page) => page.url),
       discovered_assets: [...new Set(manifest.crawled_pages.flatMap((page) => page.assets))],
       reservation_url: reservationUrl,
-      reservation_provider: reservationProvider(reservationUrl),
+      reservation_provider: detectedReservationProvider,
       content_inventory: contentInventory,
+      exceptions,
+      blocking_exception_count: exceptions.filter((item) => item.severity === "blocking").length,
+      warning_exception_count: exceptions.filter((item) => item.severity === "warning").length,
       migration_manifest: {
         page_count: manifest.page_count,
         asset_count: manifest.asset_count,
@@ -115,7 +121,7 @@ export async function POST(request: Request) {
     if (updateError) throw updateError;
 
     if (reservationUrl) {
-      await supabaseAdmin.from("locations").update({ reservation_link: reservationUrl, reservation_provider: reservationProvider(reservationUrl), reservation_source: "external", allow_external_reservations: true, updated_at: importedAt }).eq("id", locationId);
+      await supabaseAdmin.from("locations").update({ reservation_link: reservationUrl, reservation_provider: detectedReservationProvider, reservation_source: "external", allow_external_reservations: true, updated_at: importedAt }).eq("id", locationId);
     }
 
     return NextResponse.json({
