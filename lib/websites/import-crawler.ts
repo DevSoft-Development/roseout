@@ -15,6 +15,7 @@ export type CrawledWebsitePage = {
   downloads: string[];
   social_links: string[];
   schema_types: string[];
+  reservation_links: string[];
 };
 
 export type WebsiteMigrationManifest = {
@@ -26,6 +27,7 @@ export type WebsiteMigrationManifest = {
   downloads: string[];
   social_links: string[];
   schema_types: string[];
+  reservation_links: string[];
   redirect_map: Array<{ from: string; to: string }>;
   homepage_html: string;
 };
@@ -113,6 +115,16 @@ function extractSocialLinks(html: string, base: URL) {
   return [...links].slice(0, 20);
 }
 
+function extractReservationLinks(html: string, base: URL) {
+  const links = new Set<string>();
+  for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
+    const parsed = absolute(match[1], base);
+    if (!parsed) continue;
+    if (/(resy|opentable|sevenrooms|exploretock|toasttab|yelp\.com\/reservations|quandoo|reserve|reservation|book)/i.test(parsed.toString())) links.add(parsed.toString());
+  }
+  return [...links].slice(0, 20);
+}
+
 function extractSchemaTypes(html: string) {
   const types = new Set<string>();
   for (const match of html.matchAll(/["']@type["']\s*:\s*["']([^"']+)["']/gi)) types.add(cleanText(match[1]));
@@ -185,6 +197,7 @@ export async function crawlWebsiteForMigration(start: URL): Promise<WebsiteMigra
       downloads: extractDownloads(fetched.html, base),
       social_links: extractSocialLinks(fetched.html, base),
       schema_types: extractSchemaTypes(fetched.html),
+      reservation_links: extractReservationLinks(fetched.html, base),
     };
     pages.push(page);
     for (const link of extractLinks(fetched.html, base, rootHost)) if (!seen.has(link) && queue.length < 40) queue.push(link);
@@ -194,6 +207,7 @@ export async function crawlWebsiteForMigration(start: URL): Promise<WebsiteMigra
   const downloads = [...new Set(pages.flatMap((page) => page.downloads))];
   const socialLinks = [...new Set(pages.flatMap((page) => page.social_links))];
   const schemaTypes = [...new Set(pages.flatMap((page) => page.schema_types))];
+  const reservationLinks = [...new Set(pages.flatMap((page) => page.reservation_links))];
   const redirectMap = pages.map((page) => ({ from: page.path || "/", to: redirectTarget(page.path || "/") })).filter((item, index, all) => all.findIndex((candidate) => candidate.from === item.from) === index);
 
   return {
@@ -205,6 +219,7 @@ export async function crawlWebsiteForMigration(start: URL): Promise<WebsiteMigra
     downloads,
     social_links: socialLinks,
     schema_types: schemaTypes,
+    reservation_links: reservationLinks,
     redirect_map: redirectMap,
     homepage_html: homepageHtml,
   };
