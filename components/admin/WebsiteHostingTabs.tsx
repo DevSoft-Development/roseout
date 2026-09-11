@@ -1,8 +1,9 @@
 import Link from "next/link";
 
-export function WebsiteHostingTabs({ active }: { active: "overview" | "testing" }) {
+export function WebsiteHostingTabs({ active }: { active: "overview" | "migrations" | "testing" }) {
   const tabs = [
     { key: "overview" as const, label: "Overview", href: "/admin/dashboard/website-hosting" },
+    { key: "migrations" as const, label: "Migrations", href: "/admin/dashboard/website-hosting/migrations" },
     { key: "testing" as const, label: "Testing", href: "/admin/dashboard/website-hosting/testing" },
   ];
 
