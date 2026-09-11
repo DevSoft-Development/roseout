@@ -9,6 +9,16 @@ async function getUser() {
   return user;
 }
 
+function resolutionKey(item: any) {
+  return String(item?.key || (item?.page_url ? `${item?.code}:${item.page_url}` : item?.code) || "").trim();
+}
+
+function unresolvedExceptions(imported: any) {
+  const exceptions = Array.isArray(imported?.exceptions) ? imported.exceptions : [];
+  const resolutions = imported?.resolutions && typeof imported.resolutions === "object" ? imported.resolutions : {};
+  return exceptions.filter((item: any) => !resolutions[resolutionKey(item)]);
+}
+
 export async function GET(request: Request) {
   const user = await getUser();
   if (!user) return NextResponse.json({ error: "Please log in to continue." }, { status: 401 });
@@ -19,7 +29,18 @@ export async function GET(request: Request) {
   const { data: website, error } = await supabaseAdmin.from("business_websites").select("id,custom_content").eq("location_id", locationId).maybeSingle();
   if (error) return NextResponse.json({ error: "Unable to load migration review." }, { status: 500 });
   const imported = (website?.custom_content as any)?.website_import || null;
-  return NextResponse.json({ ok: true, import: imported, review_required: Boolean(imported), review_status: imported?.review_status || null });
+  const unresolved = imported ? unresolvedExceptions(imported) : [];
+  return NextResponse.json({
+    ok: true,
+    import: imported ? {
+      ...imported,
+      unresolved_exceptions: unresolved,
+      blocking_exception_count: unresolved.filter((item: any) => item?.severity === "blocking").length,
+      warning_exception_count: unresolved.filter((item: any) => item?.severity === "warning").length,
+    } : null,
+    review_required: Boolean(imported),
+    review_status: imported?.review_status || null,
+  });
 }
 
 export async function POST(request: Request) {
@@ -38,9 +59,8 @@ export async function POST(request: Request) {
   const imported = custom.website_import;
   if (!imported || typeof imported !== "object") return NextResponse.json({ error: "No imported website is waiting for review." }, { status: 409 });
 
-  const blockingExceptions = Array.isArray(imported.exceptions)
-    ? imported.exceptions.filter((item: any) => item && item.severity === "blocking")
-    : [];
+  const unresolved = unresolvedExceptions(imported);
+  const blockingExceptions = unresolved.filter((item: any) => item && item.severity === "blocking");
   if (decision === "approved" && blockingExceptions.length > 0) {
     return NextResponse.json({
       error: "Resolve blocking migration items before approving this website.",
@@ -55,6 +75,8 @@ export async function POST(request: Request) {
     reviewed_at: new Date().toISOString(),
     reviewed_by: user.id,
     review_note: String(body.note || "").trim().slice(0, 500) || null,
+    blocking_exception_count: blockingExceptions.length,
+    warning_exception_count: unresolved.filter((item: any) => item?.severity === "warning").length,
   };
   const nextCustom = { ...custom, website_import: nextImport };
   const { data: updated, error: updateError } = await supabaseAdmin.from("business_websites").update({ custom_content: nextCustom, updated_at: new Date().toISOString() }).eq("id", website.id).select("id,custom_content").single();
