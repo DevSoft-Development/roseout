@@ -12,6 +12,7 @@ import { deployWebsiteArtifact } from "@/lib/websites/deploy-client";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
+import { getMigrationRedirectRules } from "@/lib/websites/migration-redirect-artifact";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
@@ -57,17 +58,18 @@ export async function POST(request: Request) {
     const restoredWebsite: BusinessWebsite = { ...(website as BusinessWebsite), site_title: savedWebsite.site_title ?? website.site_title, theme: savedWebsite.theme ?? website.theme, sections: savedWebsite.sections ?? website.sections, custom_content: savedWebsite.custom_content ?? website.custom_content };
     const liveContent = await getGeneratedWebsiteLocationSnapshot(location as Record<string, unknown>);
     const files = renderEnhancedWebsiteArtifact(restoredWebsite, liveContent);
+    const redirects = getMigrationRedirectRules(restoredWebsite);
     const { data: latest } = await supabaseAdmin.from("business_website_versions").select("version").eq("website_id", website.id).order("version", { ascending: false }).limit(1).maybeSingle();
     const newVersion = Number(latest?.version || 0) + 1;
     const allocation = await allocateLightsailWebsiteNode(locationId, website.domain || null);
-    const deployInput = { websiteId: website.id, locationId, version: newVersion, sitePath: allocation.website.site_path || `/srv/sites/${locationId}`, domain, files };
+    const deployInput = { websiteId: website.id, locationId, version: newVersion, sitePath: allocation.website.site_path || `/srv/sites/${locationId}`, domain, files, redirects };
     await deployWebsiteArtifact(deployInput);
     await recordWebsiteReplicaSynced(website.id, allocation.node.id, newVersion);
     try { await replicateWebsiteToStandby(deployInput, allocation.node.id); } catch (error) { console.error("Website rollback standby replication failed", { websiteId: website.id, newVersion, error }); }
     const now = new Date().toISOString();
     await supabaseAdmin.from("business_website_versions").insert({ website_id: website.id, version: newVersion, snapshot: { website: savedWebsite, location, rendered_live_content: liveContent, restored_from_version: requestedVersion }, source: "rollback", created_by: user.id, published_at: now });
     await supabaseAdmin.from("business_websites").update({ site_title: restoredWebsite.site_title, theme: restoredWebsite.theme, sections: restoredWebsite.sections, custom_content: restoredWebsite.custom_content, published_version: newVersion, deployment_version: String(newVersion), deployment_status: "deployed", last_publish_status: "published", last_deployed_at: now, published_at: now, last_error: null, updated_at: now }).eq("id", website.id);
-    return NextResponse.json({ ok: true, hosting_mode: hostingMode, restored_from_version: requestedVersion, version: newVersion, live_changed: true });
+    return NextResponse.json({ ok: true, hosting_mode: hostingMode, restored_from_version: requestedVersion, version: newVersion, live_changed: true, redirects: redirects.length });
   } catch (error) {
     console.error("Website release rollback failed", { locationId, requestedVersion, error: error instanceof Error ? error.message : error });
     return NextResponse.json({ error: "Unable to roll back this website version." }, { status: 500 });
