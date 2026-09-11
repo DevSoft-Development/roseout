@@ -9,6 +9,7 @@ type ReviewPayload = {
     provider?: string | null;
     reservation_provider?: string | null;
     review_note?: string | null;
+    content_inventory?: Record<string, string[] | undefined>;
     migration_manifest?: {
       page_count?: number;
       asset_count?: number;
@@ -16,8 +17,7 @@ type ReviewPayload = {
       redirect_map?: Array<{ from: string; to: string }>;
       downloads?: string[];
       social_links?: string[];
-      provider_extraction?: string[];
-      content_inventory?: Record<string, string[] | undefined>;
+      schema_types?: string[];
     };
   } | null;
 };
@@ -67,7 +67,7 @@ export function WebsiteMigrationReviewPanel({ locationId }: { locationId: string
 
   const manifest = data.import.migration_manifest || {};
   const redirects = manifest.redirect_map || [];
-  const inventory = manifest.content_inventory || {};
+  const inventory = data.import.content_inventory || {};
   const status = data.review_status || "pending";
 
   return <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
