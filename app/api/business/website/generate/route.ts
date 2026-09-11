@@ -17,6 +17,13 @@ import {
 import { WEBSITE_AI_IMAGE_GENERATION_ENABLED, WEBSITE_AI_MODEL, estimateWebsiteAiCostMicros } from "@/lib/websites/ai-config";
 import { getWebsiteDesignDirection } from "@/lib/websites/design-directions";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import {
+  applyMigrationSections,
+  migrationPromptContext,
+  normalizeWebsiteMigrationMode,
+  resolveMigrationDirection,
+  type WebsiteMigrationMode,
+} from "@/lib/websites/migration-mode";
 import type { WebsiteSection } from "@/lib/websites/data";
 
 export const runtime = "nodejs";
@@ -31,6 +38,10 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
 }
 
 function isUnlimitedWebsiteDemo(location: Record<string, unknown>) {
@@ -52,16 +63,20 @@ async function persistBlueprint(input: {
   existingTheme: Record<string, unknown>;
   existingCustomContent: Record<string, unknown>;
   existingSections: WebsiteSection[];
+  migrationMode: WebsiteMigrationMode;
   source: "ai" | "rules";
 }) {
   const direction = getWebsiteDesignDirection(input.blueprint.design.directionId);
-  const sections = blueprintToWebsiteSections(input.blueprint, input.existingSections);
+  const generatedSections = blueprintToWebsiteSections(input.blueprint, input.existingSections);
+  const sections = applyMigrationSections(input.migrationMode, generatedSections, input.existingSections);
   const theme = {
     ...input.existingTheme,
     ...(direction?.theme || {}),
     design_direction_id: input.blueprint.design.directionId,
     visual_hierarchy: input.blueprint.design.visualHierarchy,
     image_strategy: input.blueprint.design.imageStrategy,
+    migration_mode: input.migrationMode,
+    design_lock: input.migrationMode === "preserve_exact",
   };
   const customContent = {
     ...input.existingCustomContent,
@@ -71,6 +86,12 @@ async function persistBlueprint(input: {
     blueprint_source: input.source,
     generated: blueprintGeneratedContent(input.blueprint),
     cta_strategy: input.blueprint.conversion,
+    migration_application: {
+      mode: input.migrationMode,
+      structure_locked: input.migrationMode === "preserve_exact",
+      brand_retained: input.migrationMode !== "redesign",
+      applied_at: new Date().toISOString(),
+    },
   };
 
   const { data, error } = await supabaseAdmin
@@ -149,17 +170,35 @@ export async function POST(request: Request) {
   const existingTheme = objectValue(website.theme);
   const existingCustomContent = objectValue(website.custom_content);
   const existingBlueprint = objectValue(existingCustomContent.blueprint);
-  const generationType = requestedMode === "redesign" || Object.keys(existingBlueprint).length > 0 || website.published_version
+  const websiteImport = objectValue(existingCustomContent.website_import);
+  const migrationMode = normalizeWebsiteMigrationMode(existingTheme.migration_mode || websiteImport.mode);
+  const existingSections = Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [];
+  const generationType = requestedMode === "redesign" || migrationMode === "redesign" || Object.keys(existingBlueprint).length > 0 || website.published_version
     ? "full_redesign"
     : "initial_build";
-  const requestedDirectionId = inferWebsiteDesignDirectionFromVision(vision);
+  const inferredDirectionId = inferWebsiteDesignDirectionFromVision(vision);
   const existingDirectionId = firstString(existingTheme, ["design_direction_id"]);
+  const requestedDirectionId = resolveMigrationDirection({
+    mode: migrationMode,
+    requestedDirectionId: inferredDirectionId,
+    existingDirectionId,
+  });
   const fallback = fallbackWebsiteBlueprint({
     name,
     category: category || cuisine,
     vision,
     directionId: requestedDirectionId || (generationType === "initial_build" ? existingDirectionId : null),
   });
+  const importedThemeColor = firstString(existingTheme, ["imported_theme_color"]);
+  const migrationContext = migrationPromptContext({
+    mode: migrationMode,
+    importedProvider: firstString(websiteImport, ["provider"]),
+    importedTitle: firstString(websiteImport, ["title"]),
+    importedDescription: firstString(websiteImport, ["description"]),
+    importedThemeColor,
+    importedPages: stringArray(websiteImport.discovered_pages),
+  });
+  const promptVision = `${vision}\n\nMigration constraints:\n${migrationContext}`;
 
   if (!process.env.OPENAI_API_KEY) {
     const blueprint = enforceRequestedWebsiteDesignDirection(fallback, requestedDirectionId);
@@ -169,7 +208,8 @@ export async function POST(request: Request) {
       vision,
       existingTheme,
       existingCustomContent,
-      existingSections: Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [],
+      existingSections,
+      migrationMode,
       source: "rules",
     });
     return NextResponse.json({
@@ -178,6 +218,7 @@ export async function POST(request: Request) {
       blueprint,
       source: "rules",
       generation_type: generationType,
+      migration_mode: migrationMode,
       requested_direction_id: requestedDirectionId,
       selected_direction_id: blueprint.design.directionId,
       quota_bypassed: unlimitedDemo,
@@ -206,7 +247,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const prompt = buildWebsiteBlueprintPrompt({ vision, location: locationContext, fallback, requestedDirectionId });
+    const prompt = buildWebsiteBlueprintPrompt({ vision: promptVision, location: locationContext, fallback, requestedDirectionId });
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: WEBSITE_AI_MODEL,
@@ -227,7 +268,8 @@ export async function POST(request: Request) {
       vision,
       existingTheme,
       existingCustomContent,
-      existingSections: Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [],
+      existingSections,
+      migrationMode,
       source: "ai",
     });
     const inputTokens = completion.usage?.prompt_tokens || 0;
@@ -248,6 +290,7 @@ export async function POST(request: Request) {
       blueprint,
       source: "ai",
       generation_type: generationType,
+      migration_mode: migrationMode,
       model: WEBSITE_AI_MODEL,
       requested_direction_id: requestedDirectionId,
       selected_direction_id: blueprint.design.directionId,
