@@ -53,9 +53,10 @@ const LEGACY_DIRECTION_ALIASES: Record<string, string> = {
   heritage_story: "classic_bistro",
   contemporary_culture: "editorial_luxury",
   high_energy_experience: "experiential_escape",
+  competitive_social: "experiential_escape",
   immersive_adventure: "experiential_escape",
-  family_fun: "family_entertainment",
-  wellness_escape: "wellness_retreat",
+  family_fun: "creative_workshop",
+  wellness_escape: "luxury_minimal",
 };
 
 export function normalizeWebsiteDesignDirectionId(id: string) {
