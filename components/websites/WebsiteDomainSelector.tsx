@@ -14,6 +14,15 @@ type Website = {
 
 type DomainMode = "subdomain" | "custom" | "new";
 
+type Props = {
+  initialWebsite: Website;
+  locationName: string;
+  includedDomainName?: string | null;
+  includedDomainStatus?: string | null;
+  includedDomainConnectionStatus?: string | null;
+  includedDomainRenewalDueAt?: string | null;
+};
+
 function suggestedSubdomain(locationName: string) {
   const base = locationName
     .normalize("NFKD")
@@ -25,7 +34,17 @@ function suggestedSubdomain(locationName: string) {
   return `${base}.theouthaven.com`;
 }
 
-export function WebsiteDomainSelector({ initialWebsite, locationName }: { initialWebsite: Website; locationName: string }) {
+function connectionLabel(status?: string | null) {
+  const value = String(status || "").toLowerCase();
+  if (value === "live") return "Live";
+  if (value === "awaiting_dns" || value === "configuring_dns" || value === "dns_retry") return "DNS connecting";
+  if (value === "provisioning_ssl" || value === "ssl_retry") return "SSL connecting";
+  if (value === "host_recovery") return "Hosting recovery";
+  if (value === "pending") return "Connection pending";
+  return value ? value.replace(/_/g, " ") : "Registered";
+}
+
+export function WebsiteDomainSelector({ initialWebsite, locationName, includedDomainName, includedDomainStatus, includedDomainConnectionStatus, includedDomainRenewalDueAt }: Props) {
   const initialChoice: DomainMode = initialWebsite.domain ? "custom" : "subdomain";
   const [mode, setMode] = useState<DomainMode>(initialChoice);
   const [customDomain, setCustomDomain] = useState(initialWebsite.domain || "");
@@ -60,15 +79,17 @@ export function WebsiteDomainSelector({ initialWebsite, locationName }: { initia
     setMode(nextMode === "custom" ? "custom" : "subdomain");
     setSavedDomain(data?.website?.domain || "");
     if (nextMode === "custom") setCustomDomain(data?.website?.domain || domainToSave);
-    setMessage(nextMode === "custom" ? "Custom domain saved. DNS and SSL will be verified during connection." : "TheOutHaven subdomain selected.");
+    setMessage(nextMode === "custom" ? "Custom domain saved. DNS and SSL will be verified during connection." : "TheOutHaven subdomain selected. It is included and requires no DNS work from you.");
     return true;
   }
 
   async function useRegisteredDomain(domain: string) {
     setCustomDomain(domain);
     const saved = await saveDomainChoice("custom", domain);
-    if (saved) setMessage(`${domain} was registered and selected for this website. DNS and SSL will finish connecting next.`);
+    if (saved) setMessage(`${domain} is registered through the included first-year domain benefit and selected for this website. DNS and SSL connection will complete automatically.`);
   }
+
+  const renewalDate = includedDomainRenewalDueAt ? new Date(includedDomainRenewalDueAt).toLocaleDateString() : null;
 
   return (
     <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.04] p-5 sm:p-6">
@@ -76,10 +97,15 @@ export function WebsiteDomainSelector({ initialWebsite, locationName }: { initia
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Website address</p>
           <h2 className="mt-2 text-2xl font-black">Choose how customers will reach your website</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Use an included TheOutHaven subdomain, connect a domain you already own, or register a new eligible domain. The first year of a new eligible domain is included with Partner Pro; renewal after year one is not included.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Use an included TheOutHaven subdomain, connect a domain you already own, or register one eligible standard domain with the first year included in Essentials. Renewal after year one is billed separately.</p>
         </div>
         <span className="rounded-full border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-white/60">Part of website setup</span>
       </div>
+
+      {includedDomainName ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4">
+        <div><p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-100/60">Included first-year domain</p><p className="mt-1 font-black text-emerald-50">{includedDomainName}</p><p className="mt-1 text-xs text-emerald-100/60">Registrar status: {includedDomainStatus || "active"}{renewalDate ? ` · Renewal due ${renewalDate}` : ""}</p></div>
+        <span className="rounded-full bg-emerald-300/15 px-3 py-2 text-xs font-black text-emerald-100">{connectionLabel(includedDomainConnectionStatus)}</span>
+      </div> : null}
 
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         <button
@@ -88,7 +114,7 @@ export function WebsiteDomainSelector({ initialWebsite, locationName }: { initia
           className={`rounded-2xl border p-5 text-left transition ${mode === "subdomain" ? "border-[#f5b700]/60 bg-[#f5b700]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}
         >
           <div className="flex items-center justify-between gap-3"><p className="font-black">Use a TheOutHaven subdomain</p><span className="text-xs font-black text-emerald-200">Included</span></div>
-          <p className="mt-2 text-sm text-white/55">Fastest setup. No DNS changes are required from the business.</p>
+          <p className="mt-2 text-sm text-white/55">Fastest setup. Publish to your included address without changing DNS at another provider.</p>
           <div className="mt-4 rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-black text-[#f5b700]">{platformDomain}</div>
         </button>
 
@@ -107,9 +133,9 @@ export function WebsiteDomainSelector({ initialWebsite, locationName }: { initia
           onClick={() => setMode("new")}
           className={`rounded-2xl border p-5 text-left transition ${mode === "new" ? "border-[#f5b700]/60 bg-[#f5b700]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}
         >
-          <div className="flex items-center justify-between gap-3"><p className="font-black">Create a new domain</p><span className="text-xs font-black text-emerald-200">First year free</span></div>
-          <p className="mt-2 text-sm text-white/55">Search available domains, register an eligible standard domain, and use it for this website without leaving setup.</p>
-          <p className="mt-4 text-xs leading-5 text-white/45">One eligible first-year registration per Partner Pro location. Renewal after the first year is billed separately.</p>
+          <div className="flex items-center justify-between gap-3"><p className="font-black">Register a new domain</p><span className="text-xs font-black text-emerald-200">First year included</span></div>
+          <p className="mt-2 text-sm text-white/55">Search an eligible domain, register it through our OpenSRS registrar connection, and attach it to this website automatically.</p>
+          <p className="mt-4 text-xs leading-5 text-white/45">One eligible first-year registration per Essentials location. Renewal after the first year is billed separately.</p>
         </button>
       </div>
 
@@ -119,11 +145,11 @@ export function WebsiteDomainSelector({ initialWebsite, locationName }: { initia
           <input value={customDomain} onChange={(event) => setCustomDomain(event.target.value)} placeholder="yourrestaurant.com" className="h-12 flex-1 rounded-xl border border-white/10 bg-black/30 px-4 text-sm font-bold text-white outline-none focus:border-[#f5b700]/50" />
           <button type="button" onClick={() => void saveDomainChoice("custom")} disabled={saving || customDomain.trim().length < 4} className="h-12 rounded-xl bg-[#f5b700] px-5 text-sm font-black text-black disabled:opacity-40">{saving ? "Saving…" : "Use this domain"}</button>
         </div>
-        <p className="mt-3 text-xs leading-5 text-white/45">We only save the domain choice here. DNS ownership and SSL must verify before the custom address is considered fully connected.</p>
+        <p className="mt-3 text-xs leading-5 text-white/45">The domain is saved here, then DNS and SSL readiness are verified before cutover.</p>
       </div> : null}
 
       {mode === "new" ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5">
-        <PartnerProDomainSearch locationId={initialWebsite.location_id} onRegistered={useRegisteredDomain} />
+        <PartnerProDomainSearch locationId={initialWebsite.location_id} claimedDomain={includedDomainName} onRegistered={useRegisteredDomain} />
       </div> : null}
 
       {message ? <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/70">{message}</p> : null}
