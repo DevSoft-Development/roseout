@@ -93,6 +93,13 @@ export async function POST(request: Request) {
     if (!websiteRow) return NextResponse.json({ error: "Create the website draft before publishing." }, { status: 409 });
 
     websiteId = websiteRow.id;
+    const importedWebsite = websiteRow.custom_content && typeof websiteRow.custom_content === "object"
+      ? (websiteRow.custom_content as Record<string, any>).website_import
+      : null;
+    if (importedWebsite && importedWebsite.review_status !== "approved") {
+      return NextResponse.json({ error: "Review and approve the imported website before publishing.", code: "migration_review_required" }, { status: 409 });
+    }
+
     const platformLocationName = renderLocation.name || renderLocation.title || websiteRow.site_title || null;
     const platformDomain = await ensurePlatformDomain(websiteRow.id, platformLocationName);
     const publishDomain = websiteRow.domain?.trim().toLowerCase() || platformDomain;
