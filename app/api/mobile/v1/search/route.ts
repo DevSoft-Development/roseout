@@ -6,11 +6,16 @@ export const dynamic = "force-dynamic";
 
 type MobileSearchBody = {
   query?: string;
+  planType?: "outing" | "restaurant" | "activity";
   when?: string;
+  customDate?: string;
+  customTime?: string;
   area?: string;
   partySize?: number | string;
   budget?: string;
   travel?: string;
+  preferences?: string[];
+  customMatters?: string[];
 };
 
 function text(value: unknown) {
@@ -29,18 +34,37 @@ function firstText(...values: unknown[]) {
   return null;
 }
 
+function list(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
+}
+
 function buildCanonicalMessage(body: MobileSearchBody) {
   const query = text(body.query);
   if (!query) return "";
 
+  const typeInstruction = body.planType === "restaurant"
+    ? "restaurant only"
+    : body.planType === "activity"
+      ? "activity only"
+      : "restaurant and activity outing";
+  const when = text(body.customDate) || text(body.customTime)
+    ? [text(body.customDate), text(body.customTime)].filter(Boolean).join(" ")
+    : text(body.when) && text(body.when) !== "none"
+      ? text(body.when)
+      : "";
+  const preferences = [...list(body.preferences), ...list(body.customMatters)];
   const qualifiers = [
-    text(body.when),
-    text(body.area) && text(body.area).toLowerCase() !== "near me" ? `in ${text(body.area)}` : "near me",
-    text(body.budget) ? `budget ${text(body.budget)}` : "",
-    text(body.travel) === "walking" ? "walking distance" : "",
+    `Plan a ${typeInstruction}.`,
+    query,
+    text(body.area) && text(body.area).toLowerCase() !== "near me" ? `Location: ${text(body.area)}.` : "Location: near me.",
+    when ? `When: ${when}.` : "",
+    text(body.budget) ? `Budget: ${text(body.budget)}.` : "",
+    text(body.travel) === "walking" ? "Walking distance between stops." : "",
+    preferences.length ? `Preferences: ${preferences.join(", ")}.` : "",
+    "Return the best options, ranked by fit.",
   ].filter(Boolean);
 
-  return [query, ...qualifiers].join(" ");
+  return qualifiers.join(" ");
 }
 
 function pickName(value: any) {
@@ -52,8 +76,10 @@ function pickCategory(value: any) {
 }
 
 function pickImage(value: any) {
-  const image = value?.image_url || value?.image || value?.photo_url || value?.photo || value?.photos?.[0];
-  return typeof image === "string" ? image : null;
+  const photos = Array.isArray(value?.photos) ? value.photos : [];
+  const firstPhoto = photos.find((item: unknown) => typeof item === "string" && item.trim());
+  const image = value?.image_url || value?.main_image || value?.image || value?.photo_url || value?.photo || firstPhoto;
+  return typeof image === "string" && image.trim() ? image.trim() : null;
 }
 
 function shapePlace(value: any, kind: "restaurant" | "activity") {
@@ -64,11 +90,13 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
     kind,
     category: pickCategory(value),
     imageUrl: pickImage(value),
-    rating: numberOrNull(value?.rating),
-    priceLevel: firstText(value?.price_level, value?.price),
+    rating: numberOrNull(value?.rating ?? value?.google_rating ?? value?.average_rating),
+    reviewCount: numberOrNull(value?.review_count ?? value?.user_ratings_total ?? value?.google_review_count),
+    priceLevel: firstText(value?.price_level, value?.price_range, value?.price),
     distanceMiles: numberOrNull(value?.distance_miles ?? value?.distanceMiles),
+    whyMatched: firstText(value?.whyMatched, value?.why_it_matched, Array.isArray(value?.matchReasons) ? value.matchReasons[0] : null),
     publicUrl: firstText(value?.public_url, value?.detail_url, value?.profile_href),
-    reservationUrl: firstText(value?.reservation_url, value?.reservation_link, value?.external_reservation_url),
+    reservationUrl: firstText(value?.reservation_url, value?.booking_url, value?.reservation_link, value?.external_reservation_url),
     websiteUrl: firstText(value?.website, value?.website_url, value?.official_website),
     phone: firstText(value?.phone, value?.phone_number, value?.formatted_phone),
     address: firstText(value?.formatted_address, value?.full_address, value?.address),
@@ -77,16 +105,17 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
   };
 }
 
-function shapePair(value: any, index: number) {
-  const restaurant = value?.restaurant || value?.restaurant_location || value?.restaurantLocation || null;
-  const activity = value?.activity || value?.activity_location || value?.activityLocation || null;
+function shapePair(value: any, index: number, resultType: "pair" | "same_venue" = "pair") {
+  const restaurant = value?.restaurant || value?.restaurant_location || value?.restaurantLocation || (resultType === "same_venue" ? value : null);
+  const activity = value?.activity || value?.activity_location || value?.activityLocation || (resultType === "same_venue" ? value : null);
   return {
-    id: String(value?.id || value?.pair_id || `pair-${index}`),
+    id: String(value?.id || value?.pair_id || `${resultType}-${index}`),
     restaurant: restaurant ? shapePlace(restaurant, "restaurant") : null,
     activity: activity ? shapePlace(activity, "activity") : null,
-    distanceMiles: numberOrNull(value?.distance_miles ?? value?.distanceMiles),
-    walkMinutes: numberOrNull(value?.walk_minutes ?? value?.walkMinutes),
-    reason: firstText(value?.reason, value?.pairing_reason),
+    distanceMiles: resultType === "same_venue" ? 0 : numberOrNull(value?.distance_miles ?? value?.distanceMiles),
+    walkMinutes: resultType === "same_venue" ? 0 : numberOrNull(value?.walk_minutes ?? value?.walkingMinutes ?? value?.walkMinutes),
+    reason: firstText(value?.reason, value?.pairing_reason, value?.whyMatched, value?.why_it_matched),
+    resultType,
   };
 }
 
@@ -136,16 +165,32 @@ export async function POST(request: Request) {
     return mobileError(String(code), String(messageText), canonicalResponse.status);
   }
 
-  const restaurants = Array.isArray(payload?.restaurants) ? payload.restaurants.map((item: any) => shapePlace(item, "restaurant")) : [];
-  const activities = Array.isArray(payload?.activities) ? payload.activities.map((item: any) => shapePlace(item, "activity")) : [];
-  const pairs = Array.isArray(payload?.pairs) ? payload.pairs.map(shapePair) : [];
+  const source = payload?.searchV2 || payload;
+  const restaurantsRaw = Array.isArray(source?.restaurants) ? source.restaurants : Array.isArray(payload?.restaurants) ? payload.restaurants : [];
+  const activitiesRaw = Array.isArray(source?.activities) ? source.activities : Array.isArray(payload?.activities) ? payload.activities : [];
+  const pairsRaw = Array.isArray(source?.pairs) ? source.pairs : Array.isArray(payload?.pairs) ? payload.pairs : [];
+  const sameVenueRaw = Array.isArray(source?.sameVenueResults)
+    ? source.sameVenueResults
+    : Array.isArray(source?.same_venue_results)
+      ? source.same_venue_results
+      : Array.isArray(payload?.sameVenueResults)
+        ? payload.sameVenueResults
+        : Array.isArray(payload?.same_venue_results)
+          ? payload.same_venue_results
+          : [];
+
+  const restaurants = restaurantsRaw.map((item: any) => shapePlace(item, "restaurant"));
+  const activities = activitiesRaw.map((item: any) => shapePlace(item, "activity"));
+  const pairs = pairsRaw.map((item: any, index: number) => shapePair(item, index));
+  const sameVenueResults = sameVenueRaw.map((item: any, index: number) => shapePair(item, index, "same_venue"));
 
   return mobileJson({
     ok: true,
     requestId: payload?.request_id || payload?.requestId || null,
     reply: typeof payload?.reply === "string" ? payload.reply : null,
-    renderMode: payload?.render_mode || payload?.renderMode || (pairs.length ? "outings" : "places"),
+    renderMode: payload?.render_mode || payload?.renderMode || (pairs.length || sameVenueResults.length ? "outings" : "places"),
     pairs,
+    sameVenueResults,
     restaurants,
     activities,
   });
