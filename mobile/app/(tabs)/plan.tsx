@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import DateTimePicker from "@expo/ui/community/datetime-picker";
 import { Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { BrandHeader } from "@/components/brand/BrandHeader";
 import { JourneySteps } from "@/components/planner/JourneySteps";
 import { FoundationScreen } from "@/components/FoundationScreen";
 import { AppText } from "@/components/ui/AppText";
@@ -24,15 +23,15 @@ const WHEN_OPTIONS: Array<[MobileSearchDraft["when"], string]> = [
   ["tonight", "Tonight"],
   ["tomorrow", "Tomorrow"],
   ["weekend", "This weekend"],
-  ["none", "No specific time"],
+  ["none", "Anytime"],
 ];
-const PARTY_OPTIONS: MobileSearchDraft["partySize"][] = ["1", "2", "3-4", "5-8", "9+"];
-const BUDGET_OPTIONS: MobileSearchDraft["budget"][] = ["$", "$$", "$$$", "$$$$"];
-const PREFERENCES = ["Romantic", "Upscale", "Lively", "Walking distance", "Budget friendly"];
-const TRAVEL_OPTIONS: Array<[MobileSearchDraft["travel"], string]> = [
-  ["walking", "Walking"],
-  ["nearby", "Nearby"],
-  ["reasonable", "Any reasonable distance"],
+
+const PREFERENCES: Array<{ label: string; icon: string }> = [
+  { label: "Romantic", icon: "♥" },
+  { label: "Upscale", icon: "✦" },
+  { label: "Lively", icon: "♫" },
+  { label: "Walking distance", icon: "↗" },
+  { label: "Budget friendly", icon: "$" },
 ];
 
 type PlannerIntentResponse = {
@@ -86,6 +85,22 @@ function formatTimeLabel(value: string) {
   });
 }
 
+function localDate(offsetDays = 0) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + offsetDays);
+  return formatDateStorage(date);
+}
+
+function weekendDate() {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay();
+  const daysUntilSaturday = day === 6 ? 0 : day === 0 ? 6 : 6 - day;
+  date.setDate(date.getDate() + daysUntilSaturday);
+  return formatDateStorage(date);
+}
+
 export default function PlanScreen() {
   const params = useLocalSearchParams<{ prompt?: string; planType?: string; startAt?: string }>();
   const router = useRouter();
@@ -95,6 +110,8 @@ export default function PlanScreen() {
   const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt));
   const [error, setError] = useState<string | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
+  const [showExactTiming, setShowExactTiming] = useState(false);
+  const [showCustomPreference, setShowCustomPreference] = useState(false);
   const detectedForPrompt = useRef<string | null>(null);
   const [customMatter, setCustomMatter] = useState("");
   const [draft, setDraft] = useState<MobileSearchDraft>({
@@ -104,8 +121,6 @@ export default function PlanScreen() {
   });
 
   const summary = useMemo(() => serializeSearchDraft(draft), [draft]);
-  const set = <K extends keyof MobileSearchDraft>(key: K, value: MobileSearchDraft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
 
   const nativePickerValue = useMemo(() => {
     const now = new Date();
@@ -153,10 +168,22 @@ export default function PlanScreen() {
   }
 
   function addCustomMatter() {
-    const value = customMatter.trim();
-    if (!value || draft.customMatters.some((item) => item.toLowerCase() === value.toLowerCase())) return;
-    setDraft((current) => ({ ...current, customMatters: [...current.customMatters, value].slice(0, 5) }));
+    const value = customMatter.trim().replace(/[,;]+$/, "");
+    if (!value || draft.customMatters.length >= 5 || draft.customMatters.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      setCustomMatter("");
+      return;
+    }
+    setDraft((current) => ({ ...current, customMatters: [...current.customMatters, value] }));
     setCustomMatter("");
+  }
+
+  function selectWhen(value: MobileSearchDraft["when"]) {
+    setDraft((current) => {
+      if (value === "today" || value === "tonight") return { ...current, when: value, customDate: localDate(0) };
+      if (value === "tomorrow") return { ...current, when: value, customDate: localDate(1) };
+      if (value === "weekend") return { ...current, when: value, customDate: weekendDate() };
+      return { ...current, when: "none", customDate: "", customTime: "" };
+    });
   }
 
   function applyNativeDate(selectedDate: Date) {
@@ -170,6 +197,10 @@ export default function PlanScreen() {
 
   function submit() {
     if (!summary.query) return;
+    if (!summary.area) {
+      setError("Add an area or use your current location so we know where to plan.");
+      return;
+    }
     router.push({
       pathname: "/(tabs)/results",
       params: {
@@ -201,103 +232,112 @@ export default function PlanScreen() {
     justifyContent: "center" as const,
   };
 
-  return (
-    <FoundationScreen title="Make it yours" description="Confirm the details that matter. We’ll use the same planning logic as TheOutHaven on the web.">
-      <View style={{ gap: theme.spacing.lg }}>
-        <BrandHeader compact />
-        <JourneySteps activeStep={2} />
-        <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back</Button>
+  const detectedFromSearch = draft.areaSource === "search" && Boolean(draft.area.trim()) && draft.area !== "Near me";
 
+  return (
+    <FoundationScreen
+      eyebrow="STEP 2 OF 4"
+      title="Make it yours."
+      description="Tell us where. Timing and preferences are optional."
+      beforeTitle={<JourneySteps activeStep={2} />}
+      showBrandHeader
+      showBack
+      backLabel="Back"
+    >
+      <View style={{ gap: theme.spacing.md }}>
         <Card elevated>
-          <AppText variant="eyebrow" accent>YOUR PLAN</AppText>
-          <AppText variant="bodyStrong" style={{ marginTop: 8 }}>{draft.query || "Tell us what you want to do"}</AppText>
-          <AppText variant="caption" muted style={{ marginTop: 6 }}>{draft.planType === "outing" ? "Restaurant + Activity" : draft.planType === "restaurant" ? "Restaurant" : "Activity"}</AppText>
+          <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="eyebrow">WHERE?</AppText>
+              <AppText variant="caption" muted style={{ marginTop: 4 }}>Required</AppText>
+            </View>
+            {detectedFromSearch ? (
+              <View style={{ borderRadius: 999, backgroundColor: "rgba(52,211,153,0.10)", paddingHorizontal: 10, paddingVertical: 6 }}>
+                <AppText variant="caption" style={{ color: "#6ee7b7" }}>From your search</AppText>
+              </View>
+            ) : null}
+          </View>
+
+          {detectedFromSearch ? (
+            <View style={{ marginTop: 12, minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderWidth: 1, borderColor: "rgba(52,211,153,0.20)", backgroundColor: "rgba(52,211,153,0.07)", borderRadius: 16, paddingHorizontal: 14 }}>
+              <AppText variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{draft.area}</AppText>
+              <Button fullWidth={false} variant="secondary" onPress={() => setDraft((current) => ({ ...current, areaSource: "manual" }))}>Change</Button>
+            </View>
+          ) : (
+            <SearchField
+              value={draft.area === "Near me" && draft.areaSource === "default" ? "" : draft.area}
+              onChangeText={(value) => setDraft((current) => ({ ...current, area: value || "Near me", areaSource: value ? "manual" : "default" }))}
+              placeholder="Neighborhood, city, or ZIP"
+              style={{ marginTop: theme.spacing.md }}
+            />
+          )}
+          <AppText variant="caption" muted style={{ marginTop: 8 }}>
+            {resolvingIntent ? "Reading the location from your plan..." : detectedFromSearch ? "" : "If you leave this blank, we’ll plan near you."}
+          </AppText>
         </Card>
 
-        <View>
-          <AppText variant="h3">Where?</AppText>
-          <SearchField
-            value={draft.area}
-            onChangeText={(value) => setDraft((current) => ({ ...current, area: value, areaSource: "manual" }))}
-            placeholder="Near me, Astoria, Brooklyn..."
-            style={{ marginTop: theme.spacing.sm }}
-          />
-          <AppText variant="caption" muted style={{ marginTop: theme.spacing.xs }}>
-            {resolvingIntent ? "Reading the location from your plan..." : draft.areaSource === "search" ? "Detected from your search." : "If you did not name an area, Near me is used."}
-          </AppText>
-        </View>
-
-        <View>
-          <AppText variant="h3">When?</AppText>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
-            {WHEN_OPTIONS.map(([value, label]) => <Chip key={value} label={label} selected={draft.when === value} onPress={() => set("when", value)} />)}
+        <Card elevated>
+          <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="eyebrow">WHEN?</AppText>
+              <AppText variant="caption" muted style={{ marginTop: 4 }}>Optional — skip this if timing does not matter.</AppText>
+            </View>
+            {!showExactTiming ? (
+              <Pressable onPress={() => setShowExactTiming(true)} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 })}>
+                <AppText variant="caption">Exact date & time</AppText>
+              </Pressable>
+            ) : null}
           </View>
 
-          <View style={{ flexDirection: "row", gap: 10, marginTop: theme.spacing.md }}>
-            {Platform.OS === "ios" ? (
-              <>
-                <View style={pickerFieldStyle}>
-                  <AppText variant="caption" muted>Date</AppText>
-                  <DateTimePicker
-                    value={nativePickerValue}
-                    onValueChange={(_, selectedDate) => {
-                      setActivePicker("date");
-                      setDraft((current) => ({ ...current, when: "custom", customDate: formatDateStorage(selectedDate) }));
-                    }}
-                    mode="date"
-                    display="compact"
-                    minimumDate={new Date()}
-                    accentColor={theme.colors.accent}
-                    themeVariant="dark"
-                    timeZoneName="America/New_York"
-                    style={{ marginTop: 4 }}
-                  />
-                </View>
-                <View style={pickerFieldStyle}>
-                  <AppText variant="caption" muted>Time</AppText>
-                  <DateTimePicker
-                    value={nativePickerValue}
-                    onValueChange={(_, selectedDate) => {
-                      setActivePicker("time");
-                      setDraft((current) => ({ ...current, when: "custom", customTime: formatTimeStorage(selectedDate) }));
-                    }}
-                    mode="time"
-                    display="compact"
-                    accentColor={theme.colors.accent}
-                    themeVariant="dark"
-                    timeZoneName="America/New_York"
-                    style={{ marginTop: 4 }}
-                  />
-                </View>
-              </>
-            ) : (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose exact date"
-                  onPress={() => setActivePicker("date")}
-                  style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}
-                >
-                  <AppText variant="caption" muted>Date</AppText>
-                  <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatDateLabel(draft.customDate)}</AppText>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Choose exact time"
-                  onPress={() => setActivePicker("time")}
-                  style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}
-                >
-                  <AppText variant="caption" muted>Time</AppText>
-                  <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatTimeLabel(draft.customTime)}</AppText>
-                </Pressable>
-              </>
-            )}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.md }}>
+            {WHEN_OPTIONS.map(([value, label]) => <Chip key={value} label={label} selected={draft.when === value && !showExactTiming} onPress={() => { selectWhen(value); setShowExactTiming(false); }} />)}
           </View>
 
-          {draft.when === "custom" ? (
-            <AppText variant="caption" style={{ color: theme.colors.accentAlt, marginTop: theme.spacing.xs }}>
-              Exact timing selected{draft.customDate ? ` · ${formatDateLabel(draft.customDate)}` : ""}{draft.customTime ? ` at ${formatTimeLabel(draft.customTime)}` : ""}
-            </AppText>
+          {showExactTiming ? (
+            <View style={{ flexDirection: "row", gap: 10, marginTop: theme.spacing.md }}>
+              {Platform.OS === "ios" ? (
+                <>
+                  <View style={pickerFieldStyle}>
+                    <AppText variant="caption" muted>Date</AppText>
+                    <DateTimePicker
+                      value={nativePickerValue}
+                      onValueChange={(_, selectedDate) => setDraft((current) => ({ ...current, when: "custom", customDate: formatDateStorage(selectedDate) }))}
+                      mode="date"
+                      display="compact"
+                      minimumDate={new Date()}
+                      accentColor={theme.colors.accent}
+                      themeVariant="dark"
+                      timeZoneName="America/New_York"
+                      style={{ marginTop: 4 }}
+                    />
+                  </View>
+                  <View style={pickerFieldStyle}>
+                    <AppText variant="caption" muted>Time</AppText>
+                    <DateTimePicker
+                      value={nativePickerValue}
+                      onValueChange={(_, selectedDate) => setDraft((current) => ({ ...current, when: "custom", customTime: formatTimeStorage(selectedDate) }))}
+                      mode="time"
+                      display="compact"
+                      accentColor={theme.colors.accent}
+                      themeVariant="dark"
+                      timeZoneName="America/New_York"
+                      style={{ marginTop: 4 }}
+                    />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Choose exact date" onPress={() => setActivePicker("date")} style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}>
+                    <AppText variant="caption" muted>Date</AppText>
+                    <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatDateLabel(draft.customDate)}</AppText>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" accessibilityLabel="Choose exact time" onPress={() => setActivePicker("time")} style={({ pressed }) => [pickerFieldStyle, pressed && { borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft }]}>
+                    <AppText variant="caption" muted>Time</AppText>
+                    <AppText variant="bodyStrong" style={{ marginTop: 2 }}>{formatTimeLabel(draft.customTime)}</AppText>
+                  </Pressable>
+                </>
+              )}
+            </View>
           ) : null}
 
           {Platform.OS === "android" && activePicker ? (
@@ -312,50 +352,46 @@ export default function PlanScreen() {
               is24Hour={false}
             />
           ) : null}
-        </View>
+        </Card>
 
-        <View>
-          <AppText variant="h3">What matters?</AppText>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
-            {PREFERENCES.map((value) => <Chip key={value} label={value} selected={draft.preferences.includes(value)} onPress={() => togglePreference(value)} />)}
+        <Card elevated>
+          <AppText variant="eyebrow">WHAT MATTERS?</AppText>
+          <AppText variant="caption" muted style={{ marginTop: 4 }}>Optional — choose only what would actually change your picks.</AppText>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.md }}>
+            {PREFERENCES.map((item) => <Chip key={item.label} label={`${item.icon} ${item.label}${draft.preferences.includes(item.label) ? " ✓" : ""}`} selected={draft.preferences.includes(item.label)} onPress={() => togglePreference(item.label)} />)}
           </View>
-          <View style={{ flexDirection: "row", gap: 10, marginTop: theme.spacing.sm }}>
-            <TextInput
-              value={customMatter}
-              onChangeText={setCustomMatter}
-              onSubmitEditing={addCustomMatter}
-              placeholder="Add another preference"
-              placeholderTextColor={theme.colors.textMuted}
-              style={{ flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, borderColor: theme.colors.borderStrong, color: theme.colors.text, backgroundColor: theme.colors.surface }}
-            />
-            <Button fullWidth={false} variant="secondary" onPress={addCustomMatter}>Add</Button>
-          </View>
-          {draft.customMatters.length ? <AppText variant="caption" muted style={{ marginTop: 8 }}>{draft.customMatters.join(" · ")}</AppText> : null}
-        </View>
 
-        <View>
-          <AppText variant="h3">Party size</AppText>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
-            {PARTY_OPTIONS.map((value) => <Chip key={value} label={value} selected={draft.partySize === value} onPress={() => set("partySize", value)} />)}
-          </View>
-        </View>
+          {showCustomPreference || draft.customMatters.length > 0 ? (
+            <View style={{ marginTop: theme.spacing.md, gap: 8 }}>
+              {draft.customMatters.length ? (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {draft.customMatters.map((item) => (
+                    <Pressable key={item} onPress={() => setDraft((current) => ({ ...current, customMatters: current.customMatters.filter((value) => value !== item) }))} style={{ borderWidth: 1, borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 8 }}>
+                      <AppText variant="caption">{item} ×</AppText>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+              <TextInput
+                disabled={draft.customMatters.length >= 5}
+                value={customMatter}
+                onChangeText={(value) => setCustomMatter(value.replace(/^\s+/, ""))}
+                onSubmitEditing={addCustomMatter}
+                onBlur={() => customMatter.trim() && addCustomMatter()}
+                placeholder={draft.customMatters.length >= 5 ? "5 custom preferences added" : "e.g. live music, quiet table, outdoor seating"}
+                placeholderTextColor={theme.colors.textMuted}
+                style={{ minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, borderColor: theme.colors.borderStrong, color: theme.colors.text, backgroundColor: theme.colors.background }}
+              />
+            </View>
+          ) : (
+            <Pressable onPress={() => setShowCustomPreference(true)} style={{ marginTop: theme.spacing.md }}>
+              <AppText variant="bodyStrong" accent>+ Add something specific</AppText>
+            </Pressable>
+          )}
+        </Card>
 
-        <View>
-          <AppText variant="h3">Budget</AppText>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
-            {BUDGET_OPTIONS.map((value) => <Chip key={value} label={value} selected={draft.budget === value} onPress={() => set("budget", value)} />)}
-          </View>
-        </View>
-
-        <View>
-          <AppText variant="h3">How close should the stops be?</AppText>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: theme.spacing.sm }}>
-            {TRAVEL_OPTIONS.map(([value, label]) => <Chip key={value} label={label} selected={draft.travel === value} onPress={() => set("travel", value)} />)}
-          </View>
-        </View>
-
-        {error ? <AppText muted>{error}</AppText> : null}
-        <Button onPress={submit} disabled={!summary.query || resolvingIntent}>Show my picks</Button>
+        {error ? <AppText style={{ color: "#fecaca" }}>{error}</AppText> : null}
+        <Button onPress={submit} disabled={!summary.query || resolvingIntent}>Show My Picks →</Button>
       </View>
     </FoundationScreen>
   );
