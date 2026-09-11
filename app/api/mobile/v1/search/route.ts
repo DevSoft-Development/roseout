@@ -4,6 +4,9 @@ import { mobileJson, mobileError } from "../_lib/response";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const GUIDED_FLOW_VERSION = "guided_create_v1";
+const WEB_TIMEZONE = "America/New_York";
+
 type MobileSearchBody = {
   query?: string;
   planType?: "outing" | "restaurant" | "activity";
@@ -35,10 +38,17 @@ function firstText(...values: unknown[]) {
 }
 
 function list(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
+    : [];
 }
 
-function buildCanonicalMessage(body: MobileSearchBody) {
+function laneFor(planType: MobileSearchBody["planType"]) {
+  return planType === "restaurant" ? "restaurant" : planType === "activity" ? "activity" : "mixed";
+}
+
+// Keep this intentionally identical to GuidedCreatePageV2.buildPrompt().
+function buildWebGuidedPrompt(body: MobileSearchBody) {
   const query = text(body.query);
   if (!query) return "";
 
@@ -47,24 +57,20 @@ function buildCanonicalMessage(body: MobileSearchBody) {
     : body.planType === "activity"
       ? "activity only"
       : "restaurant and activity outing";
-  const when = text(body.customDate) || text(body.customTime)
-    ? [text(body.customDate), text(body.customTime)].filter(Boolean).join(" ")
-    : text(body.when) && text(body.when) !== "none"
-      ? text(body.when)
-      : "";
-  const preferences = [...list(body.preferences), ...list(body.customMatters)];
-  const qualifiers = [
+  const timing = [
+    text(body.customDate) || (text(body.when) && text(body.when) !== "none" ? text(body.when) : null),
+    text(body.customTime) || null,
+  ].filter(Boolean).join(" ");
+  const allMatters = [...list(body.preferences), ...list(body.customMatters)];
+
+  return [
     `Plan a ${typeInstruction}.`,
     query,
-    text(body.area) && text(body.area).toLowerCase() !== "near me" ? `Location: ${text(body.area)}.` : "Location: near me.",
-    when ? `When: ${when}.` : "",
-    text(body.budget) ? `Budget: ${text(body.budget)}.` : "",
-    text(body.travel) === "walking" ? "Walking distance between stops." : "",
-    preferences.length ? `Preferences: ${preferences.join(", ")}.` : "",
+    `Location: ${text(body.area) || "near me"}.`,
+    timing ? `When: ${timing}.` : "",
+    allMatters.length ? `Preferences: ${allMatters.join(", ")}.` : "",
     "Return the best options, ranked by fit.",
-  ].filter(Boolean);
-
-  return qualifiers.join(" ");
+  ].filter(Boolean).join(" ");
 }
 
 function pickName(value: any) {
@@ -127,8 +133,8 @@ export async function POST(request: Request) {
     return mobileError("INVALID_JSON", "Search request was not valid JSON.", 400);
   }
 
-  const message = buildCanonicalMessage(body);
-  if (!message) return mobileError("QUERY_REQUIRED", "Tell TheOutHaven what you want to do.", 400);
+  const prompt = buildWebGuidedPrompt(body);
+  if (!prompt) return mobileError("QUERY_REQUIRED", "Tell TheOutHaven what you want to do.", 400);
 
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
@@ -138,16 +144,16 @@ export async function POST(request: Request) {
     headers.set("cookie", `guest_search_id=${encodeURIComponent(guestId)}`);
   }
 
+  // Match GuidedResultsPageV4: mobile is only an auth/response-shaping adapter.
   const canonicalRequest = new Request(request.url, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      message,
-      query: message,
-      partySize: body.partySize,
-      budget: body.budget,
-      travelPreference: body.travel,
-      source: "mobile_v1",
+      input: prompt,
+      selectedSearchLane: laneFor(body.planType),
+      timezone: WEB_TIMEZONE,
+      useCurrentLocation: false,
+      guidedFlow: GUIDED_FLOW_VERSION,
     }),
   });
 
