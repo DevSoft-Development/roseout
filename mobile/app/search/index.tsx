@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { FoundationScreen } from "@/components/FoundationScreen";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
@@ -22,6 +22,7 @@ export default function SearchScreen() {
     budget?: string;
     travel?: string;
   }>();
+  const router = useRouter();
   const { theme } = useAppTheme();
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<MobileSearchResponse | null>(null);
@@ -73,7 +74,10 @@ export default function SearchScreen() {
         title="Finding your OUTing"
         description="We’re matching your plan against TheOutHaven’s live search catalog."
       >
-        <SearchLoadingJourney />
+        <View style={{ gap: theme.spacing.lg }}>
+          <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back</Button>
+          <SearchLoadingJourney />
+        </View>
       </FoundationScreen>
     );
   }
@@ -81,7 +85,10 @@ export default function SearchScreen() {
   if (error) {
     return (
       <FoundationScreen eyebrow="PICK" title="We hit a snag" description={error}>
-        <Button onPress={() => void runSearch()}>Try again</Button>
+        <View style={{ gap: theme.spacing.md }}>
+          <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back to plan</Button>
+          <Button onPress={() => void runSearch()}>Try again</Button>
+        </View>
       </FoundationScreen>
     );
   }
@@ -97,6 +104,8 @@ export default function SearchScreen() {
       description={result?.reply || "Here are the strongest matches for what you asked for."}
     >
       <View style={{ gap: theme.spacing.lg }}>
+        <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back to plan</Button>
+
         <View style={{ flexDirection: "row", gap: theme.spacing.sm }}>
           <Chip label="OUTings" selected={mode === "outings"} disabled={!hasOutings} onPress={() => setMode("outings")} />
           <Chip label="Places" selected={mode === "places"} disabled={!hasPlaces} onPress={() => setMode("places")} />

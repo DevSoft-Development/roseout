@@ -9,20 +9,23 @@ export function Chip({ label, selected, style, ...props }: Props) {
   return (
     <Pressable
       {...props}
-      style={({ pressed }) => [
-        {
-          minHeight: 38,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 14,
-          borderRadius: theme.radius.pill,
-          borderWidth: 1,
-          borderColor: selected ? theme.colors.accent : theme.colors.border,
-          backgroundColor: selected ? theme.colors.accentSoft : theme.colors.surface,
-          opacity: pressed ? 0.75 : 1,
-        },
-        typeof style === "function" ? style({ pressed }) : style,
-      ]}
+      style={(state) => {
+        const { pressed } = state;
+        return [
+          {
+            minHeight: 38,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 14,
+            borderRadius: theme.radius.pill,
+            borderWidth: 1,
+            borderColor: selected ? theme.colors.accent : theme.colors.border,
+            backgroundColor: selected ? theme.colors.accentSoft : theme.colors.surface,
+            opacity: pressed ? 0.75 : 1,
+          },
+          typeof style === "function" ? style(state) : style,
+        ];
+      }}
     >
       <AppText variant="label" accent={selected}>{label}</AppText>
     </Pressable>

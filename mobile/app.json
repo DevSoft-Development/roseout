@@ -4,16 +4,22 @@
     "slug": "theouthaven",
     "scheme": "theouthaven",
     "version": "0.1.0",
+    "icon": "../public/android-chrome-512x512.png",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.theouthaven.app",
-      "associatedDomains": ["applinks:outhvn.com"]
+      "associatedDomains": [
+        "applinks:outhvn.com"
+      ]
     },
     "android": {
       "package": "com.theouthaven.app",
+      "adaptiveIcon": {
+        "foregroundImage": "../public/android-chrome-512x512.png",
+        "backgroundColor": "#050505"
+      },
       "intentFilters": [
         {
           "action": "VIEW",
@@ -25,7 +31,10 @@
               "pathPrefix": "/"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -36,10 +45,16 @@
         {
           "defaultChannel": "outing-reminders"
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
+      }
     }
   }
 }

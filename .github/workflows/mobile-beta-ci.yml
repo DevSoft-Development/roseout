@@ -1,0 +1,72 @@
+name: Mobile beta CI
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-beta-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-beta-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-beta-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: mobile/package.json
+
+      - name: Install mobile dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate Expo configuration
+        run: npx expo config --type public >/tmp/theouthaven-mobile-expo-config.json
+
+      - name: Verify release identifiers
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          if (app?.ios?.bundleIdentifier !== 'com.theouthaven.app') throw new Error('Unexpected iOS bundle identifier');
+          if (app?.android?.package !== 'com.theouthaven.app') throw new Error('Unexpected Android package');
+          if (!Array.isArray(app?.ios?.associatedDomains) || !app.ios.associatedDomains.includes('applinks:outhvn.com')) throw new Error('outhvn.com iOS associated domain missing');
+          const filters = app?.android?.intentFilters || [];
+          const hasShortLink = filters.some((filter) => (filter.data || []).some((item) => item.scheme === 'https' && item.host === 'outhvn.com'));
+          if (!hasShortLink) throw new Error('outhvn.com Android app link missing');
+          NODE
+
+      - name: Verify EAS profiles
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const eas = JSON.parse(fs.readFileSync('eas.json', 'utf8'));
+          for (const profile of ['development', 'preview', 'production']) {
+            if (!eas?.build?.[profile]) throw new Error(`Missing EAS ${profile} build profile`);
+          }
+          if (eas.build.preview.distribution !== 'internal') throw new Error('Preview build must remain internal');
+          if (eas.build.production.autoIncrement !== true) throw new Error('Production autoIncrement must remain enabled');
+          NODE

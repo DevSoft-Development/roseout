@@ -39,7 +39,7 @@ function PlaceBlock({ label, place, onOpen }: { label: string; place: MobilePlac
 }
 
 export default function OutingDetailScreen() {
-  const params = useLocalSearchParams<Record<string, string | string[] | undefined>>();
+  const params = useLocalSearchParams();
   const router = useRouter();
   const requireAuth = useRequireAuth();
   const { theme } = useAppTheme();
