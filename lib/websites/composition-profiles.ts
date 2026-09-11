@@ -1,22 +1,4 @@
-export type WebsiteCompositionId =
-  | "editorial_luxury"
-  | "refined_after_dark"
-  | "modern_minimal"
-  | "bold_social"
-  | "classic_bistro"
-  | "coastal_airy"
-  | "warm_neighborhood"
-  | "luxury_minimal"
-  | "experiential_escape"
-  | "creative_workshop"
-  | "chef_counter"
-  | "brunch_social"
-  | "fast_casual_polished"
-  | "competitive_social"
-  | "family_entertainment"
-  | "wellness_retreat"
-  | "arts_culture"
-  | "cinematic_entertainment";
+export type WebsiteCompositionId = string;
 
 export type WebsiteCompositionProfile = {
   id: WebsiteCompositionId;
@@ -34,7 +16,7 @@ export type WebsiteCompositionProfile = {
 
 const p = (profile: WebsiteCompositionProfile) => profile;
 
-export const WEBSITE_COMPOSITION_PROFILES: Record<WebsiteCompositionId, WebsiteCompositionProfile> = {
+export const WEBSITE_COMPOSITION_PROFILES: Record<string, WebsiteCompositionProfile> = {
   editorial_luxury:p({id:"editorial_luxury",nav:"bordered",hero:"editorial",sectionOrder:["hero","about","gallery","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"2px",maxWidth:"1380px",displayScale:"clamp(4.7rem,9.2vw,9.4rem)",eyebrowTracking:".3em",imageRatio:"4/5",sectionRule:"line"}),
   refined_after_dark:p({id:"refined_after_dark",nav:"transparent",hero:"offset",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"0px",maxWidth:"1440px",displayScale:"clamp(4.8rem,10vw,10rem)",eyebrowTracking:".32em",imageRatio:"3/4",sectionRule:"soft"}),
   modern_minimal:p({id:"modern_minimal",nav:"solid",hero:"reservation",sectionOrder:["hero","reservations","about","gallery","hours","contact"],reservationPlacement:"hero-adjacent",radius:"14px",maxWidth:"1240px",displayScale:"clamp(3.8rem,7.2vw,7.4rem)",eyebrowTracking:".16em",imageRatio:"16/10",sectionRule:"none"}),
@@ -48,14 +30,36 @@ export const WEBSITE_COMPOSITION_PROFILES: Record<WebsiteCompositionId, WebsiteC
   chef_counter:p({id:"chef_counter",nav:"bordered",hero:"minimal",sectionOrder:["hero","about","reservations","gallery","hours","contact"],reservationPlacement:"hero-adjacent",radius:"2px",maxWidth:"1020px",displayScale:"clamp(4.2rem,8.6vw,8.8rem)",eyebrowTracking:".28em",imageRatio:"3/4",sectionRule:"line"}),
   brunch_social:p({id:"brunch_social",nav:"transparent",hero:"framed",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"30px",maxWidth:"1380px",displayScale:"clamp(4.1rem,8.8vw,8.8rem)",eyebrowTracking:".1em",imageRatio:"5/4",sectionRule:"none"}),
   fast_casual_polished:p({id:"fast_casual_polished",nav:"solid",hero:"reservation",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"16px",maxWidth:"1180px",displayScale:"clamp(3.4rem,6.5vw,6.6rem)",eyebrowTracking:".08em",imageRatio:"4/3",sectionRule:"soft"}),
-  competitive_social:p({id:"competitive_social",nav:"solid",hero:"experience",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"18px",maxWidth:"1500px",displayScale:"clamp(4.7rem,10vw,10rem)",eyebrowTracking:".06em",imageRatio:"16/9",sectionRule:"none"}),
+  social_games:p({id:"social_games",nav:"solid",hero:"experience",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"18px",maxWidth:"1500px",displayScale:"clamp(4.7rem,10vw,10rem)",eyebrowTracking:".06em",imageRatio:"16/9",sectionRule:"none"}),
   family_entertainment:p({id:"family_entertainment",nav:"solid",hero:"playful",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"32px",maxWidth:"1340px",displayScale:"clamp(4rem,8vw,8rem)",eyebrowTracking:".06em",imageRatio:"16/10",sectionRule:"none"}),
   wellness_retreat:p({id:"wellness_retreat",nav:"transparent",hero:"framed",sectionOrder:["hero","about","gallery","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"24px",maxWidth:"1160px",displayScale:"clamp(4.4rem,8vw,8rem)",eyebrowTracking:".26em",imageRatio:"4/5",sectionRule:"soft"}),
   arts_culture:p({id:"arts_culture",nav:"bordered",hero:"editorial",sectionOrder:["hero","about","gallery","hours","reservations","contact"],reservationPlacement:"mid-page",radius:"0px",maxWidth:"1320px",displayScale:"clamp(4.8rem,9.4vw,9.5rem)",eyebrowTracking:".34em",imageRatio:"3/2",sectionRule:"line"}),
   cinematic_entertainment:p({id:"cinematic_entertainment",nav:"transparent",hero:"centered",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"8px",maxWidth:"1480px",displayScale:"clamp(5rem,11vw,11rem)",eyebrowTracking:".18em",imageRatio:"21/9",sectionRule:"soft"}),
+  modern_steakhouse:p({id:"modern_steakhouse",nav:"transparent",hero:"offset",sectionOrder:["hero","reservations","about","gallery","hours","contact"],reservationPlacement:"hero-adjacent",radius:"6px",maxWidth:"1420px",displayScale:"clamp(4.8rem,9vw,9rem)",eyebrowTracking:".24em",imageRatio:"4/5",sectionRule:"line"}),
+  sushi_modern:p({id:"sushi_modern",nav:"bordered",hero:"minimal",sectionOrder:["hero","about","gallery","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"4px",maxWidth:"1100px",displayScale:"clamp(4.2rem,8vw,8rem)",eyebrowTracking:".3em",imageRatio:"3/4",sectionRule:"line"}),
+  tropical_caribbean:p({id:"tropical_caribbean",nav:"transparent",hero:"playful",sectionOrder:["hero","gallery","about","reservations","hours","contact"],reservationPlacement:"after-hero",radius:"28px",maxWidth:"1360px",displayScale:"clamp(4.4rem,9vw,9rem)",eyebrowTracking:".08em",imageRatio:"4/3",sectionRule:"none"}),
+  latin_night:p({id:"latin_night",nav:"transparent",hero:"offset",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"22px",maxWidth:"1480px",displayScale:"clamp(4.8rem,10vw,10rem)",eyebrowTracking:".1em",imageRatio:"16/9",sectionRule:"soft"}),
+  rooftop_city:p({id:"rooftop_city",nav:"transparent",hero:"centered",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"after-hero",radius:"10px",maxWidth:"1520px",displayScale:"clamp(5rem,10.5vw,10.5rem)",eyebrowTracking:".22em",imageRatio:"21/9",sectionRule:"none"}),
+  garden_terrace:p({id:"garden_terrace",nav:"transparent",hero:"framed",sectionOrder:["hero","gallery","about","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"30px",maxWidth:"1300px",displayScale:"clamp(4.2rem,8vw,8rem)",eyebrowTracking:".2em",imageRatio:"4/5",sectionRule:"soft"}),
+  wine_cellar:p({id:"wine_cellar",nav:"bordered",hero:"story",sectionOrder:["hero","about","reservations","hours","gallery","contact"],reservationPlacement:"mid-page",radius:"2px",maxWidth:"1080px",displayScale:"clamp(4rem,7.6vw,7.6rem)",eyebrowTracking:".3em",imageRatio:"5/7",sectionRule:"line"}),
+  craft_brewery:p({id:"craft_brewery",nav:"solid",hero:"split",sectionOrder:["hero","gallery","about","hours","reservations","contact"],reservationPlacement:"after-hero",radius:"14px",maxWidth:"1280px",displayScale:"clamp(4rem,7.8vw,7.8rem)",eyebrowTracking:".1em",imageRatio:"3/2",sectionRule:"soft"}),
+  sports_watch:p({id:"sports_watch",nav:"solid",hero:"experience",sectionOrder:["hero","reservations","gallery","hours","about","contact"],reservationPlacement:"hero-adjacent",radius:"12px",maxWidth:"1500px",displayScale:"clamp(4.6rem,9vw,9rem)",eyebrowTracking:".04em",imageRatio:"16/9",sectionRule:"none"}),
+  jazz_room:p({id:"jazz_room",nav:"transparent",hero:"story",sectionOrder:["hero","about","gallery","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"2px",maxWidth:"1160px",displayScale:"clamp(4.5rem,8.8vw,8.8rem)",eyebrowTracking:".28em",imageRatio:"4/5",sectionRule:"line"}),
+  comedy_club:p({id:"comedy_club",nav:"solid",hero:"typography_first" as any,sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"14px",maxWidth:"1320px",displayScale:"clamp(4.8rem,10vw,10rem)",eyebrowTracking:".06em",imageRatio:"16/10",sectionRule:"soft"}),
+  karaoke_social:p({id:"karaoke_social",nav:"transparent",hero:"playful",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"26px",maxWidth:"1420px",displayScale:"clamp(4.6rem,9vw,9rem)",eyebrowTracking:".06em",imageRatio:"16/9",sectionRule:"none"}),
+  arcade_neon:p({id:"arcade_neon",nav:"solid",hero:"experience",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"18px",maxWidth:"1500px",displayScale:"clamp(5rem,10vw,10rem)",eyebrowTracking:".02em",imageRatio:"16/9",sectionRule:"none"}),
+  bowling_luxe:p({id:"bowling_luxe",nav:"transparent",hero:"offset",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"16px",maxWidth:"1480px",displayScale:"clamp(4.7rem,9.5vw,9.5rem)",eyebrowTracking:".08em",imageRatio:"21/9",sectionRule:"soft"}),
+  escape_cinematic:p({id:"escape_cinematic",nav:"transparent",hero:"centered",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"10px",maxWidth:"1460px",displayScale:"clamp(5rem,10vw,10rem)",eyebrowTracking:".12em",imageRatio:"21/9",sectionRule:"none"}),
+  mini_golf_playful:p({id:"mini_golf_playful",nav:"solid",hero:"playful",sectionOrder:["hero","gallery","reservations","about","hours","contact"],reservationPlacement:"after-hero",radius:"36px",maxWidth:"1380px",displayScale:"clamp(4.2rem,8vw,8rem)",eyebrowTracking:".04em",imageRatio:"4/3",sectionRule:"none"}),
+  museum_modern:p({id:"museum_modern",nav:"bordered",hero:"editorial",sectionOrder:["hero","about","gallery","hours","reservations","contact"],reservationPlacement:"mid-page",radius:"0px",maxWidth:"1360px",displayScale:"clamp(5rem,9.5vw,9.5rem)",eyebrowTracking:".38em",imageRatio:"3/2",sectionRule:"line"}),
+  theater_grand:p({id:"theater_grand",nav:"transparent",hero:"centered",sectionOrder:["hero","gallery","about","reservations","hours","contact"],reservationPlacement:"after-hero",radius:"2px",maxWidth:"1460px",displayScale:"clamp(5.2rem,10.8vw,10.8rem)",eyebrowTracking:".25em",imageRatio:"21/9",sectionRule:"line"}),
+  spa_serene:p({id:"spa_serene",nav:"transparent",hero:"framed",sectionOrder:["hero","about","gallery","reservations","hours","contact"],reservationPlacement:"mid-page",radius:"28px",maxWidth:"1120px",displayScale:"clamp(4.3rem,8vw,8rem)",eyebrowTracking:".3em",imageRatio:"4/5",sectionRule:"soft"}),
+  dessert_bakery:p({id:"dessert_bakery",nav:"solid",hero:"framed",sectionOrder:["hero","gallery","about","hours","reservations","contact"],reservationPlacement:"after-hero",radius:"34px",maxWidth:"1220px",displayScale:"clamp(4rem,7.8vw,7.8rem)",eyebrowTracking:".07em",imageRatio:"5/4",sectionRule:"none"}),
+  coffee_roastery:p({id:"coffee_roastery",nav:"bordered",hero:"split",sectionOrder:["hero","about","hours","gallery","reservations","contact"],reservationPlacement:"mid-page",radius:"12px",maxWidth:"1160px",displayScale:"clamp(3.9rem,7.4vw,7.4rem)",eyebrowTracking:".18em",imageRatio:"4/5",sectionRule:"soft"}),
+  private_events:p({id:"private_events",nav:"transparent",hero:"reservation",sectionOrder:["hero","reservations","gallery","about","hours","contact"],reservationPlacement:"hero-adjacent",radius:"20px",maxWidth:"1380px",displayScale:"clamp(4.5rem,8.8vw,8.8rem)",eyebrowTracking:".18em",imageRatio:"16/10",sectionRule:"soft"}),
 };
 
 export function getWebsiteCompositionProfile(id: string | null | undefined) {
-  const normalized = String(id || "modern_minimal") as WebsiteCompositionId;
+  const normalized = String(id || "modern_minimal");
   return WEBSITE_COMPOSITION_PROFILES[normalized] || WEBSITE_COMPOSITION_PROFILES.modern_minimal;
 }
