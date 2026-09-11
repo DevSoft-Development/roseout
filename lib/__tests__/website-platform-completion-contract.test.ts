@@ -18,6 +18,14 @@ describe("hosted website platform completion", () => {
     }
   });
 
+  it("keeps the forty-family catalog compositionally diverse", () => {
+    const signatures = WEBSITE_DESIGN_DIRECTIONS.map((direction) => {
+      const profile = WEBSITE_COMPOSITION_PROFILES[direction.id];
+      return [profile.nav, profile.hero, profile.reservationPlacement, profile.radius, profile.maxWidth, profile.imageRatio, profile.sectionRule].join("|");
+    });
+    expect(new Set(signatures).size).toBeGreaterThanOrEqual(28);
+  });
+
   it("gives the expanded families their own visual token layer", () => {
     const themes = read("lib/websites/expanded-design-theme-artifact.ts");
     for (const id of ["social_games", "modern_steakhouse", "rooftop_city", "jazz_room", "arcade_neon", "spa_serene", "private_events"]) {
@@ -31,9 +39,10 @@ describe("hosted website platform completion", () => {
     const review = read("app/api/business/website/migration-review/route.ts");
     const publish = read("app/api/business/website/publish/route.ts");
     expect(importer).toContain('review_status: "pending"');
-    expect(review).toContain('"approved", "needs_changes"');
+    expect(importer).toContain("buildMigrationExceptions");
+    expect(review).toContain("migration_blockers_unresolved");
     expect(publish).toContain("migration_review_required");
-    expect(read("components/websites/WebsiteMigrationReviewPanel.tsx")).toContain("Approve migration");
+    expect(read("components/websites/WebsiteMigrationReviewPanel.tsx")).toContain("Resolve blocking items first");
   });
 
   it("deploys migration redirects as validated permanent redirects and restores them on rollback", () => {
@@ -77,13 +86,14 @@ describe("hosted website platform completion", () => {
     expect(readiness).toContain('domainMode = customDomain ? "custom" : "subdomain"');
   });
 
-  it("surfaces migration state in the existing admin website-hosting control plane", () => {
+  it("surfaces migration and live-health state in the existing admin website-hosting control plane", () => {
     const tabs = read("components/admin/WebsiteHostingTabs.tsx");
     const migrations = read("app/admin/dashboard/website-hosting/migrations/page.tsx");
     expect(tabs).toContain('label: "Migrations"');
     expect(migrations).toContain("Needs review");
-    expect(migrations).toContain("Domain pending");
-    expect(migrations).toContain("Ready to publish");
+    expect(migrations).toContain("Domain attention");
+    expect(migrations).toContain("Live health attention");
+    expect(migrations).toContain("booking_link_broken");
     expect(migrations).toContain("WebsiteHostingTabs active=\"migrations\"");
   });
 
