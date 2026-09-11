@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
 import { WebsiteImportPanel } from "@/components/websites/WebsiteImportPanel";
+import { WebsiteMigrationReviewPanel } from "@/components/websites/WebsiteMigrationReviewPanel";
 import { WebsiteHealthPanel } from "@/components/websites/WebsiteHealthPanel";
 import { WebsiteCutoverReadinessPanel } from "@/components/websites/WebsiteCutoverReadinessPanel";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
@@ -39,7 +40,8 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
     getGeneratedWebsiteLocationSnapshot(location as unknown as Record<string, unknown>),
   ]);
   const hydratedWebsite = website ? { ...website, live_url: getWebsiteLiveUrl(website) } : null;
-  const type = String((location as any).location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
+  const locationRecord = location as unknown as Record<string, any>;
+  const type = String(locationRecord.location_type || parsed.type || "restaurant").toLowerCase().includes("activ") ? "activity" : "restaurant";
   const backHref = dashboardHref(params, location.id, type);
   const editHref = `/locations/${type === "activity" ? "activities" : "restaurants"}/${encodeURIComponent(location.id)}/edit?from=${encodeURIComponent("/locations/dashboard/website")}`;
 
@@ -68,7 +70,14 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         {demoContext?.demoMode ? <div className="mb-5 rounded-2xl border border-[#ff2142]/25 bg-[#ff2142]/10 px-4 py-3 text-sm font-bold text-rose-100">Internal demo mode — publishing is allowed only for the protected TheOutHaven Lounge demo location.</div> : null}
         {hydratedWebsite ? (
           <div className="website-builder-brand">
-            <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteDomainSelector
+              initialWebsite={hydratedWebsite}
+              locationName={locationName}
+              includedDomainName={locationRecord.included_domain_name || null}
+              includedDomainStatus={locationRecord.included_domain_status || null}
+              includedDomainConnectionStatus={locationRecord.included_domain_connection_status || null}
+              includedDomainRenewalDueAt={locationRecord.included_domain_renewal_due_at || null}
+            />
             <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
             <WebsiteHealthPanel locationId={location.id} />
             <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
@@ -76,6 +85,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{contentSources.map(source=><div key={source.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{source.label}</p><p className="mt-2 text-sm font-black text-white">{source.value}</p></div>)}</div>
             </section>
             <WebsiteImportPanel locationId={location.id} />
+            <WebsiteMigrationReviewPanel locationId={location.id} />
             <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
           </div>
         ) : <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website setup is temporarily unavailable.</section>}

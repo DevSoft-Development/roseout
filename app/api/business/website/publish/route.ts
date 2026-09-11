@@ -14,6 +14,7 @@ import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { buildPlatformWebsiteDomain } from "@/lib/websites/platform-domain";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import { getMigrationRedirectRules } from "@/lib/websites/migration-redirect-artifact";
 import type { BusinessWebsite } from "@/lib/websites/data";
 
 async function getUser() {
@@ -93,6 +94,13 @@ export async function POST(request: Request) {
     if (!websiteRow) return NextResponse.json({ error: "Create the website draft before publishing." }, { status: 409 });
 
     websiteId = websiteRow.id;
+    const importedWebsite = websiteRow.custom_content && typeof websiteRow.custom_content === "object"
+      ? (websiteRow.custom_content as Record<string, any>).website_import
+      : null;
+    if (importedWebsite && importedWebsite.review_status !== "approved") {
+      return NextResponse.json({ error: "Review and approve the imported website before publishing.", code: "migration_review_required" }, { status: 409 });
+    }
+
     const platformLocationName = renderLocation.name || renderLocation.title || websiteRow.site_title || null;
     const platformDomain = await ensurePlatformDomain(websiteRow.id, platformLocationName);
     const publishDomain = websiteRow.domain?.trim().toLowerCase() || platformDomain;
@@ -152,6 +160,7 @@ export async function POST(request: Request) {
     if (snapshotError) throw snapshotError;
 
     const files = renderEnhancedWebsiteArtifact(website, renderLocation);
+    const redirects = getMigrationRedirectRules(website);
     const awsReleaseInput = {
       websiteId: website.id,
       locationId,
@@ -184,6 +193,7 @@ export async function POST(request: Request) {
         sitePath: allocation.website.site_path || `/srv/sites/${locationId}`,
         domain: publishDomain,
         files,
+        redirects,
       };
       const result = await deployWebsiteArtifact(deployInput);
       await recordWebsiteReplicaSynced(website.id, allocation.node.id, version);
@@ -255,6 +265,7 @@ export async function POST(request: Request) {
       platform_domain: platformDomain,
       live_domain: publishDomain,
       live_url: `https://${publishDomain}`,
+      redirects: redirects.length,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "website_publish_failed";

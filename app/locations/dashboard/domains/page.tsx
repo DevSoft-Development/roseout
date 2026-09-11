@@ -42,7 +42,7 @@ export default async function Page({
       ) : (
         <div className="space-y-5">
           <section className="rounded-3xl border border-rose-200/15 bg-white/[0.04] p-6">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Partner Pro benefit</p>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Essentials benefit</p>
             <h2 className="mt-3 text-2xl font-black">Included custom domain</h2>
             <p className="mt-2 text-sm leading-6 text-white/65">{benefitCopy}</p>
             {location.included_domain_name ? (
@@ -56,7 +56,7 @@ export default async function Page({
           {!benefitSettings.firstYearIncluded && !location.included_domain_name ? (
             <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
               <p className="text-sm font-bold text-white/80">The included domain offer is currently turned off.</p>
-              <p className="mt-2 text-sm text-white/55">Your other Partner Pro features are not affected.</p>
+              <p className="mt-2 text-sm text-white/55">Your other Essentials features are not affected.</p>
             </section>
           ) : benefitSettings.firstYearIncluded ? (
             <div className="[&>div>section:first-child]:hidden">
