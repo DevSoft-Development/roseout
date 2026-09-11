@@ -6,6 +6,7 @@ import { crawlWebsiteForMigration, assertPublicWebsiteUrl } from "@/lib/websites
 import { buildMigrationContentInventory } from "@/lib/websites/import-content-inventory";
 import { buildMigrationExceptions } from "@/lib/websites/migration-exceptions";
 import { detectWebsiteImportAdapter, extractImportSignals } from "@/lib/websites/import-provider-adapters";
+import { selectBestReservationLink } from "@/lib/websites/reservation-link-selection";
 
 export const runtime = "nodejs";
 
@@ -13,18 +14,6 @@ type MigrationMode = "preserve_exact" | "modernize" | "redesign";
 
 function textMatch(html: string, pattern: RegExp) {
   return html.match(pattern)?.[1]?.replace(/\s+/g, " ").trim() || null;
-}
-
-function reservationProvider(url: string | null) {
-  if (!url) return null;
-  if (/resy/i.test(url)) return "Resy";
-  if (/opentable/i.test(url)) return "OpenTable";
-  if (/sevenrooms/i.test(url)) return "SevenRooms";
-  if (/exploretock|tock/i.test(url)) return "Tock";
-  if (/toasttab/i.test(url)) return "Toast Tables";
-  if (/yelp/i.test(url)) return "Yelp Reservations";
-  if (/quandoo/i.test(url)) return "Quandoo";
-  return "External";
 }
 
 async function getUser() {
@@ -57,8 +46,9 @@ export async function POST(request: Request) {
     const title = textMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
     const description = textMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || textMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i);
     const themeColor = textMatch(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i);
-    const reservationUrl = manifest.reservation_links[0] || null;
-    const detectedReservationProvider = reservationProvider(reservationUrl);
+    const reservationSelection = selectBestReservationLink(sourceUrl, manifest.reservation_links);
+    const reservationUrl = reservationSelection.url;
+    const detectedReservationProvider = reservationSelection.provider;
     const exceptions = buildMigrationExceptions(manifest, contentInventory, detectedReservationProvider);
     const importedAt = new Date().toISOString();
 
