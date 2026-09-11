@@ -66,7 +66,7 @@ const LOCATION_KEY = "theouthaven_user_location";
 const FLOW_VERSION = "guided_create_v1";
 const JOURNEY_VERSION = "four_step";
 const WALKING_INTENT = /\b(?:walk|walking|walkable|walkability)\b|\bon\s+foot\b/i;
-const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation/i;
+const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested/i;
 
 const LOADING_LINES: Record<PlanType, string[]> = {
   outing: ["Finding your perfect outing...", "Matching restaurants and activities...", "Checking distance, ratings, and fit...", "Building your strongest complete picks..."],
@@ -93,15 +93,38 @@ function priceFor(location: LocationCard) {
   if (!level || level <= 0) return null;
   return "$".repeat(Math.max(1, Math.min(4, Math.round(level))));
 }
-function reservationReady(location: LocationCard) { return Boolean(location.reservation_url || location.booking_url); }
 function cleanReason(value: unknown) {
   if (typeof value !== "string") return null;
-  const pieces = value.split(/[;•]|\s+·\s+/).map((part) => part.trim()).filter(Boolean).filter((part) => !/requested locality|matched requested|matches? requested/i.test(part)).filter((part) => !INTERNAL_REASON.test(part));
-  return pieces[0] || null;
+  const pieces = value
+    .split(/[;•]|\s+·\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !INTERNAL_REASON.test(part))
+    .filter((part) => !/[A-Za-z]+_[A-Za-z]+|\b(?:true|false|null|undefined)\b/i.test(part));
+  const reason = pieces[0];
+  if (!reason || reason.length < 10 || reason.length > 150) return null;
+  return reason.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 function customerWhy(value: PairCard | LocationCard | null | undefined) {
   if (!value) return null;
   return cleanReason(value.whyMatched) || cleanReason(value.why_it_matched) || (Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).find(Boolean) || null : null);
+}
+function locationWhy(location: LocationCard, planType: PlanType) {
+  const reason = customerWhy(location);
+  if (reason) return reason;
+  const category = String(location.cuisine || location.cuisine_type || location.activity_type || location.primary_category || "").trim();
+  const place = String(location.city || "").trim();
+  if (category && place) return `A ${category.toLowerCase()} pick in ${place} that lines up well with the experience you asked for.`;
+  if (category) return `A ${category.toLowerCase()} pick that lines up well with the experience you asked for.`;
+  return planType === "restaurant" ? "A polished dining option that fits the kind of meal you described." : "A strong experience for the kind of outing you described.";
+}
+function pairWhy(item: CompletePair, distance: string | null) {
+  const reason = customerWhy(item.pair) || customerWhy(item.restaurant) || customerWhy(item.activity);
+  if (reason) return reason;
+  if (item.resultType === "same_venue") return "Dinner and the experience are together in one place, keeping the night simple and seamless.";
+  const restaurant = nameFor(item.restaurant);
+  const activity = nameFor(item.activity);
+  return distance ? `${restaurant} and ${activity} make an easy pairing, with just ${distance} between them.` : `${restaurant} and ${activity} make a smooth dinner-and-activity pairing for the night you described.`;
 }
 function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
@@ -131,18 +154,19 @@ function VenueRow({ location, label }: { location: LocationCard; label: string }
   const rating = ratingFor(location);
   const price = priceFor(location);
   return (
-    <div className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white/[0.05]">
-        {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-2xl">📍</div>}
+    <div className="overflow-hidden rounded-[1.25rem] border border-white/[0.09] bg-white/[0.025] shadow-[0_12px_40px_rgba(0,0,0,0.18)]">
+      <div className="relative h-36 bg-white/[0.04] sm:h-40">
+        {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-3xl">📍</div>}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-transparent" />
+        <span className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/65 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white/85 backdrop-blur">{label}</span>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ff7188]">{label}</p>
-        <h3 className="mt-1 truncate text-base font-black">{nameFor(location)}</h3>
+      <div className="p-4">
+        <h3 className="truncate text-[17px] font-black tracking-[-0.02em]">{nameFor(location)}</h3>
         {metaFor(location) ? <p className="mt-1 truncate text-xs font-semibold text-white/45">{metaFor(location)}</p> : null}
-        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-white/55">
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold text-white/55">
           {rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}
-          {price ? <span>· {price}</span> : null}
-          {reservationReady(location) ? <span className="text-emerald-300">· Reservation link found</span> : null}
+          {rating && price ? <span className="text-white/20">•</span> : null}
+          {price ? <span>{price}</span> : null}
         </div>
       </div>
     </div>
@@ -153,25 +177,25 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, onUse }: 
   const best = rank === 1 && !sponsoredPair(item);
   const sponsored = sponsoredPair(item);
   const distance = distanceFor(item.pair, walkingRequested);
-  const why = customerWhy(item.pair) || customerWhy(item.restaurant) || customerWhy(item.activity) || (item.resultType === "same_venue" ? "Food and activity together in one venue." : "A strong restaurant + activity match for what you asked for.");
+  const why = pairWhy(item, distance);
   const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   return (
-    <article className={`rounded-[1.5rem] border bg-[#0b0b0b] p-4 shadow-xl shadow-black/30 ${best ? "border-[#e1062a]/70 ring-1 ring-[#e1062a]/20 lg:p-5" : "border-white/10"}`}>
+    <article className={`rounded-[1.6rem] border bg-[#0a0a0a] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/55 ring-1 ring-[#e1062a]/15" : "border-white/[0.09]"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] ${sponsored ? "bg-white text-black" : best ? "bg-[#e1062a] text-white" : "border border-white/10 bg-white/[0.04] text-white/55"}`}>{sponsored ? "Sponsored" : best ? "Best Match" : `Option ${rank}`}</span>
-        {distance ? <span className="text-xs font-black text-white/55">{distance}</span> : null}
+        {distance ? <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-[11px] font-bold text-white/60">{distance}</span> : null}
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <VenueRow location={item.restaurant} label={item.resultType === "same_venue" ? "Restaurant + activity" : "Restaurant"} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <VenueRow location={item.restaurant} label={item.resultType === "same_venue" ? "Dinner + experience" : "Restaurant"} />
         {item.resultType !== "same_venue" ? <VenueRow location={item.activity} label="Activity" /> : null}
       </div>
-      <div className="mt-4 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/[0.055] px-4 py-3">
-        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Why it fits</p>
-        <p className="mt-1.5 text-sm font-semibold leading-5 text-white/70">{why}</p>
+      <div className="mt-4 border-t border-white/[0.07] pt-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#ff7188]">Why you’ll like it</p>
+        <p className="mt-1.5 text-sm font-medium leading-5 text-white/68">{why}</p>
       </div>
-      <button type="button" onClick={onUse} className={`mt-4 w-full rounded-full bg-[#e1062a] px-5 py-4 font-black uppercase tracking-[0.08em] transition hover:bg-[#ff1744] ${best ? "text-sm" : "text-xs"}`}>Choose this outing →</button>
-      <details className="mt-3 rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
-        <summary className="cursor-pointer list-none font-black text-white/55">More details <span className="float-right text-white/30">+</span></summary>
+      <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.08em] transition hover:bg-[#f20b31]">Choose this outing →</button>
+      <details className="mt-2 rounded-xl px-2 py-2 text-sm">
+        <summary className="cursor-pointer list-none text-center text-xs font-bold text-white/40 transition hover:text-white/65">View details</summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <Link href={profileHref(item.restaurant, returnToResults)} className="rounded-full border border-white/10 px-4 py-2.5 text-center text-xs font-black text-white/65">View restaurant</Link>
           {item.resultType !== "same_venue" ? <Link href={profileHref(item.activity, returnToResults)} className="rounded-full border border-white/10 px-4 py-2.5 text-center text-xs font-black text-white/65">View activity</Link> : null}
@@ -187,20 +211,20 @@ function SingleCard({ location, rank, planType, returnToResults, onUse }: { loca
   const rating = ratingFor(location);
   const price = priceFor(location);
   const best = rank === 1;
-  const why = customerWhy(location) || "A strong match for the outing you described.";
+  const why = locationWhy(location, planType);
   return (
-    <article className={`overflow-hidden rounded-[1.5rem] border bg-[#0b0b0b] shadow-xl shadow-black/30 ${best ? "border-[#e1062a]/70 ring-1 ring-[#e1062a]/20" : "border-white/10"}`}>
-      <div className="relative h-48 bg-white/[0.04]">
+    <article className={`overflow-hidden rounded-[1.5rem] border bg-[#0a0a0a] shadow-[0_18px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/55 ring-1 ring-[#e1062a]/15" : "border-white/[0.09]"}`}>
+      <div className="relative h-52 bg-white/[0.04]">
         {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-4xl">📍</div>}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/10" />
-        <span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] ${best ? "bg-[#e1062a] text-white" : "bg-black/75 text-white/70"}`}>{best ? "Best Match" : `Option ${rank}`}</span>
-        <div className="absolute bottom-3 left-3 right-3"><h3 className="truncate text-lg font-black">{nameFor(location)}</h3><p className="mt-1 truncate text-xs font-semibold text-white/60">{metaFor(location)}</p></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/10" />
+        <span className={`absolute left-3 top-3 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] ${best ? "bg-[#e1062a] text-white" : "bg-black/70 text-white/75"}`}>{best ? "Best Match" : `Option ${rank}`}</span>
+        <div className="absolute bottom-4 left-4 right-4"><h3 className="truncate text-xl font-black tracking-[-0.025em]">{nameFor(location)}</h3><p className="mt-1 truncate text-xs font-semibold text-white/60">{metaFor(location)}</p></div>
       </div>
       <div className="p-4">
-        <div className="flex flex-wrap gap-2 text-xs font-bold text-white/55">{rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}{price ? <span>· {price}</span> : null}{reservationReady(location) ? <span className="text-emerald-300">· Reservation link found</span> : null}</div>
-        <div className="mt-3 rounded-2xl bg-white/[0.03] px-3.5 py-3"><p className="text-[9px] font-black uppercase tracking-[0.14em] text-[#ff7188]">Why it fits</p><p className="mt-1.5 text-sm font-semibold leading-5 text-white/65">{why}</p></div>
-        <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.1em]">Choose this {planType} →</button>
-        <details className="mt-3 text-center text-xs font-black text-white/45"><summary className="cursor-pointer list-none">More details</summary><Link href={profileHref(location, returnToResults)} className="mt-3 inline-flex rounded-full border border-white/10 px-4 py-2.5 text-white/65">View profile</Link></details>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/55">{rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}{rating && price ? <span className="text-white/20">•</span> : null}{price ? <span>{price}</span> : null}</div>
+        <div className="mt-4 border-t border-white/[0.07] pt-4"><p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#ff7188]">Why you’ll like it</p><p className="mt-1.5 text-sm font-medium leading-5 text-white/68">{why}</p></div>
+        <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.1em] transition hover:bg-[#f20b31]">Choose this {planType} →</button>
+        <details className="mt-2 text-center text-xs font-bold text-white/40"><summary className="cursor-pointer list-none">View details</summary><Link href={profileHref(location, returnToResults)} className="mt-3 inline-flex rounded-full border border-white/10 px-4 py-2.5 text-white/65">View profile</Link></details>
       </div>
     </article>
   );
@@ -280,11 +304,11 @@ export default function GuidedResultsPageV4() {
   return (
     <main className="min-h-screen bg-[#050505] pb-16 text-white">
       <GuidedJourneySteps activeStep={3} className="max-w-5xl" />
-      <section className="border-b border-white/10 px-4 pb-7 pt-6 sm:px-6 sm:pb-9 sm:pt-8"><div className="mx-auto max-w-6xl"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step 3 of 4 · Pick</p><h1 className="mt-2 text-3xl font-black tracking-[-0.045em] sm:text-5xl">{planType === "outing" ? "Choose your outing." : planType === "restaurant" ? "Choose your restaurant." : "Choose your activity."}</h1><p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/50 sm:text-base">Your strongest match is first. Compare only what matters, then choose and finish the plan.</p></div><Link href="/create" className="rounded-full border border-white/10 px-4 py-2.5 text-xs font-black text-white/60">Adjust plan</Link></div></div></section>
+      <section className="border-b border-white/[0.08] px-4 pb-7 pt-6 sm:px-6 sm:pb-8 sm:pt-8"><div className="mx-auto max-w-6xl"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step 3 of 4 · Pick</p><h1 className="mt-2 text-3xl font-black tracking-[-0.045em] sm:text-5xl">{planType === "outing" ? "Your best options, curated." : planType === "restaurant" ? "Your best restaurants, curated." : "Your best activities, curated."}</h1><p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-white/48 sm:text-base">Compare the atmosphere, location and experience at a glance. Your strongest match is always shown first.</p></div><Link href="/create" className="rounded-full border border-white/10 bg-white/[0.025] px-4 py-2.5 text-xs font-black text-white/60 transition hover:border-white/20 hover:text-white">Adjust plan</Link></div></div></section>
 
       <section className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
         {loading ? <LoadingResults planType={planType} index={loadingIndex} /> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Try again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Adjust my plan</Link></div> : planType === "outing" ? <>
-          <div className="grid gap-5 lg:grid-cols-2">{pairs.map((item, index) => <div key={`${item.restaurant.id}-${item.activity.id}-${index}`} className={index === 0 ? "lg:col-span-2" : ""}><PairCardView item={item} rank={index + 1} walkingRequested={walkingRequested} returnToResults={returnToResults} onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsoredPair(item), sponsorId(item))} /></div>)}</div>
+          <div className="grid gap-5 lg:grid-cols-2">{pairs.map((item, index) => <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} walkingRequested={walkingRequested} returnToResults={returnToResults} onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsoredPair(item), sponsorId(item))} />)}</div>
           {restaurants.length && activities.length ? (
             <details className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-5 sm:p-6">
               <summary onClick={() => track("planner_build_own_opened", { step: 3, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION })} className="cursor-pointer list-none">
@@ -292,7 +316,7 @@ export default function GuidedResultsPageV4() {
               </summary>
               <div className="mt-5 grid gap-5 lg:grid-cols-2">
                 <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Restaurant</p><div className="space-y-2">{restaurants.map((location) => <BuilderChoice key={`restaurant-${location.id}`} location={location} label="Restaurant" selected={String(selectedRestaurant?.id) === String(location.id)} onSelect={() => { setSelectedRestaurant(location); track("planner_custom_restaurant_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
-                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Activity</p><div className="space-y-2">{activities.map((location) => <BuilderChoice key={`activity-${location.id}`} location={location} label="Activity" selected={String(selectedActivity?.id) === String(location.id)} onSelect={() => { setSelectedActivity(location); track("planner_custom_activity_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />)}</div></div>
+                <div><p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#ff7188]">Activity</p><div className="space-y-2">{activities.map((location) => <BuilderChoice key={`activity-${location.id}`} location={location} label="Activity" selected={String(selectedActivity?.id) === String(location.id)} onSelect={() => { setSelectedActivity(location); track("planner_custom_activity_selected", { step: 3, location_id: location.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); }} />}</div></div>
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/[0.05] p-4"><p className="text-sm font-semibold text-white/55">{selectedRestaurant && selectedActivity ? `${nameFor(selectedRestaurant)} + ${nameFor(selectedActivity)}` : "Choose one restaurant and one activity."}</p><button type="button" disabled={!selectedRestaurant || !selectedActivity} onClick={() => { if (selectedRestaurant && selectedActivity) { track("planner_custom_pair_selected", { step: 3, restaurant_id: selectedRestaurant.id || null, activity_id: selectedActivity.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); openPlan(selectedRestaurant, selectedActivity, null, null, "custom_pair"); } }} className="rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-35">Choose my outing →</button></div>
             </details>
