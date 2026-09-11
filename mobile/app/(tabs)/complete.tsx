@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert, Image, Share, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { BrandHeader } from "@/components/brand/BrandHeader";
 import { JourneySteps } from "@/components/planner/JourneySteps";
 import { FoundationScreen } from "@/components/FoundationScreen";
 import { AppText } from "@/components/ui/AppText";
@@ -37,11 +36,6 @@ function PlaceBlock({ label, place, onOpen }: { label: string; place: MobilePlac
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
           {place.rating != null ? <AppText variant="caption">★ {place.rating.toFixed(1)}{place.reviewCount ? ` (${Math.round(place.reviewCount).toLocaleString()})` : ""}</AppText> : null}
           {place.priceLevel ? <AppText variant="caption">{place.priceLevel}</AppText> : null}
-          {place.reservationUrl ? (
-            <View style={{ borderRadius: 999, backgroundColor: theme.colors.accentSoft, paddingHorizontal: 9, paddingVertical: 4 }}>
-              <AppText variant="caption" accent>Reservation ready</AppText>
-            </View>
-          ) : null}
         </View>
         <View style={{ marginTop: 16 }}>
           <Button variant="secondary" onPress={onOpen}>View {label.toLowerCase()}</Button>
@@ -117,21 +111,26 @@ export default function CompleteOutingScreen() {
   };
 
   return (
-    <FoundationScreen title="Your OUTing is coming together." description={reason || "Everything you need to turn the picks into a real plan."}>
+    <FoundationScreen
+      eyebrow="STEP 4 OF 4 · COMPLETE OUTING"
+      title="Finish your outing."
+      description="Book what needs a reservation, confirm what you completed, then keep the finished plan with you."
+      beforeTitle={<JourneySteps activeStep={4} />}
+      showBrandHeader
+      showBack
+      backLabel="Back to picks"
+    >
       <View style={{ gap: theme.spacing.lg }}>
-        <BrandHeader compact />
-        <JourneySteps activeStep={4} />
-        <Button variant="ghost" fullWidth={false} onPress={() => router.back()}>← Back to picks</Button>
-
         <Card elevated style={{ backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }}>
           <View style={{ gap: 8 }}>
             <AppText variant="eyebrow" accent>YOUR OUTING</AppText>
             <AppText variant="h2">{restaurant?.name || "Your first stop"}{activity && activity.id !== restaurant?.id ? ` + ${activity.name}` : ""}</AppText>
             <AppText muted>{travelLabel}</AppText>
+            {reason ? <AppText muted style={{ marginTop: 4 }}>{reason}</AppText> : null}
           </View>
         </Card>
 
-        <PlaceBlock label={resultType === "same_venue" ? "RESTAURANT + ACTIVITY" : "RESTAURANT"} place={restaurant} onOpen={() => restaurant && router.push(placeRouteParams(restaurant))} />
+        <PlaceBlock label={resultType === "same_venue" ? "DINNER + EXPERIENCE" : "RESTAURANT"} place={restaurant} onOpen={() => restaurant && router.push(placeRouteParams(restaurant))} />
         {restaurant && activity && activity.id !== restaurant.id ? (
           <View style={{ alignItems: "center", gap: 6, paddingVertical: 2 }}>
             <View style={{ width: 1, height: 20, backgroundColor: theme.colors.accent }} />
@@ -141,18 +140,18 @@ export default function CompleteOutingScreen() {
             <View style={{ width: 1, height: 20, backgroundColor: theme.colors.accent }} />
           </View>
         ) : null}
-        {activity && activity.id !== restaurant?.id ? <PlaceBlock label="THING TO DO" place={activity} onOpen={() => activity && router.push(placeRouteParams(activity))} /> : null}
+        {activity && activity.id !== restaurant?.id ? <PlaceBlock label="ACTIVITY" place={activity} onOpen={() => activity && router.push(placeRouteParams(activity))} /> : null}
 
         <Card elevated>
           <View style={{ gap: 8 }}>
             <AppText variant="eyebrow" accent>READY WHEN YOU ARE</AppText>
             <AppText variant="h3">Lock in the plan.</AppText>
-            <AppText muted>Open each venue for reservation or booking options, then save this OUTing so it’s easy to return to and eligible for reminders.</AppText>
+            <AppText muted>Open each place for reservation or booking options, then save this outing so it’s easy to return to.</AppText>
           </View>
         </Card>
 
-        <Button disabled={saving} onPress={save}>{saving ? "Saving…" : saved ? "✓ OUTing saved" : "Save OUTing"}</Button>
-        <Button variant="secondary" onPress={share}>Share OUTing</Button>
+        <Button disabled={saving} onPress={save}>{saving ? "Saving…" : saved ? "✓ Outing saved" : "Save outing"}</Button>
+        <Button variant="secondary" onPress={share}>Share outing</Button>
       </View>
     </FoundationScreen>
   );
