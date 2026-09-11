@@ -56,6 +56,16 @@ function quotaMessage(message: string) {
   return null;
 }
 
+function transientAssistantFailure(error: unknown) {
+  const status = Number((error as { status?: unknown } | null)?.status || 0);
+  const message = error instanceof Error ? error.message : String(error || "");
+  return status === 408
+    || status === 409
+    || status === 429
+    || status >= 500
+    || /assistant_upstream_unavailable|openai_unavailable|timeout|timed out|ECONNRESET|ECONNREFUSED|fetch failed/i.test(message);
+}
+
 async function persistBlueprint(input: {
   websiteId: string;
   blueprint: ReturnType<typeof normalizeWebsiteBlueprint>;
@@ -297,6 +307,7 @@ export async function POST(request: Request) {
       quota_bypassed: unlimitedDemo,
     });
   } catch (error) {
+    const shouldFallback = transientAssistantFailure(error);
     if (usageId) {
       await supabaseAdmin.rpc("finish_location_website_ai_generation", {
         p_usage_id: usageId,
@@ -304,10 +315,46 @@ export async function POST(request: Request) {
         p_input_tokens: 0,
         p_output_tokens: 0,
         p_actual_cost_micros: 0,
-        p_error_code: "website_v3_generation_failed",
+        p_error_code: shouldFallback ? "website_v3_ai_upstream_fallback" : "website_v3_generation_failed",
       });
     }
     console.error("Website V3 generation failed", error);
+
+    if (shouldFallback) {
+      try {
+        const blueprint = enforceRequestedWebsiteDesignDirection(fallback, requestedDirectionId);
+        const saved = await persistBlueprint({
+          websiteId: website.id,
+          blueprint,
+          vision,
+          existingTheme,
+          existingCustomContent,
+          existingSections,
+          migrationMode,
+          source: "rules",
+        });
+        console.warn("Website V3 used deterministic fallback after assistant outage", {
+          locationId,
+          model: WEBSITE_AI_MODEL,
+        });
+        return NextResponse.json({
+          ok: true,
+          website: saved,
+          blueprint,
+          source: "rules",
+          degraded: true,
+          fallback_reason: "ai_upstream_unavailable",
+          generation_type: generationType,
+          migration_mode: migrationMode,
+          requested_direction_id: requestedDirectionId,
+          selected_direction_id: blueprint.design.directionId,
+          quota_bypassed: unlimitedDemo,
+        });
+      } catch (fallbackError) {
+        console.error("Website V3 deterministic fallback failed", fallbackError);
+      }
+    }
+
     return NextResponse.json({ error: "We could not generate the website right now. Your existing draft was not changed." }, { status: 502 });
   }
 }
