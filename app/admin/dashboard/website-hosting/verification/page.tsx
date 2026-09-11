@@ -11,13 +11,14 @@ import {
 import { WebsiteHostingTabs } from "@/components/admin/WebsiteHostingTabs";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getDomainGatewayStatus } from "@/lib/domains/gateway";
 import { WEBSITE_COMPOSITION_PROFILES } from "@/lib/websites/composition-profiles";
 import { WEBSITE_DESIGN_DIRECTIONS } from "@/lib/websites/design-directions";
 import { loadWebsiteProductionVerification } from "@/lib/websites/production-verification";
 
 export const metadata: Metadata = {
   title: "Website Verification | Admin",
-  description: "Verify hosted website production state, domain paths, replicas, and premium design coverage.",
+  description: "Verify hosted website production state, domain paths, replicas, registrar readiness, and premium design coverage.",
 };
 
 export const dynamic = "force-dynamic";
@@ -46,12 +47,24 @@ function profileSignature(id: string) {
 export default async function WebsiteVerificationPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.dashboard);
 
-  const rows = await loadWebsiteProductionVerification();
+  const [rows, gatewayStatus] = await Promise.all([
+    loadWebsiteProductionVerification(),
+    getDomainGatewayStatus().catch((error) => ({
+      ok: false,
+      authenticated: false,
+      registrationEnabled: false,
+      renewalEnabled: false,
+      dnsChangesEnabled: false,
+      error: error instanceof Error ? error.message : "domain_gateway_unreachable",
+    })),
+  ]);
+
   const healthy = rows.filter((row) => row.state === "healthy").length;
   const attention = rows.filter((row) => row.state === "attention").length;
   const blocked = rows.filter((row) => row.state === "blocked").length;
   const subdomains = rows.filter((row) => !row.domain && row.platformDomain).length;
   const customDomains = rows.filter((row) => Boolean(row.domain)).length;
+  const registrarHealthy = Boolean(gatewayStatus.ok && gatewayStatus.authenticated && gatewayStatus.registrationEnabled && gatewayStatus.dnsChangesEnabled);
 
   const signatures = WEBSITE_DESIGN_DIRECTIONS.map((direction) => ({ direction, signature: profileSignature(direction.id) }));
   const signatureCounts = new Map<string, number>();
@@ -81,6 +94,20 @@ export default async function WebsiteVerificationPage() {
       </AdminKpiGrid>
 
       <AdminSectionCard className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Domain registration</p><h2 className="mt-1 text-2xl font-black">OpenSRS first-year domain readiness</h2><p className="mt-1 max-w-3xl text-sm text-white/50">This is a non-destructive live gateway check. It verifies authentication, registration, DNS changes, and renewal capability without buying a domain.</p></div>
+          <AdminStatusBadge tone={registrarHealthy ? "green" : "rose"}>{registrarHealthy ? "Registrar ready" : "Registrar attention"}</AdminStatusBadge>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <GatewayCheck label="Gateway authentication" ok={Boolean(gatewayStatus.ok && gatewayStatus.authenticated)} />
+          <GatewayCheck label="Registration" ok={Boolean(gatewayStatus.registrationEnabled)} />
+          <GatewayCheck label="DNS automation" ok={Boolean(gatewayStatus.dnsChangesEnabled)} />
+          <GatewayCheck label="Renewal" ok={Boolean(gatewayStatus.renewalEnabled)} warningOnly />
+        </div>
+        {"error" in gatewayStatus && gatewayStatus.error ? <p className="mt-3 text-xs text-rose-200">{String(gatewayStatus.error).replace(/_/g, " ")}</p> : null}
+      </AdminSectionCard>
+
+      <AdminSectionCard className="p-5">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Live production</p><h2 className="mt-1 text-2xl font-black">Hosted website verification</h2><p className="mt-1 max-w-3xl text-sm text-white/50">A website is blocked only when a critical publish, address, primary-node, DNS, SSL, or OpenSRS connection check fails. Standby and health freshness are tracked separately.</p></div>
           <AdminStatusBadge tone={blocked ? "rose" : attention ? "amber" : "green"}>{blocked ? `${blocked} blocked` : attention ? `${attention} attention` : "All healthy"}</AdminStatusBadge>
@@ -99,7 +126,7 @@ export default async function WebsiteVerificationPage() {
       </AdminSectionCard>
 
       <AdminSectionCard className="p-5">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Premium design QA</p><h2 className="mt-1 text-2xl font-black">40-family design coverage</h2><p className="mt-1 max-w-3xl text-sm text-white/50">This matrix catches missing composition profiles and exact structural duplicates before they reach business owners. Device rendering still uses Preview for final visual approval.</p></div><AdminStatusBadge tone={visualFamiliesHealthy ? "green" : "rose"}>{visualFamiliesHealthy ? "Catalog structurally distinct" : "Catalog needs review"}</AdminStatusBadge></div>
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Premium design QA</p><h2 className="mt-1 text-2xl font-black">40-family design coverage</h2><p className="mt-1 max-w-3xl text-sm text-white/50">This matrix catches missing composition profiles and exact structural duplicates before they reach business owners. Desktop, iPad/tablet, and phone rendering are available in Website Preview for final visual approval.</p></div><AdminStatusBadge tone={visualFamiliesHealthy ? "green" : "rose"}>{visualFamiliesHealthy ? "Catalog structurally distinct" : "Catalog needs review"}</AdminStatusBadge></div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">{signatures.map(({ direction, signature }) => {
           const profile = WEBSITE_COMPOSITION_PROFILES[direction.id];
           const duplicate = signature !== "missing" && (signatureCounts.get(signature) || 0) > 1;
@@ -108,4 +135,8 @@ export default async function WebsiteVerificationPage() {
       </AdminSectionCard>
     </AdminPageShell>
   );
+}
+
+function GatewayCheck({ label, ok, warningOnly = false }: { label: string; ok: boolean; warningOnly?: boolean }) {
+  return <div className={`rounded-xl border px-4 py-3 ${ok ? "border-emerald-300/15 bg-emerald-500/5" : warningOnly ? "border-amber-300/20 bg-amber-500/10" : "border-rose-300/20 bg-rose-500/10"}`}><div className="flex items-center justify-between gap-2"><p className="text-sm font-black text-white">{label}</p><span className={`text-[10px] font-black uppercase ${ok ? "text-emerald-200" : warningOnly ? "text-amber-200" : "text-rose-200"}`}>{ok ? "Ready" : "Not ready"}</span></div></div>;
 }
