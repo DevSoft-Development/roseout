@@ -37,6 +37,18 @@ export async function POST(request: Request) {
   const custom = website.custom_content && typeof website.custom_content === "object" ? website.custom_content as Record<string, any> : {};
   const imported = custom.website_import;
   if (!imported || typeof imported !== "object") return NextResponse.json({ error: "No imported website is waiting for review." }, { status: 409 });
+
+  const blockingExceptions = Array.isArray(imported.exceptions)
+    ? imported.exceptions.filter((item: any) => item && item.severity === "blocking")
+    : [];
+  if (decision === "approved" && blockingExceptions.length > 0) {
+    return NextResponse.json({
+      error: "Resolve blocking migration items before approving this website.",
+      code: "migration_blockers_unresolved",
+      blocking_count: blockingExceptions.length,
+    }, { status: 409 });
+  }
+
   const nextImport = {
     ...imported,
     review_status: decision,
