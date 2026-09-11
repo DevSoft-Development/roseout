@@ -1,5 +1,5 @@
 import QRCode from "qrcode";
-import { Resend } from "resend";
+import { resend } from "@/lib/resend";
 import { sendSms } from "@/lib/sms/sendSms";
 
 export type TicketDeliveryResult = {
@@ -33,9 +33,6 @@ function escapeHtml(input: string) {
 }
 
 async function sendEventEmail({ to, subject, html, text }: { to: string | string[]; subject: string; html: string; text: string }) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) throw new Error("RESEND_API_KEY is not configured");
-  const resend = new Resend(apiKey);
   const from = process.env.EVENT_TICKETS_EMAIL_FROM?.trim() || process.env.RESEND_FROM_EMAIL?.trim() || "TheOutHaven <tickets@theouthaven.com>";
   const { error } = await resend.emails.send({ from, to, subject, html, text });
   if (error) throw new Error(error.message || "Email delivery failed");
