@@ -8,18 +8,33 @@
 }
 
 /*
- * Venue utility menus live inside cards that intentionally clip overflow so
- * imagery respects the rounded card shell. Open the More menu upward so it
- * stays fully visible instead of being cut off below the card.
+ * Keep the venue card visually clipped at the image while allowing the More
+ * utility menu to leave the card boundary. This prevents the menu from being
+ * cut off and gives it a normal anchored dropdown position.
  */
+.guided-plan-shell .guided-plan-body article:has(details.relative > summary) {
+  overflow: visible !important;
+  position: relative;
+  z-index: 1;
+}
+
+.guided-plan-shell .guided-plan-body article:has(details.relative > summary) > div.relative.h-48 {
+  overflow: hidden;
+  border-radius: 1.4rem 1.4rem 0 0;
+}
+
+.guided-plan-shell .guided-plan-body article:has(details.relative[open] > summary) {
+  z-index: 50;
+}
+
 .guided-plan-shell .guided-plan-body article details {
   position: relative;
   z-index: 30;
 }
 
 .guided-plan-shell .guided-plan-body article details > div {
-  top: auto !important;
-  bottom: calc(100% + 0.5rem) !important;
+  top: calc(100% + 0.5rem) !important;
+  bottom: auto !important;
   margin-top: 0 !important;
   z-index: 60 !important;
 }
