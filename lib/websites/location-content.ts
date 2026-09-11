@@ -8,7 +8,7 @@ export type GeneratedWebsiteReview = { customer_name:string; rating:number; revi
 export type GeneratedWebsiteEvent = { id:string; slug:string|null; title:string; description:string|null; category:string|null; starts_at:string; image_url:string|null; is_free:boolean; price_min:number|null };
 export type GeneratedWebsiteExperience = { id:string; slug:string|null; title:string; description:string|null; category:string|null; image_url:string|null; duration_minutes:number; price_per_person:number };
 export type GeneratedWebsiteLocationSnapshot = {
-  id:string; name?:string|null; title?:string|null; address?:string|null; phone?:string|null; hours?:string|null; reservation_link?:string|null; reservation_provider?:string|null; reservation_source?:string|null; uses_internal_reservations:boolean; internal_reservations_enabled:boolean; allow_external_reservations:boolean; image_url?:string|null; photos:string[];
+  id:string; name?:string|null; title?:string|null; address?:string|null; phone?:string|null; hours?:string|null; description?:string|null; short_description?:string|null; dress_code?:string|null; parking_info?:string|null; best_for:string[]; special_features:string[]; reservation_link?:string|null; reservation_provider?:string|null; reservation_source?:string|null; uses_internal_reservations:boolean; internal_reservations_enabled:boolean; allow_external_reservations:boolean; image_url?:string|null; photos:string[];
   menu:{ title:string; description?:string|null; external_url?:string|null; pdf_url?:string|null; items:GeneratedWebsiteMenuItem[] }|null;
   reviews:GeneratedWebsiteReview[];
   events:GeneratedWebsiteEvent[];
@@ -17,6 +17,7 @@ export type GeneratedWebsiteLocationSnapshot = {
 
 function stringValue(value:unknown){return typeof value==="string"&&value.trim()?value.trim():null}
 function objectValue(value:unknown):Record<string,unknown>{return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{} }
+function textArray(value:unknown){if(Array.isArray(value))return value.map(item=>String(item||"").trim()).filter(Boolean);if(typeof value==="string"&&value.trim())return value.split(",").map(item=>item.trim()).filter(Boolean);return []}
 function uniqueUrls(values:unknown[]){const urls:string[]=[];for(const value of values){if(Array.isArray(value)){for(const nested of value){const candidate=typeof nested==="string"?nested:stringValue(objectValue(nested).url)||stringValue(objectValue(nested).image_url);if(candidate&&/^https?:\/\//i.test(candidate)&&!urls.includes(candidate))urls.push(candidate)}continue}const candidate=stringValue(value);if(candidate&&/^https?:\/\//i.test(candidate)&&!urls.includes(candidate))urls.push(candidate)}return urls.slice(0,12)}
 function firstReservationUrl(location:Record<string,unknown>,metadata:Record<string,unknown>){return stringValue(location.external_reservation_url)||stringValue(location.reservation_url)||stringValue(location.reservation_link)||stringValue(location.booking_url)||stringValue(metadata.external_reservation_url)||stringValue(metadata.reservation_url)||stringValue(metadata.reservation_link)||stringValue(metadata.booking_url)}
 export function formatWebsiteHours(value:unknown):string|null{if(typeof value==="string"&&value.trim())return value.trim();if(Array.isArray(value)){const lines=value.map(entry=>typeof entry==="string"?entry.trim():"").filter(Boolean);return lines.length?lines.join("\n"):null}const record=objectValue(value);const entries=Object.entries(record).filter(([,hours])=>hours!=null&&String(hours).trim()).map(([day,hours])=>`${day.replace(/_/g," ").replace(/\b\w/g,letter=>letter.toUpperCase())}: ${String(hours).trim()}`);return entries.length?entries.join("\n"):null}
@@ -34,5 +35,30 @@ export async function getGeneratedWebsiteLocationSnapshot(location:Record<string
   ]);events=(eventRows||[]).map(row=>({id:String(row.id),slug:stringValue(row.slug),title:String(row.title||"Event"),description:stringValue(row.description),category:stringValue(row.category),starts_at:String(row.starts_at),image_url:stringValue(row.image_url),is_free:Boolean(row.is_free),price_min:row.price_min==null?null:Number(row.price_min)}));experiences=(experienceRows||[]).map(row=>({id:String(row.id),slug:stringValue(row.slug),title:String(row.title||"Experience"),description:stringValue(row.description),category:stringValue(row.category),image_url:stringValue(row.image_url),duration_minutes:Number(row.duration_minutes||60),price_per_person:Number(row.price_per_person||0)}))}}catch(error){console.error("GENERATED_WEBSITE_OFFERINGS_LOAD_FAILED",{locationId:id,error})}
   const usesInternal=Boolean(location.uses_internal_reservations||location.internal_reservations_enabled||metadata.uses_internal_reservations||metadata.internal_reservations_enabled);
   const allowExternal=Boolean(location.allow_external_reservations??metadata.allow_external_reservations??true);
-  return {id,name:stringValue(location.name)||stringValue(location.restaurant_name)||stringValue(location.activity_name)||stringValue(location.location_name),title:stringValue(location.title),address:stringValue(location.address)||stringValue(location.formatted_address),phone:stringValue(location.phone)||stringValue(location.phone_number),hours:formatWebsiteHours(location.hours??location.opening_hours??location.business_hours??metadata.hours??metadata.opening_hours),reservation_link:firstReservationUrl(location,metadata),reservation_provider:stringValue(location.reservation_provider)||stringValue(metadata.reservation_provider),reservation_source:stringValue(location.reservation_source)||stringValue(metadata.reservation_source),uses_internal_reservations:usesInternal,internal_reservations_enabled:usesInternal,allow_external_reservations:allowExternal,image_url:photos[0]||null,photos,menu,reviews,events,experiences};
+  return {
+    id,
+    name:stringValue(location.name)||stringValue(location.restaurant_name)||stringValue(location.activity_name)||stringValue(location.location_name),
+    title:stringValue(location.title),
+    address:stringValue(location.address)||stringValue(location.formatted_address),
+    phone:stringValue(location.phone)||stringValue(location.phone_number),
+    hours:formatWebsiteHours(location.hours??location.opening_hours??location.business_hours??metadata.hours??metadata.opening_hours),
+    description:stringValue(location.description)||stringValue(metadata.description),
+    short_description:stringValue(location.short_description)||stringValue(metadata.short_description),
+    dress_code:stringValue(location.dress_code)||stringValue(metadata.dress_code),
+    parking_info:stringValue(location.parking_info)||stringValue(metadata.parking_info),
+    best_for:textArray(location.best_for??location.best_for_tags??metadata.best_for),
+    special_features:textArray(location.special_features??metadata.special_features),
+    reservation_link:firstReservationUrl(location,metadata),
+    reservation_provider:stringValue(location.reservation_provider)||stringValue(metadata.reservation_provider),
+    reservation_source:stringValue(location.reservation_source)||stringValue(metadata.reservation_source),
+    uses_internal_reservations:usesInternal,
+    internal_reservations_enabled:usesInternal,
+    allow_external_reservations:allowExternal,
+    image_url:photos[0]||null,
+    photos,
+    menu,
+    reviews,
+    events,
+    experiences,
+  };
 }

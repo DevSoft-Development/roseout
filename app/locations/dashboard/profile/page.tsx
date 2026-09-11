@@ -6,6 +6,7 @@ import {
 import LocationProfileEditor from "./LocationProfileEditor";
 import LocationDiscoveryEditor from "./LocationDiscoveryEditor";
 import OwnerPhotoSetupPanel from "./OwnerPhotoSetupPanel";
+import WebsiteReadyLocationPanel from "./WebsiteReadyLocationPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -28,13 +29,9 @@ export default async function LocationProfilePage({
     return (
       <main className="min-h-screen bg-[#050607] p-6 text-white">
         <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-white/[0.04] p-8">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">
-            Business Profile
-          </p>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">Business Profile</p>
           <h1 className="mt-3 text-3xl font-black">No connected location found</h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-white/55">
-            Connect or claim a location before editing its customer-facing profile.
-          </p>
+          <p className="mt-3 text-sm font-semibold leading-6 text-white/55">Connect or claim a location before editing its customer-facing profile.</p>
         </div>
       </main>
     );
@@ -48,22 +45,11 @@ export default async function LocationProfilePage({
   return (
     <div className="min-h-screen bg-[#050607]">
       <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
-        <OwnerPhotoSetupPanel
-          locationId={locationId}
-          locationType={locationType}
-          claimSetup={claimSetup}
-        />
+        <OwnerPhotoSetupPanel locationId={locationId} locationType={locationType} claimSetup={claimSetup} />
       </div>
-      <LocationProfileEditor
-        locationId={locationId}
-        locationType={locationType}
-        demoMode={demo.demoMode}
-      />
-      <LocationDiscoveryEditor
-        locationId={locationId}
-        locationType={locationType}
-        demoMode={demo.demoMode}
-      />
+      <LocationProfileEditor locationId={locationId} locationType={locationType} demoMode={demo.demoMode} />
+      <WebsiteReadyLocationPanel locationId={locationId} locationType={locationType} />
+      <LocationDiscoveryEditor locationId={locationId} locationType={locationType} demoMode={demo.demoMode} />
     </div>
   );
 }
