@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { crawlWebsiteForMigration, assertPublicWebsiteUrl } from "@/lib/websites/import-crawler";
+import { buildMigrationContentInventory } from "@/lib/websites/import-content-inventory";
 import { detectWebsiteImportAdapter, extractImportSignals } from "@/lib/websites/import-provider-adapters";
 
 export const runtime = "nodejs";
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
     const html = manifest.homepage_html;
     const adapter = detectWebsiteImportAdapter(html, sourceUrl.hostname);
     const adapterSignals = extractImportSignals(html, adapter);
+    const contentInventory = buildMigrationContentInventory(manifest, adapter.id);
     const title = textMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
     const description = textMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || textMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i);
     const themeColor = textMatch(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i);
@@ -76,10 +78,14 @@ export async function POST(request: Request) {
       imported_at: importedAt,
       title,
       description,
+      review_status: "pending",
+      reviewed_at: null,
+      reviewed_by: null,
       discovered_pages: manifest.crawled_pages.map((page) => page.url),
       discovered_assets: [...new Set(manifest.crawled_pages.flatMap((page) => page.assets))],
       reservation_url: reservationUrl,
       reservation_provider: reservationProvider(reservationUrl),
+      content_inventory: contentInventory,
       migration_manifest: {
         page_count: manifest.page_count,
         asset_count: manifest.asset_count,
