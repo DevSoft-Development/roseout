@@ -3,11 +3,13 @@ import hashlib
 import hmac
 import json
 import os
+import socket
 import time
 import urllib.error
 import urllib.request
 
 import boto3
+from botocore.exceptions import ClientError, ConnectTimeoutError, EndpointConnectionError, ReadTimeoutError
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ.get("SHARED_SECRET_ARN", "")
@@ -29,6 +31,19 @@ ALLOWED_MODEL_PREFIXES = (
     "o4",
     "text-embedding-",
 )
+SAFE_RUNTIME_CODES = {
+    "assistant_secret_not_configured",
+    "assistant_secret_empty",
+    "assistant_provider_secret_not_configured",
+    "assistant_provider_secret_empty",
+    "assistant_provider_secret_invalid",
+    "openai_credential_not_configured",
+    "openai_credential_verification_failed",
+    "openai_credential_verification_unavailable",
+    "openai_timeout",
+    "openai_dns_unavailable",
+    "openai_network_unavailable",
+}
 
 secrets = boto3.client("secretsmanager")
 provider_secrets = boto3.client("secretsmanager", region_name=RUNTIME_PROVIDER_SECRET_REGION)
@@ -36,15 +51,18 @@ _secret_cache = {}
 _provider_cache = None
 
 
-def response(status, payload, *, content_type="application/json"):
+def response(status, payload, *, content_type="application/json", extra_headers=None):
     body = payload if isinstance(payload, str) else json.dumps(payload)
+    headers = {
+        "content-type": content_type,
+        "cache-control": "no-store",
+        "x-toh-service": "assistant-api",
+    }
+    if extra_headers:
+        headers.update({str(key): str(value) for key, value in extra_headers.items() if value is not None})
     return {
         "statusCode": int(status),
-        "headers": {
-            "content-type": content_type,
-            "cache-control": "no-store",
-            "x-toh-service": "assistant-api",
-        },
+        "headers": headers,
         "body": body,
     }
 
@@ -86,7 +104,10 @@ def runtime_provider_env():
     value = provider_secrets.get_secret_value(SecretId=RUNTIME_PROVIDER_SECRET_ID).get("SecretString", "")
     if not value:
         raise RuntimeError("assistant_provider_secret_empty")
-    parsed = json.loads(value)
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("assistant_provider_secret_invalid") from exc
     if not isinstance(parsed, dict):
         raise RuntimeError("assistant_provider_secret_invalid")
     _provider_cache = parsed
@@ -154,6 +175,40 @@ def openai_headers(env):
     return headers
 
 
+def classify_exception(exc):
+    if isinstance(exc, RuntimeError):
+        message = str(exc)
+        if message in SAFE_RUNTIME_CODES or message.startswith("openai_credential_verification_http_"):
+            return message
+    if isinstance(exc, ClientError):
+        aws_code = str((exc.response.get("Error") or {}).get("Code") or "")
+        if aws_code in {"AccessDenied", "AccessDeniedException", "UnrecognizedClientException"}:
+            return "provider_secret_access_denied"
+        if aws_code in {"ResourceNotFoundException", "ParameterNotFound"}:
+            return "provider_secret_not_found"
+        if aws_code in {"Throttling", "ThrottlingException", "TooManyRequestsException"}:
+            return "provider_secret_throttled"
+        return "aws_service_error"
+    if isinstance(exc, (ConnectTimeoutError, ReadTimeoutError)):
+        return "aws_timeout"
+    if isinstance(exc, EndpointConnectionError):
+        return "aws_endpoint_unavailable"
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "upstream_timeout"
+    if isinstance(exc, socket.gaierror):
+        return "dns_unavailable"
+    return "assistant_internal_error"
+
+
+def openai_network_error(exc):
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return RuntimeError("openai_timeout")
+    if isinstance(reason, socket.gaierror):
+        return RuntimeError("openai_dns_unavailable")
+    return RuntimeError("openai_network_unavailable")
+
+
 def openai_verify():
     headers = openai_headers(runtime_provider_env())
     request = urllib.request.Request(
@@ -174,7 +229,9 @@ def openai_verify():
             })
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"openai_credential_verification_http_{exc.code}") from exc
-    except (urllib.error.URLError, TimeoutError) as exc:
+    except TimeoutError as exc:
+        raise RuntimeError("openai_credential_verification_unavailable") from exc
+    except urllib.error.URLError as exc:
         raise RuntimeError("openai_credential_verification_unavailable") from exc
 
 
@@ -205,8 +262,10 @@ def openai_request(path, raw_payload):
         if not raw:
             raw = json.dumps({"error": {"message": f"openai_http_{exc.code}", "type": "server_error"}})
         return response(exc.code, raw, content_type=exc.headers.get("content-type", "application/json"))
-    except (urllib.error.URLError, TimeoutError) as exc:
-        raise RuntimeError("openai_unavailable") from exc
+    except TimeoutError as exc:
+        raise RuntimeError("openai_timeout") from exc
+    except urllib.error.URLError as exc:
+        raise openai_network_error(exc) from exc
 
 
 def handler(event, context):
@@ -241,5 +300,18 @@ def handler(event, context):
     except ValueError as exc:
         return response(400, {"error": {"message": str(exc), "type": "invalid_request_error"}})
     except Exception as exc:
-        print(json.dumps({"level": "error", "service": "assistant-api", "error": type(exc).__name__, "detail": str(exc)[:300]}))
-        return response(502, {"error": {"message": "assistant_upstream_unavailable", "type": "server_error"}})
+        diagnostic_code = classify_exception(exc)
+        request_id = getattr(context, "aws_request_id", None)
+        print(json.dumps({
+            "level": "error",
+            "service": "assistant-api",
+            "diagnostic_code": diagnostic_code,
+            "exception_type": type(exc).__name__,
+            "request_path": path,
+            "request_id": request_id,
+        }))
+        return response(
+            502,
+            {"error": {"message": "assistant_upstream_unavailable", "type": "server_error"}},
+            extra_headers={"x-toh-error-code": diagnostic_code},
+        )
