@@ -13,20 +13,6 @@ function textMatch(html: string, pattern: RegExp) {
   return html.match(pattern)?.[1]?.replace(/\s+/g, " ").trim() || null;
 }
 
-function absoluteUrl(value: string | null, base: URL) {
-  if (!value) return null;
-  try { return new URL(value, base).toString(); } catch { return null; }
-}
-
-function detectReservationLink(html: string, base: URL) {
-  for (const match of html.matchAll(/href=["']([^"']+)["']/gi)) {
-    const href = absoluteUrl(match[1], base);
-    if (!href) continue;
-    if (/(resy|opentable|sevenrooms|exploretock|toasttab|yelp\.com\/reservations|quandoo|reserve|reservation|book)/i.test(href)) return href;
-  }
-  return null;
-}
-
 function reservationProvider(url: string | null) {
   if (!url) return null;
   if (/resy/i.test(url)) return "Resy";
@@ -68,7 +54,7 @@ export async function POST(request: Request) {
     const title = textMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
     const description = textMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || textMatch(html, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i);
     const themeColor = textMatch(html, /<meta[^>]+name=["']theme-color["'][^>]+content=["']([^"']+)["']/i);
-    const reservationUrl = manifest.crawled_pages.map((page) => detectReservationLink(htmlForPage(page.url, manifest), new URL(page.url))).find(Boolean) || detectReservationLink(html, sourceUrl);
+    const reservationUrl = manifest.reservation_links[0] || null;
     const importedAt = new Date().toISOString();
 
     const { data: website, error: readError } = await supabaseAdmin.from("business_websites").select("id,theme,custom_content,site_title").eq("location_id", locationId).maybeSingle();
@@ -98,7 +84,7 @@ export async function POST(request: Request) {
         page_count: manifest.page_count,
         asset_count: manifest.asset_count,
         form_count: manifest.form_count,
-        pages: manifest.crawled_pages.map(({ url, path, title: pageTitle, description: pageDescription, canonical, headings, forms, downloads, social_links, schema_types }) => ({
+        pages: manifest.crawled_pages.map(({ url, path, title: pageTitle, description: pageDescription, canonical, headings, forms, downloads, social_links, schema_types, reservation_links }) => ({
           url,
           path,
           title: pageTitle,
@@ -109,10 +95,12 @@ export async function POST(request: Request) {
           downloads,
           social_links,
           schema_types,
+          reservation_links,
         })),
         downloads: manifest.downloads,
         social_links: manifest.social_links,
         schema_types: manifest.schema_types,
+        reservation_links: manifest.reservation_links,
         redirect_map: manifest.redirect_map,
       },
     };
@@ -139,9 +127,4 @@ export async function POST(request: Request) {
     console.error("Website import failed", { locationId, error: error instanceof Error ? error.message : error });
     return NextResponse.json({ error: "We could not analyze that website. Check the URL and try again." }, { status: 400 });
   }
-}
-
-function htmlForPage(url: string, manifest: Awaited<ReturnType<typeof crawlWebsiteForMigration>>) {
-  if (url === manifest.source_url || manifest.crawled_pages[0]?.url === url) return manifest.homepage_html;
-  return "";
 }
