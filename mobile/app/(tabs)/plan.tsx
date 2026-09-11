@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DateTimePicker from "@expo/ui/community/datetime-picker";
+import * as Location from "expo-location";
 import { Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { JourneySteps } from "@/components/planner/JourneySteps";
@@ -108,6 +109,7 @@ export default function PlanScreen() {
   const incomingPrompt = typeof params.prompt === "string" ? params.prompt.trim() : "";
   const incomingPlanType: MobilePlanType = params.planType === "restaurant" || params.planType === "activity" ? params.planType : "outing";
   const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt));
+  const [requestingLocation, setRequestingLocation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const [showExactTiming, setShowExactTiming] = useState(false);
@@ -145,9 +147,9 @@ export default function PlanScreen() {
       .then((response) => {
         const area = response.detectedLocation?.area?.trim();
         setDraft((current) => area
-          ? { ...current, area, areaSource: "search" }
+          ? { ...current, area, areaSource: "search", latitude: null, longitude: null }
           : current.areaSource === "search"
-            ? { ...current, area: "Near me", areaSource: "default" }
+            ? { ...current, area: "Near me", areaSource: "default", latitude: null, longitude: null }
             : current,
         );
       })
@@ -186,6 +188,32 @@ export default function PlanScreen() {
     });
   }
 
+  async function requestUserLocation() {
+    setRequestingLocation(true);
+    setError(null);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        setDraft((current) => ({ ...current, latitude: null, longitude: null, areaSource: current.areaSource === "device" ? "default" : current.areaSource }));
+        setError("Location access is off. Enter a neighborhood, city, or ZIP instead.");
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setDraft((current) => ({
+        ...current,
+        area: "Near me",
+        areaSource: "device",
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      }));
+    } catch {
+      setError("We couldn’t get your current location. Enter a neighborhood, city, or ZIP instead.");
+    } finally {
+      setRequestingLocation(false);
+    }
+  }
+
   function applyNativeDate(selectedDate: Date) {
     if (activePicker === "date") {
       setDraft((current) => ({ ...current, when: "custom", customDate: formatDateStorage(selectedDate) }));
@@ -197,10 +225,13 @@ export default function PlanScreen() {
 
   function submit() {
     if (!summary.query) return;
-    if (!summary.area) {
+    const hasTypedOrDetectedArea = (summary.areaSource === "search" || summary.areaSource === "manual") && Boolean(summary.area.trim()) && summary.area !== "Near me";
+    const hasDeviceLocation = summary.areaSource === "device" && summary.latitude !== null && summary.longitude !== null;
+    if (!hasTypedOrDetectedArea && !hasDeviceLocation) {
       setError("Add an area or use your current location so we know where to plan.");
       return;
     }
+
     router.push({
       pathname: "/(tabs)/results",
       params: {
@@ -211,6 +242,8 @@ export default function PlanScreen() {
         customTime: summary.customTime,
         area: summary.area,
         areaSource: summary.areaSource,
+        latitude: summary.latitude == null ? "" : String(summary.latitude),
+        longitude: summary.longitude == null ? "" : String(summary.longitude),
         partySize: summary.partySize,
         budget: summary.budget,
         travel: summary.travel,
@@ -233,6 +266,7 @@ export default function PlanScreen() {
   };
 
   const detectedFromSearch = draft.areaSource === "search" && Boolean(draft.area.trim()) && draft.area !== "Near me";
+  const usingDeviceLocation = draft.areaSource === "device" && draft.latitude !== null && draft.longitude !== null;
 
   return (
     <FoundationScreen
@@ -261,19 +295,29 @@ export default function PlanScreen() {
           {detectedFromSearch ? (
             <View style={{ marginTop: 12, minHeight: 50, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderWidth: 1, borderColor: "rgba(52,211,153,0.20)", backgroundColor: "rgba(52,211,153,0.07)", borderRadius: 16, paddingHorizontal: 14 }}>
               <AppText variant="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{draft.area}</AppText>
-              <Button fullWidth={false} variant="secondary" onPress={() => setDraft((current) => ({ ...current, areaSource: "manual" }))}>Change</Button>
+              <Button fullWidth={false} variant="secondary" onPress={() => setDraft((current) => ({ ...current, areaSource: "manual", latitude: null, longitude: null }))}>Change</Button>
             </View>
           ) : (
-            <SearchField
-              value={draft.area === "Near me" && draft.areaSource === "default" ? "" : draft.area}
-              onChangeText={(value) => setDraft((current) => ({ ...current, area: value || "Near me", areaSource: value ? "manual" : "default" }))}
-              placeholder="Neighborhood, city, or ZIP"
-              style={{ marginTop: theme.spacing.md }}
-            />
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginTop: theme.spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <SearchField
+                  value={draft.areaSource === "default" || usingDeviceLocation ? "" : draft.area}
+                  onChangeText={(value) => setDraft((current) => ({
+                    ...current,
+                    area: value,
+                    areaSource: value.trim() ? "manual" : "default",
+                    latitude: null,
+                    longitude: null,
+                  }))}
+                  placeholder="Neighborhood, city, or ZIP"
+                />
+              </View>
+              <Button fullWidth={false} variant={usingDeviceLocation ? "secondary" : "secondary"} disabled={requestingLocation} onPress={() => void requestUserLocation()}>
+                {requestingLocation ? "Locating…" : usingDeviceLocation ? "✓ My location" : "Use my location"}
+              </Button>
+            </View>
           )}
-          <AppText variant="caption" muted style={{ marginTop: 8 }}>
-            {resolvingIntent ? "Reading the location from your plan..." : detectedFromSearch ? "" : "If you leave this blank, we’ll plan near you."}
-          </AppText>
+          {resolvingIntent ? <AppText variant="caption" muted style={{ marginTop: 8 }}>Reading the location from your plan...</AppText> : null}
         </Card>
 
         <Card elevated>
@@ -391,7 +435,7 @@ export default function PlanScreen() {
         </Card>
 
         {error ? <AppText style={{ color: "#fecaca" }}>{error}</AppText> : null}
-        <Button onPress={submit} disabled={!summary.query || resolvingIntent}>Show My Picks →</Button>
+        <Button onPress={submit} disabled={!summary.query || resolvingIntent || requestingLocation}>Show My Picks →</Button>
       </View>
     </FoundationScreen>
   );
