@@ -8,9 +8,17 @@ type Analysis = {
   provider?: string | null;
   title?: string | null;
   page_count?: number;
+  asset_count?: number;
+  form_count?: number;
   reservation_provider?: string | null;
   reservation_url?: string | null;
   mode?: MigrationMode;
+  migration_manifest?: {
+    redirect_map?: Array<{ from: string; to: string }>;
+    downloads?: string[];
+    social_links?: string[];
+    schema_types?: string[];
+  };
 };
 
 const modes: Array<{ id: MigrationMode; title: string; body: string }> = [
@@ -43,20 +51,23 @@ export function WebsiteImportPanel({ locationId }: { locationId: string }) {
       return;
     }
     setAnalysis(data.analysis || null);
-    setMessage("Website analyzed and connected to this location draft.");
+    setMessage("Website analyzed and connected to this location draft. Review the migration summary before publishing.");
   }
+
+  const redirectCount = analysis?.migration_manifest?.redirect_map?.length || 0;
 
   return <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Move an existing website</p><h2 className="mt-2 text-xl font-black">Import the site you already have</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Enter the current website once. TheOutHaven will detect the platform, pages, branding signals, and reservation provider, then keep business facts connected to the same Edit Location data you already use.</p></div>
+      <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Move an existing website</p><h2 className="mt-2 text-xl font-black">Import the site you already have</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Enter the current website once. TheOutHaven scans a bounded set of same-site pages for page structure, assets, forms, SEO signals, social links, downloads, and reservation providers while keeping business facts connected to Edit Location.</p></div>
       <span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">No duplicate business editor</span>
     </div>
     <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-      <input value={url} onChange={(event)=>setUrl(event.target.value)} placeholder="https://yourbusiness.com" className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-semibold text-white outline-none focus:border-[#ff2142]/50" />
+      <input value={url} onChange={(event)=>setUrl(event.target.value)} placeholder="yourbusiness.com" className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-semibold text-white outline-none focus:border-[#ff2142]/50" />
       <button type="button" disabled={busy || !url.trim()} onClick={analyze} className="rounded-2xl bg-[#ff2142] px-5 py-3 text-sm font-black text-white disabled:opacity-40">{busy ? "Analyzing…" : "Analyze website"}</button>
     </div>
     <div className="mt-4 grid gap-3 lg:grid-cols-3">{modes.map(item=><button key={item.id} type="button" onClick={()=>setMode(item.id)} className={`rounded-2xl border p-4 text-left transition ${mode===item.id?"border-[#ff2142]/60 bg-[#ff2142]/10":"border-white/10 bg-black/20 hover:bg-white/[0.04]"}`}><p className="font-black">{item.title}</p><p className="mt-2 text-xs leading-5 text-white/50">{item.body}</p></button>)}</div>
-    {analysis ? <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Platform" value={analysis.provider || "Detected website"}/><Metric label="Pages found" value={String(analysis.page_count || 0)}/><Metric label="Reservations" value={analysis.reservation_provider || "Not detected"}/><Metric label="Migration" value={mode === "preserve_exact" ? "Preserve" : mode === "modernize" ? "Modernize" : "Redesign"}/></div> : null}
+    {analysis ? <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"><Metric label="Platform" value={analysis.provider || "Detected website"}/><Metric label="Pages scanned" value={String(analysis.page_count || 0)}/><Metric label="Assets found" value={String(analysis.asset_count || 0)}/><Metric label="Forms found" value={String(analysis.form_count || 0)}/><Metric label="Old URLs mapped" value={String(redirectCount)}/><Metric label="Reservations" value={analysis.reservation_provider || "Not detected"}/></div> : null}
+    {analysis?.migration_manifest ? <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">Migration review also found {analysis.migration_manifest.downloads?.length || 0} downloadable file(s), {analysis.migration_manifest.social_links?.length || 0} social profile link(s), and {analysis.migration_manifest.schema_types?.length || 0} structured-data type(s). Nothing is published automatically.</div> : null}
     {message ? <p className="mt-4 text-sm font-bold text-white/65">{message}</p> : null}
   </section>;
 }
