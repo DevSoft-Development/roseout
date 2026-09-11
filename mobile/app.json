@@ -4,6 +4,7 @@
     "slug": "theouthaven",
     "scheme": "theouthaven",
     "version": "0.1.0",
+    "icon": "../public/android-chrome-512x512.png",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "ios": {
@@ -15,6 +16,10 @@
     },
     "android": {
       "package": "com.theouthaven.app",
+      "adaptiveIcon": {
+        "foregroundImage": "../public/android-chrome-512x512.png",
+        "backgroundColor": "#050505"
+      },
       "intentFilters": [
         {
           "action": "VIEW",
