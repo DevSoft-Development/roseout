@@ -94,9 +94,12 @@ export default function LocationDetailScreen() {
 
   return (
     <FoundationScreen
-      eyebrow={value(params.kind) === "activity" ? "THING TO DO" : "RESTAURANT"}
+      eyebrow={value(params.kind) === "activity" ? "ACTIVITY" : "RESTAURANT"}
       title={name}
       description={value(params.category) || address || "Location details"}
+      showBrandHeader
+      showBack
+      backLabel="Back"
     >
       <View style={{ gap: theme.spacing.md }}>
         <Card elevated>

@@ -1,3 +1,4 @@
+import { outingCustomerReason } from "@/lib/customer-reason";
 import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 export function placeRouteParams(place: MobilePlaceResult) {
@@ -33,7 +34,7 @@ export function outingRouteParams(outing: MobileOutingResult) {
       activity: outing.activity ? JSON.stringify(outing.activity) : "",
       distanceMiles: outing.distanceMiles == null ? "" : String(outing.distanceMiles),
       walkMinutes: outing.walkMinutes == null ? "" : String(outing.walkMinutes),
-      reason: outing.reason || "",
+      reason: outingCustomerReason(outing),
       resultType: outing.resultType || "pair",
     },
   };

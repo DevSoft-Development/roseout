@@ -4,23 +4,37 @@ import { AppText } from "@/components/ui/AppText";
 import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
-const MESSAGES = [
-  "Finding your perfect OUTing...",
-  "Matching the vibe you asked for...",
-  "Checking restaurants and things to do...",
-  "Comparing how the stops fit together...",
-  "Ranking the strongest combinations...",
-  "Almost ready...",
-];
+type PlanType = "outing" | "restaurant" | "activity";
 
-export function SearchLoadingJourney() {
+const LOADING_LINES: Record<PlanType, string[]> = {
+  outing: [
+    "Finding your perfect outing...",
+    "Matching restaurants and activities...",
+    "Checking distance, ratings, and fit...",
+    "Building your strongest complete picks...",
+  ],
+  restaurant: [
+    "Finding your perfect restaurant...",
+    "Matching the food, vibe, and area...",
+    "Checking ratings and fit...",
+  ],
+  activity: [
+    "Finding your perfect activity...",
+    "Matching the vibe, area, and experience...",
+    "Checking ratings and fit...",
+  ],
+};
+
+export function SearchLoadingJourney({ planType = "outing" }: { planType?: PlanType }) {
   const { theme } = useAppTheme();
   const [index, setIndex] = useState(0);
   const pulse = useRef(new Animated.Value(0.38)).current;
   const translate = useRef(new Animated.Value(-100)).current;
+  const messages = LOADING_LINES[planType];
 
   useEffect(() => {
-    const timer = setInterval(() => setIndex((value) => (value + 1) % MESSAGES.length), 1500);
+    setIndex(0);
+    const timer = setInterval(() => setIndex((value) => (value + 1) % messages.length), 1800);
     const loop = Animated.loop(
       Animated.parallel([
         Animated.sequence([
@@ -38,17 +52,16 @@ export function SearchLoadingJourney() {
       clearInterval(timer);
       loop.stop();
     };
-  }, [pulse, translate]);
+  }, [messages, pulse, translate]);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
       <View style={{ gap: 7 }}>
-        <AppText variant="eyebrow" accent>BUILDING YOUR OUTING</AppText>
-        <AppText variant="h2">{MESSAGES[index]}</AppText>
-        <AppText muted>We’re ranking complete combinations first so you spend less time comparing tabs and more time choosing.</AppText>
+        <AppText variant="eyebrow" accent>THEOUTHAVEN IS SEARCHING</AppText>
+        <AppText variant="h2">{messages[index % messages.length]}</AppText>
       </View>
 
-      {[0, 1, 2].map((item) => (
+      {[0, 1, 2, 3].map((item) => (
         <Card key={item} elevated style={{ minHeight: 190, overflow: "hidden", padding: 0 }}>
           <Animated.View style={{ opacity: pulse }}>
             <View style={{ height: 104, backgroundColor: theme.colors.borderStrong }} />
