@@ -6,8 +6,8 @@ import { WEBSITE_IMPORT_ADAPTERS, detectWebsiteImportAdapter } from "@/lib/websi
 
 describe("premium website production contracts", () => {
   it("keeps the expanded premium design catalog composition-backed", () => {
-    expect(WEBSITE_DESIGN_DIRECTIONS.length).toBeGreaterThanOrEqual(18);
-    expect(WEBSITE_DESIGN_DIRECTIONS.reduce((sum, direction) => sum + direction.variants.length, 0)).toBeGreaterThanOrEqual(60);
+    expect(WEBSITE_DESIGN_DIRECTIONS.length).toBeGreaterThanOrEqual(40);
+    expect(WEBSITE_DESIGN_DIRECTIONS.reduce((sum, direction) => sum + direction.variants.length, 0)).toBeGreaterThanOrEqual(120);
     for (const direction of WEBSITE_DESIGN_DIRECTIONS) {
       expect(WEBSITE_COMPOSITION_PROFILES).toHaveProperty(direction.id);
       expect(direction.variants).toContain(direction.defaultVariant);
@@ -34,7 +34,7 @@ describe("premium website production contracts", () => {
     const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
     expect(read("app/api/business/website/import/route.ts")).toContain('from("business_websites")');
     expect(read("app/api/business/website/import/route.ts")).toContain('from("locations")');
-    expect(read("lib/websites/content-artifact.ts")).toContain("addMultiPageArtifacts");
+    expect(read("lib/websites/content-artifact.ts")).toContain("addGeneratedWebsitePages");
     expect(read("lib/websites/content-artifact.ts")).toContain("routeGeneratedReservationArtifact");
     expect(read("app/api/business/website/health/route.ts")).toContain("getGeneratedWebsiteLocationSnapshot");
     expect(read("app/api/business/website/rollback/route.ts")).toContain("business_website_versions");
