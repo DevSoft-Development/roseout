@@ -1,5 +1,7 @@
 import "server-only";
 
+import { assertPublicWebsiteUrl } from "@/lib/websites/import-crawler";
+
 export type LiveProbe = {
   ok: boolean;
   status: number | null;
@@ -10,11 +12,13 @@ export type LiveProbe = {
 async function probe(url: string, timeoutMs = 7000): Promise<LiveProbe> {
   const started = Date.now();
   try {
-    const response = await fetch(url, {
+    const target = await assertPublicWebsiteUrl(url);
+    if (target.username || target.password) throw new Error("url_credentials_not_allowed");
+    const response = await fetch(target, {
       method: "GET",
       redirect: "follow",
       cache: "no-store",
-      headers: { "user-agent": "TheOutHaven Website Health/1.0" },
+      headers: { "user-agent": "TheOutHaven Website Health/1.1" },
       signal: AbortSignal.timeout(timeoutMs),
     });
     return {
@@ -28,7 +32,7 @@ async function probe(url: string, timeoutMs = 7000): Promise<LiveProbe> {
       ok: false,
       status: null,
       response_ms: Date.now() - started,
-      error: error instanceof Error ? error.name || error.message : "request_failed",
+      error: error instanceof Error ? error.message || error.name : "request_failed",
     };
   }
 }
