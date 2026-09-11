@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
 import { WebsiteImportPanel } from "@/components/websites/WebsiteImportPanel";
+import { WebsiteMigrationReviewPanel } from "@/components/websites/WebsiteMigrationReviewPanel";
 import { WebsiteHealthPanel } from "@/components/websites/WebsiteHealthPanel";
 import { WebsiteCutoverReadinessPanel } from "@/components/websites/WebsiteCutoverReadinessPanel";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
@@ -76,6 +77,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{contentSources.map(source=><div key={source.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{source.label}</p><p className="mt-2 text-sm font-black text-white">{source.value}</p></div>)}</div>
             </section>
             <WebsiteImportPanel locationId={location.id} />
+            <WebsiteMigrationReviewPanel locationId={location.id} />
             <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
           </div>
         ) : <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website setup is temporarily unavailable.</section>}
