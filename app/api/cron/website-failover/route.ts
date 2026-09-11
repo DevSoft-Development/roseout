@@ -149,20 +149,26 @@ async function auditLiveWebsite(website: { id: string; location_id: string; doma
   const reservationUrl = internalReservations ? null : String(location?.external_reservation_url || location?.reservation_url || location?.reservation_link || location?.booking_url || "").trim() || null;
   const health = await checkHostedWebsiteLiveHealth({ liveUrl: `https://${domain}`, reservationUrl });
   const now = new Date().toISOString();
-  const errorCode = !health.site?.ok
+  const healthState = !health.site?.ok
     ? "website_unreachable"
     : reservationUrl && !health.reservation?.ok
       ? "reservation_link_unreachable"
       : !health.sitemap?.ok || !health.robots?.ok
         ? "website_seo_endpoint_unhealthy"
         : null;
+
+  // Health warnings are not publish failures. Only an unreachable website should
+  // populate last_error; booking and SEO warnings are returned to operations while
+  // the deployment remains successfully deployed.
   await supabaseAdmin.from("business_websites").update({
     last_health_check_at: now,
-    last_error: errorCode,
+    deployment_status: health.site?.ok ? "deployed" : "failed",
+    last_error: healthState === "website_unreachable" ? healthState : null,
     updated_at: now,
   }).eq("id", website.id);
+
   return {
-    state: errorCode || "healthy",
+    state: healthState || "healthy",
     siteStatus: health.site?.status ?? null,
     reservationStatus: health.reservation?.status ?? null,
     sitemapOk: Boolean(health.sitemap?.ok),
