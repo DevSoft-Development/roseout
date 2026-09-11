@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 16.17.0"
+    "version": ">= 16.17.0
   },
   "build": {
     "development": {
@@ -10,11 +10,17 @@
     },
     "preview": {
       "distribution": "internal",
-      "environment": "preview"
+      "environment": "preview",
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "environment": "production"
+      "environment": "production",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
