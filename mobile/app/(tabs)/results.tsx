@@ -26,6 +26,12 @@ function parseArray(raw: string | undefined) {
   }
 }
 
+function parseNumber(raw: string | undefined) {
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
 function headingFor(planType: PlanType) {
   if (planType === "restaurant") return "Your best restaurants, curated.";
   if (planType === "activity") return "Your best activities, curated.";
@@ -51,6 +57,9 @@ export default function ResultsScreen() {
     customDate: params.customDate || "",
     customTime: params.customTime || "",
     area: params.area || "Near me",
+    areaSource: params.areaSource || "default",
+    latitude: parseNumber(params.latitude),
+    longitude: parseNumber(params.longitude),
     partySize: params.partySize || "2",
     budget: params.budget || "$$",
     travel: params.travel || "nearby",
@@ -63,6 +72,9 @@ export default function ResultsScreen() {
     params.customDate,
     params.customTime,
     params.area,
+    params.areaSource,
+    params.latitude,
+    params.longitude,
     params.partySize,
     params.budget,
     params.travel,
