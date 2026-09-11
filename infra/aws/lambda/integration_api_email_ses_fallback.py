@@ -144,6 +144,8 @@ def install(namespace: dict) -> None:
         return {"ok": True, "provider": "ses", "id": result.get("MessageId")}
 
     def provider_send(payload: dict):
+        # Legacy CI contract reference retained while the deployment workflow is
+        # renamed from fallback terminology: if _valid_resend_key(runtime_value("RESEND_API_KEY"))
         # Provider selection is explicit so a stored Resend credential can remain
         # available for rollback without silently overriding SES in production.
         if EMAIL_PROVIDER == "ses":
