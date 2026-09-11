@@ -69,6 +69,12 @@ function eventSchema(location: GeneratedWebsiteLocationSnapshot, base: string | 
   }));
 }
 
+function withoutContext(item: Record<string, unknown>) {
+  const copy = { ...item };
+  delete copy["@context"];
+  return copy;
+}
+
 function enhanceHtml(input: string, canonicalUrl: string | null, website: BusinessWebsite, location: GeneratedWebsiteLocationSnapshot, path: string) {
   const name = location.name || location.title || website.site_title || "Business";
   const existingTitle = input.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || name;
@@ -89,7 +95,10 @@ function enhanceHtml(input: string, canonicalUrl: string | null, website: Busine
     ...(location.address ? { address: { "@type": "PostalAddress", streetAddress: location.address } } : {}),
     ...(location.reservation_link ? { potentialAction: { "@type": "ReserveAction", target: location.reservation_link } } : {}),
   };
-  const graph = [structured, ...eventSchema(location, canonicalUrl)];
+  const graph: Array<Record<string, unknown>> = [
+    structured,
+    ...eventSchema(location, canonicalUrl),
+  ];
 
   const social = [
     canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : "",
@@ -102,7 +111,7 @@ function enhanceHtml(input: string, canonicalUrl: string | null, website: Busine
     `<meta name="twitter:title" content="${escapeHtml(title)}">`,
     `<meta name="twitter:description" content="${escapeHtml(description)}">`,
     image ? `<meta name="twitter:image" content="${escapeHtml(image)}">` : "",
-    `<script type="application/ld+json">${escapeJson({ "@context": "https://schema.org", "@graph": graph.map(({ ["@context"]: _context, ...item }) => item) })}</script>`,
+    `<script type="application/ld+json">${escapeJson({ "@context": "https://schema.org", "@graph": graph.map(withoutContext) })}</script>`,
   ].filter(Boolean).join("");
 
   let html = input
