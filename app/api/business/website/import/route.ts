@@ -127,7 +127,7 @@ export async function POST(request: Request) {
     if (readError) throw readError;
     if (!website) return NextResponse.json({ error: "Create the website draft before importing." }, { status: 409 });
     const theme = { ...(website.theme || {}), migration_mode: mode, design_lock: mode === "preserve_exact", imported_theme_color: themeColor, imported_provider: adapter.label, import_adapter_id: adapter.id };
-    const importAnalysis = { source_url: sourceUrl.toString(), provider: adapter.label, adapter_id: adapter.id, mode, imported_at: importedAt, title, description, discovered_pages: pages, discovered_assets: assets, reservation_url: reservationUrl, reservation_provider: reservationProvider(reservationUrl), ...adapterSignals };
+    const importAnalysis = { source_url: sourceUrl.toString(), ...adapterSignals, mode, imported_at: importedAt, title, description, discovered_pages: pages, discovered_assets: assets, reservation_url: reservationUrl, reservation_provider: reservationProvider(reservationUrl) };
     const customContent = { ...(website.custom_content || {}), website_import: importAnalysis };
     const { data: updated, error: updateError } = await supabaseAdmin.from("business_websites").update({ theme, custom_content: customContent, site_title: website.site_title || title, updated_at: importedAt }).eq("id", website.id).select("*").single();
     if (updateError) throw updateError;
