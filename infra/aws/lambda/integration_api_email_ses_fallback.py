@@ -111,12 +111,10 @@ def install(namespace: dict) -> None:
         if text is not None:
             body["Text"] = {"Data": str(text), "Charset": "UTF-8"}
 
-        reply_to = str(payload.get("replyTo") or payload.get("reply_to") or "").strip()
-        reply_to_addresses = []
-        if reply_to:
-            if len(reply_to) > 320 or not email_re.fullmatch(reply_to):
-                raise ValueError("email_reply_to_invalid")
-            reply_to_addresses = [reply_to]
+        reply_to_value = payload.get("replyTo")
+        if reply_to_value is None:
+            reply_to_value = payload.get("reply_to")
+        reply_to_addresses = normalize_email_list(reply_to_value or [], "reply_to")
 
         request = {
             "FromEmailAddress": sender,
