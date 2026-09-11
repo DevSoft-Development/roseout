@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
 import { renderEnhancedWebsiteArtifact } from "@/lib/websites/content-artifact";
 import { upgradeGeneratedReservationArtifact } from "@/lib/websites/native-reservation-artifact";
+import { routeGeneratedReservationArtifact } from "@/lib/websites/reservation-routing-artifact";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 import type { BusinessWebsite, WebsiteSection } from "@/lib/websites/data";
 
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
     updated_at: new Date().toISOString(),
   } satisfies BusinessWebsite;
 
-  const files = upgradeGeneratedReservationArtifact(renderEnhancedWebsiteArtifact(website, renderLocation), locationId);
+  const routedFiles = routeGeneratedReservationArtifact(renderEnhancedWebsiteArtifact(website, renderLocation), renderLocation);
+  const files = upgradeGeneratedReservationArtifact(routedFiles, locationId);
   const index = files.find((file) => file.path === "index.html");
   if (!index || (index.encoding && index.encoding !== "utf8")) {
     return NextResponse.json({ error: "Preview is unavailable." }, { status: 500 });
