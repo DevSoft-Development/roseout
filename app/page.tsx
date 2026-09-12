@@ -20,24 +20,18 @@ const occasions = [
   "Date night",
   "Girls’ night",
   "Birthday",
-  "Family outing",
-  "Last-minute plans",
-  "Group night out",
+  "Night out",
+  "Brunch",
+  "Something different",
 ];
 
 const areas = [
-  "Queens",
-  "Brooklyn",
   "Manhattan",
-  "Bronx",
-  "Staten Island",
+  "Brooklyn",
+  "Queens",
   "Long Island",
-];
-
-const experiences = [
-  ["Dinner worth leaving home for", "From neighborhood favorites to special-occasion tables."],
-  ["Something to do next", "Comedy, karaoke, bowling, museums, games, nightlife, and more."],
-  ["Plans that fit the moment", "Shape the outing around the occasion, area, timing, and mood."],
+  "Hoboken",
+  "Jersey City",
 ];
 
 export default function HomePage() {
@@ -47,197 +41,210 @@ export default function HomePage() {
       <TheOutHavenHeader />
 
       <section className="relative overflow-hidden border-b border-white/5 pt-20">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(225,6,42,0.2),transparent_30%),radial-gradient(circle_at_85%_35%,rgba(225,6,42,0.1),transparent_25%),linear-gradient(180deg,#050505_0%,#090606_70%,#050505_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_5%,rgba(225,6,42,.22),transparent_34%),radial-gradient(circle_at_8%_48%,rgba(225,6,42,.09),transparent_26%),linear-gradient(180deg,#050505_0%,#090606_62%,#050505_100%)]" />
         <div className="absolute inset-x-0 top-20 h-px bg-gradient-to-r from-transparent via-[#e1062a]/45 to-transparent" />
 
-        <div className="relative mx-auto grid w-full max-w-7xl gap-12 px-5 pb-16 pt-14 sm:px-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,.75fr)] lg:items-center lg:px-8 lg:pb-20 lg:pt-20">
-          <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">
-              New York City + Long Island
-            </p>
+        <div className="relative mx-auto flex min-h-[calc(100svh-5rem)] w-full max-w-7xl flex-col items-center justify-center px-5 pb-16 pt-14 text-center sm:px-6 lg:px-8 lg:pb-20 lg:pt-16">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">
+            New York City + Long Island
+          </p>
 
-            <h1 className="mt-6 max-w-4xl text-5xl font-black leading-[.94] tracking-[-.06em] sm:text-6xl lg:text-[5.4rem]">
-              Plan the whole outing.
-              <span className="block text-[#e1062a]">In one place.</span>
-            </h1>
+          <h1 className="mt-5 max-w-5xl text-5xl font-black leading-[.94] tracking-[-.06em] sm:text-6xl lg:text-[5.75rem]">
+            Plan better <span className="text-[#e1062a]">OUTings.</span>
+          </h1>
 
-            <p className="mt-7 max-w-2xl text-lg leading-8 text-white/66 sm:text-xl sm:leading-9">
-              TheOutHaven brings restaurants, activities, nightlife, and local experiences together around the kind of day or night you actually want.
-            </p>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl sm:leading-9">
+            Tell us what you&apos;re in the mood for. We&apos;ll find the places and put the outing together.
+          </p>
 
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#plan-your-outing"
-                data-analytics="homepage_plan_outing_click"
-                className="inline-flex min-h-13 items-center justify-center whitespace-nowrap rounded-full bg-[#e1062a] px-8 py-4 text-sm font-black text-white shadow-2xl shadow-red-950/40 transition hover:bg-[#ff1744] focus:outline-none focus:ring-2 focus:ring-[#e1062a]/60 focus:ring-offset-2 focus:ring-offset-black"
-              >
-                Plan an Outing
-              </a>
-
-              <Link
-                href="/explore"
-                className="inline-flex min-h-13 items-center justify-center whitespace-nowrap rounded-full border border-white/15 bg-white/[.05] px-8 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black focus:outline-none focus:ring-2 focus:ring-white/40 focus:ring-offset-2 focus:ring-offset-black"
-              >
-                Explore Places
-              </Link>
-            </div>
-
-            <div className="mt-10 grid max-w-2xl grid-cols-3 border-y border-white/10 py-5 text-sm">
-              <div className="pr-4">
-                <p className="font-black text-white">Eat</p>
-                <p className="mt-1 text-white/40">Restaurants & drinks</p>
-              </div>
-              <div className="border-l border-white/10 px-4">
-                <p className="font-black text-white">Do</p>
-                <p className="mt-1 text-white/40">Activities & nightlife</p>
-              </div>
-              <div className="border-l border-white/10 pl-4">
-                <p className="font-black text-white">Go</p>
-                <p className="mt-1 text-white/40">Neighborhoods & areas</p>
-              </div>
-            </div>
-          </div>
-
-          <PremiumPreview />
-
-          <div className="min-w-0 pt-4 lg:col-span-2 lg:pt-8">
+          <div className="mt-10 w-full">
             <LiveOutingSearch />
           </div>
-        </div>
-      </section>
 
-      <section className="border-b border-white/10 bg-[#090909]">
-        <div className="mx-auto grid w-full max-w-7xl gap-px bg-white/10 sm:grid-cols-3">
-          {experiences.map(([title, text], index) => (
-            <article key={title} className="bg-[#090909] px-6 py-8 sm:px-8">
-              <p className="text-xs font-black tracking-[0.2em] text-[#e1062a]">0{index + 1}</p>
-              <h2 className="mt-4 text-xl font-black tracking-[-0.02em]">{title}</h2>
-              <p className="mt-3 text-sm leading-6 text-white/50">{text}</p>
-            </article>
-          ))}
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-black uppercase tracking-[0.18em] text-white/28">
+            <span>Restaurants</span>
+            <span className="text-[#e1062a]">•</span>
+            <span>Activities</span>
+            <span className="text-[#e1062a]">•</span>
+            <span>Nightlife</span>
+            <span className="text-[#e1062a]">•</span>
+            <span>Complete Outings</span>
+          </div>
         </div>
       </section>
 
       <section className="bg-white px-5 py-20 text-black sm:px-6 lg:px-8 lg:py-24">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-10 lg:grid-cols-[.8fr_1.2fr] lg:items-end">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">
-                Made for real plans
-              </p>
-              <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
-                Less searching. More deciding.
-              </h2>
-            </div>
-            <p className="max-w-2xl text-lg leading-8 text-black/58 lg:justify-self-end">
-              TheOutHaven is built around the full outing, not a single stop. Start with the occasion, choose what fits, and keep the night moving without piecing everything together yourself.
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">How it works</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
+              One search. Your whole outing.
+            </h2>
+            <p className="mt-5 text-lg leading-8 text-black/58">
+              Most searches give you places. TheOutHaven helps put the night together.
             </p>
           </div>
 
           <div className="mt-14 grid gap-5 md:grid-cols-3">
-            <LightFeature number="01" title="Say what you want" text="Dinner and comedy in Manhattan. A rooftop birthday in Queens. Brunch and something fun nearby." />
-            <LightFeature number="02" title="See what fits together" text="Compare restaurants, activities, nightlife, and nearby options around the plan you described." />
-            <LightFeature number="03" title="Make it yours" text="Choose the places that feel right, open their details, and build the outing around your people and your time." />
+            <LightFeature
+              number="01"
+              title="Tell us what you want"
+              text="Try something natural like “Italian dinner and something fun afterward in Queens.”"
+            />
+            <LightFeature
+              number="02"
+              title="We find what fits"
+              text="We bring together food, activities, distance, vibe, and timing around the kind of outing you described."
+            />
+            <LightFeature
+              number="03"
+              title="Pick your outing"
+              text="Compare the places that work together, choose what feels right, and keep the night moving."
+            />
           </div>
         </div>
       </section>
 
-      <section className="relative overflow-hidden px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(225,6,42,0.13),transparent_28%)]" />
-        <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-2">
-          <ChoiceSection eyebrow="Choose the occasion" title="Start with the reason you’re going out." items={occasions} />
-          <ChoiceSection eyebrow="Choose the area" title="Find the right part of New York for the plan." items={areas} />
-        </div>
-      </section>
-
-      <section className="px-5 pb-20 sm:px-6 lg:px-8 lg:pb-24">
-        <div className="mx-auto max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0b]">
-          <div className="grid gap-0 lg:grid-cols-[1.15fr_.85fr]">
-            <div className="p-8 sm:p-10 lg:p-12">
-              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">
-                Explore TheOutHaven
+      <section className="relative overflow-hidden border-y border-white/10 px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(225,6,42,.14),transparent_30%)]" />
+        <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">See it in action</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
+              Search the way you actually think about going out.
+            </h2>
+            <p className="mt-5 max-w-xl text-lg leading-8 text-white/58">
+              You don&apos;t need to start with a category or know the exact place. Start with the night you want.
+            </p>
+            <div className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[.035] p-5 sm:p-6">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">Try searching</p>
+              <p className="mt-3 text-2xl font-black leading-snug text-white sm:text-3xl">
+                “Dinner and live music somewhere nice for date night.”
               </p>
-              <h2 className="mt-4 max-w-2xl text-4xl font-black tracking-[-0.045em] sm:text-5xl">
-                Find places worth building a plan around.
-              </h2>
-              <p className="mt-5 max-w-2xl text-base leading-7 text-white/58">
-                Browse restaurants, activities, nightlife, and experiences across New York City and Long Island, then turn the places you like into a complete outing.
-              </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Link href="/explore" className="inline-flex min-h-12 items-center justify-center rounded-full bg-white px-7 text-sm font-black text-black transition hover:bg-white/85">
-                  Explore Places
-                </Link>
-                <Link href="/about" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/15 px-7 text-sm font-black text-white transition hover:bg-white hover:text-black">
-                  About TheOutHaven
-                </Link>
-              </div>
             </div>
-            <div className="border-t border-white/10 bg-[radial-gradient(circle_at_center,rgba(225,6,42,.26),transparent_52%),#120506] p-8 lg:border-l lg:border-t-0 lg:p-12">
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff8a9b]">One city. Countless possibilities.</p>
-              <div className="mt-8 space-y-5">
-                {["Dinner that matches the mood", "An activity that keeps the night going", "A neighborhood that brings it all together"].map((item) => (
-                  <div key={item} className="border-b border-white/10 pb-5 last:border-0 last:pb-0">
-                    <p className="text-lg font-black leading-7">{item}</p>
-                  </div>
-                ))}
+          </div>
+
+          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0b] shadow-2xl shadow-black/50">
+            <div className="border-b border-white/10 px-6 py-5 sm:px-8">
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff8a9b]">Your outing</p>
+              <p className="mt-2 text-lg font-black">A date night that keeps moving</p>
+            </div>
+            <div className="grid gap-0 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
+              <DemoStop label="Dinner" title="Italian" detail="Romantic • Manhattan" />
+              <div className="flex items-center justify-center border-y border-white/10 px-5 py-4 sm:border-x sm:border-y-0">
+                <div className="text-center">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-white/30">Next stop</p>
+                  <p className="mt-1 text-sm font-black text-[#ff8a9b]">8 min walk</p>
+                </div>
               </div>
+              <DemoStop label="Activity" title="Live music" detail="Jazz • Nearby" />
             </div>
           </div>
         </div>
       </section>
 
-      <section className="border-y border-white/10 bg-[#120606] px-5 py-16 sm:px-6 lg:px-8">
+      <section className="bg-[#090909] px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Built for the whole outing</p>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">Eat. Do. Go.</h2>
+          </div>
+          <div className="mt-12 grid gap-px overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 md:grid-cols-3">
+            <DarkFeature title="Eat" text="Find restaurants, brunch, drinks, rooftops, and places worth building the night around." />
+            <DarkFeature title="Do" text="Add activities, entertainment, nightlife, live music, games, and experiences." />
+            <DarkFeature title="Go" text="Keep the stops connected so the outing makes sense geographically, not just individually." />
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Need inspiration?</p>
+              <h2 className="mt-3 text-4xl font-black tracking-[-0.045em] sm:text-5xl">Plan by occasion.</h2>
+            </div>
+            <Link href="/explore" className="text-sm font-black text-white/55 transition hover:text-white">
+              Explore more ideas →
+            </Link>
+          </div>
+
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {occasions.map((occasion, index) => (
+              <Link
+                key={occasion}
+                href={`/create?prompt=${encodeURIComponent(occasion)}`}
+                className="group relative min-h-44 overflow-hidden rounded-[1.75rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.18),transparent_38%),#0b0b0b] p-6 transition hover:-translate-y-1 hover:border-[#e1062a]/50"
+              >
+                <span className="text-xs font-black tracking-[0.2em] text-[#ff8a9b]">0{index + 1}</span>
+                <div className="absolute inset-x-6 bottom-6 flex items-end justify-between gap-4">
+                  <h3 className="text-2xl font-black tracking-[-0.03em]">{occasion}</h3>
+                  <span className="text-xl text-white/35 transition group-hover:translate-x-1 group-hover:text-white">→</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/10 bg-white px-5 py-18 text-black sm:px-6 lg:px-8 lg:py-20">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Popular areas</p>
+              <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Start with where you want the night to happen.</h2>
+            </div>
+            <div className="flex max-w-2xl flex-wrap gap-2.5 lg:justify-end">
+              {areas.map((area) => (
+                <Link
+                  key={area}
+                  href={`/create?prompt=${encodeURIComponent(area)}`}
+                  className="rounded-full border border-black/10 bg-[#f6f6f6] px-5 py-3 text-sm font-black text-black/65 transition hover:border-[#e1062a]/40 hover:bg-[#fff2f4] hover:text-black"
+                >
+                  {area}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-white/10 bg-[#120606] px-5 py-16 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-black uppercase tracking-[0.26em] text-[#ff8a9b]">For businesses</p>
             <h2 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">
-              Be part of where people decide to go next.
+              Your customers are already deciding where to go next.
             </h2>
             <p className="mt-4 max-w-2xl text-base leading-7 text-white/58">
-              Keep your presence accurate, show what makes your business worth choosing, and give people a clearer path from discovery to a night out.
+              Bring your business to TheOutHaven and show up while people are deciding where to eat, what to do, and where to go next.
             </p>
           </div>
           <Link href="/business" className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full bg-[#e1062a] px-8 text-sm font-black text-white transition hover:bg-[#ff1744]">
-            For Businesses
+            TheOutHaven for Business
+          </Link>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_100%,rgba(225,6,42,.18),transparent_40%)]" />
+        <div className="relative mx-auto max-w-4xl text-center">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Ready?</p>
+          <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">So, what are we doing?</h2>
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/58">
+            Start with the whole night. We&apos;ll help you find what fits.
+          </p>
+          <Link
+            href="#plan-your-outing"
+            className="mt-8 inline-flex min-h-14 items-center justify-center rounded-full bg-[#e1062a] px-8 text-sm font-black text-white transition hover:bg-[#ff1744]"
+          >
+            Plan My Outing
           </Link>
         </div>
       </section>
 
       <TheOutHavenFooter />
     </main>
-  );
-}
-
-function PremiumPreview() {
-  return (
-    <aside className="relative min-w-0 overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0b] p-6 shadow-2xl shadow-black/50 sm:p-7">
-      <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-[#e1062a]/15 blur-3xl" />
-      <div className="relative">
-        <div className="flex items-center justify-between border-b border-white/10 pb-5">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff8a9b]">Your night, considered</p>
-            <p className="mt-2 text-lg font-black">Build around the whole experience</p>
-          </div>
-          <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e1062a]/30 bg-[#e1062a]/10 text-[#ff8a9b]">✦</span>
-        </div>
-
-        <div className="mt-5 space-y-3">
-          {[
-            ["01", "Start with the table", "Dinner, brunch, drinks, or something special."],
-            ["02", "Add the experience", "A show, activity, nightlife, or something unexpected."],
-            ["03", "Keep it close", "Bring the stops together around the area that works."],
-          ].map(([number, title, text]) => (
-            <div key={number} className="grid grid-cols-[44px_1fr] gap-4 rounded-2xl border border-white/8 bg-white/[.035] p-4">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[.06] text-xs font-black text-[#ff8a9b]">{number}</span>
-              <div>
-                <p className="text-sm font-black text-white">{title}</p>
-                <p className="mt-1 text-sm leading-6 text-white/45">{text}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -251,22 +258,21 @@ function LightFeature({ number, title, text }: { number: string; title: string; 
   );
 }
 
-function ChoiceSection({ eyebrow, title, items }: { eyebrow: string; title: string; items: string[] }) {
+function DarkFeature({ title, text }: { title: string; text: string }) {
   return (
-    <section className="rounded-[1.75rem] border border-white/10 bg-white/[.035] p-7 sm:p-8">
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff8a9b]">{eyebrow}</p>
-      <h2 className="mt-3 max-w-xl text-2xl font-black tracking-[-0.03em] sm:text-3xl">{title}</h2>
-      <div className="mt-6 flex flex-wrap gap-2">
-        {items.map((item) => (
-          <Link
-            key={item}
-            href={`/create?prompt=${encodeURIComponent(item)}`}
-            className="rounded-full border border-white/12 bg-white/[.025] px-4 py-2.5 text-sm font-bold text-white/72 transition hover:border-[#e1062a] hover:bg-[#e1062a]/10 hover:text-white"
-          >
-            {item}
-          </Link>
-        ))}
-      </div>
-    </section>
+    <article className="bg-[#090909] p-7 sm:p-8 lg:p-10">
+      <h3 className="text-3xl font-black tracking-[-0.04em]">{title}</h3>
+      <p className="mt-4 text-sm leading-7 text-white/52">{text}</p>
+    </article>
+  );
+}
+
+function DemoStop({ label, title, detail }: { label: string; title: string; detail: string }) {
+  return (
+    <div className="p-6 sm:p-8">
+      <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">{label}</p>
+      <p className="mt-3 text-2xl font-black tracking-[-0.03em]">{title}</p>
+      <p className="mt-2 text-sm font-bold text-white/50">{detail}</p>
+    </div>
   );
 }
