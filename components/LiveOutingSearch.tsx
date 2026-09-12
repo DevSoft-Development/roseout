@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { inferHomepagePlanType } from "@/lib/search/inferHomepagePlanType";
 
 const quickIdeas = [
   "Date night",
@@ -82,7 +83,7 @@ export default function LiveOutingSearch() {
 
     const params = new URLSearchParams({
       step: "2",
-      planType: "outing",
+      planType: inferHomepagePlanType(cleanInput),
       prompt: cleanInput,
       guidedFlow: "guided_create_v1",
       journey: "four_step",
