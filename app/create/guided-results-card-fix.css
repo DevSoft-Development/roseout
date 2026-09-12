@@ -1,0 +1,51 @@
+/* Keep the two halves of guided outing result cards visually aligned.
+   This also overrides any older create-page image presentation styles that can
+   leave one venue image stretched across the full tile. */
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] {
+  align-items: stretch;
+}
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] > div:first-child {
+  position: relative !important;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 16 / 10 !important;
+  flex: none !important;
+  overflow: hidden !important;
+  background: rgb(255 255 255 / 0.04);
+}
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] > div:first-child > img {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: center !important;
+}
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] > div:nth-child(2) {
+  display: flex;
+  min-height: 7rem;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] > div:nth-child(2) > div:last-child {
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+@media (max-width: 639px) {
+  main article[class*="rounded-[1.6rem]"] > div[class*="sm:grid-cols-2"] > div[class*="rounded-[1.25rem]"] > div:nth-child(2) {
+    min-height: 6.5rem;
+  }
+}
