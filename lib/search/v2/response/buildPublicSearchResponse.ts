@@ -15,9 +15,23 @@ function effectiveRetrievalGeoLevel(item: ResolvedSearchResult["restaurants"][nu
   return "outside_scope";
 }
 
+function isCustomerFacingReason(reason: string) {
+  const value = reason.trim();
+  if (!value) return false;
+  return !(
+    /qualified as|deterministic ranking|bounded ML ranking boost applied|canonical profile|scoring|candidate pool|fallback|missing explicit|weak .*intent|penalized|evidence unavailable|distance unavailable|matched requested|matched dish-specific evidence|exact menu phrase|ranking|boost|adjustment/i.test(value) ||
+    /^\d+(?:\.\d+)?\s+miles?\s+away$/i.test(value)
+  );
+}
+
+function publicReasons(reasons: string[]) {
+  return reasons.filter(isCustomerFacingReason);
+}
+
 const card = (item: ResolvedSearchResult["restaurants"][number]): PublicLocationCard => {
-  const whyMatched = item.reasons.filter((reason) => !/deterministic ranking|bounded ML ranking boost applied/i.test(reason)).join("; ");
-  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons: item.reasons, whyMatched, why_it_matched: whyMatched });
+  const matchReasons = publicReasons(item.reasons);
+  const whyMatched = matchReasons.join("; ");
+  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, whyMatched, why_it_matched: whyMatched });
 };
 
 function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"] {
@@ -94,11 +108,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const activities = result.activities.map(card);
   const sameVenueResults = result.sameVenueResults.map(card);
   const pairs = result.pairs.map((pair) => {
-    const pairReasons = [
+    const pairReasons = publicReasons([
       ...pair.restaurant.reasons.filter((reason) => /matched|qualified|casual|relaxed|dinner/i.test(reason)),
       ...pair.activity.reasons.filter((reason) => /matched|qualified|casual|relaxed/i.test(reason)),
       ...pair.reasons,
-    ];
+    ]);
     const whyMatched = pairReasons.join("; ");
     return {
       restaurant: card(pair.restaurant),
