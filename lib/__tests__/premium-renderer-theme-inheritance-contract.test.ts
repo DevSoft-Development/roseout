@@ -21,11 +21,28 @@ describe("premium hosted website renderer", () => {
     expect(premium).toContain(".reservation-native-shell");
   });
 
+  it("applies premium atmosphere globally before composition-specific treatment", () => {
+    const premium = source("lib/websites/premium-theme-artifact.ts");
+    expect(premium).toContain(".site-nav{top:14px");
+    expect(premium).toContain(".hero{min-height:clamp(700px");
+    expect(premium).toContain(".hero-split,.hero-framed,.hero-playful,.hero-reservation");
+    expect(premium).toContain(".content-section:nth-of-type(even)");
+    expect(premium).toContain(".reservation-section{background:linear-gradient");
+    expect(premium).toContain(".gallery-stage{border-radius:clamp(22px");
+  });
+
   it("keeps major composition families visually distinct", () => {
     const premium = source("lib/websites/premium-theme-artifact.ts");
     for (const id of ["editorial_luxury", "refined_after_dark", "modern_minimal", "bold_social", "luxury_minimal", "experiential_escape"]) {
       expect(premium).toContain(`.composition-${id}`);
     }
+  });
+
+  it("keeps the premium layout responsive on tablet and mobile", () => {
+    const premium = source("lib/websites/premium-theme-artifact.ts");
+    expect(premium).toContain("@media(max-width:980px)");
+    expect(premium).toContain("@media(max-width:820px)");
+    expect(premium).toContain("grid-template-columns:1fr!important");
   });
 
   it("respects reduced-motion preferences", () => {
