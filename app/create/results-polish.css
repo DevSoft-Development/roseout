@@ -1,0 +1,125 @@
+.guided-results-polish {
+  --results-surface: #0b0b0c;
+  --results-border: rgba(255,255,255,.105);
+  --results-muted: rgba(255,255,255,.58);
+}
+
+.guided-results-polish main {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(225,6,42,.07), transparent 34rem),
+    #050505;
+}
+
+/* Keep the results page focused and give the cards more breathing room. */
+.guided-results-polish main > section:last-of-type {
+  padding-top: 1.75rem;
+}
+
+.guided-results-polish .md\:grid-cols-2 {
+  gap: 1.125rem;
+}
+
+/* Single restaurant/activity cards */
+.guided-results-polish .md\:grid-cols-2 > article {
+  border-color: var(--results-border) !important;
+  border-radius: 1.45rem !important;
+  background: var(--results-surface) !important;
+  box-shadow: 0 18px 48px rgba(0,0,0,.30) !important;
+  overflow: hidden;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article:first-child {
+  border-color: rgba(225,6,42,.38) !important;
+  box-shadow: 0 18px 52px rgba(0,0,0,.34), 0 0 0 1px rgba(225,6,42,.08) !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,.18) !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:first-child {
+  height: 15.25rem !important;
+  min-height: 15.25rem;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:first-child img {
+  transition: transform .45s ease;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article:hover > div:first-child img {
+  transform: scale(1.018);
+}
+
+/* Make the information panel feel like a real decision card, not a photo caption. */
+.guided-results-polish .md\:grid-cols-2 > article > div:last-child {
+  padding: 1.15rem 1.2rem 1.2rem !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:last-child > div:first-child {
+  min-height: 1.5rem;
+  color: rgba(255,255,255,.67) !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:last-child > div:nth-child(2) {
+  margin-top: .85rem !important;
+  padding-top: .85rem !important;
+  border-color: rgba(255,255,255,.075) !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:last-child > div:nth-child(2) > p:first-child {
+  color: rgba(255,255,255,.42) !important;
+  letter-spacing: .12em !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article > div:last-child > div:nth-child(2) > p:last-child {
+  color: rgba(255,255,255,.72) !important;
+  line-height: 1.55 !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article button {
+  margin-top: 1rem !important;
+  min-height: 2.85rem;
+  box-shadow: 0 10px 24px rgba(225,6,42,.16);
+}
+
+/* Replace the weak collapsed “View details” footer with an always-visible secondary action. */
+.guided-results-polish .md\:grid-cols-2 > article details {
+  display: block !important;
+  margin-top: .6rem !important;
+  text-align: initial !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article details > summary {
+  display: none !important;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article details > :not(summary) {
+  display: flex !important;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0 !important;
+  min-height: 2.75rem;
+  border-color: rgba(255,255,255,.12) !important;
+  background: rgba(255,255,255,.025);
+  color: rgba(255,255,255,.72) !important;
+  transition: border-color .2s ease, background .2s ease, color .2s ease;
+}
+
+.guided-results-polish .md\:grid-cols-2 > article details > :not(summary):hover {
+  border-color: rgba(255,255,255,.23) !important;
+  background: rgba(255,255,255,.055);
+  color: #fff !important;
+}
+
+@media (max-width: 767px) {
+  .guided-results-polish main > section:last-of-type {
+    padding-top: 1.25rem;
+  }
+
+  .guided-results-polish .md\:grid-cols-2 > article > div:first-child {
+    height: 13.5rem !important;
+    min-height: 13.5rem;
+  }
+}

@@ -1,3 +1,4 @@
+import "./results-polish.css";
 import GuidedCreatePageV2 from "./GuidedCreatePageV2";
 import GuidedResultsPageV4 from "./GuidedResultsPageV4";
 import GuidedSnapshotResultsPage from "./GuidedSnapshotResultsPage";
@@ -32,7 +33,7 @@ export default async function CreatePage({ searchParams }: CreatePageProps) {
   }
 
   if (guided === "results") {
-    return <GuidedResultsPageV4 />;
+    return <div className="guided-results-polish"><GuidedResultsPageV4 /></div>;
   }
 
   if (planExact === "true" && campaignSlug) {
