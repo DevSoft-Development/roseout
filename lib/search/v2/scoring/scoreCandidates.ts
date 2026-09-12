@@ -20,6 +20,23 @@ import { geoTierRank } from "../geo/geoPolicy";
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 
+function normalizedDish(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function atomicRequestedDishTerms(terms: readonly string[]) {
+  return [...new Set(terms.map(normalizedDish).filter((term) => term.length >= 3 && term.split(/\s+/).length === 1 && !["only","best","food","restaurant","dinner","lunch","brunch"].includes(term)))];
+}
+function structuredDishCoverage(terms: readonly string[], location: Record<string, unknown>) {
+  const atomic = atomicRequestedDishTerms(terms);
+  if (atomic.length < 2) return { multiDish: false, atomic, matched: [] as string[], complete: false };
+  const inventory = [location.signature_items, location.exact_menu_inventory_items]
+    .flatMap((value) => Array.isArray(value) ? value : value == null ? [] : [value])
+    .map(normalizedDish)
+    .filter(Boolean);
+  const matched = atomic.filter((term) => inventory.some((item) => ` ${item} `.includes(` ${term} `)));
+  return { multiDish: true, atomic, matched, complete: matched.length === atomic.length };
+}
+
 function matchesCanonicalOrRaw(term: string, text: string, canonicalTerms: Set<string>) {
   if (text.includes(term) || canonicalTerms.has(term)) return true;
   for (const canonicalTerm of canonicalTerms) {
@@ -65,24 +82,9 @@ export type EventInventoryFallbackState = {
   eventFallbackReason: "no_canonical_events_in_requested_window" | null;
 };
 
-export function resolveEventInventoryFallbackState({
-  explicitEventRequested,
-  canonicalEventCount,
-  activityCandidateCount,
-}: {
-  explicitEventRequested: boolean;
-  canonicalEventCount: number;
-  activityCandidateCount: number;
-}): EventInventoryFallbackState {
+export function resolveEventInventoryFallbackState({ explicitEventRequested, canonicalEventCount, activityCandidateCount }: { explicitEventRequested: boolean; canonicalEventCount: number; activityCandidateCount: number; }): EventInventoryFallbackState {
   const eventFallbackUsed = explicitEventRequested && canonicalEventCount === 0 && activityCandidateCount > 0;
-  return {
-    explicitEventRequested,
-    canonicalEventCount,
-    activityCandidateCount,
-    fallbackActivityCount: eventFallbackUsed ? activityCandidateCount : 0,
-    eventFallbackUsed,
-    eventFallbackReason: eventFallbackUsed ? "no_canonical_events_in_requested_window" : null,
-  };
+  return { explicitEventRequested, canonicalEventCount, activityCandidateCount, fallbackActivityCount: eventFallbackUsed ? activityCandidateCount : 0, eventFallbackUsed, eventFallbackReason: eventFallbackUsed ? "no_canonical_events_in_requested_window" : null };
 }
 
 function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
@@ -97,6 +99,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const requestedDishTerms = plan.restaurant.foods.map((term) => term.toLowerCase());
   const requestedRestaurantTerms = [...requestedCuisineTerms, ...requestedDishTerms];
   const requestedActivityTerms = plan.activity.categories.flatMap((category) => activityRetrievalTerms(category)).map((term) => term.toLowerCase());
+  const multiDishRequested = atomicRequestedDishTerms(requestedDishTerms).length >= 2;
   const casualRequested = plan.restaurant.features.includes("casual");
   const relaxedRequested = plan.activity.categories.includes("relaxed_activity");
   const dinnerRequested = plan.restaurant.mealPeriods.includes("dinner");
@@ -109,33 +112,26 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   let dateSuitabilityDemoted = 0;
   let eventDependentVenueRejected = 0;
   let exactMenuPhraseBoosted = 0;
+  let completeMultiDishEvidence = 0;
+  let partialMultiDishEvidence = 0;
 
   const scored = candidates.map((candidate): ScoredCandidate | null => {
     const role = [...candidate.roles].sort((a, b) => b.confidence - a.confidence)[0];
     const l = candidate.candidate.location;
-    if (isEventDependentVenue(l as Record<string, unknown>)) {
-      eventDependentVenueRejected++;
-      return null;
-    }
+    if (isEventDependentVenue(l as Record<string, unknown>)) { eventDependentVenueRejected++; return null; }
     const isRestaurant = role.role === "restaurant" || role.role.endsWith("_restaurant");
     const isActivity = role.role === "general_activity" || role.role.endsWith("_activity");
-    if (plan.audience.minorsPresent && isActivity && isFamilyUnsafeActivity(l)) {
-      familySafetyRejected++;
-      return null;
-    }
+    if (plan.audience.minorsPresent && isActivity && isFamilyUnsafeActivity(l)) { familySafetyRejected++; return null; }
     const specialized = role.role !== "restaurant" && role.role !== "general_activity";
     const text = searchableText(l as Record<string, unknown>);
-    const canonicalTerms = new Set(candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
-      ? candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
-      : []);
-    const exactMenuPhraseMatch = isRestaurant
-      ? findExactMenuPhraseMatch(requestedDishTerms, (l as Record<string, unknown>).signature_items)
-      : null;
+    const canonicalTerms = new Set(candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations") ? candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase()) : []);
+    const exactMenuPhraseMatch = isRestaurant ? findExactMenuPhraseMatch(requestedDishTerms, (l as Record<string, unknown>).signature_items) : null;
     if (exactMenuPhraseMatch) exactMenuPhraseBoosted++;
+    const structuredCoverage = isRestaurant ? structuredDishCoverage(requestedDishTerms, l as Record<string, unknown>) : { multiDish: false, atomic: [] as string[], matched: [] as string[], complete: false };
+    if (structuredCoverage.complete) completeMultiDishEvidence++;
+    else if (structuredCoverage.multiDish && structuredCoverage.matched.length) partialMultiDishEvidence++;
     const rankingText = `${text} ${[...canonicalTerms].join(" ")}`;
-    const dateSuitability = dateNightRequested && isRestaurant
-      ? scoreDateSuitability(rankingText)
-      : { adjustment: 0, fit: "neutral" as const, positiveSignals: [], negativeSignals: [] };
+    const dateSuitability = dateNightRequested && isRestaurant ? scoreDateSuitability(rankingText) : { adjustment: 0, fit: "neutral" as const, positiveSignals: [], negativeSignals: [] };
     if (dateSuitability.adjustment > 0) dateSuitabilityBoosted++;
     if (dateSuitability.adjustment < 0) dateSuitabilityDemoted++;
     const explicitRestaurantMatches = requestedRestaurantTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms)).length;
@@ -150,15 +146,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const coffeeFirstVenue = /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|tea house|dessert shop|juice bar/i.test(text);
     const dinnerEvidence = /\bdinner\b|full[- ]service|table service|entree|entrée|steak|seafood|pasta|supper|evening dining|dinner menu|prix fixe|tasting menu|meal_periods?.{0,20}dinner/i.test(rankingText);
     const dishCoverage = hasDishRequest ? dishEvidenceCount / Math.max(1, requestedDishTerms.length) : 0;
-    const restaurantIntent = exactMenuPhraseMatch
-      ? 100
-      : hasDishRequest && dishEvidenceCount > 0
-        ? clamp(76 + dishCoverage * 24)
-        : hasDishRequest && hasExplicitRestaurantMatch
-          ? 55
-          : hasExplicitRestaurantMatch
-            ? 100
-            : 25;
+    const restaurantIntent = exactMenuPhraseMatch || structuredCoverage.complete ? 100 : hasDishRequest && dishEvidenceCount > 0 ? clamp(70 + dishCoverage * 22) : hasDishRequest && hasExplicitRestaurantMatch ? 48 : hasExplicitRestaurantMatch ? 100 : 20;
     const intent = clamp(requestedRestaurantTerms.length && isRestaurant ? restaurantIntent : requestedActivityTerms.length && isActivity ? explicitActivityMatches ? 100 : relaxedRequested && !highEnergyActivity ? 82 : 30 : specialized ? 95 : 75);
     const roleConfidence = role.confidence * 100;
     const distance = candidate.candidate.distanceMiles;
@@ -173,15 +161,18 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const ml = applyMlBoost(l, mlEnabled);
     const missingExplicitRestaurantIntentPenalty = requestedRestaurantTerms.length && isRestaurant && !hasExplicitRestaurantMatch ? 35 : 0;
     const missingDishEvidencePenalty = hasDishRequest && isRestaurant && !dishEvidenceCount && hasExplicitRestaurantMatch ? 12 : 0;
+    const multiDishEvidencePenalty = multiDishRequested && isRestaurant && !structuredCoverage.complete ? (structuredCoverage.matched.length ? 24 : 40) : 0;
     const relaxedMismatchPenalty = relaxedRequested && isActivity && (highEnergyActivity || !explicitActivityMatches) ? highEnergyActivity ? 55 : 22 : 0;
     const casualMismatchPenalty = casualRequested && isRestaurant && fineDiningRestaurant && !casualRestaurant ? 35 : 0;
     const dinnerMismatchPenalty = dinnerRequested && isRestaurant && coffeeFirstVenue && !dinnerEvidence ? 32 : 0;
     if (dinnerMismatchPenalty) dinnerRejected++;
     if (requestedActivityTerms.length && isActivity && !explicitActivityMatches) weakActivityRejected++;
-    const penalties = missingExplicitRestaurantIntentPenalty + missingDishEvidencePenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
+    const penalties = missingExplicitRestaurantIntentPenalty + missingDishEvidencePenalty + multiDishEvidencePenalty + relaxedMismatchPenalty + casualMismatchPenalty + dinnerMismatchPenalty;
     const base = intent * .35 + roleConfidence * .2 + geo * .2 + quality * .1 + feature * .08 + popularity * .05 + audience * .02;
+    const inventoryPriority = Number((l as Record<string, unknown>).exact_menu_inventory_priority ?? 0);
+    const verifiedMenuSourceBoost = structuredCoverage.complete ? Math.max(0, Math.min(6, inventoryPriority * 2)) : 0;
     const exactMenuBoost = exactMenuPhraseMatch ? EXACT_MENU_PHRASE_BOOST : 0;
-    const total = clamp(base + ml.boost + dateSuitability.adjustment + exactMenuBoost - penalties);
+    const total = clamp(base + ml.boost + dateSuitability.adjustment + exactMenuBoost + verifiedMenuSourceBoost - penalties);
     const matchedCuisineTerms = requestedCuisineTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
     const matchedRestaurantTerms = [...new Set([...matchedCuisineTerms, ...matchedDishTerms])];
     const matchedActivityTerms = requestedActivityTerms.filter((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
@@ -189,7 +180,9 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
       `qualified as ${role.role}`,
       matchedRestaurantTerms.length ? `matched requested restaurant terms: ${matchedRestaurantTerms.join(", ")}` : requestedRestaurantTerms.length && isRestaurant && !exactMenuPhraseMatch ? "missing explicit restaurant term" : null,
       hasDishRequest && dishEvidenceCount ? `matched dish-specific evidence: ${matchedDishTerms.join(", ")}` : hasDishRequest && hasExplicitRestaurantMatch && !exactMenuPhraseMatch ? "broad restaurant fallback without dish-specific evidence" : null,
+      structuredCoverage.complete ? `verified multi-dish menu coverage: ${structuredCoverage.matched.join(", ")}` : structuredCoverage.multiDish && structuredCoverage.matched.length ? `partial multi-dish menu coverage: ${structuredCoverage.matched.join(", ")}` : multiDishRequested && isRestaurant ? "no verified multi-dish menu coverage" : null,
       exactMenuPhraseMatch ? `exact menu phrase match +${EXACT_MENU_PHRASE_BOOST}: ${exactMenuPhraseMatch}` : null,
+      verifiedMenuSourceBoost ? `verified menu source priority +${verifiedMenuSourceBoost.toFixed(2)}` : null,
       explicitActivityMatches ? `matched requested activity terms: ${matchedActivityTerms.slice(0, 3).join(", ")}` : requestedActivityTerms.length && isActivity ? "weak activity-intent match" : null,
       canonicalTerms.size ? "canonical profile evidence preserved in scoring" : null,
       dateNightRequested && isRestaurant && dateSuitability.adjustment > 0 ? `date-night suitability boost +${dateSuitability.adjustment}: ${dateSuitability.positiveSignals.join(", ")}` : null,
@@ -215,60 +208,27 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     trace.rejections.dinnerEvidence = dinnerRejected;
     trace.rejections.weakActivityIntent = weakActivityRejected;
     if (requestedDishTerms.length) {
-      trace.decisions.push({
-        stage: "menu_phrase_evidence",
-        decision: exactMenuPhraseBoosted ? "exact_menu_phrase_boost_applied" : "no_exact_menu_phrase_match_fallback",
-        reason: JSON.stringify({ requestedDishTerms, exactMenuPhraseBoosted, boost: EXACT_MENU_PHRASE_BOOST }),
-      });
+      trace.decisions.push({ stage: "menu_phrase_evidence", decision: exactMenuPhraseBoosted ? "exact_menu_phrase_boost_applied" : "no_exact_menu_phrase_match_fallback", reason: JSON.stringify({ requestedDishTerms, exactMenuPhraseBoosted, multiDishRequested, completeMultiDishEvidence, partialMultiDishEvidence, boost: EXACT_MENU_PHRASE_BOOST }) });
     }
   }
   const restaurants = scored.filter((item) => item.selectedRole === "restaurant" || item.selectedRole.endsWith("_restaurant"));
   const activities = scored.filter((item) => item.selectedRole === "general_activity" || item.selectedRole.endsWith("_activity"));
   const dateNightQualityFloorApplied = dateNightRequested && !explicitQuickDateConcept;
-  const dateNightEligibleRestaurants = dateNightQualityFloorApplied
-    ? restaurants.filter((item) => passesDateNightRestaurantQualityFloor(dateNightRankingText(item)))
-    : restaurants;
+  const dateNightEligibleRestaurants = dateNightQualityFloorApplied ? restaurants.filter((item) => passesDateNightRestaurantQualityFloor(dateNightRankingText(item))) : restaurants;
   const dateNightRestaurantRejected = restaurants.length - dateNightEligibleRestaurants.length;
 
   if (trace && dateNightRequested) {
-    trace.decisions.push({
-      stage: "date_suitability_ranking",
-      decision: dateNightQualityFloorApplied ? "occasion_quality_floor_applied" : "explicit_quick_concept_floor_bypassed",
-      reason: JSON.stringify({
-        boostedRestaurantCount: dateSuitabilityBoosted,
-        demotedRestaurantCount: dateSuitabilityDemoted,
-        qualityFloorApplied: dateNightQualityFloorApplied,
-        rejectedRestaurantCount: dateNightRestaurantRejected,
-        explicitQuickConceptRequested: explicitQuickDateConcept,
-      }),
-    });
+    trace.decisions.push({ stage: "date_suitability_ranking", decision: dateNightQualityFloorApplied ? "occasion_quality_floor_applied" : "explicit_quick_concept_floor_bypassed", reason: JSON.stringify({ boostedRestaurantCount: dateSuitabilityBoosted, demotedRestaurantCount: dateSuitabilityDemoted, qualityFloorApplied: dateNightQualityFloorApplied, rejectedRestaurantCount: dateNightRestaurantRejected, explicitQuickConceptRequested: explicitQuickDateConcept }) });
   }
   if (trace && eventDependentVenueRejected > 0) {
-    trace.decisions.push({
-      stage: "event_dependent_venue_eligibility",
-      decision: "venue_only_inventory_suppressed",
-      reason: JSON.stringify({
-        rejectedVenueCount: eventDependentVenueRejected,
-        rule: "stadium_arena_event_venue_requires_canonical_event_inventory",
-      }),
-    });
+    trace.decisions.push({ stage: "event_dependent_venue_eligibility", decision: "venue_only_inventory_suppressed", reason: JSON.stringify({ rejectedVenueCount: eventDependentVenueRejected, rule: "stadium_arena_event_venue_requires_canonical_event_inventory" }) });
   }
 
   const canonicalEventActivities = activities.filter(isCanonicalEventCandidate);
   const explicitEventRequested = explicitEventInventoryRequested(plan);
-  const eventFallback = resolveEventInventoryFallbackState({
-    explicitEventRequested,
-    canonicalEventCount: canonicalEventActivities.length,
-    activityCandidateCount: activities.length,
-  });
+  const eventFallback = resolveEventInventoryFallbackState({ explicitEventRequested, canonicalEventCount: canonicalEventActivities.length, activityCandidateCount: activities.length });
   const eventAwareActivities = explicitEventRequested && canonicalEventActivities.length ? canonicalEventActivities : activities;
-  if (trace && explicitEventRequested) {
-    trace.decisions.push({
-      stage: "event_inventory_preference",
-      decision: canonicalEventActivities.length ? "canonical_events_preferred" : "canonical_events_unavailable_fallback",
-      reason: JSON.stringify(eventFallback),
-    });
-  }
+  if (trace && explicitEventRequested) trace.decisions.push({ stage: "event_inventory_preference", decision: canonicalEventActivities.length ? "canonical_events_preferred" : "canonical_events_unavailable_fallback", reason: JSON.stringify(eventFallback) });
   if (eventFallback.eventFallbackUsed) {
     for (const item of eventAwareActivities) {
       const location = item.candidate.candidate.location as Record<string, unknown>;
@@ -283,11 +243,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
   const dinnerSuitableRestaurants = dateNightEligibleRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
   return {
     all: scored,
-    restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length
-      ? explicitRestaurantMatches
-      : dinnerRequested && dinnerSuitableRestaurants.length
-        ? dinnerSuitableRestaurants
-        : dateNightEligibleRestaurants,
+    restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length ? explicitRestaurantMatches : dinnerRequested && dinnerSuitableRestaurants.length ? dinnerSuitableRestaurants : dateNightEligibleRestaurants,
     activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
   };
 }
