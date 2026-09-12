@@ -5,7 +5,7 @@
 
 .guided-results-polish main {
   background:
-    radial-gradient(circle at 50% -10%, rgba(225,6,42,.07), transparent 34rem),
+    radial-gradient(circle at 50% -10%, rgba(225,6,42,.06), transparent 34rem),
     #050505;
 }
 
@@ -13,31 +13,26 @@
   padding-top: 1.5rem;
 }
 
-/*
- * Restaurant-only and activity-only results use a div whose class token contains
- * `md:grid-cols-2`. Use an attribute selector instead of escaping the Tailwind
- * token so this remains reliable after minification/build transforms.
- */
+/* Premium visual discovery grid for restaurant-only and activity-only results. */
 .guided-results-polish div[class*="md:grid-cols-2"] {
-  grid-template-columns: minmax(0, 1fr) !important;
-  gap: 1rem !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 1.15rem !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1.12fr) minmax(20rem, .88fr) !important;
-  min-height: 20rem;
+  display: block !important;
+  min-height: 0 !important;
   overflow: hidden;
   border: 1px solid var(--results-border) !important;
-  border-radius: 1.5rem !important;
+  border-radius: 1.45rem !important;
   background: var(--results-surface) !important;
-  box-shadow: 0 20px 56px rgba(0,0,0,.3) !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,.28) !important;
   transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article:first-child {
-  border-color: rgba(225,6,42,.35) !important;
-  box-shadow: 0 22px 62px rgba(0,0,0,.34), 0 0 0 1px rgba(225,6,42,.07) !important;
+  border-color: rgba(225,6,42,.32) !important;
+  box-shadow: 0 20px 54px rgba(0,0,0,.32), 0 0 0 1px rgba(225,6,42,.05) !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article:hover {
@@ -45,10 +40,10 @@
   border-color: rgba(255,255,255,.18) !important;
 }
 
-/* Media column */
+/* Keep the photography prominent without turning each result into a giant photo tile. */
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:first-child {
-  height: 100% !important;
-  min-height: 20rem !important;
+  height: 17rem !important;
+  min-height: 17rem !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:first-child img {
@@ -59,50 +54,49 @@
   transform: scale(1.015);
 }
 
-/* Decision column */
+/* Decision panel beneath the image. */
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child {
-  display: flex !important;
-  min-width: 0;
-  flex-direction: column;
-  justify-content: center;
-  padding: 1.55rem 1.6rem 1.45rem !important;
-  border-left: 1px solid rgba(255,255,255,.07);
+  display: block !important;
+  padding: 1.15rem 1.2rem 1.2rem !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255,255,255,.07) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.018), rgba(255,255,255,.006));
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child > div:first-child {
-  min-height: 1.4rem;
-  color: rgba(255,255,255,.68) !important;
+  min-height: 1.35rem;
+  color: rgba(255,255,255,.67) !important;
   font-size: .78rem !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child > div:nth-child(2) {
-  margin-top: 1rem !important;
-  padding-top: 1rem !important;
-  border-color: rgba(255,255,255,.08) !important;
+  margin-top: .8rem !important;
+  padding-top: .8rem !important;
+  border-color: rgba(255,255,255,.07) !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child > div:nth-child(2) > p:first-child {
   color: rgba(255,255,255,.42) !important;
-  letter-spacing: .12em !important;
+  letter-spacing: .11em !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child > div:nth-child(2) > p:last-child {
-  margin-top: .45rem !important;
-  color: rgba(255,255,255,.76) !important;
-  font-size: .92rem !important;
-  line-height: 1.6 !important;
+  margin-top: .35rem !important;
+  color: rgba(255,255,255,.72) !important;
+  font-size: .9rem !important;
+  line-height: 1.55 !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article button {
-  margin-top: 1.15rem !important;
-  min-height: 3rem;
-  box-shadow: 0 10px 24px rgba(225,6,42,.17);
+  margin-top: 1rem !important;
+  min-height: 2.9rem;
+  box-shadow: none !important;
 }
 
-/* Always expose the secondary profile action. */
+/* Keep the secondary profile action visible; no collapsed footer. */
 .guided-results-polish div[class*="md:grid-cols-2"] > article details {
   display: block !important;
-  margin-top: .65rem !important;
+  margin-top: .55rem !important;
   text-align: initial !important;
 }
 
@@ -113,36 +107,29 @@
 .guided-results-polish div[class*="md:grid-cols-2"] > article details > :not(summary) {
   display: flex !important;
   width: 100%;
-  min-height: 2.8rem;
+  min-height: 2.75rem;
   align-items: center;
   justify-content: center;
   margin-top: 0 !important;
   border-color: rgba(255,255,255,.12) !important;
   background: rgba(255,255,255,.025);
-  color: rgba(255,255,255,.74) !important;
+  color: rgba(255,255,255,.72) !important;
 }
 
 .guided-results-polish div[class*="md:grid-cols-2"] > article details > :not(summary):hover {
   border-color: rgba(255,255,255,.23) !important;
-  background: rgba(255,255,255,.055);
+  background: rgba(255,255,255,.05);
   color: #fff !important;
 }
 
-@media (max-width: 900px) {
-  .guided-results-polish div[class*="md:grid-cols-2"] > article {
-    grid-template-columns: 1fr !important;
-    min-height: 0;
+@media (max-width: 767px) {
+  .guided-results-polish div[class*="md:grid-cols-2"] {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   .guided-results-polish div[class*="md:grid-cols-2"] > article > div:first-child {
     height: 14rem !important;
     min-height: 14rem !important;
-  }
-
-  .guided-results-polish div[class*="md:grid-cols-2"] > article > div:last-child {
-    border-left: 0;
-    border-top: 1px solid rgba(255,255,255,.07);
-    padding: 1.15rem 1.2rem 1.2rem !important;
   }
 }
 
@@ -152,7 +139,7 @@
   }
 
   .guided-results-polish div[class*="md:grid-cols-2"] > article > div:first-child {
-    height: 12.5rem !important;
-    min-height: 12.5rem !important;
+    height: 13rem !important;
+    min-height: 13rem !important;
   }
 }
