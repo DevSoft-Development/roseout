@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { inferHomepagePlanType } from "@/lib/search/inferHomepagePlanType";
 
 const quickIdeas = [
   "Date night",
@@ -21,11 +20,15 @@ const typewriterPrompts = [
   "Brunch and something to do afterward",
 ];
 
+type ResolvedPlannerType = "outing" | "restaurant" | "activity";
+
 export default function LiveOutingSearch() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [typedPlaceholder, setTypedPlaceholder] = useState("");
   const [focused, setFocused] = useState(false);
+  const [resolvingIntent, setResolvingIntent] = useState(false);
+  const [intentError, setIntentError] = useState("");
 
   useEffect(() => {
     if (prompt || focused) return;
@@ -77,29 +80,50 @@ export default function LiveOutingSearch() {
     return () => clearTimeout(timer);
   }, [focused, prompt]);
 
-  function startPlanner(input: string) {
+  async function startPlanner(input: string) {
     const cleanInput = input.trim();
-    if (!cleanInput) return;
+    if (!cleanInput || resolvingIntent) return;
 
-    const params = new URLSearchParams({
-      step: "2",
-      planType: inferHomepagePlanType(cleanInput),
-      prompt: cleanInput,
-      guidedFlow: "guided_create_v1",
-      journey: "four_step",
-      source: "homepage_outing_search",
-    });
+    setResolvingIntent(true);
+    setIntentError("");
 
-    router.push(`/create?${params.toString()}`);
+    try {
+      const response = await fetch("/api/search/resolve-plan-type", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleanInput }),
+      });
+      const data = await response.json().catch(() => ({}));
+      const planType = data?.planType as ResolvedPlannerType | undefined;
+
+      if (!response.ok || !planType || !["outing", "restaurant", "activity"].includes(planType)) {
+        throw new Error("intent_resolution_failed");
+      }
+
+      const params = new URLSearchParams({
+        step: "2",
+        planType,
+        prompt: cleanInput,
+        guidedFlow: "guided_create_v1",
+        journey: "four_step",
+        source: "homepage_outing_search",
+      });
+
+      router.push(`/create?${params.toString()}`);
+    } catch {
+      setIntentError("We couldn’t understand that search yet. Try again so we don’t build the wrong type of plan.");
+      setResolvingIntent(false);
+    }
   }
 
   function openPlanner(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    startPlanner(prompt);
+    void startPlanner(prompt);
   }
 
   function useQuickIdea(idea: string) {
     setPrompt(idea);
+    setIntentError("");
   }
 
   return (
@@ -112,7 +136,7 @@ export default function LiveOutingSearch() {
           <span aria-hidden="true" className="text-lg text-[#ff8a9b]">✦</span>
           <input
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={(event) => { setPrompt(event.target.value); setIntentError(""); }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             aria-label="Describe the outing you want"
@@ -122,12 +146,14 @@ export default function LiveOutingSearch() {
         </div>
         <button
           type="submit"
-          disabled={!prompt.trim()}
+          disabled={!prompt.trim() || resolvingIntent}
           className="h-14 shrink-0 rounded-full bg-[#e1062a] px-7 text-sm font-black text-white shadow-lg shadow-red-950/30 transition hover:bg-[#ff1744] disabled:cursor-not-allowed disabled:opacity-40 sm:h-[4.5rem] sm:px-9"
         >
-          Find My Outing
+          {resolvingIntent ? "Understanding…" : "Find My Outing"}
         </button>
       </form>
+
+      {intentError ? <p className="mt-3 text-center text-sm font-semibold text-red-200/80">{intentError}</p> : null}
 
       <p className="mt-4 text-center text-sm font-semibold text-white/45">
         Try describing the whole night — not just a restaurant.
