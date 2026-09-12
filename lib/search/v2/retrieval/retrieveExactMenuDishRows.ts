@@ -51,11 +51,7 @@ function addEvidence(map: Map<string, MenuEvidence[]>, locationId: unknown, evid
   map.set(id, current);
 }
 
-async function loadPublishedOwnerMenuEvidence(
-  supabase: SupabaseClient,
-  phrases: string[],
-  menuMatches: Map<string, MenuEvidence[]>,
-) {
+async function loadPublishedOwnerMenuEvidence(supabase: SupabaseClient, phrases: string[], menuMatches: Map<string, MenuEvidence[]>) {
   const candidateItems: any[] = [];
   for (const phrase of phrases) {
     const escaped = phrase.replace(/,/g, " ");
@@ -85,11 +81,7 @@ async function loadPublishedOwnerMenuEvidence(
   let added = 0;
   for (const row of candidateItems) {
     if (!publishedPages.has(String(row.commerce_page_id))) continue;
-    addEvidence(menuMatches, row.location_id, {
-      item: String(row.name ?? "").trim(),
-      source: "owner_published_menu",
-      priority: 3,
-    });
+    addEvidence(menuMatches, row.location_id, { item: String(row.name ?? "").trim(), source: "owner_published_menu", priority: 3 });
     added += 1;
   }
   return added;
@@ -97,25 +89,13 @@ async function loadPublishedOwnerMenuEvidence(
 
 /**
  * Exact menu inventory is authoritative evidence for authored dishes.
- * Published owner menus are read directly for immediate consistency, while
- * website/crawler/profile menu intelligence enters through ready embeddings.
+ * Published owner menus are read live so edits/unpublishes take effect immediately.
+ * Website/crawler/profile menu intelligence enters through ready embeddings.
  */
-export async function retrieveExactMenuDishRows({
-  plan,
-  supabase,
-  requests,
-  trace,
-}: {
-  plan: SearchPlan;
-  supabase: SupabaseClient;
-  requests: RetrievalRequest[];
-  trace: SearchTrace;
-}) {
+export async function retrieveExactMenuDishRows({ plan, supabase, requests, trace }: { plan: SearchPlan; supabase: SupabaseClient; requests: RetrievalRequest[]; trace: SearchTrace; }) {
   const restaurantRequest = requests.find(isRestaurantRequest);
   const phrases = specificDishTerms(requests);
-  if (!restaurantRequest || !phrases.length) {
-    return [] as Array<{ location: any; request: RetrievalRequest }>;
-  }
+  if (!restaurantRequest || !phrases.length) return [] as Array<{ location: any; request: RetrievalRequest }>;
 
   const started = performance.now();
   try {
@@ -131,38 +111,28 @@ export async function retrieveExactMenuDishRows({
       for (const row of data ?? []) {
         if (!menuItemContainsPhrase(row.normalized_item_name ?? row.item_name, phrase)) continue;
         const source = String(row.source ?? "menu_intelligence");
-        const priority = /owner|commerce/i.test(source) ? 3 : /website|crawl|scrap|menu/i.test(source) ? 2 : 1;
-        addEvidence(menuMatches, row.location_id, {
-          item: String(row.item_name ?? row.normalized_item_name ?? phrase).trim(),
-          source,
-          priority,
-        });
+        // Owner menu embeddings are deliberately not trusted for exact inventory;
+        // the canonical commerce tables above are read live to prevent stale deleted/unpublished dishes.
+        if (/owner|commerce/i.test(source)) continue;
+        const priority = /website|crawl|scrap|menu/i.test(source) ? 2 : 1;
+        addEvidence(menuMatches, row.location_id, { item: String(row.item_name ?? row.normalized_item_name ?? phrase).trim(), source, priority });
       }
     }
 
     const ownerEvidenceCount = await loadPublishedOwnerMenuEvidence(supabase, phrases, menuMatches);
     const ids = [...menuMatches.keys()];
     if (!ids.length) {
-      trace.decisions.push({
-        stage: "exact_menu_dish_retrieval",
-        decision: "no_ready_exact_menu_match",
-        reason: JSON.stringify({ phrases, ownerEvidenceCount, latencyMs: performance.now() - started }),
-      });
+      trace.decisions.push({ stage: "exact_menu_dish_retrieval", decision: "no_ready_exact_menu_match", reason: JSON.stringify({ phrases, ownerEvidenceCount, latencyMs: performance.now() - started }) });
       return [] as Array<{ location: any; request: RetrievalRequest }>;
     }
 
-    const { data: locations, error: locationError } = await supabase
-      .from("locations")
-      .select(SEARCH_LOCATION_SELECT)
-      .in("id", ids)
-      .eq("is_searchable", true);
+    const { data: locations, error: locationError } = await supabase.from("locations").select(SEARCH_LOCATION_SELECT).in("id", ids).eq("is_searchable", true);
     if (locationError) throw locationError;
 
     const projected = (locations ?? [])
       .filter((row: any) => row?.is_hidden !== true)
       .map((row: any) => {
-        const evidence = [...(menuMatches.get(String(row.id)) ?? [])]
-          .sort((a, b) => b.priority - a.priority);
+        const evidence = [...(menuMatches.get(String(row.id)) ?? [])].sort((a, b) => b.priority - a.priority);
         const items = evidence.map((entry) => entry.item);
         const sources = [...new Set(evidence.map((entry) => entry.source))];
         return {
@@ -178,25 +148,10 @@ export async function retrieveExactMenuDishRows({
         };
       });
 
-    trace.decisions.push({
-      stage: "exact_menu_dish_retrieval",
-      decision: projected.length ? "ready_exact_menu_candidates_added" : "exact_menu_matches_not_publicly_searchable",
-      reason: JSON.stringify({
-        phrases,
-        ownerEvidenceCount,
-        menuLocationCount: ids.length,
-        candidateCount: projected.length,
-        market: plan.geo.market,
-        latencyMs: performance.now() - started,
-      }),
-    });
+    trace.decisions.push({ stage: "exact_menu_dish_retrieval", decision: projected.length ? "ready_exact_menu_candidates_added" : "exact_menu_matches_not_publicly_searchable", reason: JSON.stringify({ phrases, ownerEvidenceCount, menuLocationCount: ids.length, candidateCount: projected.length, market: plan.geo.market, latencyMs: performance.now() - started }) });
     return projected;
   } catch (error) {
-    trace.decisions.push({
-      stage: "exact_menu_dish_retrieval",
-      decision: "exact_menu_retrieval_fail_open",
-      reason: error instanceof Error ? error.message : "unknown exact menu retrieval failure",
-    });
+    trace.decisions.push({ stage: "exact_menu_dish_retrieval", decision: "exact_menu_retrieval_fail_open", reason: error instanceof Error ? error.message : "unknown exact menu retrieval failure" });
     return [] as Array<{ location: any; request: RetrievalRequest }>;
   }
 }
