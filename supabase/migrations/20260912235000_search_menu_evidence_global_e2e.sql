@@ -74,13 +74,22 @@ as $$
 declare
   v_location_id uuid;
 begin
-  v_location_id := coalesce(new.location_id, old.location_id);
+  if tg_op = 'DELETE' then
+    v_location_id := old.location_id;
+  else
+    v_location_id := new.location_id;
+  end if;
+
   if v_location_id is not null then
     delete from public.location_menu_item_embeddings_hf
     where location_id = v_location_id
       and source = 'owner_published_menu';
   end if;
-  return coalesce(new,old);
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
 end;
 $$;
 
@@ -94,5 +103,5 @@ for each row execute function public.invalidate_owner_menu_search_embeddings();
 
 drop trigger if exists trg_search_owner_menu_pages_changed on public.location_commerce_pages;
 create trigger trg_search_owner_menu_pages_changed
-after insert or update of status,is_active or delete on public.location_commerce_pages
+after insert or update or delete on public.location_commerce_pages
 for each row execute function public.invalidate_owner_menu_search_embeddings();
