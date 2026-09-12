@@ -1,0 +1,125 @@
+name: AWS semantic metadata final drain v2
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-semantic-metadata-final-drain-v2.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-semantic-metadata-final-drain-v2.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-semantic-metadata-final-production-v2
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+  SUPABASE_SERVICE_ROLE_SECRET: /theouthaven/production/supabase/service-role
+  BATCH_SIZE: '200'
+  MAX_BATCHES: '25'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate semantic final drain contract
+        run: |
+          set -euo pipefail
+          FILE=.github/workflows/aws-semantic-metadata-final-drain-v2.yml
+          grep -F "BATCH_SIZE: '200'" "$FILE" >/dev/null
+          grep -F 'semantic-nightly?limit=${BATCH_SIZE}' "$FILE" >/dev/null
+          grep -F 'legacy_openai_embedding_generated == false' "$FILE" >/dev/null
+          grep -F 'search_v2_embedding_provider == "hugging_face"' "$FILE" >/dev/null
+          if grep -Eq '^[[:space:]]*-[[:space:]]*cron:' "$FILE"; then
+            echo 'Semantic final drain must never add a recurring GitHub timer.' >&2
+            exit 1
+          fi
+
+  execute:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Resolve invoker and Virginia credential
+        id: runtime
+        run: |
+          set -euo pipefail
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != 'None'
+          KEY_FILE="$RUNNER_TEMP/virginia-service-role"
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_SERVICE_ROLE_SECRET" --query SecretString --output text > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          test -n "$SERVICE_ROLE"
+          echo "::add-mask::$SERVICE_ROLE"
+          echo "invoker=$INVOKER" >> "$GITHUB_OUTPUT"
+          echo "key_file=$KEY_FILE" >> "$GITHUB_OUTPUT"
+      - name: Drain deterministic semantic metadata backlog
+        id: drain
+        env:
+          INVOKER: ${{ steps.runtime.outputs.invoker }}
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: |
+          set -euo pipefail
+          SERVICE_ROLE="$(cat "$KEY_FILE")"
+          count_pending() {
+            local headers="$RUNNER_TEMP/semantic-v2-count.headers"
+            curl --silent --show-error --fail --dump-header "$headers" --output /dev/null \
+              --header "apikey: $SERVICE_ROLE" \
+              --header "Authorization: Bearer $SERVICE_ROLE" \
+              --header 'Prefer: count=exact' \
+              "${SUPABASE_URL}/rest/v1/locations?select=id&deleted_at=is.null&needs_semantic_refresh=eq.true&limit=1"
+            awk -F'/' 'tolower($1) ~ /^content-range:/ {gsub("\r", "", $2); print $2}' "$headers" | tail -1
+          }
+          INITIAL="$(count_pending)"
+          PENDING="$INITIAL"
+          echo "Semantic metadata backlog before drain: $PENDING"
+          for batch in $(seq 1 "$MAX_BATCHES"); do
+            if [ "$PENDING" -eq 0 ]; then break; fi
+            BEFORE="$PENDING"
+            REQUEST="$RUNNER_TEMP/semantic-v2-${batch}.json"
+            RESPONSE="$RUNNER_TEMP/semantic-v2-response-${batch}.json"
+            jq -nc --arg fn "node:/api/cron/semantic-nightly?limit=${BATCH_SIZE}" '{function:$fn,body:{}}' > "$REQUEST"
+            aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$REQUEST" "$RESPONSE" >/dev/null
+            jq -e '.ok == true and .runtime == "node" and (.response.legacy_openai_embedding_generated == false) and (.response.search_v2_embedding_provider == "hugging_face")' "$RESPONSE" >/dev/null
+            PENDING="$(count_pending)"
+            test "$PENDING" -lt "$BEFORE" || { echo "Semantic batch $batch made no progress: $BEFORE -> $PENDING" >&2; jq . "$RESPONSE"; exit 1; }
+            echo "Semantic batch $batch: $BEFORE -> $PENDING"
+          done
+          test "$PENDING" -eq 0 || { echo "Semantic final drain hit batch cap with $PENDING remaining." >&2; exit 1; }
+          echo "initial=$INITIAL" >> "$GITHUB_OUTPUT"
+          echo "remaining=$PENDING" >> "$GITHUB_OUTPUT"
+      - name: Cleanup credential file
+        if: always()
+        env:
+          KEY_FILE: ${{ steps.runtime.outputs.key_file }}
+        run: rm -f "$KEY_FILE"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### Semantic metadata final drain v2'
+            echo "- Backlog before: \`${{ steps.drain.outputs.initial || 'n/a' }}\`"
+            echo "- Backlog after: \`${{ steps.drain.outputs.remaining || 'n/a' }}\`"
+            echo '- OpenAI location embeddings remain disabled.'
+            echo '- Search V2 embedding provider remains Hugging Face.'
+            echo '- No recurring scheduler added or changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
