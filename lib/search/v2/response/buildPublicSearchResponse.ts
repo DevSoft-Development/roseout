@@ -19,8 +19,9 @@ function isCustomerFacingReason(reason: string) {
   const value = reason.trim();
   if (!value) return false;
   return !(
-    /qualified as|deterministic ranking|bounded ML ranking boost applied|canonical profile|scoring|candidate pool|fallback|missing explicit|weak .*intent|penalized|evidence unavailable|distance unavailable|matched requested|matched dish-specific evidence|exact menu phrase|ranking|boost|adjustment/i.test(value) ||
-    /^\d+(?:\.\d+)?\s+miles?\s+away$/i.test(value)
+    /qualified as|deterministic ranking|bounded .*ranking|bounded advanced ml|canonical profile|scoring|candidate pool|fallback|missing explicit|weak .*intent|penalized|evidence unavailable|distance unavailable|matched requested|matched dish-specific evidence|exact menu phrase|ranking|boost|adjustment|business quality|behavioral result quality|review intelligence|booking likelihood|learned location fit|negative feedback|duplicate risk|hf reranker|hf semantic relevance|hf menu semantic relevance|model version|confidence score|search score|intent match|role confidence|geo fit/i.test(value) ||
+    /^\d+(?:\.\d+)?\s+miles?\s+away$/i.test(value) ||
+    /[+-]\d+(?:\.\d+)?\b/.test(value)
   );
 }
 
