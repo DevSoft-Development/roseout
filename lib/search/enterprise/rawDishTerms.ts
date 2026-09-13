@@ -65,6 +65,8 @@ const GENERIC_QUERY_TOKENS = new Set([
   "for",
   "fun",
   "good",
+  "highly",
+  "highest",
   "in",
   "it",
   "just",
@@ -72,6 +74,7 @@ const GENERIC_QUERY_TOKENS = new Set([
   "location",
   "meal",
   "me",
+  "most",
   "near",
   "nearby",
   "nice",
@@ -89,13 +92,21 @@ const GENERIC_QUERY_TOKENS = new Set([
   "place",
   "plan",
   "please",
+  "popular",
+  "popularity",
   "prioritize",
   "ranked",
+  "rated",
+  "rating",
+  "ratings",
   "recommend",
   "recommendation",
   "restaurant",
   "restaurants",
   "return",
+  "review",
+  "reviewed",
+  "reviews",
   "serves",
   "serving",
   "show",
@@ -133,6 +144,8 @@ const NON_DISH_ONLY_TOKENS = new Set([
   "upscale",
   "views",
 ]);
+
+const QUALITY_RANKING_LANGUAGE = /\b(?:highly\s+rated|highest\s+rated|top\s+rated|best\s+rated|well\s+rated|highly\s+reviewed|best\s+reviewed|most\s+reviewed|most\s+popular|highest\s+rating|best\s+rating|great\s+ratings?|good\s+ratings?|great\s+reviews?|good\s+reviews?|highly|highest|rated|rating|ratings|reviewed|reviews?|popular|popularity)\b/gi;
 
 function normalize(value: unknown) {
   return String(value ?? "")
@@ -274,6 +287,7 @@ export function extractRawRestaurantDishTerms(query: string, intent: SearchInten
   for (const term of nonDishTerms) residual = removePhrase(residual, term);
 
   residual = residual
+    .replace(QUALITY_RANKING_LANGUAGE, " ")
     .replace(/\b(?:today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi, " ")
     .replace(/\b\d{4}-\d{2}-\d{2}\b/g, " ")
     .replace(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, " ")
