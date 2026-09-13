@@ -66,7 +66,10 @@ const LOCATION_KEY = "theouthaven_user_location";
 const FLOW_VERSION = "guided_create_v1";
 const JOURNEY_VERSION = "four_step";
 const WALKING_INTENT = /\b(?:walk|walking|walkable|walkability)\b|\bon\s+foot\b/i;
+const PROXIMITY_INTENT = /\b(?:near me|nearby|nearest|closest|walk|walking|walkable|walkability|within\s+\d+\s*(?:miles?|minutes?|mins?)|short\s+(?:walk|drive))\b|\bon\s+foot\b/i;
+const QUALITY_INTENT = /\b(?:best|top|highest[-\s]?rated|highly[-\s]?rated|well[-\s]?rated|recommended|great\s+reviews?|rating|ratings|reviews?)\b/i;
 const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested|matched dish[-\s]?specific evidence|exact menu phrase match|canonical profile evidence|deterministic ranking|weak activity[-\s]?intent|broad restaurant fallback|date[-\s]?night\s+fit|occasion\s+fit|\b(?:fit|boost|penalty|adjustment)\s*[+-]?\s*\d/i;
+const MATCH_STOP_WORDS = new Set(["about", "activity", "and", "best", "dinner", "experience", "find", "for", "from", "good", "great", "have", "in", "location", "meal", "near", "night", "only", "option", "outing", "place", "plan", "restaurant", "search", "spot", "that", "the", "this", "to", "want", "with"]);
 
 const LOADING_LINES: Record<PlanType, string[]> = {
   outing: ["Finding your perfect outing...", "Matching restaurants and activities...", "Checking distance, ratings, and fit...", "Building your strongest complete picks..."],
@@ -103,54 +106,60 @@ function cleanReason(value: unknown) {
     .filter((part) => !/[A-Za-z]+_[A-Za-z]+|\b(?:true|false|null|undefined)\b/i.test(part))
     .filter((part) => !/\b(?:fit|boost|penalty|adjustment)\b.*[+-]?\d+(?:\.\d+)?/i.test(part));
   const reason = pieces[0];
-  if (!reason || reason.length < 10 || reason.length > 150) return null;
+  if (!reason || reason.length < 4 || reason.length > 150) return null;
   return reason.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 function customerWhy(value: PairCard | LocationCard | null | undefined) {
   if (!value) return null;
   return cleanReason(value.whyMatched) || cleanReason(value.why_it_matched) || (Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).find(Boolean) || null : null);
 }
-function requestSummary(prompt: string) {
-  const cleaned = prompt
-    .replace(/^plan\s+(?:a\s+)?restaurant\s+and\s+activity\s+outing[.:\s-]*/i, "")
-    .replace(/^plan\s+(?:a\s+)?restaurant\s+only[.:\s-]*/i, "")
-    .replace(/^plan\s+(?:an?\s+)?activity\s+only[.:\s-]*/i, "")
-    .replace(/\blocation\s*:\s*[^.]+/gi, "")
-    .replace(/\s+/g, " ")
-    .replace(/^[,.;:\s-]+|[,.;:\s-]+$/g, "")
-    .trim();
-  if (!cleaned) return "the outing you described";
-  return cleaned.length > 95 ? `${cleaned.slice(0, 92).trimEnd()}…` : cleaned;
+function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
+function shortSignal(value: string) {
+  const normalized = value.replace(/[.!]+$/, "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= 42) return normalized;
+  const clipped = normalized.slice(0, 42);
+  const boundary = clipped.lastIndexOf(" ");
+  return `${(boundary > 24 ? clipped.slice(0, boundary) : clipped).trim()}…`;
 }
-function locationWhy(location: LocationCard, planType: PlanType) {
+function meaningfulTokens(value: string) {
+  return value.toLowerCase().match(/[a-z0-9$]+/g)?.filter((token) => token.length >= 3 && !MATCH_STOP_WORDS.has(token)) || [];
+}
+function overlapsPrompt(prompt: string, value: string) {
+  const promptTokens = new Set(meaningfulTokens(prompt));
+  return meaningfulTokens(value).some((token) => promptTokens.has(token));
+}
+function locationCategory(location: LocationCard) {
+  return String(location.cuisine || location.cuisine_type || location.activity_type || location.primary_category || "").trim();
+}
+function locationSignals(location: LocationCard, prompt: string) {
+  const signals: string[] = [];
+  const category = locationCategory(location);
+  const city = String(location.city || "").trim();
   const reason = customerWhy(location);
-  if (reason) return reason;
-  const category = String(location.cuisine || location.cuisine_type || location.activity_type || location.primary_category || "").trim();
-  const place = String(location.city || "").trim();
   const rating = ratingFor(location);
-  if (category && place && rating) return `A well-rated ${category.toLowerCase()} spot in ${place} that lines up with the kind of ${planType === "restaurant" ? "meal" : "experience"} you asked for.`;
-  if (category && place) return `A ${category.toLowerCase()} spot in ${place} that lines up with the kind of ${planType === "restaurant" ? "meal" : "experience"} you asked for.`;
-  if (category) return `A ${category.toLowerCase()} pick that matches the kind of ${planType === "restaurant" ? "meal" : "experience"} you described.`;
-  return planType === "restaurant" ? "A polished dining option that fits the kind of meal you described." : "A strong experience for the kind of outing you described.";
+  if (category && overlapsPrompt(prompt, category)) signals.push(titleCase(category));
+  if (reason && overlapsPrompt(prompt, reason)) signals.push(shortSignal(reason));
+  if (city && prompt.toLowerCase().includes(city.toLowerCase())) signals.push(city);
+  if (QUALITY_INTENT.test(prompt) && rating) signals.push(`★ ${rating.value} rated`);
+  return [...new Set(signals)].slice(0, 3);
 }
-function pairWhy(item: CompletePair, distance: string | null, prompt: string) {
-  const requested = requestSummary(prompt);
-  const restaurant = nameFor(item.restaurant);
-  const activity = nameFor(item.activity);
-  const restaurantType = String(item.restaurant.cuisine || item.restaurant.cuisine_type || item.restaurant.primary_category || "").trim().toLowerCase();
-  const activityType = String(item.activity.activity_type || item.activity.primary_category || "").trim().toLowerCase();
-  const reason = customerWhy(item.pair) || customerWhy(item.restaurant) || customerWhy(item.activity);
-  const distancePhrase = distance ? ` They’re ${distance}, so the night stays easy to move through.` : "";
-
-  if (item.resultType === "same_venue") {
-    return `You asked for “${requested}.” We picked ${restaurant} because it keeps the meal and experience together in one place while matching the plan you described.`;
+function pairSignals(item: CompletePair, distance: string | null, prompt: string) {
+  const signals: string[] = [];
+  const restaurantCategory = locationCategory(item.restaurant);
+  const activityCategory = locationCategory(item.activity);
+  const pairReason = customerWhy(item.pair);
+  if (restaurantCategory && overlapsPrompt(prompt, restaurantCategory)) signals.push(titleCase(restaurantCategory));
+  if (activityCategory && overlapsPrompt(prompt, activityCategory)) signals.push(titleCase(activityCategory));
+  if (pairReason && overlapsPrompt(prompt, pairReason)) signals.push(shortSignal(pairReason));
+  if (signals.length < 2) {
+    for (const signal of [...locationSignals(item.restaurant, prompt), ...locationSignals(item.activity, prompt)]) {
+      if (!signals.includes(signal)) signals.push(signal);
+      if (signals.length >= 2) break;
+    }
   }
-
-  const fitParts = [restaurantType ? `${restaurantType} dining` : "the restaurant", activityType ? `${activityType}` : "the activity"].filter(Boolean).join(" with ");
-  const reasonPhrase = reason && !/^(?:about\s+)?\d+\s+(?:min|minute|minutes|mile|miles)/i.test(reason)
-    ? ` ${reason.charAt(0).toUpperCase()}${reason.slice(1).replace(/[.!]+$/, "")}.`
-    : "";
-  return `You asked for “${requested}.” We paired ${restaurant} with ${activity} because ${fitParts} fits that kind of outing.${distancePhrase}${reasonPhrase}`;
+  if (distance && PROXIMITY_INTENT.test(prompt)) signals.push(distance);
+  if (item.resultType === "same_venue" && signals.length < 3) signals.push("One venue for both stops");
+  return [...new Set(signals)].slice(0, 3);
 }
 function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
@@ -185,6 +194,18 @@ function outingTimeFrom(payload: SearchPayload): OutingTimeValue {
   return { plannedFor: time?.plannedFor || null, timezone: time?.timezone || "America/New_York", outingDateContext: time?.dateContext || null, outingTimeConfidence: confidence, remindersEnabled: Boolean(time?.shouldSchedulePreOutingReminders), nextMorningFollowupEnabled: Boolean(time?.nextMorningFollowupDate), nextMorningFollowupDate: time?.nextMorningFollowupDate || null, outingDateTimeText: payload.outingDateTimeText || null, outingDateLabel: payload.outingDateLabel || payload.parsedDateText || null, outingTimeLabel: payload.outingTimeLabel || payload.parsedTimeText || null };
 }
 
+function MatchSignals({ title, signals }: { title: string; signals: string[] }) {
+  if (!signals.length) return null;
+  return (
+    <div className="mt-4 border-t border-white/[0.07] pt-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#ff7188]">{title}</p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        {signals.map((signal) => <span key={signal} className="rounded-full border border-white/[0.09] bg-white/[0.045] px-3 py-1.5 text-[11px] font-bold text-white/72">{signal}</span>)}
+      </div>
+    </div>
+  );
+}
+
 function VenueRow({ location, label }: { location: LocationCard; label: string }) {
   const image = imageFor(location);
   const rating = ratingFor(location);
@@ -213,7 +234,7 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
   const best = rank === 1 && !sponsoredPair(item);
   const sponsored = sponsoredPair(item);
   const distance = distanceFor(item.pair, walkingRequested);
-  const why = pairWhy(item, distance, prompt);
+  const signals = pairSignals(item, distance, prompt);
   const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   return (
     <article className={`rounded-[1.6rem] border bg-[#0a0a0a] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/55 ring-1 ring-[#e1062a]/15" : "border-white/[0.09]"}`}>
@@ -225,10 +246,7 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
         <VenueRow location={item.restaurant} label={item.resultType === "same_venue" ? "Dinner + experience" : "Restaurant"} />
         {item.resultType !== "same_venue" ? <VenueRow location={item.activity} label="Activity" /> : null}
       </div>
-      <div className="mt-4 border-t border-white/[0.07] pt-4">
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#ff7188]">Why we picked this pair</p>
-        <p className="mt-1.5 text-sm font-medium leading-5 text-white/68">{why}</p>
-      </div>
+      <MatchSignals title="Matched to your plan" signals={signals} />
       <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.08em] transition hover:bg-[#f20b31]">Choose this outing →</button>
       <details className="mt-2 rounded-xl px-2 py-2 text-sm">
         <summary className="cursor-pointer list-none text-center text-xs font-bold text-white/40 transition hover:text-white/65">View details</summary>
@@ -242,12 +260,12 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
   );
 }
 
-function SingleCard({ location, rank, planType, returnToResults, onUse }: { location: LocationCard; rank: number; planType: PlanType; returnToResults: string; onUse: () => void }) {
+function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }: { location: LocationCard; rank: number; planType: PlanType; returnToResults: string; prompt: string; onUse: () => void }) {
   const image = imageFor(location);
   const rating = ratingFor(location);
   const price = priceFor(location);
   const best = rank === 1;
-  const why = locationWhy(location, planType);
+  const signals = locationSignals(location, prompt);
   const noun = planType === "restaurant" ? "restaurant" : "activity";
   return (
     <article className={`group flex h-full flex-col overflow-hidden rounded-[1.45rem] border bg-[#0b0b0c] shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/35 ring-1 ring-[#e1062a]/5" : "border-white/[0.10]"}`}>
@@ -262,10 +280,7 @@ function SingleCard({ location, rank, planType, returnToResults, onUse }: { loca
           {metaFor(location) ? <p className="mt-1.5 text-sm font-semibold text-white/48">{metaFor(location)}</p> : null}
           {(rating || price) ? <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/62">{rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}{rating && price ? <span className="text-white/20">•</span> : null}{price ? <span>{price}</span> : null}</div> : null}
         </div>
-        <div className="mt-5 border-t border-white/[0.07] pt-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/38">Why this stands out</p>
-          <p className="mt-2 line-clamp-3 text-sm font-medium leading-6 text-white/72">{why}</p>
-        </div>
+        <MatchSignals title="Matched to your search" signals={signals} />
         <div className="mt-auto grid gap-2.5 pt-5 sm:grid-cols-2">
           <Link href={profileHref(location, returnToResults)} className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/12 bg-white/[0.025] px-4 text-center text-xs font-black text-white/72 transition hover:border-white/25 hover:bg-white/[0.05] hover:text-white">View {noun}</Link>
           <button type="button" onClick={onUse} className="min-h-12 rounded-full bg-[#e1062a] px-4 text-xs font-black uppercase tracking-[0.07em] text-white transition hover:bg-[#f20b31]">Choose {noun} →</button>
@@ -393,7 +408,7 @@ export default function GuidedResultsPageV4() {
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/[0.05] p-4"><p className="text-sm font-semibold text-white/55">{selectedRestaurant && selectedActivity ? `${nameFor(selectedRestaurant)} + ${nameFor(selectedActivity)}` : "Choose one restaurant and one activity."}</p><button type="button" disabled={!selectedRestaurant || !selectedActivity} onClick={() => { if (selectedRestaurant && selectedActivity) { track("planner_custom_pair_selected", { step: 3, restaurant_id: selectedRestaurant.id || null, activity_id: selectedActivity.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); openPlan(selectedRestaurant, selectedActivity, null, null, "custom_pair"); } }} className="rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-35">Choose my outing →</button></div>
             </details>
           ) : null}
-        </> : <div className="grid items-stretch gap-5 md:grid-cols-2">{singles.map((location, index) => <SingleCard key={`${location.id || index}`} location={location} rank={index + 1} planType={planType} returnToResults={returnToResults} onUse={() => openPlan(planType === "restaurant" ? location : null, planType === "activity" ? location : null, null, index + 1, planType)} />)}</div>}
+        </> : <div className="grid items-stretch gap-5 md:grid-cols-2">{singles.map((location, index) => <SingleCard key={`${location.id || index}`} location={location} rank={index + 1} planType={planType} returnToResults={returnToResults} prompt={prompt} onUse={() => openPlan(planType === "restaurant" ? location : null, planType === "activity" ? location : null, null, index + 1, planType)} />)}</div>}
       </section>
     </main>
   );
