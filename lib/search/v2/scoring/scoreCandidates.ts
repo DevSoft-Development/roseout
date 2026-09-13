@@ -57,6 +57,22 @@ function matchesDishEvidence(term: string, text: string, canonicalTerms: Set<str
   return false;
 }
 
+function steakhouseCategoryRequested(query: string) {
+  return /\bsteakhouses?\b|\bsteak\s+(?:restaurants?|spots?|places?)\b/i.test(query);
+}
+
+function scoredCandidateMatchesTerms(item: ScoredCandidate, terms: readonly string[]) {
+  if (!terms.length) return true;
+  const location = item.candidate.candidate.location as Record<string, unknown>;
+  const text = searchableText(location);
+  const canonicalTerms = new Set(
+    item.candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
+      ? item.candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
+      : [],
+  );
+  return terms.some((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
+}
+
 function isCanonicalEventCandidate(item: ScoredCandidate) {
   return isCanonicalEventInventory(item.candidate.candidate.location as Record<string, unknown>);
 }
@@ -95,8 +111,14 @@ function compareByGeoTierThenScore(a: ScoredCandidate, b: ScoredCandidate) {
 
 export async function scoreCandidates({ plan, candidates, trace }: { plan: SearchPlan; candidates: RoleQualifiedCandidate[]; trace?: SearchTrace }) {
   const mlEnabled = !["0", "false", "off"].includes(String(process.env.ML_ENABLED ?? "true").toLowerCase());
-  const requestedCuisineTerms = plan.restaurant.cuisines.map((term) => term.toLowerCase());
-  const requestedDishTerms = plan.restaurant.foods.map((term) => term.toLowerCase());
+  const steakhouseRequested = steakhouseCategoryRequested(plan.rawQuery);
+  const requestedCuisineTerms = [...new Set([
+    ...plan.restaurant.cuisines.map((term) => term.toLowerCase()),
+    ...(steakhouseRequested ? ["steakhouse"] : []),
+  ])];
+  const requestedDishTerms = plan.restaurant.foods
+    .map((term) => term.toLowerCase())
+    .filter((term) => !(steakhouseRequested && term === "steak"));
   const requestedRestaurantTerms = [...requestedCuisineTerms, ...requestedDishTerms];
   const requestedActivityTerms = plan.activity.categories.flatMap((category) => activityRetrievalTerms(category)).map((term) => term.toLowerCase());
   const multiDishRequested = atomicRequestedDishTerms(requestedDishTerms).length >= 2;
@@ -239,11 +261,20 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     }
   }
   const explicitRestaurantMatches = dateNightEligibleRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
+  const cuisineQualifiedRestaurants = requestedCuisineTerms.length
+    ? dateNightEligibleRestaurants.filter((item) => scoredCandidateMatchesTerms(item, requestedCuisineTerms))
+    : [];
   const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
   const dinnerSuitableRestaurants = dateNightEligibleRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
   return {
     all: scored,
-    restaurants: requestedRestaurantTerms.length && explicitRestaurantMatches.length ? explicitRestaurantMatches : dinnerRequested && dinnerSuitableRestaurants.length ? dinnerSuitableRestaurants : dateNightEligibleRestaurants,
+    restaurants: requestedCuisineTerms.length && cuisineQualifiedRestaurants.length
+      ? cuisineQualifiedRestaurants
+      : requestedRestaurantTerms.length && explicitRestaurantMatches.length
+        ? explicitRestaurantMatches
+        : dinnerRequested && dinnerSuitableRestaurants.length
+          ? dinnerSuitableRestaurants
+          : dateNightEligibleRestaurants,
     activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
   };
 }
