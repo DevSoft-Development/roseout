@@ -19,7 +19,7 @@ async function authorize(locationId: string) {
   if (!access) return { error: NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 }) };
   const { data: location } = await supabaseAdmin.from("locations").select("*").eq("id", locationId).maybeSingle();
   if (!location) return { error: NextResponse.json({ success: false, error: "Location not found" }, { status: 404 }) };
-  if (!access.isAdmin && !isPaidPlan(location)) return { error: NextResponse.json({ success: false, error: "Website Conversion Tracking is included with Essentials." }, { status: 402 }) };
+  if (!access.access.isAdmin && !isPaidPlan(location)) return { error: NextResponse.json({ success: false, error: "Website Conversion Tracking is included with Essentials." }, { status: 402 }) };
   return { location };
 }
 
