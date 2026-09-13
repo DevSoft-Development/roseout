@@ -11,10 +11,6 @@ on:
       - '.github/workflows/aws-assistant-api.yml'
       - '.github/workflows/aws-edge-runtime.yml'
       - 'scripts/verify-provider-boundaries.mjs'
-      - 'tsconfig.json'
-      - 'lib/**'
-      - 'app/api/**'
-      - 'supabase/functions/**'
   push:
     branches: [main]
     paths:
@@ -26,10 +22,6 @@ on:
       - '.github/workflows/aws-assistant-api.yml'
       - '.github/workflows/aws-edge-runtime.yml'
       - 'scripts/verify-provider-boundaries.mjs'
-      - 'tsconfig.json'
-      - 'lib/**'
-      - 'app/api/**'
-      - 'supabase/functions/**'
   workflow_dispatch:
     inputs:
       environment:
