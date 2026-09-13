@@ -3,10 +3,42 @@
 import { useEffect, useState } from "react";
 
 type Props = { locationId: string; range: string };
+type TrackingConfig = {
+  allowed_origins?: string[];
+  average_customer_value?: number | null;
+};
+type SetupResponse = {
+  error?: string;
+  snippet?: string;
+  config?: TrackingConfig;
+};
+type Funnel = {
+  attributed_outbound_visits?: number;
+  website_sessions?: number;
+  high_intent_actions?: number;
+  reservation_actions?: number;
+  menu_views?: number;
+  calls?: number;
+  directions?: number;
+  orders?: number;
+  contact_submits?: number;
+};
+type ValueData = {
+  estimated_customer_value?: number;
+  average_customer_value?: number;
+  estimated_plan_multiple?: number | null;
+};
+type DemandItem = { query: string; searches: number };
+type ConversionResponse = {
+  tracking?: { connected?: boolean };
+  funnel?: Funnel;
+  value?: ValueData;
+  demand?: DemandItem[];
+};
 
 export default function WebsiteTrackingPanel({ locationId, range }: Props) {
-  const [setup, setSetup] = useState<any>(null);
-  const [conversion, setConversion] = useState<any>(null);
+  const [setup, setSetup] = useState<SetupResponse | null>(null);
+  const [conversion, setConversion] = useState<ConversionResponse | null>(null);
   const [origin, setOrigin] = useState("");
   const [averageValue, setAverageValue] = useState("");
   const [message, setMessage] = useState("");
@@ -14,12 +46,12 @@ export default function WebsiteTrackingPanel({ locationId, range }: Props) {
   useEffect(() => {
     if (!locationId) return;
     Promise.all([
-      fetch(`/api/business/website-tracking?location_id=${encodeURIComponent(locationId)}`).then(async (r) => ({ ok: r.ok, body: await r.json() })),
-      fetch(`/api/business/conversion-analytics?location_id=${encodeURIComponent(locationId)}&range=${encodeURIComponent(range)}`).then(async (r) => ({ ok: r.ok, body: await r.json() })),
+      fetch(`/api/business/website-tracking?location_id=${encodeURIComponent(locationId)}`).then(async (r) => ({ ok: r.ok, body: await r.json() as SetupResponse })),
+      fetch(`/api/business/conversion-analytics?location_id=${encodeURIComponent(locationId)}&range=${encodeURIComponent(range)}`).then(async (r) => ({ ok: r.ok, body: await r.json() as ConversionResponse })),
     ]).then(([tracking, analytics]) => {
       setSetup(tracking.body);
-      if (tracking.body?.config?.allowed_origins?.[0]) setOrigin(tracking.body.config.allowed_origins[0]);
-      if (tracking.body?.config?.average_customer_value != null) setAverageValue(String(tracking.body.config.average_customer_value));
+      if (tracking.body.config?.allowed_origins?.[0]) setOrigin(tracking.body.config.allowed_origins[0]);
+      if (tracking.body.config?.average_customer_value != null) setAverageValue(String(tracking.body.config.average_customer_value));
       setConversion(analytics.body);
     }).catch(() => undefined);
   }, [locationId, range]);
@@ -31,13 +63,13 @@ export default function WebsiteTrackingPanel({ locationId, range }: Props) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ location_id: locationId, allowed_origins: origin ? [origin] : [], average_customer_value: averageValue || null, enabled: true }),
     });
-    const body = await response.json();
-    setMessage(response.ok ? "Saved. Add the tracking code to your site, then visit the site to verify it." : body?.error || "Could not save settings.");
-    if (response.ok) setSetup((current: any) => ({ ...current, config: body.config }));
+    const body = await response.json() as SetupResponse;
+    setMessage(response.ok ? "Saved. Add the tracking code to your site, then visit the site to verify it." : body.error || "Could not save settings.");
+    if (response.ok) setSetup((current) => ({ ...(current || {}), config: body.config }));
   }
 
   if (!locationId) return null;
-  if (setup?.error && setup?.error.includes("Essentials")) {
+  if (setup?.error?.includes("Essentials")) {
     return <section className="mt-6 toh-card rounded-3xl p-6"><p className="text-xs font-black uppercase tracking-[0.16em] text-[#ff6b86]">Essentials</p><h2 className="mt-2 text-2xl font-black">Unlock Conversion Tracking</h2><p className="toh-muted mt-2 text-sm">See what customers do after TheOutHaven sends them to your website, including reservation, menu, call, directions, order, and contact actions.</p><p className="mt-4 text-sm font-black">Included with the $99/month Essentials plan.</p></section>;
   }
 
@@ -57,7 +89,7 @@ export default function WebsiteTrackingPanel({ locationId, range }: Props) {
         </div>
         <button onClick={save} className="mt-4 rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white">Save tracking settings</button>
         {message && <p className="toh-muted mt-3 text-sm">{message}</p>}
-        {setup?.snippet && <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-black">Install once in your website header</p><button onClick={() => navigator.clipboard.writeText(setup.snippet)} className="rounded-full border border-white/15 px-3 py-1 text-xs font-black">Copy code</button></div><code className="mt-3 block overflow-x-auto whitespace-pre-wrap break-all text-xs text-white/60">{setup.snippet}</code><p className="toh-muted mt-3 text-xs">Works with WordPress, Wix, Squarespace, Toast sites, Shopify, and custom websites where custom scripts are allowed.</p></div>}
+        {setup?.snippet && <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-black">Install once in your website header</p><button onClick={() => navigator.clipboard.writeText(setup.snippet || "")} className="rounded-full border border-white/15 px-3 py-1 text-xs font-black">Copy code</button></div><code className="mt-3 block overflow-x-auto whitespace-pre-wrap break-all text-xs text-white/60">{setup.snippet}</code><p className="toh-muted mt-3 text-xs">Works with WordPress, Wix, Squarespace, Toast sites, Shopify, and custom websites where custom scripts are allowed.</p></div>}
       </div>
 
       <div className="toh-card rounded-3xl p-6">
@@ -68,10 +100,10 @@ export default function WebsiteTrackingPanel({ locationId, range }: Props) {
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {[["Menu views",f.menu_views],["Calls",f.calls],["Directions",f.directions],["Orders",f.orders],["Contact actions",f.contact_submits]].map(([label,value]) => <div key={String(label)} className="rounded-2xl border border-white/10 p-4"><p className="toh-muted text-xs">{label}</p><p className="mt-1 text-xl font-black">{Number(value || 0).toLocaleString()}</p></div>)}
         </div>
-        {v.estimated_customer_value > 0 && <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-5"><p className="toh-muted text-xs uppercase tracking-[0.12em]">Estimated customer value</p><p className="mt-1 text-3xl font-black">${Number(v.estimated_customer_value).toLocaleString()}</p><p className="toh-muted mt-1 text-xs">Based on your ${Number(v.average_customer_value || 0).toLocaleString()} average customer value and tracked reservation actions. This is an estimate, not confirmed revenue.</p>{v.estimated_plan_multiple && <p className="mt-3 text-sm font-black">Estimated value equals {v.estimated_plan_multiple}× the $99 monthly Essentials cost.</p>}</div>}
+        {(v.estimated_customer_value || 0) > 0 && <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-5"><p className="toh-muted text-xs uppercase tracking-[0.12em]">Estimated customer value</p><p className="mt-1 text-3xl font-black">${Number(v.estimated_customer_value).toLocaleString()}</p><p className="toh-muted mt-1 text-xs">Based on your ${Number(v.average_customer_value || 0).toLocaleString()} average customer value and tracked reservation actions. This is an estimate, not confirmed revenue.</p>{v.estimated_plan_multiple && <p className="mt-3 text-sm font-black">Estimated value equals {v.estimated_plan_multiple}× the $99 monthly Essentials cost.</p>}</div>}
       </div>
 
-      <div className="toh-card rounded-3xl p-6"><p className="text-xs font-black uppercase tracking-[0.16em] text-[#ff6b86]">Customer Demand</p><h2 className="mt-2 text-xl font-black">What customers were looking for</h2><div className="mt-4 space-y-2">{(conversion?.demand || []).map((item: any) => <div key={item.query} className="flex items-center justify-between gap-4 border-b border-white/10 py-2 text-sm"><span>{item.query}</span><span className="toh-muted font-black">{item.searches}</span></div>)}{!conversion?.demand?.length && <p className="toh-muted text-sm">Demand insights will appear as customers discover this location through TheOutHaven.</p>}</div></div>
+      <div className="toh-card rounded-3xl p-6"><p className="text-xs font-black uppercase tracking-[0.16em] text-[#ff6b86]">Customer Demand</p><h2 className="mt-2 text-xl font-black">What customers were looking for</h2><div className="mt-4 space-y-2">{(conversion?.demand || []).map((item) => <div key={item.query} className="flex items-center justify-between gap-4 border-b border-white/10 py-2 text-sm"><span>{item.query}</span><span className="toh-muted font-black">{item.searches}</span></div>)}{!conversion?.demand?.length && <p className="toh-muted text-sm">Demand insights will appear as customers discover this location through TheOutHaven.</p>}</div></div>
     </section>
   );
 }
