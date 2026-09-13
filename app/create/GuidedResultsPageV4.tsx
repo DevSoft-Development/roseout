@@ -349,8 +349,14 @@ export default function GuidedResultsPageV4() {
   const pairs = useMemo(() => allPairs.slice(0, 6), [allPairs]);
   const rawRestaurants = useMemo(() => result?.restaurants || [], [result]);
   const rawActivities = useMemo(() => result?.activities || [], [result]);
-  const restaurants = useMemo(() => uniqueLocations([...rawRestaurants, ...allPairs.map((item) => item.restaurant)]).slice(0, planType === "outing" ? 12 : 6), [rawRestaurants, allPairs, planType]);
-  const activities = useMemo(() => uniqueLocations([...rawActivities, ...allPairs.map((item) => item.activity)]).slice(0, planType === "outing" ? 12 : 6), [rawActivities, allPairs, planType]);
+  const restaurants = useMemo(() => {
+    const unique = uniqueLocations([...rawRestaurants, ...allPairs.map((item) => item.restaurant)]);
+    return planType === "outing" ? unique.slice(0, 12) : unique;
+  }, [rawRestaurants, allPairs, planType]);
+  const activities = useMemo(() => {
+    const unique = uniqueLocations([...rawActivities, ...allPairs.map((item) => item.activity)]);
+    return planType === "outing" ? unique.slice(0, 12) : unique;
+  }, [rawActivities, allPairs, planType]);
   const singles = planType === "restaurant" ? restaurants : activities;
   const hasResults = planType === "outing" ? pairs.length > 0 : singles.length > 0;
 
