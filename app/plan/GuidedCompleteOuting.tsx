@@ -732,8 +732,8 @@ function PlaceCompletionCard({
             : null;
 
   return (
-    <article className="overflow-hidden rounded-[1.4rem] border border-white/10 bg-[#0b0b0b] shadow-xl shadow-black/30">
-      <div className="relative h-48 bg-white/[0.04]">
+    <article className="overflow-visible rounded-[1.4rem] border border-white/10 bg-[#0b0b0b] shadow-xl shadow-black/30">
+      <div className="relative h-48 overflow-hidden rounded-t-[1.4rem] bg-white/[0.04]">
         {image ? <Image src={image as string} alt={name} fill unoptimized sizes="(max-width: 1024px) 100vw, 50vw" className="object-cover" /> : <div className="flex h-full items-center justify-center text-4xl">{type === "restaurant" ? "🍽️" : "✨"}</div>}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0b] via-black/20 to-transparent" />
         <span className="absolute left-4 top-4 rounded-full bg-black/75 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em]">{type === "restaurant" ? "Restaurant" : "Activity"}</span>
