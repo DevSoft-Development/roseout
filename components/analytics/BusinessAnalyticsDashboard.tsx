@@ -33,6 +33,10 @@ const ranges = [
   { value: "all", label: "All" },
 ];
 
+function locationLabel(location: LocationOption | LocationRow) {
+  return "name" in location && location.name ? location.name : location.display_name;
+}
+
 export default function BusinessAnalyticsDashboard({ locations, admin = false }: Props) {
   const [selectedLocationId, setSelectedLocationId] = useState(locations[0]?.id || "");
   const [range, setRange] = useState("30d");
@@ -88,7 +92,7 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
           <div className="toh-glass rounded-3xl p-5">
             <p className="text-lg font-black">Top locations</p>
             <ul className="mt-4 space-y-2 text-sm">
-              {(data?.top_locations || locations.slice(0, 8)).map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.name || l.display_name}</span><span className="toh-muted">{l.city || "—"}</span></li>)}
+              {(data?.top_locations || locations.slice(0, 8)).map((l) => <li key={l.id} className="flex items-center justify-between"><span>{locationLabel(l)}</span><span className="toh-muted">{l.city || "—"}</span></li>)}
             </ul>
           </div>
           <div className="toh-glass rounded-3xl p-5">
