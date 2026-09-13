@@ -12,7 +12,8 @@ export function resolveMigrationDirection(input: {
   existingDirectionId: string | null;
 }) {
   if (input.mode === "preserve_exact" && input.existingDirectionId) return input.existingDirectionId;
-  return input.requestedDirectionId || input.existingDirectionId || null;
+  if (input.requestedDirectionId) return input.requestedDirectionId;
+  return null;
 }
 
 export function applyMigrationSections(
@@ -44,9 +45,9 @@ export function migrationPromptContext(input: {
   if (input.mode === "preserve_exact") {
     base.push("Preserve the existing/imported visual identity and page structure. Improve implementation quality only; do not choose a new visual direction or reorder the owner's existing sections.");
   } else if (input.mode === "modernize") {
-    base.push("Retain recognizable brand signals and content hierarchy from the imported site, while modernizing typography, spacing, responsiveness, accessibility, and premium composition.");
+    base.push("Retain recognizable brand signals and content hierarchy from the imported site, while modernizing typography, spacing, responsiveness, accessibility, and premium composition. If the owner provides a new visual brief, choose the direction that best matches that brief instead of silently reusing the previous template.");
   } else {
-    base.push("Use imported content only as factual/source material. You may choose a completely new premium visual direction and composition.");
+    base.push("Use imported content only as factual/source material. You may choose a completely new premium visual direction and composition. Do not reuse the previous design direction unless the owner's new brief asks for it.");
   }
   return base.join("\n");
 }
