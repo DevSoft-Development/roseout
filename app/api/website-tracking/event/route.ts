@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const MAX_BODY_BYTES = 16_000;
 
+type SafeMetadataValue = string | number | boolean | null;
+
 function cors(origin: string | null) {
   return {
     "access-control-allow-origin": origin || "null",
@@ -11,6 +13,14 @@ function cors(origin: string | null) {
     "access-control-allow-headers": "content-type",
     vary: "Origin",
   };
+}
+
+function safeMetadataValue(value: unknown): SafeMetadataValue {
+  if (value === null) return null;
+  if (typeof value === "string") return value.slice(0, 500);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "boolean") return value;
+  return null;
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -37,8 +47,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Origin not allowed" }, { status: 403, headers: cors(origin) });
   }
 
-  const metadata = body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-    ? Object.fromEntries(Object.entries(body.metadata).slice(0, 20).map(([key, value]) => [String(key).slice(0, 80), ["string","number","boolean"].includes(typeof value) || value === null ? typeof value === "string" ? value.slice(0, 500) : value : null]))
+  const metadata: Record<string, SafeMetadataValue> = body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? Object.fromEntries(Object.entries(body.metadata).slice(0, 20).map(([key, value]) => [String(key).slice(0, 80), safeMetadataValue(value)]))
     : {};
 
   await recordExternalEvent({
