@@ -62,13 +62,60 @@ function tagFit(plan: SearchPlan, features: any) {
   return clamp(matches * 0.35 * Math.max(0.35, confidence), 0, 0.9);
 }
 
+function userAuthoredQuery(rawQuery: string) {
+  return String(rawQuery ?? "")
+    .split(/\blocation\s*:/i)[0]
+    .replace(/^\s*plan\s+(?:a|an)\s+(?:restaurant\s+only|activity\s+only|restaurant\s+and\s+activity\s+outing)\s*[.:\-]?\s*/i, "")
+    .replace(/\breturn\s+the\s+best\s+options(?:,)?\s+ranked\s+by\s+fit\.?\s*$/i, "")
+    .trim();
+}
+
+type QualityIntent = {
+  overall: boolean;
+  rating: boolean;
+  popularity: boolean;
+};
+
+export function detectQualityIntent(rawQuery: string): QualityIntent {
+  const query = userAuthoredQuery(rawQuery).toLowerCase();
+  const rating = /\b(highly rated|top rated|best rated|highest rated|great reviews?|excellent reviews?|well reviewed|strong reviews?)\b/.test(query);
+  const popularity = /\b(most popular|very popular|popular|lots? of reviews?|many reviews?|thousands? of reviews?|hundreds? of reviews?|well known|well-known)\b/.test(query);
+  const overall = rating || popularity || /\b(best|top|highly recommended|most recommended|recommended|greatest)\b/.test(query);
+  return { overall, rating, popularity };
+}
+
+function explicitQualityAdjustment(plan: SearchPlan, item: ScoredCandidate) {
+  const intent = detectQualityIntent(plan.rawQuery);
+  if (!intent.overall && !intent.rating && !intent.popularity) return { total: 0, reasons: [] as string[] };
+
+  const location = locationOf(item);
+  const rating = Number(location.rating ?? location.google_rating ?? location.average_rating ?? 0);
+  const reviews = Number(location.review_count ?? location.user_ratings_total ?? location.google_review_count ?? 0);
+  const ratingSignal = Number.isFinite(rating) && rating > 0 ? clamp((rating - 4.0) / 0.9, 0, 1) : 0;
+  const reviewConfidence = Number.isFinite(reviews) && reviews > 0 ? clamp(1 - Math.exp(-reviews / 275), 0, 1) : 0;
+  const popularitySignal = Number.isFinite(reviews) && reviews > 0 ? clamp(Math.log10(reviews + 1) / 3.7, 0, 1) : 0;
+  const confidenceAdjustedRating = ratingSignal * (0.4 + reviewConfidence * 0.6);
+
+  let total = 0;
+  if (intent.overall) total += confidenceAdjustedRating * 2.4 + popularitySignal * 1.1;
+  if (intent.rating) total += confidenceAdjustedRating * 2.4;
+  if (intent.popularity) total += popularitySignal * 2.5;
+  total = clamp(total, 0, 6.5);
+
+  const reasons = total >= 0.05
+    ? [`explicit quality preference +${total.toFixed(2)} (rating ${Number.isFinite(rating) && rating > 0 ? rating.toFixed(1) : "n/a"}, reviews ${Number.isFinite(reviews) && reviews > 0 ? Math.round(reviews) : 0})`]
+    : [];
+  return { total, reasons };
+}
+
 function compareByGeoThenScore(a: ScoredCandidate, b: ScoredCandidate) {
   return geoTierRank(a.candidate.candidate.geoMatch?.tier) - geoTierRank(b.candidate.candidate.geoMatch?.tier)
     || b.scores.total - a.scores.total;
 }
 
 function adjustmentFor(plan: SearchPlan, item: ScoredCandidate, features: any) {
-  if (!features) return { total: 0, reasons: [] as string[] };
+  const explicitQuality = explicitQualityAdjustment(plan, item);
+  if (!features) return { total: explicitQuality.total, reasons: explicitQuality.reasons };
   const resultConfidence = confidence01(features.result_confidence_score);
   const reviewConfidence = confidence01(features.review_confidence_score);
   const bookingConfidence = confidence01(features.booking_confidence_score);
@@ -89,11 +136,13 @@ function adjustmentFor(plan: SearchPlan, item: ScoredCandidate, features: any) {
     : 0;
   const learnedTagFit = tagFit(plan, features);
 
-  let total = clamp(resultQuality + reviewQuality + booking + trust + learnedTagFit - duplicatePenalty - negativePenalty, -2.5, 3.5);
+  let total = clamp(resultQuality + reviewQuality + booking + trust + learnedTagFit - duplicatePenalty - negativePenalty, -2.5, 3.5) + explicitQuality.total;
+  total = clamp(total, -2.5, 8.5);
   const exactMenu = item.reasons.some((reason) => /exact menu phrase match/i.test(reason));
   if (exactMenu) total = Math.max(0, total);
 
   const reasons = [
+    ...explicitQuality.reasons,
     Math.abs(resultQuality) >= 0.05 ? `behavioral result quality ${resultQuality >= 0 ? "+" : ""}${resultQuality.toFixed(2)}` : null,
     Math.abs(reviewQuality) >= 0.05 ? `review intelligence ${reviewQuality >= 0 ? "+" : ""}${reviewQuality.toFixed(2)}` : null,
     booking >= 0.05 ? `booking likelihood +${booking.toFixed(2)}` : null,
@@ -144,6 +193,7 @@ export async function applyAdvancedMlSignals({
     }
     const mapLane = (rows: ScoredCandidate[]) => rows.map((row) => adjustedByOriginal.get(row) ?? row).sort(compareByGeoThenScore);
     const all = scored.all.map((row) => adjustedByOriginal.get(row) ?? row).sort(compareByGeoThenScore);
+    const qualityIntent = detectQualityIntent(plan.rawQuery);
     trace.decisions.push({
       stage: "advanced_ml_signals",
       decision: adjustedCount ? "bounded_advanced_signals_applied" : "no_eligible_advanced_signal",
@@ -153,8 +203,9 @@ export async function applyAdvancedMlSignals({
         adjustedCount,
         maxPositive,
         maxNegative,
-        maxPositiveBound: 3.5,
+        maxPositiveBound: qualityIntent.overall || qualityIntent.rating || qualityIntent.popularity ? 8.5 : 3.5,
         maxNegativeBound: -2.5,
+        explicitQualityIntent: qualityIntent,
         exactMenuDemotionBlocked: true,
         hardConstraintsUnaffected: true,
         latencyMs: performance.now() - started,
