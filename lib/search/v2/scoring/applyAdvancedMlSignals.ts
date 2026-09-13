@@ -3,7 +3,7 @@ import { geoTierRank } from "../geo/geoPolicy";
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { ScoredCandidate } from "./scoringTypes";
-import { detectBookingIntent, detectQualityIntent } from "./rankingIntent";
+import { detectBookingIntent, detectDistanceIntent, detectQualityIntent } from "./rankingIntent";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -92,10 +92,43 @@ function compareByGeoThenScore(a: ScoredCandidate, b: ScoredCandidate) {
     || b.scores.total - a.scores.total;
 }
 
+export function queryRequestedBaseAdjustment(plan: SearchPlan, item: ScoredCandidate) {
+  const qualityIntent = detectQualityIntent(plan.rawQuery);
+  const distanceRequested = detectDistanceIntent(plan);
+  const genericBestRequested = qualityIntent.overall && !qualityIntent.rating && !qualityIntent.popularity;
+  const ratingRequested = qualityIntent.rating || genericBestRequested;
+  const popularityRequested = qualityIntent.popularity || genericBestRequested;
+
+  let total = 0;
+  const reasons: string[] = [];
+
+  if (!distanceRequested) {
+    total += (60 - item.scores.geoFit) * 0.2;
+    reasons.push("distance neutralized because proximity was not requested");
+  }
+  if (!ratingRequested) {
+    total += (50 - item.scores.quality) * 0.1;
+    reasons.push("rating/quality neutralized because it was not requested");
+  }
+  if (!popularityRequested) {
+    total += (50 - item.scores.popularity) * 0.05;
+    reasons.push("review popularity neutralized because it was not requested");
+  }
+
+  return { total, reasons, distanceRequested, ratingRequested, popularityRequested };
+}
+
 function adjustmentFor(plan: SearchPlan, item: ScoredCandidate, features: any) {
   const qualityIntent = detectQualityIntent(plan.rawQuery);
   const explicitQuality = explicitQualityAdjustment(plan, item);
-  if (!features) return { total: explicitQuality.total, reasons: explicitQuality.reasons };
+  const basePolicy = queryRequestedBaseAdjustment(plan, item);
+  if (!features) {
+    return {
+      total: basePolicy.total + explicitQuality.total,
+      reasons: [...basePolicy.reasons, ...explicitQuality.reasons],
+    };
+  }
+
   const resultConfidence = confidence01(features.result_confidence_score);
   const reviewConfidence = confidence01(features.review_confidence_score);
   const bookingConfidence = confidence01(features.booking_confidence_score);
@@ -107,29 +140,19 @@ function adjustmentFor(plan: SearchPlan, item: ScoredCandidate, features: any) {
     : 0;
   const wantsBooking = detectBookingIntent(plan.rawQuery);
   const booking = wantsBooking && Number.isFinite(Number(features.booking_likelihood_score))
-    ? clamp((Number(features.booking_likelihood_score) / 100) * 1.0 * Math.max(0.35, bookingConfidence), 0, 1.0)
-    : 0;
-  const duplicatePenalty = Number.isFinite(Number(features.duplicate_risk_score))
-    ? clamp(Number(features.duplicate_risk_score) / 100 * 1.2, 0, 1.2)
-    : 0;
-  const negativePenalty = Number.isFinite(Number(features.negative_feedback_rate))
-    ? clamp(Number(features.negative_feedback_rate) * 3.0 * Math.max(0.4, resultConfidence), 0, 2.0)
+    ? clamp((Number(features.booking_likelihood_score) / 100) * Math.max(0.35, bookingConfidence), 0, 1.0)
     : 0;
   const learnedTagFit = tagFit(plan, features);
 
-  let total = clamp(resultQuality + reviewQuality + booking + learnedTagFit - duplicatePenalty - negativePenalty, -2.5, 3.5) + explicitQuality.total;
-  total = clamp(total, -2.5, 8.5);
-  const exactMenu = item.reasons.some((reason) => /exact menu phrase match/i.test(reason));
-  if (exactMenu) total = Math.max(0, total);
-
+  let total = basePolicy.total + explicitQuality.total + resultQuality + reviewQuality + booking + learnedTagFit;
+  total = clamp(total, -20, 20);
   const reasons = [
+    ...basePolicy.reasons,
     ...explicitQuality.reasons,
     Math.abs(resultQuality) >= 0.05 ? `requested overall quality signal ${resultQuality >= 0 ? "+" : ""}${resultQuality.toFixed(2)}` : null,
     Math.abs(reviewQuality) >= 0.05 ? `requested review quality signal ${reviewQuality >= 0 ? "+" : ""}${reviewQuality.toFixed(2)}` : null,
     booking >= 0.05 ? `requested booking likelihood +${booking.toFixed(2)}` : null,
     learnedTagFit >= 0.05 ? `requested preference fit +${learnedTagFit.toFixed(2)}` : null,
-    negativePenalty >= 0.05 ? `negative feedback -${negativePenalty.toFixed(2)}` : null,
-    duplicatePenalty >= 0.05 ? `duplicate risk -${duplicatePenalty.toFixed(2)}` : null,
   ].filter(Boolean) as string[];
   return { total, reasons };
 }
@@ -148,16 +171,14 @@ export async function applyAdvancedMlSignals({
   const ids = [...new Set(scored.all.map(idOf).filter(Boolean))];
   if (!ids.length) return scored;
   const started = performance.now();
-  try {
-    const { data, error } = await supabase.rpc("get_search_v2_advanced_location_features", { p_location_ids: ids });
-    if (error) throw error;
-    const byId = new Map((data ?? []).map((row: any) => [String(row.location_id), row]));
+
+  const applyAdjustments = (featureRows: Map<string, any>) => {
     let adjustedCount = 0;
     let maxPositive = 0;
     let maxNegative = 0;
     const adjustedByOriginal = new Map<ScoredCandidate, ScoredCandidate>();
     for (const item of scored.all) {
-      const adjustment = adjustmentFor(plan, item, byId.get(idOf(item)));
+      const adjustment = adjustmentFor(plan, item, featureRows.get(idOf(item)));
       if (Math.abs(adjustment.total) < 0.001) {
         adjustedByOriginal.set(item, item);
         continue;
@@ -168,39 +189,58 @@ export async function applyAdvancedMlSignals({
       adjustedByOriginal.set(item, {
         ...item,
         scores: { ...item.scores, total: clamp(item.scores.total + adjustment.total, 0, 100) },
-        reasons: [...item.reasons, ...adjustment.reasons, `bounded advanced ML ${adjustment.total >= 0 ? "+" : ""}${adjustment.total.toFixed(2)}`],
+        reasons: [...item.reasons, ...adjustment.reasons, `query-driven ranking adjustment ${adjustment.total >= 0 ? "+" : ""}${adjustment.total.toFixed(2)}`],
       });
     }
     const mapLane = (rows: ScoredCandidate[]) => rows.map((row) => adjustedByOriginal.get(row) ?? row).sort(compareByGeoThenScore);
-    const all = scored.all.map((row) => adjustedByOriginal.get(row) ?? row).sort(compareByGeoThenScore);
+    return {
+      all: scored.all.map((row) => adjustedByOriginal.get(row) ?? row).sort(compareByGeoThenScore),
+      restaurants: mapLane(scored.restaurants),
+      activities: mapLane(scored.activities),
+      adjustedCount,
+      maxPositive,
+      maxNegative,
+    };
+  };
+
+  try {
+    const { data, error } = await supabase.rpc("get_search_v2_advanced_location_features", { p_location_ids: ids });
+    if (error) throw error;
+    const byId = new Map((data ?? []).map((row: any) => [String(row.location_id), row]));
+    const adjusted = applyAdjustments(byId);
     const qualityIntent = detectQualityIntent(plan.rawQuery);
     trace.decisions.push({
       stage: "advanced_ml_signals",
-      decision: adjustedCount ? "query_requested_advanced_signals_applied" : "no_query_requested_advanced_signal",
+      decision: adjusted.adjustedCount ? "query_requested_signals_applied" : "no_query_requested_advanced_signal",
       reason: JSON.stringify({
         candidateCount: ids.length,
         featureRows: byId.size,
-        adjustedCount,
-        maxPositive,
-        maxNegative,
-        maxPositiveBound: qualityIntent.overall || qualityIntent.rating || qualityIntent.popularity ? 8.5 : 3.5,
-        maxNegativeBound: -2.5,
+        adjustedCount: adjusted.adjustedCount,
+        maxPositive: adjusted.maxPositive,
+        maxNegative: adjusted.maxNegative,
         explicitQualityIntent: qualityIntent,
+        distanceIntent: detectDistanceIntent(plan),
         bookingIntent: detectBookingIntent(plan.rawQuery),
-        genericReviewQualitySuppressedWithoutRequest: true,
-        genericBookingLikelihoodSuppressedWithoutRequest: true,
-        exactMenuDemotionBlocked: true,
+        genericDistanceSuppressedWithoutRequest: true,
+        genericRatingSuppressedWithoutRequest: true,
+        genericPopularitySuppressedWithoutRequest: true,
+        genericBehavioralMlSuppressedWithoutRequest: true,
         hardConstraintsUnaffected: true,
         latencyMs: performance.now() - started,
       }),
     });
-    return { all, restaurants: mapLane(scored.restaurants), activities: mapLane(scored.activities) };
+    return { all: adjusted.all, restaurants: adjusted.restaurants, activities: adjusted.activities };
   } catch (error) {
+    const adjusted = applyAdjustments(new Map());
     trace.decisions.push({
       stage: "advanced_ml_signals",
-      decision: "advanced_ml_fail_open",
-      reason: error instanceof Error ? error.message : "unknown_advanced_ml_error",
+      decision: "advanced_ml_fail_open_query_policy_preserved",
+      reason: JSON.stringify({
+        error: error instanceof Error ? error.message : "unknown_advanced_ml_error",
+        queryDrivenBasePolicyApplied: true,
+        adjustedCount: adjusted.adjustedCount,
+      }),
     });
-    return scored;
+    return { all: adjusted.all, restaurants: adjusted.restaurants, activities: adjusted.activities };
   }
 }
