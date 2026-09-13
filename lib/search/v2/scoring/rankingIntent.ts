@@ -18,7 +18,7 @@ export function detectQualityIntent(rawQuery: string): QualityIntent {
   const query = userAuthoredQuery(rawQuery).toLowerCase();
   const rating = /\b(highly rated|top rated|best rated|highest rated|great reviews?|excellent reviews?|well reviewed|strong reviews?|rating|ratings)\b/.test(query);
   const popularity = /\b(most popular|very popular|popular|lots? of reviews?|many reviews?|thousands? of reviews?|hundreds? of reviews?|well known|well-known)\b/.test(query);
-  const overall = rating || popularity || /\b(best|top|highly recommended|most recommended|recommended|greatest)\b/.test(query);
+  const overall = !rating && !popularity && /\b(best|top|highly recommended|most recommended|recommended|greatest)\b/.test(query);
   return { overall, rating, popularity };
 }
 
