@@ -17,6 +17,15 @@ export const EXTERNAL_EVENT_NAMES = [
 
 export type ExternalEventName = (typeof EXTERNAL_EVENT_NAMES)[number];
 
+type AttributionRecord = {
+  id?: string | null;
+  token?: string | null;
+  search_id?: string | null;
+  search_query?: string | null;
+  result_position?: number | null;
+  expires_at?: string | null;
+};
+
 export function normalizeOrigin(value: string | null | undefined) {
   if (!value) return null;
   try {
@@ -52,7 +61,7 @@ export async function recordExternalEvent(input: {
   sessionId?: string | null;
   metadata?: Record<string, string | number | boolean | null>;
 }) {
-  let attribution: any = null;
+  let attribution: AttributionRecord | null = null;
   if (input.attributionToken) {
     const { data } = await supabaseAdmin
       .from("location_attributions")
@@ -60,7 +69,8 @@ export async function recordExternalEvent(input: {
       .eq("token", input.attributionToken)
       .eq("location_id", input.locationId)
       .maybeSingle();
-    if (data && new Date(data.expires_at).getTime() > Date.now()) attribution = data;
+    const record = data as AttributionRecord | null;
+    if (record?.expires_at && new Date(record.expires_at).getTime() > Date.now()) attribution = record;
   }
 
   await trackEvent({
