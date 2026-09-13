@@ -5,6 +5,25 @@ import WebsiteTrackingPanel from "@/components/analytics/WebsiteTrackingPanel";
 
 type LocationOption = { id: string; display_name: string; city?: string | null; state?: string | null; is_pro?: boolean };
 type Props = { locations: LocationOption[]; admin?: boolean };
+type SummaryData = {
+  total_locations?: number;
+  profile_views?: number;
+  search_clicks?: number;
+  completed_outings?: number;
+  reservation_starts?: number;
+  reservation_completions?: number;
+};
+type LocationRow = { id: string; name?: string; display_name?: string; city?: string | null; completion_rate?: number };
+type ActivityRow = { id?: string; created_at?: string; event_name?: string; event_type?: string; metadata?: { event_name?: string } };
+type CategoryRow = { category: string; count: number };
+type DashboardData = {
+  summary?: SummaryData;
+  top_locations?: LocationRow[];
+  recent_activity?: ActivityRow[];
+  all_locations?: LocationRow[];
+  most_searched_categories?: CategoryRow[];
+  admin_location_drilldown?: { name?: string };
+};
 
 const ranges = [
   { value: "7d", label: "7 days" },
@@ -18,7 +37,7 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
   const [selectedLocationId, setSelectedLocationId] = useState(locations[0]?.id || "");
   const [range, setRange] = useState("30d");
   const [q, setQ] = useState("");
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
 
   const selectedLocation = useMemo(() => locations.find((location) => location.id === selectedLocationId) || locations[0], [locations, selectedLocationId]);
 
@@ -28,13 +47,13 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
     if (selectedLocationId) qs.set("location_id", selectedLocationId);
     if (admin && q.trim()) qs.set("q", q.trim());
     fetch(`${endpoint}?${qs.toString()}`)
-      .then((response) => response.json())
+      .then((response) => response.json() as Promise<DashboardData>)
       .then(setData)
       .catch(() => setData(null));
   }, [selectedLocationId, range, admin, q]);
 
   const s = data?.summary || {};
-  const cards = admin
+  const cards: [string, number][] = admin
     ? [["Locations", s.total_locations ?? 0], ["Profile Views", s.profile_views ?? 0], ["Search Clicks", s.search_clicks ?? 0], ["Outing Completions", s.completed_outings ?? 0]]
     : [["Profile Views", s.profile_views ?? 0], ["Search Clicks", s.search_clicks ?? 0], ["Reserve Clicks", s.reservation_starts ?? 0], ["Completed Outings", s.reservation_completions ?? 0]];
 
@@ -56,9 +75,9 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map(([label, value]) => (
-            <div key={String(label)} className="toh-card rounded-3xl p-5">
+            <div key={label} className="toh-card rounded-3xl p-5">
               <p className="toh-muted text-xs uppercase tracking-[0.16em]">{label}</p>
-              <p className="mt-2 text-3xl font-black">{Number(value).toLocaleString()}</p>
+              <p className="mt-2 text-3xl font-black">{value.toLocaleString()}</p>
             </div>
           ))}
         </div>
@@ -69,13 +88,13 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
           <div className="toh-glass rounded-3xl p-5">
             <p className="text-lg font-black">Top locations</p>
             <ul className="mt-4 space-y-2 text-sm">
-              {(data?.top_locations || locations.slice(0, 8)).map((l: any) => <li key={l.id} className="flex items-center justify-between"><span>{l.name || l.display_name}</span><span className="toh-muted">{l.city || "—"}</span></li>)}
+              {(data?.top_locations || locations.slice(0, 8)).map((l) => <li key={l.id} className="flex items-center justify-between"><span>{l.name || l.display_name}</span><span className="toh-muted">{l.city || "—"}</span></li>)}
             </ul>
           </div>
           <div className="toh-glass rounded-3xl p-5">
             <p className="text-lg font-black">Recent tracked activity</p>
             <div className="mt-4 space-y-2 text-sm">
-              {(data?.recent_activity || []).slice(0, 10).map((item: any, i: number) => { const ts = item?.created_at ? new Date(item.created_at).toLocaleString() : "—"; return <p key={`${item.id || i}`} className="toh-muted">{item.event_name || item.event_type || item?.metadata?.event_name || "event"} · {ts}</p>; })}
+              {(data?.recent_activity || []).slice(0, 10).map((item, i) => { const ts = item.created_at ? new Date(item.created_at).toLocaleString() : "—"; return <p key={`${item.id || i}`} className="toh-muted">{item.event_name || item.event_type || item.metadata?.event_name || "event"} · {ts}</p>; })}
               {!data?.recent_activity?.length && <p className="toh-muted">No tracked activity in this range yet.</p>}
             </div>
           </div>
@@ -85,14 +104,14 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
           <div className="toh-glass rounded-3xl p-5 xl:col-span-2">
             <p className="text-lg font-black">Bird’s Eye View · All locations</p>
             <div className="mt-3 space-y-2 text-sm">
-              {(data?.all_locations || []).slice(0, 20).map((l: any) => <div key={l.id} className="flex items-center justify-between border-b border-white/10 py-2"><span>{l.name}</span><span className="toh-muted">CTR {Math.round((l.completion_rate || 0) * 100)}%</span></div>)}
+              {(data?.all_locations || []).slice(0, 20).map((l) => <div key={l.id} className="flex items-center justify-between border-b border-white/10 py-2"><span>{l.name}</span><span className="toh-muted">CTR {Math.round((l.completion_rate || 0) * 100)}%</span></div>)}
               {!data?.all_locations?.length && <p className="toh-muted">No locations match this search.</p>}
             </div>
           </div>
           <div className="toh-glass rounded-3xl p-5">
             <p className="text-lg font-black">Most searched categories</p>
             <div className="mt-3 space-y-2 text-sm">
-              {(data?.most_searched_categories || []).map((c: any, i: number) => <div key={`${c.category}-${i}`} className="flex justify-between"><span>{c.category}</span><span className="toh-muted">{c.count}</span></div>)}
+              {(data?.most_searched_categories || []).map((c, i) => <div key={`${c.category}-${i}`} className="flex justify-between"><span>{c.category}</span><span className="toh-muted">{c.count}</span></div>)}
               {!data?.most_searched_categories?.length && <p className="toh-muted">Not enough search signal yet.</p>}
             </div>
           </div>
