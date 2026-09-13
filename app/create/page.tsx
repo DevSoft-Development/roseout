@@ -1,4 +1,5 @@
 import "./results-polish.css";
+import "./step-two-premium.css";
 import GuidedCreatePageV2 from "./GuidedCreatePageV2";
 import GuidedResultsPageV4 from "./GuidedResultsPageV4";
 import GuidedSnapshotResultsPage from "./GuidedSnapshotResultsPage";
