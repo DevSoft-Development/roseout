@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WEBSITE_DESIGN_DIRECTIONS } from "@/lib/websites/design-directions";
+import {
+  GUIDED_DESIGN_CHOICES,
+  GUIDED_DESIGN_PRIORITIES,
+  autofillWebsiteSections,
+  buildGuidedWebsiteVision,
+  type WebsiteLocationContentSummary,
+} from "@/lib/websites/builder-guidance";
 
 type WebsiteSection = {
   id: string;
@@ -45,15 +52,30 @@ function startingPoint(customContent: Record<string, unknown>) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { initialWebsite: Website; locationName: string }) {
+function initialGuidedChoice(directionId: string) {
+  return GUIDED_DESIGN_CHOICES.find((item) => item.directionId === directionId)?.id || "auto";
+}
+
+export function WebsiteBuilderWorkspace({
+  initialWebsite,
+  locationName,
+  locationContent,
+}: {
+  initialWebsite: Website;
+  locationName: string;
+  locationContent: WebsiteLocationContentSummary;
+}) {
   const initialDirection = typeof initialWebsite.theme?.design_direction_id === "string" ? String(initialWebsite.theme.design_direction_id) : "";
   const initialVision = typeof initialWebsite.custom_content?.design_vision === "string" ? String(initialWebsite.custom_content.design_vision) : "";
+  const initialSections = autofillWebsiteSections(initialWebsite.sections || [], locationName, locationContent);
   const [website, setWebsite] = useState(initialWebsite);
   const [step, setStep] = useState<Step>(initialDirection ? "content" : "style");
   const [vision, setVision] = useState(initialVision);
+  const [designChoice, setDesignChoice] = useState(initialGuidedChoice(initialDirection));
+  const [designPriority, setDesignPriority] = useState("auto");
   const [selectedDirection, setSelectedDirection] = useState(initialDirection);
   const [siteTitle, setSiteTitle] = useState(initialWebsite.site_title || locationName);
-  const [sections, setSections] = useState<WebsiteSection[]>(initialWebsite.sections || []);
+  const [sections, setSections] = useState<WebsiteSection[]>(initialSections);
   const [saving, setSaving] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [generating, setGenerating] = useState(false);
@@ -125,10 +147,16 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
   async function generateWebsite() {
     setGenerating(true);
     setMessage("");
+    const guided = buildGuidedWebsiteVision({ choiceId: designChoice, priorityId: designPriority, note: vision });
     const response = await fetch("/api/business/website/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ location_id: website.location_id, vision, mode: isRedesign ? "redesign" : "auto" }),
+      body: JSON.stringify({
+        location_id: website.location_id,
+        vision: guided.vision,
+        direction_id: guided.directionId,
+        mode: isRedesign ? "redesign" : "auto",
+      }),
     });
     const data = await response.json().catch(() => ({}));
     setGenerating(false);
@@ -137,12 +165,15 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
       return;
     }
     const nextWebsite = data.website as Website;
+    const nextSections = autofillWebsiteSections(Array.isArray(nextWebsite.sections) ? nextWebsite.sections : [], locationName, locationContent);
     setWebsite(nextWebsite);
-    setSections(Array.isArray(nextWebsite.sections) ? nextWebsite.sections : []);
+    setSections(nextSections);
     setSiteTitle(nextWebsite.site_title || locationName);
-    setSelectedDirection(typeof nextWebsite.theme?.design_direction_id === "string" ? String(nextWebsite.theme.design_direction_id) : "");
+    const nextDirection = typeof nextWebsite.theme?.design_direction_id === "string" ? String(nextWebsite.theme.design_direction_id) : "";
+    setSelectedDirection(nextDirection);
+    setDesignChoice(initialGuidedChoice(nextDirection));
     setSaveState("saved");
-    setMessage("Your new website design is ready. Review anything you want before publishing.");
+    setMessage("Your website design is ready. We filled the content from your business information; review anything you want before publishing.");
     setStep("content");
   }
 
@@ -210,7 +241,7 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Website Designer</p>
             <h2 className="mt-2 text-2xl font-black">{website.published_version ? "Design and update your website" : "Create your website"}</h2>
-            <p className="mt-2 max-w-2xl text-sm text-white/55">Choose the look and feel, review your pages, preview every screen size, and publish when you&apos;re ready. Your real business information and photos stay connected.</p>
+            <p className="mt-2 max-w-2xl text-sm text-white/55">Pick a style, review the content we build from your business information, preview every screen size, and publish when you&apos;re ready.</p>
           </div>
           <div className="flex items-center gap-2 text-xs font-bold text-white/50">
             <span className={`h-2 w-2 rounded-full ${saveState === "error" ? "bg-red-400" : saveState === "saving" ? "bg-amber-300" : "bg-emerald-400"}`} />
@@ -232,25 +263,47 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
 
     {step === "style" ? <section className="rounded-3xl border border-white/10 bg-black/25 p-5 sm:p-6">
       <p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Step 1 of 4</p>
-      <h3 className="mt-2 text-2xl font-black">Describe the look you want</h3>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Tell us the mood, audience, and what should stand out. TheOutHaven uses that direction with your actual location details, menu, reservations, events, experiences, reviews, and business-owned photos.</p>
-      <textarea value={vision} onChange={(event) => setVision(event.target.value)} maxLength={1200} placeholder="Example: Upscale, dark and romantic. Make reservations the main action, emphasize the lounge atmosphere, keep the wording polished and concise, and use our photos prominently without making the site feel crowded." className="mt-5 min-h-36 w-full rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-white outline-none focus:border-rose-300/40" />
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={generateWebsite} disabled={generating || vision.trim().length < 10} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black disabled:opacity-40">{generating ? "Creating your design…" : isRedesign ? "Create a new design" : "Create my website"}</button>
-        <span className="text-xs text-white/45">Uses your real business photos and information</span>
+      <h3 className="mt-2 text-2xl font-black">Choose a look</h3>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">No design knowledge needed. Pick the option that feels closest, or let TheOutHaven choose from your business type, photos, menu, events, reviews, and booking setup.</p>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {GUIDED_DESIGN_CHOICES.map((choice) => {
+          const active = designChoice === choice.id;
+          return <button key={choice.id} type="button" onClick={() => setDesignChoice(choice.id)} className={`rounded-2xl border p-4 text-left transition ${active ? "border-[#f5b700]/60 bg-[#f5b700]/10" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+            <div className="flex items-center justify-between gap-3"><span className="font-black">{choice.label}</span><span className={`h-3 w-3 rounded-full border ${active ? "border-[#f5b700] bg-[#f5b700]" : "border-white/25"}`} /></div>
+            <p className="mt-2 text-xs leading-5 text-white/50">{choice.description}</p>
+          </button>;
+        })}
+      </div>
+
+      <div className="mt-6">
+        <p className="text-sm font-black">What should stand out most?</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {GUIDED_DESIGN_PRIORITIES.map((priority) => <button key={priority.id} type="button" onClick={() => setDesignPriority(priority.id)} className={`rounded-full border px-4 py-2 text-xs font-black ${designPriority === priority.id ? "border-[#f5b700]/60 bg-[#f5b700]/10 text-white" : "border-white/10 bg-white/[0.03] text-white/60"}`}>{priority.label}</button>)}
+        </div>
+      </div>
+
+      <details className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <summary className="cursor-pointer text-sm font-black">Anything else? <span className="font-semibold text-white/40">Optional</span></summary>
+        <textarea value={vision} onChange={(event) => setVision(event.target.value)} maxLength={1200} placeholder="Example: Keep it romantic, use our photos heavily, and make the wording concise." className="mt-4 min-h-28 w-full rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white outline-none focus:border-rose-300/40" />
+      </details>
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <button type="button" onClick={generateWebsite} disabled={generating} className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black disabled:opacity-40">{generating ? "Creating your design…" : isRedesign ? "Create a new design" : "Create my website"}</button>
+        <span className="text-xs text-white/45">We use your real business information automatically</span>
       </div>
       {direction ? <div className="mt-6 rounded-2xl border border-[#f5b700]/25 bg-[#f5b700]/8 p-5"><p className="text-xs font-black uppercase tracking-[0.14em] text-[#f5b700]">Current design</p><p className="mt-2 text-xl font-black">{direction.name}</p><p className="mt-2 text-sm text-white/60">{direction.summary}</p></div> : null}
     </section> : null}
 
     {step === "content" ? <section className="rounded-3xl border border-white/10 bg-black/25 p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Step 2 of 4</p><h3 className="mt-2 text-2xl font-black">Review your pages and content</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">This is your starting point. Reorder, hide, or rewrite sections before publishing. Address, phone, hours, photos, menu, and booking information stay synced from your business settings.</p></div>
+        <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#f5b700]">Step 2 of 4</p><h3 className="mt-2 text-2xl font-black">Review your pages and content</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">We pre-filled the wording from your location information and website design. Live business facts stay synced automatically; edit the wording only if you want to.</p></div>
         <span className="rounded-full bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-200">{enabledCount} sections showing</span>
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-black uppercase text-white/40">Design</p><p className="mt-2 font-black">{direction?.name || "Custom design"}</p></div>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-black uppercase text-white/40">Starting point</p><p className="mt-2 font-black">{generatedStartingPoint ? "Created for this business" : "Manual draft"}</p></div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-black uppercase text-white/40">Content</p><p className="mt-2 font-black">Filled from your business information</p></div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -260,14 +313,14 @@ export function WebsiteBuilderWorkspace({ initialWebsite, locationName }: { init
 
       <div className="mt-4 space-y-3">{sections.map((section, index) => <article key={section.id} className={`rounded-2xl border p-4 ${section.enabled ? "border-white/10 bg-white/[0.03]" : "border-white/5 bg-black/20 opacity-65"}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><p className="font-black">{sectionLabel(section.type)}</p>{section.liveBindings?.length ? <p className="mt-1 text-xs text-emerald-200/70">Business information stays synced</p> : null}</div>
+          <div><p className="font-black">{sectionLabel(section.type)}</p>{section.liveBindings?.length ? <p className="mt-1 text-xs text-emerald-200/70">Business information stays synced</p> : <p className="mt-1 text-xs text-white/35">Wording created for this location</p>}</div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => moveSection(index, -1)} disabled={index === 0} aria-label={`Move ${section.type} up`} className="rounded-full border border-white/10 px-3 py-1 text-xs font-black disabled:opacity-25">↑</button>
             <button type="button" onClick={() => moveSection(index, 1)} disabled={index === sections.length - 1} aria-label={`Move ${section.type} down`} className="rounded-full border border-white/10 px-3 py-1 text-xs font-black disabled:opacity-25">↓</button>
             <button type="button" onClick={() => updateSection(section.id, { enabled: !section.enabled })} className="rounded-full border border-white/10 px-3 py-1 text-xs font-black">{section.enabled ? "Hide" : "Show"}</button>
           </div>
         </div>
-        {section.enabled ? <div className="mt-4 grid gap-3"><input value={section.heading || ""} onChange={(event) => updateSection(section.id, { heading: event.target.value })} placeholder={`${sectionLabel(section.type)} heading`} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /><textarea value={section.body || ""} onChange={(event) => updateSection(section.id, { body: event.target.value })} placeholder="Optional custom wording" className="min-h-20 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /></div> : null}
+        {section.enabled ? <div className="mt-4 grid gap-3"><input value={section.heading || ""} onChange={(event) => updateSection(section.id, { heading: event.target.value })} placeholder={`${sectionLabel(section.type)} heading`} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /><textarea value={section.body || ""} onChange={(event) => updateSection(section.id, { body: event.target.value })} placeholder="Section wording" className="min-h-20 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white" /></div> : null}
       </article>)}</div>
 
       <div className="mt-6 flex flex-wrap justify-between gap-3"><button type="button" onClick={() => void goToStep("style")} className="rounded-full border border-white/15 px-5 py-3 text-sm font-black">← Change design</button><button type="button" onClick={() => void goToStep("preview")} className="rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Preview my website →</button></div>
