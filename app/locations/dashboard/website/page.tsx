@@ -54,6 +54,19 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
     { label: "Reservations", value: liveContent.uses_internal_reservations ? "TheOutHaven Reserve" : liveContent.reservation_provider || (liveContent.reservation_link ? "External provider" : "Set in Edit Location") },
   ];
 
+  const builderLocationContent = {
+    address: liveContent.address || null,
+    phone: liveContent.phone || null,
+    hours: liveContent.hours || null,
+    photoCount: liveContent.photos.length,
+    menuItemCount: liveContent.menu?.items.length || 0,
+    reviewCount: liveContent.reviews.length,
+    eventCount: liveContent.events.length,
+    experienceCount: liveContent.experiences.length,
+    reservationProvider: liveContent.uses_internal_reservations ? "TheOutHaven Reserve" : liveContent.reservation_provider || null,
+    hasReservations: Boolean(liveContent.uses_internal_reservations || liveContent.reservation_link),
+  };
+
   return (
     <main className="min-h-screen bg-[#050607] text-white">
       <style>{`
@@ -84,7 +97,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
             </section>
             <WebsiteImportPanel locationId={location.id} />
             <WebsiteMigrationReviewPanel locationId={location.id} />
-            <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} />
+            <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} locationContent={builderLocationContent} />
             <div className="mt-5 grid gap-5 xl:grid-cols-2">
               <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
               <WebsiteHealthPanel locationId={location.id} />
