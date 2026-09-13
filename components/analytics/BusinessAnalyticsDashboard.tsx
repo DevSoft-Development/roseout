@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import WebsiteTrackingPanel from "@/components/analytics/WebsiteTrackingPanel";
 
 type LocationOption = { id: string; display_name: string; city?: string | null; state?: string | null; is_pro?: boolean };
 type Props = { locations: LocationOption[]; admin?: boolean };
@@ -61,6 +62,8 @@ export default function BusinessAnalyticsDashboard({ locations, admin = false }:
             </div>
           ))}
         </div>
+
+        {!admin && selectedLocationId ? <WebsiteTrackingPanel locationId={selectedLocationId} range={range} /> : null}
 
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
           <div className="toh-glass rounded-3xl p-5">
