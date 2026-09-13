@@ -20,22 +20,64 @@ async function score(query: string, rows: Record<string, unknown>[]) {
 }
 
 describe("single-lane restaurant category intent", () => {
-  it("treats steak restaurant as steakhouse category intent instead of admitting unrelated cuisines with a steak mention", async () => {
-    const result = await score("best steak restaurant in manhattan", [
-      { id: "steakhouse", name: "Prime Cut Steakhouse", cuisine: "steakhouse", primary_category: "steakhouse", foods: ["steak"] },
-      { id: "seafood", name: "Harbor Seafood", cuisine: "seafood", foods: ["steak", "lobster"] },
-      { id: "italian", name: "Roma Italian", cuisine: "italian", foods: ["steak", "pasta"] },
-    ]);
-
-    expect(result.restaurants.map((item) => item.candidate.candidate.location.id)).toEqual(["steakhouse"]);
+  it.each([
+    {
+      query: "best steak restaurant in manhattan",
+      expected: "steakhouse",
+      rows: [
+        { id: "steakhouse", name: "Prime Cut Steakhouse", cuisine: "steakhouse", primary_category: "steakhouse", foods: ["steak"] },
+        { id: "seafood", name: "Harbor Seafood", cuisine: "seafood", foods: ["steak", "lobster"] },
+        { id: "italian", name: "Roma Italian", cuisine: "italian", foods: ["steak", "pasta"] },
+      ],
+    },
+    {
+      query: "best chicken restaurant in queens",
+      expected: "chicken",
+      rows: [
+        { id: "chicken", name: "Golden Chicken", primary_category: "chicken restaurant", cuisine: "american", foods: ["fried chicken"] },
+        { id: "italian", name: "Roma Italian", cuisine: "italian", foods: ["chicken parm", "pasta"] },
+        { id: "thai", name: "Bangkok Table", cuisine: "thai", foods: ["chicken basil"] },
+      ],
+    },
+    {
+      query: "best wings spot in brooklyn",
+      expected: "wings",
+      rows: [
+        { id: "wings", name: "Wing House", primary_category: "wings", cuisine: "american", foods: ["buffalo wings"] },
+        { id: "sports-bar", name: "Game Room", primary_category: "sports_bar", cuisine: "american", foods: ["buffalo wings"] },
+      ],
+    },
+    {
+      query: "best italian restaurant in manhattan",
+      expected: "italian",
+      rows: [
+        { id: "italian", name: "Roma Italian", cuisine: "italian", foods: ["pasta"] },
+        { id: "american", name: "Downtown Grill", cuisine: "american", description: "Popular near several Italian restaurants" },
+      ],
+    },
+    {
+      query: "best seafood restaurant in manhattan",
+      expected: "seafood",
+      rows: [
+        { id: "seafood", name: "Harbor Seafood", cuisine: "seafood", foods: ["lobster"] },
+        { id: "italian", name: "Roma Italian", cuisine: "italian", foods: ["shrimp", "pasta"], description: "Seafood specials available" },
+      ],
+    },
+  ])("keeps $query inside the requested restaurant identity", async ({ query, expected, rows }) => {
+    const result = await score(query, rows);
+    expect(result.restaurants.map((item) => item.candidate.candidate.location.id)).toEqual([expected]);
   });
 
-  it("keeps dish intent broad when the user asks for a restaurant with steak", async () => {
-    const result = await score("best restaurant with steak in manhattan", [
-      { id: "italian-steak", name: "Roma Italian", cuisine: "italian", signature_items: ["grilled ribeye steak"] },
-      { id: "no-steak", name: "Pasta House", cuisine: "italian", signature_items: ["cacio e pepe"] },
+  it.each([
+    ["best restaurant with steak in manhattan", "italian-steak", "grilled ribeye steak"],
+    ["best restaurant with chicken in queens", "thai-chicken", "thai basil chicken"],
+    ["best restaurant with wings in brooklyn", "bar-wings", "buffalo wings"],
+  ])("keeps %s as dish intent instead of forcing a restaurant category", async (query, expected, dish) => {
+    const result = await score(query, [
+      { id: expected, name: "Menu Match", cuisine: "italian", signature_items: [dish] },
+      { id: "no-match", name: "No Menu Match", cuisine: "italian", signature_items: ["pasta"] },
     ]);
 
-    expect(result.restaurants.some((item) => item.candidate.candidate.location.id === "italian-steak")).toBe(true);
+    expect(result.restaurants.some((item) => item.candidate.candidate.location.id === expected)).toBe(true);
   });
 });
