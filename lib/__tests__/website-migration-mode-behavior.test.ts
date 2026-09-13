@@ -28,6 +28,11 @@ describe("website migration mode behavior", () => {
     expect(resolveMigrationDirection({ mode: "redesign", requestedDirectionId: "refined_after_dark", existingDirectionId: "classic_bistro" })).toBe("refined_after_dark");
   });
 
+  it("does not silently reuse the previous template when the owner supplies a new brief", () => {
+    expect(resolveMigrationDirection({ mode: "modernize", requestedDirectionId: null, existingDirectionId: "classic_bistro" })).toBeNull();
+    expect(resolveMigrationDirection({ mode: "redesign", requestedDirectionId: null, existingDirectionId: "classic_bistro" })).toBeNull();
+  });
+
   it("keeps owner section structure in preserve mode", () => {
     const existing: WebsiteSection[] = [{ id: "hero", type: "hero", enabled: true }, { id: "menu", type: "menu", enabled: true }];
     const generated: WebsiteSection[] = [{ id: "hero", type: "hero", enabled: true }, { id: "gallery", type: "gallery", enabled: true }];
@@ -48,5 +53,6 @@ describe("website migration mode behavior", () => {
     expect(context).toContain("Imported brand color: #123456");
     expect(context).toContain("/menu, /events, /contact");
     expect(context).toContain("Retain recognizable brand signals");
+    expect(context).toContain("instead of silently reusing the previous template");
   });
 });
