@@ -6,6 +6,15 @@ const MAX_BODY_BYTES = 16_000;
 const RATE_LIMIT_PER_MINUTE = 240;
 
 type SafeMetadataValue = string | number | boolean | null;
+type TrackingEventBody = {
+  site_key?: unknown;
+  event_name?: unknown;
+  attribution_token?: unknown;
+  page_url?: unknown;
+  referrer?: unknown;
+  session_id?: unknown;
+  metadata?: unknown;
+};
 
 function cors(origin: string | null) {
   return {
@@ -39,11 +48,15 @@ export async function POST(request: NextRequest) {
   const length = Number(request.headers.get("content-length") || 0);
   if (length > MAX_BODY_BYTES) return NextResponse.json({ success: false, error: "Payload too large" }, { status: 413, headers: cors(origin) });
 
-  let body: any;
-  try { body = await request.json(); } catch { return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400, headers: cors(origin) }); }
+  let body: TrackingEventBody;
+  try {
+    body = await request.json() as TrackingEventBody;
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400, headers: cors(origin) });
+  }
 
-  const siteKey = typeof body?.site_key === "string" ? body.site_key : "";
-  const eventName = typeof body?.event_name === "string" ? body.event_name as ExternalEventName : null;
+  const siteKey = typeof body.site_key === "string" ? body.site_key : "";
+  const eventName = typeof body.event_name === "string" ? body.event_name as ExternalEventName : null;
   if (!siteKey || !eventName || !EXTERNAL_EVENT_NAMES.includes(eventName)) {
     return NextResponse.json({ success: false, error: "Invalid event" }, { status: 400, headers: cors(origin) });
   }
@@ -68,17 +81,20 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const metadata: Record<string, SafeMetadataValue> = body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-    ? Object.fromEntries(Object.entries(body.metadata).slice(0, 20).map(([key, value]) => [String(key).slice(0, 80), safeMetadataValue(value)]))
+  const metadataSource = body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+    ? body.metadata as Record<string, unknown>
+    : null;
+  const metadata: Record<string, SafeMetadataValue> = metadataSource
+    ? Object.fromEntries(Object.entries(metadataSource).slice(0, 20).map(([key, value]) => [String(key).slice(0, 80), safeMetadataValue(value)]))
     : {};
 
   await recordExternalEvent({
     locationId: config.location_id,
     eventName,
-    attributionToken: typeof body?.attribution_token === "string" ? body.attribution_token : null,
-    pageUrl: typeof body?.page_url === "string" ? body.page_url.slice(0, 2000) : null,
-    referrer: typeof body?.referrer === "string" ? body.referrer.slice(0, 2000) : null,
-    sessionId: typeof body?.session_id === "string" ? body.session_id.slice(0, 128) : null,
+    attributionToken: typeof body.attribution_token === "string" ? body.attribution_token : null,
+    pageUrl: typeof body.page_url === "string" ? body.page_url.slice(0, 2000) : null,
+    referrer: typeof body.referrer === "string" ? body.referrer.slice(0, 2000) : null,
+    sessionId: typeof body.session_id === "string" ? body.session_id.slice(0, 128) : null,
     metadata,
   });
 
