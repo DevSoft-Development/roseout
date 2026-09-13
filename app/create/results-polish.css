@@ -75,6 +75,43 @@
   box-shadow: 0 12px 30px rgba(225,6,42,.20);
 }
 
+/* Step 3 match summary: one compact customer-facing line, never a second card of pills. */
+.guided-results-polish article div[class*="border-white/[0.07]"][class*="pt-4"] {
+  margin-top: .7rem !important;
+  padding-top: .55rem !important;
+  border-top-color: rgba(255,255,255,.055) !important;
+}
+
+.guided-results-polish article div[class*="border-white/[0.07]"][class*="pt-4"] > p {
+  display: none !important;
+}
+
+.guided-results-polish article div[class*="border-white/[0.07]"][class*="pt-4"] > div {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0 !important;
+  margin-top: 0 !important;
+}
+
+.guided-results-polish article div[class*="border-white/[0.07]"][class*="pt-4"] > div > span {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-size: .72rem !important;
+  line-height: 1.15rem !important;
+  font-weight: 750 !important;
+  color: rgba(255,255,255,.66) !important;
+}
+
+.guided-results-polish article div[class*="border-white/[0.07]"][class*="pt-4"] > div > span + span::before {
+  content: "·";
+  display: inline-block;
+  margin: 0 .38rem;
+  color: rgba(255,255,255,.24);
+}
+
 /* Step 3 loading: layered shimmer, glow and staggered motion instead of static pulse blocks. */
 .guided-results-polish .animate-pulse {
   position: relative;
