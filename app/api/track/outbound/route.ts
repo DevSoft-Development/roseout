@@ -107,6 +107,7 @@ export async function GET(req: NextRequest) {
   const source = clean(searchParams.get("source"), 80) || "plan_page";
   const sessionId = clean(searchParams.get("session_id"), 200);
   const anonymousId = clean(searchParams.get("anonymous_id"), 200);
+  const searchId = clean(searchParams.get("search_id"), 80);
   const nextStatus = statusForType(linkType);
 
   await Promise.allSettled([
@@ -179,6 +180,7 @@ export async function GET(req: NextRequest) {
       source_location_id: sourceLocationId ?? locationId,
       session_id: sessionId,
       anonymous_id: anonymousId,
+      search_id: isUuid(searchId) ? searchId : null,
       page_path: "/plan",
       source,
       location_type: locationType,
@@ -199,6 +201,7 @@ export async function GET(req: NextRequest) {
           eventType: businessEventForType(linkType),
           eventSource: source,
           sessionId,
+          searchId: isUuid(searchId) ? searchId : null,
           searchQuery: planTitle,
           outingType: locationType,
           referrer: "/plan",
@@ -211,5 +214,21 @@ export async function GET(req: NextRequest) {
       : Promise.resolve(),
   ]);
 
-  return NextResponse.redirect(destination, { status: 302 });
+  let redirectDestination = destination;
+  if (linkType === "website" && destination.protocol !== "tel:" && isUuid(locationId)) {
+    const { data: attribution } = await supabaseAdmin.from("location_attributions").insert({
+      location_id: locationId,
+      search_id: isUuid(searchId) ? searchId : null,
+      session_id: sessionId,
+      destination_url: destination.toString().slice(0, 2000),
+      search_query: planTitle,
+      source,
+    }).select("token").single();
+    if (attribution?.token) {
+      redirectDestination = new URL(destination.toString());
+      redirectDestination.searchParams.set("toh_attribution", attribution.token);
+    }
+  }
+
+  return NextResponse.redirect(redirectDestination, { status: 302 });
 }
