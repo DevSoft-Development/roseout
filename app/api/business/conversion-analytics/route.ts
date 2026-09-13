@@ -10,6 +10,14 @@ function rangeStart(range: string) {
   return days ? new Date(Date.now() - days * 86400000).toISOString() : null;
 }
 
+function isPaidPlan(location: Record<string, any> | null | undefined) {
+  const values = [location?.plan, location?.business_plan, location?.subscription_plan, location?.pricing_plan, location?.tier, location?.subscription_tier]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  const status = String(location?.subscription_status || location?.plan_status || "").toLowerCase();
+  return status !== "cancelled" && values.some((value) => value === "essentials" || value === "pro" || value === "premium" || value === "business_pro" || value.includes("essential") || value.includes("pro"));
+}
+
 export async function GET(request: NextRequest) {
   const params = new URL(request.url).searchParams;
   const locationId = params.get("location_id") || "";
@@ -21,6 +29,9 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   const access = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
   if (!access) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  if (!access.access.isAdmin && !isPaidPlan(access.location)) {
+    return NextResponse.json({ success: false, error: "Conversion analytics are included with Essentials." }, { status: 402 });
+  }
 
   const from = rangeStart(range);
   let eventsQuery = supabaseAdmin.from("analytics_events").select("id,event_name,event_type,query,search_id,session_id,metadata,revenue_impact,created_at").eq("location_id", locationId);
