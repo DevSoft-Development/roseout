@@ -68,12 +68,13 @@ function shellFromIndex(index: string, pageTitle: string, body: string, pageNav:
   const head = index.slice(0, headEnd).replace(/<title>[\s\S]*?<\/title>/i, `<title>${pageTitle}</title>`);
   const headerMatch = index.match(/<header[\s\S]*?<\/header>/i)?.[0] || "";
   const footerMatch = index.match(/<footer[\s\S]*?<\/footer>/i)?.[0] || "";
+  const bodyClass = index.match(/<body class=\"([^\"]*)\"/i)?.[1] || "";
   const header = headerMatch
     .replace(/href=\"#top\"/g, 'href="/"')
     .replace(/href=\"#visit\"/g, 'href="/visit/"')
     .replace(/href=\"#reserve\"/g, 'href="/reservations/"');
   const footer = footerMatch.replace(/href=\"#reserve\"/g, 'href="/reservations/"');
-  return `${head}<style>.toh-page-main{width:min(var(--max),calc(100% - 40px));margin:0 auto;padding:clamp(54px,8vw,110px) 0}.toh-page-nav{display:flex;gap:18px;overflow:auto;padding:14px max(20px,calc((100vw - var(--max))/2));border-bottom:1px solid var(--border);font:800 11px/1 var(--body);text-transform:uppercase;letter-spacing:.08em}.toh-page-nav a{white-space:nowrap;opacity:.7}.toh-page-nav a:hover,.toh-page-nav a:focus-visible{opacity:1}.toh-page-main>.toh-rich-section,.toh-page-main>.reservation-section,.toh-page-main>.content-section{width:100%;padding-top:36px}</style></head><body>${header}${pageNav}<main class="toh-page-main">${body}</main>${footer}</body></html>`;
+  return `${head}<style>.toh-page-main{width:min(var(--max),calc(100% - 40px));margin:0 auto;padding:clamp(54px,8vw,110px) 0}.toh-page-nav{display:flex;gap:18px;overflow:auto;padding:14px max(20px,calc((100vw - var(--max))/2));border-bottom:1px solid var(--border);font:800 11px/1 var(--body);text-transform:uppercase;letter-spacing:.08em}.toh-page-nav a{white-space:nowrap;opacity:.7}.toh-page-nav a:hover,.toh-page-nav a:focus-visible{opacity:1}.toh-page-main>.toh-rich-section,.toh-page-main>.reservation-section,.toh-page-main>.content-section{width:100%;padding-top:36px}</style></head><body${bodyClass ? ` class="${bodyClass}"` : ""}>${header}${pageNav}<main class="toh-page-main">${body}</main>${footer}</body></html>`;
 }
 
 export function addGeneratedWebsitePages(files: WebsiteArtifactFile[]): WebsiteArtifactFile[] {
