@@ -3,6 +3,7 @@ import { EXTERNAL_EVENT_NAMES, getWebsiteTrackingBySiteKey, isAllowedOrigin, rec
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const MAX_BODY_BYTES = 16_000;
+const RATE_LIMIT_PER_MINUTE = 240;
 
 type SafeMetadataValue = string | number | boolean | null;
 
@@ -21,6 +22,12 @@ function safeMetadataValue(value: unknown): SafeMetadataValue {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "boolean") return value;
   return null;
+}
+
+function clientKey(request: NextRequest) {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  return (forwarded || realIp || "unknown").slice(0, 100);
 }
 
 export async function OPTIONS(request: NextRequest) {
@@ -45,6 +52,20 @@ export async function POST(request: NextRequest) {
   if (!config?.enabled) return NextResponse.json({ success: false, error: "Tracking disabled" }, { status: 403, headers: cors(origin) });
   if (!isAllowedOrigin(origin, Array.isArray(config.allowed_origins) ? config.allowed_origins : [])) {
     return NextResponse.json({ success: false, error: "Origin not allowed" }, { status: 403, headers: cors(origin) });
+  }
+
+  const { data: rateRows, error: rateError } = await supabaseAdmin.rpc("consume_api_rate_limit", {
+    p_key: `website-tracking:${siteKey}:${clientKey(request)}`,
+    p_limit: RATE_LIMIT_PER_MINUTE,
+    p_window_seconds: 60,
+  });
+  if (rateError) return NextResponse.json({ success: false, error: "Tracking temporarily unavailable" }, { status: 503, headers: cors(origin) });
+  const rate = Array.isArray(rateRows) ? rateRows[0] : rateRows;
+  if (rate && rate.allowed === false) {
+    return NextResponse.json({ success: false, error: "Too many events" }, {
+      status: 429,
+      headers: { ...cors(origin), "retry-after": String(rate.retry_after_seconds || 60) },
+    });
   }
 
   const metadata: Record<string, SafeMetadataValue> = body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
