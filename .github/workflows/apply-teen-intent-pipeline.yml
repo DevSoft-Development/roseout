@@ -4,9 +4,25 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'lib/search/enterprise/intent.ts'
+      - 'lib/search/enterprise/ranking.ts'
+      - 'lib/search/enterprise/normalize-intent.ts'
+      - 'lib/search/enterprise/__tests__/intent.test.ts'
+      - 'lib/search/enterprise/__tests__/quality-ranking.test.ts'
+      - 'lib/ml/**'
+      - '.github/workflows/apply-teen-intent-pipeline.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'lib/search/enterprise/intent.ts'
+      - 'lib/search/enterprise/ranking.ts'
+      - 'lib/search/enterprise/normalize-intent.ts'
+      - 'lib/search/enterprise/__tests__/intent.test.ts'
+      - 'lib/search/enterprise/__tests__/quality-ranking.test.ts'
+      - 'lib/ml/**'
+      - '.github/workflows/apply-teen-intent-pipeline.yml'
 
 permissions:
   contents: read
