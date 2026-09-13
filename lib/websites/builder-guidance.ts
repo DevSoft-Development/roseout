@@ -1,5 +1,3 @@
-import type { WebsiteSection } from "@/lib/websites/data";
-
 export type WebsiteLocationContentSummary = {
   address?: string | null;
   phone?: string | null;
@@ -11,6 +9,15 @@ export type WebsiteLocationContentSummary = {
   experienceCount: number;
   reservationProvider?: string | null;
   hasReservations: boolean;
+};
+
+export type WebsiteBuilderSection = {
+  id: string;
+  type: string;
+  enabled: boolean;
+  heading?: string;
+  body?: string;
+  liveBindings?: string[];
 };
 
 export type GuidedDesignChoice = {
@@ -57,11 +64,11 @@ function plural(value: number, singular: string, pluralValue = `${singular}s`) {
   return `${value} ${value === 1 ? singular : pluralValue}`;
 }
 
-export function autofillWebsiteSections(
-  sections: WebsiteSection[],
+export function autofillWebsiteSections<T extends WebsiteBuilderSection>(
+  sections: T[],
   locationName: string,
   content: WebsiteLocationContentSummary,
-): WebsiteSection[] {
+): T[] {
   return sections.map((section) => {
     const existingHeading = typeof section.heading === "string" ? section.heading.trim() : "";
     const existingBody = typeof section.body === "string" ? section.body.trim() : "";
