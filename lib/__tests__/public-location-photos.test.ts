@@ -43,19 +43,20 @@ describe("public location photo dedupe", () => {
     expect(lazyPhotos[3]).toContain("index=4");
   });
 
-  it("replaces a legacy persisted Google snapshot with current indexed Google slots", () => {
-    const legacy = "https://project.supabase.co/storage/v1/object/public/location-images/locations/1/migrated-google-123.jpg";
+  it("keeps a persisted Google snapshot ahead of live Google fallback slots", () => {
+    const stored = "https://project.supabase.co/storage/v1/object/public/location-images/locations/1/migrated-google-123.jpg";
     const photos = getPhotoList({
       google_place_id: "ChIJ-live-google",
       photo_source: "google_places",
-      main_image: legacy,
-      image_url: legacy,
-      images: [legacy],
+      main_image: stored,
+      image_url: stored,
+      images: [stored],
     });
 
     expect(photos).toHaveLength(5);
-    expect(photos).not.toContain(legacy);
-    expect(photos.every((url) => url.includes("/api/public/google-place-photo"))).toBe(true);
+    expect(photos[0]).toBe(stored);
+    expect(photos[1]).toContain("placeId=ChIJ-live-google");
+    expect(photos[1]).toContain("index=1");
   });
 
   it("keeps existing photos first and fills only their missing Google positions", () => {
