@@ -8,11 +8,6 @@ on:
       - 'app/api/cron/search-gold-production-qa/route.ts'
       - 'lib/search/**'
       - '.github/workflows/search-gold-production-qa.yml'
-  pull_request:
-    paths:
-      - 'app/api/cron/search-gold-production-qa/route.ts'
-      - 'lib/search/**'
-      - '.github/workflows/search-gold-production-qa.yml'
   workflow_dispatch:
 
 permissions:
