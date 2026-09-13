@@ -4,7 +4,25 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 import { buildTrackerSnippet, normalizeOrigin } from "@/lib/analytics/conversion-attribution";
 
-function isPaidPlan(location: any) {
+type PlanLocation = {
+  plan?: unknown;
+  business_plan?: unknown;
+  subscription_plan?: unknown;
+  pricing_plan?: unknown;
+  tier?: unknown;
+  subscription_tier?: unknown;
+  subscription_status?: unknown;
+  plan_status?: unknown;
+};
+
+type TrackingBody = {
+  location_id?: unknown;
+  allowed_origins?: unknown;
+  average_customer_value?: unknown;
+  enabled?: unknown;
+};
+
+function isPaidPlan(location: PlanLocation | null | undefined) {
   const values = [location?.plan, location?.business_plan, location?.subscription_plan, location?.pricing_plan, location?.tier, location?.subscription_tier]
     .filter(Boolean).map((value) => String(value).toLowerCase());
   const status = String(location?.subscription_status || location?.plan_status || "").toLowerCase();
@@ -38,17 +56,22 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  let body: any; try { body = await request.json(); } catch { return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 }); }
-  const locationId = typeof body?.location_id === "string" ? body.location_id : "";
+  let body: TrackingBody;
+  try {
+    body = await request.json() as TrackingBody;
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
+  }
+  const locationId = typeof body.location_id === "string" ? body.location_id : "";
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location_id" }, { status: 400 });
   const auth = await authorize(locationId); if (auth.error) return auth.error;
-  const origins = Array.isArray(body?.allowed_origins) ? body.allowed_origins.map((value: unknown) => normalizeOrigin(String(value))).filter(Boolean).slice(0, 10) : [];
-  const average = body?.average_customer_value == null || body.average_customer_value === "" ? null : Number(body.average_customer_value);
+  const origins = Array.isArray(body.allowed_origins) ? body.allowed_origins.map((value: unknown) => normalizeOrigin(String(value))).filter(Boolean).slice(0, 10) : [];
+  const average = body.average_customer_value == null || body.average_customer_value === "" ? null : Number(body.average_customer_value);
   if (average != null && (!Number.isFinite(average) || average < 0 || average > 100000)) return NextResponse.json({ success: false, error: "Invalid average customer value" }, { status: 400 });
   const { data, error } = await supabaseAdmin.from("location_website_tracking").upsert({
     location_id: locationId,
     allowed_origins: origins,
-    enabled: body?.enabled !== false,
+    enabled: body.enabled !== false,
     average_customer_value: average,
     updated_at: new Date().toISOString(),
   }, { onConflict: "location_id" }).select("*").single();
