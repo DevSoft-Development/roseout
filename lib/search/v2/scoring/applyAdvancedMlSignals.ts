@@ -206,7 +206,7 @@ export async function applyAdvancedMlSignals({
   try {
     const { data, error } = await supabase.rpc("get_search_v2_advanced_location_features", { p_location_ids: ids });
     if (error) throw error;
-    const byId = new Map((data ?? []).map((row: any) => [String(row.location_id), row]));
+    const byId = new Map<string, any>((data ?? []).map((row: any) => [String(row.location_id), row]));
     const adjusted = applyAdjustments(byId);
     const qualityIntent = detectQualityIntent(plan.rawQuery);
     trace.decisions.push({
@@ -231,7 +231,7 @@ export async function applyAdvancedMlSignals({
     });
     return { all: adjusted.all, restaurants: adjusted.restaurants, activities: adjusted.activities };
   } catch (error) {
-    const adjusted = applyAdjustments(new Map());
+    const adjusted = applyAdjustments(new Map<string, any>());
     trace.decisions.push({
       stage: "advanced_ml_signals",
       decision: "advanced_ml_fail_open_query_policy_preserved",
