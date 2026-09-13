@@ -1,3 +1,4 @@
+import { getGeoAliases, normalizeGeoTerm } from "./geo-taxonomy";
 import type { SearchIntent } from "./types";
 
 const GENERIC_QUERY_PHRASES = [
@@ -184,7 +185,7 @@ function knownNonDishTerms(intent: SearchIntent) {
 }
 
 function geoTerms(intent: SearchIntent) {
-  return flatTerms(
+  const structured = [
     intent.geo?.raw,
     intent.geo?.neighborhood,
     intent.geo?.borough,
@@ -192,6 +193,16 @@ function geoTerms(intent: SearchIntent) {
     intent.geo?.county,
     intent.geo?.region,
     intent.geo?.state,
+  ];
+  const taxonomyAliases = structured.flatMap((value) => {
+    const record = normalizeGeoTerm(value);
+    return record ? getGeoAliases(record) : [];
+  });
+
+  return flatTerms(
+    ...structured,
+    intent.geo?.aliases,
+    taxonomyAliases,
     intent.geo?.requestedMarket,
     intent.geo?.resolvedMarket,
   ).sort((a, b) => b.length - a.length);
