@@ -5,12 +5,33 @@ import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAcc
 
 const EXTERNAL = ["external_site_session_started","external_page_view","external_menu_view","external_reserve_click","external_call_click","external_directions_click","external_order_click","external_contact_submit","external_event_view"];
 
+type PlanLocation = {
+  plan?: unknown;
+  business_plan?: unknown;
+  subscription_plan?: unknown;
+  pricing_plan?: unknown;
+  tier?: unknown;
+  subscription_tier?: unknown;
+  subscription_status?: unknown;
+  plan_status?: unknown;
+};
+
+type AnalyticsEvent = {
+  event_name?: unknown;
+  event_type?: unknown;
+  query?: unknown;
+  session_id?: string | null;
+  metadata?: { event_name?: unknown; search_query?: unknown } | null;
+};
+
+type AttributionRow = { search_query?: unknown };
+
 function rangeStart(range: string) {
   const days = range === "7d" ? 7 : range === "90d" ? 90 : range === "12m" ? 365 : range === "all" ? 0 : 30;
   return days ? new Date(Date.now() - days * 86400000).toISOString() : null;
 }
 
-function isPaidPlan(location: Record<string, any> | null | undefined) {
+function isPaidPlan(location: PlanLocation | null | undefined) {
   const values = [location?.plan, location?.business_plan, location?.subscription_plan, location?.pricing_plan, location?.tier, location?.subscription_tier]
     .filter(Boolean)
     .map((value) => String(value).toLowerCase());
@@ -44,22 +65,24 @@ export async function GET(request: NextRequest) {
     supabaseAdmin.from("location_website_tracking").select("verified_at,last_seen_at,average_customer_value,allowed_origins,enabled").eq("location_id", locationId).maybeSingle(),
   ]);
 
-  const name = (event: any) => String(event?.event_name || event?.event_type || event?.metadata?.event_name || "");
-  const count = (eventName: string) => (events || []).filter((event: any) => name(event) === eventName).length;
-  const externalEvents = (events || []).filter((event: any) => EXTERNAL.includes(name(event)));
-  const sessions = new Set(externalEvents.map((event: any) => event.session_id).filter(Boolean)).size || count("external_site_session_started");
+  const typedEvents = (events || []) as AnalyticsEvent[];
+  const typedAttributions = (attributions || []) as AttributionRow[];
+  const name = (event: AnalyticsEvent) => String(event?.event_name || event?.event_type || event?.metadata?.event_name || "");
+  const count = (eventName: string) => typedEvents.filter((event) => name(event) === eventName).length;
+  const externalEvents = typedEvents.filter((event) => EXTERNAL.includes(name(event)));
+  const sessions = new Set(externalEvents.map((event) => event.session_id).filter(Boolean)).size || count("external_site_session_started");
   const reservationActions = count("external_reserve_click");
   const highIntentActions = reservationActions + count("external_call_click") + count("external_directions_click") + count("external_order_click") + count("external_contact_submit");
   const averageCustomerValue = Number(config?.average_customer_value || 0);
   const estimatedValue = averageCustomerValue > 0 ? reservationActions * averageCustomerValue : 0;
 
   const demand = new Map<string, number>();
-  for (const event of events || []) {
-    const q = String((event as any).query || (event as any).metadata?.search_query || "").trim();
+  for (const event of typedEvents) {
+    const q = String(event.query || event.metadata?.search_query || "").trim();
     if (q) demand.set(q, (demand.get(q) || 0) + 1);
   }
-  for (const row of attributions || []) {
-    const q = String((row as any).search_query || "").trim();
+  for (const row of typedAttributions) {
+    const q = String(row.search_query || "").trim();
     if (q) demand.set(q, (demand.get(q) || 0) + 1);
   }
   const topDemand = Array.from(demand.entries()).sort((a,b) => b[1]-a[1]).slice(0,8).map(([query, searches]) => ({ query, searches }));
@@ -75,7 +98,7 @@ export async function GET(request: NextRequest) {
       allowed_origins: config?.allowed_origins || [],
     },
     funnel: {
-      attributed_outbound_visits: (attributions || []).length,
+      attributed_outbound_visits: typedAttributions.length,
       website_sessions: sessions,
       page_views: count("external_page_view"),
       menu_views: count("external_menu_view"),
