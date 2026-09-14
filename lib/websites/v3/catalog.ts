@@ -10,7 +10,12 @@ export type WebsiteV3ConceptId =
   | "pulse"
   | "botanica"
   | "grandstand"
-  | "gallery_house";
+  | "gallery_house"
+  | "riviera"
+  | "ember"
+  | "velvet_room"
+  | "market_hall"
+  | "skyline";
 
 export type WebsiteV3Concept = {
   id: WebsiteV3ConceptId;
@@ -31,6 +36,11 @@ export const WEBSITE_V3_CONCEPTS: WebsiteV3Concept[] = [
   { id:"botanica", name:"Botanica", description:"Airy, garden-inspired, relaxed and naturally elegant.", bestFor:"Brunch, garden restaurants, cafes, rooftops, wellness-led venues", status:"preview_ready" },
   { id:"grandstand", name:"Grandstand", description:"Bold, structured, group-first and entertainment-driven.", bestFor:"Sports bars, bowling, arcades, game venues, group entertainment", status:"preview_ready" },
   { id:"gallery_house", name:"Gallery House", description:"Museum-like, art-directed, minimal and culture-forward.", bestFor:"Museums, galleries, theaters, chef concepts, premium experiences", status:"preview_ready" },
+  { id:"riviera", name:"Riviera", description:"Coastal, sunlit and relaxed with polished destination energy.", bestFor:"Mediterranean dining, seafood, beach clubs, coastal restaurants", status:"preview_ready" },
+  { id:"ember", name:"Ember", description:"Fire-led, dramatic and tactile with a warm evening atmosphere.", bestFor:"Steakhouses, barbecue, wood-fired restaurants, whiskey bars", status:"preview_ready" },
+  { id:"velvet_room", name:"Velvet Room", description:"Intimate, nocturnal and refined with a cocktail-lounge sensibility.", bestFor:"Cocktail bars, jazz rooms, speakeasies, lounges, private clubs", status:"preview_ready" },
+  { id:"market_hall", name:"Market Hall", description:"Graphic, casual and energetic with an approachable neighborhood feel.", bestFor:"Food halls, cafes, casual restaurants, bakeries, fast-casual concepts", status:"preview_ready" },
+  { id:"skyline", name:"Skyline", description:"City-facing, elevated and cinematic with strong rooftop energy.", bestFor:"Rooftops, skyline restaurants, terraces, penthouse lounges", status:"preview_ready" },
 ];
 
 export function normalizeWebsiteRendererVersion(value: unknown): WebsiteRendererVersion {
