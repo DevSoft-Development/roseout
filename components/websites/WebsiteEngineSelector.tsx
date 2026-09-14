@@ -2,91 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  WEBSITE_V3_CONCEPTS,
-  type WebsiteRendererVersion,
-  type WebsiteV3ConceptId,
-} from "@/lib/websites/v3/catalog";
+import { WEBSITE_V3_CONCEPTS, type WebsiteRendererVersion, type WebsiteV3ConceptId } from "@/lib/websites/v3/catalog";
+import { WEBSITE_V3_PALETTES, type WebsiteV3PaletteId } from "@/lib/websites/v3/palettes";
+import { nextWebsiteV3Direction } from "@/lib/websites/v3/recommendation";
 
-export function WebsiteEngineSelector({
-  locationId,
-  initialRenderer,
-  initialConcept,
-}: {
-  locationId: string;
-  initialRenderer: WebsiteRendererVersion;
-  initialConcept: WebsiteV3ConceptId;
-}) {
-  const router = useRouter();
-  const [renderer, setRenderer] = useState<WebsiteRendererVersion>(initialRenderer);
-  const [concept, setConcept] = useState<WebsiteV3ConceptId>(initialConcept);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-
-  async function save(nextRenderer: WebsiteRendererVersion, nextConcept = concept) {
-    setSaving(true);
-    setMessage("");
-    const response = await fetch("/api/business/website", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        location_id: locationId,
-        theme: {
-          renderer_version: nextRenderer,
-          v3_concept: nextConcept,
-        },
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    setSaving(false);
-    if (!response.ok) {
-      setMessage(data?.error || "We could not save the website engine choice.");
-      return;
-    }
-    setRenderer(nextRenderer);
-    setConcept(nextConcept);
-    setMessage(nextRenderer === "v3" ? "V3 Premium selected for this location." : "Legacy website engine selected.");
-    router.refresh();
-  }
-
-  return (
-    <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Website engine</p>
-          <h2 className="mt-2 text-xl font-black">Choose which website system this location uses</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">V3 is the new from-scratch premium engine. Your current website remains intact, and you can switch back to Legacy at any time.</p>
-        </div>
-        <span className={`rounded-full border px-3 py-2 text-xs font-black ${renderer === "v3" ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-black/30 text-white/60"}`}>{renderer === "v3" ? "V3 Premium selected" : "Legacy selected"}</span>
-      </div>
-
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        <button type="button" disabled={saving} onClick={() => void save("v3", concept)} className={`rounded-2xl border p-5 text-left transition ${renderer === "v3" ? "border-[#ff2142]/50 bg-[#ff2142]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
-          <div className="flex items-center justify-between gap-3"><span className="text-lg font-black">V3 — Premium</span><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-200">New</span></div>
-          <p className="mt-2 text-sm leading-6 text-white/55">Fifteen independent premium templates with multi-page previews and no dependency on the old template foundation.</p>
-        </button>
-        <button type="button" disabled={saving} onClick={() => void save("legacy", concept)} className={`rounded-2xl border p-5 text-left transition ${renderer === "legacy" ? "border-white/30 bg-white/[0.08]" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
-          <div className="text-lg font-black">Current — Legacy</div>
-          <p className="mt-2 text-sm leading-6 text-white/55">Keeps the existing website builder, templates, preview, and publish flow unchanged.</p>
-        </button>
-      </div>
-
-      {renderer === "v3" ? <div className="mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 template</p><p className="mt-1 text-xs text-white/45">All fifteen templates have live five-page previews built from this location&apos;s business data.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {WEBSITE_V3_CONCEPTS.map((item) => {
-            const active = concept === item.id;
-            const ready = item.status === "preview_ready";
-            return <button key={item.id} type="button" disabled={saving} onClick={() => void save("v3", item.id)} className={`rounded-2xl border p-4 text-left transition ${active ? "border-[#ff2142]/50 bg-[#ff2142]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
-              <div className="flex items-center justify-between gap-2"><span className="font-black">{item.name}</span><span className={`text-[9px] font-black uppercase tracking-[0.1em] ${ready ? "text-emerald-200" : "text-white/35"}`}>{ready ? "Preview ready" : "In development"}</span></div>
-              <p className="mt-2 text-xs leading-5 text-white/50">{item.description}</p>
-              <p className="mt-3 text-[10px] leading-4 text-white/35">Best for: {item.bestFor}</p>
-            </button>;
-          })}
-        </div>
-      </div> : null}
-
-      <div className="mt-4 min-h-5 text-xs font-bold text-white/50">{saving ? "Saving website engine…" : message}</div>
-    </section>
-  );
+export function WebsiteEngineSelector({locationId,initialRenderer,initialConcept,initialPalette,recommendedConcept}:{locationId:string;initialRenderer:WebsiteRendererVersion;initialConcept:WebsiteV3ConceptId;initialPalette:WebsiteV3PaletteId;recommendedConcept:WebsiteV3ConceptId}){
+ const router=useRouter();const[renderer,setRenderer]=useState(initialRenderer);const[concept,setConcept]=useState(initialConcept);const[palette,setPalette]=useState(initialPalette);const[saving,setSaving]=useState(false);const[message,setMessage]=useState("");
+ const current=WEBSITE_V3_CONCEPTS.find(x=>x.id===concept)!;const recommended=WEBSITE_V3_CONCEPTS.find(x=>x.id===recommendedConcept)!;
+ async function save(nextRenderer:WebsiteRendererVersion,nextConcept=concept,nextPalette=palette){setSaving(true);setMessage("");const response=await fetch("/api/business/website",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({location_id:locationId,theme:{renderer_version:nextRenderer,v3_concept:nextConcept,v3_palette:nextPalette}})});const data=await response.json().catch(()=>({}));setSaving(false);if(!response.ok){setMessage(data?.error||"We could not save the website design.");return}setRenderer(nextRenderer);setConcept(nextConcept);setPalette(nextPalette);setMessage(nextRenderer==="v3"?"Website design updated.":"Legacy website engine selected.");router.refresh()}
+ function another(){const next=nextWebsiteV3Direction(concept,recommendedConcept);void save("v3",next,palette)}
+ return <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+  <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Website design</p><h2 className="mt-2 text-xl font-black">We picked a design for your business</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">TheOutHaven uses your business type, atmosphere, features, menu and experience signals to choose a strong starting direction. You can change the color mood or ask for another direction without browsing a template library.</p></div><span className={`rounded-full border px-3 py-2 text-xs font-black ${renderer==="v3"?"border-emerald-300/25 bg-emerald-400/10 text-emerald-100":"border-white/10 bg-black/30 text-white/60"}`}>{renderer==="v3"?"V3 Premium selected":"Legacy selected"}</span></div>
+  <div className="mt-5 grid gap-3 md:grid-cols-[1.35fr_.65fr]">
+   <div className="rounded-2xl border border-[#ff2142]/35 bg-[#ff2142]/[0.08] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-rose-200">{concept===recommendedConcept?"Best match":"Current direction"}</p><h3 className="mt-1 text-xl font-black">{current.name}</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">{current.description}</p><p className="mt-2 text-xs text-white/35">Best for: {current.bestFor}</p></div>{concept!==recommendedConcept?<button type="button" disabled={saving} onClick={()=>void save("v3",recommendedConcept,palette)} className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-4 py-2 text-xs font-black text-emerald-100">Use recommended: {recommended.name}</button>:<span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-[10px] font-black uppercase tracking-[.12em] text-emerald-100">Recommended</span>}</div><div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={saving} onClick={()=>void save("v3",concept,palette)} className="rounded-full bg-white px-4 py-2.5 text-xs font-black text-black">Use this design</button><button type="button" disabled={saving} onClick={another} className="rounded-full border border-white/15 bg-white/[0.04] px-4 py-2.5 text-xs font-black text-white">Try another direction</button></div></div>
+   <button type="button" disabled={saving} onClick={()=>void save("legacy",concept,palette)} className={`rounded-2xl border p-5 text-left ${renderer==="legacy"?"border-white/30 bg-white/[0.08]":"border-white/10 bg-black/20"}`}><div className="text-sm font-black">Current — Legacy</div><p className="mt-2 text-xs leading-5 text-white/45">Keep the existing website builder and publishing flow.</p></button>
+  </div>
+  {renderer==="v3"?<div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5"><div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Color style</p><p className="mt-1 text-xs text-white/45">Change the mood without changing the design or content.</p></div><span className="text-[10px] font-black uppercase tracking-[.12em] text-white/35">Curated palettes</span></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{WEBSITE_V3_PALETTES.map(item=><button key={item.id} type="button" disabled={saving} onClick={()=>void save("v3",concept,item.id)} className={`rounded-2xl border p-3 text-left transition ${palette===item.id?"border-[#ff2142]/55 bg-[#ff2142]/10":"border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}><div className="flex gap-1.5">{item.swatches.map((color,i)=><span key={`${item.id}-${i}`} className="h-5 w-5 rounded-full border border-white/15" style={{backgroundColor:color}} />)}</div><p className="mt-2 text-xs font-black">{item.name}</p></button>)}</div></div>:null}
+  <div className="mt-4 min-h-5 text-xs font-bold text-white/50">{saving?"Updating website design…":message}</div>
+ </section>
 }
