@@ -11,6 +11,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.theouthaven.app",
       "icon": "../public/apple-touch-icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
       "associatedDomains": [
         "applinks:outhvn.com"
       ]
