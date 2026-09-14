@@ -24,6 +24,8 @@ type MobileSearchBody = {
   customMatters?: string[];
 };
 
+type ResolvedPlanType = "outing" | "restaurant" | "activity";
+
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -130,6 +132,47 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
   };
 }
 
+function canonicalSearchType(payload: any, source: any) {
+  return firstText(
+    source?.searchType,
+    source?.search_type,
+    source?.searchPlan?.searchType,
+    source?.searchPlan?.search_type,
+    source?.normalizedIntent?.searchType,
+    source?.normalizedIntent?.search_type,
+    payload?.searchType,
+    payload?.search_type,
+    payload?.normalizedIntent?.searchType,
+    payload?.normalizedIntent?.search_type,
+  );
+}
+
+function resolvePlanType(args: {
+  canonicalType: string | null;
+  renderMode: string;
+  requestedPlanType: MobileSearchBody["planType"];
+  restaurantCount: number;
+  activityCount: number;
+  pairCount: number;
+  sameVenueCount: number;
+}): ResolvedPlanType {
+  const canonical = (args.canonicalType || "").toLowerCase();
+  if (canonical.includes("restaurant")) return "restaurant";
+  if (canonical.includes("activity")) return "activity";
+  if (canonical.includes("pair") || canonical.includes("outing") || canonical.includes("mixed")) return "outing";
+
+  const renderMode = args.renderMode.toLowerCase();
+  if (renderMode.includes("restaurant")) return "restaurant";
+  if (renderMode.includes("activity")) return "activity";
+  if (renderMode.includes("outing") || renderMode.includes("pair")) return "outing";
+
+  if (args.pairCount > 0 || args.sameVenueCount > 0) return "outing";
+  if (args.restaurantCount > 0 && args.activityCount === 0) return "restaurant";
+  if (args.activityCount > 0 && args.restaurantCount === 0) return "activity";
+  if (args.requestedPlanType === "restaurant" || args.requestedPlanType === "activity") return args.requestedPlanType;
+  return "outing";
+}
+
 export async function POST(request: Request) {
   let body: MobileSearchBody;
   try {
@@ -200,12 +243,25 @@ export async function POST(request: Request) {
   const activities = activitiesRaw.map((item: any) => shapePlace(item, "activity"));
   const pairs = pairsRaw.map((item: any, index: number) => shapePair(item, index));
   const sameVenueResults = sameVenueRaw.map((item: any, index: number) => shapePair(item, index, "same_venue"));
+  const renderMode = String(payload?.render_mode || payload?.renderMode || source?.render_mode || source?.renderMode || (pairs.length || sameVenueResults.length ? "outings" : "places"));
+  const canonicalType = canonicalSearchType(payload, source);
+  const resolvedPlanType = resolvePlanType({
+    canonicalType,
+    renderMode,
+    requestedPlanType: body.planType,
+    restaurantCount: restaurants.length,
+    activityCount: activities.length,
+    pairCount: pairs.length,
+    sameVenueCount: sameVenueResults.length,
+  });
 
   return mobileJson({
     ok: true,
     requestId: payload?.request_id || payload?.requestId || null,
     reply: typeof payload?.reply === "string" ? payload.reply : null,
-    renderMode: payload?.render_mode || payload?.renderMode || (pairs.length || sameVenueResults.length ? "outings" : "places"),
+    renderMode,
+    resolvedPlanType,
+    canonicalSearchType: canonicalType,
     pairs,
     sameVenueResults,
     restaurants,
