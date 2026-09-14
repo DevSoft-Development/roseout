@@ -51,6 +51,9 @@ jobs:
       - name: Verify mobile/web search parity
         run: node ../scripts/mobile-search-parity-regression.mjs
 
+      - name: Verify initial-search location pass-through
+        run: node scripts/verify-location-pass.mjs
+
       - name: Verify release identifiers
         run: |
           set -euo pipefail

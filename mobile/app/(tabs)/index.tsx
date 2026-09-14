@@ -42,6 +42,10 @@ type UpcomingOuting = {
 };
 
 type OutingsPayload = { ok: true; upcoming: UpcomingOuting[] };
+type PlannerIntentResponse = {
+  ok: true;
+  detectedLocation: { area: string; geoType: string; requestedMarket: string | null } | null;
+};
 
 export default function HomeScreen() {
   const { theme } = useAppTheme();
@@ -50,6 +54,7 @@ export default function HomeScreen() {
   const [focused, setFocused] = useState(false);
   const [typedPlaceholder, setTypedPlaceholder] = useState("");
   const [nextOuting, setNextOuting] = useState<UpcomingOuting | null>(null);
+  const [openingPlanner, setOpeningPlanner] = useState(false);
   const searchRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -108,13 +113,37 @@ export default function HomeScreen() {
     return () => { active = false; };
   }, [user?.id]);
 
-  const openPlanner = (value = query, source = "homepage_outing_search") => {
+  const openPlanner = async (value = query, source = "homepage_outing_search", knownArea?: string) => {
     const prompt = value.trim();
-    if (!prompt) return;
+    if (!prompt || openingPlanner) return;
+
+    setOpeningPlanner(true);
+    let detectedArea = knownArea?.trim() || "";
+
+    if (!detectedArea) {
+      try {
+        const intent = await mobileApi<PlannerIntentResponse>("/search/intent", {
+          method: "POST",
+          body: JSON.stringify({ query: prompt }),
+        });
+        detectedArea = intent.detectedLocation?.area?.trim() || "";
+      } catch {
+        // Location can still be entered on Step 2 if the lightweight parser cannot resolve it.
+      }
+    }
+
     router.push({
       pathname: "/(tabs)/plan",
-      params: { prompt, planType: "outing", startAt: "2", source },
+      params: {
+        prompt,
+        planType: "outing",
+        startAt: "2",
+        source,
+        area: detectedArea,
+        areaSource: detectedArea ? "search" : "default",
+      },
     });
+    setOpeningPlanner(false);
   };
 
   return (
@@ -154,13 +183,13 @@ export default function HomeScreen() {
               onChangeText={setQuery}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              onSubmitEditing={() => openPlanner()}
+              onSubmitEditing={() => void openPlanner()}
               placeholder={typedPlaceholder}
               placeholderTextColor={theme.colors.textMuted}
               returnKeyType="search"
               style={[styles.searchInput, { color: theme.colors.text, backgroundColor: theme.colors.background }]}
             />
-            <Button onPress={() => openPlanner()} disabled={!query.trim()}>Plan my outing</Button>
+            <Button onPress={() => void openPlanner()} disabled={!query.trim() || openingPlanner}>{openingPlanner ? "Reading your plan…" : "Plan my outing"}</Button>
           </View>
         </View>
 
@@ -169,7 +198,7 @@ export default function HomeScreen() {
           {OCCASIONS.map(([label, prompt]) => (
             <Pressable
               key={label}
-              onPress={() => openPlanner(prompt, "homepage_occasion")}
+              onPress={() => void openPlanner(prompt, "homepage_occasion")}
               style={({ pressed }) => [
                 styles.occasionCard,
                 { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
@@ -186,7 +215,7 @@ export default function HomeScreen() {
           {AREAS.map((area) => (
             <Pressable
               key={area}
-              onPress={() => openPlanner(area, "homepage_area")}
+              onPress={() => void openPlanner(area, "homepage_area", area)}
               style={({ pressed }) => [
                 styles.areaCard,
                 { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated },
@@ -204,7 +233,7 @@ export default function HomeScreen() {
           {INSPIRATION.map(([title, prompt]) => (
             <Pressable
               key={title}
-              onPress={() => openPlanner(prompt, "homepage_inspiration")}
+              onPress={() => void openPlanner(prompt, "homepage_inspiration")}
               style={({ pressed }) => [
                 styles.inspirationCard,
                 { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },

@@ -103,23 +103,28 @@ function weekendDate() {
 }
 
 export default function PlanScreen() {
-  const params = useLocalSearchParams<{ prompt?: string; planType?: string; startAt?: string }>();
+  const params = useLocalSearchParams<{ prompt?: string; planType?: string; startAt?: string; area?: string; areaSource?: string }>();
   const router = useRouter();
   const { theme } = useAppTheme();
   const incomingPrompt = typeof params.prompt === "string" ? params.prompt.trim() : "";
+  const incomingArea = typeof params.area === "string" ? params.area.trim() : "";
+  const incomingAreaSource: MobileSearchDraft["areaSource"] = params.areaSource === "search" || params.areaSource === "manual" || params.areaSource === "device" ? params.areaSource : "default";
+  const hasPassedArea = Boolean(incomingArea) && incomingAreaSource !== "default";
   const incomingPlanType: MobilePlanType = params.planType === "restaurant" || params.planType === "activity" ? params.planType : "outing";
-  const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt));
+  const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt) && !hasPassedArea);
   const [requestingLocation, setRequestingLocation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const [showExactTiming, setShowExactTiming] = useState(false);
   const [showCustomPreference, setShowCustomPreference] = useState(false);
-  const detectedForPrompt = useRef<string | null>(null);
+  const detectedForPrompt = useRef<string | null>(hasPassedArea ? incomingPrompt : null);
   const [customMatter, setCustomMatter] = useState("");
   const [draft, setDraft] = useState<MobileSearchDraft>({
     ...DEFAULT_MOBILE_SEARCH_DRAFT,
     query: incomingPrompt,
     planType: incomingPlanType,
+    area: hasPassedArea ? incomingArea : DEFAULT_MOBILE_SEARCH_DRAFT.area,
+    areaSource: hasPassedArea ? incomingAreaSource : DEFAULT_MOBILE_SEARCH_DRAFT.areaSource,
   });
 
   const summary = useMemo(() => serializeSearchDraft(draft), [draft]);
@@ -131,6 +136,21 @@ export default function PlanScreen() {
   }, [draft.customDate, draft.customTime]);
 
   useEffect(() => {
+    if (hasPassedArea) {
+      detectedForPrompt.current = incomingPrompt;
+      setDraft((current) => ({
+        ...current,
+        query: incomingPrompt,
+        planType: incomingPlanType,
+        area: incomingArea,
+        areaSource: incomingAreaSource,
+        latitude: null,
+        longitude: null,
+      }));
+      setResolvingIntent(false);
+      return;
+    }
+
     if (!incomingPrompt || detectedForPrompt.current === incomingPrompt) {
       setResolvingIntent(false);
       return;
@@ -157,7 +177,7 @@ export default function PlanScreen() {
         setError(intentError instanceof MobileApiError ? intentError.message : "We could not automatically read the location. You can enter it below.");
       })
       .finally(() => setResolvingIntent(false));
-  }, [incomingPlanType, incomingPrompt]);
+  }, [hasPassedArea, incomingArea, incomingAreaSource, incomingPlanType, incomingPrompt]);
 
   function togglePreference(value: string) {
     setDraft((current) => ({
@@ -312,7 +332,7 @@ export default function PlanScreen() {
                   placeholder="Neighborhood, city, or ZIP"
                 />
               </View>
-              <Button fullWidth={false} variant={usingDeviceLocation ? "secondary" : "secondary"} disabled={requestingLocation} onPress={() => void requestUserLocation()}>
+              <Button fullWidth={false} variant="secondary" disabled={requestingLocation} onPress={() => void requestUserLocation()}>
                 {requestingLocation ? "Locating…" : usingDeviceLocation ? "✓ My location" : "Use my location"}
               </Button>
             </View>
