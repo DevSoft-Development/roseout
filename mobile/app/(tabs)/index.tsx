@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, SafeAreaView, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
@@ -21,16 +21,9 @@ const OCCASIONS = [
   ["Girls’ Night", "Girls’ night"],
   ["Birthday", "Birthday"],
   ["Family", "Family outing"],
-  ["Group Night", "Group night out"],
-  ["Last-Minute", "Last-minute plans"],
 ] as const;
 
 const AREAS = ["Manhattan", "Brooklyn", "Queens", "Long Island"] as const;
-const INSPIRATION = [
-  ["Dinner + something fun", "Dinner and something fun nearby"],
-  ["Rooftop night", "Rooftop drinks and something fun"],
-  ["Brunch + activity", "Brunch and an activity"],
-] as const;
 
 type UpcomingOuting = {
   id: string;
@@ -147,7 +140,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <View pointerEvents="none" style={styles.heroGlow} />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]}
@@ -217,36 +210,24 @@ export default function HomeScreen() {
               key={area}
               onPress={() => void openPlanner(area, "homepage_area", area)}
               style={({ pressed }) => [
-                styles.areaCard,
+                styles.areaPill,
                 { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated },
                 pressed && { opacity: 0.72 },
               ]}
             >
-              <AppText variant="eyebrow" accent>PLAN HERE</AppText>
-              <AppText variant="h3" style={{ marginTop: 8 }}>{area}</AppText>
+              <AppText variant="bodyStrong">{area}</AppText>
             </Pressable>
           ))}
         </ScrollView>
 
-        <SectionHeader title="Need inspiration?" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRail}>
-          {INSPIRATION.map(([title, prompt]) => (
-            <Pressable
-              key={title}
-              onPress={() => void openPlanner(prompt, "homepage_inspiration")}
-              style={({ pressed }) => [
-                styles.inspirationCard,
-                { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
-                pressed && { opacity: 0.72 },
-              ]}
-            >
-              <View style={styles.inspirationGlow} />
-              <AppText variant="eyebrow" style={styles.pink}>PLAN THIS VIBE</AppText>
-              <AppText variant="h3" style={{ marginTop: 10 }}>{title}</AppText>
-              <AppText variant="caption" muted style={{ marginTop: 7 }}>Tap to make it yours →</AppText>
-            </Pressable>
-          ))}
-        </ScrollView>
+        <Pressable
+          onPress={() => void openPlanner("Dinner and something fun nearby", "homepage_inspiration")}
+          style={({ pressed }) => [styles.inspirationCta, pressed && { opacity: 0.8 }]}
+        >
+          <AppText variant="eyebrow" style={styles.pink}>NEED AN IDEA?</AppText>
+          <AppText variant="h3" style={{ marginTop: 6 }}>Build me a night out</AppText>
+          <AppText muted style={{ marginTop: 5 }}>We’ll start with a strong dinner + activity plan and you can make it yours.</AppText>
+        </Pressable>
 
         {nextOuting ? (
           <View>
@@ -267,17 +248,8 @@ export default function HomeScreen() {
             </Card>
           </View>
         ) : null}
-
-        <Pressable
-          onPress={() => searchRef.current?.focus()}
-          style={({ pressed }) => [styles.finalCta, pressed && { opacity: 0.8 }]}
-        >
-          <AppText variant="eyebrow" style={styles.pink}>READY WHEN YOU ARE</AppText>
-          <AppText variant="h2" style={{ marginTop: 8 }}>Have something specific in mind?</AppText>
-          <AppText muted style={{ marginTop: 7 }}>Jump back to the planner and tell us your way.</AppText>
-        </Pressable>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -295,21 +267,19 @@ function SectionHeader({ title, action, onAction }: { title: string; action?: st
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 20, paddingBottom: 118, gap: 20 },
-  heroGlow: { position: "absolute", top: -150, left: -110, width: 360, height: 360, borderRadius: 180, backgroundColor: "rgba(225,6,42,0.13)" },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  profileButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  hero: { paddingTop: 12 },
-  heroBody: { marginTop: 10, fontSize: 16, lineHeight: 24, maxWidth: 340 },
-  searchShell: { borderWidth: 1, borderRadius: 24, padding: 8, gap: 8, marginTop: 20 },
-  searchInput: { minHeight: 58, borderRadius: 18, paddingHorizontal: 16, fontSize: 16, fontWeight: "600" },
+  content: { paddingTop: 12, paddingBottom: 118, gap: 18 },
+  heroGlow: { position: "absolute", top: -120, left: -95, width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(225,6,42,0.10)" },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
+  profileButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  hero: { paddingTop: 8 },
+  heroBody: { marginTop: 8, fontSize: 15, lineHeight: 22, maxWidth: 340 },
+  searchShell: { borderWidth: 1, borderRadius: 22, padding: 7, gap: 7, marginTop: 16 },
+  searchInput: { minHeight: 54, borderRadius: 17, paddingHorizontal: 15, fontSize: 16, fontWeight: "600" },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 2 },
-  occasionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  occasionCard: { width: "48%", minHeight: 62, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, justifyContent: "center" },
-  horizontalRail: { gap: 12, paddingRight: 6 },
-  areaCard: { width: 156, minHeight: 118, borderWidth: 1, borderRadius: 22, padding: 16, justifyContent: "flex-end" },
-  inspirationCard: { width: 228, minHeight: 142, borderWidth: 1, borderRadius: 22, padding: 18, overflow: "hidden", justifyContent: "flex-end" },
-  inspirationGlow: { position: "absolute", width: 150, height: 150, borderRadius: 75, right: -45, top: -55, backgroundColor: "rgba(225,6,42,0.18)" },
+  occasionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
+  occasionCard: { width: "48%", minHeight: 54, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, justifyContent: "center" },
+  horizontalRail: { gap: 9, paddingRight: 6 },
+  areaPill: { minHeight: 48, borderWidth: 1, borderRadius: 24, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
+  inspirationCta: { borderRadius: 20, padding: 17, backgroundColor: "#120606" },
   pink: { color: "#ff8a9b" },
-  finalCta: { borderRadius: 22, padding: 20, backgroundColor: "#120606", marginTop: 2 },
 });
