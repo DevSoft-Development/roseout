@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
 const navItems = [
-  { href: "/explore", label: "Explore" },
+  { href: "/explore", label: "Discover" },
   { href: "/#plan-your-outing", label: "Create Outing" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
   { href: "/reservations", label: "Reservations" },
