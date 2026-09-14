@@ -4,21 +4,23 @@
     "slug": "theouthaven",
     "scheme": "theouthaven",
     "version": "0.1.0",
-    "icon": "../public/android-chrome-512x512.png",
+    "icon": "../public/apple-touch-icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.theouthaven.app",
+      "icon": "../public/apple-touch-icon.png",
       "associatedDomains": [
         "applinks:outhvn.com"
       ]
     },
     "android": {
       "package": "com.theouthaven.app",
+      "icon": "../public/android-chrome-512x512.png",
       "adaptiveIcon": {
-        "foregroundImage": "../public/android-chrome-512x512.png",
-        "backgroundColor": "#050505"
+        "foregroundImage": "../public/toh_logo.png",
+        "backgroundColor": "#FFFFFF"
       },
       "intentFilters": [
         {
