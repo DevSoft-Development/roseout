@@ -11,7 +11,13 @@ const WIDTHS: Record<Device, string> = {
   mobile: "390px",
 };
 
-export function WebsiteV3Preview({ artifact, conceptName }: { artifact: WebsiteV3PreviewArtifact; conceptName: string }) {
+export function WebsiteV3Preview({ artifact, html, conceptName }: { artifact?: WebsiteV3PreviewArtifact; html?: WebsiteV3PreviewArtifact | string; conceptName: string }) {
+  const resolved = artifact || (typeof html === "string" ? { defaultPage: "home", pages: [{ id: "home", label: "Home", path: "index.html", html }] } : html);
+  if (!resolved) return null;
+  return <WebsiteV3PreviewInner artifact={resolved} conceptName={conceptName} />;
+}
+
+function WebsiteV3PreviewInner({ artifact, conceptName }: { artifact: WebsiteV3PreviewArtifact; conceptName: string }) {
   const [device, setDevice] = useState<Device>("desktop");
   const [pageId, setPageId] = useState(artifact.defaultPage);
   const page = useMemo(() => artifact.pages.find((item) => item.id === pageId) || artifact.pages[0], [artifact, pageId]);
