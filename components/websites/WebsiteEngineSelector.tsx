@@ -63,7 +63,7 @@ export function WebsiteEngineSelector({
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         <button type="button" disabled={saving} onClick={() => void save("v3", concept)} className={`rounded-2xl border p-5 text-left transition ${renderer === "v3" ? "border-[#ff2142]/50 bg-[#ff2142]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
           <div className="flex items-center justify-between gap-3"><span className="text-lg font-black">V3 — Premium</span><span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-200">New</span></div>
-          <p className="mt-2 text-sm leading-6 text-white/55">Ten independent premium templates with multi-page previews and no dependency on the old template foundation.</p>
+          <p className="mt-2 text-sm leading-6 text-white/55">Fifteen independent premium templates with multi-page previews and no dependency on the old template foundation.</p>
         </button>
         <button type="button" disabled={saving} onClick={() => void save("legacy", concept)} className={`rounded-2xl border p-5 text-left transition ${renderer === "legacy" ? "border-white/30 bg-white/[0.08]" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
           <div className="text-lg font-black">Current — Legacy</div>
@@ -72,7 +72,7 @@ export function WebsiteEngineSelector({
       </div>
 
       {renderer === "v3" ? <div className="mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 template</p><p className="mt-1 text-xs text-white/45">All ten templates have live five-page previews built from this location&apos;s business data.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
+        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 template</p><p className="mt-1 text-xs text-white/45">All fifteen templates have live five-page previews built from this location&apos;s business data.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {WEBSITE_V3_CONCEPTS.map((item) => {
             const active = concept === item.id;
