@@ -28,28 +28,28 @@ export const WEBSITE_V3_CONCEPTS: WebsiteV3Concept[] = [
     name: "Atelier",
     description: "Editorial, art-directed, asymmetric, and typography-led.",
     bestFor: "Chef-driven dining, sushi, wine, museums, galleries",
-    status: "building",
+    status: "preview_ready",
   },
   {
     id: "vista",
     name: "Vista",
     description: "Panoramic, destination-led, spacious, and environmental.",
     bestFor: "Rooftops, coastal venues, gardens, breweries, destinations",
-    status: "building",
+    status: "preview_ready",
   },
   {
     id: "social_house",
     name: "Social House",
     description: "Energetic, multi-image, social, and booking-forward.",
     bestFor: "Brunch, karaoke, bowling, arcade, mini golf, group experiences",
-    status: "building",
+    status: "preview_ready",
   },
   {
     id: "quiet_luxury",
     name: "Quiet Luxury",
     description: "Calm, restrained, tactile, spacious, and discreet.",
     bestFor: "Spas, wellness, intimate dining, private events",
-    status: "building",
+    status: "preview_ready",
   },
 ];
 
