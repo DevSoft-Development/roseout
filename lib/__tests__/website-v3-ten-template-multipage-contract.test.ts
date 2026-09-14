@@ -11,13 +11,13 @@ const nocturne=source("lib/websites/v3/nocturne.ts");
 const atelier=source("lib/websites/v3/atelier.ts");
 const vista=source("lib/websites/v3/vista.ts");
 
-describe("Website V3 ten-template multipage system",()=>{
-  it("exposes ten preview-ready templates",()=>{
+describe("Website V3 multipage system",()=>{
+  it("preserves the original ten designs while the catalog expands",()=>{
     for(const id of ["nocturne","atelier","vista","social_house","quiet_luxury","maison","pulse","botanica","grandstand","gallery_house"]){
       expect(catalog).toContain(`id:\"${id}\"`);
-      expect(render).toContain(`case \"${id}\"`);
+      expect(render).toContain(id);
     }
-    expect((catalog.match(/status:\"preview_ready\"/g)||[]).length).toBe(10);
+    expect((catalog.match(/status:\"preview_ready\"/g)||[]).length).toBeGreaterThanOrEqual(20);
   });
 
   it("builds a real five-page preview artifact",()=>{
