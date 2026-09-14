@@ -15,7 +15,12 @@ export type WebsiteV3ConceptId =
   | "ember"
   | "velvet_room"
   | "market_hall"
-  | "skyline";
+  | "skyline"
+  | "daylight"
+  | "foundry"
+  | "supper_club"
+  | "sanctuary"
+  | "electric_garden";
 
 export type WebsiteV3Concept = {
   id: WebsiteV3ConceptId;
@@ -41,6 +46,11 @@ export const WEBSITE_V3_CONCEPTS: WebsiteV3Concept[] = [
   { id:"velvet_room", name:"Velvet Room", description:"Intimate, nocturnal and refined with a cocktail-lounge sensibility.", bestFor:"Cocktail bars, jazz rooms, speakeasies, lounges, private clubs", status:"preview_ready" },
   { id:"market_hall", name:"Market Hall", description:"Graphic, casual and energetic with an approachable neighborhood feel.", bestFor:"Food halls, cafes, casual restaurants, bakeries, fast-casual concepts", status:"preview_ready" },
   { id:"skyline", name:"Skyline", description:"City-facing, elevated and cinematic with strong rooftop energy.", bestFor:"Rooftops, skyline restaurants, terraces, penthouse lounges", status:"preview_ready" },
+  { id:"daylight", name:"Daylight", description:"Bright, editorial and daytime-led with cafe and brunch energy.", bestFor:"Cafes, bakeries, brunch spots, coffee shops, patisseries", status:"preview_ready" },
+  { id:"foundry", name:"Foundry", description:"Industrial, craft-led and tactile with maker energy.", bestFor:"Breweries, distilleries, taprooms, craft restaurants, food halls", status:"preview_ready" },
+  { id:"supper_club", name:"Supper Club", description:"Classic evening hospitality with music, dinner and occasion.", bestFor:"Supper clubs, live music, jazz dining, cabaret, destination restaurants", status:"preview_ready" },
+  { id:"sanctuary", name:"Sanctuary", description:"Restorative, calm and premium with a wellness-first rhythm.", bestFor:"Spas, wellness studios, massage, saunas, restorative experiences", status:"preview_ready" },
+  { id:"electric_garden", name:"Electric Garden", description:"Immersive, playful and high-energy for active group outings.", bestFor:"Mini golf, arcades, bowling, immersive entertainment, family fun", status:"preview_ready" },
 ];
 
 export function normalizeWebsiteRendererVersion(value: unknown): WebsiteRendererVersion {
