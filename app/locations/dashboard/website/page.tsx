@@ -19,7 +19,7 @@ import {
   normalizeWebsiteRendererVersion,
   normalizeWebsiteV3Concept,
 } from "@/lib/websites/v3/catalog";
-import { renderNocturneV3Preview } from "@/lib/websites/v3/nocturne";
+import { renderWebsiteV3Preview } from "@/lib/websites/v3/render";
 
 export const dynamic = "force-dynamic";
 
@@ -78,8 +78,8 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   const rendererVersion = normalizeWebsiteRendererVersion(hydratedWebsite?.theme?.renderer_version);
   const v3ConceptId = normalizeWebsiteV3Concept(hydratedWebsite?.theme?.v3_concept);
   const v3Concept = WEBSITE_V3_CONCEPTS.find((concept) => concept.id === v3ConceptId) || WEBSITE_V3_CONCEPTS[0];
-  const v3PreviewHtml = rendererVersion === "v3" && v3ConceptId === "nocturne" && hydratedWebsite
-    ? renderNocturneV3Preview(hydratedWebsite, liveContent)
+  const v3PreviewHtml = rendererVersion === "v3" && hydratedWebsite
+    ? renderWebsiteV3Preview(v3ConceptId, hydratedWebsite, liveContent)
     : null;
 
   return (
@@ -133,11 +133,7 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
                     Your current Legacy website has not been deleted or overwritten. V3 publishing stays locked during visual QA, so you can review the new design safely and switch back to Legacy at any time.
                   </div>
                 </section>
-                {v3PreviewHtml ? <WebsiteV3Preview html={v3PreviewHtml} conceptName={v3Concept.name} /> : (
-                  <section className="rounded-3xl border border-amber-300/15 bg-amber-300/[0.04] p-6 text-sm leading-6 text-white/55">
-                    {v3Concept.name} is still in development. Select <strong className="text-white">Nocturne</strong> above to review the first live V3 concept.
-                  </section>
-                )}
+                {v3PreviewHtml ? <WebsiteV3Preview html={v3PreviewHtml} conceptName={v3Concept.name} /> : null}
               </div>
             ) : (
               <>
