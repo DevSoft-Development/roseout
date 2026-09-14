@@ -131,7 +131,6 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.hero}>
-          <AppText variant="eyebrow" style={styles.locationEyebrow}>NEW YORK CITY + LONG ISLAND</AppText>
           <View style={styles.heroTitleRow}>
             <AppText variant="display" style={styles.heroTitle}>Plan better </AppText>
             <AppText variant="display" accent style={styles.heroTitle}>OUTings.</AppText>
@@ -257,9 +256,8 @@ const styles = StyleSheet.create({
   heroGlow: { position: "absolute", top: -120, left: -95, width: 300, height: 300, borderRadius: 150, backgroundColor: "rgba(225,6,42,0.12)" },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
   profileButton: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  hero: { paddingTop: 34, paddingBottom: 38, alignItems: "center" },
-  locationEyebrow: { color: "#ff8a9b", textAlign: "center" },
-  heroTitleRow: { marginTop: 12, flexDirection: "row", flexWrap: "wrap", justifyContent: "center" },
+  hero: { paddingTop: 24, paddingBottom: 38, alignItems: "center" },
+  heroTitleRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center" },
   heroTitle: { textAlign: "center" },
   heroBody: { marginTop: 14, fontSize: 16, lineHeight: 24, maxWidth: 360, textAlign: "center" },
   searchShell: { width: "100%", borderWidth: 1, borderRadius: 24, padding: 7, gap: 7, marginTop: 24 },
