@@ -1,6 +1,10 @@
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const source = fs.readFileSync("app/api/mobile/v1/search/route.ts", "utf8");
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
+const source = fs.readFileSync(path.join(repoRoot, "app/api/mobile/v1/search/route.ts"), "utf8");
 
 if (!source.includes('return planType === "restaurant" ? "restaurant" : planType === "activity" ? "activity" : "auto";')) {
   throw new Error("Mobile search must default to selectedSearchLane=auto");
