@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - 'mobile/**'
+      - 'app/api/mobile/v1/search/**'
+      - 'scripts/mobile-search-parity-regression.mjs'
       - '.github/workflows/mobile-beta-ci.yml'
   push:
     branches: [main]
     paths:
       - 'mobile/**'
+      - 'app/api/mobile/v1/search/**'
+      - 'scripts/mobile-search-parity-regression.mjs'
       - '.github/workflows/mobile-beta-ci.yml'
   workflow_dispatch:
 
@@ -43,6 +47,9 @@ jobs:
 
       - name: Validate Expo configuration
         run: npx expo config --type public >/tmp/theouthaven-mobile-expo-config.json
+
+      - name: Verify mobile/web search parity
+        run: node ../scripts/mobile-search-parity-regression.mjs
 
       - name: Verify release identifiers
         run: |
