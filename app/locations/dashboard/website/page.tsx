@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
+import { WebsiteEngineSelector } from "@/components/websites/WebsiteEngineSelector";
 import { WebsiteImportPanel } from "@/components/websites/WebsiteImportPanel";
 import { WebsiteMigrationReviewPanel } from "@/components/websites/WebsiteMigrationReviewPanel";
 import { WebsiteHealthPanel } from "@/components/websites/WebsiteHealthPanel";
@@ -12,6 +13,11 @@ import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams }
 import { ensureBusinessWebsite } from "@/lib/websites/data";
 import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import {
+  WEBSITE_V3_CONCEPTS,
+  normalizeWebsiteRendererVersion,
+  normalizeWebsiteV3Concept,
+} from "@/lib/websites/v3/catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +73,10 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
     hasReservations: Boolean(liveContent.uses_internal_reservations || liveContent.reservation_link),
   };
 
+  const rendererVersion = normalizeWebsiteRendererVersion(hydratedWebsite?.theme?.renderer_version);
+  const v3ConceptId = normalizeWebsiteV3Concept(hydratedWebsite?.theme?.v3_concept);
+  const v3Concept = WEBSITE_V3_CONCEPTS.find((concept) => concept.id === v3ConceptId) || WEBSITE_V3_CONCEPTS[0];
+
   return (
     <main className="min-h-screen bg-[#050607] text-white">
       <style>{`
@@ -95,13 +105,39 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Business information</p><h2 className="mt-2 text-xl font-black">Your website stays current automatically</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Edit business facts once in Edit Location. Hours, photos, menu items, published events, experiences, contact details, and reservation settings feed the website automatically. This Website area is for design, migration, address, preview, publishing, and health.</p></div><span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">Auto-sync on</span></div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{contentSources.map(source=><div key={source.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{source.label}</p><p className="mt-2 text-sm font-black text-white">{source.value}</p></div>)}</div>
             </section>
-            <WebsiteImportPanel locationId={location.id} />
-            <WebsiteMigrationReviewPanel locationId={location.id} />
-            <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} locationContent={builderLocationContent} />
-            <div className="mt-5 grid gap-5 xl:grid-cols-2">
-              <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
-              <WebsiteHealthPanel locationId={location.id} />
-            </div>
+
+            <WebsiteEngineSelector
+              locationId={location.id}
+              initialRenderer={rendererVersion}
+              initialConcept={v3ConceptId}
+            />
+
+            {rendererVersion === "v3" ? (
+              <section className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[0.05] p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200">V3 Premium workspace</p>
+                    <h2 className="mt-2 text-2xl font-black">{v3Concept.name}</h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{v3Concept.description} V3 is being built from scratch and remains preview-only until this concept passes desktop, tablet, and mobile visual QA.</p>
+                    <p className="mt-3 text-xs leading-5 text-white/40">Best for: {v3Concept.bestFor}</p>
+                  </div>
+                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-black text-amber-100">Renderer building</span>
+                </div>
+                <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-white/55">
+                  Your current Legacy website has not been deleted or overwritten. Publishing is intentionally unavailable in V3 until the new renderer is ready for visual review. Switch back to Legacy above at any time to use the current builder and publish flow.
+                </div>
+              </section>
+            ) : (
+              <>
+                <WebsiteImportPanel locationId={location.id} />
+                <WebsiteMigrationReviewPanel locationId={location.id} />
+                <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} locationContent={builderLocationContent} />
+                <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                  <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
+                  <WebsiteHealthPanel locationId={location.id} />
+                </div>
+              </>
+            )}
           </div>
         ) : <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website setup is temporarily unavailable.</section>}
       </div>
