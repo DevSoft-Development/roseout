@@ -12,6 +12,7 @@ type FoundationScreenProps = {
   children?: ReactNode;
   beforeTitle?: ReactNode;
   stickyFooter?: ReactNode;
+  stickyFooterBottomOffset?: number;
   showHomeShortcut?: boolean;
   showBrandHeader?: boolean;
   showBack?: boolean;
@@ -25,6 +26,7 @@ export function FoundationScreen({
   children,
   beforeTitle,
   stickyFooter,
+  stickyFooterBottomOffset = 78,
   showHomeShortcut = true,
   showBrandHeader = false,
   showBack = false,
@@ -42,7 +44,7 @@ export function FoundationScreen({
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.lg,
-          paddingBottom: stickyFooter ? 180 : 120,
+          paddingBottom: stickyFooter ? 180 + stickyFooterBottomOffset : 120,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -113,7 +115,7 @@ export function FoundationScreen({
             position: "absolute",
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: stickyFooterBottomOffset,
             paddingHorizontal: theme.spacing.lg,
             paddingTop: theme.spacing.sm,
             paddingBottom: theme.spacing.md,
