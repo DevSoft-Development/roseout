@@ -28,11 +28,15 @@ export type MobileOutingResult = {
   resultType?: "pair" | "same_venue";
 };
 
+export type MobileResolvedPlanType = "outing" | "restaurant" | "activity";
+
 export type MobileSearchResponse = {
   ok: true;
   requestId: string | null;
   reply: string | null;
   renderMode: string;
+  resolvedPlanType: MobileResolvedPlanType;
+  canonicalSearchType: string | null;
   pairs: MobileOutingResult[];
   sameVenueResults: MobileOutingResult[];
   restaurants: MobilePlaceResult[];
