@@ -98,12 +98,13 @@ export default function ResultsScreen() {
 
   useEffect(() => { void runSearch(); }, [runSearch]);
 
+  const effectivePlanType: PlanType = result?.resolvedPlanType || planType;
   const recommended = [...(result?.pairs || []), ...(result?.sameVenueResults || [])].slice(0, 6);
   const restaurants = (result?.restaurants || []).slice(0, 6);
   const activities = (result?.activities || []).slice(0, 6);
-  const singles = planType === "restaurant" ? restaurants : planType === "activity" ? activities : [];
-  const hasResults = planType === "outing" ? recommended.length > 0 : singles.length > 0;
-  const canBuild = restaurants.length > 0 && activities.length > 0;
+  const singles = effectivePlanType === "restaurant" ? restaurants : effectivePlanType === "activity" ? activities : [];
+  const hasResults = effectivePlanType === "outing" ? recommended.length > 0 : singles.length > 0;
+  const canBuild = effectivePlanType === "outing" && restaurants.length > 0 && activities.length > 0;
 
   const customPair: MobileOutingResult | null = selectedRestaurant && selectedActivity ? {
     id: `custom-${selectedRestaurant.id}-${selectedActivity.id}`,
@@ -158,7 +159,7 @@ export default function ResultsScreen() {
   return (
     <FoundationScreen
       eyebrow="STEP 3 OF 4 · PICK"
-      title={headingFor(planType)}
+      title={headingFor(effectivePlanType)}
       description="Compare the atmosphere, location and experience at a glance. Your strongest match is always shown first."
       beforeTitle={beforeTitle}
       showBrandHeader
@@ -174,7 +175,7 @@ export default function ResultsScreen() {
               <Button onPress={() => router.back()}>Adjust my plan</Button>
             </View>
           </Card>
-        ) : planType === "outing" ? (
+        ) : effectivePlanType === "outing" ? (
           <>
             <View style={{ gap: theme.spacing.md }}>
               {recommended.map((outing, index) => <OutingResultCard key={outing.id} outing={outing} rank={index + 1} />)}
