@@ -21,7 +21,7 @@ export const WEBSITE_V3_CONCEPTS: WebsiteV3Concept[] = [
     name: "Nocturne",
     description: "Cinematic, moody, reservation-forward, and image-led.",
     bestFor: "Steakhouses, lounges, nightlife, jazz, rooftops, upscale dining",
-    status: "building",
+    status: "preview_ready",
   },
   {
     id: "atelier",

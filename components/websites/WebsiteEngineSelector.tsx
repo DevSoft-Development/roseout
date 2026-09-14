@@ -72,12 +72,13 @@ export function WebsiteEngineSelector({
       </div>
 
       {renderer === "v3" ? <div className="mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 concept</p><p className="mt-1 text-xs text-white/45">Saved per location. Concept previews will activate as each V3 renderer is completed.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
+        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 concept</p><p className="mt-1 text-xs text-white/45">Nocturne has a live preview. The remaining clean-room concepts are still in development.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {WEBSITE_V3_CONCEPTS.map((item) => {
             const active = concept === item.id;
+            const ready = item.status === "preview_ready";
             return <button key={item.id} type="button" disabled={saving} onClick={() => void save("v3", item.id)} className={`rounded-2xl border p-4 text-left transition ${active ? "border-[#ff2142]/50 bg-[#ff2142]/10" : "border-white/10 bg-black/20 hover:bg-white/[0.05]"}`}>
-              <div className="flex items-center justify-between gap-2"><span className="font-black">{item.name}</span><span className="text-[9px] font-black uppercase tracking-[0.1em] text-white/35">Building</span></div>
+              <div className="flex items-center justify-between gap-2"><span className="font-black">{item.name}</span><span className={`text-[9px] font-black uppercase tracking-[0.1em] ${ready ? "text-emerald-200" : "text-white/35"}`}>{ready ? "Preview ready" : "In development"}</span></div>
               <p className="mt-2 text-xs leading-5 text-white/50">{item.description}</p>
               <p className="mt-3 text-[10px] leading-4 text-white/35">Best for: {item.bestFor}</p>
             </button>;

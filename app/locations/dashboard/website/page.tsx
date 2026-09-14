@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
 import { WebsiteEngineSelector } from "@/components/websites/WebsiteEngineSelector";
+import { WebsiteV3Preview } from "@/components/websites/WebsiteV3Preview";
 import { WebsiteImportPanel } from "@/components/websites/WebsiteImportPanel";
 import { WebsiteMigrationReviewPanel } from "@/components/websites/WebsiteMigrationReviewPanel";
 import { WebsiteHealthPanel } from "@/components/websites/WebsiteHealthPanel";
@@ -18,6 +19,7 @@ import {
   normalizeWebsiteRendererVersion,
   normalizeWebsiteV3Concept,
 } from "@/lib/websites/v3/catalog";
+import { renderNocturneV3Preview } from "@/lib/websites/v3/nocturne";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,9 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   const rendererVersion = normalizeWebsiteRendererVersion(hydratedWebsite?.theme?.renderer_version);
   const v3ConceptId = normalizeWebsiteV3Concept(hydratedWebsite?.theme?.v3_concept);
   const v3Concept = WEBSITE_V3_CONCEPTS.find((concept) => concept.id === v3ConceptId) || WEBSITE_V3_CONCEPTS[0];
+  const v3PreviewHtml = rendererVersion === "v3" && v3ConceptId === "nocturne" && hydratedWebsite
+    ? renderNocturneV3Preview(hydratedWebsite, liveContent)
+    : null;
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
@@ -113,20 +118,27 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
             />
 
             {rendererVersion === "v3" ? (
-              <section className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[0.05] p-5 sm:p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200">V3 Premium workspace</p>
-                    <h2 className="mt-2 text-2xl font-black">{v3Concept.name}</h2>
-                    <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{v3Concept.description} V3 is being built from scratch and remains preview-only until this concept passes desktop, tablet, and mobile visual QA.</p>
-                    <p className="mt-3 text-xs leading-5 text-white/40">Best for: {v3Concept.bestFor}</p>
+              <div className="space-y-5">
+                <section className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[0.05] p-5 sm:p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200">V3 Premium workspace</p>
+                      <h2 className="mt-2 text-2xl font-black">{v3Concept.name}</h2>
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{v3Concept.description} V3 remains preview-only until the concept passes desktop, tablet, and mobile visual QA.</p>
+                      <p className="mt-3 text-xs leading-5 text-white/40">Best for: {v3Concept.bestFor}</p>
+                    </div>
+                    <span className={`rounded-full border px-3 py-2 text-xs font-black ${v3Concept.status === "preview_ready" ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100" : "border-amber-300/20 bg-amber-300/10 text-amber-100"}`}>{v3Concept.status === "preview_ready" ? "Preview ready" : "In development"}</span>
                   </div>
-                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-black text-amber-100">Renderer building</span>
-                </div>
-                <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-white/55">
-                  Your current Legacy website has not been deleted or overwritten. Publishing is intentionally unavailable in V3 until the new renderer is ready for visual review. Switch back to Legacy above at any time to use the current builder and publish flow.
-                </div>
-              </section>
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-white/55">
+                    Your current Legacy website has not been deleted or overwritten. V3 publishing stays locked during visual QA, so you can review the new design safely and switch back to Legacy at any time.
+                  </div>
+                </section>
+                {v3PreviewHtml ? <WebsiteV3Preview html={v3PreviewHtml} conceptName={v3Concept.name} /> : (
+                  <section className="rounded-3xl border border-amber-300/15 bg-amber-300/[0.04] p-6 text-sm leading-6 text-white/55">
+                    {v3Concept.name} is still in development. Select <strong className="text-white">Nocturne</strong> above to review the first live V3 concept.
+                  </section>
+                )}
+              </div>
             ) : (
               <>
                 <WebsiteImportPanel locationId={location.id} />
