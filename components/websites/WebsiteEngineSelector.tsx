@@ -72,7 +72,7 @@ export function WebsiteEngineSelector({
       </div>
 
       {renderer === "v3" ? <div className="mt-6">
-        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 concept</p><p className="mt-1 text-xs text-white/45">Nocturne has a live preview. The remaining clean-room concepts are still in development.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
+        <div className="flex flex-wrap items-end justify-between gap-2"><div><p className="text-sm font-black">Choose your V3 concept</p><p className="mt-1 text-xs text-white/45">All five flagship concepts now have live previews built from this location&apos;s business data.</p></div><span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-200">Preview-only rollout</span></div>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {WEBSITE_V3_CONCEPTS.map((item) => {
             const active = concept === item.id;
