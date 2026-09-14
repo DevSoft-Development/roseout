@@ -44,12 +44,12 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_5%,rgba(225,6,42,.22),transparent_34%),radial-gradient(circle_at_8%_48%,rgba(225,6,42,.09),transparent_26%),linear-gradient(180deg,#050505_0%,#090606_62%,#050505_100%)]" />
         <div className="absolute inset-x-0 top-20 h-px bg-gradient-to-r from-transparent via-[#e1062a]/45 to-transparent" />
 
-        <div className="relative mx-auto flex min-h-[calc(100svh-5rem)] w-full max-w-7xl flex-col items-center justify-center px-5 pb-16 pt-14 text-center sm:px-6 lg:px-8 lg:pb-20 lg:pt-16">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">
+        <div className="relative mx-auto flex min-h-[calc(100svh-5rem)] w-full max-w-7xl flex-col items-center justify-center px-5 pb-16 pt-8 text-center sm:px-6 sm:pt-14 lg:px-8 lg:pb-20 lg:pt-16">
+          <p className="hidden text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b] sm:block">
             New York City + Long Island
           </p>
 
-          <h1 className="mt-5 max-w-5xl text-5xl font-black leading-[.94] tracking-[-.06em] sm:text-6xl lg:text-[5.75rem]">
+          <h1 className="mt-0 max-w-5xl text-5xl font-black leading-[.94] tracking-[-.06em] sm:mt-5 sm:text-6xl lg:text-[5.75rem]">
             Plan better <span className="text-[#e1062a]">OUTings.</span>
           </h1>
 
