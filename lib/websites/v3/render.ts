@@ -3,6 +3,7 @@ import type { BusinessWebsite } from "@/lib/websites/data";
 import type { GeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
 import type { WebsiteV3ConceptId } from "@/lib/websites/v3/catalog";
 import { buildV3PreviewArtifact, type V3PageProfile, type WebsiteV3PreviewArtifact } from "@/lib/websites/v3/artifact";
+import { enhanceV3HomeHtml } from "@/lib/websites/v3/home-conversion";
 import { renderNocturneV3Preview } from "@/lib/websites/v3/nocturne";
 import { renderAtelierV3Preview } from "@/lib/websites/v3/atelier";
 import { renderVistaV3Preview } from "@/lib/websites/v3/vista";
@@ -37,7 +38,7 @@ const PROFILES:Record<WebsiteV3ConceptId,V3PageProfile>={
   skyline:{background:"#0b1018",foreground:"#eef4ff",muted:"#9caac0",accent:"#7fb4ff",panel:"#141d2a",serif:'Georgia,serif',sans:'Arial,sans-serif',radius:"0px",navStyle:"floating"},
 };
 
-function home(concept:WebsiteV3ConceptId,website:BusinessWebsite,location:GeneratedWebsiteLocationSnapshot){
+function rawHome(concept:WebsiteV3ConceptId,website:BusinessWebsite,location:GeneratedWebsiteLocationSnapshot){
  switch(concept){
   case "atelier": return renderAtelierV3Preview(website,location);
   case "vista": return renderVistaV3Preview(website,location);
@@ -56,6 +57,10 @@ function home(concept:WebsiteV3ConceptId,website:BusinessWebsite,location:Genera
   case "nocturne":
   default: return renderNocturneV3Preview(website,location);
  }
+}
+
+function home(concept:WebsiteV3ConceptId,website:BusinessWebsite,location:GeneratedWebsiteLocationSnapshot){
+  return enhanceV3HomeHtml(concept,rawHome(concept,website,location),location);
 }
 
 const LABELS:Record<WebsiteV3ConceptId,string>={nocturne:"Nocturne",atelier:"Atelier",vista:"Vista",social_house:"Social House",quiet_luxury:"Quiet Luxury",maison:"Maison",pulse:"Pulse",botanica:"Botanica",grandstand:"Grandstand",gallery_house:"Gallery House",riviera:"Riviera",ember:"Ember",velvet_room:"Velvet Room",market_hall:"Market Hall",skyline:"Skyline"};
