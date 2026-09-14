@@ -294,6 +294,11 @@ export default function PlanScreen() {
       title="Make it yours."
       description="Tell us where. Timing and preferences are optional."
       beforeTitle={<JourneySteps activeStep={2} />}
+      stickyFooter={(
+        <Button onPress={submit} disabled={!summary.query || resolvingIntent || requestingLocation}>
+          Show My Picks →
+        </Button>
+      )}
       showBrandHeader
       showBack
       backLabel="Back"
@@ -455,7 +460,6 @@ export default function PlanScreen() {
         </Card>
 
         {error ? <AppText style={{ color: "#fecaca" }}>{error}</AppText> : null}
-        <Button onPress={submit} disabled={!summary.query || resolvingIntent || requestingLocation}>Show My Picks →</Button>
       </View>
     </FoundationScreen>
   );
