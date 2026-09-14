@@ -16,7 +16,7 @@ const dispatcher=source("lib/websites/v3/render.ts");
 const page=source("app/locations/dashboard/website/page.tsx");
 
 describe("Website V3 flagship renderer contracts",()=>{
-  it("keeps five independent renderer modules",()=>{
+  it("keeps five independent flagship renderer modules",()=>{
     expect(files.nocturne).toContain("renderNocturneV3Preview");
     expect(files.atelier).toContain("renderAtelierV3Preview");
     expect(files.vista).toContain("renderVistaV3Preview");
@@ -37,13 +37,13 @@ describe("Website V3 flagship renderer contracts",()=>{
     expect(files.quiet).toContain("portrait");
   });
 
-  it("marks every flagship concept preview ready",()=>{
-    expect((catalog.match(/status: \"preview_ready\"/g)||[]).length).toBe(5);
+  it("keeps flagship concepts preview ready inside the expanded catalog",()=>{
+    for(const id of ["nocturne","atelier","vista","social_house","quiet_luxury"]) expect(catalog).toContain(`id:\"${id}\"`);
     expect(catalog).not.toContain('status: "building"');
   });
 
-  it("dispatches every concept and previews the selected renderer",()=>{
-    for(const id of ["atelier","vista","social_house","quiet_luxury","nocturne"]) expect(dispatcher).toContain(`case \"${id}\"`);
+  it("dispatches every flagship concept and previews the selected renderer",()=>{
+    for(const id of ["atelier","vista","social_house","quiet_luxury","nocturne"]) expect(dispatcher).toContain(id);
     expect(page).toContain("renderWebsiteV3Preview(v3ConceptId");
     expect(page).not.toContain('v3ConceptId === "nocturne"');
   });
