@@ -14,11 +14,9 @@ import { parseDemoOwnerParams, requireDemoOwnerLocation, type DemoSearchParams }
 import { ensureBusinessWebsite } from "@/lib/websites/data";
 import { getWebsiteLiveUrl } from "@/lib/websites/platform-domain";
 import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
-import {
-  WEBSITE_V3_CONCEPTS,
-  normalizeWebsiteRendererVersion,
-  normalizeWebsiteV3Concept,
-} from "@/lib/websites/v3/catalog";
+import { WEBSITE_V3_CONCEPTS, normalizeWebsiteRendererVersion, normalizeWebsiteV3Concept } from "@/lib/websites/v3/catalog";
+import { normalizeWebsiteV3Palette } from "@/lib/websites/v3/palettes";
+import { recommendWebsiteV3Concept } from "@/lib/websites/v3/recommendation";
 import { renderWebsiteV3Preview } from "@/lib/websites/v3/render";
 
 export const dynamic = "force-dynamic";
@@ -76,10 +74,13 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
   };
 
   const rendererVersion = normalizeWebsiteRendererVersion(hydratedWebsite?.theme?.renderer_version);
-  const v3ConceptId = normalizeWebsiteV3Concept(hydratedWebsite?.theme?.v3_concept);
+  const recommendedConcept = recommendWebsiteV3Concept(liveContent, locationRecord);
+  const savedConcept = hydratedWebsite?.theme?.v3_concept ? normalizeWebsiteV3Concept(hydratedWebsite.theme.v3_concept) : null;
+  const v3ConceptId = savedConcept || recommendedConcept;
+  const v3Palette = normalizeWebsiteV3Palette(hydratedWebsite?.theme?.v3_palette);
   const v3Concept = WEBSITE_V3_CONCEPTS.find((concept) => concept.id === v3ConceptId) || WEBSITE_V3_CONCEPTS[0];
   const v3PreviewHtml = rendererVersion === "v3" && hydratedWebsite
-    ? renderWebsiteV3Preview(v3ConceptId, hydratedWebsite, liveContent)
+    ? renderWebsiteV3Preview(v3ConceptId, hydratedWebsite, liveContent, v3Palette)
     : null;
 
   return (
@@ -98,53 +99,24 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
         {demoContext?.demoMode ? <div className="mb-5 rounded-2xl border border-[#ff2142]/25 bg-[#ff2142]/10 px-4 py-3 text-sm font-bold text-rose-100">Internal demo mode — publishing is allowed only for the protected TheOutHaven Lounge demo location.</div> : null}
         {hydratedWebsite ? (
           <div className="website-builder-brand">
-            <WebsiteDomainSelector
-              initialWebsite={hydratedWebsite}
-              locationName={locationName}
-              includedDomainName={locationRecord.included_domain_name || null}
-              includedDomainStatus={locationRecord.included_domain_status || null}
-              includedDomainConnectionStatus={locationRecord.included_domain_connection_status || null}
-              includedDomainRenewalDueAt={locationRecord.included_domain_renewal_due_at || null}
-            />
+            <WebsiteDomainSelector initialWebsite={hydratedWebsite} locationName={locationName} includedDomainName={locationRecord.included_domain_name || null} includedDomainStatus={locationRecord.included_domain_status || null} includedDomainConnectionStatus={locationRecord.included_domain_connection_status || null} includedDomainRenewalDueAt={locationRecord.included_domain_renewal_due_at || null} />
             <section className="mb-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff2142]">Business information</p><h2 className="mt-2 text-xl font-black">Your website stays current automatically</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Edit business facts once in Edit Location. Hours, photos, menu items, published events, experiences, contact details, and reservation settings feed the website automatically. This Website area is for design, migration, address, preview, publishing, and health.</p></div><span className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-xs font-black text-white/60">Auto-sync on</span></div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{contentSources.map(source=><div key={source.label} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/40">{source.label}</p><p className="mt-2 text-sm font-black text-white">{source.value}</p></div>)}</div>
             </section>
 
-            <WebsiteEngineSelector
-              locationId={location.id}
-              initialRenderer={rendererVersion}
-              initialConcept={v3ConceptId}
-            />
+            <WebsiteEngineSelector locationId={location.id} initialRenderer={rendererVersion} initialConcept={v3ConceptId} initialPalette={v3Palette} recommendedConcept={recommendedConcept} />
 
             {rendererVersion === "v3" ? (
               <div className="space-y-5">
                 <section className="rounded-3xl border border-emerald-300/15 bg-emerald-400/[0.05] p-5 sm:p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200">V3 Premium workspace</p>
-                      <h2 className="mt-2 text-2xl font-black">{v3Concept.name}</h2>
-                      <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{v3Concept.description} V3 remains preview-only until the concept passes desktop, tablet, and mobile visual QA.</p>
-                      <p className="mt-3 text-xs leading-5 text-white/40">Best for: {v3Concept.bestFor}</p>
-                    </div>
-                    <span className={`rounded-full border px-3 py-2 text-xs font-black ${v3Concept.status === "preview_ready" ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-100" : "border-amber-300/20 bg-amber-300/10 text-amber-100"}`}>{v3Concept.status === "preview_ready" ? "Preview ready" : "In development"}</span>
-                  </div>
-                  <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-white/55">
-                    Your current Legacy website has not been deleted or overwritten. V3 publishing stays locked during visual QA, so you can review the new design safely and switch back to Legacy at any time.
-                  </div>
+                  <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-200">V3 Premium workspace</p><h2 className="mt-2 text-2xl font-black">{v3Concept.name}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{v3Concept.description} TheOutHaven recommended {WEBSITE_V3_CONCEPTS.find(x=>x.id===recommendedConcept)?.name || "this direction"} from the location&apos;s current business signals.</p><p className="mt-3 text-xs leading-5 text-white/40">Best for: {v3Concept.bestFor}</p></div><span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-xs font-black text-emerald-100">Preview ready</span></div>
+                  <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-white/55">Your current Legacy website has not been deleted or overwritten. V3 publishing stays locked during visual QA, so you can review the new design safely and switch back to Legacy at any time.</div>
                 </section>
                 {v3PreviewHtml ? <WebsiteV3Preview html={v3PreviewHtml} conceptName={v3Concept.name} /> : null}
               </div>
             ) : (
-              <>
-                <WebsiteImportPanel locationId={location.id} />
-                <WebsiteMigrationReviewPanel locationId={location.id} />
-                <WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} locationContent={builderLocationContent} />
-                <div className="mt-5 grid gap-5 xl:grid-cols-2">
-                  <WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} />
-                  <WebsiteHealthPanel locationId={location.id} />
-                </div>
-              </>
+              <><WebsiteImportPanel locationId={location.id} /><WebsiteMigrationReviewPanel locationId={location.id} /><WebsiteBuilderWorkspace initialWebsite={hydratedWebsite} locationName={locationName} locationContent={builderLocationContent} /><div className="mt-5 grid gap-5 xl:grid-cols-2"><WebsiteCutoverReadinessPanel locationId={location.id} hasCustomDomain={Boolean(hydratedWebsite.domain)} /><WebsiteHealthPanel locationId={location.id} /></div></>
             )}
           </div>
         ) : <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website setup is temporarily unavailable.</section>}
