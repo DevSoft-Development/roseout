@@ -28,8 +28,8 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "flex-start" },
-  logoShell: { width: 42, height: 42, borderRadius: 14, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center" },
-  logo: { width: 34, height: 34 },
-  wordmark: { gap: 1 },
+  row: { flexDirection: "row", alignItems: "center", gap: 9, alignSelf: "flex-start", flexShrink: 1 },
+  logoShell: { width: 38, height: 38, borderRadius: 12, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  logo: { width: 29, height: 29 },
+  wordmark: { gap: 1, flexShrink: 1 },
 });
