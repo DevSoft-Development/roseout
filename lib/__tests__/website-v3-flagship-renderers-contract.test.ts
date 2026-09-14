@@ -33,7 +33,7 @@ describe("Website V3 flagship renderer contracts",()=>{
     expect(files.nocturne).toContain("gallery-wrap");
     expect(files.atelier).toContain("manifesto");
     expect(files.vista).toContain("panorama");
-    expect(files.social).toContain("social-collage").or.toContain("collage");
+    expect(files.social).toContain("collage");
     expect(files.quiet).toContain("portrait");
   });
 
