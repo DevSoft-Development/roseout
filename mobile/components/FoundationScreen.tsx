@@ -26,7 +26,7 @@ export function FoundationScreen({
   children,
   beforeTitle,
   stickyFooter,
-  stickyFooterBottomOffset = 0,
+  stickyFooterBottomOffset = 78,
   showHomeShortcut = true,
   showBrandHeader = false,
   showBack = false,
