@@ -57,12 +57,14 @@ as $$
 declare
   meta jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
   month_value smallint := null;
-  consent_value boolean := coalesce((meta ->> 'sms_consent')::boolean, false);
   consent_copy text := nullif(trim(meta ->> 'sms_consent_text'), '');
+  consent_value boolean := false;
 begin
   if coalesce(meta ->> 'birth_month', '') ~ '^(?:[1-9]|1[0-2])$' then
     month_value := (meta ->> 'birth_month')::smallint;
   end if;
+
+  consent_value := coalesce((meta ->> 'sms_consent')::boolean, false) and consent_copy is not null;
 
   insert into public.consumer_profiles (
     user_id,
