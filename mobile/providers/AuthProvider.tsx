@@ -3,6 +3,8 @@ import type { Session, User } from "@supabase/supabase-js";
 import { getOrCreateGuestId } from "@/lib/auth/storage";
 import { supabase } from "@/lib/auth/supabase";
 
+const SMS_CONSENT_TEXT = "I agree to receive SMS messages from TheOutHaven about my account, saved plans, OUTing reminders, reservations, and optional offers. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. Consent is not a condition of purchase.";
+
 type SignInInput = { email: string; password: string; captchaToken: string };
 type SignUpInput = {
   email: string;
@@ -79,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             phone_e164: input.phone,
             birth_month: input.birthMonth,
             sms_consent: input.smsConsent,
+            sms_consent_text: input.smsConsent ? SMS_CONSENT_TEXT : null,
             signup_source: "mobile_app",
           },
         },
