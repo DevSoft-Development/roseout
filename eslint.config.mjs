@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import reactPlugin from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = defineConfig([
@@ -8,6 +9,7 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     plugins: {
+      react: reactPlugin,
       "react-hooks": reactHooks,
     },
     rules: {
