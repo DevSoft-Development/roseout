@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
@@ -20,9 +20,10 @@ function normalizePhone(value: string) {
 
 export default function AuthScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string }>();
   const { theme } = useAppTheme();
   const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">(params.mode === "signup" ? "signup" : "signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -31,6 +32,14 @@ export default function AuthScreen() {
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (params.mode === "signup" || params.mode === "signin") {
+      setMode(params.mode);
+      setMessage(null);
+      setVerifying(false);
+    }
+  }, [params.mode]);
 
   const valid = useMemo(() => {
     if (!email.trim() || password.length < 8) return false;
