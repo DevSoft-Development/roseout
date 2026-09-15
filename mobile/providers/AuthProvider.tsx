@@ -7,6 +7,7 @@ const SMS_CONSENT_TEXT = "I agree to receive SMS messages from TheOutHaven about
 
 type SignInInput = { email: string; password: string; captchaToken: string };
 type SignUpInput = {
+  firstName: string;
   email: string;
   password: string;
   phone: string;
@@ -78,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: {
           captchaToken: input.captchaToken,
           data: {
+            first_name: input.firstName.trim(),
             phone_e164: input.phone,
             birth_month: input.birthMonth,
             sms_consent: input.smsConsent,
