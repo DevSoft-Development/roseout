@@ -30,10 +30,11 @@ export async function POST(request: Request) {
   const remaining = Math.max(0, Number(campaign.total_budget_cents || 0) - Number(campaign.spent_cents || 0));
   let amountCents = 0;
   if (placement === "discover" && eventType === "impression") amountCents = Math.max(1, Math.round(Number(campaign.discover_cpm_cents || 0) / 1000));
-  if (placement === "search" && (eventType === "click" || eventType === "outing_open" || eventType === "profile_view")) amountCents = Number(campaign.search_cpc_cents || 0);
+  if (placement === "search" && eventType === "outing_open") amountCents = Number(campaign.search_cpc_cents || 0);
   amountCents = Math.min(amountCents, remaining);
 
-  const dedupeKey = sessionKey && amountCents > 0 ? `${campaignId}:${placement}:${eventType}:${sessionKey}` : text(body.event_id) || null;
+  const billableDedupeType = placement === "search" && amountCents > 0 ? "qualified_engagement" : eventType;
+  const dedupeKey = sessionKey && amountCents > 0 ? `${campaignId}:${placement}:${billableDedupeType}:${sessionKey}` : text(body.event_id) || null;
   const { data: event, error: eventError } = await supabaseAdmin
     .from("promotion_events")
     .insert({
