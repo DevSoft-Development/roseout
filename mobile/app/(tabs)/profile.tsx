@@ -15,6 +15,7 @@ type MePayload = {
   ok: true;
   profile: {
     kind: "user" | "guest";
+    firstName: string | null;
     email: string | null;
     phone: string | null;
     birthMonth: number | null;
@@ -58,7 +59,8 @@ export default function ProfileScreen() {
   };
 
   const displayEmail = user?.email || profile?.email || "TheOutHaven member";
-  const initials = displayEmail.slice(0, 1).toUpperCase();
+  const displayName = profile?.firstName || displayEmail;
+  const initials = displayName.slice(0, 1).toUpperCase();
 
   return (
     <ScrollView style={[styles.page, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} showsVerticalScrollIndicator={false}>
@@ -76,7 +78,8 @@ export default function ProfileScreen() {
             <View style={[styles.avatar, { backgroundColor: theme.colors.accentSoft }]}><AppText variant="h2" accent>{initials}</AppText></View>
             <View style={{ flex: 1 }}>
               <AppText variant="eyebrow" accent>MEMBER</AppText>
-              <AppText variant="h3" style={{ marginTop: 3 }}>{displayEmail}</AppText>
+              <AppText variant="h3" style={{ marginTop: 3 }}>{displayName}</AppText>
+              {profile?.firstName ? <AppText variant="caption" muted style={{ marginTop: 4 }}>{displayEmail}</AppText> : null}
               {profile?.phone ? <AppText variant="caption" muted style={{ marginTop: 4 }}>{profile.phone}</AppText> : null}
             </View>
           </View>
