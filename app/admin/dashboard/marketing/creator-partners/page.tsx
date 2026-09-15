@@ -1,8 +1,11 @@
+import { requireAdminRole } from "@/lib/admin-auth";
+import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
 export default async function CreatorPartnersAdminPage() {
+  await requireAdminRole(ADMIN_PAGE_ACCESS.marketing);
   const [{ data: creators }, { data: referrals }, { data: commissions }] = await Promise.all([
     supabaseAdmin.from("gtm_creator_sources").select("id,display_name,email,instagram_handle,tiktok_handle,follower_count,primary_market,application_status,program_tier,status,stripe_connect_onboarding_status,created_at").order("created_at", { ascending: false }).limit(200),
     supabaseAdmin.from("gtm_referrals").select("id,creator_source_id,status,attributed_mrr,created_at").not("creator_source_id", "is", null).order("created_at", { ascending: false }).limit(1000),
