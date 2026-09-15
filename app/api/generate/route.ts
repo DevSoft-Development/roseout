@@ -1,6 +1,7 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
+import { applySearchPromotions } from "@/lib/promotions/engine";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -55,24 +56,14 @@ async function internalDemoSearchResponse(request: Request) {
     .maybeSingle();
 
   const hostedDomain = String(hostedWebsite?.domain || hostedWebsite?.platform_domain || "").trim();
-  const hasPublishedHostedWebsite =
-    Boolean(hostedDomain) &&
-    Number(hostedWebsite?.published_version || 0) > 0 &&
-    hostedWebsite?.last_publish_status === "published";
-  const websiteHref = hasPublishedHostedWebsite
-    ? `https://${hostedDomain}`
-    : websiteWorkspaceHref;
+  const hasPublishedHostedWebsite = Boolean(hostedDomain) && Number(hostedWebsite?.published_version || 0) > 0 && hostedWebsite?.last_publish_status === "published";
+  const websiteHref = hasPublishedHostedWebsite ? `https://${hostedDomain}` : websiteWorkspaceHref;
 
   const card = {
     ...location,
     id,
-    name:
-      location.name ||
-      location.restaurant_name ||
-      location.activity_name ||
-      "TheOutHaven Lounge",
-    restaurant_name:
-      location.restaurant_name || location.name || "TheOutHaven Lounge",
+    name: location.name || location.restaurant_name || location.activity_name || "TheOutHaven Lounge",
+    restaurant_name: location.restaurant_name || location.name || "TheOutHaven Lounge",
     location_type: "restaurant",
     detail_location_type: "restaurants",
     source_table: location.source_table || "restaurant",
@@ -108,18 +99,8 @@ async function internalDemoSearchResponse(request: Request) {
     cards: [card],
     render_mode: "restaurants",
     renderMode: "restaurants",
-    card_counts: {
-      restaurants: 1,
-      activities: 0,
-      matched_locations: 1,
-      pairs: 0,
-    },
-    cardCounts: {
-      restaurants: 1,
-      activities: 0,
-      matched_locations: 1,
-      pairs: 0,
-    },
+    card_counts: { restaurants: 1, activities: 0, matched_locations: 1, pairs: 0 },
+    cardCounts: { restaurants: 1, activities: 0, matched_locations: 1, pairs: 0 },
     diagnostics: {
       internal_demo_search: true,
       demo_viewer_role: viewer.role,
@@ -130,8 +111,22 @@ async function internalDemoSearchResponse(request: Request) {
   });
 }
 
+async function withQualifiedPromotions(response: Response) {
+  if (!response.ok) return response;
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return response;
+  try {
+    const payload = await response.clone().json();
+    const promoted = await applySearchPromotions(payload);
+    return Response.json(promoted, { status: response.status, headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.warn("PROMOTION_SEARCH_DECORATION_FAILED", error);
+    return response;
+  }
+}
+
 export async function POST(request: Request) {
   const demoResponse = await internalDemoSearchResponse(request);
   if (demoResponse) return demoResponse;
-  return handleGeneratePost(request);
+  return withQualifiedPromotions(await handleGeneratePost(request));
 }
