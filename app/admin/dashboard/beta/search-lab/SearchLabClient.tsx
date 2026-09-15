@@ -43,6 +43,10 @@ function resolveInitialEngine(
   return "legacy";
 }
 
+function persistEngineCookie(value: QaSearchEngine) {
+  document.cookie = `${COOKIE_NAME}=${value}; path=/; max-age=31536000; samesite=lax`;
+}
+
 export default function SearchLabClient(_props: { initialQuery?: string }) {
   void _props;
   const hostRef = useRef<HTMLSpanElement | null>(null);
@@ -59,7 +63,7 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
       ?.split("=")[1];
     const initial = resolveInitialEngine(stored, cookieValue);
     setEngine(initial);
-    document.cookie = `${COOKIE_NAME}=${initial}; path=/; max-age=31536000; samesite=lax`;
+    persistEngineCookie(initial);
     setReady(true);
   }, []);
 
@@ -95,7 +99,7 @@ export default function SearchLabClient(_props: { initialQuery?: string }) {
   function selectEngine(next: QaSearchEngine) {
     setEngine(next);
     window.localStorage.setItem(STORAGE_KEY, next);
-    document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=31536000; samesite=lax`;
+    persistEngineCookie(next);
     window.dispatchEvent(
       new CustomEvent("theouthaven:search-qa-engine", { detail: next }),
     );

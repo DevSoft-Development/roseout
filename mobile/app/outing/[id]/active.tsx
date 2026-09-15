@@ -31,14 +31,15 @@ export default function ActiveOutingScreen() {
 
   useEffect(() => { void load(); }, [id]);
 
+  const outingDate = outing?.outingDate;
   const leaveLabel = useMemo(() => {
-    if (!outing?.outingDate) return "When you're ready, head to your first stop.";
-    const target = new Date(outing.outingDate).getTime();
+    if (!outingDate) return "When you're ready, head to your first stop.";
+    const target = new Date(outingDate).getTime();
     const minutes = Math.round((target - Date.now()) / 60000);
     if (minutes <= 0) return "Your OUTing is ready to start.";
     if (minutes <= 60) return `About ${minutes} min until your planned start.`;
-    return new Date(outing.outingDate).toLocaleString();
-  }, [outing?.outingDate]);
+    return new Date(outingDate).toLocaleString();
+  }, [outingDate]);
 
   const start = async () => {
     if (!id) return;

@@ -16,8 +16,7 @@ async function assistantEmbedding(input) {
   const path = '/v1/openai/embeddings'
   const body = JSON.stringify({ model: process.env.SEARCH_EMBEDDING_MODEL || 'text-embedding-3-small', input })
   const timestamp = String(Date.now())
-  const signature = crypto.createHmac('sha256', assistantSecret).update([timestamp, 'POST', path, body].join('
-'), 'utf8').digest('hex')
+  const signature = crypto.createHmac('sha256', assistantSecret).update([timestamp, 'POST', path, body].join('\n'), 'utf8').digest('hex')
   const response = await fetch(`${assistantBaseUrl}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-toh-timestamp': timestamp, 'x-toh-signature': signature }, body })
   const payload = await response.json().catch(() => null)
   if (!response.ok || !payload?.data?.[0]?.embedding) throw new Error(payload?.error?.message || `Assistant embedding failed: ${response.status}`)
@@ -112,7 +111,7 @@ async function embedTable(tableName) {
     }
 
     try {
-      const embedding = { data: [{ embedding: await assistantEmbedding(text,) }] }
+      const embedding = { data: [{ embedding: await assistantEmbedding(text) }] }
 
       const vector = embedding.data[0].embedding
 
