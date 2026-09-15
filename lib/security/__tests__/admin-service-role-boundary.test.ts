@@ -5,6 +5,7 @@ import { requiresAdminApiSession } from "../admin-api-boundary-paths";
 
 const ROUTE_AUTH_MARKERS = [
   "requireAdminApiRole(", "requireSuperAdmin(", "requireAdminRole(", "getCurrentAdmin(",
+  "requireMarketingAdminApi(", "requireMarketingViewerApi(",
   "CRON_SECRET", "x-internal-import-secret", "x-admin-secret", "authorizeAdminApiBoundary(",
 ];
 
