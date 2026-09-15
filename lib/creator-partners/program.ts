@@ -62,22 +62,7 @@ export async function findCreatorForUser(userId: string, email?: string | null):
   if (byUser) return byUser as CreatorRow;
   if (!email) return null;
   const { data: byEmail, error: emailError } = await supabaseAdmin.from("gtm_creator_sources").select(fields).eq("email", email.toLowerCase()).maybeSingle();
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail?.user_id === null) await supabaseAdmin.from("gtm_creator_sources").update({ user_id: userId, updated_at: new Date().toISOString() }).eq("id", byEmail.id).is("user_id", null);
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
-  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
-  if (byEmail) return byEmail as CreatorRow;
+  if (emailError) throw emailError;
   if (!byEmail) return null;
   if (!byEmail.user_id) await supabaseAdmin.from("gtm_creator_sources").update({ user_id: userId, updated_at: new Date().toISOString() }).eq("id", byEmail.id).is("user_id", null);
   return { ...byEmail, user_id: userId } as CreatorRow;
@@ -183,7 +168,7 @@ export async function reverseValidatingCommissionForLocation(locationId: string,
 }
 
 export async function createCreatorRecipientAccount(creator: Pick<CreatorRow, "id" | "display_name" | "email">) {
-  return stripeV2Request<{ id: string }>("/core/accounts", { idempotencyKey: `creator-recipient-v2-${creator.id}`, body: { contact_email: creator.email || undefined, display_name: creator.display_name, dashboard: "express", identity: { country: "us" }, configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } }, defaults: { currency: "usd", locales: ["en-US"], responsibilities: { fees_collector: "application", losses_collector: "application" } }, metadata: { creator_source_id: creator.id, platform: "theouthaven", program: "creator_partner" }, include: ["configuration.recipient", "requirements"] } });
+  return stripeV2Request<{ id: string }>("/core/accounts", { idempotencyKey: `creator-recipient-v2-${creator.id}`, body: { contact_email: creator.email || undefined, display_name: creator.display_name, dashboard: "express", identity: { country: "us" }, configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } }, defaults: { currency: "usd", locales: ["en-US"], responsibilities: { fees_collector: "application", losses_collector: "application" } }, metadata: { creator_source_id: creator.id, platform: "theouthaven", program: "creator_partner" }, include: ["configuration.recipient", "requirements"] } });
 }
 
 export async function createCreatorOnboardingLink(creator: CreatorRow) {
