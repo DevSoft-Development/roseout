@@ -1,0 +1,43 @@
+name: Temporary lint diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/lint-diagnostic-temporary.yml'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - 'eslint.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Capture repository lint report
+        shell: bash
+        run: |
+          set +e
+          npm run lint > lint-report.txt 2>&1
+          status=$?
+          echo "lint_status=$status" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - name: Upload lint report
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-lint-report
+          path: lint-report.txt
+          retention-days: 1
