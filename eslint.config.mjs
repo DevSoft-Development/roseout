@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "warn",
       "@next/next/no-html-link-for-pages": "warn",
       "react-hooks/purity": "warn",
+      "react-hooks/refs": "warn",
       "react/no-unescaped-entities": "warn",
       "prefer-const": "warn",
     },
