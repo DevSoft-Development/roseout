@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
+import { getAnalyticsIdentity, rememberPromotionContext } from "@/lib/analytics/trackClientEvent";
 import type { DiscoverSection } from "@/lib/discover";
 
 const TONE_CLASSES = [
@@ -13,8 +15,44 @@ const TONE_CLASSES = [
   "from-zinc-900 via-zinc-950 to-black",
 ];
 
+function sendPromotionEvent(campaignId: string, eventType: "impression" | "click") {
+  const identity = getAnalyticsIdentity();
+  void fetch("/api/promotions/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: true,
+    body: JSON.stringify({
+      campaign_id: campaignId,
+      event_type: eventType,
+      placement: "discover",
+      session_key: identity.session_id,
+      event_id: eventType === "click" ? `${campaignId}:discover:click:${Date.now()}` : null,
+      metadata: { surface: "discover" },
+    }),
+  });
+}
+
 export default function DiscoverClient({ sections }: { sections: DiscoverSection[] }) {
   const visible = sections.filter((section) => section.enabled && section.items.length > 0);
+
+  useEffect(() => {
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.5) continue;
+        const node = entry.target as HTMLElement;
+        const campaignId = node.dataset.promotionId?.trim();
+        if (!campaignId || seen.has(campaignId)) continue;
+        seen.add(campaignId);
+        sendPromotionEvent(campaignId, "impression");
+        observer.unobserve(node);
+      }
+    }, { threshold: [0.5] });
+
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>("[data-promotion-id]"));
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [sections]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#070303] text-white">
@@ -74,9 +112,15 @@ function DiscoverSectionBlock({ section, sectionIndex }: { section: DiscoverSect
         <div className={`grid gap-4 ${isFeatured ? "md:grid-cols-2" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
           {section.items.map((item, index) => {
             const href = item.href || `/create?q=${encodeURIComponent(item.query || item.title)}`;
-            const imageStyle = item.image_url ? { backgroundImage: `linear-gradient(180deg,rgba(0,0,0,.02),rgba(0,0,0,.82)),url(${item.image_url})` } : undefined;
+            const campaignId = item.sponsored ? String(item.metadata?.campaign_id || "").trim() : "";
             return (
-              <Link key={item.id} href={href} className={`group relative min-h-[210px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-gradient-to-br ${TONE_CLASSES[(index + sectionIndex) % TONE_CLASSES.length]} p-5 shadow-2xl transition duration-300 hover:-translate-y-1 hover:border-white/20`} style={imageStyle}>
+              <Link
+                key={item.id}
+                href={href}
+                data-promotion-id={campaignId || undefined}
+                onClick={campaignId ? () => { rememberPromotionContext(campaignId, "discover"); sendPromotionEvent(campaignId, "click"); } : undefined}
+                className={`group relative min-h-[210px] overflow-hidden rounded-[1.75rem] border border-white/10 bg-gradient-to-br ${TONE_CLASSES[(index + sectionIndex) % TONE_CLASSES.length]} p-5 shadow-2xl transition duration-300 hover:-translate-y-1 hover:border-white/20`}
+              >
                 <div className="absolute inset-0 bg-cover bg-center" style={item.image_url ? { backgroundImage: `url(${item.image_url})` } : undefined} />
                 {item.image_url ? <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-black/5" /> : null}
                 <div className="relative z-10 flex h-full min-h-[170px] flex-col justify-between">
