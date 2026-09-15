@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
         kind: "guest",
         userId: null,
         guestId: identity.guestId,
+        firstName: null,
         email: null,
         phone: null,
         birthMonth: null,
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
   const admin = getSupabaseAdminClient();
   const { data } = await admin
     .from("consumer_profiles")
-    .select("phone_e164,birth_month,sms_consent")
+    .select("first_name,phone_e164,birth_month,sms_consent")
     .eq("user_id", identity.userId)
     .maybeSingle();
 
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
       kind: "user",
       userId: identity.userId,
       guestId: identity.guestId,
+      firstName: data?.first_name ?? null,
       email: identity.email,
       phone: data?.phone_e164 ?? null,
       birthMonth: data?.birth_month ?? null,
