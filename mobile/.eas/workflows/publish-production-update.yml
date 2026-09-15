@@ -1,0 +1,37 @@
+name: Publish production mobile update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - mobile/**
+      - '!mobile/app.json'
+      - '!mobile/eas.json'
+      - '!mobile/package.json'
+      - '!mobile/package-lock.json'
+      - '!mobile/assets/**'
+      - '!mobile/plugins/**'
+      - '!mobile/ios/**'
+      - '!mobile/android/**'
+      - '!mobile/.eas/workflows/**'
+      - '!mobile/**/*.md'
+      - '!mobile/.env.example'
+      - '!mobile/.gitignore'
+      - '!mobile/expo-env.d.ts'
+      - '!mobile/tsconfig.json'
+      - '!mobile/scripts/**'
+      - '!mobile/**/*.test.*'
+      - '!mobile/**/*.spec.*'
+
+concurrency:
+  cancel_in_progress: true
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+jobs:
+  publish_update:
+    name: Publish production OTA update
+    type: update
+    environment: production
+    params:
+      channel: production
