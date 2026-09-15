@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { loadDiscoverPromotionItems } from "@/lib/promotions/engine";
 
 export type DiscoverItem = {
   id: string;
@@ -31,7 +32,7 @@ export type DiscoverSection = {
 
 export async function loadDiscoverSections(): Promise<DiscoverSection[]> {
   const now = new Date().toISOString();
-  const [{ data: sections, error: sectionError }, { data: items, error: itemError }] = await Promise.all([
+  const [{ data: sections, error: sectionError }, { data: items, error: itemError }, promotionItems] = await Promise.all([
     supabaseAdmin
       .from("discover_sections")
       .select("id,eyebrow,title,description,enabled,sort_order")
@@ -44,6 +45,7 @@ export async function loadDiscoverSections(): Promise<DiscoverSection[]> {
       .or(`starts_at.is.null,starts_at.lte.${now}`)
       .or(`ends_at.is.null,ends_at.gte.${now}`)
       .order("sort_order", { ascending: true }),
+    loadDiscoverPromotionItems(),
   ]);
 
   if (sectionError || itemError) {
@@ -52,9 +54,10 @@ export async function loadDiscoverSections(): Promise<DiscoverSection[]> {
   }
 
   const grouped = new Map<string, DiscoverItem[]>();
-  for (const item of (items || []) as DiscoverItem[]) {
+  for (const item of [...((items || []) as DiscoverItem[]), ...(promotionItems as DiscoverItem[])]) {
     const group = grouped.get(item.section_id) || [];
     group.push(item);
+    group.sort((a, b) => a.sort_order - b.sort_order);
     grouped.set(item.section_id, group);
   }
 
