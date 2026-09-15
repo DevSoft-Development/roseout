@@ -1,5 +1,10 @@
 import fs from 'node:fs';
 const read = (p) => fs.readFileSync(p, 'utf8');
+const readFirst = (...paths) => {
+  const path = paths.find((candidate) => fs.existsSync(candidate));
+  if (!path) throw new Error(`Missing required billing regression fixture: ${paths.join(' or ')}`);
+  return read(path);
+};
 
 const checkout = read('app/api/business/billing/checkout/route.ts');
 const portal = read('app/api/business/billing/portal/route.ts');
@@ -13,7 +18,14 @@ const reservationPage = read('app/reserve/confirmation/[token]/page.tsx');
 const organizerOnboard = read('app/api/organizers/stripe-connect/onboard/route.ts');
 const organizerReturn = read('app/api/organizers/stripe-connect/return/route.ts');
 const ticketRefund = read('app/api/events/ticket-orders/[orderId]/refund/route.ts');
-const refundMigration = read('supabase/migrations/20260822201331_stripe_e2e_refund_audit.sql');
+const refundMigration = readFirst(
+  'supabase/migrations/20260822201331_stripe_e2e_refund_audit.sql',
+  'supabase/migrations_archive/pre_virginia_baseline/20260822201331_stripe_e2e_refund_audit.sql',
+);
+const connectDepositMigration = readFirst(
+  'supabase/migrations/20260812110000_stripe_connect_reservation_deposits.sql',
+  'supabase/migrations_archive/pre_virginia_baseline/20260812110000_stripe_connect_reservation_deposits.sql',
+);
 
 const checks = [
   ['checkout monthly/annual params', checkout, /interval.*monthly/s, /getBusinessProPriceId\(interval\)/],
@@ -42,7 +54,7 @@ const checks = [
   ['event refunds are connected-account scoped and return app fee', ticketRefund, /stripeAccount: connectedAccountId/, /refund_application_fee/, /provider_refund_id/, /refund_requested_by/],
   ['refund audit migration is versioned', refundMigration, /provider_refund_id/, /refund_requested_at/, /event_ticket_orders_provider_refund_id_key/],
   ['subscription lifecycle supports cycle switch and reactivation', changePlan, /change_interval/, /reactivate/, /proration_behavior/, /cancel_at_period_end/],
-  ['Connect migration defaults deposits off', read('supabase/migrations/20260812110000_stripe_connect_reservation_deposits.sql'), /deposits_enabled set default false/, /locations_deposit_opt_in_check/],
+  ['Connect migration defaults deposits off', connectDepositMigration, /deposits_enabled set default false/, /locations_deposit_opt_in_check/],
   ['admin MRR uses canonical $99 fallback', read('app/admin/dashboard/billing/page.tsx'), /BUSINESS_PRO_MONTHLY_CENTS/, /mrrCents/],
 ];
 
