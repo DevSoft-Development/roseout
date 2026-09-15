@@ -38,7 +38,7 @@ export default function ProfileScreen() {
   }, [user?.id]));
 
   const enableReminders = async () => {
-    if (!user) return router.push("/auth");
+    if (!user) return router.push({ pathname: "/auth", params: { mode: "signin" } });
     setEnablingPush(true);
     try {
       const result = await registerForOutingReminders();
@@ -91,8 +91,8 @@ export default function ProfileScreen() {
           <AppText variant="h2" style={{ marginTop: 8 }}>Explore now. Save it when it matters.</AppText>
           <AppText muted style={styles.cardCopy}>Create one account for your saved places, OUTings, favorites, reminders, and reviews across web and mobile.</AppText>
           <View style={styles.authActions}>
-            <Button onPress={() => router.push("/auth")}>Sign in</Button>
-            <Button variant="secondary" onPress={() => router.push("/auth")}>Create account</Button>
+            <Button onPress={() => router.push({ pathname: "/auth", params: { mode: "signin" } })}>Sign in</Button>
+            <Button variant="secondary" onPress={() => router.push({ pathname: "/auth", params: { mode: "signup" } })}>Create account</Button>
           </View>
         </Card>
       )}
