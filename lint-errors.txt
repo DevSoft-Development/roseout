@@ -1,0 +1,232 @@
+errors=25 warnings=5574
+/home/runner/work/roseout/roseout/app/admin/dashboard/beta/search-lab/SearchLabClient.tsx
+  98:5  react-hooks/immutability  Error: This value cannot be modified
+
+Modifying a variable defined outside a component or hook is not allowed. Consider using an effect.
+
+/home/runner/work/roseout/roseout/app/admin/dashboard/beta/search-lab/SearchLabClient.tsx:98:5
+   96 |     setEngine(next);
+   97 |     window.localStorage.setItem(STORAGE_KEY, next);
+>  98 |     document.cookie = `${COOKIE_NAME}=${next}; path=/; max-age=31536000; samesite=lax`;
+      |     ^^^^^^^^ value cannot be modified
+   99 |     window.dispatchEvent(
+  100 |       new CustomEvent("theouthaven:search-qa-engine", { detail: next }),
+  101 |     );
+/home/runner/work/roseout/roseout/app/admin/dashboard/careers/applications/[id]/page.tsx
+  73:502  react/no-unescaped-entities  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+/home/runner/work/roseout/roseout/app/business/dashboard/marketing-studio/media-permissions/page.tsx
+  44:311  react/no-unescaped-entities  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+/home/runner/work/roseout/roseout/app/organizers/dashboard/events/[id]/scanner/ScannerClient.tsx
+  93:86  react/no-unescaped-entities  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx
+  278:50  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:278:50
+  276 |
+  277 |   const requiredQuestionCount = questions.filter((question) => question.required).length;
+> 278 |   const answeredQuestionCount = questions.filter((question) => formValue(`question_${question.id}`)).length;
+      |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Passing a ref to a function may read its value during render
+  279 |
+  280 |   return (
+  281 |     <div ref={wizardRef} className="scroll-mt-4">
+  431:50  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:431:50
+  429 |
+  430 |             <div className="mt-6 grid gap-3 sm:grid-cols-2">
+> 431 |               <ReviewItem label="Name" value={`${formValue("firstName")} ${formValue("lastName")}`.trim()} />
+      |                                                  ^^^^^^^^^ This function accesses a ref value
+  432 |               <ReviewItem label="Email" value={formValue("email")} />
+  433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+  434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+  431:76  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:431:76
+  429 |
+  430 |             <div className="mt-6 grid gap-3 sm:grid-cols-2">
+> 431 |               <ReviewItem label="Name" value={`${formValue("firstName")} ${formValue("lastName")}`.trim()} />
+      |                                                                            ^^^^^^^^^ This function accesses a ref value
+  432 |               <ReviewItem label="Email" value={formValue("email")} />
+  433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+  434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+  432:48  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:432:48
+  430 |             <div className="mt-6 grid gap-3 sm:grid-cols-2">
+  431 |               <ReviewItem label="Name" value={`${formValue("firstName")} ${formValue("lastName")}`.trim()} />
+> 432 |               <ReviewItem label="Email" value={formValue("email")} />
+      |                                                ^^^^^^^^^ This function accesses a ref value
+  433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+  434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+  435 |               <ReviewItem label="Resume" value={resume?.originalName || resumeLink || "Not provided"} />
+  433:48  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:433:48
+  431 |               <ReviewItem label="Name" value={`${formValue("firstName")} ${formValue("lastName")}`.trim()} />
+  432 |               <ReviewItem label="Email" value={formValue("email")} />
+> 433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+      |                                                ^^^^^^^^^ This function accesses a ref value
+  434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+  435 |               <ReviewItem label="Resume" value={resume?.originalName || resumeLink || "Not provided"} />
+  436 |               <ReviewItem label="Role questions" value={`${answeredQuestionCount} of ${questions.length} answered`} />
+  434:52  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:434:52
+  432 |               <ReviewItem label="Email" value={formValue("email")} />
+  433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+> 434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+      |                                                    ^^^^^^^^^ This function accesses a ref value
+  435 |               <ReviewItem label="Resume" value={resume?.originalName || resumeLink || "Not provided"} />
+  436 |               <ReviewItem label="Role questions" value={`${answeredQuestionCount} of ${questions.length} answered`} />
+  437 |             </div>
+  434:71  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/components/CareersApplyForm.tsx:434:71
+  432 |               <ReviewItem label="Email" value={formValue("email")} />
+  433 |               <ReviewItem label="Phone" value={formValue("phone")} />
+> 434 |               <ReviewItem label="Location" value={[formValue("city"), formValue("state")].filter(Boolean).join(", ")} />
+      |                                                                       ^^^^^^^^^ This function accesses a ref value
+  435 |               <ReviewItem label="Resume" value={resume?.originalName || resumeLink || "Not provided"} />
+  436 |               <ReviewItem label="Role questions" value={`${answeredQuestionCount} of ${questions.length} answered`} />
+  437 |             </div>
+/home/runner/work/roseout/roseout/components/LiveOutingSearch.tsx
+  167:28  react-hooks/rules-of-hooks  React Hook "useQuickIdea" cannot be called inside a callback. React Hooks must be called in a React function component or a custom React Hook function.
+/home/runner/work/roseout/roseout/components/admin/AdminRolesConsole.tsx
+  407:152  react/no-unescaped-entities  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+/home/runner/work/roseout/roseout/components/events/LocationEventManager.tsx
+  55:227  react/no-unescaped-entities  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+/home/runner/work/roseout/roseout/infra/aws/edge-runtime/main/index.ts
+  1:1  @typescript-eslint/ban-ts-comment  Do not use "@ts-nocheck" because it alters compilation errors.
+/home/runner/work/roseout/roseout/mobile/app/outing/[id]/active.tsx
+  34:30  react-hooks/preserve-manual-memoization  Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `outing.outingDate`, but the source dependencies were [outing?.outingDate]. Inferred different dependency than source.
+
+/home/runner/work/roseout/roseout/mobile/app/outing/[id]/active.tsx:34:30
+  32 |   useEffect(() => { void load(); }, [id]);
+  33 |
+> 34 |   const leaveLabel = useMemo(() => {
+     |                              ^^^^^^^
+> 35 |     if (!outing?.outingDate) return "When you're ready, head to your first stop.";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 36 |     const target = new Date(outing.outingDate).getTime();
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 37 |     const minutes = Math.round((target - Date.now()) / 60000);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 38 |     if (minutes <= 0) return "Your OUTing is ready to start.";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 39 |     if (minutes <= 60) return `About ${minutes} min until your planned start.`;
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 40 |     return new Date(outing.outingDate).toLocaleString();
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 41 |   }, [outing?.outingDate]);
+     | ^^^^ Could not preserve existing manual memoization
+  42 |
+  43 |   const start = async () => {
+  44 |     if (!id) return;
+  34:30  react-hooks/preserve-manual-memoization  Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `outing.outingDate`, but the source dependencies were [outing?.outingDate]. Inferred different dependency than source.
+
+/home/runner/work/roseout/roseout/mobile/app/outing/[id]/active.tsx:34:30
+  32 |   useEffect(() => { void load(); }, [id]);
+  33 |
+> 34 |   const leaveLabel = useMemo(() => {
+     |                              ^^^^^^^
+> 35 |     if (!outing?.outingDate) return "When you're ready, head to your first stop.";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 36 |     const target = new Date(outing.outingDate).getTime();
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 37 |     const minutes = Math.round((target - Date.now()) / 60000);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 38 |     if (minutes <= 0) return "Your OUTing is ready to start.";
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 39 |     if (minutes <= 60) return `About ${minutes} min until your planned start.`;
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 40 |     return new Date(outing.outingDate).toLocaleString();
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 41 |   }, [outing?.outingDate]);
+     | ^^^^ Could not preserve existing manual memoization
+  42 |
+  43 |   const start = async () => {
+  44 |     if (!id) return;
+/home/runner/work/roseout/roseout/mobile/components/search/SearchLoadingJourney.tsx
+  31:17  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/mobile/components/search/SearchLoadingJourney.tsx:31:17
+  29 |   const { theme } = useAppTheme();
+  30 |   const [index, setIndex] = useState(0);
+> 31 |   const pulse = useRef(new Animated.Value(0.38)).current;
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  32 |   const translate = useRef(new Animated.Value(-100)).current;
+  33 |   const messages = LOADING_LINES[planType];
+  34 |
+  32:21  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/mobile/components/search/SearchLoadingJourney.tsx:32:21
+  30 |   const [index, setIndex] = useState(0);
+  31 |   const pulse = useRef(new Animated.Value(0.38)).current;
+> 32 |   const translate = useRef(new Animated.Value(-100)).current;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  33 |   const messages = LOADING_LINES[planType];
+  34 |
+  35 |   useEffect(() => {
+  55:6  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/mobile/components/search/SearchLoadingJourney.tsx:55:6
+  53 |       loop.stop();
+  54 |     };
+> 55 |   }, [messages, pulse, translate]);
+     |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  56 |
+  57 |   return (
+  58 |     <View style={{ gap: theme.spacing.lg }}>
+  64:25  react-hooks/refs  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+/home/runner/work/roseout/roseout/mobile/components/search/SearchLoadingJourney.tsx:64:25
+  62 |       </View>
+  63 |
+> 64 |       {[0, 1, 2, 3].map((item) => (
+     |                         ^^^^^^^^^^^
+> 65 |         <Card key={item} elevated style={{ minHeight: 190, overflow: "hidden", padding: 0 }}>
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 66 |           <Animated.View style={{ opacity: pulse }}>
+     …
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 86 |         </Card>
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 87 |       ))}
+     | ^^^^^^^^ Cannot access ref value during render
+  88 |     </View>
+  89 |   );
+  90 | }
+/home/runner/work/roseout/roseout/mobile/metro.config.js
+  1:33  @typescript-eslint/no-require-imports  A `require()` style import is forbidden.
+/home/runner/work/roseout/roseout/scripts/backfill-embeddings.js
+  19:110  parse-error  Parsing error: Unterminated string literal.
+/home/runner/work/roseout/roseout/supabase/functions/dr-failback-reconciler/index.ts
+  1:1  @typescript-eslint/ban-ts-comment  Do not use "@ts-nocheck" because it alters compilation errors.
+/home/runner/work/roseout/roseout/supabase/functions/dr-standby-reconciler/index.ts
+  1:1  @typescript-eslint/ban-ts-comment  Do not use "@ts-nocheck" because it alters compilation errors.
