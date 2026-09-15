@@ -7,11 +7,19 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "environment": "development"
+      "environment": "development",
+      "channel": "development",
+      "env": {
+        "EAS_NO_FROZEN_LOCKFILE": "1"
+      }
     },
     "preview": {
       "distribution": "internal",
       "environment": "preview",
+      "channel": "preview",
+      "env": {
+        "EAS_NO_FROZEN_LOCKFILE": "1"
+      },
       "android": {
         "buildType": "apk"
       }
@@ -19,6 +27,10 @@
     "production": {
       "autoIncrement": true,
       "environment": "production",
+      "channel": "production",
+      "env": {
+        "EAS_NO_FROZEN_LOCKFILE": "1"
+      },
       "android": {
         "buildType": "app-bundle"
       }
