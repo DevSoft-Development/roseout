@@ -17,7 +17,7 @@ export const buildClaimsHref = (ctx:CrmRecordContext={}) => withCrmContext("/adm
 export const buildOutreachHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/outreach", ctx);
 export const buildOpportunitiesHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/opportunities", ctx);
 export const buildSupportHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/support", ctx);
-export const buildTasksHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/tasks", ctx);
+export const buildTasksHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/my-work", ctx);
 export const buildActivityHref = (ctx:CrmRecordContext={}) => withCrmContext("/admin/dashboard/crm/operations", ctx, { view: "activity" });
 export async function resolveCrmContext(input: CrmRecordContext) { const ctx = {...input};
  if (ctx.locationId && !ctx.accountId) { const {data} = await supabaseAdmin.from("crm_account_locations").select("account_id").eq("location_id",ctx.locationId).eq("status","active").limit(1).maybeSingle(); if (data?.account_id) ctx.accountId=data.account_id; }
