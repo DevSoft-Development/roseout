@@ -11,7 +11,7 @@ create table if not exists public.promotion_campaigns (
   total_budget_cents integer not null default 0 check (total_budget_cents >= 0),
   daily_budget_cents integer check (daily_budget_cents is null or daily_budget_cents > 0),
   spent_cents integer not null default 0 check (spent_cents >= 0),
-  discover_cpm_cents integer not null default 1200 check (discover_cpm_cents >= 0),
+  discover_cpm_cents integer not null default 1000 check (discover_cpm_cents >= 0),
   search_cpc_cents integer not null default 200 check (search_cpc_cents >= 0),
   starts_at timestamptz,
   ends_at timestamptz,
