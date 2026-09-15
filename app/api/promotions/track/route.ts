@@ -27,64 +27,69 @@ export async function POST(request: Request) {
   const active = campaign.status === "active" && (!campaign.starts_at || new Date(campaign.starts_at).getTime() <= now) && (!campaign.ends_at || new Date(campaign.ends_at).getTime() >= now);
   if (!active || !Array.isArray(campaign.placements) || !campaign.placements.includes(placement)) return NextResponse.json({ ok: true, billable: false });
 
-  const remaining = Math.max(0, Number(campaign.total_budget_cents || 0) - Number(campaign.spent_cents || 0));
+  let requestedAmountCents = 0;
+  if (placement === "discover" && eventType === "impression") requestedAmountCents = Math.max(1, Math.round(Number(campaign.discover_cpm_cents || 0) / 1000));
+  if (placement === "search" && eventType === "outing_open") requestedAmountCents = Number(campaign.search_cpc_cents || 0);
+
+  const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
+  const revenueCents = Number.isFinite(Number(body.revenue_cents)) ? Number(body.revenue_cents) : null;
+  let eventId: string | null = null;
   let amountCents = 0;
-  if (placement === "discover" && eventType === "impression") amountCents = Math.max(1, Math.round(Number(campaign.discover_cpm_cents || 0) / 1000));
-  if (placement === "search" && eventType === "outing_open") amountCents = Number(campaign.search_cpc_cents || 0);
-  amountCents = Math.min(amountCents, remaining);
+  let duplicate = false;
 
-  const billableDedupeType = placement === "search" && amountCents > 0 ? "qualified_engagement" : eventType;
-  const dedupeKey = sessionKey && amountCents > 0 ? `${campaignId}:${placement}:${billableDedupeType}:${sessionKey}` : text(body.event_id) || null;
-  const { data: event, error: eventError } = await supabaseAdmin
-    .from("promotion_events")
-    .insert({
-      campaign_id: campaignId,
-      location_id: campaign.location_id,
-      event_type: eventType,
-      placement,
-      session_key: sessionKey,
-      dedupe_key: dedupeKey,
-      amount_cents: amountCents,
-      revenue_cents: Number.isFinite(Number(body.revenue_cents)) ? Number(body.revenue_cents) : null,
-      metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
-    })
-    .select("id")
-    .single();
-
-  if (eventError) {
-    if (String(eventError.code) === "23505") return NextResponse.json({ ok: true, duplicate: true, billable: false });
-    return NextResponse.json({ error: eventError.message }, { status: 400 });
-  }
-
-  if (amountCents > 0) {
-    await supabaseAdmin.from("promotion_ledger_entries").insert({
-      campaign_id: campaignId,
-      location_id: campaign.location_id,
-      entry_type: "spend",
-      amount_cents: amountCents,
-      event_id: event.id,
-      description: placement === "discover" ? "Qualified sponsored impression" : "Qualified sponsored search engagement",
-      metadata: { placement, event_type: eventType },
+  if (requestedAmountCents > 0) {
+    const billableDedupeType = placement === "search" ? "qualified_engagement" : eventType;
+    const dedupeKey = sessionKey ? `${campaignId}:${placement}:${billableDedupeType}:${sessionKey}` : text(body.event_id) || null;
+    const { data: result, error: billingError } = await supabaseAdmin.rpc("record_promotion_billable_event", {
+      p_campaign_id: campaignId,
+      p_event_type: eventType,
+      p_placement: placement,
+      p_session_key: sessionKey,
+      p_dedupe_key: dedupeKey,
+      p_requested_amount_cents: requestedAmountCents,
+      p_revenue_cents: revenueCents,
+      p_metadata: metadata,
     });
-    const nextSpent = Number(campaign.spent_cents || 0) + amountCents;
-    await supabaseAdmin.from("promotion_campaigns").update({
-      spent_cents: nextSpent,
-      status: nextSpent >= Number(campaign.total_budget_cents || 0) ? "completed" : campaign.status,
-      completed_at: nextSpent >= Number(campaign.total_budget_cents || 0) ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    }).eq("id", campaignId);
+    if (billingError) return NextResponse.json({ error: billingError.message }, { status: 400 });
+    const payload = result && typeof result === "object" ? result as Record<string, unknown> : {};
+    amountCents = Number(payload.charged_cents || 0);
+    duplicate = payload.duplicate === true;
+    eventId = typeof payload.event_id === "string" ? payload.event_id : null;
+    if (duplicate) return NextResponse.json({ ok: true, duplicate: true, billable: false });
+  } else {
+    const dedupeKey = text(body.event_id) || null;
+    const { data: event, error: eventError } = await supabaseAdmin
+      .from("promotion_events")
+      .insert({
+        campaign_id: campaignId,
+        location_id: campaign.location_id,
+        event_type: eventType,
+        placement,
+        session_key: sessionKey,
+        dedupe_key: dedupeKey,
+        amount_cents: 0,
+        revenue_cents: revenueCents,
+        metadata,
+      })
+      .select("id")
+      .single();
+    if (eventError) {
+      if (String(eventError.code) === "23505") return NextResponse.json({ ok: true, duplicate: true, billable: false });
+      return NextResponse.json({ error: eventError.message }, { status: 400 });
+    }
+    eventId = event.id;
   }
 
-  if (CONVERSIONS.has(eventType)) {
+  if (CONVERSIONS.has(eventType) && eventId) {
     await supabaseAdmin.from("promotion_attributions").insert({
       campaign_id: campaignId,
       location_id: campaign.location_id,
-      source_event_id: event.id,
+      source_event_id: eventId,
       conversion_type: eventType,
       conversion_id: text(body.conversion_id) || null,
-      attributed_revenue_cents: Number.isFinite(Number(body.revenue_cents)) ? Number(body.revenue_cents) : null,
+      attributed_revenue_cents: revenueCents,
       attribution_model: "last_click_7d",
-      metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      metadata,
     });
   }
 
