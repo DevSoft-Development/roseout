@@ -47,3 +47,60 @@ with check (auth.uid() = user_id);
 create index if not exists consumer_profiles_sms_consent_idx
   on public.consumer_profiles (sms_consent, sms_consent_at desc)
   where sms_consent = true;
+
+create or replace function public.sync_consumer_profile_from_auth_metadata()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  meta jsonb := coalesce(new.raw_user_meta_data, '{}'::jsonb);
+  month_value smallint := null;
+  consent_value boolean := coalesce((meta ->> 'sms_consent')::boolean, false);
+  consent_copy text := nullif(trim(meta ->> 'sms_consent_text'), '');
+begin
+  if coalesce(meta ->> 'birth_month', '') ~ '^(?:[1-9]|1[0-2])$' then
+    month_value := (meta ->> 'birth_month')::smallint;
+  end if;
+
+  insert into public.consumer_profiles (
+    user_id,
+    phone_e164,
+    birth_month,
+    sms_consent,
+    sms_consent_at,
+    sms_consent_source,
+    sms_consent_text,
+    updated_at
+  ) values (
+    new.id,
+    nullif(trim(meta ->> 'phone_e164'), ''),
+    month_value,
+    consent_value,
+    case when consent_value then now() else null end,
+    case when consent_value then 'mobile_account_signup' else null end,
+    case when consent_value then consent_copy else null end,
+    now()
+  )
+  on conflict (user_id) do update set
+    phone_e164 = coalesce(excluded.phone_e164, consumer_profiles.phone_e164),
+    birth_month = coalesce(excluded.birth_month, consumer_profiles.birth_month),
+    sms_consent = excluded.sms_consent,
+    sms_consent_at = case
+      when excluded.sms_consent and consumer_profiles.sms_consent_at is null then now()
+      when excluded.sms_consent then consumer_profiles.sms_consent_at
+      else null
+    end,
+    sms_consent_source = case when excluded.sms_consent then 'mobile_account_signup' else null end,
+    sms_consent_text = case when excluded.sms_consent then excluded.sms_consent_text else null end,
+    updated_at = now();
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_consumer_profile_after_auth_user_change on auth.users;
+create trigger sync_consumer_profile_after_auth_user_change
+after insert or update of raw_user_meta_data on auth.users
+for each row execute function public.sync_consumer_profile_from_auth_metadata();
