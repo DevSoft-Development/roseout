@@ -7,6 +7,7 @@
   {"name":"daily-platform-error-digest","expression":"cron(15 10,11 * * ? *)","function":"admin-platform-error-digest","body":{"source":"cron","hours":24,"force":false}},
   {"name":"daily-search-health-digest","expression":"cron(30 10,11 * * ? *)","function":"admin-search-health-digest","body":{"source":"cron","hours":24,"force":false}},
   {"name":"discover-refresh","expression":"cron(5 12 * * ? *)","function":"node:/api/cron/discover-refresh","body":{}},
+  {"name":"promotion-campaign-reconcile","expression":"cron(25 * * * ? *)","function":"node:/api/cron/promotion-campaign-reconcile","body":{}},
   {"name":"fraud-sweep-15m","expression":"cron(0/15 * * * ? *)","function":"fraud-sweep","body":{"source":"aws_eventbridge","_inject_scheduled_at":true}},
   {"name":"google-location-enrichment","expression":"cron(20 7 * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=catalog-enrichment-runner"}},
   {"name":"location-enrichment-reconcile","expression":"cron(0 * * * ? *)","function":"aws-db-maintenance","body":{"operation":"location_enrichment_reconcile"}},
