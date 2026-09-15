@@ -144,17 +144,21 @@ export async function loadDiscoverPromotionItems() {
     const location: any = byId.get(campaign.location_id);
     if (!location) return [];
     const creative = campaign.creative || {};
-    const title = String(creative.headline || location.name || location.restaurant_name || location.activity_name || campaign.name);
+    const locationName = String(location.name || location.restaurant_name || location.activity_name || campaign.name);
+    const title = String(creative.headline || locationName);
     const subtitle = String(creative.description || [location.primary_category || location.cuisine || location.cuisine_type || location.activity_type, location.city, location.state].filter(Boolean).join(" · ")) || null;
     const image = String(creative.image_url || location.hero_image_url || location.cover_image_url || location.photo_url || location.image_url || "") || null;
     const type = String(location.location_type || location.source_table || "location").toLowerCase().includes("activ") ? "activity" : "restaurant";
+    const href = campaign.promotion_type === "outing"
+      ? `/create?guided=results&planType=outing&prompt=${encodeURIComponent(`Build an outing around ${locationName}`)}&promo=${encodeURIComponent(campaign.id)}`
+      : `/locations/${type}/${encodeURIComponent(campaign.location_id)}?promo=${encodeURIComponent(campaign.id)}`;
     return [{
       id: `promotion-${campaign.id}`,
       section_id: campaign.promotion_type === "outing" ? "featured-outings" : "featured-places",
       title,
       subtitle,
       image_url: image,
-      href: `/locations/${type}/${encodeURIComponent(campaign.location_id)}?promo=${encodeURIComponent(campaign.id)}`,
+      href,
       query: null,
       badge: campaign.promotion_type === "outing" ? "Featured OUTing" : "Featured Place",
       location_id: campaign.location_id,
@@ -164,7 +168,7 @@ export async function loadDiscoverPromotionItems() {
       sort_order: -100,
       starts_at: campaign.starts_at,
       ends_at: campaign.ends_at,
-      metadata: { campaign_id: campaign.id, source: "promotion_campaign", placement: "discover" },
+      metadata: { campaign_id: campaign.id, source: "promotion_campaign", placement: "discover", anchor_location_id: campaign.location_id },
     }];
   });
 }
