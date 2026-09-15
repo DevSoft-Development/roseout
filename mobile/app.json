@@ -4,13 +4,13 @@
     "slug": "theouthaven",
     "scheme": "theouthaven",
     "version": "0.1.0",
-    "icon": "../public/apple-touch-icon.png",
+    "icon": "../public/toh_logo.png",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.theouthaven.app",
-      "icon": "../public/apple-touch-icon.png",
+      "icon": "../public/toh_logo.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -20,10 +20,10 @@
     },
     "android": {
       "package": "com.theouthaven.app",
-      "icon": "../public/android-chrome-512x512.png",
+      "icon": "../public/toh_logo.png",
       "adaptiveIcon": {
         "foregroundImage": "../public/toh_logo.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#070303"
       },
       "intentFilters": [
         {
