@@ -27,10 +27,6 @@
     "android": {
       "package": "com.theouthaven.app",
       "icon": "./assets/app-icon.png",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/app-icon.png",
-        "backgroundColor": "#FFFFFF"
-      },
       "intentFilters": [
         {
           "action": "VIEW",
