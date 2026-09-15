@@ -1,8 +1,10 @@
-export type PlanFeature = readonly [feature: string, essentials: string, partnerPro: string];
+export type PlanFeature = readonly [feature: string, essentials: string, essentialsPlus: string];
 export type PlanFeatureGroup = { title: string; features: readonly PlanFeature[] };
 
 export const ESSENTIALS_PLAN_NAME = "Essentials";
-export const PARTNER_PRO_PLAN_NAME = "Partner Pro";
+export const ESSENTIALS_PLUS_PLAN_NAME = "Essentials+";
+// Compatibility alias while internal billing keys remain business_pro/partner_pro.
+export const PARTNER_PRO_PLAN_NAME = ESSENTIALS_PLUS_PLAN_NAME;
 
 export const essentialsFeatures = [
   "Show up when guests search for outings on TheOutHaven",
@@ -60,8 +62,10 @@ export const planFeatureGroups = [
     ],
   },
   {
-    title: "Guests, marketing and growth",
+    title: "Website, guests and growth",
     features: [
+      ["Hosted business website", "—", "Included"],
+      ["Existing website conversion tracking", "—", "Included"],
       ["Guest details and private notes", "—", "Included"],
       ["Lead tracking", "—", "Included"],
       ["Offers and promotions", "—", "Included"],
@@ -70,7 +74,7 @@ export const planFeatureGroups = [
       ["Reviews and feedback workspace", "—", "Included"],
       ["Marketing Studio", "—", "Included"],
       ["Business notifications", "—", "Included"],
-      ["Analytics", "Profile views", "Views, clicks, bookings and sales"],
+      ["Analytics", "Profile views", "Views, clicks, bookings, sales and ROI"],
     ],
   },
 ] as const satisfies readonly PlanFeatureGroup[];
@@ -105,6 +109,8 @@ export const featureDescriptions: Record<string, string> = {
   "Waitlist texting and table-ready messages": "Notify waiting guests by text when their table or reserved area is ready.",
   "Add-to-calendar links": "Let guests add confirmed reservations to their preferred calendar.",
   "Reservation deposits and Stripe payouts": "Collect eligible booking deposits and receive funds through connected Stripe payouts.",
+  "Hosted business website": "Publish a polished business website that stays in sync with your location details and offerings.",
+  "Existing website conversion tracking": "See when TheOutHaven traffic becomes high-value actions on your existing website.",
   "Guest details and private notes": "Keep useful guest information and internal service notes available to your team.",
   "Lead tracking": "Track potential customers and inquiries from first interest through conversion.",
   "Offers and promotions": "Create promotions that encourage guests to visit, book, or return.",
@@ -121,5 +127,5 @@ export const essentialsIncludedFeatures = planFeatureGroups.flatMap((group) =>
 );
 
 export const partnerProDowngradeChanges = planFeatureGroups.flatMap((group) =>
-  group.features.filter(([, essentials, partnerPro]) => essentials !== partnerPro).map(([feature, essentials, partnerPro]) => ({ feature, essentials, partnerPro })),
+  group.features.filter(([, essentials, essentialsPlus]) => essentials !== essentialsPlus).map(([feature, essentials, essentialsPlus]) => ({ feature, essentials, partnerPro: essentialsPlus })),
 );
