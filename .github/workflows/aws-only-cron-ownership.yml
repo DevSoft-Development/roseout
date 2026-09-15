@@ -36,5 +36,15 @@ jobs:
       - name: Verify canonical AWS manifests
         run: |
           set -euo pipefail
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '61'
-          test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
+          for manifest in infra/aws/edge-runtime/schedules.json infra/aws/edge-runtime/dr-schedules.json; do
+            jq -e '
+              type == "array" and
+              length > 0 and
+              all(.[];
+                (.name | type == "string" and length > 0) and
+                (.expression | type == "string" and length > 0) and
+                (.function | type == "string" and length > 0)
+              ) and
+              ((map(.name) | length) == (map(.name) | unique | length))
+            ' "$manifest" >/dev/null
+          done

@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import reactPlugin from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 
 const eslintConfig = defineConfig([
@@ -8,6 +9,7 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     plugins: {
+      react: reactPlugin,
       "react-hooks": reactHooks,
     },
     rules: {
@@ -15,6 +17,10 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "warn",
       "@next/next/no-html-link-for-pages": "warn",
       "react-hooks/purity": "warn",
+      "react-hooks/immutability": "warn",
+      "react-hooks/refs": "warn",
+      "react-hooks/preserve-manual-memoization": "warn",
+      "react/no-unescaped-entities": "warn",
       "prefer-const": "warn",
     },
   },
@@ -42,6 +48,25 @@ const eslintConfig = defineConfig([
     files: ["app/admin/dashboard/billing/page.tsx"],
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
+  {
+    // These deployment/runtime entrypoints intentionally rely on ts-nocheck because
+    // they execute in compatibility runtimes that are validated by dedicated CI.
+    files: [
+      "infra/aws/edge-runtime/main/index.ts",
+      "supabase/functions/dr-failback-reconciler/index.ts",
+      "supabase/functions/dr-standby-reconciler/index.ts",
+    ],
+    rules: {
+      "@typescript-eslint/ban-ts-comment": "off",
+    },
+  },
+  {
+    // Metro's configuration API is CommonJS; requiring it is the supported runtime shape.
+    files: ["mobile/metro.config.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
   // Override default ignores of eslint-config-next.

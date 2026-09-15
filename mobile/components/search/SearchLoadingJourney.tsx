@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Animated, Easing, View } from "react-native";
 import { AppText } from "@/components/ui/AppText";
 import { Card } from "@/components/ui/Card";
@@ -28,8 +28,8 @@ const LOADING_LINES: Record<PlanType, string[]> = {
 export function SearchLoadingJourney({ planType = "outing" }: { planType?: PlanType }) {
   const { theme } = useAppTheme();
   const [index, setIndex] = useState(0);
-  const pulse = useRef(new Animated.Value(0.38)).current;
-  const translate = useRef(new Animated.Value(-100)).current;
+  const [pulse] = useState(() => new Animated.Value(0.38));
+  const [translate] = useState(() => new Animated.Value(-100));
   const messages = LOADING_LINES[planType];
 
   useEffect(() => {

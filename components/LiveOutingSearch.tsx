@@ -121,7 +121,7 @@ export default function LiveOutingSearch() {
     void startPlanner(prompt);
   }
 
-  function useQuickIdea(idea: string) {
+  function chooseQuickIdea(idea: string) {
     setPrompt(idea);
     setIntentError("");
   }
@@ -164,7 +164,7 @@ export default function LiveOutingSearch() {
           <button
             key={idea}
             type="button"
-            onClick={() => useQuickIdea(idea)}
+            onClick={() => chooseQuickIdea(idea)}
             className="rounded-full border border-white/10 bg-white/[0.045] px-4 py-2.5 text-sm font-bold text-white/65 transition hover:border-[#e1062a]/55 hover:bg-[#e1062a]/10 hover:text-white"
           >
             {idea}
