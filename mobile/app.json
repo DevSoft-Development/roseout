@@ -3,7 +3,7 @@
     "name": "TheOutHaven",
     "slug": "theouthaven",
     "scheme": "theouthaven",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "runtimeVersion": {
       "policy": "fingerprint"
     },
