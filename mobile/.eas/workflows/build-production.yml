@@ -5,7 +5,14 @@ on:
     branches:
       - main
     paths:
-      - mobile/**
+      - mobile/app.json
+      - mobile/eas.json
+      - mobile/package.json
+      - mobile/package-lock.json
+      - mobile/assets/**
+      - mobile/plugins/**
+      - mobile/ios/**
+      - mobile/android/**
 
 jobs:
   build_android:
