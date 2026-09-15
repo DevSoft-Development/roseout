@@ -76,7 +76,7 @@ export async function reconcileCreatorPartnerProgram(limit = 150) {
     if (commission) conversionsFound += 1;
   }
 
-  const reversed = await reverseRefundedOrDisputedCommissions(limit);
+  const refundReversals = await reverseRefundedOrDisputedCommissions(limit);
   const commissions = await processCreatorCommissions(limit);
-  return { referralsChecked: (referrals || []).length, conversionsFound, reversed, ...commissions };
+  return { referralsChecked: (referrals || []).length, conversionsFound, refundReversals, ...commissions };
 }
