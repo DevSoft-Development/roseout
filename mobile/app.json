@@ -5,7 +5,7 @@
     "scheme": "theouthaven",
     "version": "0.1.0",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
