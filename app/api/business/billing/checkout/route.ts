@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase-server";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 import { getBusinessProPriceId, getSiteUrl, stripeRequest } from "@/lib/stripe/server";
 import { getLocationName } from "@/lib/locationName";
+import { attachCreatorReferral, CREATOR_REFERRAL_COOKIE } from "@/lib/creator-partners/program";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,15 +15,18 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const locationId = String(formData.get("location_id") || "").trim();
     const interval = String(formData.get("interval") || "monthly") === "annual" ? "annual" : "monthly";
-    if (!locationId) return NextResponse.json({ error: "Missing location." }, { status: 400 });
+    if (!locationId) return NextResponse.json({ error: "We couldn’t find that business." }, { status: 400 });
 
     const authorized = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
-    if (!authorized) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+    if (!authorized) return NextResponse.json({ error: "Business not found." }, { status: 404 });
     const location = authorized.location;
 
     if (location.stripe_subscription_id && ["active", "trialing", "past_due", "grace_period", "unpaid", "incomplete", "paused"].includes(String(location.subscription_status || "").toLowerCase())) {
-      return NextResponse.json({ error: "This location already has a Stripe subscription. Use Manage Billing instead." }, { status: 409 });
+      return NextResponse.json({ error: "Essentials+ is already active for this business. You can manage it from Billing." }, { status: 409 });
     }
+
+    const creatorToken = String(formData.get("creator") || request.cookies.get(CREATOR_REFERRAL_COOKIE)?.value || "").trim();
+    const referral = creatorToken ? await attachCreatorReferral({ creatorToken, locationId, sourceUrl: request.headers.get("referer") }) : null;
 
     const siteUrl = getSiteUrl();
     const body = new URLSearchParams({
@@ -35,30 +39,33 @@ export async function POST(request: NextRequest) {
       billing_address_collection: "required",
       "payment_method_types[0]": "card",
       "metadata[plan]": "business_pro",
-      "metadata[plan_name]": "partner_pro",
+      "metadata[plan_name]": "essentials_plus",
       "metadata[interval]": interval,
       "metadata[location_id]": locationId,
       "metadata[businessName]": getLocationName(location, "TheOutHaven business"),
       "metadata[source]": "business_billing",
       "subscription_data[metadata][plan]": "business_pro",
-      "subscription_data[metadata][plan_name]": "partner_pro",
+      "subscription_data[metadata][plan_name]": "essentials_plus",
       "subscription_data[metadata][interval]": interval,
       "subscription_data[metadata][location_id]": locationId,
     });
-
-    if (location.stripe_customer_id) {
-      body.set("customer", String(location.stripe_customer_id));
-    } else {
-      body.set("customer_email", user.email || String(location.owner_email || ""));
+    if (referral?.referral_key) {
+      body.set("metadata[referral_key]", String(referral.referral_key));
+      body.set("subscription_data[metadata][referral_key]", String(referral.referral_key));
+      body.set("metadata[creator_source_id]", String(referral.creator_source_id || ""));
+      body.set("subscription_data[metadata][creator_source_id]", String(referral.creator_source_id || ""));
     }
+
+    if (location.stripe_customer_id) body.set("customer", String(location.stripe_customer_id));
+    else body.set("customer_email", user.email || String(location.owner_email || ""));
 
     const session = await stripeRequest<{ url?: string }>("/checkout/sessions", {
       body,
-      idempotencyKey: `business-pro-${locationId}-${interval}-${randomUUID()}`,
+      idempotencyKey: `essentials-plus-${locationId}-${interval}-${randomUUID()}`,
     });
-    if (!session.url) return NextResponse.json({ error: "Unable to create checkout session." }, { status: 500 });
+    if (!session.url) return NextResponse.json({ error: "We couldn’t open checkout. Please try again." }, { status: 500 });
     return NextResponse.redirect(session.url, { status: 303 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to start checkout." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "We couldn’t start checkout. Please try again." }, { status: 500 });
   }
 }

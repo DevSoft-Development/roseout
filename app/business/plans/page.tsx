@@ -8,7 +8,7 @@ import { essentialsFeatures, featureDescriptions, planFeatureGroups } from "@/li
 
 export const metadata: Metadata = buildMetadata({
   title: "Business Plans",
-  description: "Compare TheOutHaven Essentials and Partner Pro features, pricing, events, experiences, reservations, marketing tools, and business analytics.",
+  description: "Compare TheOutHaven Essentials and Essentials+ for discovery, reservations, websites, marketing, events, experiences, and business analytics.",
   path: "/business/plans",
 });
 
@@ -23,8 +23,8 @@ export default function BusinessPlansPage() {
         <div className="relative mx-auto max-w-7xl">
           <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs font-black uppercase tracking-[0.35em] text-[#e1062a]">Business plans</p>
-            <h1 className="mt-5 text-5xl font-black tracking-tight sm:text-6xl">Choose how you want to grow</h1>
-            <p className="mt-5 text-base font-semibold leading-7 text-white/60 sm:text-lg">Start with Essentials for free, including basic Events and Experiences. Choose Partner Pro for the complete reservations, ticketing, guest-management, marketing, and analytics toolkit.</p>
+            <h1 className="mt-5 text-5xl font-black tracking-tight sm:text-6xl">Start free. Upgrade when you want more.</h1>
+            <p className="mt-5 text-base font-semibold leading-7 text-white/60 sm:text-lg">Essentials gives your business a strong presence on TheOutHaven at no cost. Essentials+ adds the tools to take bookings, manage guests, understand demand, and grow.</p>
           </div>
           <div className="mx-auto mt-12 grid max-w-6xl gap-5 lg:grid-cols-[0.8fr_1.2fr]">
             <EssentialsCard />
@@ -40,16 +40,17 @@ export default function BusinessPlansPage() {
 function EssentialsCard() {
   return (
     <article className="flex h-full flex-col rounded-[2rem] border border-white/10 bg-black p-6 shadow-2xl shadow-black/40 sm:p-8">
-      <span className="mb-5 w-fit rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white/60">Build your presence</span>
+      <span className="mb-5 w-fit rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white/60">Get discovered</span>
       <h2 className="text-3xl font-black tracking-tight">Essentials</h2>
-      <p className="mt-3 text-sm leading-6 text-white/55">Build a trusted presence where guests plan outings, publish your events and experiences, then send them directly to your contact and booking channels.</p>
+      <p className="mt-3 text-sm leading-6 text-white/55">Claim your business, keep your information accurate, publish basic events and experiences, and give guests a direct path to reach you.</p>
       <p className="mt-6 text-5xl font-black">Free</p>
+      <p className="mt-2 text-sm font-semibold text-white/40">No card required.</p>
       <ul className="mt-7 flex-1 space-y-3">
         {essentialsFeatures.map((feature) => (
           <li key={feature} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm font-semibold leading-6 text-white/66"><span className="mr-2 text-emerald-300" aria-hidden="true">✓</span>{feature}</li>
         ))}
       </ul>
-      <Link href={claimHref} className="mt-7 inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.05] px-7 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Claim Your Location</Link>
+      <Link href={claimHref} className="mt-7 inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.05] px-7 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Claim Your Business</Link>
     </article>
   );
 }
@@ -58,9 +59,9 @@ function PlanFeatureComparison() {
   return (
     <section aria-labelledby="full-plan-comparison" className="mx-auto mt-14 max-w-6xl overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/35">
       <div className="border-b border-white/10 bg-[linear-gradient(135deg,rgba(225,6,42,0.16),transparent_55%)] p-6 sm:p-8">
-        <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Complete feature list</p>
-        <h2 id="full-plan-comparison" className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">See exactly what each plan includes</h2>
-        <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/55">Every advertised feature is shown below with the availability or limit for Essentials and Partner Pro.</p>
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">Compare plans</p>
+        <h2 id="full-plan-comparison" className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">See what you get with each plan</h2>
+        <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/55">Choose the free plan for a strong business presence, or Essentials+ when you want bookings, website tools, guest management, and deeper insights.</p>
       </div>
       <div className="divide-y divide-white/10">
         {planFeatureGroups.map((group) => (
@@ -68,13 +69,13 @@ function PlanFeatureComparison() {
             <h3 className="px-2 text-sm font-black uppercase tracking-[0.18em] text-white/75">{group.title}</h3>
             <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10">
               <table className="w-full min-w-[680px] border-collapse text-left">
-                <thead className="bg-white/[0.055]"><tr><th scope="col" className="w-1/2 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/45">Feature</th><th scope="col" className="w-1/4 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/65">Essentials</th><th scope="col" className="w-1/4 bg-[#e1062a]/10 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-red-100">Partner Pro</th></tr></thead>
+                <thead className="bg-white/[0.055]"><tr><th scope="col" className="w-1/2 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/45">Feature</th><th scope="col" className="w-1/4 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-white/65">Essentials</th><th scope="col" className="w-1/4 bg-[#e1062a]/10 px-4 py-4 text-xs font-black uppercase tracking-[0.14em] text-red-100">Essentials+</th></tr></thead>
                 <tbody>
-                  {group.features.map(([feature, essentials, pro]) => (
+                  {group.features.map(([feature, essentials, plus]) => (
                     <tr key={feature} className="border-t border-white/10">
                       <th scope="row" className="px-4 py-4 text-sm font-bold text-white/80"><span className="inline-flex items-center gap-2">{feature}<FeatureInfo feature={feature} description={featureDescriptions[feature]} /></span></th>
                       <td className="px-4 py-4 text-sm font-semibold text-white/48">{essentials === "—" ? <span aria-label="Not included">—</span> : essentials}</td>
-                      <td className="bg-[#e1062a]/[0.055] px-4 py-4 text-sm font-black text-white"><span className="mr-2 text-emerald-300" aria-hidden="true">✓</span>{pro}</td>
+                      <td className="bg-[#e1062a]/[0.055] px-4 py-4 text-sm font-black text-white"><span className="mr-2 text-emerald-300" aria-hidden="true">✓</span>{plus}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -84,8 +85,8 @@ function PlanFeatureComparison() {
         ))}
       </div>
       <div className="flex flex-col gap-4 border-t border-white/10 bg-white/[0.035] p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
-        <div><p className="text-lg font-black">Ready to use the complete toolkit?</p><p className="mt-1 text-xs font-semibold text-white/45">Choose monthly or annual billing above. Taxes are calculated at checkout.</p></div>
-        <Link href={`${claimHref}?plan=monthly`} className="inline-flex items-center justify-center rounded-2xl bg-[#e1062a] px-7 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500">Choose Partner Pro</Link>
+        <div><p className="text-lg font-black">Ready for more than a listing?</p><p className="mt-1 text-xs font-semibold text-white/45">Essentials+ is $99/month or $999/year. You can manage billing from your dashboard.</p></div>
+        <Link href={`${claimHref}?plan=monthly`} className="inline-flex items-center justify-center rounded-2xl bg-[#e1062a] px-7 py-4 text-sm font-black text-white shadow-2xl shadow-red-500/25 transition hover:bg-red-500">Choose Essentials+</Link>
       </div>
     </section>
   );
