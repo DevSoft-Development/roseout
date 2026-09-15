@@ -62,7 +62,7 @@ export const enterpriseCrmNavigation: CrmNavItem[] = [
   { id: "tasks", label: "Tasks", href: "/admin/dashboard/crm/tasks", group: "Workspace", icon: ListChecks },
   { id: "calendar", label: "Calendar", href: "/admin/dashboard/crm/calendar", group: "Workspace", icon: CalendarDays },
   { id: "operations", label: "Admin Operations", href: "/admin/dashboard/crm/operations", group: "Admin", icon: Gauge },
-  { id: "knowledge", label: "Knowledge Base", href: "/admin/dashboard/crm/knowledge-base", group: "Resources", icon: BookOpen },
+  { id: "knowledge", label: "Knowledge Base", href: "/admin/dashboard/crm/operations?view=knowledge-base", group: "Resources", icon: BookOpen },
 ];
 
 function pathFor(item: CrmNavItem) {
