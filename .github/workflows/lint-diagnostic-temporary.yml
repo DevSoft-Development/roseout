@@ -29,22 +29,43 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Capture repository lint report
+      - name: Capture actionable repository lint errors
         shell: bash
         run: |
           set +e
-          npm run lint > lint-report.txt 2>&1
+          npx eslint -f json . > lint-report.json 2>/dev/null
           status=$?
+          node <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('lint-report.json', 'utf8'));
+          const lines = [];
+          let errorCount = 0;
+          let warningCount = 0;
+          for (const result of report) {
+            errorCount += result.errorCount || 0;
+            warningCount += result.warningCount || 0;
+            const errors = (result.messages || []).filter((message) => message.severity === 2);
+            if (!errors.length) continue;
+            lines.push(result.filePath);
+            for (const error of errors) {
+              lines.push(`  ${error.line || 0}:${error.column || 0}  ${error.ruleId || 'parse-error'}  ${error.message}`);
+            }
+          }
+          lines.unshift(`errors=${errorCount} warnings=${warningCount}`);
+          fs.writeFileSync('lint-errors.txt', lines.join('\n') + '\n');
+          NODE
           echo "lint_status=$status" >> "$GITHUB_STEP_SUMMARY"
+          cat lint-errors.txt >> "$GITHUB_STEP_SUMMARY"
           exit 0
-      - name: Persist lint report on diagnostic branch
+      - name: Persist lint errors on diagnostic branch
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f lint-report.txt
+          rm -f lint-report.json
+          git add -f lint-errors.txt
           if git diff --cached --quiet; then
             exit 0
           fi
-          git commit -m "chore: capture current lint report"
+          git commit -m "chore: capture current lint errors"
           git push
