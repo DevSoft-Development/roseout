@@ -33,5 +33,7 @@ jobs:
     name: Publish production OTA update
     type: update
     environment: production
+    env:
+      EAS_NO_FROZEN_LOCKFILE: "1"
     params:
       channel: production
