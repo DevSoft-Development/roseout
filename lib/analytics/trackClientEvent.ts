@@ -57,12 +57,8 @@ export function getAnalyticsIdentity() {
 
   let local: Storage | undefined;
   let session: Storage | undefined;
-  try {
-    local = window.localStorage;
-  } catch {}
-  try {
-    session = window.sessionStorage;
-  } catch {}
+  try { local = window.localStorage; } catch {}
+  try { session = window.sessionStorage; } catch {}
 
   return {
     anonymous_id: persistedId(local, ANONYMOUS_KEY),
@@ -71,22 +67,15 @@ export function getAnalyticsIdentity() {
 }
 
 function getActiveSearchContext(): ActiveSearchContext {
-  if (typeof window === "undefined") {
-    return { search_id: null, query: null, normalized_query: null, source: null };
-  }
-
+  if (typeof window === "undefined") return { search_id: null, query: null, normalized_query: null, source: null };
   try {
     const raw = window.sessionStorage.getItem(ACTIVE_SEARCH_KEY);
-    if (!raw) {
-      return { search_id: null, query: null, normalized_query: null, source: null };
-    }
-
+    if (!raw) return { search_id: null, query: null, normalized_query: null, source: null };
     const parsed = JSON.parse(raw) as Partial<ActiveSearchContext>;
     return {
       search_id: typeof parsed.search_id === "string" ? parsed.search_id : null,
       query: typeof parsed.query === "string" ? parsed.query : null,
-      normalized_query:
-        typeof parsed.normalized_query === "string" ? parsed.normalized_query : null,
+      normalized_query: typeof parsed.normalized_query === "string" ? parsed.normalized_query : null,
       source: typeof parsed.source === "string" ? parsed.source : null,
     };
   } catch {
@@ -96,7 +85,6 @@ function getActiveSearchContext(): ActiveSearchContext {
 
 function persistActiveSearchContext(input: ClientTrackEventInput) {
   if (typeof window === "undefined" || !input.search_id) return;
-
   try {
     const current = getActiveSearchContext();
     const next: ActiveSearchContext = {
@@ -106,9 +94,7 @@ function persistActiveSearchContext(input: ClientTrackEventInput) {
       source: input.source ?? current.source,
     };
     window.sessionStorage.setItem(ACTIVE_SEARCH_KEY, JSON.stringify(next));
-  } catch {
-    // Storage failures must never affect analytics or the user flow.
-  }
+  } catch {}
 }
 
 function getDeviceHints() {
@@ -121,12 +107,36 @@ function getDeviceHints() {
   };
 }
 
+function mirrorPromotionEvent(input: ClientTrackEventInput, sessionId: string | null) {
+  if (input.event_name !== "planner_plan_selected" || input.metadata?.sponsored !== true) return;
+  const campaignId = String(input.metadata?.sponsor_id || "").trim();
+  if (!campaignId) return;
+  void fetch("/api/promotions/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: true,
+    body: JSON.stringify({
+      campaign_id: campaignId,
+      event_type: "outing_open",
+      placement: "search",
+      session_key: sessionId,
+      metadata: {
+        restaurant_id: input.metadata?.restaurant_id || null,
+        activity_id: input.metadata?.activity_id || null,
+        plan_type: input.metadata?.plan_type || null,
+        rank: input.metadata?.rank || null,
+      },
+    }),
+  });
+}
+
 export function trackClientEvent(input: ClientTrackEventInput) {
   try {
     persistActiveSearchContext(input);
     const activeSearch = getActiveSearchContext();
+    const identity = getAnalyticsIdentity();
     const payload = {
-      ...getAnalyticsIdentity(),
+      ...identity,
       ...activeSearch,
       ...input,
       page_path: typeof window !== "undefined" ? window.location.pathname : null,
@@ -140,7 +150,6 @@ export function trackClientEvent(input: ClientTrackEventInput) {
       keepalive: true,
       body: JSON.stringify(payload),
     });
-  } catch {
-    // Analytics must never interrupt the user flow.
-  }
+    mirrorPromotionEvent(input, identity.session_id);
+  } catch {}
 }
