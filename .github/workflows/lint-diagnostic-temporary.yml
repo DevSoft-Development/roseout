@@ -51,7 +51,7 @@ jobs:
               lines.push(`  ${error.line || 0}:${error.column || 0}  ${error.ruleId || 'parse-error'}  ${error.message}`);
             }
           }
-          lines.unshift(`errors=${errorCount} warnings=${warningCount}`);
+          lines.unshift(`head=${process.env.GITHUB_SHA || 'unknown'}`, `errors=${errorCount} warnings=${warningCount}`);
           fs.writeFileSync('lint-errors.txt', lines.join('\n') + '\n');
           NODE
           echo "lint_status=$status" >> "$GITHUB_STEP_SUMMARY"
