@@ -50,7 +50,7 @@ export default async function CreatorDashboardPage() {
         <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-white/40">Your referral link</p>
           <p className="mt-3 break-all text-lg font-black">{referralUrl}</p>
-          <p className="mt-2 text-sm font-semibold text-white/45">Businesses that start from this link stay connected to you for 90 days. You earn $99 when an eligible new referral becomes an Essentials+ customer and clears the 14-day validation period.</p>
+          <p className="mt-2 text-sm font-semibold text-white/45">Businesses that start from this link stay connected to you for 90 days. You earn $75 when an eligible new referral becomes an Essentials+ customer and clears the 14-day validation period.</p>
         </section>
 
         <section className="mt-8 overflow-hidden rounded-[2rem] border border-white/10 bg-black">
@@ -63,7 +63,7 @@ export default async function CreatorDashboardPage() {
         <section className="mt-8 overflow-hidden rounded-[2rem] border border-white/10 bg-black">
           <div className="border-b border-white/10 p-6"><h2 className="text-2xl font-black">Earnings</h2><p className="mt-1 text-sm font-semibold text-white/45">Commissions move automatically from validation to payout.</p></div>
           <div className="divide-y divide-white/10">
-            {commissionRows.length ? commissionRows.map((row: any) => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-5"><div><p className="font-black">{locationName(row.locations)}</p><p className="mt-1 text-xs font-semibold text-white/40">{friendlyCommissionStatus(row.status, row.validation_ends_at)}</p></div><p className="text-lg font-black">{money(Number(row.amount_cents || 0))}</p></div>) : <p className="px-6 py-10 text-sm font-semibold text-white/40">Your first $99 commission will appear here when a referred business joins Essentials+.</p>}
+            {commissionRows.length ? commissionRows.map((row: any) => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-5"><div><p className="font-black">{locationName(row.locations)}</p><p className="mt-1 text-xs font-semibold text-white/40">{friendlyCommissionStatus(row.status, row.validation_ends_at)}</p></div><p className="text-lg font-black">{money(Number(row.amount_cents || 0))}</p></div>) : <p className="px-6 py-10 text-sm font-semibold text-white/40">Your first $75 commission will appear here when a referred business joins Essentials+.</p>}
           </div>
         </section>
       </section>
