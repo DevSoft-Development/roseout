@@ -3,11 +3,11 @@ import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 
 export const metadata = {
   title: "Creator Partners | TheOutHaven",
-  description: "Partner with TheOutHaven, curate local outings, and earn $99 when a business you refer becomes an Essentials+ customer.",
+  description: "Partner with TheOutHaven, curate local outings, and earn $75 when a business you refer becomes an Essentials+ customer.",
 };
 
 const benefits = [
-  ["Earn $99 per paid business", "When a new business you refer becomes an Essentials+ customer and completes the validation period, your $99 commission is paid automatically."],
+  ["Earn $75 per paid business", "When a new business you refer becomes an Essentials+ customer and completes the validation period, your $75 commission is paid automatically."],
   ["Keep creating your way", "There is no required posting quota. Share TheOutHaven when it naturally fits your food, nightlife, date-night, or things-to-do content."],
   ["Get your own creator presence", "Approved creators get a trackable referral link and can be featured through creator profiles, curated outings, and Discover."],
   ["We handle the sales process", "Introduce the business and keep your referral credit. TheOutHaven can handle the claim, follow-up, onboarding, and upgrade."],
@@ -23,7 +23,7 @@ export default function CreatorsPage() {
           <div className="max-w-3xl">
             <p className="text-xs font-black uppercase tracking-[0.3em] text-[#ff526b]">TheOutHaven Creator Partners</p>
             <h1 className="mt-5 text-5xl font-black tracking-tight sm:text-7xl">Create local influence that keeps paying you back.</h1>
-            <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-white/65">Help people discover where to eat and what to do. Introduce great local businesses to TheOutHaven and earn <strong className="text-white">$99</strong> when each one becomes an Essentials+ customer.</p>
+            <p className="mt-6 max-w-2xl text-lg font-semibold leading-8 text-white/65">Help people discover where to eat and what to do. Introduce great local businesses to TheOutHaven and earn <strong className="text-white">$75</strong> when each one becomes an Essentials+ customer.</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/creators/apply" className="rounded-2xl bg-[#e1062a] px-7 py-4 text-sm font-black shadow-xl shadow-red-500/20">Apply to become a Creator Partner</Link>
               <Link href="/business/plans" className="rounded-2xl border border-white/15 px-7 py-4 text-sm font-black text-white/80">See what businesses get</Link>
@@ -41,7 +41,7 @@ export default function CreatorsPage() {
                 ["1", "Join", "Apply and get approved."],
                 ["2", "Share", "Use your creator link or refer a business from your dashboard."],
                 ["3", "They upgrade", "The business joins Essentials+ at $99/month or $999/year."],
-                ["4", "You get paid", "After the 14-day validation period, your $99 commission is released automatically."],
+                ["4", "You get paid", "After the 14-day validation period, your $75 commission is released automatically."],
               ].map(([number, title, body]) => <div key={number}><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e1062a] text-sm font-black">{number}</span><h3 className="mt-4 text-lg font-black">{title}</h3><p className="mt-2 text-sm leading-6 text-white/50">{body}</p></div>)}
             </div>
           </section>
