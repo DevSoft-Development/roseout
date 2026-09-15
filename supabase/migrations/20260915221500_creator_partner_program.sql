@@ -15,7 +15,7 @@ alter table public.gtm_creator_sources
   add column if not exists program_tier text not null default 'creator_partner',
   add column if not exists referral_code text,
   add column if not exists referral_window_days integer not null default 90,
-  add column if not exists commission_amount_cents integer not null default 9900,
+  add column if not exists commission_amount_cents integer not null default 7500,
   add column if not exists agreement_accepted_at timestamptz,
   add column if not exists approved_at timestamptz,
   add column if not exists stripe_connect_account_id text,
@@ -73,7 +73,7 @@ create table if not exists public.creator_partner_commissions (
   creator_source_id uuid not null references public.gtm_creator_sources(id) on delete cascade,
   referral_id uuid not null references public.gtm_referrals(id) on delete restrict,
   location_id uuid references public.locations(id) on delete set null,
-  amount_cents integer not null default 9900 check (amount_cents > 0),
+  amount_cents integer not null default 7500 check (amount_cents > 0),
   currency text not null default 'usd',
   status text not null default 'validating' check (status in ('validating','approved','payable','paid','reversed','needs_review')),
   stripe_invoice_id text,
@@ -102,7 +102,7 @@ alter table public.creator_partner_commissions enable row level security;
 revoke all on public.creator_partner_commissions from anon, authenticated;
 
 comment on table public.creator_partner_commissions is 'One-time creator referral commissions. Server-only; payouts are triggered after the validation period.';
-comment on column public.gtm_creator_sources.commission_amount_cents is 'Default one-time commission for a new Essentials+ conversion. Initial program value is $99.';
+comment on column public.gtm_creator_sources.commission_amount_cents is 'Default one-time commission for a new Essentials+ conversion. Initial program value is $75.';
 comment on column public.gtm_creator_sources.referral_window_days is 'Number of days after a creator referral in which a first paid Essentials+ conversion qualifies.';
 
 commit;
