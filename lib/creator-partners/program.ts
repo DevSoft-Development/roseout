@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const CREATOR_REFERRAL_COOKIE = "toh_creator_ref";
 export const CREATOR_REFERRAL_DAYS = 90;
 export const CREATOR_VALIDATION_DAYS = 14;
-export const CREATOR_DEFAULT_COMMISSION_CENTS = 9900;
+export const CREATOR_DEFAULT_COMMISSION_CENTS = 7500;
 
 type CreatorRow = {
   id: string;
@@ -62,7 +62,22 @@ export async function findCreatorForUser(userId: string, email?: string | null):
   if (byUser) return byUser as CreatorRow;
   if (!email) return null;
   const { data: byEmail, error: emailError } = await supabaseAdmin.from("gtm_creator_sources").select(fields).eq("email", email.toLowerCase()).maybeSingle();
-  if (emailError) throw emailError;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail?.user_id === null) await supabaseAdmin.from("gtm_creator_sources").update({ user_id: userId, updated_at: new Date().toISOString() }).eq("id", byEmail.id).is("user_id", null);
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
+  if (byEmail) return { ...byEmail, user_id: userId } as CreatorRow;
+  if (byEmail) return byEmail as CreatorRow;
   if (!byEmail) return null;
   if (!byEmail.user_id) await supabaseAdmin.from("gtm_creator_sources").update({ user_id: userId, updated_at: new Date().toISOString() }).eq("id", byEmail.id).is("user_id", null);
   return { ...byEmail, user_id: userId } as CreatorRow;
@@ -104,7 +119,7 @@ export async function createCreatorApplication(input: {
   }).select("id").single();
   if (error) throw error;
   await Promise.allSettled([
-    sendRawBrandedEmail({ to: email, department: "account", subject: "We received your Creator Partner application", heading: "Thanks for applying to TheOutHaven Creator Partners", body: "We received your application. If approved, you’ll get your own referral link, creator dashboard, and the ability to earn $99 for each new business you refer that becomes an Essentials+ customer.", cta: { label: "Learn about Creator Partners", url: `${getSiteUrl()}/creators` } }),
+    sendRawBrandedEmail({ to: email, department: "account", subject: "We received your Creator Partner application", heading: "Thanks for applying to TheOutHaven Creator Partners", body: "We received your application. If approved, you’ll get your own referral link, creator dashboard, and the ability to earn $75 for each new business you refer that becomes an Essentials+ customer.", cta: { label: "Learn about Creator Partners", url: `${getSiteUrl()}/creators` } }),
     sendRawBrandedEmail({ to: process.env.ADMIN_NOTIFY_EMAIL || "admin@theouthaven.com", department: "admin", subject: `Creator Partner application: ${displayName}`, heading: "New Creator Partner application", body: `${displayName} applied to the Creator Partner program. Review the application in Marketing → Creator Partners.`, cta: { label: "Review creator", url: `${getSiteUrl()}/admin/dashboard/marketing/creator-partners` } }),
   ]);
   return { id: String(data.id), existing: false, status: "applied" };
@@ -114,7 +129,7 @@ export async function approveCreator(creatorId: string, tier: "creator_partner" 
   const now = new Date().toISOString();
   const { data, error } = await supabaseAdmin.from("gtm_creator_sources").update({ application_status: "approved", status: "active", program_tier: tier, approved_at: now, updated_at: now }).eq("id", creatorId).select("id,creator_key,display_name,email,slug,referral_code").single();
   if (error) throw error;
-  if (data.email) await sendRawBrandedEmail({ to: data.email, department: "account", subject: "You’re approved as a TheOutHaven Creator Partner", heading: "Welcome to TheOutHaven Creator Partners", body: "Your creator partnership is approved. You can now share your referral link and earn $99 when a new business you refer becomes a paying Essentials+ customer. Complete payout setup before your first commission is released.", cta: { label: "Open creator dashboard", url: `${getSiteUrl()}/creator/dashboard` } });
+  if (data.email) await sendRawBrandedEmail({ to: data.email, department: "account", subject: "You’re approved as a TheOutHaven Creator Partner", heading: "Welcome to TheOutHaven Creator Partners", body: "Your creator partnership is approved. You can now share your referral link and earn $75 when a new business you refer becomes a paying Essentials+ customer. Complete payout setup before your first commission is released.", cta: { label: "Open creator dashboard", url: `${getSiteUrl()}/creator/dashboard` } });
   return data;
 }
 
@@ -156,7 +171,7 @@ export async function createCreatorCommissionFromPaidInvoice(input: { locationId
   const { data: commission, error: commissionError } = await supabaseAdmin.from("creator_partner_commissions").upsert({ creator_source_id: creator.id, referral_id: referral.id, location_id: input.locationId, amount_cents: amountCents, currency: "usd", status: "validating", stripe_invoice_id: input.invoiceId, stripe_charge_id: input.chargeId || null, qualifying_payment_at: paidAt, validation_ends_at: validationEndsAt, metadata: { stripe_customer_id: input.customerId || null, stripe_subscription_id: input.subscriptionId || null }, updated_at: new Date().toISOString() }, { onConflict: "referral_id", ignoreDuplicates: true }).select("id,status,amount_cents,validation_ends_at").maybeSingle();
   if (commissionError) throw commissionError;
   await supabaseAdmin.from("gtm_referrals").update({ status: "paid", paid_at: paidAt, converted_at: paidAt, attributed_mrr: 99, stripe_customer_id: input.customerId || null, stripe_subscription_id: input.subscriptionId || null, updated_at: new Date().toISOString() }).eq("id", referral.id);
-  if (commission && creator.email) await sendRawBrandedEmail({ to: creator.email, department: "account", subject: "$99 creator commission is validating", heading: "A business you referred joined Essentials+", body: `Your $${(amountCents / 100).toFixed(0)} commission is now in the ${CREATOR_VALIDATION_DAYS}-day validation period. If the subscription stays eligible, it will move automatically to payout.`, cta: { label: "View earnings", url: `${getSiteUrl()}/creator/dashboard` } });
+  if (commission && creator.email) await sendRawBrandedEmail({ to: creator.email, department: "account", subject: "$75 creator commission is validating", heading: "A business you referred joined Essentials+", body: `Your $${(amountCents / 100).toFixed(0)} commission is now in the ${CREATOR_VALIDATION_DAYS}-day validation period. If the subscription stays eligible, it will move automatically to payout.`, cta: { label: "View earnings", url: `${getSiteUrl()}/creator/dashboard` } });
   return commission;
 }
 
@@ -168,7 +183,7 @@ export async function reverseValidatingCommissionForLocation(locationId: string,
 }
 
 export async function createCreatorRecipientAccount(creator: Pick<CreatorRow, "id" | "display_name" | "email">) {
-  return stripeV2Request<{ id: string }>("/core/accounts", { idempotencyKey: `creator-recipient-v2-${creator.id}`, body: { contact_email: creator.email || undefined, display_name: creator.display_name, dashboard: "express", identity: { country: "us" }, configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } }, defaults: { currency: "usd", locales: ["en-US"], responsibilities: { fees_collector: "application", losses_collector: "application" } }, metadata: { creator_source_id: creator.id, platform: "theouthaven", program: "creator_partner" }, include: ["configuration.recipient", "requirements"] } });
+  return stripeV2Request<{ id: string }>("/core/accounts", { idempotencyKey: `creator-recipient-v2-${creator.id}`, body: { contact_email: creator.email || undefined, display_name: creator.display_name, dashboard: "express", identity: { country: "us" }, configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } }, defaults: { currency: "usd", locales: ["en-US"], responsibilities: { fees_collector: "application", losses_collector: "application" } }, metadata: { creator_source_id: creator.id, platform: "theouthaven", program: "creator_partner" }, include: ["configuration.recipient", "requirements"] } });
 }
 
 export async function createCreatorOnboardingLink(creator: CreatorRow) {
