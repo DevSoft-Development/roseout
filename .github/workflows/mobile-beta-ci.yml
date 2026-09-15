@@ -68,6 +68,19 @@ jobs:
           if (!hasShortLink) throw new Error('outhvn.com Android app link missing');
           NODE
 
+      - name: Verify EAS Update configuration
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const expectedUrl = 'https://u.expo.dev/243ab88a-53dc-4f94-ae7e-6cc3d24b94be';
+          if (pkg?.dependencies?.['expo-updates'] !== '~57.0.22') throw new Error('expo-updates dependency missing or unexpected');
+          if (app?.updates?.url !== expectedUrl) throw new Error('EAS Update URL is missing or unexpected');
+          if (app?.runtimeVersion?.policy !== 'fingerprint') throw new Error('EAS runtimeVersion must use fingerprint policy');
+          NODE
+
       - name: Verify EAS profiles
         run: |
           set -euo pipefail
@@ -76,6 +89,7 @@ jobs:
           const eas = JSON.parse(fs.readFileSync('eas.json', 'utf8'));
           for (const profile of ['development', 'preview', 'production']) {
             if (!eas?.build?.[profile]) throw new Error(`Missing EAS ${profile} build profile`);
+            if (eas.build[profile].channel !== profile) throw new Error(`EAS ${profile} channel must match the profile name`);
           }
           if (eas.build.preview.distribution !== 'internal') throw new Error('Preview build must remain internal');
           if (eas.build.production.autoIncrement !== true) throw new Error('Production autoIncrement must remain enabled');
