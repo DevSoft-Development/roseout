@@ -111,13 +111,19 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true, status: "paused" });
   }
   if (action === "resume") {
-    const nextStatus = campaign.funded_at ? "active" : "pending_funding";
+    let nextStatus = "pending_funding";
+    if (campaign.funded_at) {
+      if (Number(campaign.spent_cents || 0) >= Number(campaign.total_budget_cents || 0)) nextStatus = "completed";
+      else if (campaign.starts_at && new Date(campaign.starts_at).getTime() > Date.now()) nextStatus = "scheduled";
+      else nextStatus = "active";
+    }
     await supabaseAdmin.from("promotion_campaigns").update({ status: nextStatus, paused_at: null, updated_at: now }).eq("id", campaignId);
     return NextResponse.json({ ok: true, status: nextStatus });
   }
   if (action === "cancel") {
     const unused = Math.max(0, Number(campaign.total_budget_cents || 0) - Number(campaign.spent_cents || 0));
     let refundId: string | null = null;
+    let refundedCents = 0;
     if (unused > 0 && campaign.stripe_payment_intent_id) {
       const form = new URLSearchParams();
       form.set("payment_intent", String(campaign.stripe_payment_intent_id));
@@ -126,10 +132,11 @@ export async function PATCH(request: Request) {
       form.set("metadata[location_id]", canonicalId);
       const refund = await stripeRequest<{ id: string }>("/refunds", { body: form, idempotencyKey: `promotion-refund-${campaignId}-${unused}`, mode: getStripeModeForLocation(auth.access.location) });
       refundId = refund.id;
+      refundedCents = unused;
       await supabaseAdmin.from("promotion_ledger_entries").insert({ campaign_id: campaignId, location_id: canonicalId, entry_type: "refund", amount_cents: -unused, stripe_object_id: refund.id, description: "Unused campaign budget refund", metadata: { unused_budget_cents: unused } });
     }
-    await supabaseAdmin.from("promotion_campaigns").update({ status: "cancelled", completed_at: now, updated_at: now, metadata: { ...(campaign.metadata || {}), refund_id: refundId, unused_refund_cents: unused } }).eq("id", campaignId);
-    return NextResponse.json({ ok: true, status: "cancelled", refunded_cents: unused, refund_id: refundId });
+    await supabaseAdmin.from("promotion_campaigns").update({ status: "cancelled", completed_at: now, updated_at: now, metadata: { ...(campaign.metadata || {}), refund_id: refundId, unused_refund_cents: refundedCents } }).eq("id", campaignId);
+    return NextResponse.json({ ok: true, status: "cancelled", refunded_cents: refundedCents, refund_id: refundId });
   }
 
   if (campaign.status !== "draft" && campaign.status !== "pending_funding") return NextResponse.json({ error: "Only draft or unfunded campaigns can be edited." }, { status: 409 });
