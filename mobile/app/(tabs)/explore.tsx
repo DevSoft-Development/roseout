@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, View } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { mobileApi } from "@/lib/api";
@@ -32,23 +32,32 @@ export default function ExploreScreen() {
   const { theme } = useAppTheme();
   const [sections, setSections] = useState<DiscoverSection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  const loadDiscover = useCallback(() => {
     let active = true;
+    setLoading(true);
+    setLoadError(false);
+
     mobileApi<DiscoverResponse>("/discover")
       .then((data) => {
-        if (active) setSections(Array.isArray(data.sections) ? data.sections : []);
+        if (!active) return;
+        setSections(Array.isArray(data.sections) ? data.sections : []);
       })
       .catch(() => {
-        if (active) setSections([]);
+        if (!active) return;
+        setLoadError(true);
       })
       .finally(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
   }, []);
+
+  useFocusEffect(loadDiscover);
 
   const visible = useMemo(() => sections.filter((section) => section.items?.length), [sections]);
 
@@ -85,10 +94,17 @@ export default function ExploreScreen() {
           <AppText muted style={styles.heroBody}>Browse ideas, areas, popular searches, featured places, and complete plans without needing to know what to type.</AppText>
         </View>
 
-        {loading ? (
+        {loading && visible.length === 0 ? (
           <View style={[styles.loadingCard, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
             <AppText variant="bodyStrong">Finding ideas worth going out for…</AppText>
           </View>
+        ) : null}
+
+        {loadError && visible.length === 0 ? (
+          <Pressable onPress={loadDiscover} style={[styles.loadingCard, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
+            <AppText variant="bodyStrong">Discover could not refresh.</AppText>
+            <AppText muted style={{ marginTop: 6 }}>Tap to try again.</AppText>
+          </Pressable>
         ) : null}
 
         {visible.map((section) => (

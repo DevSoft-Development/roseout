@@ -49,9 +49,9 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color, focused }) => <TabGlyph glyph="⌂" color={color} focused={focused} /> }} />
       <Tabs.Screen name="explore" options={{ title: "Discover", tabBarIcon: ({ color, focused }) => <TabGlyph glyph="⌕" color={color} focused={focused} /> }} />
-      <Tabs.Screen name="plan" options={{ title: "Plan", tabBarIcon: ({ color, focused }) => <TabGlyph glyph="✦" color={color} focused={focused} /> }} />
       <Tabs.Screen name="outings" options={{ title: "Outings", tabBarIcon: ({ color, focused }) => <TabGlyph glyph="♡" color={color} focused={focused} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, focused }) => <TabGlyph glyph="◉" color={color} focused={focused} /> }} />
+      <Tabs.Screen name="plan" options={{ href: null }} />
       <Tabs.Screen name="results" options={{ href: null }} />
       <Tabs.Screen name="complete" options={{ href: null }} />
     </Tabs>
