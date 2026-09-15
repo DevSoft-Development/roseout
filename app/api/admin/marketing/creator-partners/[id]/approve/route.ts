@@ -4,7 +4,7 @@ import { approveCreator } from "@/lib/creator-partners/program";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminApiRole(["superadmin", "admin"]);
-  if (!auth.ok) return auth.response;
+  if (auth.error) return auth.error;
   try {
     const { id } = await params;
     const form = await request.formData().catch(() => new FormData());
