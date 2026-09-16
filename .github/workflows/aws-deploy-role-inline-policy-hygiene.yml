@@ -41,7 +41,7 @@ jobs:
           grep -F 'iam:PutRolePolicy' "$FILE" >/dev/null
           grep -F 'iam:DeleteRolePolicy' "$FILE" >/dev/null
           grep -F 'inline_policy_bytes_after' "$FILE" >/dev/null
-          if grep -F -- "- '.github/workflows/aws-platform-dr.yml'" "$FILE" >/dev/null; then
+          if sed -n '1,/^permissions:/p' "$FILE" | grep -F -- "- '.github/workflows/aws-platform-dr.yml'" >/dev/null; then
             echo 'Deploy-role hygiene must not race every DR workflow push.' >&2
             exit 1
           fi
