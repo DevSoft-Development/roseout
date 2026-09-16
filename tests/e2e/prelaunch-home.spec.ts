@@ -13,11 +13,10 @@ const forbiddenLaunchCopy = [
 ];
 
 async function waitForPlannerHydration(page: import("@playwright/test").Page) {
+  const planner = page.getByRole("region", { name: "Plan your outing" });
   const input = page.getByLabel("Describe the outing you want");
-  const quickIdea = page.getByRole("button", { name: "Date night", exact: true });
+  await expect(planner).toHaveAttribute("data-hydrated", "true");
   await expect(input).toBeVisible();
-  await quickIdea.click();
-  await expect(input).toHaveValue("Date night");
   return input;
 }
 
