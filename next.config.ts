@@ -37,6 +37,7 @@ const securityHeaders = [
 
 const nextConfig = {
   ...(isAwsBackground || !isVercel ? { output: "standalone" } : {}),
+  ...(!isProduction ? { allowedDevOrigins: ["127.0.0.1"] } : {}),
   async redirects() { return myWorkspaceRedirects; },
   async headers() { return [{ source: "/:path*", headers: securityHeaders }]; },
   images: {
