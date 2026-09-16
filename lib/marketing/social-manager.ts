@@ -171,24 +171,6 @@ export async function ingestCommunityEvent(input: {
   }, { onConflict: "provider,external_message_id", ignoreDuplicates: true });
   if (messageError) throw messageError;
 
-  if (analysis.opportunityScore >= 50 && input.conversationType === "public_opportunity") {
-    await supabaseAdmin.from("social_growth_opportunities").upsert({
-      provider: input.provider,
-      opportunity_type: analysis.personType === "creator" ? "creator" : "public_intent",
-      external_id: input.externalMessageId || messageKey,
-      title: input.body.slice(0, 140),
-      summary: analysis.intent || "Public conversation",
-      intent: analysis.intent,
-      area: analysis.area,
-      timing: analysis.timing,
-      opportunity_strength: analysis.opportunityStrength,
-      score: analysis.opportunityScore,
-      source_url: input.sourcePermalink || null,
-      suggested_reply: analysis.suggestedReply,
-      metadata: { conversation_id: conversationId },
-    }, { onConflict: "provider,external_id" }).then(() => undefined).catch(() => undefined);
-  }
-
   return { conversationId, analysis };
 }
 
