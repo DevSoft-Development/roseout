@@ -43,20 +43,22 @@ def _sns_message(record):
     sns = record.get("Sns") or {}
     subject = str(sns.get("Subject") or "TheOutHaven critical platform alert").strip()
     message = str(sns.get("Message") or "Critical platform alarm changed state.").strip()
+    state = "ALARM"
     try:
         parsed = json.loads(message)
         if isinstance(parsed, dict):
             alarm = parsed.get("AlarmName") or parsed.get("alarmName") or subject
-            state = parsed.get("NewStateValue") or parsed.get("state") or "ALARM"
+            state = str(parsed.get("NewStateValue") or parsed.get("state") or "ALARM").upper()
             reason = parsed.get("NewStateReason") or parsed.get("reason") or ""
             message = f"{alarm}: {state}. {reason}".strip()
     except Exception:
         pass
-    return subject, message
+    return subject, message, state
 
 
-def _sms_body(subject, message):
-    combined = f"TheOutHaven CRITICAL: {subject}. {message}"
+def _sms_body(subject, message, state):
+    prefix = "RECOVERED" if state == "OK" else "CRITICAL"
+    combined = f"TheOutHaven {prefix}: {subject}. {message}"
     combined = re.sub(r"\s+", " ", combined).strip()
     return combined[:1450]
 
@@ -87,12 +89,12 @@ def handler(event, context):
 
     results = []
     for record in event.get("Records") or []:
-        subject, message = _sns_message(record)
+        subject, message, state = _sns_message(record)
         if not configured:
             results.append({"sent": False, "reason": "critical_sms_not_configured"})
             continue
         try:
-            status, _ = _send_telnyx(api_key, from_number, to_number, _sms_body(subject, message))
+            status, _ = _send_telnyx(api_key, from_number, to_number, _sms_body(subject, message, state))
             results.append({"sent": 200 <= status < 300, "status": status})
         except urllib.error.HTTPError as error:
             results.append({"sent": False, "status": int(error.code), "reason": "telnyx_http_error"})
