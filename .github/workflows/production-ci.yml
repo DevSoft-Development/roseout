@@ -109,7 +109,7 @@ jobs:
 
           matches() { printf '%s\n' "$CHANGED" | grep -Eq "$1"; }
           all=false
-          if matches '^(package(-lock)?\.json|tsconfig.*\.json|\.github/workflows/production-ci\.yml)$'; then all=true; fi
+          if matches '^(package(-lock)?\.json|tsconfig.*\.json)$'; then all=true; fi
 
           security=false
           search=false
