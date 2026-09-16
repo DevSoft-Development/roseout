@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
 
+async function waitForPlannerHydration(page: import("@playwright/test").Page) {
+  const input = page.getByLabel("Describe the outing you want");
+  await expect(input).toBeVisible();
+  await expect(input).not.toHaveAttribute("placeholder", "", { timeout: 10_000 });
+  return input;
+}
+
 test.describe("public planner routing", () => {
   test("homepage search opens Make It Yours before results", async ({ page }) => {
     await page.route("**/api/search/resolve-plan-type", async (route) => {
@@ -11,8 +18,11 @@ test.describe("public planner routing", () => {
     });
 
     await page.goto("/");
-    await page.getByLabel("Describe the outing you want").fill("Date night in Brooklyn");
-    await page.getByRole("button", { name: "Find My Outing" }).click();
+    const plannerInput = await waitForPlannerHydration(page);
+    await plannerInput.fill("Date night in Brooklyn");
+    const submit = page.getByRole("button", { name: "Find My Outing" });
+    await expect(submit).toBeEnabled();
+    await submit.click();
 
     await expect(page).toHaveURL(/step=2/);
     await expect(page.getByText("MAKE IT YOURS")).toBeVisible();
@@ -27,12 +37,19 @@ test.describe("public planner routing", () => {
     await expect(page.getByLabel("Describe the outing you want")).toBeVisible();
   });
 
-  test("Queens area browse returns listings", async ({ request }) => {
-    const response = await request.get("/api/explore/search?area=Queens", {
-      headers: { "x-forwarded-for": "198.51.100.42" },
-    });
-    expect(response.ok()).toBeTruthy();
-    const payload = await response.json();
+  test("Queens area browse returns listings", async ({ request }, testInfo) => {
+    let response;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const octet = 1 + ((Date.now() + testInfo.workerIndex * 31 + attempt * 97) % 254);
+      response = await request.get("/api/explore/search?area=Queens", {
+        headers: { "x-forwarded-for": `198.51.100.${octet}` },
+      });
+      if (response.status() !== 429) break;
+    }
+
+    expect(response, "Queens browse request should return a response").toBeTruthy();
+    expect(response!.ok(), `Queens browse returned HTTP ${response!.status()}`).toBeTruthy();
+    const payload = await response!.json();
     expect(payload.success).toBe(true);
     expect(payload.items?.length || 0).toBeGreaterThan(0);
   });
