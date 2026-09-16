@@ -1,8 +1,15 @@
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+
+const inventory = spawnSync(process.execPath, ["scripts/validate-runtime-schedules.mjs", "reservation-reminder-cron"], {
+  encoding: "utf8",
+  stdio: "inherit",
+});
+if (inventory.status !== 0) {
+  throw new Error("canonical runtime schedule inventory validation failed");
+}
 
 const schedules = JSON.parse(fs.readFileSync("infra/aws/edge-runtime/schedules.json", "utf8"));
-if (schedules.length !== 65) throw new Error(`Expected 65 canonical schedules, got ${schedules.length}`);
-
 const reservation = schedules.find((row) => row.name === "reservation-reminder-cron");
 if (!reservation) throw new Error("reservation-reminder-cron schedule missing");
 if (reservation.expression !== "cron(0/15 * * * ? *)") throw new Error("reservation reminder cadence drifted");
