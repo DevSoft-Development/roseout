@@ -23,10 +23,10 @@ test.describe("public product readiness", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByRole("heading", { name: "Plan the whole outing. In one place." })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Plan an Outing" }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Explore Places" }).first()).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Tell us the outing you have in mind." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Plan better OUTings." })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Plan your outing" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "For Businesses" }).first()).toBeVisible();
 
     const body = (await page.locator("body").innerText()).toLowerCase();
     for (const copy of forbiddenLaunchCopy) expect(body).not.toContain(copy);
@@ -34,25 +34,25 @@ test.describe("public product readiness", () => {
   });
 
   test("homepage search opens the outing planner with the visitor prompt", async ({ page }) => {
-    await page.route("**/api/generate", async (route) => {
+    await page.route("**/api/search/resolve-plan-type", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ pairs: [], restaurants: [], activities: [] }),
+        body: JSON.stringify({ planType: "outing" }),
       });
     });
 
     await page.goto("/");
-    await page.getByLabel("Describe your outing").fill("Italian dinner and comedy in Manhattan");
-    await page.getByRole("button", { name: "Plan my outing" }).click();
+    await page.getByLabel("Describe the outing you want").fill("Italian dinner and comedy in Manhattan");
+    await page.getByRole("button", { name: "Find My Outing" }).click();
 
-    await expect(page).toHaveURL(/\/create\?.*guided=results/);
+    await expect(page).toHaveURL(/\/create\?.*step=2/);
     expect(decodeURIComponent(page.url())).toContain("Italian dinner and comedy in Manhattan");
   });
 
   test("Explore is directly reachable from the homepage", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Explore Places" }).first().click();
+    await page.getByRole("link", { name: "Discover" }).click();
     await expect(page).toHaveURL(/\/explore/);
   });
 
@@ -90,7 +90,7 @@ test.describe("public product readiness", () => {
     test(`outing planner entry has no horizontal overflow at ${viewport.width}px`, async ({ page }) => {
       await page.setViewportSize(viewport);
       await page.goto("/");
-      await expect(page.getByRole("button", { name: "Plan my outing" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Find My Outing" })).toBeVisible();
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
