@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import TurnstileField from "@/components/security/TurnstileField";
 
 const ALLOWED_ACTIONS = new Set(["mobile_signin", "mobile_signup"]);
 
-export default function MobileTurnstilePage() {
+function MobileTurnstileContent() {
   const params = useSearchParams();
   const requestedAction = params.get("action") || "mobile_signin";
   const action = ALLOWED_ACTIONS.has(requestedAction) ? requestedAction : "mobile_signin";
@@ -36,5 +36,13 @@ export default function MobileTurnstilePage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function MobileTurnstilePage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#090909]" />}>
+      <MobileTurnstileContent />
+    </Suspense>
   );
 }
