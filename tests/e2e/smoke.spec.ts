@@ -1,5 +1,5 @@
-import { test } from "@playwright/test";
-import { expectCleanPageLoad } from "./helpers";
+import { expect, test } from "@playwright/test";
+import { expectCleanPageLoad, expectNoHardError } from "./helpers";
 
 const publicRoutes = [
   "/",
@@ -9,7 +9,6 @@ const publicRoutes = [
   "/business/claim",
   "/signup",
   "/plan",
-  "/pricing",
 ];
 
 test.describe("public route smoke tests", () => {
@@ -18,4 +17,10 @@ test.describe("public route smoke tests", () => {
       await expectCleanPageLoad(page, route);
     });
   }
+
+  test("/pricing loads the current business plans destination without hard errors", async ({ page }) => {
+    await page.goto("/pricing", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/business\/plans(?:[?#].*)?$/);
+    await expectNoHardError(page);
+  });
 });
