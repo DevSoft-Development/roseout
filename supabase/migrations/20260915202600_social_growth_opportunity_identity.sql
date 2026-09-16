@@ -1,0 +1,1 @@
+create unique index if not exists social_growth_opportunities_provider_external_uidx on public.social_growth_opportunities(provider,external_id);
