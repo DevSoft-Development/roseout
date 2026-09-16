@@ -1,12 +1,12 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import TurnstileField from "@/components/security/TurnstileField";
 
 const ALLOWED_ACTIONS = new Set(["mobile_signin", "mobile_signup"]);
 
-function TurnstileShell({ children }: { children: React.ReactNode }) {
+function TurnstileShell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-[#090909] px-6 py-12 text-white">
       <div className="mx-auto flex min-h-[70vh] max-w-md items-center">
