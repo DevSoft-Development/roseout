@@ -21,11 +21,15 @@ function assertIncludes(haystack, needle, message) {
 assertIncludes(weeklyPage, 'getWeeklyBetaEnabled', 'weekly route must check real weekly flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaEnabled)', 'weekly route must block real sessions while disabled');
 assertIncludes(weeklyPage, 'Weekly beta task is not open yet', 'weekly disabled state must be user-friendly');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(ctx.beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
+const realDisabledGuard = weeklyPage.indexOf('if (!weeklyBetaEnabled)');
+const realSessionCreate = weeklyPage.indexOf('const result = await getOrCreateWeeklyBetaSessionForTester(beta.id)');
+assert.ok(realDisabledGuard >= 0 && realSessionCreate > realDisabledGuard, 'weekly route must not create/fetch real sessions before disabled guard');
 
 assertIncludes(weeklyPage, 'getWeeklyBetaE2ETestModeEnabled', 'test route must check e2e flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaTestModeEnabled)', 'test route must block ?test=1 while disabled');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaTestModeEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForUser(ctx.user.id, true)'), 'test route must not create test sessions before test-mode guard');
+const testDisabledGuard = weeklyPage.indexOf('if (!weeklyBetaTestModeEnabled)');
+const testSessionCreate = weeklyPage.indexOf('const result = await getOrCreateWeeklyBetaSessionForUser(ctx.user.id, true)');
+assert.ok(testDisabledGuard >= 0 && testSessionCreate > testDisabledGuard, 'test route must not create test sessions before test-mode guard');
 assertIncludes(weeklyPage, 'Enable test mode from the admin beta or giveaway controls', 'admins need helpful test-mode disabled message');
 
 assertIncludes(guidedRoute, 'completedStepsFor', 'guided route must update session completed steps');
