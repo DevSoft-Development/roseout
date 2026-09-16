@@ -3,7 +3,7 @@ declare
   social_contact record;
   crm_contact_id uuid;
   task_exists boolean;
-  creator_key text;
+  v_creator_key text;
 begin
   if new.person_type not in ('business','creator') then return new; end if;
   select * into social_contact from public.social_community_contacts where id=new.contact_id;
@@ -19,9 +19,9 @@ begin
     update public.social_community_contacts set linked_crm_contact_id=crm_contact_id where id=social_contact.id;
   end if;
   if new.person_type='creator' then
-    creator_key := new.provider||':'||social_contact.external_user_id;
+    v_creator_key := new.provider||':'||social_contact.external_user_id;
     insert into public.gtm_creator_sources(creator_key,display_name,platform,status,metadata)
-    values (creator_key,coalesce(nullif(social_contact.display_name,''),nullif(social_contact.username,''),'Creator'),new.provider,'active',jsonb_build_object('social_contact_id',social_contact.id,'conversation_id',new.id,'username',social_contact.username))
+    values (v_creator_key,coalesce(nullif(social_contact.display_name,''),nullif(social_contact.username,''),'Creator'),new.provider,'active',jsonb_build_object('social_contact_id',social_contact.id,'conversation_id',new.id,'username',social_contact.username))
     on conflict (creator_key) do update set display_name=excluded.display_name,platform=excluded.platform,status='active',metadata=public.gtm_creator_sources.metadata||excluded.metadata,updated_at=now();
   end if;
   select exists(select 1 from public.crm_tasks where source='social_manager' and source_record_id=new.id::text and archived_at is null) into task_exists;
