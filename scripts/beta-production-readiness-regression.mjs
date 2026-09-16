@@ -12,6 +12,7 @@ const betaAdminClient = read('app/admin/dashboard/beta/BetaAdminClient.tsx');
 const giveawayAdminClient = read('app/admin/dashboard/giveaway/GiveawayAdminClient.tsx');
 const weeklyE2EChecklist = read('docs/beta-weekly-e2e-checklist.md');
 const eligibility = read('lib/beta-giveaway-eligibility.ts');
+const cronJobs = JSON.parse(read('config/cron-jobs.json'));
 const vercel = JSON.parse(read('vercel.json'));
 
 function assertIncludes(haystack, needle, message) {
@@ -21,7 +22,7 @@ function assertIncludes(haystack, needle, message) {
 assertIncludes(weeklyPage, 'getWeeklyBetaEnabled', 'weekly route must check real weekly flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaEnabled)', 'weekly route must block real sessions while disabled');
 assertIncludes(weeklyPage, 'Weekly beta task is not open yet', 'weekly disabled state must be user-friendly');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(ctx.beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
+assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
 
 assertIncludes(weeklyPage, 'getWeeklyBetaE2ETestModeEnabled', 'test route must check e2e flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaTestModeEnabled)', 'test route must block ?test=1 while disabled');
@@ -69,6 +70,10 @@ assertIncludes(betaAdminClient, 'Send Test Completion Email', 'beta admin UI mus
 assertIncludes(giveawayAdminClient, 'Send Test Completion Email', 'giveaway admin UI must expose Send Test Completion Email');
 assertIncludes(weeklyE2EChecklist, 'Admin test-mode E2E', 'weekly beta E2E checklist must exist');
 
-assert.ok(vercel.crons.some((cron) => cron.path === '/api/cron/beta-reminders' && cron.schedule === '0 14 * * 1-5'), 'vercel cron must schedule beta reminders on weekdays around 14:00 UTC');
+const betaReminderJob = cronJobs.find((job) => job.jobKey === 'beta-reminders');
+assert.ok(betaReminderJob, 'managed cron registry must include beta reminders');
+assert.equal(betaReminderJob.targetPath, '/api/cron/beta-reminders', 'beta reminders must target the canonical Next.js cron route');
+assert.equal(betaReminderJob.delivery, 'managed', 'beta reminders must be owned by the managed scheduler');
+assert.ok(!vercel.crons.some((cron) => cron.path === '/api/cron/beta-reminders'), 'beta reminders must not be duplicated in Vercel cron after scheduler migration');
 
 console.log('Beta production-readiness regression checks passed.');
