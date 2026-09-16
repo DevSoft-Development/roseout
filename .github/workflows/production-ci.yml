@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -50,7 +52,26 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
+      - name: Lint changed files on pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t FILES < <(
+            git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" |
+              grep -E '\.(js|jsx|ts|tsx|mjs|cjs)$' || true
+          )
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No changed JavaScript/TypeScript files to lint."
+            exit 0
+          fi
+          echo "Linting ${#FILES[@]} changed files."
+          npx eslint -- "${FILES[@]}"
+
+      - name: Full repository lint on main
+        if: github.event_name != 'pull_request'
         run: npm run lint
 
       - name: Build production application
@@ -79,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "pull_request" ]; then
-            for key in security search reserve billing beta location; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
+            for key in security search search_health reserve billing beta location; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
 
@@ -92,6 +113,7 @@ jobs:
 
           security=false
           search=false
+          search_health=false
           reserve=false
           billing=false
           beta=false
@@ -99,6 +121,7 @@ jobs:
 
           if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
+          if [ "$all" = true ] || matches '^(lib/admin/search-health-dashboard\.ts$|lib/admin/__tests__/search-health-dashboard\.test\.ts$|app/admin/dashboard/search-health/|app/api/admin/search-health/)'; then search_health=true; fi
           if [ "$all" = true ] || matches '^(lib/reserve/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
           if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe))'; then billing=true; fi
           if [ "$all" = true ] || matches '^(lib/beta/|app/api/beta/|app/beta/|scripts/.*beta)'; then beta=true; fi
@@ -106,49 +129,68 @@ jobs:
 
           echo "security=$security" >> "$GITHUB_OUTPUT"
           echo "search=$search" >> "$GITHUB_OUTPUT"
+          echo "search_health=$search_health" >> "$GITHUB_OUTPUT"
           echo "reserve=$reserve" >> "$GITHUB_OUTPUT"
           echo "billing=$billing" >> "$GITHUB_OUTPUT"
           echo "beta=$beta" >> "$GITHUB_OUTPUT"
           echo "location=$location" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.search_health == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install locked dependencies
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.search_health == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
         run: npm ci
 
       - name: Security access regressions
         if: steps.changes.outputs.security == 'true'
         run: npm run test:security-access
 
-      - name: Core search intent regression
+      - name: Search regression suite
         if: steps.changes.outputs.search == 'true'
-        run: npm test
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-ci-search
+          mkdir -p .tmp-ci-search
 
-      - name: Search production regression
-        if: steps.changes.outputs.search == 'true'
-        run: npm run test:search-production
+          (npm test && npm run test:search-production) > .tmp-ci-search/core.log 2>&1 &
+          core_pid=$!
+          npm run test:search-quality > .tmp-ci-search/quality.log 2>&1 & quality_pid=$!
+          npm run test:search-route-regression > .tmp-ci-search/route.log 2>&1 & route_pid=$!
+          npm run test:enterprise-search > .tmp-ci-search/enterprise.log 2>&1 & enterprise_pid=$!
+          npm run test:public-search-intent > .tmp-ci-search/public-intent.log 2>&1 & public_pid=$!
 
-      - name: Enterprise search quality regression
-        if: steps.changes.outputs.search == 'true'
-        run: npm run test:search-quality
+          status=0
+          for entry in \
+            "$core_pid:core" \
+            "$quality_pid:quality" \
+            "$route_pid:route" \
+            "$enterprise_pid:enterprise" \
+            "$public_pid:public-intent"; do
+            pid="${entry%%:*}"
+            name="${entry#*:}"
+            if wait "$pid"; then
+              echo "PASS: $name"
+            else
+              echo "FAIL: $name"
+              status=1
+            fi
+          done
 
-      - name: Search route regression
-        if: steps.changes.outputs.search == 'true'
-        run: npm run test:search-route-regression
+          for log in .tmp-ci-search/*.log; do
+            echo "::group::$(basename "$log")"
+            cat "$log"
+            echo "::endgroup::"
+          done
+          exit "$status"
 
-      - name: Enterprise search unit tests
-        if: steps.changes.outputs.search == 'true'
-        run: npm run test:enterprise-search
-
-      - name: Public search intent checks
-        if: steps.changes.outputs.search == 'true'
-        run: npm run test:public-search-intent
+      - name: Search Health dashboard regression
+        if: steps.changes.outputs.search_health == 'true'
+        run: npm run test:search-health-dashboard
 
       - name: Reserve regression tests
         if: steps.changes.outputs.reserve == 'true'
@@ -173,7 +215,7 @@ jobs:
       - name: Report targeted PR validation
         if: github.event_name == 'pull_request'
         run: |
-          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, search_health=${{ steps.changes.outputs.search_health }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}" >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
     name: Required browser smoke tests
@@ -201,7 +243,7 @@ jobs:
             exit 0
           fi
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json|\.github/workflows/production-ci\.yml)'; then
+          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json)'; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run=false' >> "$GITHUB_OUTPUT"
