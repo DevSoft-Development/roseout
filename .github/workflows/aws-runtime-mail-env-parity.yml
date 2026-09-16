@@ -71,7 +71,7 @@ jobs:
           grep -F 'sync_mail.outputs.background_changed' "$FILE" >/dev/null
           grep -F 'if [[ "$EDGE_CHANGED" == "true" ]]' "$FILE" >/dev/null
           grep -F 'if [[ "$BACKGROUND_CHANGED" == "true" ]]' "$FILE" >/dev/null
-          if grep -F 'vercel@59.3.0 env pull' "$FILE" >/dev/null; then
+          if grep -F 'npx --yes vercel@59.3.0 env pull' "$FILE" >/dev/null; then
             echo 'Mail parity must not depend on Vercel CLI project-link state.' >&2
             exit 1
           fi
