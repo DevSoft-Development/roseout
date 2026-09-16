@@ -36,6 +36,7 @@ env:
   EDGE_RUNTIME_SECRET_REGION: us-east-1
   BACKGROUND_APP_ENV_SECRET: /theouthaven/production/platform-dr/app-env
   BACKGROUND_APP_ENV_SECRET_REGION: us-west-2
+  CREDENTIAL_VAULT_PREFIX: /theouthaven/credential-vault
   VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
   VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
   VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
@@ -53,6 +54,9 @@ jobs:
           grep -F 'SEARCH_HEALTH_DIGEST_TO' "$FILE" >/dev/null
           grep -F 'MARKETING_PULSE_TO' "$FILE" >/dev/null
           grep -F 'PLATFORM_ERROR_DIGEST_TO' "$FILE" >/dev/null
+          grep -F 'CREDENTIAL_VAULT_PREFIX: /theouthaven/credential-vault' "$FILE" >/dev/null
+          grep -F '${CREDENTIAL_VAULT_PREFIX}/production/vercel' "$FILE" >/dev/null
+          grep -F 'decrypt=true' "$FILE" >/dev/null
           grep -F 'VERCEL_ORG_ID: team_TzlwC4vdLZiT8kFGuXSoj1em' "$FILE" >/dev/null
           grep -F '/theouthaven/production/edge-runtime/env' "$FILE" >/dev/null
           grep -F '/theouthaven/production/platform-dr/app-env' "$FILE" >/dev/null
@@ -67,6 +71,10 @@ jobs:
           grep -F 'sync_mail.outputs.background_changed' "$FILE" >/dev/null
           grep -F 'if [[ "$EDGE_CHANGED" == "true" ]]' "$FILE" >/dev/null
           grep -F 'if [[ "$BACKGROUND_CHANGED" == "true" ]]' "$FILE" >/dev/null
+          if grep -F 'vercel@59.3.0 env pull' "$FILE" >/dev/null; then
+            echo 'Mail parity must not depend on Vercel CLI project-link state.' >&2
+            exit 1
+          fi
           grep -F 'awsCronSchedules' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'AWS EventBridge:' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'aws_schedule_count' app/api/admin/cron-jobs/route.ts >/dev/null
@@ -95,19 +103,31 @@ jobs:
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       - name: Pull production mail configuration without logging values
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
-          test -n "$VERCEL_TOKEN" || { echo 'VERCEL_TOKEN is required for production mail parity.' >&2; exit 1; }
-          mkdir -p .vercel
-          jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
-          ENV_FILE="$RUNNER_TEMP/vercel-production.env"
+          VERCEL_CREDENTIAL="$RUNNER_TEMP/vercel-credential.json"
+          VERCEL_ENV_JSON="$RUNNER_TEMP/vercel-production-env.json"
           MAIL_JSON="$RUNNER_TEMP/mail-env.json"
-          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
-          chmod 600 "$ENV_FILE"
+          aws secretsmanager get-secret-value \
+            --region "$AWS_REGION" \
+            --secret-id "${CREDENTIAL_VAULT_PREFIX}/production/vercel" \
+            --query SecretString \
+            --output text > "$VERCEL_CREDENTIAL"
+          chmod 600 "$VERCEL_CREDENTIAL"
+          jq -e 'type == "object"' "$VERCEL_CREDENTIAL" >/dev/null
+          VERCEL_RUNTIME_TOKEN="$(jq -r '.token // empty' "$VERCEL_CREDENTIAL")"
+          VERCEL_RUNTIME_TEAM_ID="$(jq -r '.teamId // empty' "$VERCEL_CREDENTIAL")"
+          test -n "$VERCEL_RUNTIME_TOKEN" || { echo 'Credential Vault Vercel token is not configured.' >&2; exit 1; }
+          if [ -z "$VERCEL_RUNTIME_TEAM_ID" ]; then VERCEL_RUNTIME_TEAM_ID="$VERCEL_TEAM_ID"; fi
+          echo "::add-mask::$VERCEL_RUNTIME_TOKEN"
 
-          ENV_FILE="$ENV_FILE" MAIL_JSON="$MAIL_JSON" python <<'PY'
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_RUNTIME_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?decrypt=true&source=aws-runtime-mail-parity&teamId=${VERCEL_RUNTIME_TEAM_ID}" \
+            > "$VERCEL_ENV_JSON"
+          chmod 600 "$VERCEL_ENV_JSON"
+
+          VERCEL_ENV_JSON="$VERCEL_ENV_JSON" MAIL_JSON="$MAIL_JSON" python <<'PY'
           import json
           import os
           from pathlib import Path
@@ -125,22 +145,22 @@ jobs:
               'PLATFORM_ERROR_DIGEST_TO',
               'THEOUTHAVEN_ADMIN_EMAIL',
           }
+          payload = json.loads(Path(os.environ['VERCEL_ENV_JSON']).read_text(encoding='utf-8'))
+          envs = payload.get('envs')
+          if not isinstance(envs, list):
+              raise SystemExit('Vercel project environment response did not contain an envs array.')
           values = {}
-          for raw_line in Path(os.environ['ENV_FILE']).read_text(encoding='utf-8').splitlines():
-              line = raw_line.strip()
-              if not line or line.startswith('#') or '=' not in line:
+          for item in envs:
+              if not isinstance(item, dict):
                   continue
-              key, raw = line.split('=', 1)
-              key = key.strip()
-              if key not in allowed:
+              key = item.get('key')
+              value = item.get('value')
+              targets = item.get('target') or []
+              if key not in allowed or not isinstance(value, str) or not value:
                   continue
-              raw = raw.strip()
-              try:
-                  value = json.loads(raw) if raw.startswith('"') else raw.strip("'")
-              except json.JSONDecodeError:
-                  value = raw.strip('"').strip("'")
-              if isinstance(value, str) and value:
-                  values[key] = value
+              if not isinstance(targets, list) or 'production' not in targets:
+                  continue
+              values[key] = value
           if not values.get('RESEND_API_KEY'):
               raise SystemExit('Production Vercel environment is missing RESEND_API_KEY.')
           if not any(values.get(key) for key in ('ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'THEOUTHAVEN_ADMIN_EMAIL')):
@@ -151,7 +171,7 @@ jobs:
           while IFS= read -r value; do
             [ -z "$value" ] || echo "::add-mask::$value"
           done < <(jq -r '.[]' "$MAIL_JSON")
-          rm -f "$ENV_FILE"
+          rm -f "$VERCEL_CREDENTIAL" "$VERCEL_ENV_JSON"
 
       - name: Synchronize mail configuration into AWS runtime secrets
         id: sync_mail
