@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - '.github/workflows/aws-runtime-mail-env-parity.yml'
+      - 'scripts/validate-runtime-schedules.mjs'
+      - 'infra/aws/edge-runtime/schedules.json'
       - 'app/api/admin/cron-jobs/**'
       - 'lib/cron/controlPlane.ts'
   push:
     branches: [main]
     paths:
       - '.github/workflows/aws-runtime-mail-env-parity.yml'
+      - 'scripts/validate-runtime-schedules.mjs'
+      - 'infra/aws/edge-runtime/schedules.json'
   workflow_run:
     workflows: ["AWS edge runtime", "AWS background runtime"]
     types: [completed]
@@ -67,7 +71,10 @@ jobs:
           grep -F 'AWS EventBridge:' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'aws_schedule_count' app/api/admin/cron-jobs/route.ts >/dev/null
           grep -F 'infra/aws/edge-runtime/schedules.json' lib/cron/controlPlane.ts >/dev/null
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          node scripts/validate-runtime-schedules.mjs \
+            daily-search-health-digest \
+            daily-marketing-pulse \
+            daily-platform-error-digest
 
   sync:
     if: >-

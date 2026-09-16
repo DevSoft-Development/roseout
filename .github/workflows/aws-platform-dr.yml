@@ -129,6 +129,25 @@ jobs:
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          PRESERVE='TheOutHavenPlatformCloudFormation'
+
+          mapfile -t TEMPORARY_POLICIES <<'EOF'
+          TheOutHavenPlatformDrBootstrap
+          TheOutHavenSesTelemetryBootstrap
+          TheOutHavenWorkerRuntimeBootstrap
+          TheOutHavenDnsVerificationBootstrap
+          TheOutHavenCloudFormationChangeSetsBootstrap
+          TheOutHavenSearchMlBootstrap
+          TheOutHavenSesProductionAccessBootstrap
+          TheOutHavenOpsCodeBuildBootstrap
+          TheOutHavenWebsiteRuntimeBootstrap
+          TheOutHavenEdgeRuntimeEcrBootstrap
+          TheOutHavenWebsiteAcmBootstrap
+          TheOutHavenPlatformDrTargetDiagnosticsBootstrap
+          TheOutHavenDomainGatewayBootstrap
+          TheOutHavenDomainGatewayAuthorityBootstrap
+          EOF
+
           cat > "$RUNNER_TEMP/platform-dr-bootstrap.json" <<'JSON'
           {
             "Version":"2012-10-17",
@@ -152,7 +171,49 @@ jobs:
             ]
           }
           JSON
-          test "$(wc -c < "$RUNNER_TEMP/platform-dr-bootstrap.json")" -lt 1024
+
+          aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/dr-inline-policies.json"
+          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/dr-inline-policies.json" >/dev/null || {
+            echo "Canonical inline policy $PRESERVE is missing; refusing DR bootstrap cleanup." >&2
+            exit 1
+          }
+
+          before=0
+          while IFS= read -r policy; do
+            doc="$RUNNER_TEMP/dr-policy-${policy}.json"
+            aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "$policy" --query PolicyDocument --output json > "$doc"
+            bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
+            before=$((before + bytes))
+          done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/dr-inline-policies.json")
+          echo "inline_policy_bytes_before=$before"
+
+          for policy in "${TEMPORARY_POLICIES[@]}"; do
+            if jq -e --arg name "$policy" '.PolicyNames | index($name) != null' "$RUNNER_TEMP/dr-inline-policies.json" >/dev/null; then
+              test "$policy" != "$PRESERVE"
+              echo "Removing stale temporary inline policy before DR bootstrap: $policy"
+              aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$policy"
+            fi
+          done
+
+          aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/dr-inline-policies-after.json"
+          after=0
+          while IFS= read -r policy; do
+            doc="$RUNNER_TEMP/dr-policy-after-${policy}.json"
+            aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "$policy" --query PolicyDocument --output json > "$doc"
+            bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
+            after=$((after + bytes))
+          done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/dr-inline-policies-after.json")
+          echo "inline_policy_bytes_after=$after"
+          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/dr-inline-policies-after.json" >/dev/null
+
+          bootstrap_bytes="$(jq -c . "$RUNNER_TEMP/platform-dr-bootstrap.json" | wc -c | tr -d ' ')"
+          projected=$((after + bootstrap_bytes))
+          echo "inline_policy_bytes_projected_with_dr_bootstrap=$projected"
+          test "$projected" -lt 10240 || {
+            echo "Deploy role would meet or exceed the AWS 10,240-byte inline-policy limit after the DR bootstrap; refusing deployment." >&2
+            exit 1
+          }
+
           aws iam put-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name TheOutHavenPlatformDrBootstrap \

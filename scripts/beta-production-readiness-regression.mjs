@@ -12,7 +12,7 @@ const betaAdminClient = read('app/admin/dashboard/beta/BetaAdminClient.tsx');
 const giveawayAdminClient = read('app/admin/dashboard/giveaway/GiveawayAdminClient.tsx');
 const weeklyE2EChecklist = read('docs/beta-weekly-e2e-checklist.md');
 const eligibility = read('lib/beta-giveaway-eligibility.ts');
-const vercel = JSON.parse(read('vercel.json'));
+const runtimeSchedules = JSON.parse(read('infra/aws/edge-runtime/schedules.json'));
 
 function assertIncludes(haystack, needle, message) {
   assert.ok(haystack.includes(needle), message || `Expected to find ${needle}`);
@@ -21,11 +21,15 @@ function assertIncludes(haystack, needle, message) {
 assertIncludes(weeklyPage, 'getWeeklyBetaEnabled', 'weekly route must check real weekly flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaEnabled)', 'weekly route must block real sessions while disabled');
 assertIncludes(weeklyPage, 'Weekly beta task is not open yet', 'weekly disabled state must be user-friendly');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(ctx.beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
+const realDisabledGuard = weeklyPage.indexOf('if (!weeklyBetaEnabled)');
+const realSessionCreate = weeklyPage.indexOf('const result = await getOrCreateWeeklyBetaSessionForTester(beta.id)');
+assert.ok(realDisabledGuard >= 0 && realSessionCreate > realDisabledGuard, 'weekly route must not create/fetch real sessions before disabled guard');
 
 assertIncludes(weeklyPage, 'getWeeklyBetaE2ETestModeEnabled', 'test route must check e2e flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaTestModeEnabled)', 'test route must block ?test=1 while disabled');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaTestModeEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForUser(ctx.user.id, true)'), 'test route must not create test sessions before test-mode guard');
+const testDisabledGuard = weeklyPage.indexOf('if (!weeklyBetaTestModeEnabled)');
+const testSessionCreate = weeklyPage.indexOf('const result = await getOrCreateWeeklyBetaSessionForUser(ctx.user.id, true)');
+assert.ok(testDisabledGuard >= 0 && testSessionCreate > testDisabledGuard, 'test route must not create test sessions before test-mode guard');
 assertIncludes(weeklyPage, 'Enable test mode from the admin beta or giveaway controls', 'admins need helpful test-mode disabled message');
 
 assertIncludes(guidedRoute, 'completedStepsFor', 'guided route must update session completed steps');
@@ -69,6 +73,10 @@ assertIncludes(betaAdminClient, 'Send Test Completion Email', 'beta admin UI mus
 assertIncludes(giveawayAdminClient, 'Send Test Completion Email', 'giveaway admin UI must expose Send Test Completion Email');
 assertIncludes(weeklyE2EChecklist, 'Admin test-mode E2E', 'weekly beta E2E checklist must exist');
 
-assert.ok(vercel.crons.some((cron) => cron.path === '/api/cron/beta-reminders' && cron.schedule === '0 14 * * 1-5'), 'vercel cron must schedule beta reminders on weekdays around 14:00 UTC');
+const betaReminderSchedule = runtimeSchedules.find((schedule) => schedule?.name === 'beta-reminders');
+assert.ok(betaReminderSchedule, 'AWS runtime schedule inventory must include beta-reminders');
+assert.equal(betaReminderSchedule.expression, 'cron(0 14 ? * MON-FRI *)', 'AWS must schedule beta reminders weekdays at 14:00 UTC');
+assert.equal(betaReminderSchedule.function, 'sqs:background-cron', 'beta reminders must use the AWS background cron runtime');
+assert.equal(betaReminderSchedule.body?.target, '/api/cron/managed?job=beta-reminders', 'beta reminders must invoke the managed beta-reminders job');
 
 console.log('Beta production-readiness regression checks passed.');

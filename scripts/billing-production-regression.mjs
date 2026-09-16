@@ -1,6 +1,17 @@
 import fs from 'node:fs';
 const read = (p) => fs.readFileSync(p, 'utf8');
 
+function readSqlTree(dir) {
+  if (!fs.existsSync(dir)) return '';
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .map((entry) => {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) return readSqlTree(path);
+      return entry.name.endsWith('.sql') ? read(path) : '';
+    })
+    .join('\n');
+}
+
 const checkout = read('app/api/business/billing/checkout/route.ts');
 const portal = read('app/api/business/billing/portal/route.ts');
 const changePlan = read('app/api/business/billing/change-plan/route.ts');
@@ -12,8 +23,12 @@ const depositCheckout = read('app/api/reservations/create-deposit-checkout/route
 const reservationPage = read('app/reserve/confirmation/[token]/page.tsx');
 const organizerOnboard = read('app/api/organizers/stripe-connect/onboard/route.ts');
 const organizerReturn = read('app/api/organizers/stripe-connect/return/route.ts');
+const organizerConnectStatus = read('lib/stripe/connect-status.ts');
 const ticketRefund = read('app/api/events/ticket-orders/[orderId]/refund/route.ts');
-const refundMigration = read('supabase/migrations/20260822201331_stripe_e2e_refund_audit.sql');
+const migrationCorpus = [
+  readSqlTree('supabase/migrations'),
+  readSqlTree('supabase/migrations_archive'),
+].join('\n');
 
 const checks = [
   ['checkout monthly/annual params', checkout, /interval.*monthly/s, /getBusinessProPriceId\(interval\)/],
@@ -38,11 +53,11 @@ const checks = [
   ['hosted deposit checkout routes funds to connected location', depositCheckout, /payment_intent_data\[transfer_data\]\[destination\]/, /payment_intent_data\[on_behalf_of\]/, /reservation-deposit-checkout-/],
   ['reservation customer has Pay Deposit flow', reservationPage, /Pay Deposit Securely/, /create-deposit-checkout/, /searchParams\.get\("deposit"\)/, /depositResult === "success"/],
   ['reservation cancellation refunds transfer and application fee', read('app/api/reservations/[id]/cancel/route.ts'), /reverse_transfer/, /refund_application_fee/],
-  ['organizer Connect return is synchronized', organizerOnboard, /api\/organizers\/stripe-connect\/return/, organizerReturn, /stripe_connect_charges_enabled/, /stripe_connect_payouts_enabled/],
+  ['organizer Connect return is synchronized', organizerOnboard, /api\/organizers\/stripe-connect\/return/, organizerReturn, /retrieveConnectAccountState/, /connectStateUpdate\(state\)/, organizerConnectStatus, /stripe_connect_charges_enabled: state\.chargesEnabled/, /stripe_connect_payouts_enabled: state\.payoutsEnabled/, /stripe_connect_onboarding_status: state\.onboardingStatus/],
   ['event refunds are connected-account scoped and return app fee', ticketRefund, /stripeAccount: connectedAccountId/, /refund_application_fee/, /provider_refund_id/, /refund_requested_by/],
-  ['refund audit migration is versioned', refundMigration, /provider_refund_id/, /refund_requested_at/, /event_ticket_orders_provider_refund_id_key/],
+  ['refund audit migration is versioned', migrationCorpus, /provider_refund_id/, /refund_requested_at/, /event_ticket_orders_provider_refund_id_key/],
   ['subscription lifecycle supports cycle switch and reactivation', changePlan, /change_interval/, /reactivate/, /proration_behavior/, /cancel_at_period_end/],
-  ['Connect migration defaults deposits off', read('supabase/migrations/20260812110000_stripe_connect_reservation_deposits.sql'), /deposits_enabled set default false/, /locations_deposit_opt_in_check/],
+  ['Connect migration defaults deposits off', migrationCorpus, /deposits_enabled set default false/, /locations_deposit_opt_in_check/],
   ['admin MRR uses canonical $99 fallback', read('app/admin/dashboard/billing/page.tsx'), /BUSINESS_PRO_MONTHLY_CENTS/, /mrrCents/],
 ];
 
