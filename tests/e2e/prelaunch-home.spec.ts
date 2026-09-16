@@ -12,6 +12,13 @@ const forbiddenLaunchCopy = [
   "public planner",
 ];
 
+async function waitForPlannerHydration(page: import("@playwright/test").Page) {
+  const input = page.getByLabel("Describe the outing you want");
+  await expect(input).toBeVisible();
+  await expect(input).not.toHaveAttribute("placeholder", "", { timeout: 10_000 });
+  return input;
+}
+
 test.describe("public product readiness", () => {
   test("homepage presents the product without launch-gating or reviewer language", async ({ page }) => {
     const failedImageRequests: string[] = [];
@@ -43,8 +50,11 @@ test.describe("public product readiness", () => {
     });
 
     await page.goto("/");
-    await page.getByLabel("Describe the outing you want").fill("Italian dinner and comedy in Manhattan");
-    await page.getByRole("button", { name: "Find My Outing" }).click();
+    const plannerInput = await waitForPlannerHydration(page);
+    await plannerInput.fill("Italian dinner and comedy in Manhattan");
+    const submit = page.getByRole("button", { name: "Find My Outing" });
+    await expect(submit).toBeEnabled();
+    await submit.click();
 
     await expect(page).toHaveURL(/\/create\?.*step=2/);
     expect(decodeURIComponent(page.url())).toContain("Italian dinner and comedy in Manhattan");
