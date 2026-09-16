@@ -23,6 +23,7 @@ const RANGE_MS: Record<RangeKey, number> = {
   "7d": 7 * 24 * 60 * 60 * 1000,
   "30d": 30 * 24 * 60 * 60 * 1000,
 };
+const DEFAULT_SOURCE = "public_create_search";
 
 function parseRange(value: string | null): RangeKey {
   return value === "7d" || value === "30d" ? value : "24h";
@@ -59,13 +60,11 @@ export async function GET(req: Request) {
       validIso(searchParams.get("from")) ??
       new Date(now.getTime() - RANGE_MS[range]).toISOString();
     const to = validIso(searchParams.get("to")) ?? now.toISOString();
-    const source = (searchParams.get("source") ?? "all").trim().slice(0, 80);
+    const source = (searchParams.get("source") ?? DEFAULT_SOURCE).trim().slice(0, 80);
 
     let query = supabaseAdmin
       .from("search_events")
-      .select(
-        "created_at,success,had_issue,result_count,no_results_reason,no_pairs_reason",
-      )
+      .select("created_at,success,had_issue,result_count,no_results_reason,no_pairs_reason")
       .gte("created_at", from)
       .lte("created_at", to)
       .order("created_at", { ascending: true })
@@ -98,6 +97,7 @@ export async function GET(req: Request) {
       {
         data: Array.from(buckets.values()),
         granularity,
+        source,
         lastEventAt: rows.at(-1)?.created_at ?? null,
         generatedAt: now.toISOString(),
       },
