@@ -1,0 +1,137 @@
+name: AWS platform critical alerting
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_critical_monitor.py'
+      - 'infra/aws/lambda/platform_critical_alert_relay.py'
+      - 'infra/aws/cloudformation/platform-critical-alerting.yml'
+      - '.github/workflows/aws-platform-critical-alerting.yml'
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'infra/aws/lambda/infrastructure_inventory.py'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_critical_monitor.py'
+      - 'infra/aws/lambda/platform_critical_alert_relay.py'
+      - 'infra/aws/cloudformation/platform-critical-alerting.yml'
+      - '.github/workflows/aws-platform-critical-alerting.yml'
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'infra/aws/lambda/infrastructure_inventory.py'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy critical monitoring and alert relay
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-platform-critical-alerting-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  ENVIRONMENT: production
+  STACK_NAME: theouthaven-platform-critical-alerting-production
+  TEMPLATE_FILE: infra/aws/cloudformation/platform-critical-alerting.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python
+        run: |
+          python -m py_compile infra/aws/lambda/platform_critical_monitor.py
+          python -m py_compile infra/aws/lambda/platform_critical_alert_relay.py
+      - name: Validate CloudFormation
+        run: |
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve existing platform resources
+        id: config
+        env:
+          CRITICAL_SMS_FROM: ${{ vars.CRITICAL_ALERT_SMS_FROM }}
+          CRITICAL_SMS_TO: ${{ vars.CRITICAL_ALERT_SMS_TO }}
+        run: |
+          set -euo pipefail
+          TOPIC_ARN="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          DR_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id /theouthaven/production/dr-reconciler/env --query ARN --output text)"
+          test -n "$TOPIC_ARN" && test "$TOPIC_ARN" != None
+          test -n "$DR_SECRET_ARN" && test "$DR_SECRET_ARN" != None
+          echo "topic_arn=$TOPIC_ARN" >> "$GITHUB_OUTPUT"
+          echo "dr_secret_arn=$DR_SECRET_ARN" >> "$GITHUB_OUTPUT"
+          if [ -n "${CRITICAL_SMS_FROM:-}" ] && [ -n "${CRITICAL_SMS_TO:-}" ]; then
+            echo 'SMS escalation routing is configured.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'SMS escalation routing is not configured yet; email/CloudWatch alerting will still deploy.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Deploy critical monitoring stack
+        env:
+          TOPIC_ARN: ${{ steps.config.outputs.topic_arn }}
+          DR_SECRET_ARN: ${{ steps.config.outputs.dr_secret_arn }}
+          CRITICAL_SMS_FROM: ${{ vars.CRITICAL_ALERT_SMS_FROM }}
+          CRITICAL_SMS_TO: ${{ vars.CRITICAL_ALERT_SMS_TO }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK_NAME" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$ENVIRONMENT" \
+              PlatformAlertsTopicArn="$TOPIC_ARN" \
+              DrSecretArn="$DR_SECRET_ARN" \
+              CriticalSmsFrom="${CRITICAL_SMS_FROM:-}" \
+              CriticalSmsTo="${CRITICAL_SMS_TO:-}" \
+            --tags Project=TheOutHaven Environment=production Service=CriticalAlerting
+
+      - name: Deploy Lambda code
+        run: |
+          set -euo pipefail
+          deploy_py() {
+            local source="$1" function="$2" dir zip
+            dir="$(mktemp -d)"; zip="$RUNNER_TEMP/${function}.zip"
+            cp "$source" "$dir/index.py"
+            (cd "$dir" && zip -q "$zip" index.py)
+            aws lambda update-function-code --function-name "$function" --zip-file "fileb://$zip" >/dev/null
+            aws lambda wait function-updated --function-name "$function"
+          }
+          deploy_py infra/aws/lambda/platform_critical_monitor.py toh-production-critical-platform-monitor
+          deploy_py infra/aws/lambda/platform_critical_alert_relay.py toh-production-critical-alert-relay
+
+      - name: Run read-only monitor probe
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name toh-production-critical-platform-monitor --payload '{}' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
+          jq -e '.ok == true or .ok == false' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
+          jq '{ok,productionReachable,replicationHealthy,storage,replication}' "$RUNNER_TEMP/critical-monitor.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify critical alarms and subscriptions
+        run: |
+          set -euo pipefail
+          aws cloudwatch describe-alarms --alarm-name-prefix toh-production-critical- --query 'MetricAlarms[].{Name:AlarmName,State:StateValue}' --output table
+          aws sns list-subscriptions-by-topic --topic-arn "${{ steps.config.outputs.topic_arn }}" --query 'Subscriptions[].{Protocol:Protocol,Endpoint:Endpoint}' --output table
