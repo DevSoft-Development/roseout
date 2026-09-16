@@ -67,7 +67,7 @@ export default function LiveOutingSearch() {
       }
 
       characterIndex -= 1;
-      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0));
+      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0)));
 
       if (characterIndex <= 0) {
         deleting = false;
