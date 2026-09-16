@@ -7,11 +7,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-const providers: Array<{ key: SocialProvider; label: string; short: string; description: string; community: string }> = [
-  { key: "instagram", label: "Instagram", short: "IG", description: "Publish posts and Reels, see results, and bring supported comments and messages into Community.", community: "Community available when Meta grants the required account permissions." },
-  { key: "facebook", label: "Meta / Facebook", short: "FB", description: "Publish to your Facebook Page, see results, and bring supported comments and messages into Community.", community: "Community available when your Meta connection includes messaging and engagement access." },
-  { key: "tiktok", label: "TikTok", short: "TT", description: "Publish videos and track account and video performance from TheOutHaven.", community: "TikTok connection currently covers publishing and performance. Community messaging depends on TikTok access made available to your app." },
-  { key: "youtube", label: "YouTube", short: "YT", description: "Publish videos and track channel and video performance.", community: "YouTube community tools will use the account features available to the connected app." },
+const providers: Array<{ key: SocialProvider; label: string; short: string; description: string }> = [
+  { key: "instagram", label: "Instagram", short: "IG", description: "Publish posts and Reels, see results, and bring supported comments and messages into Community." },
+  { key: "facebook", label: "Meta / Facebook", short: "FB", description: "Publish to your Facebook Page, see results, and bring supported comments and messages into Community." },
+  { key: "tiktok", label: "TikTok", short: "TT", description: "Publish videos and track account and video performance from TheOutHaven." },
+  { key: "youtube", label: "YouTube", short: "YT", description: "Publish videos and track channel and video performance." },
 ];
 
 function state(connection: any) {
@@ -35,12 +35,28 @@ function stateClass(value: string) {
   return "bg-white/10 text-white/55";
 }
 
+function communityStatus(provider: SocialProvider, scopes: unknown) {
+  const granted = Array.isArray(scopes) ? scopes.map((value) => String(value)) : [];
+  if (provider === "instagram") {
+    const comments = granted.some((scope) => ["instagram_manage_comments", "instagram_business_manage_comments"].includes(scope));
+    const messages = granted.some((scope) => ["instagram_manage_messages", "instagram_business_manage_messages"].includes(scope));
+    return comments && messages ? "Community ready" : "Publishing ready · Community access still needs Meta approval";
+  }
+  if (provider === "facebook") {
+    const comments = granted.includes("pages_manage_engagement");
+    const messages = granted.includes("pages_messaging");
+    return comments && messages ? "Community ready" : "Publishing ready · Community access still needs Meta approval";
+  }
+  if (provider === "tiktok") return "Publishing and performance ready · TikTok does not expose a general Community inbox through the standard app scopes";
+  return "Publishing and performance ready";
+}
+
 export default async function SocialAccountsPage({ searchParams }: { searchParams: Promise<{ connected?: string; error?: string }> }) {
   await requireAdminRole(ADMIN_PAGE_ACCESS.marketingSocialAccounts);
   const params = await searchParams;
   const { data } = await supabaseAdmin
     .from("marketing_social_connections")
-    .select("id,provider,display_name,username,status,token_expires_at,last_sync_at,last_error,connected_at")
+    .select("id,provider,display_name,username,status,token_expires_at,last_sync_at,last_error,connected_at,granted_scopes")
     .eq("scope", "platform")
     .order("provider");
   const connections = data || [];
@@ -60,7 +76,8 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
       const configured = socialOauthConfigured(provider.key);
       const account = connection?.username ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}` : connection?.display_name || null;
       return <article key={provider.key} className="rounded-[1.75rem] border border-white/10 bg-white/[0.06] p-5"><div className="flex items-start justify-between gap-3"><div className="flex gap-4"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-500/10 text-sm font-bold text-rose-200">{provider.short}</div><div><h2 className="text-2xl font-semibold">{provider.label}</h2><p className="mt-1 text-sm text-white/45">{account || "Not connected yet"}</p></div></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${stateClass(connectionState)}`}>{stateLabel(connectionState)}</span></div>
-        <p className="mt-5 text-sm leading-6 text-white/60">{provider.description}</p><p className="mt-2 text-xs leading-5 text-white/40">{provider.community}</p>
+        <p className="mt-5 text-sm leading-6 text-white/60">{provider.description}</p>
+        {connectionState === "connected" ? <div className="mt-3 rounded-xl bg-black/20 p-3 text-sm text-white/55">{communityStatus(provider.key, connection?.granted_scopes)}</div> : null}
         {connection?.last_sync_at ? <p className="mt-4 text-xs text-white/35">Last updated {new Date(connection.last_sync_at).toLocaleString("en-US", { timeZone: "America/New_York" })}</p> : null}
         {connection?.last_error ? <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">This account needs attention. Reconnecting usually fixes the issue.</div> : null}
         <SocialConnectionActions provider={provider.key} connectionId={connection?.id} configured={configured} connected={connectionState !== "not_connected"} />
