@@ -100,7 +100,7 @@ jobs:
           if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
           if [ "$all" = true ] || matches '^(lib/reserve/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
-          if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe))'; then billing=true; fi
+          if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe)|scripts/billing-production-regression\.mjs$)'; then billing=true; fi
           if [ "$all" = true ] || matches '^(lib/beta/|app/api/beta/|app/beta/|scripts/.*beta)'; then beta=true; fi
           if [ "$all" = true ] || matches '^(lib/locations/|app/api/locations/|app/locations/|components/.*location)'; then location=true; fi
 
