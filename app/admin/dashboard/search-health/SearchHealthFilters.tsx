@@ -44,11 +44,7 @@ export default function SearchHealthFiltersBar({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Label title="Date range">
-          <select
-            className={inputClass}
-            defaultValue={filters.preset}
-            name="range"
-          >
+          <select className={inputClass} defaultValue={filters.preset} name="range">
             <option value="24h">Last 24 Hours</option>
             <option value="7d">Last 7 Days</option>
             <option value="30d">Last 30 Days</option>
@@ -74,11 +70,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="Overall status">
-          <select
-            className={inputClass}
-            defaultValue={filters.status}
-            name="status"
-          >
+          <select className={inputClass} defaultValue={filters.status} name="status">
             <option value="all">All</option>
             <option value="healthy">Healthy</option>
             <option value="issue">Issue</option>
@@ -86,23 +78,16 @@ export default function SearchHealthFiltersBar({
           </select>
         </Label>
 
-        <Label title="Source">
-          <select
-            className={inputClass}
-            defaultValue={filters.source}
-            name="source"
-          >
-            <option value="all">All sources</option>
-            <option value="public_create_search">public_create_search</option>
+        <Label title="Traffic">
+          <select className={inputClass} defaultValue={filters.source} name="source">
+            <option value="public_create_search">Customer searches</option>
+            <option value="phase4b_internal_test">Automated QA</option>
+            <option value="all">All traffic</option>
           </select>
         </Label>
 
         <Label title="Severity">
-          <select
-            className={inputClass}
-            defaultValue={filters.severity}
-            name="severity"
-          >
+          <select className={inputClass} defaultValue={filters.severity} name="severity">
             <option value="all">All</option>
             <option value="critical">Critical</option>
             <option value="error">Error</option>
@@ -112,11 +97,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="Review status">
-          <select
-            className={inputClass}
-            defaultValue={filters.reviewStatus}
-            name="review"
-          >
+          <select className={inputClass} defaultValue={filters.reviewStatus} name="review">
             <option value="all">All</option>
             <option value="open">Open</option>
             <option value="new">New</option>
@@ -128,11 +109,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="Speed status">
-          <select
-            className={inputClass}
-            defaultValue={filters.speed}
-            name="speed"
-          >
+          <select className={inputClass} defaultValue={filters.speed} name="speed">
             <option value="all">All</option>
             <option value="slow">Slow</option>
             <option value="critical">Critical</option>
@@ -143,11 +120,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="Has issue">
-          <select
-            className={inputClass}
-            defaultValue={filters.hasIssue}
-            name="hasIssue"
-          >
+          <select className={inputClass} defaultValue={filters.hasIssue} name="hasIssue">
             <option value="all">All</option>
             <option value="yes">Yes</option>
             <option value="no">No</option>
@@ -155,11 +128,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="No results">
-          <select
-            className={inputClass}
-            defaultValue={filters.noResults}
-            name="noResults"
-          >
+          <select className={inputClass} defaultValue={filters.noResults} name="noResults">
             <option value="all">All</option>
             <option value="yes">Yes</option>
             <option value="no">No</option>
@@ -167,11 +136,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="No pairs">
-          <select
-            className={inputClass}
-            defaultValue={filters.noPairs}
-            name="noPairs"
-          >
+          <select className={inputClass} defaultValue={filters.noPairs} name="noPairs">
             <option value="all">All</option>
             <option value="yes">Yes</option>
             <option value="no">No</option>
@@ -179,11 +144,7 @@ export default function SearchHealthFiltersBar({
         </Label>
 
         <Label title="Rows per page">
-          <select
-            className={inputClass}
-            defaultValue={filters.pageSize}
-            name="pageSize"
-          >
+          <select className={inputClass} defaultValue={filters.pageSize} name="pageSize">
             <option value="25">25</option>
             <option value="50">50</option>
             <option value="100">100</option>
@@ -197,9 +158,9 @@ export default function SearchHealthFiltersBar({
         </button>
         <a
           className="rounded-xl border border-white/10 px-5 py-2.5 text-sm font-black text-white/65 transition hover:text-white"
-          href="/admin/dashboard/search-health?tab=overview&range=30d&source=all&status=all&severity=all&review=all&speed=all&hasIssue=all&noResults=all&noPairs=all&page=1&issuePage=1&pageSize=25"
+          href="/admin/dashboard/search-health?tab=overview&range=30d&source=public_create_search&status=all&severity=all&review=all&speed=all&hasIssue=all&noResults=all&noPairs=all&page=1&issuePage=1&pageSize=25"
         >
-          Show all
+          Reset to customer searches
         </a>
       </div>
     </form>
