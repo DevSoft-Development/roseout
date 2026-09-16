@@ -17,6 +17,11 @@ async function providerPost(url: string, accessToken: string, body: Record<strin
   return parsed;
 }
 
+function hasScope(granted: unknown, names: string[]) {
+  const scopes = Array.isArray(granted) ? granted.map((value) => String(value)) : [];
+  return names.some((name) => scopes.includes(name));
+}
+
 export async function POST(request: Request) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.marketing);
   const form = await request.formData();
@@ -36,15 +41,23 @@ export async function POST(request: Request) {
   const [{ data: contact }, { data: inbound }, { data: connection }] = await Promise.all([
     supabaseAdmin.from("social_community_contacts").select("external_user_id").eq("id", conversation.contact_id).maybeSingle(),
     supabaseAdmin.from("social_community_messages").select("external_message_id").eq("conversation_id", conversationId).eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    supabaseAdmin.from("marketing_social_connections").select("id,provider_account_id,status,token_expires_at").eq("scope", "platform").eq("provider", conversation.provider).eq("status", "connected").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    supabaseAdmin.from("marketing_social_connections").select("id,provider_account_id,status,token_expires_at,granted_scopes").eq("scope", "platform").eq("provider", conversation.provider).eq("status", "connected").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
-  if (!connection?.id) return NextResponse.json({ error: `Reconnect ${conversation.provider === "instagram" ? "Instagram" : "Facebook"} before sending replies.` }, { status: 409 });
-  if (connection.token_expires_at && new Date(connection.token_expires_at).getTime() <= Date.now()) return NextResponse.json({ error: `Reconnect ${conversation.provider === "instagram" ? "Instagram" : "Facebook"} before sending replies.` }, { status: 409 });
+  const network = conversation.provider === "instagram" ? "Instagram" : "Facebook";
+  if (!connection?.id) return NextResponse.json({ error: `Reconnect ${network} before sending replies.` }, { status: 409 });
+  if (connection.token_expires_at && new Date(connection.token_expires_at).getTime() <= Date.now()) return NextResponse.json({ error: `Reconnect ${network} before sending replies.` }, { status: 409 });
 
+  const dm = conversation.conversation_type === "dm";
+  const permitted = conversation.provider === "instagram"
+    ? hasScope(connection.granted_scopes, dm ? ["instagram_manage_messages", "instagram_business_manage_messages"] : ["instagram_manage_comments", "instagram_business_manage_comments"])
+    : hasScope(connection.granted_scopes, dm ? ["pages_messaging"] : ["pages_manage_engagement"]);
+  if (!permitted) return NextResponse.json({ error: `${network} is connected, but Community reply access has not been approved for this account yet. Reconnect after that access is approved.` }, { status: 409 });
+
+  const version = process.env.META_GRAPH_VERSION;
+  if (!version) return NextResponse.json({ error: "Meta Community access is not configured yet." }, { status: 503 });
   const { accessToken } = await loadSocialConnectionSecrets(connection.id);
-  const version = process.env.META_GRAPH_VERSION || "v23.0";
   let result: any;
-  if (conversation.conversation_type === "dm") {
+  if (dm) {
     if (!contact?.external_user_id || !connection.provider_account_id) return NextResponse.json({ error: "This conversation is missing the information needed to reply." }, { status: 409 });
     result = await providerPost(`https://graph.facebook.com/${version}/${encodeURIComponent(connection.provider_account_id)}/messages`, accessToken, {
       recipient: { id: contact.external_user_id },
