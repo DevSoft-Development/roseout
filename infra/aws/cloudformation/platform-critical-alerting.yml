@@ -26,11 +26,16 @@ Parameters:
     Type: Number
     Default: 536870912
 
+Conditions:
+  SmsConfigured: !And
+    - !Not [!Equals [!Ref CriticalSmsFrom, '']]
+    - !Not [!Equals [!Ref CriticalSmsTo, '']]
+
 Resources:
   CriticalMonitorRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub toh-${Environment}-critical-monitor-role
+      RoleName: !Sub TheOutHavenCriticalMonitor${Environment}Role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -74,29 +79,44 @@ Resources:
           def handler(event, context):
               raise RuntimeError('critical_monitor_code_not_deployed')
 
+  CriticalMonitorScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenCriticalMonitorSchedule${Environment}Role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeCriticalMonitor
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt CriticalMonitorFunction.Arn
+
   CriticalMonitorSchedule:
-    Type: AWS::Events::Rule
+    Type: AWS::Scheduler::Schedule
     Properties:
       Name: !Sub toh-${Environment}-critical-platform-monitor-5m
+      GroupName: !Sub toh-${Environment}
       Description: Run critical platform health checks every five minutes.
       ScheduleExpression: rate(5 minutes)
       State: ENABLED
-      Targets:
-        - Arn: !GetAtt CriticalMonitorFunction.Arn
-          Id: CriticalPlatformMonitor
-
-  CriticalMonitorSchedulePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref CriticalMonitorFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt CriticalMonitorSchedule.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt CriticalMonitorFunction.Arn
+        RoleArn: !GetAtt CriticalMonitorScheduleRole.Arn
+        Input: '{}'
 
   CriticalAlertRelayRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub toh-${Environment}-critical-alert-relay-role
+      RoleName: !Sub TheOutHavenCriticalAlertRelay${Environment}Role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -241,8 +261,3 @@ Outputs:
     Value: !Ref CriticalAlertRelayFunction
   CriticalSmsConfigured:
     Value: !If [SmsConfigured, 'true', 'false']
-
-Conditions:
-  SmsConfigured: !And
-    - !Not [!Equals [!Ref CriticalSmsFrom, '']]
-    - !Not [!Equals [!Ref CriticalSmsTo, '']]

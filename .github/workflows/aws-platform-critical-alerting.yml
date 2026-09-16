@@ -88,6 +88,18 @@ jobs:
             echo 'SMS escalation routing is not configured yet; email/CloudWatch alerting will still deploy.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Recover rolled-back critical alert stack
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          case "$STATUS" in
+            ROLLBACK_COMPLETE|ROLLBACK_FAILED|CREATE_FAILED)
+              echo "Removing failed critical alert stack before clean retry: $STATUS"
+              aws cloudformation delete-stack --stack-name "$STACK_NAME"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+              ;;
+          esac
+
       - name: Deploy critical monitoring stack
         env:
           TOPIC_ARN: ${{ steps.config.outputs.topic_arn }}
@@ -108,6 +120,14 @@ jobs:
               CriticalSmsFrom="${CRITICAL_SMS_FROM:-}" \
               CriticalSmsTo="${CRITICAL_SMS_TO:-}" \
             --tags Project=TheOutHaven Environment=production Service=CriticalAlerting
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
 
       - name: Deploy Lambda code
         run: |
