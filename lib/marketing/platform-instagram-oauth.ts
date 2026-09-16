@@ -9,8 +9,6 @@ const SCOPES = [
   "instagram_business_basic",
   "instagram_business_content_publish",
   "instagram_business_manage_insights",
-  "instagram_business_manage_comments",
-  "instagram_business_manage_messages",
 ];
 
 type PlatformInstagramState = {
@@ -80,37 +78,73 @@ export async function completePlatformInstagramOauth(code: string, userId: strin
   const config = await loadInstagramSocialConfig();
   if (!config.appId || !config.appSecret || !config.graphVersion) throw new Error("Instagram App ID and Instagram App Secret are not configured.");
 
-  const token = await json<{ access_token?: string; user_id?: string }>("https://api.instagram.com/oauth/access_token", {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: config.appId,
-      client_secret: config.appSecret,
-      grant_type: "authorization_code",
-      redirect_uri: platformInstagramRedirectUri(),
-      code,
-    }).toString(),
-  });
-  if (!token.access_token || !token.user_id) throw new Error("Instagram did not return an access token.");
+  const form = new FormData();
+  form.set("client_id", config.appId);
+  form.set("client_secret", config.appSecret);
+  form.set("grant_type", "authorization_code");
+  form.set("redirect_uri", platformInstagramRedirectUri());
+  form.set("code", code);
+  const shortToken = await json<{ access_token: string; user_id?: string | number; permissions?: string[] }>("https://api.instagram.com/oauth/access_token", { method: "POST", body: form });
 
-  const longLivedUrl = new URL("https://graph.instagram.com/access_token");
-  longLivedUrl.searchParams.set("grant_type", "ig_exchange_token");
-  longLivedUrl.searchParams.set("client_secret", config.appSecret);
-  longLivedUrl.searchParams.set("access_token", token.access_token);
-  const longLived = await json<{ access_token?: string; token_type?: string; expires_in?: number }>(longLivedUrl.toString());
-  const accessToken = longLived.access_token || token.access_token;
-  const expiresAt = longLived.expires_in ? new Date(Date.now() + longLived.expires_in * 1000).toISOString() : null;
+  const longUrl = new URL("https://graph.instagram.com/access_token");
+  longUrl.searchParams.set("grant_type", "ig_exchange_token");
+  longUrl.searchParams.set("client_secret", config.appSecret);
+  longUrl.searchParams.set("access_token", shortToken.access_token);
+  const longToken = await json<{ access_token: string; token_type?: string; expires_in?: number }>(longUrl.toString());
+  const accessToken = longToken.access_token || shortToken.access_token;
 
   const profileUrl = new URL(`https://graph.instagram.com/${config.graphVersion}/me`);
   profileUrl.searchParams.set("fields", "id,username,account_type,media_count");
   profileUrl.searchParams.set("access_token", accessToken);
   const profile = await json<{ id?: string; username?: string; account_type?: string; media_count?: number }>(profileUrl.toString());
-  const providerAccountId = profile.id || String(token.user_id);
+  const accountId = String(profile.id || shortToken.user_id || "").trim();
+  if (!accountId) throw new Error("Instagram did not return the professional account ID.");
+
+  const expiresAt = longToken.expires_in ? new Date(Date.now() + longToken.expires_in * 1000).toISOString() : null;
+  const scopes = shortToken.permissions?.length ? shortToken.permissions : SCOPES;
   const now = new Date().toISOString();
 
-  const { data: existing } = await supabaseAdmin.from("marketing_social_connections").select("id").eq("scope", "platform").eq("provider", "instagram").eq("provider_account_id", providerAccountId).maybeSingle();
+  await supabaseAdmin
+    .from("marketing_social_connections")
+    .update({ status: "disconnected", updated_at: now })
+    .eq("scope", "platform")
+    .eq("provider", "instagram")
+    .neq("provider_account_id", accountId);
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("marketing_social_connections")
+    .select("id,connected_at")
+    .eq("scope", "platform")
+    .eq("provider", "instagram")
+    .eq("provider_account_id", accountId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  const row = {
+    scope: "platform",
+    location_id: null,
+    organization_id: null,
+    provider: "instagram",
+    provider_account_id: accountId,
+    provider_business_id: null,
+    display_name: profile.username ? `@${profile.username}` : "Instagram",
+    username: profile.username || null,
+    status: "connected",
+    granted_scopes: scopes,
+    token_expires_at: expiresAt,
+    connected_by: userId,
+    connected_at: existing?.connected_at || now,
+    last_refreshed_at: now,
+    last_error: null,
+    metadata: {
+      login_type: "instagram_business_login",
+      account_type: profile.account_type || null,
+      media_count_at_connect: profile.media_count ?? null,
+    },
+    updated_at: now,
+  };
+
   let connectionId = existing?.id as string | undefined;
-  const row = { scope: "platform", provider: "instagram", provider_account_id: providerAccountId, display_name: profile.username || "Instagram", username: profile.username || null, status: "connected", granted_scopes: SCOPES, token_expires_at: expiresAt, connected_by: userId, connected_at: existing?.id ? undefined : now, last_refreshed_at: now, last_error: null, metadata: { account_type: profile.account_type || null, media_count: profile.media_count || null, api_family: "instagram_login" }, updated_at: now };
   if (connectionId) {
     const { error } = await supabaseAdmin.from("marketing_social_connections").update(row).eq("id", connectionId);
     if (error) throw error;
@@ -119,6 +153,8 @@ export async function completePlatformInstagramOauth(code: string, userId: strin
     if (error || !data?.id) throw error || new Error("Could not save Instagram connection.");
     connectionId = data.id;
   }
-  await storeSocialConnectionSecrets({ connectionId, accessToken, tokenType: longLived.token_type || "Bearer", scopes: SCOPES, expiresAt });
+  if (!connectionId) throw new Error("Could not resolve saved Instagram connection ID.");
+
+  await storeSocialConnectionSecrets({ connectionId, accessToken, tokenType: longToken.token_type || "Bearer", scopes, expiresAt });
   return { connectionId, username: profile.username || null };
 }
