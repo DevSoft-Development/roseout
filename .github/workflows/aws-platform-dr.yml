@@ -155,7 +155,7 @@ jobs:
           test "$(wc -c < "$RUNNER_TEMP/platform-dr-bootstrap.json")" -lt 1024
           aws iam put-role-policy \
             --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenPlatformDrBootstrap \
+            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
             --policy-document "file://$RUNNER_TEMP/platform-dr-bootstrap.json"
           sleep 8
 
@@ -743,4 +743,4 @@ jobs:
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           aws iam delete-role-policy \
             --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenPlatformDrBootstrap 2>/dev/null || true
+            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap 2>/dev/null || true
