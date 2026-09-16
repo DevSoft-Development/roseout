@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven critical platform monitoring and Telnyx alert relay.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  PlatformAlertsTopicArn:
+    Type: String
+  DrSecretArn:
+    Type: String
+  CriticalSmsFrom:
+    Type: String
+    Default: ''
+  CriticalSmsTo:
+    Type: String
+    Default: ''
+  ProductionProbeUrl:
+    Type: String
+    Default: https://theouthaven.com/api/health/platform-dr
+  StorageDriftCriticalBytes:
+    Type: Number
+    Default: 5368709120
+  WalLagCriticalBytes:
+    Type: Number
+    Default: 536870912
+
+Resources:
+  CriticalMonitorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub toh-${Environment}-critical-monitor-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CriticalMonitorAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DrSecretArn
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: TheOutHaven/Critical
+
+  CriticalMonitorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-critical-platform-monitor
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CriticalMonitorRole.Arn
+      Timeout: 90
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          DR_SECRET_NAME: !Ref DrSecretArn
+          METRIC_NAMESPACE: TheOutHaven/Critical
+          PRODUCTION_PROBE_URL: !Ref ProductionProbeUrl
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError('critical_monitor_code_not_deployed')
+
+  CriticalMonitorSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub toh-${Environment}-critical-platform-monitor-5m
+      Description: Run critical platform health checks every five minutes.
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt CriticalMonitorFunction.Arn
+          Id: CriticalPlatformMonitor
+
+  CriticalMonitorSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CriticalMonitorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CriticalMonitorSchedule.Arn
+
+  CriticalAlertRelayRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub toh-${Environment}-critical-alert-relay-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ReadTelnyxCredentialVault
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/telnyx-*
+
+  CriticalAlertRelayFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub toh-${Environment}-critical-alert-relay
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt CriticalAlertRelayRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          CREDENTIAL_VAULT_PREFIX: /theouthaven/credential-vault
+          CRITICAL_SMS_FROM: !Ref CriticalSmsFrom
+          CRITICAL_SMS_TO: !Ref CriticalSmsTo
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError('critical_alert_relay_code_not_deployed')
+
+  CriticalAlertRelayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CriticalAlertRelayFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref PlatformAlertsTopicArn
+
+  CriticalAlertRelaySubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref PlatformAlertsTopicArn
+      Protocol: lambda
+      Endpoint: !GetAtt CriticalAlertRelayFunction.Arn
+
+  ProductionOutageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-production-outage
+      AlarmDescription: TheOutHaven production health probe is unreachable.
+      Namespace: TheOutHaven/Critical
+      MetricName: ProductionReachable
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  ReplicationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-dr-replication
+      AlarmDescription: Virginia to Oregon logical replication is unhealthy.
+      Namespace: TheOutHaven/Critical
+      MetricName: ReplicationHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  StorageByteDriftAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-dr-storage-byte-drift
+      AlarmDescription: Virginia and Oregon Storage differ by more than the critical byte threshold.
+      Namespace: TheOutHaven/Critical
+      MetricName: StorageByteDrift
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: !Ref StorageDriftCriticalBytes
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  WalLagCriticalAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-dr-wal-lag
+      AlarmDescription: Virginia to Oregon WAL lag exceeded the critical threshold.
+      Namespace: TheOutHaven/Critical
+      MetricName: WalLagBytes
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: !Ref WalLagCriticalBytes
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  MonitorStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-monitor-stale
+      AlarmDescription: Critical platform monitor has not reported for 15 minutes.
+      Namespace: TheOutHaven/Critical
+      MetricName: MonitorHeartbeat
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+Outputs:
+  CriticalMonitorFunctionName:
+    Value: !Ref CriticalMonitorFunction
+  CriticalAlertRelayFunctionName:
+    Value: !Ref CriticalAlertRelayFunction
+  CriticalSmsConfigured:
+    Value: !If [SmsConfigured, 'true', 'false']
+
+Conditions:
+  SmsConfigured: !And
+    - !Not [!Equals [!Ref CriticalSmsFrom, '']]
+    - !Not [!Equals [!Ref CriticalSmsTo, '']]

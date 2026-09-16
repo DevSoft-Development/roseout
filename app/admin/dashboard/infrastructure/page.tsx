@@ -44,6 +44,10 @@ function providerTitle(provider: InfrastructureProviderSummary) {
   return "Vercel";
 }
 
+function isAlarmState(value: string | null | undefined) {
+  return String(value || "").toUpperCase() === "ALARM";
+}
+
 function ServiceCard({ service }: { service: InfrastructureService }) {
   return (
     <article className="rounded-3xl border border-white/10 bg-black/20 p-5">
@@ -123,6 +127,13 @@ export default async function InfrastructurePage() {
   const healthy = services.filter((service) => service.health === "healthy").length;
   const attention = services.filter((service) => service.health === "degraded" || service.health === "unhealthy").length;
   const resources = services.reduce((sum, service) => sum + service.resourceCount, 0);
+  const cloudwatch = services.find((service) => service.provider === "aws" && service.id === "cloudwatch");
+  const lambda = services.find((service) => service.provider === "aws" && service.id === "lambda");
+  const criticalAlarms = (cloudwatch?.resources || []).filter((resource) => String(resource.name || "").startsWith("toh-production-critical-"));
+  const openCritical = criticalAlarms.filter((resource) => isAlarmState(resource.status));
+  const monitorInstalled = Boolean((lambda?.resources || []).find((resource) => resource.name === "toh-production-critical-platform-monitor"));
+  const relayInstalled = Boolean((lambda?.resources || []).find((resource) => resource.name === "toh-production-critical-alert-relay"));
+  const overallCriticalState = openCritical.length ? "critical" : criticalAlarms.length ? "operational" : "not deployed";
 
   return (
     <AdminPageShell>
@@ -139,6 +150,62 @@ export default async function InfrastructurePage() {
           </>
         }
       />
+
+      <AdminSectionCard className={openCritical.length ? "border-rose-400/40 bg-rose-950/20 p-5 sm:p-6" : "p-5 sm:p-6"}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Critical alerts & incidents</p>
+            <h2 className="mt-1 text-2xl font-black text-white">{openCritical.length ? `${openCritical.length} critical incident${openCritical.length === 1 ? "" : "s"} open` : "No critical incidents open"}</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Five-minute monitoring covers production availability, Virginia → Oregon replication, Oregon storage byte drift, WAL lag, and monitor heartbeat. Critical alarms use the existing platform alert topic for email and the Telnyx relay for SMS.</p>
+          </div>
+          <AdminStatusBadge tone={openCritical.length ? "rose" : criticalAlarms.length ? "green" : "amber"}>{overallCriticalState}</AdminStatusBadge>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-wider text-white/35">5-minute monitor</p>
+            <p className="mt-2 text-lg font-black text-white">{monitorInstalled ? "Installed" : "Not detected"}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-wider text-white/35">Critical alarms</p>
+            <p className="mt-2 text-lg font-black text-white">{criticalAlarms.length}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-wider text-white/35">Email alerts</p>
+            <p className="mt-2 text-lg font-black text-white">Platform SNS</p>
+            <p className="mt-1 text-xs text-white/40">Uses the existing AWS platform-alert subscription.</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <p className="text-[10px] font-black uppercase tracking-wider text-white/35">SMS alerts</p>
+            <p className="mt-2 text-lg font-black text-white">{relayInstalled ? "Telnyx relay installed" : "Not detected"}</p>
+            <p className="mt-1 text-xs text-white/40">Sender and recipient are deployment configuration; Telnyx API key stays in Credentials Vault.</p>
+          </div>
+        </div>
+
+        {openCritical.length ? (
+          <div className="mt-5 space-y-3">
+            {openCritical.map((incident) => (
+              <div key={incident.name} className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-200">Critical</p>
+                    <p className="mt-1 font-black text-white">{incident.name}</p>
+                    <p className="mt-2 text-sm leading-6 text-white/60">{incident.detail || "CloudWatch reports this critical condition is active."}</p>
+                  </div>
+                  <div className="text-right">
+                    <AdminStatusBadge tone="rose">ALARM</AdminStatusBadge>
+                    <p className="mt-2 text-xs font-bold text-white/35">Updated {formatDate(incident.lastUpdatedAt)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : criticalAlarms.length ? (
+          <div className="mt-5 rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">All deployed critical alarms are clear.</div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Critical alerting has not been detected in live AWS inventory yet. It will appear here after the critical-alerting stack deploys.</div>
+        )}
+      </AdminSectionCard>
 
       <AdminKpiGrid>
         <AdminKpiCard label="Cloud providers" value={providers.length || 3} helper="AWS · Supabase · Vercel" />
