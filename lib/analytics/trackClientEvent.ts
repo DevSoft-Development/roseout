@@ -34,11 +34,22 @@ type ActivePromotionContext = {
   touched_at: number;
 };
 
+type ActiveSocialContext = {
+  source: string;
+  medium: string;
+  campaign: string;
+  conversation_id: string | null;
+  touch_id: string | null;
+  touched_at: number;
+};
+
 const ANONYMOUS_KEY = "theouthaven_analytics_anonymous_id";
 const SESSION_KEY = "theouthaven_analytics_session_id";
 const ACTIVE_SEARCH_KEY = "theouthaven_analytics_active_search";
 const ACTIVE_PROMOTION_KEY = "theouthaven_active_promotion";
+const ACTIVE_SOCIAL_KEY = "theouthaven_active_social_touch";
 const PROMOTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const SOCIAL_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 function randomId() {
   try {
@@ -93,6 +104,47 @@ function persistActiveSearchContext(input: ClientTrackEventInput) {
     const next: ActiveSearchContext = { search_id: input.search_id, query: input.query ?? current.query, normalized_query: input.normalized_query ?? current.normalized_query, source: input.source ?? current.source };
     window.sessionStorage.setItem(ACTIVE_SEARCH_KEY, JSON.stringify(next));
   } catch {}
+}
+
+function activeSocialContext(): ActiveSocialContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("utm_source")?.trim() || "";
+    const medium = params.get("utm_medium")?.trim() || "";
+    const campaign = params.get("utm_campaign")?.trim() || "";
+    const conversationId = params.get("toh_conversation")?.trim() || null;
+    const touchId = params.get("toh_touch")?.trim() || null;
+    if (conversationId || medium === "community") {
+      const next: ActiveSocialContext = {
+        source: source || "social",
+        medium: medium || "community",
+        campaign: campaign || "social_manager",
+        conversation_id: conversationId,
+        touch_id: touchId,
+        touched_at: Date.now(),
+      };
+      window.localStorage.setItem(ACTIVE_SOCIAL_KEY, JSON.stringify(next));
+      return next;
+    }
+    const raw = window.localStorage.getItem(ACTIVE_SOCIAL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ActiveSocialContext>;
+    if (!parsed.source || !parsed.medium || !parsed.touched_at || Date.now() - parsed.touched_at > SOCIAL_WINDOW_MS) {
+      window.localStorage.removeItem(ACTIVE_SOCIAL_KEY);
+      return null;
+    }
+    return {
+      source: parsed.source,
+      medium: parsed.medium,
+      campaign: parsed.campaign || "social_manager",
+      conversation_id: parsed.conversation_id || null,
+      touch_id: parsed.touch_id || null,
+      touched_at: parsed.touched_at,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function rememberPromotionContext(campaignId: string, placement: "discover" | "search") {
@@ -185,11 +237,23 @@ export function trackClientEvent(input: ClientTrackEventInput) {
   try {
     persistActiveSearchContext(input);
     const activeSearch = getActiveSearchContext();
+    const social = activeSocialContext();
     const identity = getAnalyticsIdentity();
     const payload = {
       ...identity,
       ...activeSearch,
       ...input,
+      source: input.source || social?.source || activeSearch.source || null,
+      metadata: {
+        ...(social ? {
+          utm_source: social.source,
+          utm_medium: social.medium,
+          utm_campaign: social.campaign,
+          social_conversation_id: social.conversation_id,
+          social_touch_id: social.touch_id,
+        } : {}),
+        ...(input.metadata || {}),
+      },
       page_path: typeof window !== "undefined" ? window.location.pathname : null,
       referrer: typeof document !== "undefined" ? document.referrer || null : null,
       ...getDeviceHints(),
