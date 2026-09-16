@@ -10,6 +10,8 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 CREDENTIAL_VAULT_PREFIX = os.environ.get("CREDENTIAL_VAULT_PREFIX", "/theouthaven/credential-vault")
 TELNYX_SECRET_ID = f"{CREDENTIAL_VAULT_PREFIX}/{ENVIRONMENT}/telnyx"
 TELNYX_API_URL = "https://api.telnyx.com/v2/messages"
+CRITICAL_SMS_FROM = os.environ.get("CRITICAL_SMS_FROM", "")
+CRITICAL_SMS_TO = os.environ.get("CRITICAL_SMS_TO", "")
 
 secrets = boto3.client("secretsmanager")
 
@@ -79,8 +81,8 @@ def _send_telnyx(api_key, from_number, to_number, text):
 def handler(event, context):
     cfg = _read_telnyx()
     api_key = str(cfg.get("transactionalApiKey") or cfg.get("supportApiKey") or "").strip()
-    from_number = _clean_phone(cfg.get("criticalAlertFromNumber") or cfg.get("supportPhoneNumber"))
-    to_number = _clean_phone(cfg.get("criticalAlertToNumber"))
+    from_number = _clean_phone(CRITICAL_SMS_FROM)
+    to_number = _clean_phone(CRITICAL_SMS_TO)
     configured = bool(api_key and from_number and to_number)
 
     results = []
