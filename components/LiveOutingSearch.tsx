@@ -29,6 +29,11 @@ export default function LiveOutingSearch() {
   const [focused, setFocused] = useState(false);
   const [resolvingIntent, setResolvingIntent] = useState(false);
   const [intentError, setIntentError] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     if (prompt || focused) return;
@@ -62,7 +67,7 @@ export default function LiveOutingSearch() {
       }
 
       characterIndex -= 1;
-      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0)));
+      setTypedPlaceholder(current.slice(0, Math.max(characterIndex, 0));
 
       if (characterIndex <= 0) {
         deleting = false;
@@ -127,7 +132,7 @@ export default function LiveOutingSearch() {
   }
 
   return (
-    <section id="plan-your-outing" className="w-full" aria-label="Plan your outing">
+    <section id="plan-your-outing" data-hydrated={hydrated ? "true" : "false"} className="w-full" aria-label="Plan your outing">
       <form
         onSubmit={openPlanner}
         className="mx-auto flex max-w-5xl flex-col gap-2 rounded-[1.75rem] border border-white/15 bg-white/[0.075] p-2 shadow-[0_32px_90px_rgba(0,0,0,.5)] backdrop-blur-xl sm:flex-row sm:items-center sm:rounded-full"
