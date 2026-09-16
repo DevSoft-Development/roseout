@@ -22,7 +22,7 @@ function assertIncludes(haystack, needle, message) {
 assertIncludes(weeklyPage, 'getWeeklyBetaEnabled', 'weekly route must check real weekly flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaEnabled)', 'weekly route must block real sessions while disabled');
 assertIncludes(weeklyPage, 'Weekly beta task is not open yet', 'weekly disabled state must be user-friendly');
-assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(ctx.beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
+assert.ok(weeklyPage.indexOf('if (!weeklyBetaEnabled)') < weeklyPage.indexOf('getOrCreateWeeklyBetaSessionForTester(beta.id)'), 'weekly route must not create/fetch real sessions before disabled guard');
 
 assertIncludes(weeklyPage, 'getWeeklyBetaE2ETestModeEnabled', 'test route must check e2e flag');
 assertIncludes(weeklyPage, 'if (!weeklyBetaTestModeEnabled)', 'test route must block ?test=1 while disabled');
