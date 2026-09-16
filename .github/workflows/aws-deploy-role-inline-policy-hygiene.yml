@@ -8,7 +8,6 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/aws-deploy-role-inline-policy-hygiene.yml'
-      - '.github/workflows/aws-platform-dr.yml'
   workflow_dispatch:
 
 permissions:
@@ -37,7 +36,15 @@ jobs:
           grep -F 'list-role-policies' "$FILE" >/dev/null
           grep -F 'get-role-policy' "$FILE" >/dev/null
           grep -F 'delete-role-policy' "$FILE" >/dev/null
+          grep -F 'iam:ListRolePolicies' "$FILE" >/dev/null
+          grep -F 'iam:GetRolePolicy' "$FILE" >/dev/null
+          grep -F 'iam:PutRolePolicy' "$FILE" >/dev/null
+          grep -F 'iam:DeleteRolePolicy' "$FILE" >/dev/null
           grep -F 'inline_policy_bytes_after' "$FILE" >/dev/null
+          if grep -F "- '.github/workflows/aws-platform-dr.yml'" "$FILE" >/dev/null; then
+            echo 'Deploy-role hygiene must not race every DR workflow push.' >&2
+            exit 1
+          fi
 
   clean:
     if: github.event_name != 'pull_request'
@@ -85,6 +92,15 @@ jobs:
             echo "Canonical inline policy $PRESERVE is missing; refusing cleanup." >&2
             exit 1
           }
+
+          CANONICAL="$RUNNER_TEMP/canonical-inline-policy.json"
+          aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "$PRESERVE" --query PolicyDocument --output json > "$CANONICAL"
+          for action in iam:ListRolePolicies iam:GetRolePolicy iam:PutRolePolicy iam:DeleteRolePolicy; do
+            jq -e --arg action "$action" '[.Statement[]?.Action] | flatten | index($action) != null' "$CANONICAL" >/dev/null || {
+              echo "Canonical inline policy is missing $action; refusing to remove bootstrap recovery permissions." >&2
+              exit 1
+            }
+          done
 
           before=0
           while IFS= read -r policy; do
