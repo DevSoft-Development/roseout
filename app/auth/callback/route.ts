@@ -9,18 +9,32 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-export async function GET(request: NextRequest) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
+function resolveRequestOrigin(request: NextRequest, requestUrl: URL) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol =
+    forwardedProto === "http" || forwardedProto === "https"
+      ? forwardedProto
+      : requestUrl.protocol.replace(":", "");
 
+  return host ? `${protocol}://${host}` : requestUrl.origin;
+}
+
+export async function GET(request: NextRequest) {
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app").replace(/\/$/, "");
   const requestUrl = new URL(request.url);
+  const surface = process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase();
+  const authOrigin = surface === "business" ? resolveRequestOrigin(request, requestUrl) : siteUrl;
+  const fallbackPath = surface === "business" ? "/login" : "/create";
   const code = requestUrl.searchParams.get("code");
   const intendedPath = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
 
   if (!code) {
-    return NextResponse.redirect(`${siteUrl}/create`);
+    return NextResponse.redirect(new URL(fallbackPath, authOrigin));
   }
 
-  let response = NextResponse.redirect(`${siteUrl}/create`);
+  const cookieResponse = NextResponse.redirect(new URL(fallbackPath, authOrigin));
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,7 +46,10 @@ export async function GET(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            cookieResponse.cookies.set(name, value, {
+              ...options,
+              path: "/",
+            });
           });
         },
       },
@@ -42,7 +59,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
-    return NextResponse.redirect(`${siteUrl}/create`);
+    return cookieResponse;
   }
 
   const user = data.user;
@@ -68,6 +85,9 @@ export async function GET(request: NextRequest) {
     intendedPath,
   });
 
-  response = NextResponse.redirect(`${siteUrl}${redirectTarget}`);
-  return response;
+  const finalResponse = NextResponse.redirect(new URL(redirectTarget, authOrigin));
+  cookieResponse.cookies.getAll().forEach((cookie) => {
+    finalResponse.cookies.set(cookie);
+  });
+  return finalResponse;
 }
