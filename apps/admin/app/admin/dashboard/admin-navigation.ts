@@ -1,20 +1,30 @@
 import {
   Home,
   Mail,
+  ShieldAlert,
   ShieldCheck,
   Settings,
   type LucideIcon,
 } from "lucide-react";
+import type { AdminRole } from "@theouthaven/auth/admin-roles";
 
 export type AdminShellNavItem = {
   label: string;
   href?: string;
   icon: LucideIcon;
   migrated: boolean;
+  roles?: readonly AdminRole[];
 };
 
 export const adminShellNavigation: readonly AdminShellNavItem[] = [
   { label: "Overview", href: "/admin/dashboard", icon: Home, migrated: true },
+  {
+    label: "Platform Errors",
+    href: "/admin/dashboard/platform-errors",
+    icon: ShieldAlert,
+    migrated: true,
+    roles: ["superadmin"],
+  },
   {
     label: "Microsoft 365",
     href: "/admin/dashboard/settings/microsoft-365",
