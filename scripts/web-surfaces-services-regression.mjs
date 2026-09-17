@@ -43,6 +43,8 @@ requireText(workflow, 'Show CloudFormation service failure events');
 requireText(workflow, 'Show ECS service and stopped-task diagnostics');
 requireText(workflow, 'aws ecs describe-services');
 requireText(workflow, 'aws ecs list-tasks');
+requireText(workflow, '--family "$SERVICE"', 'Failed ECS diagnostics must fall back to the task family after CloudFormation removes the service.');
+requireText(workflow, 'No stopped ECS tasks found for $SERVICE by service name or task family.');
 requireText(workflow, 'aws ecs describe-tasks');
 requireText(workflow, 'aws ecs wait services-stable');
 requireText(workflow, 'Direct-origin smoke test');
