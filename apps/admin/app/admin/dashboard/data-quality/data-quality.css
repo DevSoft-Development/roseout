@@ -1,0 +1,84 @@
+.data-quality-page { display: grid; gap: 24px; }
+.data-quality-hero,
+.data-quality-standard,
+.data-quality-advanced {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 24px;
+}
+.data-quality-hero { padding: 24px; background: #120d0b; }
+.data-quality-hero > p,
+.data-quality-standard > small {
+  margin: 0;
+  color: #fda4af;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.data-quality-hero h1 { margin: 8px 0; font-size: clamp(30px,4vw,46px); }
+.data-quality-hero span,
+.data-quality-standard p { color: rgba(255,255,255,.58); line-height: 1.65; }
+.data-quality-actions { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.data-quality-actions article {
+  display: flex;
+  flex-direction: column;
+  min-height: 245px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 20px;
+  background: rgba(255,255,255,.035);
+}
+.data-quality-actions small {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(225,29,72,.12);
+  color: #fda4af;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.data-quality-actions h2 { margin: 18px 0 8px; font-size: 18px; }
+.data-quality-actions p { flex: 1; margin: 0; color: rgba(255,255,255,.5); line-height: 1.55; }
+.data-quality-actions a {
+  margin-top: 18px;
+  border-radius: 999px;
+  padding: 11px 14px;
+  background: #e11d48;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+}
+.data-quality-standard {
+  padding: 22px;
+  background: rgba(16,185,129,.06);
+  border-color: rgba(52,211,153,.18);
+}
+.data-quality-standard > small { color: #6ee7b7; }
+.data-quality-standard h2 { margin: 8px 0; }
+.data-quality-advanced { padding: 18px; background: rgba(255,255,255,.025); }
+.data-quality-advanced summary { cursor: pointer; font-weight: 900; }
+.data-quality-advanced > div {
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.data-quality-advanced a {
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  color: rgba(255,255,255,.72);
+  text-decoration: none;
+}
+@media (max-width: 1050px) {
+  .data-quality-actions,
+  .data-quality-advanced > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .data-quality-actions,
+  .data-quality-advanced > div { grid-template-columns: 1fr; }
+}
