@@ -18,6 +18,8 @@ CREDENTIAL_VAULT_GATEWAY_URL = os.environ.get("CREDENTIAL_VAULT_GATEWAY_URL", ""
 CREDENTIAL_VAULT_GATEWAY_SECRET = os.environ.get("CREDENTIAL_VAULT_GATEWAY_SECRET", "")
 VERCEL_SECRET_ID = os.environ.get("VERCEL_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/vercel")
 VERCEL_PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN")
+STORAGE_DRIFT_CRITICAL_BYTES = int(os.environ.get("STORAGE_DRIFT_CRITICAL_BYTES", "5368709120"))
+WAL_LAG_CRITICAL_BYTES = int(os.environ.get("WAL_LAG_CRITICAL_BYTES", "536870912"))
 
 secrets = boto3.client("secretsmanager")
 cloudwatch = boto3.client("cloudwatch")
@@ -48,7 +50,7 @@ def _management_query(token, project_ref, sql):
         headers={
             "authorization": f"Bearer {token}",
             "content-type": "application/json",
-            "user-agent": "TheOutHaven-Critical-Monitor/1.1",
+            "user-agent": "TheOutHaven-Critical-Monitor/1.2",
         },
     )
     with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
@@ -67,7 +69,7 @@ def _safe_management_query(token, project_ref, sql):
 
 def _production_reachable():
     try:
-        request = urllib.request.Request(PRODUCTION_PROBE_URL, headers={"user-agent": "TheOutHaven-Critical-Monitor/1.1"})
+        request = urllib.request.Request(PRODUCTION_PROBE_URL, headers={"user-agent": "TheOutHaven-Critical-Monitor/1.2"})
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             return 1 if 200 <= int(response.status) < 500 else 0
     except Exception:
@@ -87,7 +89,7 @@ def _credential_vault_healthy():
         headers={
             "x-toh-timestamp": timestamp,
             "x-toh-signature": signature,
-            "user-agent": "TheOutHaven-Critical-Monitor/1.1",
+            "user-agent": "TheOutHaven-Critical-Monitor/1.2",
         },
     )
     try:
@@ -116,7 +118,7 @@ def _vercel_production_healthy():
             url,
             headers={
                 "authorization": f"Bearer {token}",
-                "user-agent": "TheOutHaven-Critical-Monitor/1.1",
+                "user-agent": "TheOutHaven-Critical-Monitor/1.2",
             },
         )
         with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
@@ -128,6 +130,73 @@ def _vercel_production_healthy():
         return (0 if state in {"ERROR", "CANCELED", "CANCELLED"} else 1), state
     except Exception:
         return 0, "probe_failed"
+
+
+def _sql_literal(value):
+    if value is None:
+        return "NULL"
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _record_incident_transitions(token, project_ref, incidents):
+    if not incidents:
+        return True
+
+    rows = []
+    for incident in incidents:
+        state = "open" if incident.get("active") else "recovered"
+        metadata = {
+            "incident_key": incident["key"],
+            "state": state,
+            "title": incident["title"],
+            "detail": incident.get("detail") or "",
+            "environment": ENVIRONMENT,
+        }
+        rows.append(
+            "(" + ",".join([
+                _sql_literal(incident["key"]),
+                _sql_literal(state),
+                _sql_literal(incident["title"]),
+                _sql_literal(incident.get("detail") or ""),
+                _sql_literal(json.dumps(metadata, separators=(",", ":"))),
+            ]) + ")"
+        )
+
+    sql = f"""
+      with current(incident_key, state, title, detail, metadata_text) as (
+        values {','.join(rows)}
+      ),
+      latest as (
+        select distinct on (metadata->>'incident_key')
+          metadata->>'incident_key' as incident_key,
+          metadata->>'state' as state
+        from public.admin_system_logs
+        where category = 'critical_alert'
+          and source = 'critical-platform-monitor'
+        order by metadata->>'incident_key', created_at desc
+      ),
+      changed as (
+        select current.*
+        from current
+        left join latest using (incident_key)
+        where (latest.state is null and current.state = 'open')
+           or (latest.state is not null and latest.state is distinct from current.state)
+      ),
+      inserted as (
+        insert into public.admin_system_logs(category, level, message, source, metadata)
+        select
+          'critical_alert',
+          case when state = 'open' then 'critical' else 'info' end,
+          title || ': ' || upper(state),
+          'critical-platform-monitor',
+          metadata_text::jsonb
+        from changed
+        returning id
+      )
+      select count(*)::bigint as inserted_count from inserted;
+    """
+    _management_query(token, project_ref, sql)
+    return True
 
 
 def _metric(name, value, unit="Count"):
@@ -250,6 +319,70 @@ def handler(event, context):
     ]
     _put(metrics)
 
+    incidents = [
+        {
+            "key": "production_outage",
+            "title": "Production availability",
+            "active": not bool(production_reachable),
+            "detail": "The public production health probe is unreachable." if not production_reachable else "The public production health probe recovered.",
+        },
+        {
+            "key": "supabase_virginia",
+            "title": "Supabase Virginia primary",
+            "active": not virginia_healthy,
+            "detail": "Virginia primary health queries are failing." if not virginia_healthy else "Virginia primary health queries recovered.",
+        },
+        {
+            "key": "supabase_oregon",
+            "title": "Supabase Oregon standby",
+            "active": not oregon_healthy,
+            "detail": "Oregon standby health queries are failing." if not oregon_healthy else "Oregon standby health queries recovered.",
+        },
+        {
+            "key": "dr_replication",
+            "title": "Virginia to Oregon replication",
+            "active": not replication_healthy,
+            "detail": f"Replication health: ready tables {ready_tables}/{published_tables}, connected workers {connected_workers}." if not replication_healthy else "Virginia to Oregon replication recovered.",
+        },
+        {
+            "key": "credential_vault",
+            "title": "Credential Vault gateway",
+            "active": not bool(credential_vault_healthy),
+            "detail": "Credential Vault runtime gateway is unavailable, rate limited, or returning errors." if not credential_vault_healthy else "Credential Vault runtime gateway recovered.",
+        },
+        {
+            "key": "vercel_production",
+            "title": "Vercel production deployment",
+            "active": not bool(vercel_healthy),
+            "detail": f"Latest production deployment state: {vercel_state}." if not vercel_healthy else f"Vercel production recovered; latest state is {vercel_state}.",
+        },
+        {
+            "key": "critical_cron_failures",
+            "title": "Critical cron jobs",
+            "active": critical_cron_failures > 0,
+            "detail": f"{critical_cron_failures} tracked cron job(s) have an unresolved recent failure." if critical_cron_failures else "Tracked cron jobs recovered.",
+        },
+        {
+            "key": "dr_storage_byte_drift",
+            "title": "Oregon storage byte drift",
+            "active": byte_drift > STORAGE_DRIFT_CRITICAL_BYTES,
+            "detail": f"Virginia and Oregon storage differ by {byte_drift} bytes; critical threshold is {STORAGE_DRIFT_CRITICAL_BYTES} bytes." if byte_drift > STORAGE_DRIFT_CRITICAL_BYTES else "Storage byte drift returned below the critical threshold.",
+        },
+        {
+            "key": "dr_wal_lag",
+            "title": "Oregon replication WAL lag",
+            "active": wal_lag > WAL_LAG_CRITICAL_BYTES,
+            "detail": f"WAL lag is {wal_lag} bytes; critical threshold is {WAL_LAG_CRITICAL_BYTES} bytes." if wal_lag > WAL_LAG_CRITICAL_BYTES else "WAL lag returned below the critical threshold.",
+        },
+    ]
+
+    incident_history_recorded = True
+    try:
+        _record_incident_transitions(token, virginia, incidents)
+    except Exception:
+        # Incident-history persistence must never hide or prevent the live CloudWatch health signal.
+        incident_history_recorded = False
+
     return {
         "ok": bool(
             production_reachable
@@ -266,6 +399,7 @@ def handler(event, context):
         "credentialVaultHealthy": bool(credential_vault_healthy),
         "vercel": {"healthy": bool(vercel_healthy), "state": vercel_state},
         "criticalCronFailures": critical_cron_failures,
+        "incidentHistoryRecorded": incident_history_recorded,
         "storage": {
             "virginiaBytes": source_bytes,
             "oregonBytes": target_bytes,
