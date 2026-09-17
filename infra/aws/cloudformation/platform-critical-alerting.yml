@@ -19,6 +19,16 @@ Parameters:
   ProductionProbeUrl:
     Type: String
     Default: https://theouthaven.com/api/health/platform-dr
+  CredentialVaultGatewayUrl:
+    Type: String
+    Default: ''
+  CredentialVaultGatewaySecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+  VercelProjectId:
+    Type: String
+    Default: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
   StorageDriftCriticalBytes:
     Type: Number
     Default: 5368709120
@@ -55,7 +65,9 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref DrSecretArn
+                Resource:
+                  - !Ref DrSecretArn
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/vercel-*
               - Effect: Allow
                 Action: cloudwatch:PutMetricData
                 Resource: '*'
@@ -78,6 +90,10 @@ Resources:
           DR_SECRET_NAME: !Ref DrSecretArn
           METRIC_NAMESPACE: TheOutHaven/Critical
           PRODUCTION_PROBE_URL: !Ref ProductionProbeUrl
+          CREDENTIAL_VAULT_GATEWAY_URL: !Ref CredentialVaultGatewayUrl
+          CREDENTIAL_VAULT_GATEWAY_SECRET: !Ref CredentialVaultGatewaySecret
+          VERCEL_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/vercel
+          VERCEL_PROJECT_ID: !Ref VercelProjectId
       Code:
         ZipFile: |
           def handler(event, context):
@@ -194,6 +210,40 @@ Resources:
       AlarmActions: [!Ref PlatformAlertsTopicArn]
       OKActions: [!Ref PlatformAlertsTopicArn]
 
+  SupabaseVirginiaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-supabase-virginia
+      AlarmDescription: Virginia primary Supabase health queries are failing.
+      Namespace: TheOutHaven/Critical
+      MetricName: SupabaseVirginiaHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  SupabaseOregonAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-supabase-oregon
+      AlarmDescription: Oregon standby Supabase health queries are failing.
+      Namespace: TheOutHaven/Critical
+      MetricName: SupabaseOregonHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
   ReplicationFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -207,6 +257,57 @@ Resources:
       DatapointsToAlarm: 1
       Threshold: 1
       ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  CredentialVaultAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-credential-vault
+      AlarmDescription: Credential Vault runtime gateway is unavailable, rate limited, or returning errors.
+      Namespace: TheOutHaven/Critical
+      MetricName: CredentialVaultHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  VercelProductionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-vercel-production
+      AlarmDescription: Latest Vercel production deployment is failed or production deployment status cannot be verified.
+      Namespace: TheOutHaven/Critical
+      MetricName: VercelProductionHealthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref PlatformAlertsTopicArn]
+      OKActions: [!Ref PlatformAlertsTopicArn]
+
+  CriticalCronFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-critical-cron-failures
+      AlarmDescription: One or more tracked cron jobs have an unresolved recent failure.
+      Namespace: TheOutHaven/Critical
+      MetricName: CriticalCronFailures
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
       TreatMissingData: breaching
       AlarmActions: [!Ref PlatformAlertsTopicArn]
       OKActions: [!Ref PlatformAlertsTopicArn]

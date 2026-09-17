@@ -15,6 +15,15 @@ function normalizeError(value: unknown) {
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
+
+  // Production Vercel credentials are synchronized into environment variables by the
+  // credential-vault runtime-sync workflow. Hydrating every isolated Vercel runtime
+  // on startup fans out requests to the AWS gateway and can trigger 429s. Keep
+  // startup hydration for non-Vercel runtimes and allow an explicit emergency opt-in.
+  const runningOnVercel = Boolean(process.env.VERCEL);
+  const forceStartupHydration = process.env.CREDENTIAL_VAULT_STARTUP_HYDRATION === "true";
+  if (runningOnVercel && !forceStartupHydration) return;
+
   try {
     const { hydrateCredentialVaultRuntime } = await import("@/lib/admin/credential-vault-runtime-source");
     await hydrateCredentialVaultRuntime();
