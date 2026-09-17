@@ -151,6 +151,23 @@ jobs:
           echo "admin_arn=$ADMIN_ARN" >> "$GITHUB_OUTPUT"
           echo "business_arn=$BUSINESS_ARN" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve issued wildcard TLS certificate
+        id: tls
+        run: |
+          set -euo pipefail
+          CERTIFICATE_ARN="$(aws acm list-certificates \
+            --certificate-statuses ISSUED \
+            --query "CertificateSummaryList[?DomainName=='*.theouthaven.com'] | [0].CertificateArn" \
+            --output text)"
+          if [ -z "$CERTIFICATE_ARN" ] || [ "$CERTIFICATE_ARN" = "None" ]; then
+            echo 'No issued *.theouthaven.com ACM certificate exists in us-east-1.' >&2
+            exit 1
+          fi
+          STATUS="$(aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" --query 'Certificate.Status' --output text)"
+          test "$STATUS" = 'ISSUED'
+          echo "certificate_arn=$CERTIFICATE_ARN" >> "$GITHUB_OUTPUT"
+          echo 'Using the existing issued wildcard ACM certificate for the isolated Admin and Business HTTPS listener.'
+
       - name: Recover failed first-create stack
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
@@ -178,10 +195,12 @@ jobs:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           ADMIN_APP_ENV_SECRET_ARN: ${{ steps.runtime_secrets.outputs.admin_arn }}
           BUSINESS_APP_ENV_SECRET_ARN: ${{ steps.runtime_secrets.outputs.business_arn }}
+          CERTIFICATE_ARN: ${{ steps.tls.outputs.certificate_arn }}
         run: |
           set -euo pipefail
           test -n "$ADMIN_APP_ENV_SECRET_ARN"
           test -n "$BUSINESS_APP_ENV_SECRET_ARN"
+          test -n "$CERTIFICATE_ARN"
           aws cloudformation deploy \
             --stack-name "theouthaven-web-surfaces-${TARGET_ENV}" \
             --template-file "$TEMPLATE_FILE" \
@@ -191,6 +210,7 @@ jobs:
               Environment="$TARGET_ENV" \
               AdminHost="admin.theouthaven.com" \
               BusinessHost="business.theouthaven.com" \
+              CertificateArn="$CERTIFICATE_ARN" \
               AdminAppEnvSecretArn="$ADMIN_APP_ENV_SECRET_ARN" \
               BusinessAppEnvSecretArn="$BUSINESS_APP_ENV_SECRET_ARN" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
@@ -205,6 +225,39 @@ jobs:
             --stack-name "$STACK" \
             --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
             --output table
+
+      - name: Verify HTTPS listener and managed WAF protection
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-web-surfaces-${TARGET_ENV}"
+          ORIGIN="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerDnsName'].OutputValue | [0]" \
+            --output text)"
+          EXPECTED_WAF="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='WebAclArn'].OutputValue | [0]" \
+            --output text)"
+          LOAD_BALANCER_ARN="$(aws elbv2 describe-load-balancers \
+            --names "toh-${TARGET_ENV}-web-surfaces" \
+            --query 'LoadBalancers[0].LoadBalancerArn' \
+            --output text)"
+          ATTACHED_WAF="$(aws wafv2 get-web-acl-for-resource \
+            --resource-arn "$LOAD_BALANCER_ARN" \
+            --query 'WebACL.ARN' \
+            --output text)"
+          test "$ATTACHED_WAF" = "$EXPECTED_WAF"
+
+          for surface in admin business; do
+            HOST="${surface}.theouthaven.com"
+            BODY="$(curl --fail --silent --show-error --max-time 20 \
+              --connect-to "${HOST}:443:${ORIGIN}:443" \
+              "https://${HOST}/api/health/platform-dr")"
+            printf '%s' "$BODY" | jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' >/dev/null
+          done
+          echo 'HTTPS/TLS and managed WAF protection are active on the isolated AWS origins. Public DNS has not been changed.'
 
       - name: Show CloudFormation failure events
         if: failure()
