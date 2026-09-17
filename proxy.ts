@@ -89,6 +89,7 @@ function webSurfaceBoundaryResponse(request: NextRequest) {
 
 
 function vercelPrivateSurfaceRedirect(request: NextRequest) {
+  if (currentAwsWebSurface()) return null;
   if (process.env.VERCEL_ENV !== "production") return null;
 
   const pathname = request.nextUrl.pathname;
