@@ -264,6 +264,10 @@ jobs:
               --output table
 
             TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status STOPPED --max-results 10 --query 'taskArns' --output text 2>/dev/null || true)"
+            if [ -z "$TASKS" ] || [ "$TASKS" = "None" ]; then
+              echo "Service no longer exists or has no stopped tasks; falling back to ECS task family $SERVICE."
+              TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --family "$SERVICE" --desired-status STOPPED --max-results 10 --query 'taskArns' --output text 2>/dev/null || true)"
+            fi
             if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
               echo "=== $SERVICE stopped tasks ==="
               aws ecs describe-tasks \
@@ -271,6 +275,8 @@ jobs:
                 --tasks $TASKS \
                 --query 'tasks[].{task:taskArn,stopCode:stopCode,stoppedReason:stoppedReason,containers:containers[].{name:name,reason:reason,exitCode:exitCode,lastStatus:lastStatus}}' \
                 --output json
+            else
+              echo "No stopped ECS tasks found for $SERVICE by service name or task family."
             fi
           done
 
