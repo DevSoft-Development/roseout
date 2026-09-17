@@ -4,7 +4,7 @@ export function resolveWebSurfaceAuthOrigin(request: NextRequest, requestUrl: UR
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app").replace(/\/$/, "");
   const surface = process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase();
 
-  if (surface !== "business") return siteUrl;
+  if (surface !== "admin" && surface !== "business") return siteUrl;
 
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const host = forwardedHost || request.headers.get("host")?.trim();
@@ -18,7 +18,8 @@ export function resolveWebSurfaceAuthOrigin(request: NextRequest, requestUrl: UR
 }
 
 export function webSurfaceAuthFallbackPath() {
-  return process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase() === "business"
-    ? "/login"
-    : "/create";
+  const surface = process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase();
+  if (surface === "admin") return "/admin/login";
+  if (surface === "business") return "/login";
+  return "/create";
 }
