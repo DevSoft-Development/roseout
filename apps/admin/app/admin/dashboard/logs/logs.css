@@ -1,0 +1,45 @@
+.admin-logs-page { display: grid; gap: 20px; }
+.admin-logs-hero,
+.admin-logs-filters,
+.admin-logs-table-wrap {
+  border: 1px solid rgba(255,255,255,.1);
+  background: #120d0b;
+  border-radius: 24px;
+}
+.admin-logs-hero { padding: 24px; }
+.admin-logs-hero p { margin: 0; color: #fecdd3; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .2em; }
+.admin-logs-hero h1 { margin: 8px 0; font-size: clamp(30px,4vw,46px); }
+.admin-logs-hero span { color: rgba(255,255,255,.62); }
+.admin-logs-kpis { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 12px; }
+.admin-logs-kpis article { padding: 16px; border-radius: 18px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
+.admin-logs-kpis small { display: block; color: rgba(255,255,255,.55); }
+.admin-logs-kpis strong { display: block; margin-top: 4px; font-size: 28px; }
+.admin-logs-filters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 16px; }
+.admin-logs-filters label { display: grid; gap: 6px; color: rgba(255,255,255,.55); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.admin-logs-filters input,
+.admin-logs-filters select,
+.admin-logs-filters button {
+  min-height: 44px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); padding: 0 14px;
+  background: rgba(0,0,0,.28); color: white;
+}
+.admin-logs-filters button { align-self: end; background: #e11d48; font-weight: 800; }
+.admin-logs-table-wrap { overflow-x: auto; }
+.admin-logs-table-wrap > p { padding: 20px; }
+.admin-logs-table-wrap table { width: 100%; min-width: 1200px; border-collapse: collapse; }
+.admin-logs-table-wrap th,
+.admin-logs-table-wrap td { padding: 12px; border-top: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
+.admin-logs-table-wrap th { color: rgba(255,255,255,.5); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
+.admin-logs-table-wrap td { font-size: 13px; color: rgba(255,255,255,.76); }
+.admin-logs-table-wrap td small { display: block; margin-top: 3px; color: rgba(255,255,255,.35); }
+.admin-logs-table-wrap td > span { border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 800; }
+.admin-logs-table-wrap summary { cursor: pointer; color: #fecdd3; }
+.admin-logs-table-wrap pre { max-width: 420px; max-height: 320px; overflow: auto; white-space: pre-wrap; }
+.admin-logs-error { color: #fda4af; }
+@media (max-width: 1100px) {
+  .admin-logs-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .admin-logs-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 640px) {
+  .admin-logs-kpis,
+  .admin-logs-filters { grid-template-columns: 1fr; }
+}
