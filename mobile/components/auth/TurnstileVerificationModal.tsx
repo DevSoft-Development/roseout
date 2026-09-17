@@ -62,7 +62,7 @@ export function TurnstileVerificationModal({ visible, action, onCancel, onVerifi
               javaScriptEnabled
               domStorageEnabled
               sharedCookiesEnabled={false}
-              thirdPartyCookiesEnabled={false}
+              thirdPartyCookiesEnabled
               originWhitelist={["https://*", "http://*"]}
               setSupportMultipleWindows={false}
               style={styles.webview}
