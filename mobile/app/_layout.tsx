@@ -1,8 +1,10 @@
 import { useEffect } from "react";
+import { View } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { AuthProvider, useAuth } from "@/providers/AuthProvider";
+import { AppBottomTabs } from "@/components/navigation/AppBottomTabs";
 import { ThemeProvider, useAppTheme } from "@/providers/ThemeProvider";
 import { trackMobileEvent } from "@/lib/analytics";
 import { initializeObservability, setObservabilityUser } from "@/lib/observability";
@@ -47,7 +49,10 @@ function ThemedStack() {
     <>
       <RuntimeBridge />
       <StatusBar style={isDark ? "light" : "dark"} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }} />
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.background } }} />
+      </View>
+      <AppBottomTabs />
     </>
   );
 }
