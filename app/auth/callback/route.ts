@@ -3,6 +3,10 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
+import {
+  resolveWebSurfaceAuthOrigin,
+  webSurfaceAuthFallbackPath,
+} from "@/lib/web-surface-auth-origin";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,17 +14,17 @@ const supabaseAdmin = createClient(
 );
 
 export async function GET(request: NextRequest) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
-
   const requestUrl = new URL(request.url);
+  const authOrigin = resolveWebSurfaceAuthOrigin(request, requestUrl);
+  const fallbackPath = webSurfaceAuthFallbackPath();
   const code = requestUrl.searchParams.get("code");
   const intendedPath = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
 
   if (!code) {
-    return NextResponse.redirect(`${siteUrl}/create`);
+    return NextResponse.redirect(new URL(fallbackPath, authOrigin));
   }
 
-  let response = NextResponse.redirect(`${siteUrl}/create`);
+  const cookieResponse = NextResponse.redirect(new URL(fallbackPath, authOrigin));
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,7 +36,10 @@ export async function GET(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            cookieResponse.cookies.set(name, value, {
+              ...options,
+              path: "/",
+            });
           });
         },
       },
@@ -42,7 +49,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.user) {
-    return NextResponse.redirect(`${siteUrl}/create`);
+    return cookieResponse;
   }
 
   const user = data.user;
@@ -68,6 +75,9 @@ export async function GET(request: NextRequest) {
     intendedPath,
   });
 
-  response = NextResponse.redirect(`${siteUrl}${redirectTarget}`);
-  return response;
+  const finalResponse = NextResponse.redirect(new URL(redirectTarget, authOrigin));
+  cookieResponse.cookies.getAll().forEach((cookie) => {
+    finalResponse.cookies.set(cookie);
+  });
+  return finalResponse;
 }
