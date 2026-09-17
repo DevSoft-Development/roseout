@@ -1,0 +1,105 @@
+name: Mobile production OTA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-production-ota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-production-ota
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: mobile/package.json
+
+      - name: Guard native-impacting changes
+        if: github.event_name == 'push'
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          before='${{ github.event.before }}'
+          after='${{ github.sha }}'
+          changed="$(git diff --name-only "$before" "$after" || true)"
+          printf '%s\n' "$changed"
+
+          mobile_changed="$(printf '%s\n' "$changed" | grep '^mobile/' || true)"
+          if [ -z "$mobile_changed" ]; then
+            echo 'No mobile source files changed. Treating this as a bootstrap/manual release of current main.'
+            exit 0
+          fi
+
+          native_changed="$(printf '%s\n' "$mobile_changed" | grep -E '^(mobile/(app\.json|eas\.json|package\.json|package-lock\.json)|mobile/(ios|android|plugins)/)' || true)"
+          if [ -n "$native_changed" ]; then
+            echo 'Native-impacting mobile files changed; refusing OTA publication because a fresh native build is required:'
+            printf '%s\n' "$native_changed"
+            exit 1
+          fi
+
+      - name: Install mobile dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate production EAS Update configuration
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          const eas = JSON.parse(fs.readFileSync('eas.json', 'utf8'));
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const projectId = '243ab88a-53dc-4f94-ae7e-6cc3d24b94be';
+          const expectedUrl = `https://u.expo.dev/${projectId}`;
+          if (pkg?.dependencies?.['expo-updates'] !== '~57.0.22') throw new Error('expo-updates dependency missing or unexpected');
+          if (app?.extra?.eas?.projectId !== projectId) throw new Error('Unexpected EAS project ID');
+          if (app?.updates?.url !== expectedUrl) throw new Error('EAS Update URL is missing or unexpected');
+          if (app?.runtimeVersion?.policy !== 'fingerprint') throw new Error('EAS runtimeVersion must use fingerprint policy');
+          if (eas?.build?.production?.channel !== 'production') throw new Error('Production build channel must be production');
+          NODE
+
+      - name: Verify Expo publish credential is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo 'EXPO_TOKEN GitHub Actions secret is required to publish EAS Updates.'
+            exit 1
+          fi
+
+      - name: Publish production OTA update
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: >-
+          npx --yes eas-cli@latest update
+          --channel production
+          --message "Production OTA ${{ github.sha }}"
+          --non-interactive
+
+      - name: Record release
+        run: |
+          echo "Published ${{ github.sha }} to the production EAS Update channel." >> "$GITHUB_STEP_SUMMARY"
