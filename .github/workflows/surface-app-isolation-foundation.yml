@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'apps/**'
+      - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'package.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'apps/**'
+      - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'package.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
