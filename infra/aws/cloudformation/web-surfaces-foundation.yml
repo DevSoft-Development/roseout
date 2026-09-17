@@ -1,0 +1,391 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  TheOutHaven primary-region web surface foundation for independently deployed Admin and Business
+  Next.js runtimes. Provides shared network/ALB/ECS infrastructure with isolated target groups,
+  runtime environment secrets, logs, and task roles. ECS services are registered only after a
+  verified image has been pushed so the foundation can be created safely before cutover.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  AdminHost:
+    Type: String
+    Default: admin.theouthaven.com
+  BusinessHost:
+    Type: String
+    Default: business.theouthaven.com
+
+Resources:
+  WebVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.43.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref WebVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref WebVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.43.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - { Key: Name, Value: !Sub 'toh-${Environment}-web-a' }
+        - { Key: Project, Value: TheOutHaven }
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref WebVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.43.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - { Key: Name, Value: !Sub 'toh-${Environment}-web-b' }
+        - { Key: Project, Value: TheOutHaven }
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref WebVpc
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  SubnetAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public ingress for TheOutHaven Admin and Business web surfaces
+      VpcId: !Ref WebVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS task ingress from TheOutHaven web ALB only
+      VpcId: !Ref WebVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'toh-${Environment}-web-surfaces'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      LoadBalancerAttributes:
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  AdminTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'toh-${Environment}-admin'
+      VpcId: !Ref WebVpc
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /api/health/platform-dr
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher: { HttpCode: '200' }
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '15'
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AdminWeb }
+
+  BusinessTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'toh-${Environment}-business'
+      VpcId: !Ref WebVpc
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /api/health/platform-dr
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher: { HttpCode: '200' }
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '15'
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: BusinessWeb }
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: Not found
+
+  AdminHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values: [!Ref AdminHost]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AdminTargetGroup
+
+  BusinessHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 20
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values: [!Ref BusinessHost]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BusinessTargetGroup
+
+  WebRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub 'theouthaven-${Environment}-web-surfaces'
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration: { EncryptionType: AES256 }
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[{"rulePriority":1,"description":"Keep last 30 web images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'toh-${Environment}-web-surfaces'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  AdminLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/toh-${Environment}-admin-web'
+      RetentionInDays: 30
+
+  BusinessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/toh-${Environment}-business-web'
+      RetentionInDays: 30
+
+  AdminAppEnvSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub '/theouthaven/${Environment}/admin-web/app-env'
+      Description: Runtime environment for the isolated Admin web service.
+      SecretString: '{}'
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AdminWeb }
+
+  BusinessAppEnvSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub '/theouthaven/${Environment}/business-web/app-env'
+      Description: Runtime environment for the isolated Business web service.
+      SecretString: '{}'
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: BusinessWeb }
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TheOutHavenWebSurfaceExecution-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: web-surface-task-execution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:GetDownloadUrlForLayer, ecr:BatchGetImage]
+                Resource: !GetAtt WebRepository.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource:
+                  - !Sub '${AdminLogGroup.Arn}:*'
+                  - !Sub '${BusinessLogGroup.Arn}:*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AdminAppEnvSecret
+                  - !Ref BusinessAppEnvSecret
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+
+  AdminTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TheOutHavenAdminWebTask-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AdminWeb }
+
+  BusinessTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TheOutHavenBusinessWebTask-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: BusinessWeb }
+
+Outputs:
+  LoadBalancerDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+  VpcId:
+    Value: !Ref WebVpc
+  SubnetIds:
+    Value: !Join [',', [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+  TaskSecurityGroupId:
+    Value: !Ref TaskSecurityGroup
+  EcrRepositoryName:
+    Value: !Ref WebRepository
+  EcrRepositoryUri:
+    Value: !GetAtt WebRepository.RepositoryUri
+  EcsClusterName:
+    Value: !Ref Cluster
+  AdminTargetGroupArn:
+    Value: !Ref AdminTargetGroup
+  BusinessTargetGroupArn:
+    Value: !Ref BusinessTargetGroup
+  AdminLogGroupName:
+    Value: !Ref AdminLogGroup
+  BusinessLogGroupName:
+    Value: !Ref BusinessLogGroup
+  AdminAppEnvSecretArn:
+    Value: !Ref AdminAppEnvSecret
+  BusinessAppEnvSecretArn:
+    Value: !Ref BusinessAppEnvSecret
+  TaskExecutionRoleArn:
+    Value: !GetAtt TaskExecutionRole.Arn
+  AdminTaskRoleArn:
+    Value: !GetAtt AdminTaskRole.Arn
+  BusinessTaskRoleArn:
+    Value: !GetAtt BusinessTaskRole.Arn
