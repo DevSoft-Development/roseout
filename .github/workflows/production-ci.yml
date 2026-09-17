@@ -88,7 +88,152 @@ jobs:
 
           matches() { printf '%s\n' "$CHANGED" | grep -Eq "$1"; }
           all=false
-          if matches '^(package(-lock)?\.json|tsconfig.*\.json|\.github/workflows/production-ci\.yml)$'; then all=true; fi
+          if matches '^(package(-lock)?\.json)
+          security=false
+          search=false
+          reserve=false
+          billing=false
+          beta=false
+          location=false
+
+          if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/|apps/admin/|packages/(auth|db|config)/)'; then security=true; fi
+          if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
+          if [ "$all" = true ] || matches '^(lib/reserve/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
+          if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe)|scripts/billing-production-regression\.mjs$)'; then billing=true; fi
+          if [ "$all" = true ] || matches '^(lib/beta/|app/api/beta/|app/beta/|scripts/.*beta)'; then beta=true; fi
+          if [ "$all" = true ] || matches '^(lib/locations/|app/api/locations/|app/locations/|components/.*location)'; then location=true; fi
+
+          echo "security=$security" >> "$GITHUB_OUTPUT"
+          echo "search=$search" >> "$GITHUB_OUTPUT"
+          echo "reserve=$reserve" >> "$GITHUB_OUTPUT"
+          echo "billing=$billing" >> "$GITHUB_OUTPUT"
+          echo "beta=$beta" >> "$GITHUB_OUTPUT"
+          echo "location=$location" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        run: npm ci
+
+      - name: Security access regressions
+        if: steps.changes.outputs.security == 'true'
+        run: npm run test:security-access
+
+      - name: Core search intent regression
+        if: steps.changes.outputs.search == 'true'
+        run: npm test
+
+      - name: Search production regression
+        if: steps.changes.outputs.search == 'true'
+        run: npm run test:search-production
+
+      - name: Enterprise search quality regression
+        if: steps.changes.outputs.search == 'true'
+        run: npm run test:search-quality
+
+      - name: Search route regression
+        if: steps.changes.outputs.search == 'true'
+        run: npm run test:search-route-regression
+
+      - name: Enterprise search unit tests
+        if: steps.changes.outputs.search == 'true'
+        run: npm run test:enterprise-search
+
+      - name: Public search intent checks
+        if: steps.changes.outputs.search == 'true'
+        run: npm run test:public-search-intent
+
+      - name: Reserve regression tests
+        if: steps.changes.outputs.reserve == 'true'
+        run: npm run test:reserve
+
+      - name: Billing production checks
+        if: steps.changes.outputs.billing == 'true'
+        run: npm run test:billing-production
+
+      - name: Beta production checks
+        if: steps.changes.outputs.beta == 'true'
+        run: npm run test:beta-production-readiness
+
+      - name: Beta guided-route checks
+        if: steps.changes.outputs.beta == 'true'
+        run: npm run test:beta-guided-route
+
+      - name: Location editor checks
+        if: steps.changes.outputs.location == 'true'
+        run: npm run test:location-editor
+
+      - name: Report targeted PR validation
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}" >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: Required browser smoke tests
+    needs:
+      - quality
+      - regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect browser-relevant changes
+        id: browser
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json|\.github/workflows/production-ci\.yml)'; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.browser.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        if: steps.browser.outputs.run == 'true'
+        run: npm ci
+
+      - name: Install Chromium
+        if: steps.browser.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run required end-to-end tests
+        if: steps.browser.outputs.run == 'true'
+        run: npm run test:e2e:required
+
+      - name: Upload Playwright report
+        if: always() && steps.browser.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+; then all=true; fi
 
           security=false
           search=false
