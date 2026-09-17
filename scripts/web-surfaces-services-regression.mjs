@@ -7,6 +7,7 @@ const dockerfile = fs.readFileSync('infra/aws/web-surfaces/Dockerfile', 'utf8');
 const loader = fs.readFileSync('infra/aws/web-surfaces/runtime-env-loader.cjs', 'utf8');
 const healthcheck = fs.readFileSync('infra/aws/web-surfaces/healthcheck.cjs', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/aws-web-surfaces-services.yml', 'utf8');
+const proxy = fs.readFileSync('proxy.ts', 'utf8');
 
 function requireText(source, value, message) {
   if (!source.includes(value)) throw new Error(message || `Missing: ${value}`);
@@ -47,6 +48,22 @@ requireText(healthcheck, "path: '/api/health/platform-dr'");
 requireText(healthcheck, 'status >= 200 && status < 300');
 requireText(healthcheck, "request.on('timeout'");
 requireText(healthcheck, "request.on('error'");
+
+requireText(proxy, 'THEOUTHAVEN_WEB_SURFACE', 'AWS runtime surface isolation must be driven by the task-specific surface flag.');
+requireText(proxy, 'surface === "admin" || surface === "business"', 'Only the isolated Admin and Business runtimes should activate the surface guard.');
+requireText(proxy, 'pathMatches(pathname, "/admin/dashboard")', 'Admin runtime must allow its dashboard.');
+requireText(proxy, 'pathname === "/admin/login"', 'Admin runtime must allow its login flow.');
+requireText(proxy, 'pathMatches(pathname, "/auth/admin/callback")', 'Admin runtime must allow the admin auth callback.');
+requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Business runtime must allow the location dashboard.');
+requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Business runtime must allow the business dashboard.');
+requireText(proxy, 'pathname === "/login"', 'Business runtime must allow the shared owner login flow.');
+requireText(proxy, 'return NextResponse.json({ error: "Not found" }, { status: 404 });', 'Disallowed surface routes must fail closed with 404.');
+requireText(proxy, 'export const config = { matcher: ["/:path*"] };', 'Surface isolation must cover every application page path, not only Admin/API routes.');
+const boundaryIndex = proxy.indexOf('const surfaceBoundaryResponse = webSurfaceBoundaryResponse(pathname);');
+const shortLinkIndex = proxy.indexOf('const shortHostResponse = shortLinkHostResponse(request);');
+if (boundaryIndex < 0 || shortLinkIndex < 0 || boundaryIndex > shortLinkIndex) {
+  throw new Error('AWS surface isolation must run before normal host routing and application behavior.');
+}
 
 requireText(workflow, '/theouthaven/${TARGET_ENV}/edge-runtime/env', 'AWS web surfaces must source runtime configuration from the AWS compatibility secret.');
 requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy credentials must not be copied into ECS runtime secrets.');
