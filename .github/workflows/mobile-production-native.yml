@@ -1,6 +1,12 @@
 name: Mobile production native build
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - mobile/.eas/workflows/**
+      - .github/workflows/mobile-production-native.yml
   push:
     branches:
       - main
@@ -14,6 +20,7 @@ on:
       - mobile/ios/**
       - mobile/android/**
       - mobile/.eas/workflows/build-production.yml
+      - .github/workflows/mobile-production-native.yml
   workflow_dispatch:
 
 permissions:
@@ -24,8 +31,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-eas-workflow:
+    name: Validate EAS production workflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate EAS workflow schema
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@latest workflow:validate .eas/workflows/build-production.yml --non-interactive
+
   eas-production:
     name: EAS iOS + Android production build and submit
+    needs: [validate-eas-workflow]
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     defaults:

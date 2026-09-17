@@ -1,8 +1,5 @@
 name: Build and submit production mobile apps
 
-on:
-  workflow_dispatch:
-
 jobs:
   build_android:
     name: Build Android production app
