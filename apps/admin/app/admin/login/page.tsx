@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createBrowserSupabaseClient } from "@theouthaven/auth/browser-client";
 import { sanitizeIntendedPath } from "@theouthaven/auth/redirect";
 
@@ -12,7 +12,6 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 
 export default function AdminLoginPage() {
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const autoStarted = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -22,6 +21,7 @@ export default function AdminLoginPage() {
     setLoading(true);
     setError("");
 
+    const supabase = createBrowserSupabaseClient();
     const callback = new URL("/auth/admin/callback", window.location.origin);
     callback.searchParams.set("next", nextPath);
 
@@ -38,7 +38,7 @@ export default function AdminLoginPage() {
       setLoading(false);
       setError("Microsoft sign-in could not be started. Please try again.");
     }
-  }, [nextPath, supabase]);
+  }, [nextPath]);
 
   useEffect(() => {
     const params = new URL(window.location.href).searchParams;
