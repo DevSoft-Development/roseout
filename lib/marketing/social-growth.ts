@@ -8,7 +8,7 @@ function dayBounds(date = new Date()) {
   const start = new Date(date);
   start.setUTCHours(0, 0, 0, 0);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { start, end, date: start.toISOString().slice(0, 10) };
+  return { start, end, date: start.toISOString().slice(0, 10), nextDate: end.toISOString().slice(0, 10) };
 }
 
 function providerFromEvent(row: any) {
@@ -30,16 +30,20 @@ function isHighIntent(name: string) {
   return /reserve|reservation|call|direction|ticket|save|booking/.test(name);
 }
 
+function metricValue(row: any) {
+  return Number(row?.reach ?? row?.views ?? 0) || 0;
+}
+
 export async function refreshSocialGrowthSnapshots() {
-  const { start, end, date } = dayBounds();
+  const { start, end, date, nextDate } = dayBounds();
   const previousStart = new Date(start.getTime() - 48 * 60 * 60 * 1000);
   const [connectionsResult, accountMetricsResult, postMetricsResult, analyticsResult, conversationsResult, wonResult] = await Promise.all([
     supabaseAdmin.from("marketing_social_connections").select("id,provider").eq("scope", "platform"),
     supabaseAdmin.from("social_account_metric_snapshots").select("connection_id,captured_at,followers,reach").gte("captured_at", previousStart.toISOString()).order("captured_at", { ascending: false }).limit(5000),
-    supabaseAdmin.from("social_post_metric_snapshots").select("social_post_id,provider,captured_at,views,reach").gte("captured_at", start.toISOString()).lt("captured_at", end.toISOString()).order("captured_at", { ascending: false }).limit(10000),
+    supabaseAdmin.from("social_post_metric_snapshots").select("social_post_id,provider,captured_at,views,reach").gte("captured_at", previousStart.toISOString()).lt("captured_at", end.toISOString()).order("captured_at", { ascending: false }).limit(20000),
     supabaseAdmin.from("analytics_events").select("event_name,event_type,source,metadata,occurred_at,created_at").gte("occurred_at", start.toISOString()).lt("occurred_at", end.toISOString()).limit(20000),
     supabaseAdmin.from("social_community_conversations").select("provider,person_type,occasion,area,first_message_at").gte("first_message_at", start.toISOString()).lt("first_message_at", end.toISOString()).limit(10000),
-    supabaseAdmin.from("crm_opportunities").select("lead_source,status,monthly_recurring_revenue,actual_close_date,updated_at,metadata").eq("status", "won").gte("updated_at", start.toISOString()).lt("updated_at", end.toISOString()).limit(5000),
+    supabaseAdmin.from("crm_opportunities").select("lead_source,status,monthly_recurring_revenue,actual_close_date,metadata").eq("status", "won").gte("actual_close_date", date).lt("actual_close_date", nextDate).limit(5000),
   ]);
 
   const providerByConnection = new Map((connectionsResult.data || []).map((row: any) => [row.id, row.provider]));
@@ -52,10 +56,17 @@ export async function refreshSocialGrowthSnapshots() {
     accountByProvider.set(provider, list);
   }
 
-  const latestPost = new Map<string, any>();
+  const currentPost = new Map<string, any>();
+  const previousPost = new Map<string, any>();
   for (const row of postMetricsResult.data || []) {
-    const key = `${(row as any).provider}:${(row as any).social_post_id}`;
-    if (!latestPost.has(key)) latestPost.set(key, row);
+    const item = row as any;
+    const key = `${item.provider}:${item.social_post_id}`;
+    const captured = new Date(item.captured_at);
+    if (captured >= start && captured < end) {
+      if (!currentPost.has(key)) currentPost.set(key, item);
+    } else if (captured < start && !previousPost.has(key)) {
+      previousPost.set(key, item);
+    }
   }
 
   const analyticsByProvider = new Map<string, any[]>();
@@ -77,8 +88,14 @@ export async function refreshSocialGrowthSnapshots() {
     const currentFollowers = Number(todayRows[0]?.followers ?? accountRows[0]?.followers ?? 0);
     const previousFollowers = Number(previousRows[0]?.followers ?? currentFollowers);
     const followerDelta = currentFollowers - previousFollowers;
-    const providerPosts = [...latestPost.values()].filter((row: any) => row.provider === provider);
-    const reach = providerPosts.reduce((sum, row: any) => sum + Number(row.reach ?? row.views ?? 0), 0);
+
+    let reach = 0;
+    for (const [key, current] of currentPost.entries()) {
+      if (current.provider !== provider) continue;
+      const previous = previousPost.get(key);
+      reach += Math.max(0, metricValue(current) - metricValue(previous));
+    }
+
     const events = analyticsByProvider.get(provider) || [];
     const conversations = (conversationsResult.data || []).filter((row: any) => row.provider === provider);
     const businessLeads = conversations.filter((row: any) => row.person_type === "business").length;
@@ -93,7 +110,7 @@ export async function refreshSocialGrowthSnapshots() {
       const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
       const leadSource = String(row.lead_source || metadata.source || "").toLowerCase();
       const sourceProvider = String(metadata.social_provider || "").toLowerCase();
-      return leadSource.includes("social") && (!sourceProvider || sourceProvider === provider);
+      return leadSource.includes("social") && sourceProvider === provider;
     });
     const paidCustomers = won.length;
     const newMrr = won.reduce((sum, row: any) => sum + Number(row.monthly_recurring_revenue || 0), 0);
@@ -114,7 +131,7 @@ export async function refreshSocialGrowthSnapshots() {
       new_mrr: newMrr,
       top_theme: winner(occasionCounts),
       top_area: winner(areaCounts),
-      metadata: { community_conversations: conversations.length, attributed_events: events.length },
+      metadata: { community_conversations: conversations.length, attributed_events: events.length, reach_is_daily_delta: true },
     };
     const { error } = await supabaseAdmin.from("social_growth_daily_snapshots").upsert(row, { onConflict: "snapshot_date,provider" });
     if (error) throw error;
