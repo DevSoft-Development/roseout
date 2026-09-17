@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/aws-web-surfaces-isolation-smoke.yml'
       - 'scripts/web-surfaces-isolation-smoke-regression.mjs'
+      - 'app/auth/callback/**'
+      - 'app/auth/admin/callback/**'
+      - 'lib/web-surface-auth-origin.ts'
   push:
     branches: [main]
     paths:
@@ -62,7 +65,7 @@ jobs:
           test -n "$ORIGIN" && test "$ORIGIN" != None
           echo "host=$ORIGIN" >> "$GITHUB_OUTPUT"
 
-      - name: Verify Admin and Business surface isolation
+      - name: Verify Admin and Business surface isolation and auth boundaries
         env:
           ORIGIN: ${{ steps.origin.outputs.host }}
         run: |
@@ -74,8 +77,19 @@ jobs:
             curl --silent --show-error --max-time 20 \
               --output /dev/null \
               --write-out '%{http_code}' \
-              -H "Host: $host" \
-              "http://$ORIGIN$path"
+              --connect-to "${host}:443:${ORIGIN}:443" \
+              "https://${host}${path}"
+          }
+
+          request_location() {
+            local host="$1"
+            local path="$2"
+            curl --silent --show-error --max-time 20 \
+              --output /dev/null \
+              --dump-header - \
+              --connect-to "${host}:443:${ORIGIN}:443" \
+              "https://${host}${path}" \
+              | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}'
           }
 
           require_allowed() {
@@ -102,11 +116,27 @@ jobs:
             fi
           }
 
+          require_location_prefix() {
+            local host="$1"
+            local path="$2"
+            local expected="$3"
+            local location
+            location="$(request_location "$host" "$path")"
+            echo "$host $path -> ${location:-<no location>}"
+            case "$location" in
+              "$expected"*) ;;
+              *)
+                echo "Expected $host$path to redirect within $expected, got ${location:-<none>}." >&2
+                exit 1
+                ;;
+            esac
+          }
+
           for surface in admin business; do
             host="${surface}.theouthaven.com"
             body="$(curl --fail --silent --show-error --max-time 20 \
-              -H "Host: $host" \
-              "http://$ORIGIN/api/health/platform-dr")"
+              --connect-to "${host}:443:${ORIGIN}:443" \
+              "https://${host}/api/health/platform-dr")"
             printf '%s' "$body" | jq -e --arg provider "aws-${surface}" \
               '.ok == true and .provider == $provider' >/dev/null
           done
@@ -114,10 +144,12 @@ jobs:
           require_allowed 'admin.theouthaven.com' '/admin/login'
           require_denied 'admin.theouthaven.com' '/locations/dashboard'
           require_denied 'admin.theouthaven.com' '/'
+          require_location_prefix 'admin.theouthaven.com' '/auth/admin/callback' 'https://admin.theouthaven.com/admin/login'
 
           require_allowed 'business.theouthaven.com' '/login'
           require_allowed 'business.theouthaven.com' '/locations/dashboard'
           require_denied 'business.theouthaven.com' '/admin/login'
           require_denied 'business.theouthaven.com' '/'
+          require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/login'
 
-          echo 'Admin and Business AWS runtime surface isolation passed. No DNS/public routing changes were made.'
+          echo 'Admin and Business HTTPS runtime, route isolation, and auth callback host boundaries passed. No DNS/public routing changes were made.'
