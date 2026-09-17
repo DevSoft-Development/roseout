@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/admin-auth";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getMicrosoft365Config } from "@/lib/microsoft-365/config";
+import { resolveWebSurfaceAuthOrigin } from "@/lib/web-surface-auth-origin";
 
 function base64url(input: Buffer) {
   return input.toString("base64url");
@@ -11,7 +12,13 @@ function base64url(input: Buffer) {
 
 export async function GET(request: NextRequest) {
   const admin = await getCurrentAdmin();
-  const config = await getMicrosoft365Config();
+  const requestUrl = new URL(request.url);
+  const origin = resolveWebSurfaceAuthOrigin(request, requestUrl);
+  const redirectUri = new URL(
+    "/api/admin/integrations/microsoft-365/callback",
+    origin,
+  ).toString();
+  const config = await getMicrosoft365Config({ redirectUri });
   const silent = request.nextUrl.searchParams.get("silent") === "1";
   const automatic = request.nextUrl.searchParams.get("auto") === "1";
   const requestedNext = sanitizeIntendedPath(request.nextUrl.searchParams.get("next"));

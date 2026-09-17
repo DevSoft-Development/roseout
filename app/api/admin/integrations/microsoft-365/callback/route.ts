@@ -8,6 +8,7 @@ import { encryptMicrosoftToken } from "@/lib/microsoft-365/crypto";
 import { microsoftGraphFetch } from "@/lib/microsoft-365/graph";
 import { exchangeMicrosoft365Code } from "@/lib/microsoft-365/oauth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { resolveWebSurfaceAuthOrigin } from "@/lib/web-surface-auth-origin";
 
 type GraphMe = { id: string; displayName?: string | null; mail?: string | null; userPrincipalName?: string | null };
 
@@ -28,14 +29,14 @@ function clearFlowCookies(response: NextResponse) {
   return response;
 }
 
-function redirectWith(request: NextRequest, key: string, value: string) {
-  const url = new URL("/admin/dashboard/settings/microsoft-365", request.url);
+function redirectWith(request: NextRequest, origin: string, key: string, value: string) {
+  const url = new URL("/admin/dashboard/settings/microsoft-365", origin);
   url.searchParams.set(key, value);
   return NextResponse.redirect(url);
 }
 
-function redirectToNext(request: NextRequest, next: string, connected = false) {
-  const url = new URL(next, request.url);
+function redirectToNext(origin: string, next: string, connected = false) {
+  const url = new URL(next, origin);
   if (connected && next === "/admin/dashboard/settings/microsoft-365") {
     url.searchParams.set("connected", "1");
   }
@@ -43,6 +44,12 @@ function redirectToNext(request: NextRequest, next: string, connected = false) {
 }
 
 export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url);
+  const origin = resolveWebSurfaceAuthOrigin(request, requestUrl);
+  const redirectUri = new URL(
+    "/api/admin/integrations/microsoft-365/callback",
+    origin,
+  ).toString();
   const admin = await getCurrentAdmin();
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
@@ -59,23 +66,23 @@ export async function GET(request: NextRequest) {
     : "/admin/dashboard/settings/microsoft-365";
 
   if (!state || !expectedState || expectedState !== state) {
-    return clearFlowCookies(redirectWith(request, "error", "Microsoft authorization state expired. Please reconnect."));
+    return clearFlowCookies(redirectWith(request, origin, "error", "Microsoft authorization state expired. Please reconnect."));
   }
 
   if (error) {
     if (silent && ["interaction_required", "login_required", "consent_required", "account_selection_required"].includes(error)) {
-      return clearFlowCookies(redirectToNext(request, next));
+      return clearFlowCookies(redirectToNext(origin, next));
     }
-    return clearFlowCookies(redirectWith(request, "error", errorDescription || error));
+    return clearFlowCookies(redirectWith(request, origin, "error", errorDescription || error));
   }
 
   if (!code || !verifier) {
-    return clearFlowCookies(redirectWith(request, "error", "Missing Microsoft authorization response."));
+    return clearFlowCookies(redirectWith(request, origin, "error", "Missing Microsoft authorization response."));
   }
 
   try {
-    const config = await getMicrosoft365Config();
-    const token = await exchangeMicrosoft365Code(code, verifier);
+    const config = await getMicrosoft365Config({ redirectUri });
+    const token = await exchangeMicrosoft365Code(code, verifier, redirectUri);
     if (!token.refresh_token) throw new Error("Microsoft did not return an offline refresh token.");
 
     // Store a short-lived encrypted access token first so the Graph helper can load /me.
@@ -115,7 +122,7 @@ export async function GET(request: NextRequest) {
     if (connectionError) throw connectionError;
 
     await supabaseAdmin.from("microsoft_365_sync_preferences").upsert({ user_id: admin.user_id, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-    return clearFlowCookies(redirectToNext(request, next, true));
+    return clearFlowCookies(redirectToNext(origin, next, true));
   } catch (caught) {
     await supabaseAdmin.from("microsoft_365_connections").update({
       status: "error",
@@ -123,7 +130,7 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }).eq("user_id", admin.user_id);
 
-    if (silent) return clearFlowCookies(redirectToNext(request, next));
-    return clearFlowCookies(redirectWith(request, "error", caught instanceof Error ? caught.message : "Microsoft connection failed"));
+    if (silent) return clearFlowCookies(redirectToNext(origin, next));
+    return clearFlowCookies(redirectWith(request, origin, "error", caught instanceof Error ? caught.message : "Microsoft connection failed"));
   }
 }

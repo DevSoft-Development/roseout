@@ -9,6 +9,10 @@ const healthcheck = fs.readFileSync('infra/aws/web-surfaces/healthcheck.cjs', 'u
 const workflow = fs.readFileSync('.github/workflows/aws-web-surfaces-services.yml', 'utf8');
 const proxy = fs.readFileSync('proxy.ts', 'utf8');
 const businessLogin = fs.readFileSync('app/business/login/page.tsx', 'utf8');
+const adminM365Connect = fs.readFileSync('app/api/admin/integrations/microsoft-365/connect/route.ts', 'utf8');
+const adminM365Callback = fs.readFileSync('app/api/admin/integrations/microsoft-365/callback/route.ts', 'utf8');
+const microsoft365Oauth = fs.readFileSync('lib/microsoft-365/oauth.ts', 'utf8');
+const microsoft365Config = fs.readFileSync('lib/microsoft-365/config.ts', 'utf8');
 
 function requireText(source, value, message) {
   if (!source.includes(value)) throw new Error(message || `Missing: ${value}`);
@@ -78,9 +82,18 @@ requireText(businessLogin, 'https://theouthaven.com/forgot-password', 'Business 
 requireText(businessLogin, 'https://theouthaven.com/business#plans', 'Business login must provide a clear onboarding path for new businesses.');
 requireText(businessLogin, 'https://theouthaven.com/login', 'Business login must provide a route back to consumer sign in.');
 
+requireText(adminM365Connect, 'resolveWebSurfaceAuthOrigin', 'Admin M365 authorization must resolve the external Admin surface origin.');
+requireText(adminM365Connect, '"/api/admin/integrations/microsoft-365/callback"', 'Admin M365 authorization must build its callback on the Admin surface.');
+requireText(adminM365Connect, 'getMicrosoft365Config({ redirectUri })', 'Admin M365 authorization must pass the exact Admin callback URI into config.');
+requireText(adminM365Callback, 'resolveWebSurfaceAuthOrigin', 'Admin M365 callback must resolve the external Admin surface origin.');
+requireText(adminM365Callback, 'exchangeMicrosoft365Code(code, verifier, redirectUri)', 'Admin M365 code exchange must reuse the exact callback URI used for authorization.');
+requireText(adminM365Callback, 'redirectToNext(origin, next', 'Admin M365 callback must return to the Admin surface origin.');
+requireText(microsoft365Oauth, 'getMicrosoft365Config({ redirectUri })', 'M365 token exchange must support a request-scoped redirect URI.');
+requireText(microsoft365Config, 'options?.redirectUri?.trim()', 'M365 config must permit the Admin request to supply its external callback URI.');
+
 const pullRequestPaths = workflow.match(/  pull_request:\n    paths:\n([\s\S]*?)\n  push:/)?.[1] || '';
 const pushPaths = workflow.match(/  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] || '';
-for (const path of ['app/auth/**', 'app/api/auth/**', 'lib/**']) {
+for (const path of ['app/auth/**', 'app/api/auth/**', 'app/api/admin/**', 'lib/**']) {
   requireText(pullRequestPaths, `- '${path}'`, `Pull request validation must run when ${path} changes.`);
   requireText(pushPaths, `- '${path}'`, `Production Admin/Business deployment must run when ${path} changes on main.`);
 }
