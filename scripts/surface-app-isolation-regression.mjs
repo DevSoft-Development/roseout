@@ -124,6 +124,14 @@ if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavig
   throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
 }
 
+const productionCi = read(".github/workflows/production-ci.yml");
+if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
+  throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
+}
+if (!productionCi.includes("apps/admin/") || !productionCi.includes("packages/(auth|db|config)/")) {
+  throw new Error("Production CI must route isolated Admin/auth/db/config changes through the security regression lane.");
+}
+
 const rootTsconfig = JSON.parse(read("tsconfig.json"));
 for (const excluded of ["apps", "packages"]) {
   if (!rootTsconfig.exclude?.includes(excluded)) {
