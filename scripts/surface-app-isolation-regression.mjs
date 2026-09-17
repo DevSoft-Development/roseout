@@ -5,9 +5,20 @@ import path from "node:path";
 
 const root = process.cwd();
 const surfaces = ["consumer", "admin", "business"];
+const sharedPackages = ["auth", "config"];
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
+}
+
+for (const packageName of sharedPackages) {
+  const packageRoot = path.join(root, "packages", packageName);
+  if (!fs.existsSync(packageRoot)) {
+    throw new Error(`Missing shared package: packages/${packageName}`);
+  }
+  if (!fs.existsSync(path.join(packageRoot, "package.json"))) {
+    throw new Error(`Missing package manifest: packages/${packageName}/package.json`);
+  }
 }
 
 for (const surface of surfaces) {
@@ -21,6 +32,11 @@ for (const surface of surfaces) {
   const tsconfig = read(`apps/${surface}/tsconfig.json`);
   if (!tsconfig.includes('"@/*": ["./*"]')) {
     throw new Error(`${surface} must resolve @/* inside its own app boundary.`);
+  }
+  for (const packageName of sharedPackages) {
+    if (!tsconfig.includes(`"@theouthaven/${packageName}/*"`)) {
+      throw new Error(`${surface} must expose the @theouthaven/${packageName} shared package alias.`);
+    }
   }
 
   const sourceFiles = [];
@@ -41,6 +57,11 @@ for (const surface of surfaces) {
   }
 }
 
+const adminLogin = read("apps/admin/app/admin/login/page.tsx");
+if (!adminLogin.includes("@theouthaven/auth/browser-client") || !adminLogin.includes("@theouthaven/auth/redirect")) {
+  throw new Error("Admin login must consume the shared auth package boundary.");
+}
+
 const pkg = JSON.parse(read("package.json"));
 for (const surface of surfaces) {
   const key = `build:surface:${surface}`;
@@ -49,4 +70,4 @@ for (const surface of surfaces) {
   }
 }
 
-console.log("Surface app isolation foundation regression passed.");
+console.log("Surface app isolation and shared package regression passed.");
