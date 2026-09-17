@@ -56,7 +56,7 @@ export default function AdminShell({
 
   const navigation = (
     <nav aria-label="Admin navigation" className="admin-shell-nav">
-      {adminShellNavigation.map((item) => {
+      {adminShellNavigation.filter((item) => !item.roles || item.roles.includes(adminRole)).map((item) => {
         const Icon = item.icon;
         const active =
           item.href &&
