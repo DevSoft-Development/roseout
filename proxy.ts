@@ -20,12 +20,64 @@ const rateRules: Array<{ prefix: string; limit: number; windowMs: number }> = [
 
 const SHORT_CODE_PATTERN = /^[A-Za-z0-9_-]{8,20}$/;
 const APP_INFRASTRUCTURE_PREFIXES = ["/api", "/admin", "/_next", "/favicon", "/icon", "/robots", "/sitemap"];
+const STATIC_FILE_PATTERN = /\.[A-Za-z0-9]{1,8}$/;
+
+type AwsWebSurface = "admin" | "business";
 
 function normalizedHostname(request: NextRequest) {
   return (request.headers.get("host") || request.nextUrl.hostname || "")
     .split(":")[0]
     .trim()
     .toLowerCase();
+}
+
+function pathMatches(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function currentAwsWebSurface(): AwsWebSurface | null {
+  const surface = String(process.env.THEOUTHAVEN_WEB_SURFACE || "").trim().toLowerCase();
+  return surface === "admin" || surface === "business" ? surface : null;
+}
+
+function isSharedSurfaceDependency(pathname: string) {
+  if (pathname.startsWith("/_next/")) return true;
+  if (pathname.startsWith("/api/")) return true;
+  if (STATIC_FILE_PATTERN.test(pathname)) return true;
+  return ["/favicon", "/icon", "/robots", "/sitemap"].some((prefix) => pathMatches(pathname, prefix));
+}
+
+function isAllowedAdminSurfacePath(pathname: string) {
+  if (isSharedSurfaceDependency(pathname)) return true;
+  if (pathMatches(pathname, "/admin/dashboard")) return true;
+  if (pathname === "/admin/login" || pathname === "/admin/unauthorized") return true;
+  return pathMatches(pathname, "/auth/admin/callback");
+}
+
+function isAllowedBusinessSurfacePath(pathname: string) {
+  if (isSharedSurfaceDependency(pathname)) return true;
+  if (pathMatches(pathname, "/locations/dashboard")) return true;
+  if (pathMatches(pathname, "/business/dashboard")) return true;
+  if (pathname === "/login") return true;
+  return [
+    "/auth/callback",
+    "/auth/confirm",
+    "/auth/create-password",
+    "/auth/verified",
+    "/auth/verify-email",
+  ].some((prefix) => pathMatches(pathname, prefix));
+}
+
+function webSurfaceBoundaryResponse(pathname: string) {
+  const surface = currentAwsWebSurface();
+  if (!surface) return null;
+
+  const allowed = surface === "admin"
+    ? isAllowedAdminSurfacePath(pathname)
+    : isAllowedBusinessSurfacePath(pathname);
+
+  if (allowed) return null;
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 function isApplicationInfrastructurePath(pathname: string) {
@@ -67,10 +119,13 @@ function isLoadTestBypassAllowed(request: NextRequest) {
 }
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const surfaceBoundaryResponse = webSurfaceBoundaryResponse(pathname);
+  if (surfaceBoundaryResponse) return surfaceBoundaryResponse;
+
   const shortHostResponse = shortLinkHostResponse(request);
   if (shortHostResponse) return shortHostResponse;
 
-  const pathname = request.nextUrl.pathname;
   if (pathname === "/api/debug" || pathname.startsWith("/api/debug/")) {
     if (isProductionRuntime()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -101,4 +156,4 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/api/:path*", "/admin/:path*", "/", "/:shortCode"] };
+export const config = { matcher: ["/:path*"] };
