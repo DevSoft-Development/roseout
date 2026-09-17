@@ -75,7 +75,10 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
           HealthCheck:
-            Command: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:3000/api/health/platform-dr || exit 1"]
+            Command:
+              - CMD-SHELL
+              - >-
+                node -e "const http=require('http');const req=http.get('http://127.0.0.1:3000/api/health/platform-dr',res=>{res.resume();process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));req.setTimeout(4000,()=>{req.destroy();process.exit(1)})"
             Interval: 30
             Timeout: 5
             Retries: 3
@@ -119,7 +122,10 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
           HealthCheck:
-            Command: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:3000/api/health/platform-dr || exit 1"]
+            Command:
+              - CMD-SHELL
+              - >-
+                node -e "const http=require('http');const req=http.get('http://127.0.0.1:3000/api/health/platform-dr',res=>{res.resume();process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));req.setTimeout(4000,()=>{req.destroy();process.exit(1)})"
             Interval: 30
             Timeout: 5
             Retries: 3
