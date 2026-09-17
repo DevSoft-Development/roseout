@@ -44,7 +44,17 @@ export async function POST(request: Request) {
       jobs.push(ingestCommunityEvent({ provider, externalUserId: String(event.sender.id), externalMessageId: String(message.mid || `${event.sender.id}:${event.timestamp || Date.now()}`), externalThreadId: String(event.sender.id), conversationType: "dm", body: String(message.text), metadata: { recipient_id: event.recipient?.id || null, entry_id: entry.id } }));
     }
   }
+
   const results = await Promise.allSettled(jobs);
-  const failed = results.filter((result) => result.status === "rejected").length;
-  return NextResponse.json({ received: true, processed: results.length - failed, failed });
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) {
+    console.error("Meta Community webhook ingestion failed", {
+      total: results.length,
+      failed: failed.length,
+      reasons: failed.map((result) => result.status === "rejected" ? String(result.reason) : "").slice(0, 5),
+    });
+    return NextResponse.json({ received: false, processed: results.length - failed.length, failed: failed.length, retry: true }, { status: 503 });
+  }
+
+  return NextResponse.json({ received: true, processed: results.length, failed: 0 });
 }
