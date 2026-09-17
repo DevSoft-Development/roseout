@@ -131,7 +131,6 @@ Resources:
 
   AdminService:
     Type: AWS::ECS::Service
-    DependsOn: AdminTaskDefinition
     Properties:
       ServiceName: !Sub 'toh-${Environment}-admin-web'
       Cluster: !Ref ClusterName
@@ -164,7 +163,6 @@ Resources:
 
   BusinessService:
     Type: AWS::ECS::Service
-    DependsOn: BusinessTaskDefinition
     Properties:
       ServiceName: !Sub 'toh-${Environment}-business-web'
       Cluster: !Ref ClusterName
@@ -197,9 +195,9 @@ Resources:
 
 Outputs:
   AdminServiceName:
-    Value: !GetAtt AdminService.Name
+    Value: !Sub 'toh-${Environment}-admin-web'
   BusinessServiceName:
-    Value: !GetAtt BusinessService.Name
+    Value: !Sub 'toh-${Environment}-business-web'
   AdminTaskDefinitionArn:
     Value: !Ref AdminTaskDefinition
   BusinessTaskDefinitionArn:
