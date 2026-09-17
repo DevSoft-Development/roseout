@@ -47,4 +47,8 @@ if (!policy.includes('"logs:FilterLogEvents"')) {
   throw new Error("Web-surface deploy role must be able to read ECS CloudWatch logs after a failed deployment.");
 }
 
+if (!policy.includes('"cloudformation:RollbackStack"')) {
+  throw new Error("Web-surface deploy role must be able to recover an UPDATE_FAILED services stack before retrying deployment.");
+}
+
 console.log("web-surfaces-foundation-regression: PASS");
