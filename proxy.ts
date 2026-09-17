@@ -58,7 +58,7 @@ function isAllowedBusinessSurfacePath(pathname: string) {
   if (isSharedSurfaceDependency(pathname)) return true;
   if (pathMatches(pathname, "/locations/dashboard")) return true;
   if (pathMatches(pathname, "/business/dashboard")) return true;
-  if (pathname === "/login") return true;
+  if (pathname === "/business/login") return true;
   return [
     "/auth/callback",
     "/auth/confirm",
@@ -75,7 +75,7 @@ function webSurfaceBoundaryResponse(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (pathname === "/") {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = surface === "admin" ? "/admin/login" : "/login";
+    loginUrl.pathname = surface === "admin" ? "/admin/login" : "/business/login";
     return NextResponse.redirect(loginUrl, 302);
   }
 
