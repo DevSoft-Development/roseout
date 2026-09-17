@@ -147,7 +147,7 @@ export async function proxy(request: NextRequest) {
       if (!verdict.ok) {
         return NextResponse.json(
           { error: "Rate limit exceeded" },
-          { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) },
+          { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) } },
         );
       }
     }

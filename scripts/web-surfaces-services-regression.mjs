@@ -62,6 +62,7 @@ requireText(proxy, 'if (pathname === "/") {', 'Isolated AWS web surface roots mu
 requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/business/login";', 'Admin and Business roots must redirect to their dedicated login pages.');
 requireText(proxy, 'return NextResponse.redirect(loginUrl, 302);', 'Web surface root login navigation must use an explicit redirect.');
 requireText(proxy, 'return NextResponse.json({ error: "Not found" }, { status: 404 });', 'Disallowed surface routes must fail closed with 404.');
+requireText(proxy, '{ status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) } },', 'Rate-limit responses must keep a complete headers object and valid JSON response syntax.');
 requireText(proxy, 'export const config = { matcher: ["/:path*"] };', 'Surface isolation must cover every application page path, not only Admin/API routes.');
 const boundaryIndex = proxy.indexOf('const surfaceBoundaryResponse = webSurfaceBoundaryResponse(request);');
 const shortLinkIndex = proxy.indexOf('const shortHostResponse = shortLinkHostResponse(request);');
