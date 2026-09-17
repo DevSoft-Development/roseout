@@ -1,4 +1,5 @@
 import {
+  Flag,
   Home,
   Mail,
   ScrollText,
@@ -30,6 +31,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     label: "Platform Logs",
     href: "/admin/dashboard/logs",
     icon: ScrollText,
+    migrated: true,
+    roles: ["superadmin"],
+  },
+  {
+    label: "Feature Flags",
+    href: "/admin/dashboard/feature-flags",
+    icon: Flag,
     migrated: true,
     roles: ["superadmin"],
   },
