@@ -76,6 +76,15 @@ if (adminSession.includes("@/lib/")) {
   throw new Error("Shared Admin session guard must not import root monolith modules.");
 }
 
+const adminRootLayout = read("apps/admin/app/layout.tsx");
+if (!adminRootLayout.includes("./globals.css")) {
+  throw new Error("Isolated Admin root layout must load its own global stylesheet.");
+}
+const adminGlobals = read("apps/admin/app/globals.css");
+if (!adminGlobals.includes('@import "tailwindcss"')) {
+  throw new Error("Isolated Admin global stylesheet must compile Tailwind utilities.");
+}
+
 const adminDashboardLayout = read("apps/admin/app/admin/dashboard/layout.tsx");
 if (!adminDashboardLayout.includes("@theouthaven/auth/admin-session") || !adminDashboardLayout.includes("./AdminShell")) {
   throw new Error("Admin dashboard must use the isolated session guard and Admin shell.");
