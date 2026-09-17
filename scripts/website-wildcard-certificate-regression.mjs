@@ -17,7 +17,7 @@ requireText('_*.theouthaven.com', 'ACM validation record name must be constraine
 requireText('_*.acm-validations.aws', 'ACM validation target must be constrained to AWS ACM validation.');
 requireText('Type:"CNAME"', 'ACM DNS validation must remain a CNAME record.');
 requireText('Application traffic DNS records changed: `NO`', 'Workflow summary must state that application traffic DNS is untouched.');
-requireText("STATUS" + ' = "ISSUED"', 'Workflow must wait for the wildcard certificate to become ISSUED.');
+requireText('if [ "$STATUS" = "ISSUED" ]; then', 'Workflow must wait for the wildcard certificate to become ISSUED.');
 
 if (/admin\.theouthaven\.com[^\n]*change-resource-record-sets|business\.theouthaven\.com[^\n]*change-resource-record-sets/i.test(source)) {
   throw new Error('Wildcard certificate workflow must not change Admin or Business application traffic records.');
