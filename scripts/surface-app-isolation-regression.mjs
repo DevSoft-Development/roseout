@@ -212,6 +212,39 @@ if (!adminNavigation.includes("/admin/dashboard/data-quality")) {
   throw new Error("Data Quality navigation must be present in the isolated Admin shell.");
 }
 
+const promoCodesPage = read("apps/admin/app/admin/dashboard/settings/promo-codes/page.tsx");
+if (!promoCodesPage.includes("@theouthaven/auth/admin-session") || !promoCodesPage.includes('requireAdminRole(["superadmin"])')) {
+  throw new Error("Promo Codes page must enforce isolated superadmin authorization.");
+}
+
+const promoCodesClient = read("apps/admin/app/admin/dashboard/settings/promo-codes/PromoCodesClient.tsx");
+if (!promoCodesClient.includes("/api/admin/promo-codes")) {
+  throw new Error("Promo Codes client must use the isolated Admin API routes.");
+}
+
+for (const promoRoute of [
+  "apps/admin/app/api/admin/promo-codes/route.ts",
+  "apps/admin/app/api/admin/promo-codes/[id]/route.ts",
+  "apps/admin/app/api/admin/promo-codes/generate/route.ts",
+]) {
+  const source = read(promoRoute);
+  if (!source.includes("@/lib/admin-api-auth") || !source.includes('["superadmin"]')) {
+    throw new Error(`Promo Codes API must enforce isolated superadmin authorization: ${promoRoute}`);
+  }
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-permissions")) {
+    throw new Error(`Promo Codes API must not import root monolith auth/database modules: ${promoRoute}`);
+  }
+}
+
+const promoCodesHelper = read("apps/admin/lib/promo-codes.ts");
+if (!promoCodesHelper.includes("@theouthaven/db/admin-client")) {
+  throw new Error("Promo Codes helper must use the shared Admin DB package.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/settings/promo-codes")) {
+  throw new Error("Promo Codes navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
