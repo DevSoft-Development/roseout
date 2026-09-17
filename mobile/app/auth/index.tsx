@@ -121,7 +121,7 @@ export default function AuthScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.page, { backgroundColor: theme.colors.background }]}>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 12, 28) }]}
+        contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + 12, 28), paddingBottom: Math.max(insets.bottom + 32, 56) }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -204,6 +204,17 @@ export default function AuthScreen() {
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
+
+        <View style={styles.footer}>
+          <AppText variant="caption" muted>TheOutHaven · Plan better OUTings.</AppText>
+          <View style={styles.footerLinks}>
+            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/support`)}><AppText variant="caption" muted>Support</AppText></Pressable>
+            <AppText variant="caption" muted>·</AppText>
+            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/privacy`)}><AppText variant="caption" muted>Privacy</AppText></Pressable>
+            <AppText variant="caption" muted>·</AppText>
+            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/terms`)}><AppText variant="caption" muted>Terms</AppText></Pressable>
+          </View>
+        </View>
       </ScrollView>
 
       <Modal transparent animationType="fade" visible={monthPickerOpen} onRequestClose={() => setMonthPickerOpen(false)}>
@@ -244,7 +255,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1 }, content: { paddingHorizontal: 22, paddingBottom: 56, gap: 20 }, hero: { gap: 8, marginTop: 4 }, body: { lineHeight: 22 },
+  page: { flex: 1 }, content: { paddingHorizontal: 22, gap: 20 }, hero: { gap: 8, marginTop: 4 }, body: { lineHeight: 22 },
   segment: { flexDirection: "row", padding: 4, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.035)" }, segmentButton: { flex: 1, minHeight: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   form: { gap: 17 }, field: { gap: 7 }, input: { minHeight: 54, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, fontSize: 16, fontWeight: "600" },
   strengthWrap: { gap: 7 }, strengthBars: { flexDirection: "row", gap: 6 }, strengthBar: { flex: 1, height: 4, borderRadius: 2 },
@@ -252,5 +263,6 @@ const styles = StyleSheet.create({
   consent: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 18, padding: 14, alignItems: "flex-start" }, checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
   security: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: 16, padding: 13 }, securityIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, securityCopy: { flex: 1, gap: 2 }, securityHint: { lineHeight: 17 },
+  footer: { alignItems: "center", gap: 8, paddingTop: 6 }, footerLinks: { flexDirection: "row", alignItems: "center", gap: 9 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
