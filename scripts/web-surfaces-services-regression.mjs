@@ -57,9 +57,12 @@ requireText(proxy, 'pathMatches(pathname, "/auth/admin/callback")', 'Admin runti
 requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Business runtime must allow the location dashboard.');
 requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Business runtime must allow the business dashboard.');
 requireText(proxy, 'pathname === "/login"', 'Business runtime must allow the shared owner login flow.');
+requireText(proxy, 'if (pathname === "/") {', 'Isolated AWS web surface roots must have an explicit landing behavior.');
+requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/login";', 'Admin and Business roots must redirect to their login pages.');
+requireText(proxy, 'return NextResponse.redirect(loginUrl, 302);', 'Web surface root login navigation must use an explicit redirect.');
 requireText(proxy, 'return NextResponse.json({ error: "Not found" }, { status: 404 });', 'Disallowed surface routes must fail closed with 404.');
 requireText(proxy, 'export const config = { matcher: ["/:path*"] };', 'Surface isolation must cover every application page path, not only Admin/API routes.');
-const boundaryIndex = proxy.indexOf('const surfaceBoundaryResponse = webSurfaceBoundaryResponse(pathname);');
+const boundaryIndex = proxy.indexOf('const surfaceBoundaryResponse = webSurfaceBoundaryResponse(request);');
 const shortLinkIndex = proxy.indexOf('const shortHostResponse = shortLinkHostResponse(request);');
 if (boundaryIndex < 0 || shortLinkIndex < 0 || boundaryIndex > shortLinkIndex) {
   throw new Error('AWS surface isolation must run before normal host routing and application behavior.');
