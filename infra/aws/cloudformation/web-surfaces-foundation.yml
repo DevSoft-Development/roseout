@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven primary-region web surface foundation for independently deployed Admin and Business
   Next.js runtimes. Provides shared network/ALB/ECS infrastructure with isolated target groups,
-  runtime environment secrets, logs, and task roles. ECS services are registered only after a
+  runtime environment secret references, logs, and task roles. ECS services are registered only after a
   verified image has been pushed so the foundation can be created safely before cutover.
 
 Parameters:
@@ -16,6 +16,12 @@ Parameters:
   BusinessHost:
     Type: String
     Default: business.theouthaven.com
+  AdminAppEnvSecretArn:
+    Type: String
+    Description: ARN of the pre-existing isolated Admin runtime environment secret.
+  BusinessAppEnvSecretArn:
+    Type: String
+    Description: ARN of the pre-existing isolated Business runtime environment secret.
 
 Resources:
   WebVpc:
@@ -265,32 +271,6 @@ Resources:
       LogGroupName: !Sub '/aws/ecs/toh-${Environment}-business-web'
       RetentionInDays: 30
 
-  AdminAppEnvSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Name: !Sub '/theouthaven/${Environment}/admin-web/app-env'
-      Description: Runtime environment for the isolated Admin web service.
-      SecretString: '{}'
-      Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: AdminWeb }
-
-  BusinessAppEnvSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Name: !Sub '/theouthaven/${Environment}/business-web/app-env'
-      Description: Runtime environment for the isolated Business web service.
-      SecretString: '{}'
-      Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: BusinessWeb }
-
   TaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -320,8 +300,8 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource:
-                  - !Ref AdminAppEnvSecret
-                  - !Ref BusinessAppEnvSecret
+                  - !Ref AdminAppEnvSecretArn
+                  - !Ref BusinessAppEnvSecretArn
       Tags:
         - { Key: Project, Value: TheOutHaven }
         - { Key: Environment, Value: !Ref Environment }
@@ -380,9 +360,9 @@ Outputs:
   BusinessLogGroupName:
     Value: !Ref BusinessLogGroup
   AdminAppEnvSecretArn:
-    Value: !Ref AdminAppEnvSecret
+    Value: !Ref AdminAppEnvSecretArn
   BusinessAppEnvSecretArn:
-    Value: !Ref BusinessAppEnvSecret
+    Value: !Ref BusinessAppEnvSecretArn
   TaskExecutionRoleArn:
     Value: !GetAtt TaskExecutionRole.Arn
   AdminTaskRoleArn:

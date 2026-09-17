@@ -10,8 +10,8 @@ const required = [
   "AWS::ECR::Repository",
   "AdminTargetGroup:",
   "BusinessTargetGroup:",
-  "/theouthaven/${Environment}/admin-web/app-env",
-  "/theouthaven/${Environment}/business-web/app-env",
+  "AdminAppEnvSecretArn:",
+  "BusinessAppEnvSecretArn:",
   "TheOutHavenAdminWebTask-${Environment}",
   "TheOutHavenBusinessWebTask-${Environment}",
   "AdminHostRule:",
@@ -27,8 +27,12 @@ if (source.includes("AWS::ECS::Service")) {
   throw new Error("Foundation stack must not start ECS services before a verified image/runtime deployment exists.");
 }
 
-if (!source.includes("AdminAppEnvSecret") || !source.includes("BusinessAppEnvSecret")) {
-  throw new Error("Admin and Business runtime secrets must remain isolated.");
+if (source.includes("Type: AWS::SecretsManager::Secret")) {
+  throw new Error("Foundation stack must reference runtime secrets rather than own them, so retained secrets survive stack recreation safely.");
+}
+
+if (!source.includes("!Ref AdminAppEnvSecretArn") || !source.includes("!Ref BusinessAppEnvSecretArn")) {
+  throw new Error("Admin and Business runtime secret ARNs must remain isolated and explicitly referenced.");
 }
 
 console.log("web-surfaces-foundation-regression: PASS");

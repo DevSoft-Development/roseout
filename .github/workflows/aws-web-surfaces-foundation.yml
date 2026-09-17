@@ -246,6 +246,40 @@ jobs:
             --output text >/dev/null
           sleep 8
 
+      - name: Resolve runtime secrets
+        id: runtime_secrets
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+
+          resolve_secret() {
+            local name="$1"
+            local description="$2"
+            local arn
+            arn="$(aws secretsmanager describe-secret --secret-id "$name" --query ARN --output text 2>/dev/null || true)"
+            if [ -z "$arn" ] || [ "$arn" = "None" ]; then
+              arn="$(aws secretsmanager create-secret \
+                --name "$name" \
+                --description "$description" \
+                --secret-string '{}' \
+                --tags Key=Project,Value=TheOutHaven Key=Environment,Value="$TARGET_ENV" \
+                --query ARN \
+                --output text)"
+              echo "Created runtime secret: $name"
+            else
+              echo "Reusing existing runtime secret: $name"
+            fi
+            printf '%s' "$arn"
+          }
+
+          ADMIN_NAME="/theouthaven/${TARGET_ENV}/admin-web/app-env"
+          BUSINESS_NAME="/theouthaven/${TARGET_ENV}/business-web/app-env"
+          ADMIN_ARN="$(resolve_secret "$ADMIN_NAME" 'Runtime environment for the isolated Admin web service.')"
+          BUSINESS_ARN="$(resolve_secret "$BUSINESS_NAME" 'Runtime environment for the isolated Business web service.')"
+          echo "admin_arn=$ADMIN_ARN" >> "$GITHUB_OUTPUT"
+          echo "business_arn=$BUSINESS_ARN" >> "$GITHUB_OUTPUT"
+
       - name: Recover failed first-create stack
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
@@ -271,8 +305,12 @@ jobs:
       - name: Deploy Admin and Business foundation
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          ADMIN_APP_ENV_SECRET_ARN: ${{ steps.runtime_secrets.outputs.admin_arn }}
+          BUSINESS_APP_ENV_SECRET_ARN: ${{ steps.runtime_secrets.outputs.business_arn }}
         run: |
           set -euo pipefail
+          test -n "$ADMIN_APP_ENV_SECRET_ARN"
+          test -n "$BUSINESS_APP_ENV_SECRET_ARN"
           aws cloudformation deploy \
             --stack-name "theouthaven-web-surfaces-${TARGET_ENV}" \
             --template-file "$TEMPLATE_FILE" \
@@ -282,6 +320,8 @@ jobs:
               Environment="$TARGET_ENV" \
               AdminHost="admin.theouthaven.com" \
               BusinessHost="business.theouthaven.com" \
+              AdminAppEnvSecretArn="$ADMIN_APP_ENV_SECRET_ARN" \
+              BusinessAppEnvSecretArn="$BUSINESS_APP_ENV_SECRET_ARN" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
 
       - name: Verify foundation outputs
