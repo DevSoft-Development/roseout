@@ -1,0 +1,48 @@
+name: Mobile lock sync temp
+
+on:
+  push:
+    branches:
+      - fix/mobile-lock-and-resubmit-build25-2026-09-17
+    paths:
+      - .github/workflows/mobile-lock-sync-temp.yml
+      - mobile/package.json
+      - mobile/package-lock.json
+
+permissions:
+  contents: write
+
+jobs:
+  sync-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/mobile-lock-and-resubmit-build25-2026-09-17
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Regenerate and verify mobile lockfile
+        working-directory: mobile
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund --dry-run
+
+      - name: Commit lockfile if changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- mobile/package-lock.json; then
+            echo "mobile/package-lock.json is already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/package-lock.json
+          git commit -m "Sync mobile package lock for WebView"
+          git push origin HEAD:fix/mobile-lock-and-resubmit-build25-2026-09-17
