@@ -3,7 +3,9 @@
 import fs from "node:fs";
 
 const templatePath = "infra/aws/cloudformation/web-surfaces-foundation.yml";
+const policyPath = "infra/aws/iam/web-surfaces-bootstrap-policy.json";
 const source = fs.readFileSync(templatePath, "utf8");
+const policy = fs.readFileSync(policyPath, "utf8");
 
 const required = [
   "AWS::ECS::Cluster",
@@ -39,6 +41,10 @@ if (!source.includes("!Ref AdminAppEnvSecretArn") || !source.includes("!Ref Busi
 
 if (source.includes("${AdminLogGroup.Arn}:*") || source.includes("${BusinessLogGroup.Arn}:*")) {
   throw new Error("CloudWatch LogGroup Arn already includes :*; appending another wildcard breaks ECS log-stream permissions.");
+}
+
+if (!policy.includes('"logs:FilterLogEvents"')) {
+  throw new Error("Web-surface deploy role must be able to read ECS CloudWatch logs after a failed deployment.");
 }
 
 console.log("web-surfaces-foundation-regression: PASS");
