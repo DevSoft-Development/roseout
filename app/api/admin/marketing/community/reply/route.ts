@@ -1,26 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { loadSocialConnectionSecrets } from "@/lib/marketing/social-secrets";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-
-async function providerPost(url: string, accessToken: string, body: Record<string, unknown>) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const text = await response.text();
-  let parsed: any = {};
-  try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { raw: text }; }
-  if (!response.ok) throw new Error(parsed?.error?.message || `The social network could not send this reply (${response.status}).`);
-  return parsed;
-}
-
-function hasScope(granted: unknown, names: string[]) {
-  const scopes = Array.isArray(granted) ? granted.map((value) => String(value)) : [];
-  return names.some((name) => scopes.includes(name));
-}
+import { sendCommunityReply } from "@/lib/marketing/social-community-provider";
 
 export async function POST(request: Request) {
   const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.marketing);
@@ -29,60 +10,18 @@ export async function POST(request: Request) {
   const reply = String(form.get("reply") || "").trim();
   if (!conversationId || !reply) return NextResponse.json({ error: "Conversation and reply are required." }, { status: 400 });
 
-  const { data: conversation, error: conversationError } = await supabaseAdmin
-    .from("social_community_conversations")
-    .select("id,provider,conversation_type,risk_level,source_post_id,contact_id")
-    .eq("id", conversationId)
-    .maybeSingle();
-  if (conversationError || !conversation) return NextResponse.json({ error: "Conversation was not found." }, { status: 404 });
-  if (conversation.risk_level === "red") return NextResponse.json({ error: "This conversation must be handled by a person." }, { status: 409 });
-  if (!["instagram", "facebook"].includes(conversation.provider)) return NextResponse.json({ error: "Direct replies are not available for this network yet. Take over the conversation instead." }, { status: 409 });
-
-  const [{ data: contact }, { data: inbound }, { data: connection }] = await Promise.all([
-    supabaseAdmin.from("social_community_contacts").select("external_user_id").eq("id", conversation.contact_id).maybeSingle(),
-    supabaseAdmin.from("social_community_messages").select("external_message_id").eq("conversation_id", conversationId).eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    supabaseAdmin.from("marketing_social_connections").select("id,provider_account_id,status,token_expires_at,granted_scopes").eq("scope", "platform").eq("provider", conversation.provider).eq("status", "connected").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-  ]);
-  const network = conversation.provider === "instagram" ? "Instagram" : "Facebook";
-  if (!connection?.id) return NextResponse.json({ error: `Reconnect ${network} before sending replies.` }, { status: 409 });
-  if (connection.token_expires_at && new Date(connection.token_expires_at).getTime() <= Date.now()) return NextResponse.json({ error: `Reconnect ${network} before sending replies.` }, { status: 409 });
-
-  const dm = conversation.conversation_type === "dm";
-  const permitted = conversation.provider === "instagram"
-    ? hasScope(connection.granted_scopes, dm ? ["instagram_manage_messages", "instagram_business_manage_messages"] : ["instagram_manage_comments", "instagram_business_manage_comments"])
-    : hasScope(connection.granted_scopes, dm ? ["pages_messaging"] : ["pages_manage_engagement"]);
-  if (!permitted) return NextResponse.json({ error: `${network} is connected, but Community reply access has not been approved for this account yet. Reconnect after that access is approved.` }, { status: 409 });
-
-  const version = process.env.META_GRAPH_VERSION;
-  if (!version) return NextResponse.json({ error: "Meta Community access is not configured yet." }, { status: 503 });
-  const { accessToken } = await loadSocialConnectionSecrets(connection.id);
-  let result: any;
-  if (dm) {
-    if (!contact?.external_user_id || !connection.provider_account_id) return NextResponse.json({ error: "This conversation is missing the information needed to reply." }, { status: 409 });
-    result = await providerPost(`https://graph.facebook.com/${version}/${encodeURIComponent(connection.provider_account_id)}/messages`, accessToken, {
-      recipient: { id: contact.external_user_id },
-      message: { text: reply },
+  try {
+    await sendCommunityReply({
+      conversationId,
+      reply,
+      senderType: "human",
+      sentByUserId: admin.user_id,
     });
-  } else {
-    const commentId = inbound?.external_message_id;
-    if (!commentId) return NextResponse.json({ error: "This comment can’t be replied to automatically." }, { status: 409 });
-    const endpoint = conversation.provider === "instagram" ? "replies" : "comments";
-    result = await providerPost(`https://graph.facebook.com/${version}/${encodeURIComponent(commentId)}/${endpoint}`, accessToken, { message: reply });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The reply could not be sent.";
+    const retryable = /not configured|network|fetch|timeout|temporar|5\d\d/i.test(message);
+    return NextResponse.json({ error: message }, { status: retryable ? 503 : 409 });
   }
 
-  const now = new Date().toISOString();
-  await supabaseAdmin.from("social_community_messages").insert({
-    conversation_id: conversationId,
-    provider: conversation.provider,
-    external_message_id: result?.id ? String(result.id) : null,
-    direction: "outbound",
-    sender_type: "human",
-    body: reply,
-    status: "sent",
-    sent_by_user_id: admin.user_id,
-    created_at: now,
-    metadata: { provider_response_id: result?.id || null },
-  });
-  await supabaseAdmin.from("social_community_conversations").update({ status: "human_handled", assigned_to_user_id: admin.user_id, last_message_at: now }).eq("id", conversationId);
   return NextResponse.redirect(new URL(`/admin/dashboard/marketing/community?conversation=${encodeURIComponent(conversationId)}&sent=1`, request.url), 303);
 }
