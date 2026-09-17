@@ -81,7 +81,7 @@ export default function AdminTopBar({ adminName, adminEmail, adminRole, adminPer
   const pathname = usePathname() || "";
   const [mobileOpen, setMobileOpen] = useState(false);
   const roleLabel = ADMIN_ROLE_LABELS[adminRole] || String(adminRole);
-  const signOut = async () => { await createClient().auth.signOut(); window.location.href = "/login"; };
+  const signOut = async () => { await createClient().auth.signOut(); window.location.href = "/admin/login"; };
   const closeNavigation = () => setMobileOpen(false);
 
   return <>

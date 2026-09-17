@@ -87,6 +87,25 @@ function webSurfaceBoundaryResponse(request: NextRequest) {
   return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
+
+function vercelPrivateSurfaceRedirect(request: NextRequest) {
+  if (currentAwsWebSurface()) return null;
+  if (process.env.VERCEL_ENV !== "production") return null;
+
+  const pathname = request.nextUrl.pathname;
+  const search = request.nextUrl.search;
+
+  if (pathMatches(pathname, "/admin")) {
+    return NextResponse.redirect(`https://admin.theouthaven.com${pathname}${search}`, 308);
+  }
+
+  if (pathMatches(pathname, "/locations/dashboard") || pathMatches(pathname, "/business/dashboard") || pathname === "/business/login") {
+    return NextResponse.redirect(`https://business.theouthaven.com${pathname}${search}`, 308);
+  }
+
+  return null;
+}
+
 function isApplicationInfrastructurePath(pathname: string) {
   return APP_INFRASTRUCTURE_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(`${prefix}.`),
@@ -129,6 +148,9 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const surfaceBoundaryResponse = webSurfaceBoundaryResponse(request);
   if (surfaceBoundaryResponse) return surfaceBoundaryResponse;
+
+  const privateSurfaceRedirect = vercelPrivateSurfaceRedirect(request);
+  if (privateSurfaceRedirect) return privateSurfaceRedirect;
 
   const shortHostResponse = shortLinkHostResponse(request);
   if (shortHostResponse) return shortHostResponse;
