@@ -5,8 +5,12 @@ import { getMicrosoft365Config } from "./config";
 
 export type { MicrosoftTokenResponse };
 
-export async function exchangeMicrosoft365Code(code: string, codeVerifier: string) {
-  const config = await getMicrosoft365Config();
+export async function exchangeMicrosoft365Code(
+  code: string,
+  codeVerifier: string,
+  redirectUri?: string | null,
+) {
+  const config = await getMicrosoft365Config({ redirectUri });
   return exchangeMicrosoftTokenViaIntegrationApi({
     grantType: "authorization_code",
     code,
