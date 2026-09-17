@@ -76,6 +76,7 @@
         "elasticloadbalancing:DeleteRule",
         "elasticloadbalancing:DescribeRules",
         "elasticloadbalancing:ModifyRule",
+        "elasticloadbalancing:SetWebACL",
         "elasticloadbalancing:AddTags",
         "elasticloadbalancing:RemoveTags",
         "acm:ListCertificates",
