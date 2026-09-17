@@ -183,6 +183,24 @@ jobs:
           docker push "$IMAGE_URI"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
+      - name: Recover failed services stack
+        env:
+          STACK: ${{ steps.config.outputs.services_stack }}
+        run: |
+          set -euo pipefail
+          if aws cloudformation describe-stacks --stack-name "$STACK" > "$RUNNER_TEMP/services-stack.json" 2>/dev/null; then
+            STATUS="$(jq -r '.Stacks[0].StackStatus' "$RUNNER_TEMP/services-stack.json")"
+            if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+              echo "Deleting unrecoverable services stack in $STATUS so it can be recreated cleanly."
+              aws cloudformation delete-stack --stack-name "$STACK"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+            else
+              echo "Existing services stack status: $STATUS"
+            fi
+          else
+            echo 'Services stack does not exist yet; a fresh stack will be created.'
+          fi
+
       - name: Deploy independent Admin and Business services
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
@@ -228,6 +246,33 @@ jobs:
             --stack-name "$STACK" \
             --query "StackEvents[?contains(ResourceStatus, 'FAILED') || contains(ResourceStatus, 'ROLLBACK')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
             --output table
+
+      - name: Show ECS service and stopped-task diagnostics
+        if: failure()
+        env:
+          CLUSTER: ${{ steps.foundation.outputs.ecsclustername }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set +e
+          for surface in admin business; do
+            SERVICE="toh-${TARGET_ENV}-${surface}-web"
+            echo "=== $SERVICE service events ==="
+            aws ecs describe-services \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE" \
+              --query 'services[0].events[0:10].[createdAt,message]' \
+              --output table
+
+            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status STOPPED --max-results 10 --query 'taskArns' --output text 2>/dev/null || true)"
+            if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
+              echo "=== $SERVICE stopped tasks ==="
+              aws ecs describe-tasks \
+                --cluster "$CLUSTER" \
+                --tasks $TASKS \
+                --query 'tasks[].{task:taskArn,stopCode:stopCode,stoppedReason:stoppedReason,containers:containers[].{name:name,reason:reason,exitCode:exitCode,lastStatus:lastStatus}}' \
+                --output json
+            fi
+          done
 
       - name: Wait for stable services
         if: steps.config.outputs.desired_count != '0'
