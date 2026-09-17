@@ -199,8 +199,8 @@ jobs:
           set -euo pipefail
           if aws cloudformation describe-stacks --stack-name "$STACK" > "$RUNNER_TEMP/services-stack.json" 2>/dev/null; then
             STATUS="$(jq -r '.Stacks[0].StackStatus' "$RUNNER_TEMP/services-stack.json")"
-            if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
-              echo "Deleting unrecoverable services stack in $STATUS so it can be recreated cleanly."
+            if [ "$STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STATUS" = "CREATE_FAILED" ]; then
+              echo "Deleting failed services stack in $STATUS so it can be recreated cleanly."
               aws cloudformation delete-stack --stack-name "$STACK"
               aws cloudformation wait stack-delete-complete --stack-name "$STACK"
             else
@@ -234,6 +234,7 @@ jobs:
             --stack-name "$STACK" \
             --template-file "$SERVICES_TEMPLATE" \
             --capabilities CAPABILITY_NAMED_IAM \
+            --disable-rollback \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment="$TARGET_ENV" ClusterName="$CLUSTER" SubnetIds="$SUBNETS" \
@@ -256,26 +257,30 @@ jobs:
             --query "StackEvents[?contains(ResourceStatus, 'FAILED') || contains(ResourceStatus, 'ROLLBACK')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
             --output table
 
-      - name: Show ECS service and stopped-task diagnostics
+      - name: Show ECS service, stopped-task, and CloudWatch diagnostics
         if: failure()
         env:
           CLUSTER: ${{ steps.foundation.outputs.ecsclustername }}
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          ADMIN_LOG: ${{ steps.foundation.outputs.adminloggroupname }}
+          BUSINESS_LOG: ${{ steps.foundation.outputs.businessloggroupname }}
         run: |
           set +e
           for surface in admin business; do
             SERVICE="toh-${TARGET_ENV}-${surface}-web"
+            if [ "$surface" = "admin" ]; then LOG_GROUP="$ADMIN_LOG"; else LOG_GROUP="$BUSINESS_LOG"; fi
+
             echo "=== $SERVICE service events ==="
             aws ecs describe-services \
               --cluster "$CLUSTER" \
               --services "$SERVICE" \
-              --query 'services[0].events[0:10].[createdAt,message]' \
+              --query 'services[0].events[0:20].[createdAt,message]' \
               --output table
 
-            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status STOPPED --max-results 10 --query 'taskArns' --output text 2>/dev/null || true)"
+            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status STOPPED --max-results 20 --query 'taskArns' --output text 2>/dev/null || true)"
             if [ -z "$TASKS" ] || [ "$TASKS" = "None" ]; then
-              echo "Service no longer exists or has no stopped tasks; falling back to ECS task family $SERVICE."
-              TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --family "$SERVICE" --desired-status STOPPED --max-results 10 --query 'taskArns' --output text 2>/dev/null || true)"
+              echo "No stopped tasks found by service name; falling back to ECS task family $SERVICE."
+              TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --family "$SERVICE" --desired-status STOPPED --max-results 20 --query 'taskArns' --output text 2>/dev/null || true)"
             fi
             if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
               echo "=== $SERVICE stopped tasks ==="
@@ -287,6 +292,9 @@ jobs:
             else
               echo "No stopped ECS tasks found for $SERVICE by service name or task family."
             fi
+
+            echo "=== $SERVICE CloudWatch logs ==="
+            aws logs tail "$LOG_GROUP" --since 30m --format short || true
           done
 
       - name: Wait for stable services
