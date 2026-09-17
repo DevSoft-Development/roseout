@@ -230,11 +230,18 @@ jobs:
           BUSINESS_ENV: ${{ steps.foundation.outputs.businessappenvsecretarn }}
         run: |
           set -euo pipefail
+          ROLLBACK_ARGS=()
+          if aws cloudformation describe-stacks --stack-name "$STACK" >/dev/null 2>&1; then
+            echo 'Updating existing services stack with normal rollback support so ECS task definition replacements are allowed.'
+          else
+            echo 'Creating services stack with rollback disabled so first-start failures remain available for diagnostics.'
+            ROLLBACK_ARGS=(--disable-rollback)
+          fi
           aws cloudformation deploy \
             --stack-name "$STACK" \
             --template-file "$SERVICES_TEMPLATE" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --disable-rollback \
+            "${ROLLBACK_ARGS[@]}" \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment="$TARGET_ENV" ClusterName="$CLUSTER" SubnetIds="$SUBNETS" \
