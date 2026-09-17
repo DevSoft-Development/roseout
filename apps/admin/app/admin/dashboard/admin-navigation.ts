@@ -1,6 +1,7 @@
 import {
   Home,
   Mail,
+  ScrollText,
   ShieldAlert,
   ShieldCheck,
   Settings,
@@ -22,6 +23,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     label: "Platform Errors",
     href: "/admin/dashboard/platform-errors",
     icon: ShieldAlert,
+    migrated: true,
+    roles: ["superadmin"],
+  },
+  {
+    label: "Platform Logs",
+    href: "/admin/dashboard/logs",
+    icon: ScrollText,
     migrated: true,
     roles: ["superadmin"],
   },
