@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NeighborhoodPicker, type NeighborhoodOption } from "@/components/auth/NeighborhoodPicker";
+import { TurnstileVerificationModal } from "@/components/auth/TurnstileVerificationModal";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
@@ -56,6 +57,7 @@ export default function AuthScreen() {
 
   const strength = useMemo(() => passwordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
+  const verificationAction = mode === "signin" ? "mobile_signin" : "mobile_signup";
 
   useEffect(() => {
     if (params.mode === "signup" || params.mode === "signin") {
@@ -76,36 +78,15 @@ export default function AuthScreen() {
       && homeNeighborhood !== null;
   }, [birthMonth, email, firstName, homeNeighborhood, mode, password, passwordsMatch, phone, strength.strong]);
 
-  useEffect(() => {
-    const subscription = Linking.addEventListener("url", ({ url }) => {
-      if (!url.startsWith("theouthaven://auth/turnstile")) return;
-      const parsed = new URL(url);
-      const token = parsed.searchParams.get("token") || "";
-      const action = parsed.searchParams.get("action") || "";
-      const expected = mode === "signin" ? "mobile_signin" : "mobile_signup";
-      if (!token || action !== expected) {
-        setVerifying(false);
-        setMessage("Verification did not complete. Please try again.");
-        return;
-      }
-      void submit(token);
-    });
-    return () => subscription.remove();
-  }, [mode, email, password, phone, birthMonth, homeNeighborhood, smsConsent, firstName]);
-
-  async function startVerification() {
+  function startVerification() {
     if (!valid || busy || verifying) return;
     setMessage(null);
     setVerifying(true);
-    const action = mode === "signin" ? "mobile_signin" : "mobile_signup";
-    const url = `${mobileConfig.siteUrl}/mobile/turnstile?action=${encodeURIComponent(action)}`;
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) {
-      setVerifying(false);
-      setMessage("Security verification is unavailable on this device right now.");
-      return;
-    }
-    await Linking.openURL(url);
+  }
+
+  function handleVerificationError(error: string) {
+    setVerifying(false);
+    setMessage(error);
   }
 
   async function submit(captchaToken: string) {
@@ -213,13 +194,13 @@ export default function AuthScreen() {
           <View style={[styles.security, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
             <View style={[styles.securityIcon, { backgroundColor: theme.colors.accentSoft }]}><AppText accent>✓</AppText></View>
             <View style={styles.securityCopy}>
-              <AppText variant="bodyStrong">Protected by Cloudflare Turnstile</AppText>
-              <AppText variant="caption" muted style={styles.securityHint}>A quick security check opens before {mode === "signin" ? "sign in" : "account creation"}.</AppText>
+              <AppText variant="bodyStrong">Secure {mode === "signin" ? "sign in" : "account creation"}</AppText>
+              <AppText variant="caption" muted style={styles.securityHint}>Protected by Cloudflare without sending you out to your browser.</AppText>
             </View>
           </View>
 
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
-          <Button disabled={!valid || busy || verifying} onPress={() => void startVerification()}>{busy ? "Working…" : verifying ? "Opening security check…" : mode === "signin" ? "Sign in" : "Create account"}</Button>
+          <Button disabled={!valid || busy || verifying} onPress={startVerification}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : verifying ? "Checking security…" : mode === "signin" ? "Sign in" : "Create account"}</Button>
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
@@ -246,6 +227,14 @@ export default function AuthScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <TurnstileVerificationModal
+        visible={verifying && !busy}
+        action={verificationAction}
+        onCancel={() => setVerifying(false)}
+        onVerified={(token) => void submit(token)}
+        onError={handleVerificationError}
+      />
     </KeyboardAvoidingView>
   );
 }

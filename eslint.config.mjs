@@ -63,8 +63,9 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // Metro's configuration API is CommonJS; requiring it is the supported runtime shape.
-    files: ["mobile/metro.config.js"],
+    // Metro and the AWS health probe execute as CommonJS runtime entrypoints; requiring
+    // built-in/runtime modules is intentional in those files.
+    files: ["mobile/metro.config.js", "infra/aws/web-surfaces/healthcheck.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
