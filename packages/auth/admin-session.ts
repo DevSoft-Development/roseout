@@ -23,13 +23,13 @@ export type CurrentAdmin = {
   role: AdminRole;
 };
 
-export const getCurrentAdmin = cache(async (): Promise<CurrentAdmin> => {
+export const getCurrentAdminOrNull = cache(async (): Promise<CurrentAdmin | null> => {
   const supabase = await createServerSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.id) redirect("/admin/login");
+  if (!user?.id) return null;
 
   const adminDb = getAdminDatabaseClient();
   const { data: adminUser, error } = await adminDb
@@ -40,11 +40,8 @@ export const getCurrentAdmin = cache(async (): Promise<CurrentAdmin> => {
 
   const role = normalizeAdminRole(adminUser?.role);
 
-  if (error || !adminUser || !role) redirect("/admin/unauthorized");
-
-  if (role !== "superadmin" && !isMicrosoftIdentity(user)) {
-    redirect("/admin/login?error=provider_required");
-  }
+  if (error || !adminUser || !role) return null;
+  if (role !== "superadmin" && !isMicrosoftIdentity(user)) return null;
 
   return {
     user_id: adminUser.user_id,
@@ -56,3 +53,15 @@ export const getCurrentAdmin = cache(async (): Promise<CurrentAdmin> => {
     role,
   };
 });
+
+export const getCurrentAdmin = cache(async (): Promise<CurrentAdmin> => {
+  const admin = await getCurrentAdminOrNull();
+  if (!admin) redirect("/admin/login");
+  return admin;
+});
+
+export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
+  const admin = await getCurrentAdmin();
+  if (!allowedRoles.includes(admin.role)) redirect("/admin/unauthorized");
+  return admin;
+}
