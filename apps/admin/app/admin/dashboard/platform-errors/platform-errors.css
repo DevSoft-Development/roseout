@@ -1,0 +1,55 @@
+.platform-errors-page { display: grid; gap: 20px; }
+.platform-errors-hero,
+.platform-errors-filters,
+.platform-errors-columns > section,
+.platform-errors-table-wrap {
+  border: 1px solid rgba(255,255,255,.1);
+  background: #120d0b;
+  border-radius: 24px;
+}
+.platform-errors-hero { padding: 24px; }
+.platform-errors-hero p { margin: 0; color: #fecdd3; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .18em; }
+.platform-errors-hero h1 { margin: 8px 0; font-size: clamp(30px,4vw,46px); }
+.platform-errors-hero span { color: rgba(255,255,255,.62); }
+.platform-errors-kpis { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; }
+.platform-errors-kpis article { padding: 16px; border-radius: 18px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
+.platform-errors-kpis small { color: rgba(255,255,255,.55); display: block; }
+.platform-errors-kpis strong { display: block; margin-top: 4px; font-size: 28px; }
+.platform-errors-filters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; padding: 16px; }
+.platform-errors-filters label { display: grid; gap: 6px; color: rgba(255,255,255,.55); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.platform-errors-filters input,
+.platform-errors-filters select,
+.platform-errors-filters button {
+  min-height: 44px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1); padding: 0 14px;
+  background: rgba(0,0,0,.28); color: white;
+}
+.platform-errors-filters button { align-self: end; background: #e11d48; font-weight: 800; }
+.platform-errors-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.platform-errors-columns > section { padding: 18px; }
+.platform-errors-columns h2 { margin-top: 0; }
+.platform-errors-incident { display: flex; gap: 14px; justify-content: space-between; padding: 14px; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; margin-top: 10px; }
+.platform-errors-incident div { min-width: 0; display: grid; gap: 5px; }
+.platform-errors-incident small { color: rgba(255,255,255,.45); }
+.platform-errors-incident span,
+.platform-errors-table-wrap td span { align-self: start; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 800; }
+.critical { background: rgba(244,63,94,.12); color: #fecdd3; }
+.error { background: rgba(251,146,60,.12); color: #fed7aa; }
+.warning { background: rgba(250,204,21,.12); color: #fef08a; }
+.info { background: rgba(56,189,248,.12); color: #bae6fd; }
+.platform-errors-table-wrap { overflow-x: auto; }
+.platform-errors-table-wrap > p { padding: 20px; }
+.platform-errors-table-wrap table { width: 100%; min-width: 1300px; border-collapse: collapse; }
+.platform-errors-table-wrap th,
+.platform-errors-table-wrap td { padding: 12px; border-top: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
+.platform-errors-table-wrap th { color: rgba(255,255,255,.5); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
+.platform-errors-table-wrap td { font-size: 13px; color: rgba(255,255,255,.76); }
+.platform-errors-table-wrap pre { max-width: 520px; max-height: 320px; overflow: auto; white-space: pre-wrap; }
+@media (max-width: 1000px) {
+  .platform-errors-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .platform-errors-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .platform-errors-columns { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .platform-errors-kpis,
+  .platform-errors-filters { grid-template-columns: 1fr; }
+}
