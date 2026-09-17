@@ -1,0 +1,130 @@
+name: AWS web surfaces foundation
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/cloudformation/web-surfaces-foundation.yml'
+      - 'scripts/web-surfaces-foundation-regression.mjs'
+      - '.github/workflows/aws-web-surfaces-foundation.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/aws/cloudformation/web-surfaces-foundation.yml'
+      - 'scripts/web-surfaces-foundation-regression.mjs'
+      - '.github/workflows/aws-web-surfaces-foundation.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: production
+        options:
+          - staging
+          - production
+      deploy:
+        description: Deploy foundation after validation
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-web-surfaces-foundation-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  TEMPLATE_FILE: infra/aws/cloudformation/web-surfaces-foundation.yml
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate web-surface contracts
+        run: node scripts/web-surfaces-foundation-regression.mjs
+
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+
+      - name: Lint web-surface CloudFormation
+        run: cfn-lint "$TEMPLATE_FILE"
+
+  deploy:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
+
+      - name: Deploy Admin and Business foundation
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "theouthaven-web-surfaces-${TARGET_ENV}" \
+            --template-file "$TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$TARGET_ENV" \
+              AdminHost="admin.theouthaven.com" \
+              BusinessHost="business.theouthaven.com" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
+
+      - name: Verify foundation outputs
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-web-surfaces-${TARGET_ENV}"
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK" \
+            --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+            --output table
+
+      - name: Show CloudFormation failure events
+        if: failure()
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "theouthaven-web-surfaces-${TARGET_ENV}" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
+            --output table || true
