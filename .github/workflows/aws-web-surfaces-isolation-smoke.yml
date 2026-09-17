@@ -1,0 +1,117 @@
+name: AWS web surfaces isolation smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-web-surfaces-isolation-smoke.yml'
+      - 'scripts/web-surfaces-isolation-smoke-regression.mjs'
+  workflow_run:
+    workflows: ['AWS web surfaces services']
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate isolation smoke contract
+        run: node scripts/web-surfaces-isolation-smoke-regression.mjs
+
+  smoke:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      FOUNDATION_STACK: theouthaven-web-surfaces-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve Admin and Business origin
+        id: origin
+        run: |
+          set -euo pipefail
+          ORIGIN="$(aws cloudformation describe-stacks \
+            --stack-name "$FOUNDATION_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerDnsName'].OutputValue | [0]" \
+            --output text)"
+          test -n "$ORIGIN" && test "$ORIGIN" != None
+          echo "host=$ORIGIN" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Admin and Business surface isolation
+        env:
+          ORIGIN: ${{ steps.origin.outputs.host }}
+        run: |
+          set -euo pipefail
+
+          request_status() {
+            local host="$1"
+            local path="$2"
+            curl --silent --show-error --max-time 20 \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              -H "Host: $host" \
+              "http://$ORIGIN$path"
+          }
+
+          require_allowed() {
+            local host="$1"
+            local path="$2"
+            local status
+            status="$(request_status "$host" "$path")"
+            echo "$host $path -> $status"
+            if [ "$status" = '000' ] || [ "$status" = '404' ] || [ "$status" -ge 500 ]; then
+              echo "Expected allowed route $host$path to remain reachable, got HTTP $status." >&2
+              exit 1
+            fi
+          }
+
+          require_denied() {
+            local host="$1"
+            local path="$2"
+            local status
+            status="$(request_status "$host" "$path")"
+            echo "$host $path -> $status"
+            if [ "$status" != '404' ]; then
+              echo "Expected isolated route $host$path to return HTTP 404, got $status." >&2
+              exit 1
+            fi
+          }
+
+          for surface in admin business; do
+            host="${surface}.theouthaven.com"
+            body="$(curl --fail --silent --show-error --max-time 20 \
+              -H "Host: $host" \
+              "http://$ORIGIN/api/health/platform-dr")"
+            printf '%s' "$body" | jq -e --arg provider "aws-${surface}" \
+              '.ok == true and .provider == $provider' >/dev/null
+          done
+
+          require_allowed 'admin.theouthaven.com' '/admin/login'
+          require_denied 'admin.theouthaven.com' '/locations/dashboard'
+          require_denied 'admin.theouthaven.com' '/'
+
+          require_allowed 'business.theouthaven.com' '/login'
+          require_allowed 'business.theouthaven.com' '/locations/dashboard'
+          require_denied 'business.theouthaven.com' '/admin/login'
+          require_denied 'business.theouthaven.com' '/'
+
+          echo 'Admin and Business AWS runtime surface isolation passed. No DNS/public routing changes were made.'
