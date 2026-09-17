@@ -12,7 +12,9 @@ function requireText(value, message) {
 requireText("workflows: ['AWS web surfaces services']", 'Isolation smoke must run after the services deployment workflow.');
 requireText("github.event.workflow_run.conclusion == 'success'", 'Isolation smoke must only run after a successful services deployment.');
 requireText("github.event.workflow_run.head_branch == 'main'", 'Isolation smoke must only verify main production deployments automatically.');
-requireText("ref: ${{ github.event.workflow_run.head_sha }}", 'Isolation smoke must verify the exact deployed commit.');
+requireText("push:\n    branches: [main]", 'Isolation smoke must run immediately when its own gate changes land on main.');
+requireText("github.event_name == 'push' && github.ref == 'refs/heads/main'", 'Main pushes for the isolation gate must execute the real production smoke.');
+requireText("ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}", 'Isolation smoke must verify the deployed services SHA or the exact main gate rollout SHA.');
 requireText('theouthaven-web-surfaces-production', 'Isolation smoke must resolve the production web-surface foundation origin.');
 requireText("require_allowed 'admin.theouthaven.com' '/admin/login'", 'Admin login must remain reachable on the Admin runtime.');
 requireText("require_denied 'admin.theouthaven.com' '/locations/dashboard'", 'Admin runtime must reject the Business dashboard.');
