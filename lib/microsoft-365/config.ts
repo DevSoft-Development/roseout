@@ -39,7 +39,7 @@ function validateTenantId(value: string) {
   return value;
 }
 
-export async function getMicrosoft365Config() {
+export async function getMicrosoft365Config(options?: { redirectUri?: string | null }) {
   const environment = credentialVaultEnvironmentName();
   let tenantId = "";
   let clientId = "";
@@ -58,7 +58,8 @@ export async function getMicrosoft365Config() {
   }
 
   const appUrl = (process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || "https://theouthaven.com").replace(/\/$/, "");
-  const redirectUri = process.env.M365_REDIRECT_URI?.trim() || `${appUrl}/api/admin/integrations/microsoft-365/callback`;
+  const requestedRedirectUri = options?.redirectUri?.trim() || "";
+  const redirectUri = requestedRedirectUri || process.env.M365_REDIRECT_URI?.trim() || `${appUrl}/api/admin/integrations/microsoft-365/callback`;
   if (!tenantId || !clientId) throw new Error("M365_NOT_CONFIGURED");
   validateTenantId(tenantId);
   return {
