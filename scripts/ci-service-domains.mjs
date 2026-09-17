@@ -19,6 +19,8 @@ export function classifyChangedFiles(files) {
     /^hooks\//,
     /^components\/(?!admin(?:\/|$)|reserve(?:\/|$)|locations?(?:\/|$)|business(?:\/|$))/,
     /^lib\/(?:auth|security|supabase|database|notifications|email|sms)(?:\/|$)/,
+    /^\.github\/workflows\/production-ci\.yml$/,
+    /^scripts\/ci-service-domains(?:\.test)?\.mjs$/,
   );
 
   const admin = shared || any(
