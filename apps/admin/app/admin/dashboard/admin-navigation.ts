@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Settings,
+  TicketPercent,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminRole } from "@theouthaven/auth/admin-roles";
@@ -64,6 +65,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: Database,
     migrated: true,
     roles: ["superadmin", "admin"],
+  },
+  {
+    label: "Promo Codes",
+    href: "/admin/dashboard/settings/promo-codes",
+    icon: TicketPercent,
+    migrated: true,
+    roles: ["superadmin"],
   },
   {
     label: "Microsoft 365",
