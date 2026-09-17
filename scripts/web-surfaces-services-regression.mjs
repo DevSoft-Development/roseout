@@ -8,6 +8,7 @@ const loader = fs.readFileSync('infra/aws/web-surfaces/runtime-env-loader.cjs', 
 const healthcheck = fs.readFileSync('infra/aws/web-surfaces/healthcheck.cjs', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/aws-web-surfaces-services.yml', 'utf8');
 const proxy = fs.readFileSync('proxy.ts', 'utf8');
+const businessLogin = fs.readFileSync('app/business/login/page.tsx', 'utf8');
 
 function requireText(source, value, message) {
   if (!source.includes(value)) throw new Error(message || `Missing: ${value}`);
@@ -56,9 +57,9 @@ requireText(proxy, 'pathname === "/admin/login"', 'Admin runtime must allow its 
 requireText(proxy, 'pathMatches(pathname, "/auth/admin/callback")', 'Admin runtime must allow the admin auth callback.');
 requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Business runtime must allow the location dashboard.');
 requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Business runtime must allow the business dashboard.');
-requireText(proxy, 'pathname === "/login"', 'Business runtime must allow the shared owner login flow.');
+requireText(proxy, 'pathname === "/business/login"', 'Business runtime must allow its dedicated login page.');
 requireText(proxy, 'if (pathname === "/") {', 'Isolated AWS web surface roots must have an explicit landing behavior.');
-requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/login";', 'Admin and Business roots must redirect to their login pages.');
+requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/business/login";', 'Admin and Business roots must redirect to their dedicated login pages.');
 requireText(proxy, 'return NextResponse.redirect(loginUrl, 302);', 'Web surface root login navigation must use an explicit redirect.');
 requireText(proxy, 'return NextResponse.json({ error: "Not found" }, { status: 404 });', 'Disallowed surface routes must fail closed with 404.');
 requireText(proxy, 'export const config = { matcher: ["/:path*"] };', 'Surface isolation must cover every application page path, not only Admin/API routes.');
@@ -67,6 +68,14 @@ const shortLinkIndex = proxy.indexOf('const shortHostResponse = shortLinkHostRes
 if (boundaryIndex < 0 || shortLinkIndex < 0 || boundaryIndex > shortLinkIndex) {
   throw new Error('AWS surface isolation must run before normal host routing and application behavior.');
 }
+
+requireText(businessLogin, 'TheOutHaven Business', 'Dedicated Business login must use Business-specific branding.');
+requireText(businessLogin, 'fetch("/api/auth/sign-in"', 'Business login must use the shared secure sign-in backend.');
+requireText(businessLogin, 'queryNext?.startsWith("/business/claim")', 'Business login may only preserve a business claim continuation path.');
+requireText(businessLogin, 'window.location.replace(data.redirectTo || "/business/dashboard")', 'Business login must honor the role-aware backend destination.');
+requireText(businessLogin, 'https://theouthaven.com/forgot-password', 'Business login must provide password recovery.');
+requireText(businessLogin, 'https://theouthaven.com/business#plans', 'Business login must provide a clear onboarding path for new businesses.');
+requireText(businessLogin, 'https://theouthaven.com/login', 'Business login must provide a route back to consumer sign in.');
 
 const pullRequestPaths = workflow.match(/  pull_request:\n    paths:\n([\s\S]*?)\n  push:/)?.[1] || '';
 const pushPaths = workflow.match(/  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] || '';
