@@ -295,8 +295,8 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
                 Resource:
-                  - !Sub '${AdminLogGroup.Arn}:*'
-                  - !Sub '${BusinessLogGroup.Arn}:*'
+                  - !GetAtt AdminLogGroup.Arn
+                  - !GetAtt BusinessLogGroup.Arn
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource:

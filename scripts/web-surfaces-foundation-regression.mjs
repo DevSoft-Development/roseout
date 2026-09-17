@@ -17,6 +17,8 @@ const required = [
   "AdminHostRule:",
   "BusinessHostRule:",
   "HealthCheckPath: /api/health/platform-dr",
+  "!GetAtt AdminLogGroup.Arn",
+  "!GetAtt BusinessLogGroup.Arn",
 ];
 
 for (const token of required) {
@@ -33,6 +35,10 @@ if (source.includes("Type: AWS::SecretsManager::Secret")) {
 
 if (!source.includes("!Ref AdminAppEnvSecretArn") || !source.includes("!Ref BusinessAppEnvSecretArn")) {
   throw new Error("Admin and Business runtime secret ARNs must remain isolated and explicitly referenced.");
+}
+
+if (source.includes("${AdminLogGroup.Arn}:*") || source.includes("${BusinessLogGroup.Arn}:*")) {
+  throw new Error("CloudWatch LogGroup Arn already includes :*; appending another wildcard breaks ECS log-stream permissions.");
 }
 
 console.log("web-surfaces-foundation-regression: PASS");
