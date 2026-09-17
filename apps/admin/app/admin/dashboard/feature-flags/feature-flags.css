@@ -1,0 +1,66 @@
+.feature-flags-page { display: grid; gap: 20px; }
+.feature-flags-hero,
+.feature-flags-table-wrap {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 24px;
+  background: #120d0b;
+}
+.feature-flags-hero { padding: 24px; }
+.feature-flags-hero p {
+  margin: 0;
+  color: #fcd34d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+.feature-flags-hero h1 { margin: 8px 0; font-size: clamp(30px,4vw,46px); }
+.feature-flags-hero span { color: rgba(255,255,255,.62); }
+.feature-flags-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; }
+.feature-flags-metrics article {
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  background: rgba(255,255,255,.04);
+}
+.feature-flags-metrics small { display: block; color: rgba(255,255,255,.55); }
+.feature-flags-metrics strong { display: block; margin-top: 4px; font-size: 28px; }
+.feature-flags-table-wrap { overflow-x: auto; }
+.feature-flags-table-wrap > p { padding: 20px; }
+.feature-flags-table-wrap table { width: 100%; min-width: 980px; border-collapse: collapse; }
+.feature-flags-table-wrap th,
+.feature-flags-table-wrap td {
+  padding: 13px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  text-align: left;
+  vertical-align: middle;
+}
+.feature-flags-table-wrap th {
+  color: rgba(255,255,255,.5);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+.feature-flags-table-wrap td { color: rgba(255,255,255,.78); font-size: 13px; }
+.feature-flags-table-wrap code { color: #fde68a; }
+.flag-status {
+  display: inline-flex;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255,255,255,.05);
+  font-weight: 800;
+}
+.flag-status.is-enabled {
+  border-color: rgba(52,211,153,.28);
+  background: rgba(16,185,129,.12);
+  color: #a7f3d0;
+}
+.feature-flags-error { color: #fda4af; }
+.feature-flags-empty { color: rgba(255,255,255,.62); }
+@media (max-width: 900px) {
+  .feature-flags-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 560px) {
+  .feature-flags-metrics { grid-template-columns: 1fr; }
+}

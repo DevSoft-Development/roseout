@@ -146,6 +146,28 @@ if (!adminNavigation.includes("/admin/dashboard/logs")) {
   throw new Error("Platform Logs navigation must be present in the isolated Admin shell.");
 }
 
+const featureFlagsPage = read("apps/admin/app/admin/dashboard/feature-flags/page.tsx");
+if (!featureFlagsPage.includes("@theouthaven/auth/admin-session") || !featureFlagsPage.includes("@/lib/feature-flags")) {
+  throw new Error("Feature Flags page must use isolated Admin auth and data loader.");
+}
+if (featureFlagsPage.includes("@/lib/supabase") || featureFlagsPage.includes("@/lib/admin-auth")) {
+  throw new Error("Feature Flags page must not import root monolith auth/database modules.");
+}
+
+const featureFlagsApi = read("apps/admin/app/api/admin/feature-flags/route.ts");
+if (!featureFlagsApi.includes("@theouthaven/auth/admin-session") || !featureFlagsApi.includes("@/lib/feature-flags")) {
+  throw new Error("Feature Flags API must use isolated Admin auth and data loader.");
+}
+
+const featureFlagsLoader = read("apps/admin/lib/feature-flags.ts");
+if (!featureFlagsLoader.includes("@theouthaven/db/admin-client") || featureFlagsLoader.includes("@/lib/")) {
+  throw new Error("Feature Flags data loader must use the shared DB package and avoid root lib imports.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/feature-flags")) {
+  throw new Error("Feature Flags navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
