@@ -24,6 +24,11 @@ requireText(template, 'BusinessTaskRoleArn');
 requireText(template, 'DeploymentCircuitBreaker:');
 requireText(template, 'Rollback: true');
 requireText(template, 'DesiredCount: !Ref DesiredCount');
+requireText(template, 'node -e "const http=require(\'http\')', 'ECS health checks must use the Node runtime that is guaranteed to exist in the production image.');
+requireText(template, "http://127.0.0.1:3000/api/health/platform-dr");
+if (template.includes('wget -q -O /dev/null')) {
+  throw new Error('ECS health checks must not depend on wget being present in the minimal runtime image.');
+}
 
 requireText(dockerfile, '.next/standalone');
 requireText(dockerfile, 'runtime-env-loader.cjs');
