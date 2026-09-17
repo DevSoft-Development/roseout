@@ -10,7 +10,7 @@ export default function AdminPortalLoginLink() {
   return (
     <div className="fixed bottom-4 right-4 z-[70] sm:bottom-6 sm:right-6">
       <Link
-        href="/admin/login?autostart=1"
+        href="https://admin.theouthaven.com/admin/login?autostart=1"
         className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-[#17100d]/95 px-4 py-2.5 text-xs font-bold text-white shadow-2xl shadow-black/40 backdrop-blur transition hover:border-[#e1062a]/60 hover:bg-[#221713]"
       >
         <span className="grid h-4 w-4 grid-cols-2 gap-[1px]" aria-hidden="true">
