@@ -153,6 +153,12 @@ if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\
 if (!productionCi.includes("apps/admin/") || !productionCi.includes("packages/(auth|db|config)/")) {
   throw new Error("Production CI must route isolated Admin/auth/db/config changes through the security regression lane.");
 }
+if (!productionCi.includes("Detect quality scope") || !productionCi.includes("Lint isolated Admin surface")) {
+  throw new Error("Production CI must keep the targeted isolated Admin quality lane.");
+}
+if (!productionCi.includes("grep -Evq '^(apps/admin/|packages/(auth|db|config)/|scripts/surface-app-isolation-regression\\.mjs$)'")) {
+  throw new Error("Production CI must reserve the fast quality lane for isolated Admin/shared-boundary changes only.");
+}
 
 const rootTsconfig = JSON.parse(read("tsconfig.json"));
 for (const excluded of ["apps", "packages"]) {
@@ -167,6 +173,9 @@ for (const surface of surfaces) {
   if (pkg.scripts?.[key] !== `next build apps/${surface}`) {
     throw new Error(`Missing independent build script: ${key}`);
   }
+}
+if (pkg.scripts?.["lint:surface:admin"] !== "eslint apps/admin packages/auth packages/db packages/config") {
+  throw new Error("Missing targeted Admin surface lint script.");
 }
 
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
