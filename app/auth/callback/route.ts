@@ -3,30 +3,20 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { resolvePostLoginRedirect, sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
+import {
+  resolveWebSurfaceAuthOrigin,
+  webSurfaceAuthFallbackPath,
+} from "@/lib/web-surface-auth-origin";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-function resolveRequestOrigin(request: NextRequest, requestUrl: URL) {
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost || request.headers.get("host")?.trim();
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const protocol =
-    forwardedProto === "http" || forwardedProto === "https"
-      ? forwardedProto
-      : requestUrl.protocol.replace(":", "");
-
-  return host ? `${protocol}://${host}` : requestUrl.origin;
-}
-
 export async function GET(request: NextRequest) {
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app").replace(/\/$/, "");
   const requestUrl = new URL(request.url);
-  const surface = process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase();
-  const authOrigin = surface === "business" ? resolveRequestOrigin(request, requestUrl) : siteUrl;
-  const fallbackPath = surface === "business" ? "/login" : "/create";
+  const authOrigin = resolveWebSurfaceAuthOrigin(request, requestUrl);
+  const fallbackPath = webSurfaceAuthFallbackPath();
   const code = requestUrl.searchParams.get("code");
   const intendedPath = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
 
