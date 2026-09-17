@@ -171,7 +171,7 @@ jobs:
           REGISTRY="${REPOSITORY_URI%%/*}"
           aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
 
-      - name: Build and push immutable application image
+      - name: Build or reuse immutable application image
         id: image
         env:
           REPOSITORY_URI: ${{ steps.foundation.outputs.ecrrepositoryuri }}
@@ -179,8 +179,17 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE_URI="${REPOSITORY_URI}:${GITHUB_SHA}"
-          docker build --file "$DOCKERFILE" --secret "id=platform_env,src=$ENV_FILE" --tag "$IMAGE_URI" .
-          docker push "$IMAGE_URI"
+          REPOSITORY_NAME="${REPOSITORY_URI##*/}"
+          if aws ecr describe-images \
+            --repository-name "$REPOSITORY_NAME" \
+            --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text >/dev/null 2>&1; then
+            echo "Reusing existing immutable ECR image for ${GITHUB_SHA}."
+          else
+            docker build --file "$DOCKERFILE" --secret "id=platform_env,src=$ENV_FILE" --tag "$IMAGE_URI" .
+            docker push "$IMAGE_URI"
+          fi
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
       - name: Recover failed services stack
