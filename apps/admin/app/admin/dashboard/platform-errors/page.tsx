@@ -1,3 +1,4 @@
+import "./platform-errors.css";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { loadPlatformErrors } from "@/lib/platform-errors";
 
