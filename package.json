@@ -57,7 +57,11 @@
     "search:profiles:worker": "tsx scripts/backfill-location-search-profiles.ts --batch-size 50",
     "search:profiles:parity": "vitest run lib/search/profile lib/search/v2/taxonomy",
     "search:profiles:report": "tsx scripts/validate-location-search-profiles.ts",
-    "test:security-access": "vitest run lib/auth/__tests__/locationOwnerAccess.test.ts lib/reserve/__tests__/locationPermissions.test.ts lib/security/__tests__/admin-service-role-boundary.test.ts lib/security/__tests__/outbound-url.test.ts"
+    "test:security-access": "vitest run lib/auth/__tests__/locationOwnerAccess.test.ts lib/reserve/__tests__/locationPermissions.test.ts lib/security/__tests__/admin-service-role-boundary.test.ts lib/security/__tests__/outbound-url.test.ts",
+    "build:surface:consumer": "next build apps/consumer",
+    "build:surface:admin": "next build apps/admin",
+    "build:surface:business": "next build apps/business",
+    "test:surface-app-isolation": "node scripts/surface-app-isolation-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
