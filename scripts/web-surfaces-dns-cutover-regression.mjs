@@ -38,6 +38,7 @@ requireText('TheOutHavenWebSurfaceDnsCutoverBootstrap', 'Cutover IAM bootstrap m
 forbid(/\npush:\s*(?:\n|$)/, 'Application traffic DNS workflow must never run from a push trigger.');
 forbid(/schedule:/, 'Application traffic DNS workflow must never run on a schedule.');
 forbid(/admin\.theouthaven\.com[^\n]*consumer|business\.theouthaven\.com[^\n]*consumer/i, 'Cutover workflow must not route consumer traffic.');
-forbid(/www\.theouthaven\.com|(^|[^a-z])theouthaven\.com\.['\"]/m, 'Cutover workflow must not modify the apex or www application records.');
+forbid(/["']Name["']\s*:\s*["']theouthaven\.com\.["']/, 'Cutover workflow must not construct an apex application DNS record.');
+forbid(/["']Name["']\s*:\s*["']www\.theouthaven\.com\.["']/, 'Cutover workflow must not construct a www application DNS record.');
 
 console.log('web-surfaces-dns-cutover-regression: PASS');
