@@ -254,6 +254,45 @@ if (!adminNavigation.includes("/admin/dashboard/settings/promo-codes")) {
   throw new Error("Promo Codes navigation must be present in the isolated Admin shell.");
 }
 
+const seoPage = read("apps/admin/app/admin/dashboard/seo/page.tsx");
+if (!seoPage.includes("@theouthaven/auth/admin-session") || !seoPage.includes("./SeoOperationsClient")) {
+  throw new Error("SEO Operations page must use isolated Admin auth and local client UI.");
+}
+if (!seoPage.includes('["superadmin", "admin", "editor", "viewer"]')) {
+  throw new Error("SEO Operations page must preserve the existing view-role boundary.");
+}
+
+const seoClient = read("apps/admin/app/admin/dashboard/seo/SeoOperationsClient.tsx");
+for (const endpoint of ["/api/admin/seo/runs", "/api/admin/seo/issues", "/api/admin/seo/inspect", "/api/admin/seo/audit"]) {
+  if (!seoClient.includes(endpoint)) {
+    throw new Error(`SEO Operations client must use isolated endpoint: ${endpoint}`);
+  }
+}
+
+for (const seoRoute of [
+  "apps/admin/app/api/admin/seo/runs/route.ts",
+  "apps/admin/app/api/admin/seo/issues/route.ts",
+  "apps/admin/app/api/admin/seo/inspect/route.ts",
+  "apps/admin/app/api/admin/seo/audit/route.ts",
+]) {
+  const source = read(seoRoute);
+  if (!source.includes("@/lib/admin-api-auth")) {
+    throw new Error(`SEO API must use isolated Admin API auth: ${seoRoute}`);
+  }
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-permissions")) {
+    throw new Error(`SEO API must not import root monolith auth/database modules: ${seoRoute}`);
+  }
+}
+
+const seoInspector = read("apps/admin/lib/seo/live-inspection.ts");
+if (!seoInspector.includes("Only public TheOutHaven HTTPS URLs can be inspected.")) {
+  throw new Error("SEO live inspection must preserve TheOutHaven host restrictions.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/seo")) {
+  throw new Error("SEO Operations navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
