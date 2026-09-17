@@ -7,6 +7,7 @@ on:
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
 
 permissions:
@@ -27,11 +29,62 @@ jobs:
       matrix:
         surface: [consumer, admin, business]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect surface scope
+        id: surface_scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SURFACE: ${{ matrix.surface }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$CHANGED"
+
+          run=false
+
+          if printf '%s\n' "$CHANGED" | grep -Eq '^(package(-lock)?\.json|\.github/workflows/surface-app-isolation-foundation\.yml)$'; then
+            run=true
+          elif printf '%s\n' "$CHANGED" | grep -Eq '^packages/'; then
+            run=true
+          elif printf '%s\n' "$CHANGED" | grep -Eq "^apps/${SURFACE}/"; then
+            run=true
+          elif [ "$SURFACE" = "admin" ] && printf '%s\n' "$CHANGED" | grep -Eq '^scripts/surface-app-isolation-regression\.mjs$'; then
+            run=true
+          fi
+
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: steps.surface_scope.outputs.run == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - run: npm run test:surface-app-isolation
-      - run: npm run build:surface:${{ matrix.surface }}
+
+      - name: Install locked dependencies
+        if: steps.surface_scope.outputs.run == 'true'
+        run: npm ci
+
+      - name: Verify surface isolation boundary
+        if: steps.surface_scope.outputs.run == 'true'
+        run: npm run test:surface-app-isolation
+
+      - name: Build isolated surface
+        if: steps.surface_scope.outputs.run == 'true'
+        run: npm run build:surface:${{ matrix.surface }}
+
+      - name: Report skipped surface
+        if: steps.surface_scope.outputs.run != 'true'
+        run: echo "No changes require the ${{ matrix.surface }} surface build." >> "$GITHUB_STEP_SUMMARY"
