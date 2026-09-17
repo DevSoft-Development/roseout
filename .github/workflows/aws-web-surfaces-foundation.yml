@@ -92,6 +92,52 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
+      - name: Repair CloudFormation change-set bootstrap permission
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_FILE="$RUNNER_TEMP/web-surfaces-cloudformation-bootstrap.json"
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "WebSurfacesCloudFormationBootstrap",
+                "Effect": "Allow",
+                "Action": [
+                  "cloudformation:CreateStack",
+                  "cloudformation:UpdateStack",
+                  "cloudformation:DeleteStack",
+                  "cloudformation:CreateChangeSet",
+                  "cloudformation:DescribeChangeSet",
+                  "cloudformation:ExecuteChangeSet",
+                  "cloudformation:DeleteChangeSet",
+                  "cloudformation:DescribeStacks",
+                  "cloudformation:DescribeStackEvents",
+                  "cloudformation:DescribeStackResources",
+                  "cloudformation:GetTemplate",
+                  "cloudformation:GetTemplateSummary",
+                  "cloudformation:ListStackResources",
+                  "cloudformation:ValidateTemplate"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebSurfacesCloudFormationBootstrap \
+            --policy-document "file://$POLICY_FILE"
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebSurfacesCloudFormationBootstrap \
+            --query PolicyName \
+            --output text >/dev/null
+          sleep 8
+
       - name: Deploy Admin and Business foundation
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
