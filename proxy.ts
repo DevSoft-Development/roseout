@@ -68,9 +68,16 @@ function isAllowedBusinessSurfacePath(pathname: string) {
   ].some((prefix) => pathMatches(pathname, prefix));
 }
 
-function webSurfaceBoundaryResponse(pathname: string) {
+function webSurfaceBoundaryResponse(request: NextRequest) {
   const surface = currentAwsWebSurface();
   if (!surface) return null;
+
+  const pathname = request.nextUrl.pathname;
+  if (pathname === "/") {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = surface === "admin" ? "/admin/login" : "/login";
+    return NextResponse.redirect(loginUrl, 302);
+  }
 
   const allowed = surface === "admin"
     ? isAllowedAdminSurfacePath(pathname)
@@ -120,7 +127,7 @@ function isLoadTestBypassAllowed(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const surfaceBoundaryResponse = webSurfaceBoundaryResponse(pathname);
+  const surfaceBoundaryResponse = webSurfaceBoundaryResponse(request);
   if (surfaceBoundaryResponse) return surfaceBoundaryResponse;
 
   const shortHostResponse = shortLinkHostResponse(request);
@@ -140,7 +147,7 @@ export async function proxy(request: NextRequest) {
       if (!verdict.ok) {
         return NextResponse.json(
           { error: "Rate limit exceeded" },
-          { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) } },
+          { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) },
         );
       }
     }
