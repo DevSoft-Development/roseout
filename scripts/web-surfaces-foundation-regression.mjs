@@ -4,8 +4,10 @@ import fs from "node:fs";
 
 const templatePath = "infra/aws/cloudformation/web-surfaces-foundation.yml";
 const policyPath = "infra/aws/iam/web-surfaces-bootstrap-policy.json";
+const workflowPath = ".github/workflows/aws-web-surfaces-foundation.yml";
 const source = fs.readFileSync(templatePath, "utf8");
 const policy = fs.readFileSync(policyPath, "utf8");
+const workflow = fs.readFileSync(workflowPath, "utf8");
 
 const required = [
   "AWS::ECS::Cluster",
@@ -21,6 +23,18 @@ const required = [
   "HealthCheckPath: /api/health/platform-dr",
   "!GetAtt AdminLogGroup.Arn",
   "!GetAtt BusinessLogGroup.Arn",
+  "CertificateArn:",
+  "HttpsListener:",
+  "Port: 443",
+  "Protocol: HTTPS",
+  "ELBSecurityPolicy-TLS13-1-2-2021-06",
+  "AdminHttpsHostRule:",
+  "BusinessHttpsHostRule:",
+  "AWS::WAFv2::WebACL",
+  "AWSManagedRulesCommonRuleSet",
+  "AWSManagedRulesKnownBadInputsRuleSet",
+  "AWS::WAFv2::WebACLAssociation",
+  "WebAclArn:",
 ];
 
 for (const token of required) {
@@ -43,12 +57,34 @@ if (source.includes("${AdminLogGroup.Arn}:*") || source.includes("${BusinessLogG
   throw new Error("CloudWatch LogGroup Arn already includes :*; appending another wildcard breaks ECS log-stream permissions.");
 }
 
-if (!policy.includes('"logs:FilterLogEvents"')) {
-  throw new Error("Web-surface deploy role must be able to read ECS CloudWatch logs after a failed deployment.");
+for (const permission of [
+  '"logs:FilterLogEvents"',
+  '"cloudformation:RollbackStack"',
+  '"acm:ListCertificates"',
+  '"acm:DescribeCertificate"',
+  '"wafv2:CreateWebACL"',
+  '"wafv2:UpdateWebACL"',
+  '"wafv2:AssociateWebACL"',
+  '"wafv2:GetWebACLForResource"',
+]) {
+  if (!policy.includes(permission)) throw new Error(`Web-surface deploy role is missing required permission ${permission}.`);
 }
 
-if (!policy.includes('"cloudformation:RollbackStack"')) {
-  throw new Error("Web-surface deploy role must be able to recover an UPDATE_FAILED services stack before retrying deployment.");
+for (const token of [
+  "Resolve issued wildcard TLS certificate",
+  "CertificateSummaryList[?DomainName=='*.theouthaven.com']",
+  "CertificateArn=\"$CERTIFICATE_ARN\"",
+  "Verify HTTPS listener and managed WAF protection",
+  "aws wafv2 get-web-acl-for-resource",
+  "--connect-to \"${HOST}:443:${ORIGIN}:443\"",
+  "https://${HOST}/api/health/platform-dr",
+  "Public DNS has not been changed",
+]) {
+  if (!workflow.includes(token)) throw new Error(`Foundation workflow is missing TLS/WAF verification contract: ${token}`);
+}
+
+if (/route53.*change-resource-record-sets|cloudfront update-distribution/i.test(workflow)) {
+  throw new Error("TLS/WAF foundation rollout must not perform public DNS or edge cutover.");
 }
 
 console.log("web-surfaces-foundation-regression: PASS");
