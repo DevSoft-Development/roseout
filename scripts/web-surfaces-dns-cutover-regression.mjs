@@ -23,8 +23,8 @@ requireText('SNAPSHOT_PARAMETER: /theouthaven/production/web-surfaces/dns-cutove
 requireText("Save rollback snapshot", 'Cutover must persist the exact prior Route 53 state before changing traffic.');
 requireText("Verify isolated AWS origins before DNS changes", 'AWS Admin/Business origins must be healthy before Route 53 changes.');
 requireText('--connect-to "${host}:443:${ALB_DNS}:443"', 'Preflight must exercise the real HTTPS listener without relying on public DNS.');
-requireText("'admin.theouthaven.com.'", 'Admin must remain an explicitly scoped application hostname.');
-requireText("'business.theouthaven.com.'", 'Business must remain an explicitly scoped application hostname.');
+requireText("selected = ['admin', 'business'] if scope == 'both' else [scope]", 'The cutover scope must remain limited to the Admin and Business surfaces.');
+requireText("f'{surface}.theouthaven.com.'", 'Application DNS changes must remain limited to surface-specific theouthaven.com hostnames.');
 requireText("'Type': 'A'", 'Cutover must use a Route 53 ALB alias A record.');
 requireText("'AliasTarget'", 'Cutover must target the AWS load balancer with an alias record.');
 requireText('EvaluateTargetHealth', 'Route 53 alias target health evaluation must remain enabled.');
