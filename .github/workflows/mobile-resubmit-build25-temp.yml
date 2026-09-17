@@ -1,0 +1,76 @@
+name: Mobile resubmit build 25 temp
+
+on:
+  push:
+    branches:
+      - fix/mobile-lock-and-resubmit-build25-2026-09-17
+    paths:
+      - .github/workflows/mobile-resubmit-build25-temp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  submit-ios-build-25:
+    name: Submit existing iOS build 25
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install mobile dependencies from synchronized lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Submit existing iOS build to App Store Connect
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${EXPO_TOKEN:-}"
+          npx --yes eas-cli@latest build:submit \
+            --platform ios \
+            --id cfaa699e-1e0a-473a-af9f-598f1f3204f5 \
+            --profile production \
+            --non-interactive \
+            --wait
+
+  submit-android-build-25:
+    name: Submit existing Android build 25
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install mobile dependencies from synchronized lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Submit existing Android build to Google Play internal testing
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${EXPO_TOKEN:-}"
+          npx --yes eas-cli@latest build:submit \
+            --platform android \
+            --id 78519862-e632-4554-98d5-71ee93006259 \
+            --profile production \
+            --non-interactive \
+            --wait
