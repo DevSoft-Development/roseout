@@ -35,6 +35,15 @@ requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN"');
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN"');
 requireText(workflow, 'docker push "$IMAGE_URI"');
+requireText(workflow, 'Recover failed services stack');
+requireText(workflow, 'ROLLBACK_COMPLETE');
+requireText(workflow, 'aws cloudformation delete-stack --stack-name "$STACK"');
+requireText(workflow, 'aws cloudformation wait stack-delete-complete --stack-name "$STACK"');
+requireText(workflow, 'Show CloudFormation service failure events');
+requireText(workflow, 'Show ECS service and stopped-task diagnostics');
+requireText(workflow, 'aws ecs describe-services');
+requireText(workflow, 'aws ecs list-tasks');
+requireText(workflow, 'aws ecs describe-tasks');
 requireText(workflow, 'aws ecs wait services-stable');
 requireText(workflow, 'Direct-origin smoke test');
 requireText(workflow, 'DNS/public routing has not been changed');
