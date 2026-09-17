@@ -1,6 +1,7 @@
 import {
   Database,
   Flag,
+  Globe2,
   Home,
   ListChecks,
   Mail,
@@ -72,6 +73,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: TicketPercent,
     migrated: true,
     roles: ["superadmin"],
+  },
+  {
+    label: "SEO Operations",
+    href: "/admin/dashboard/seo",
+    icon: Globe2,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "viewer"],
   },
   {
     label: "Microsoft 365",
