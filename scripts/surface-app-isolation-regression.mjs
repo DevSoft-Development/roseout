@@ -168,6 +168,28 @@ if (!adminNavigation.includes("/admin/dashboard/feature-flags")) {
   throw new Error("Feature Flags navigation must be present in the isolated Admin shell.");
 }
 
+const reviewsPage = read("apps/admin/app/admin/dashboard/reviews/page.tsx");
+if (!reviewsPage.includes("@theouthaven/auth/admin-session") || !reviewsPage.includes("@/lib/reviews")) {
+  throw new Error("Reviews page must use isolated Admin auth and data loader.");
+}
+if (reviewsPage.includes("@/lib/supabase") || reviewsPage.includes("@/lib/admin-auth")) {
+  throw new Error("Reviews page must not import root monolith auth/database modules.");
+}
+
+const reviewsApi = read("apps/admin/app/api/admin/reviews/route.ts");
+if (!reviewsApi.includes("@theouthaven/auth/admin-session") || !reviewsApi.includes("@/lib/reviews")) {
+  throw new Error("Reviews API must use isolated Admin auth and data loader.");
+}
+
+const reviewsLoader = read("apps/admin/lib/reviews.ts");
+if (!reviewsLoader.includes("@theouthaven/db/admin-client") || reviewsLoader.includes("@/lib/")) {
+  throw new Error("Reviews data loader must use the shared DB package and avoid root lib imports.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/reviews")) {
+  throw new Error("Reviews navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
