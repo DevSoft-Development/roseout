@@ -5,10 +5,16 @@ import fs from 'node:fs';
 const template = fs.readFileSync('infra/aws/cloudformation/web-surfaces-services.yml', 'utf8');
 const dockerfile = fs.readFileSync('infra/aws/web-surfaces/Dockerfile', 'utf8');
 const loader = fs.readFileSync('infra/aws/web-surfaces/runtime-env-loader.cjs', 'utf8');
+const healthcheck = fs.readFileSync('infra/aws/web-surfaces/healthcheck.cjs', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/aws-web-surfaces-services.yml', 'utf8');
 
 function requireText(source, value, message) {
   if (!source.includes(value)) throw new Error(message || `Missing: ${value}`);
+}
+
+function requireCount(source, value, count, message) {
+  const actual = source.split(value).length - 1;
+  if (actual !== count) throw new Error(message || `Expected ${count} occurrences of ${value}, found ${actual}.`);
 }
 
 requireText(template, 'AdminTaskDefinition:', 'Admin must have its own task definition.');
@@ -24,16 +30,23 @@ requireText(template, 'BusinessTaskRoleArn');
 requireText(template, 'DeploymentCircuitBreaker:');
 requireText(template, 'Rollback: true');
 requireText(template, 'DesiredCount: !Ref DesiredCount');
-requireText(template, 'node -e "const http=require(\'http\')', 'ECS health checks must use the Node runtime that is guaranteed to exist in the production image.');
-requireText(template, "http://127.0.0.1:3000/api/health/platform-dr");
-if (template.includes('wget -q -O /dev/null')) {
-  throw new Error('ECS health checks must not depend on wget being present in the minimal runtime image.');
+requireCount(template, 'Name: HOSTNAME', 2, 'Both ECS web surfaces must explicitly override the container hostname used by the Next standalone server.');
+requireCount(template, 'Value: 0.0.0.0', 2, 'Both ECS web surfaces must bind Next to all task interfaces so loopback and ALB health checks reach the same server.');
+requireCount(template, 'Command: [CMD, node, /app/healthcheck.cjs]', 2, 'ECS health checks must execute the dedicated Node probe directly without shell quoting.');
+if (template.includes('CMD-SHELL') || template.includes('node -e') || template.includes('wget -q -O /dev/null')) {
+  throw new Error('ECS health checks must not depend on inline shell commands, node -e quoting, or wget.');
 }
 
 requireText(dockerfile, '.next/standalone');
 requireText(dockerfile, 'runtime-env-loader.cjs');
+requireText(dockerfile, 'healthcheck.cjs');
 requireText(dockerfile, '--mount=type=secret,id=platform_env');
 requireText(loader, 'delete process.env.RUNTIME_ENV_JSON');
+requireText(healthcheck, "host: '127.0.0.1'");
+requireText(healthcheck, "path: '/api/health/platform-dr'");
+requireText(healthcheck, 'status >= 200 && status < 300');
+requireText(healthcheck, "request.on('timeout'");
+requireText(healthcheck, "request.on('error'");
 
 requireText(workflow, '/theouthaven/${TARGET_ENV}/edge-runtime/env', 'AWS web surfaces must source runtime configuration from the AWS compatibility secret.');
 requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy credentials must not be copied into ECS runtime secrets.');

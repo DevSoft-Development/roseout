@@ -24,6 +24,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --chown=nextjs:nextjs infra/aws/web-surfaces/runtime-env-loader.cjs ./runtime-env-loader.cjs
+COPY --chown=nextjs:nextjs infra/aws/web-surfaces/healthcheck.cjs ./healthcheck.cjs
 USER nextjs
 EXPOSE 3000
 CMD ["node", "-r", "./runtime-env-loader.cjs", "server.js"]
