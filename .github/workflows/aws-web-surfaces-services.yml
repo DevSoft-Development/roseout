@@ -199,13 +199,21 @@ jobs:
           set -euo pipefail
           if aws cloudformation describe-stacks --stack-name "$STACK" > "$RUNNER_TEMP/services-stack.json" 2>/dev/null; then
             STATUS="$(jq -r '.Stacks[0].StackStatus' "$RUNNER_TEMP/services-stack.json")"
-            if [ "$STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STATUS" = "CREATE_FAILED" ]; then
-              echo "Deleting failed services stack in $STATUS so it can be recreated cleanly."
-              aws cloudformation delete-stack --stack-name "$STACK"
-              aws cloudformation wait stack-delete-complete --stack-name "$STACK"
-            else
-              echo "Existing services stack status: $STATUS"
-            fi
+            case "$STATUS" in
+              ROLLBACK_COMPLETE|CREATE_FAILED)
+                echo "Deleting failed services stack in $STATUS so it can be recreated cleanly."
+                aws cloudformation delete-stack --stack-name "$STACK"
+                aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+                ;;
+              UPDATE_FAILED)
+                echo 'Rolling UPDATE_FAILED services stack back to the last known good state before retrying the deployment.'
+                aws cloudformation rollback-stack --stack-name "$STACK"
+                aws cloudformation wait stack-rollback-complete --stack-name "$STACK"
+                ;;
+              *)
+                echo "Existing services stack status: $STATUS"
+                ;;
+            esac
           else
             echo 'Services stack does not exist yet; a fresh stack will be created.'
           fi
