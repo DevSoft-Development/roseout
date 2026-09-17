@@ -26,15 +26,18 @@ function hasScope(granted: unknown, names: string[]) {
 }
 
 export async function sendCommunityReply(input: {
-  conversationId: string;
+  conversationId: string | undefined;
   reply: string;
   senderType: "ai" | "human";
   sentByUserId?: string | null;
 }) : Promise<CommunitySendResult> {
+  if (!input.conversationId) throw new Error("Conversation was not found.");
+  const conversationId = input.conversationId;
+
   const { data: conversation, error: conversationError } = await supabaseAdmin
     .from("social_community_conversations")
     .select("id,provider,conversation_type,risk_level,contact_id")
-    .eq("id", input.conversationId)
+    .eq("id", conversationId)
     .maybeSingle();
   if (conversationError || !conversation) throw new Error("Conversation was not found.");
   if (conversation.risk_level === "red") throw new Error("This conversation must be handled by a person.");
@@ -42,7 +45,7 @@ export async function sendCommunityReply(input: {
 
   const [{ data: contact }, { data: inbound }, { data: connection }] = await Promise.all([
     supabaseAdmin.from("social_community_contacts").select("external_user_id").eq("id", conversation.contact_id).maybeSingle(),
-    supabaseAdmin.from("social_community_messages").select("external_message_id").eq("conversation_id", input.conversationId).eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabaseAdmin.from("social_community_messages").select("external_message_id").eq("conversation_id", conversationId).eq("direction", "inbound").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     supabaseAdmin.from("marketing_social_connections").select("id,provider_account_id,status,token_expires_at,granted_scopes").eq("scope", "platform").eq("provider", conversation.provider).eq("status", "connected").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
@@ -75,7 +78,7 @@ export async function sendCommunityReply(input: {
 
   const now = new Date().toISOString();
   const { error: messageError } = await supabaseAdmin.from("social_community_messages").insert({
-    conversation_id: input.conversationId,
+    conversation_id: conversationId,
     provider: conversation.provider,
     external_message_id: result?.id ? String(result.id) : null,
     direction: "outbound",
@@ -92,7 +95,7 @@ export async function sendCommunityReply(input: {
     status: input.senderType === "ai" ? "ai_handled" : "human_handled",
     assigned_to_user_id: input.senderType === "human" ? input.sentByUserId || null : null,
     last_message_at: now,
-  }).eq("id", input.conversationId);
+  }).eq("id", conversationId);
   if (conversationUpdateError) throw conversationUpdateError;
 
   return { providerResponseId: result?.id ? String(result.id) : null };
