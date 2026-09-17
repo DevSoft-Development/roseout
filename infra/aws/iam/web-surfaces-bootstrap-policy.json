@@ -109,6 +109,7 @@
         "logs:CreateLogGroup",
         "logs:DeleteLogGroup",
         "logs:DescribeLogGroups",
+        "logs:FilterLogEvents",
         "logs:PutRetentionPolicy",
         "logs:TagResource",
         "logs:UntagResource",
