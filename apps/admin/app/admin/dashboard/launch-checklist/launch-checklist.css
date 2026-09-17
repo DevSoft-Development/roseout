@@ -1,0 +1,50 @@
+.launch-checklist-page { display: grid; gap: 20px; }
+.launch-checklist-hero {
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 24px;
+  background: #120d0b;
+}
+.launch-checklist-hero p {
+  margin: 0;
+  color: #fda4af;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+}
+.launch-checklist-hero h1 { margin: 8px 0; font-size: clamp(30px,4vw,46px); }
+.launch-checklist-hero span { color: rgba(255,255,255,.62); }
+.launch-checklist-grid { display: grid; gap: 12px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.launch-checklist-grid article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  background: rgba(255,255,255,.04);
+}
+.launch-checklist-grid strong { display: block; }
+.launch-checklist-grid small {
+  display: block;
+  margin-top: 4px;
+  color: rgba(255,255,255,.4);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+.launch-checklist-grid article > span {
+  border: 1px solid rgba(245,158,11,.25);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(245,158,11,.1);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .launch-checklist-grid { grid-template-columns: 1fr; }
+  .launch-checklist-grid article { align-items: flex-start; flex-direction: column; }
+}
