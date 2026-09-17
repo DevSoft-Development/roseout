@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
@@ -75,7 +76,8 @@ export default function ProfileScreen() {
     : "Not set";
 
   return (
-    <ScrollView style={[styles.page, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} showsVerticalScrollIndicator={false}>
+    <SafeAreaView edges={["top"]} style={[styles.page, { backgroundColor: theme.colors.background }]}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} showsVerticalScrollIndicator={false}>
       <BrandHeader compact />
 
       <View style={styles.heading}>
@@ -136,7 +138,8 @@ export default function ProfileScreen() {
 
       {user ? <View style={styles.signOut}><Button variant="ghost" onPress={() => void signOut()}>Sign out</Button></View> : null}
       <AppText variant="caption" muted style={styles.footer}>TheOutHaven · Plan better OUTings.</AppText>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -161,7 +164,7 @@ function Divider() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1 }, content: { paddingTop: 18, paddingBottom: 118, gap: 20 },
+  page: { flex: 1 }, content: { paddingTop: 10, paddingBottom: 118, gap: 20 },
   heading: { gap: 8, paddingTop: 8 }, copy: { lineHeight: 22 },
   identityRow: { flexDirection: "row", alignItems: "center", gap: 14 }, avatar: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
   profileMeta: { flexDirection: "row", flexWrap: "wrap", marginTop: 18, paddingTop: 16, borderTopWidth: 1, gap: 18 }, meta: { gap: 3 }, metaWide: { width: "100%" },
