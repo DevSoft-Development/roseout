@@ -9,6 +9,17 @@ export type CredentialVaultSummary = { ok: boolean; providers: CredentialVaultPr
 export type CredentialVaultRuntimeSnapshot = { ok: boolean; environment: CredentialVaultEnvironment; providers: Partial<Record<CredentialProviderId, Record<string, string>>> };
 export type CredentialVaultRuntimeSyncResult = { triggered: boolean; workflow: string; error?: string };
 
+type RuntimeCacheEntry = {
+  value: CredentialVaultRuntimeSnapshot;
+  expiresAt: number;
+  staleUntil: number;
+};
+
+const RUNTIME_CACHE_TTL_MS = 5 * 60_000;
+const RUNTIME_CACHE_STALE_MS = 30 * 60_000;
+const runtimeCache = new Map<CredentialVaultEnvironment, RuntimeCacheEntry>();
+const runtimeInflight = new Map<CredentialVaultEnvironment, Promise<CredentialVaultRuntimeSnapshot>>();
+
 function getGatewayConfig() {
   const baseUrl = String(process.env.AWS_PLATFORM_JOB_GATEWAY_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -34,14 +45,48 @@ async function signedRequest<T>(method: "GET" | "PUT" | "DELETE" | "POST", path:
 export async function getCredentialVaultSummary(environment: CredentialVaultEnvironment) {
   return signedRequest<CredentialVaultSummary>("GET", `/v1/credentials?environment=${encodeURIComponent(environment)}`);
 }
-export async function getCredentialVaultRuntimeSnapshot(environment: CredentialVaultEnvironment) {
-  return signedRequest<CredentialVaultRuntimeSnapshot>("GET", `/v1/credentials/runtime?environment=${encodeURIComponent(environment)}`);
+
+export async function getCredentialVaultRuntimeSnapshot(environment: CredentialVaultEnvironment, options: { force?: boolean } = {}) {
+  const now = Date.now();
+  const cached = runtimeCache.get(environment);
+  if (!options.force && cached && cached.expiresAt > now) return cached.value;
+
+  const existing = runtimeInflight.get(environment);
+  if (existing) return existing;
+
+  const request = signedRequest<CredentialVaultRuntimeSnapshot>("GET", `/v1/credentials/runtime?environment=${encodeURIComponent(environment)}`)
+    .then((value) => {
+      runtimeCache.set(environment, {
+        value,
+        expiresAt: Date.now() + RUNTIME_CACHE_TTL_MS,
+        staleUntil: Date.now() + RUNTIME_CACHE_STALE_MS,
+      });
+      return value;
+    })
+    .catch((error) => {
+      const stale = runtimeCache.get(environment);
+      if (stale && stale.staleUntil > Date.now()) return stale.value;
+      throw error;
+    })
+    .finally(() => runtimeInflight.delete(environment));
+
+  runtimeInflight.set(environment, request);
+  return request;
 }
+
+function invalidateRuntimeCache(environment: CredentialVaultEnvironment) {
+  runtimeCache.delete(environment);
+}
+
 export async function updateCredentialVaultProvider(input: { provider: CredentialProviderId; environment: CredentialVaultEnvironment; values: Record<string, string>; clearFields?: string[] }) {
-  return signedRequest<{ ok: boolean; provider: CredentialProviderId; configuredFields: string[]; updatedAt: string | null; versionId: string | null }>("PUT", `/v1/credentials/${encodeURIComponent(input.provider)}`, JSON.stringify({ environment: input.environment, values: input.values, clearFields: input.clearFields || [] }));
+  const result = await signedRequest<{ ok: boolean; provider: CredentialProviderId; configuredFields: string[]; updatedAt: string | null; versionId: string | null }>("PUT", `/v1/credentials/${encodeURIComponent(input.provider)}`, JSON.stringify({ environment: input.environment, values: input.values, clearFields: input.clearFields || [] }));
+  invalidateRuntimeCache(input.environment);
+  return result;
 }
 export async function deleteCredentialVaultProvider(provider: CredentialProviderId, environment: CredentialVaultEnvironment) {
-  return signedRequest<{ ok: boolean; provider: CredentialProviderId }>("DELETE", `/v1/credentials/${encodeURIComponent(provider)}?environment=${encodeURIComponent(environment)}`);
+  const result = await signedRequest<{ ok: boolean; provider: CredentialProviderId }>("DELETE", `/v1/credentials/${encodeURIComponent(provider)}?environment=${encodeURIComponent(environment)}`);
+  invalidateRuntimeCache(environment);
+  return result;
 }
 export async function testCredentialVaultProvider(provider: CredentialProviderId, environment: CredentialVaultEnvironment) {
   return signedRequest<{ ok: boolean; provider: CredentialProviderId; status: "healthy" | "configured"; detail: string }>("POST", `/v1/credentials/${encodeURIComponent(provider)}/test`, JSON.stringify({ environment }));
