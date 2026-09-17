@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { inspectPublicSeoUrl } from "@/lib/seo/live-inspection";
 
+const SEO_VIEW_ROLES = ["superadmin", "admin", "editor", "viewer"] as const;
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
