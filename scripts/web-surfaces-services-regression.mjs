@@ -30,12 +30,18 @@ requireText(dockerfile, 'runtime-env-loader.cjs');
 requireText(dockerfile, '--mount=type=secret,id=platform_env');
 requireText(loader, 'delete process.env.RUNTIME_ENV_JSON');
 
-requireText(workflow, 'Credential Vault');
-requireText(workflow, '/theouthaven/credential-vault/${TARGET_ENV}/vercel');
+requireText(workflow, '/theouthaven/${TARGET_ENV}/edge-runtime/env', 'AWS web surfaces must source runtime configuration from the AWS compatibility secret.');
+requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy credentials must not be copied into ECS runtime secrets.');
+requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN"');
+requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN"');
 requireText(workflow, 'docker push "$IMAGE_URI"');
 requireText(workflow, 'aws ecs wait services-stable');
 requireText(workflow, 'Direct-origin smoke test');
 requireText(workflow, 'DNS/public routing has not been changed');
+
+if (/credential-vault\/\$\{TARGET_ENV\}\/vercel|vercel env pull|VERCEL_RUNTIME_TOKEN/.test(workflow)) {
+  throw new Error('AWS web surface deployment must not depend on a Vercel API token.');
+}
 
 if (/route53|change-resource-record-sets|cloudfront update-distribution/i.test(workflow)) {
   throw new Error('Service deployment workflow must not perform public DNS/edge cutover.');
