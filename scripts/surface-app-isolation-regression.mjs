@@ -190,6 +190,17 @@ if (!adminNavigation.includes("/admin/dashboard/reviews")) {
   throw new Error("Reviews navigation must be present in the isolated Admin shell.");
 }
 
+const launchChecklistPage = read("apps/admin/app/admin/dashboard/launch-checklist/page.tsx");
+if (!launchChecklistPage.includes("@theouthaven/auth/admin-session")) {
+  throw new Error("Launch Checklist page must use isolated Admin auth.");
+}
+if (launchChecklistPage.includes("@/lib/")) {
+  throw new Error("Launch Checklist page must not import root monolith modules.");
+}
+if (!adminNavigation.includes("/admin/dashboard/launch-checklist")) {
+  throw new Error("Launch Checklist navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
