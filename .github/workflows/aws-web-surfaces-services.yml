@@ -1,0 +1,242 @@
+name: AWS web surfaces services
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/web-surfaces/**'
+      - 'infra/aws/cloudformation/web-surfaces-services.yml'
+      - 'scripts/web-surfaces-services-regression.mjs'
+      - '.github/workflows/aws-web-surfaces-services.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/admin/**'
+      - 'app/locations/**'
+      - 'app/business/**'
+      - 'app/api/admin/**'
+      - 'app/api/locations/**'
+      - 'app/api/business/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'next.config.ts'
+      - 'proxy.ts'
+      - 'infra/aws/web-surfaces/**'
+      - 'infra/aws/cloudformation/web-surfaces-services.yml'
+      - '.github/workflows/aws-web-surfaces-services.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options: [staging, production]
+      desired_count:
+        description: Tasks per web surface
+        required: true
+        default: '1'
+        type: choice
+        options: ['0', '1', '2']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-web-surfaces-services-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  FOUNDATION_STACK: theouthaven-web-surfaces-production
+  SERVICES_TEMPLATE: infra/aws/cloudformation/web-surfaces-services.yml
+  DOCKERFILE: infra/aws/web-surfaces/Dockerfile
+  VERCEL_PROJECT_ID: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+  VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate runtime contract
+        run: node scripts/web-surfaces-services-regression.mjs
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Lint service template
+        run: cfn-lint "$SERVICES_TEMPLATE"
+      - name: Verify production container build
+        run: |
+          set -euo pipefail
+          test -f "$DOCKERFILE"
+          grep -F '.next/standalone' "$DOCKERFILE" >/dev/null
+          grep -F 'runtime-env-loader.cjs' "$DOCKERFILE" >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve deployment configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          INPUT_DESIRED: ${{ github.event.inputs.desired_count }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          DESIRED="${INPUT_DESIRED:-1}"
+          case "$TARGET_ENV" in production|staging) ;; *) exit 2 ;; esac
+          case "$DESIRED" in 0|1|2) ;; *) exit 2 ;; esac
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "desired_count=$DESIRED" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "foundation_stack=theouthaven-web-surfaces-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+          echo "services_stack=theouthaven-web-surface-services-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve foundation outputs
+        id: foundation
+        env:
+          STACK: ${{ steps.config.outputs.foundation_stack }}
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name "$STACK" > "$RUNNER_TEMP/foundation.json"
+          output() { jq -r --arg key "$1" '.Stacks[0].Outputs[] | select(.OutputKey==$key) | .OutputValue' "$RUNNER_TEMP/foundation.json"; }
+          for key in LoadBalancerDnsName SubnetIds TaskSecurityGroupId EcrRepositoryUri EcsClusterName AdminTargetGroupArn BusinessTargetGroupArn AdminLogGroupName BusinessLogGroupName AdminAppEnvSecretArn BusinessAppEnvSecretArn TaskExecutionRoleArn AdminTaskRoleArn BusinessTaskRoleArn; do
+            value="$(output "$key")"
+            test -n "$value" && test "$value" != null
+            printf '%s=%s\n' "$(echo "$key" | tr '[:upper:]' '[:lower:]')" "$value" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Load Vercel credential from AWS Credential Vault
+        run: |
+          set -euo pipefail
+          TARGET_ENV='${{ steps.config.outputs.target_env }}'
+          SECRET="$(aws secretsmanager get-secret-value --secret-id "/theouthaven/credential-vault/${TARGET_ENV}/vercel" --query SecretString --output text)"
+          TOKEN="$(printf '%s' "$SECRET" | jq -r '.token // empty')"
+          TEAM="$(printf '%s' "$SECRET" | jq -r '.teamId // empty')"
+          test -n "$TOKEN"
+          echo "::add-mask::$TOKEN"
+          echo "VERCEL_RUNTIME_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "VERCEL_RUNTIME_TEAM_ID=${TEAM:-$VERCEL_TEAM_ID}" >> "$GITHUB_ENV"
+
+      - name: Pull production environment and sync isolated runtime secrets
+        id: runtime-env
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          ADMIN_SECRET_ARN: ${{ steps.foundation.outputs.adminappenvsecretarn }}
+          BUSINESS_SECRET_ARN: ${{ steps.foundation.outputs.businessappenvsecretarn }}
+        run: |
+          set -euo pipefail
+          mkdir -p .vercel
+          jq -n --arg org "$VERCEL_RUNTIME_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
+          ENV_FILE="$RUNNER_TEMP/web-surfaces.env"
+          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment="$TARGET_ENV" --yes --token "$VERCEL_RUNTIME_TOKEN" >/dev/null
+          chmod 600 "$ENV_FILE"
+          ENV_FILE="$ENV_FILE" node - <<'NODE' > "$RUNNER_TEMP/runtime-env.json"
+          const fs = require('fs');
+          const dotenv = require('dotenv');
+          const values = dotenv.parse(fs.readFileSync(process.env.ENV_FILE));
+          delete values.VERCEL_TOKEN;
+          delete values.VERCEL_ACCESS_TOKEN;
+          process.stdout.write(JSON.stringify(values));
+          NODE
+          jq -e 'type == "object" and length > 0' "$RUNNER_TEMP/runtime-env.json" >/dev/null
+          aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN" --secret-string "file://$RUNNER_TEMP/runtime-env.json" >/dev/null
+          aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN" --secret-string "file://$RUNNER_TEMP/runtime-env.json" >/dev/null
+          echo "env_file=$ENV_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to ECR
+        env:
+          REPOSITORY_URI: ${{ steps.foundation.outputs.ecrrepositoryuri }}
+        run: |
+          set -euo pipefail
+          REGISTRY="${REPOSITORY_URI%%/*}"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+
+      - name: Build and push immutable application image
+        id: image
+        env:
+          REPOSITORY_URI: ${{ steps.foundation.outputs.ecrrepositoryuri }}
+          ENV_FILE: ${{ steps.runtime-env.outputs.env_file }}
+        run: |
+          set -euo pipefail
+          IMAGE_URI="${REPOSITORY_URI}:${GITHUB_SHA}"
+          docker build \
+            --file "$DOCKERFILE" \
+            --secret "id=platform_env,src=$ENV_FILE" \
+            --tag "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy independent Admin and Business services
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          DESIRED_COUNT: ${{ steps.config.outputs.desired_count }}
+          STACK: ${{ steps.config.outputs.services_stack }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          CLUSTER: ${{ steps.foundation.outputs.ecsclustername }}
+          SUBNETS: ${{ steps.foundation.outputs.subnetids }}
+          SG: ${{ steps.foundation.outputs.tasksecuritygroupid }}
+          ADMIN_TG: ${{ steps.foundation.outputs.admintargetgrouparn }}
+          BUSINESS_TG: ${{ steps.foundation.outputs.businesstargetgrouparn }}
+          EXEC_ROLE: ${{ steps.foundation.outputs.taskexecutionrolearn }}
+          ADMIN_ROLE: ${{ steps.foundation.outputs.admintaskrolearn }}
+          BUSINESS_ROLE: ${{ steps.foundation.outputs.businesstaskrolearn }}
+          ADMIN_LOG: ${{ steps.foundation.outputs.adminloggroupname }}
+          BUSINESS_LOG: ${{ steps.foundation.outputs.businessloggroupname }}
+          ADMIN_ENV: ${{ steps.foundation.outputs.adminappenvsecretarn }}
+          BUSINESS_ENV: ${{ steps.foundation.outputs.businessappenvsecretarn }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name "$STACK" \
+            --template-file "$SERVICES_TEMPLATE" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              Environment="$TARGET_ENV" ClusterName="$CLUSTER" SubnetIds="$SUBNETS" \
+              TaskSecurityGroupId="$SG" AdminTargetGroupArn="$ADMIN_TG" BusinessTargetGroupArn="$BUSINESS_TG" \
+              TaskExecutionRoleArn="$EXEC_ROLE" AdminTaskRoleArn="$ADMIN_ROLE" BusinessTaskRoleArn="$BUSINESS_ROLE" \
+              AdminLogGroupName="$ADMIN_LOG" BusinessLogGroupName="$BUSINESS_LOG" \
+              AdminAppEnvSecretArn="$ADMIN_ENV" BusinessAppEnvSecretArn="$BUSINESS_ENV" \
+              ImageUri="$IMAGE_URI" GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT" \
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
+
+      - name: Wait for stable services
+        if: steps.config.outputs.desired_count != '0'
+        env:
+          CLUSTER: ${{ steps.foundation.outputs.ecsclustername }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "toh-${TARGET_ENV}-admin-web" "toh-${TARGET_ENV}-business-web"
+
+      - name: Direct-origin smoke test
+        if: steps.config.outputs.desired_count != '0'
+        env:
+          ORIGIN: ${{ steps.foundation.outputs.loadbalancerdnsname }}
+        run: |
+          set -euo pipefail
+          for surface in admin business; do
+            HOST="${surface}.theouthaven.com"
+            BODY="$(curl --fail --silent --show-error --max-time 20 -H "Host: $HOST" "http://$ORIGIN/api/health/platform-dr")"
+            printf '%s' "$BODY" | jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' >/dev/null
+          done
+          echo 'Admin and Business AWS origins are healthy. DNS/public routing has not been changed by this workflow.'
