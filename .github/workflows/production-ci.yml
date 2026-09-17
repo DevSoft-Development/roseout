@@ -79,7 +79,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "pull_request" ]; then
-            for key in security search reserve billing beta location; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
+            for key in security search reserve billing beta location; do
+              echo "$key=true" >> "$GITHUB_OUTPUT"
+            done
             exit 0
           fi
 
@@ -87,8 +89,11 @@ jobs:
           printf '%s\n' "$CHANGED"
 
           matches() { printf '%s\n' "$CHANGED" | grep -Eq "$1"; }
+
           all=false
-          if matches '^(package(-lock)?\.json|tsconfig.*\.json|\.github/workflows/production-ci\.yml)$'; then all=true; fi
+          if matches '^(package(-lock)?\.json)$'; then
+            all=true
+          fi
 
           security=false
           search=false
@@ -97,7 +102,7 @@ jobs:
           beta=false
           location=false
 
-          if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/)'; then security=true; fi
+          if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/|apps/admin/|packages/(auth|db|config)/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
           if [ "$all" = true ] || matches '^(lib/reserve/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
           if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe)|scripts/billing-production-regression\.mjs$)'; then billing=true; fi
@@ -200,8 +205,9 @@ jobs:
             echo 'run=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json|\.github/workflows/production-ci\.yml)'; then
+          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|apps/consumer/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json)'; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run=false' >> "$GITHUB_OUTPUT"

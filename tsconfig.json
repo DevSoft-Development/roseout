@@ -55,6 +55,8 @@
     "**/*.test.mts",
     "**/*.spec.ts",
     "**/*.spec.tsx",
-    "**/*.spec.mts"
+    "**/*.spec.mts",
+    "apps",
+    "packages"
   ]
 }
