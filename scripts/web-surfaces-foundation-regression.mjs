@@ -66,6 +66,7 @@ for (const permission of [
   '"wafv2:UpdateWebACL"',
   '"wafv2:AssociateWebACL"',
   '"wafv2:GetWebACLForResource"',
+  '"elasticloadbalancing:SetWebACL"',
 ]) {
   if (!policy.includes(permission)) throw new Error(`Web-surface deploy role is missing required permission ${permission}.`);
 }
