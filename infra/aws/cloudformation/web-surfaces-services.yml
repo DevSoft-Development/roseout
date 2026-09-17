@@ -1,0 +1,204 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven independently deployable Admin and Business ECS Fargate services.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  ClusterName:
+    Type: String
+  SubnetIds:
+    Type: CommaDelimitedList
+  TaskSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  AdminTargetGroupArn:
+    Type: String
+  BusinessTargetGroupArn:
+    Type: String
+  TaskExecutionRoleArn:
+    Type: String
+  AdminTaskRoleArn:
+    Type: String
+  BusinessTaskRoleArn:
+    Type: String
+  AdminLogGroupName:
+    Type: String
+  BusinessLogGroupName:
+    Type: String
+  AdminAppEnvSecretArn:
+    Type: String
+  BusinessAppEnvSecretArn:
+    Type: String
+  ImageUri:
+    Type: String
+  GitSha:
+    Type: String
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 4
+
+Resources:
+  AdminTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'toh-${Environment}-admin-web'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref AdminTaskRoleArn
+      ContainerDefinitions:
+        - Name: admin-web
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: PLATFORM_RUNTIME_PROVIDER
+              Value: aws-admin
+            - Name: PLATFORM_RUNTIME_GIT_SHA
+              Value: !Ref GitSha
+            - Name: THEOUTHAVEN_WEB_SURFACE
+              Value: admin
+          Secrets:
+            - Name: RUNTIME_ENV_JSON
+              ValueFrom: !Ref AdminAppEnvSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AdminLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:3000/api/health/platform-dr || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AdminWeb }
+
+  BusinessTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'toh-${Environment}-business-web'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref BusinessTaskRoleArn
+      ContainerDefinitions:
+        - Name: business-web
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: PLATFORM_RUNTIME_PROVIDER
+              Value: aws-business
+            - Name: PLATFORM_RUNTIME_GIT_SHA
+              Value: !Ref GitSha
+            - Name: THEOUTHAVEN_WEB_SURFACE
+              Value: business
+          Secrets:
+            - Name: RUNTIME_ENV_JSON
+              ValueFrom: !Ref BusinessAppEnvSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BusinessLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1:3000/api/health/platform-dr || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: BusinessWeb }
+
+  AdminService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'toh-${Environment}-admin-web'
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref AdminTaskDefinition
+      EnableECSManagedTags: true
+      PropagateTags: SERVICE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 90
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroupId]
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - ContainerName: admin-web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref AdminTargetGroupArn
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AdminWeb }
+
+  BusinessService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'toh-${Environment}-business-web'
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref BusinessTaskDefinition
+      EnableECSManagedTags: true
+      PropagateTags: SERVICE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 90
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroupId]
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - ContainerName: business-web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref BusinessTargetGroupArn
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: BusinessWeb }
+
+Outputs:
+  AdminServiceName:
+    Value: !Sub 'toh-${Environment}-admin-web'
+  BusinessServiceName:
+    Value: !Sub 'toh-${Environment}-business-web'
+  AdminTaskDefinitionArn:
+    Value: !Ref AdminTaskDefinition
+  BusinessTaskDefinitionArn:
+    Value: !Ref BusinessTaskDefinition
