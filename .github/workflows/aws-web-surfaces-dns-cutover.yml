@@ -1,0 +1,377 @@
+name: AWS web surfaces DNS cutover
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-web-surfaces-dns-cutover.yml'
+      - 'scripts/web-surfaces-dns-cutover-regression.mjs'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Plan, cut over traffic, or restore the last saved DNS snapshot'
+        required: true
+        type: choice
+        options:
+          - plan
+          - cutover
+          - rollback
+        default: plan
+      surfaces:
+        description: 'Surface scope for plan/cutover'
+        required: true
+        type: choice
+        options:
+          - both
+          - admin
+          - business
+        default: both
+      confirmation:
+        description: 'Cutover: CUTOVER_ADMIN_BUSINESS. Rollback: ROLLBACK_ADMIN_BUSINESS. Leave blank for plan.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-web-surfaces-dns-cutover-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: theouthaven.com
+  FOUNDATION_STACK: theouthaven-web-surfaces-production
+  SNAPSHOT_PARAMETER: /theouthaven/production/web-surfaces/dns-cutover-last-snapshot
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate DNS cutover safety contract
+        run: node scripts/web-surfaces-dns-cutover-regression.mjs
+
+  execute:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate operator confirmation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          case "$OPERATION" in
+            plan)
+              test -z "$CONFIRMATION" || { echo 'Plan must not include a confirmation token.' >&2; exit 1; }
+              ;;
+            cutover)
+              test "$CONFIRMATION" = 'CUTOVER_ADMIN_BUSINESS' || { echo 'Cutover confirmation token is invalid.' >&2; exit 1; }
+              ;;
+            rollback)
+              test "$CONFIRMATION" = 'ROLLBACK_ADMIN_BUSINESS' || { echo 'Rollback confirmation token is invalid.' >&2; exit 1; }
+              ;;
+            *)
+              echo "Unsupported operation: $OPERATION" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Resolve deployment role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Bootstrap narrowly scoped cutover permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/web-surfaces-dns-cutover-bootstrap.json" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"WebSurfaceDnsCutoverReadWrite",
+                "Effect":"Allow",
+                "Action":[
+                  "route53:ListHostedZones",
+                  "route53:ListResourceRecordSets",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:GetChange",
+                  "cloudformation:DescribeStacks",
+                  "elasticloadbalancing:DescribeLoadBalancers"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Sid":"WebSurfaceDnsSnapshot",
+                "Effect":"Allow",
+                "Action":["ssm:GetParameter","ssm:PutParameter"],
+                "Resource":"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter${SNAPSHOT_PARAMETER}"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebSurfaceDnsCutoverBootstrap \
+            --policy-document "file://$RUNNER_TEMP/web-surfaces-dns-cutover-bootstrap.json"
+          sleep 8
+
+      - name: Resolve production DNS and ALB target
+        id: target
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/hosted-zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${DOMAIN_NAME}." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/hosted-zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID" || { echo "Public Route 53 hosted zone for $DOMAIN_NAME was not found." >&2; exit 1; }
+
+          ALB_DNS="$(aws cloudformation describe-stacks \
+            --stack-name "$FOUNDATION_STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerDnsName'].OutputValue | [0]" \
+            --output text)"
+          test -n "$ALB_DNS" && test "$ALB_DNS" != None || { echo 'Foundation ALB DNS output is missing.' >&2; exit 1; }
+
+          aws elbv2 describe-load-balancers > "$RUNNER_TEMP/load-balancers.json"
+          ALB_ZONE_ID="$(jq -r --arg dns "$ALB_DNS" '[.LoadBalancers[] | select(.DNSName==$dns)][0].CanonicalHostedZoneId // empty' "$RUNNER_TEMP/load-balancers.json")"
+          test -n "$ALB_ZONE_ID" || { echo 'Could not resolve the ALB canonical hosted zone ID.' >&2; exit 1; }
+
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS" >> "$GITHUB_OUTPUT"
+          echo "alb_zone_id=$ALB_ZONE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify isolated AWS origins before DNS changes
+        if: inputs.operation != 'rollback'
+        env:
+          ALB_DNS: ${{ steps.target.outputs.alb_dns }}
+          SURFACES: ${{ inputs.surfaces }}
+        run: |
+          set -euo pipefail
+          verify_surface() {
+            local surface="$1"
+            local host="${surface}.theouthaven.com"
+            local body
+            body="$(curl --fail --silent --show-error --max-time 20 \
+              --connect-to "${host}:443:${ALB_DNS}:443" \
+              "https://${host}/api/health/platform-dr")"
+            printf '%s' "$body" | jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' >/dev/null
+          }
+          case "$SURFACES" in
+            admin) verify_surface admin ;;
+            business) verify_surface business ;;
+            both) verify_surface admin; verify_surface business ;;
+          esac
+
+      - name: Capture current DNS state
+        if: inputs.operation != 'rollback'
+        id: snapshot
+        env:
+          HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
+          SURFACES: ${{ inputs.surfaces }}
+        run: |
+          set -euo pipefail
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/current-records.json"
+          python - <<'PY'
+          import json, os
+          scope = os.environ['SURFACES']
+          selected = ['admin', 'business'] if scope == 'both' else [scope]
+          names = {f'{surface}.theouthaven.com.' for surface in selected}
+          current = json.load(open(os.environ['RUNNER_TEMP'] + '/current-records.json'))['ResourceRecordSets']
+          records = [row for row in current if row.get('Name') in names]
+          for row in records:
+              if row.get('SetIdentifier') or row.get('Failover') or row.get('GeoLocation') or row.get('Region') or row.get('MultiValueAnswer'):
+                  raise SystemExit(f"Refusing policy-based DNS record: {row.get('Name')} {row.get('Type')}")
+              if row.get('Type') not in {'A', 'AAAA', 'CNAME'}:
+                  raise SystemExit(f"Refusing unexpected application DNS record type: {row.get('Name')} {row.get('Type')}")
+          snapshot = {'surfaces': selected, 'records': records}
+          raw = json.dumps(snapshot, separators=(',', ':'))
+          if len(raw.encode()) > 3500:
+              raise SystemExit('DNS snapshot is unexpectedly large for safe SSM storage.')
+          open(os.environ['RUNNER_TEMP'] + '/dns-snapshot.json', 'w').write(raw)
+          print(json.dumps(snapshot, indent=2))
+          PY
+
+      - name: Save rollback snapshot
+        if: inputs.operation == 'cutover'
+        run: |
+          set -euo pipefail
+          aws ssm put-parameter \
+            --name "$SNAPSHOT_PARAMETER" \
+            --type String \
+            --overwrite \
+            --value "$(cat "$RUNNER_TEMP/dns-snapshot.json")" >/dev/null
+          echo 'Saved the exact pre-cutover DNS state for rollback.'
+
+      - name: Show cutover plan
+        if: inputs.operation == 'plan'
+        env:
+          ALB_DNS: ${{ steps.target.outputs.alb_dns }}
+          SURFACES: ${{ inputs.surfaces }}
+        run: |
+          set -euo pipefail
+          echo "Plan only. No DNS changes will be made."
+          echo "Surface scope: $SURFACES"
+          echo "Target ALB: $ALB_DNS"
+          echo 'Current selected DNS state:'
+          cat "$RUNNER_TEMP/dns-snapshot.json" | jq .
+
+      - name: Build Route 53 cutover change
+        if: inputs.operation == 'cutover'
+        env:
+          ALB_DNS: ${{ steps.target.outputs.alb_dns }}
+          ALB_ZONE_ID: ${{ steps.target.outputs.alb_zone_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          snapshot = json.load(open(os.environ['RUNNER_TEMP'] + '/dns-snapshot.json'))
+          changes = []
+          for row in snapshot['records']:
+              changes.append({'Action': 'DELETE', 'ResourceRecordSet': row})
+          for surface in snapshot['surfaces']:
+              changes.append({
+                  'Action': 'CREATE',
+                  'ResourceRecordSet': {
+                      'Name': f'{surface}.theouthaven.com.',
+                      'Type': 'A',
+                      'AliasTarget': {
+                          'HostedZoneId': os.environ['ALB_ZONE_ID'],
+                          'DNSName': os.environ['ALB_DNS'],
+                          'EvaluateTargetHealth': True,
+                      },
+                  },
+              })
+          json.dump({'Comment': 'TheOutHaven isolated Admin/Business AWS cutover', 'Changes': changes}, open(os.environ['RUNNER_TEMP'] + '/dns-cutover-change.json', 'w'))
+          PY
+
+      - name: Apply Route 53 cutover
+        if: inputs.operation == 'cutover'
+        id: apply
+        env:
+          HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          CHANGE_ID="$(aws route53 change-resource-record-sets \
+            --hosted-zone-id "$HOSTED_ZONE_ID" \
+            --change-batch "file://$RUNNER_TEMP/dns-cutover-change.json" \
+            --query 'ChangeInfo.Id' --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo "Route 53 cutover change completed: $CHANGE_ID"
+
+      - name: Verify public DNS and HTTPS after cutover
+        if: inputs.operation == 'cutover'
+        env:
+          SURFACES: ${{ inputs.surfaces }}
+        run: |
+          set -euo pipefail
+          verify_public() {
+            local surface="$1"
+            local host="${surface}.theouthaven.com"
+            local expected="aws-${surface}"
+            for attempt in $(seq 1 20); do
+              body="$(curl --silent --show-error --max-time 20 "https://${host}/api/health/platform-dr" || true)"
+              if printf '%s' "$body" | jq -e --arg provider "$expected" '.ok == true and .provider == $provider' >/dev/null 2>&1; then
+                echo "$host is publicly serving $expected"
+                return 0
+              fi
+              sleep 15
+            done
+            echo "$host did not converge to $expected within the validation window." >&2
+            return 1
+          }
+          case "$SURFACES" in
+            admin) verify_public admin ;;
+            business) verify_public business ;;
+            both) verify_public admin; verify_public business ;;
+          esac
+
+          admin_location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://admin.theouthaven.com/auth/admin/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
+          case "$admin_location" in https://admin.theouthaven.com/admin/login*) ;; *) echo "Admin callback boundary failed after cutover: $admin_location" >&2; exit 1;; esac
+
+          business_location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://business.theouthaven.com/auth/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
+          case "$business_location" in https://business.theouthaven.com/login*) ;; *) echo "Business callback boundary failed after cutover: $business_location" >&2; exit 1;; esac
+
+      - name: Restore saved DNS automatically after failed cutover validation
+        if: failure() && inputs.operation == 'cutover' && steps.apply.outputs.changed == 'true'
+        env:
+          HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          aws ssm get-parameter --name "$SNAPSHOT_PARAMETER" --query Parameter.Value --output text > "$RUNNER_TEMP/rollback-snapshot.json"
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/rollback-current.json"
+          python - <<'PY'
+          import json, os
+          snapshot = json.load(open(os.environ['RUNNER_TEMP'] + '/rollback-snapshot.json'))
+          current = json.load(open(os.environ['RUNNER_TEMP'] + '/rollback-current.json'))['ResourceRecordSets']
+          names = {f"{surface}.theouthaven.com." for surface in snapshot['surfaces']}
+          current_selected = [row for row in current if row.get('Name') in names and row.get('Type') in {'A','AAAA','CNAME'}]
+          changes = [{'Action':'DELETE','ResourceRecordSet':row} for row in current_selected]
+          changes.extend({'Action':'CREATE','ResourceRecordSet':row} for row in snapshot['records'])
+          json.dump({'Comment':'Automatic rollback after failed TheOutHaven web-surface cutover validation','Changes':changes}, open(os.environ['RUNNER_TEMP'] + '/automatic-rollback.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/automatic-rollback.json" --query 'ChangeInfo.Id' --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo "Automatic DNS rollback completed: $CHANGE_ID"
+
+      - name: Restore last saved DNS snapshot
+        if: inputs.operation == 'rollback'
+        env:
+          HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          aws ssm get-parameter --name "$SNAPSHOT_PARAMETER" --query Parameter.Value --output text > "$RUNNER_TEMP/rollback-snapshot.json"
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/rollback-current.json"
+          python - <<'PY'
+          import json, os
+          snapshot = json.load(open(os.environ['RUNNER_TEMP'] + '/rollback-snapshot.json'))
+          current = json.load(open(os.environ['RUNNER_TEMP'] + '/rollback-current.json'))['ResourceRecordSets']
+          names = {f"{surface}.theouthaven.com." for surface in snapshot['surfaces']}
+          selected = [row for row in current if row.get('Name') in names and row.get('Type') in {'A','AAAA','CNAME'}]
+          for row in selected:
+              if row.get('SetIdentifier') or row.get('Failover') or row.get('GeoLocation') or row.get('Region') or row.get('MultiValueAnswer'):
+                  raise SystemExit('Refusing to rollback over a policy-based DNS record.')
+          changes = [{'Action':'DELETE','ResourceRecordSet':row} for row in selected]
+          changes.extend({'Action':'CREATE','ResourceRecordSet':row} for row in snapshot['records'])
+          if not changes:
+              raise SystemExit('Saved snapshot contains no DNS change to restore.')
+          json.dump({'Comment':'Operator-requested TheOutHaven web-surface DNS rollback','Changes':changes}, open(os.environ['RUNNER_TEMP'] + '/manual-rollback.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/manual-rollback.json" --query 'ChangeInfo.Id' --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo "Manual DNS rollback completed: $CHANGE_ID"
+
+      - name: Remove temporary cutover permissions
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenWebSurfaceDnsCutoverBootstrap || true
