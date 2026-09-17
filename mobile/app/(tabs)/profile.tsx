@@ -19,6 +19,10 @@ type MePayload = {
     email: string | null;
     phone: string | null;
     birthMonth: number | null;
+    homeNeighborhood: string | null;
+    homeBorough: string | null;
+    homeCity: string | null;
+    homeState: string | null;
     smsConsent: boolean;
   };
 };
@@ -61,6 +65,14 @@ export default function ProfileScreen() {
   const displayEmail = user?.email || profile?.email || "TheOutHaven member";
   const displayName = profile?.firstName || displayEmail;
   const initials = displayName.slice(0, 1).toUpperCase();
+  const neighborhoodLabel = profile?.homeNeighborhood
+    ? [
+        profile.homeNeighborhood,
+        profile.homeBorough,
+        profile.homeCity && profile.homeCity !== profile.homeBorough ? profile.homeCity : null,
+        profile.homeState,
+      ].filter(Boolean).join(", ")
+    : "Not set";
 
   return (
     <ScrollView style={[styles.page, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.content, { paddingHorizontal: theme.spacing.lg }]} showsVerticalScrollIndicator={false}>
@@ -83,7 +95,8 @@ export default function ProfileScreen() {
               {profile?.phone ? <AppText variant="caption" muted style={{ marginTop: 4 }}>{profile.phone}</AppText> : null}
             </View>
           </View>
-          <View style={[styles.profileMeta, { borderTopColor: theme.colors.border }]}> 
+          <View style={[styles.profileMeta, { borderTopColor: theme.colors.border }]}>
+            <Meta label="Home neighborhood" value={neighborhoodLabel} accent={Boolean(profile?.homeNeighborhood)} wide />
             <Meta label="Birth month" value={profile?.birthMonth ? MONTHS[profile.birthMonth - 1] : "Not set"} />
             <Meta label="SMS updates" value={profile?.smsConsent ? "On" : "Off"} accent={Boolean(profile?.smsConsent)} />
           </View>
@@ -127,8 +140,8 @@ export default function ProfileScreen() {
   );
 }
 
-function Meta({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return <View style={styles.meta}><AppText variant="caption" muted>{label}</AppText><AppText variant="bodyStrong" accent={accent}>{value}</AppText></View>;
+function Meta({ label, value, accent = false, wide = false }: { label: string; value: string; accent?: boolean; wide?: boolean }) {
+  return <View style={[styles.meta, wide && styles.metaWide]}><AppText variant="caption" muted>{label}</AppText><AppText variant="bodyStrong" accent={accent}>{value}</AppText></View>;
 }
 
 function MenuRow({ title, subtitle, icon, onPress, disabled = false }: { title: string; subtitle: string; icon: string; onPress: () => void; disabled?: boolean }) {
@@ -151,7 +164,7 @@ const styles = StyleSheet.create({
   page: { flex: 1 }, content: { paddingTop: 18, paddingBottom: 118, gap: 20 },
   heading: { gap: 8, paddingTop: 8 }, copy: { lineHeight: 22 },
   identityRow: { flexDirection: "row", alignItems: "center", gap: 14 }, avatar: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" },
-  profileMeta: { flexDirection: "row", marginTop: 18, paddingTop: 16, borderTopWidth: 1, gap: 28 }, meta: { gap: 3 },
+  profileMeta: { flexDirection: "row", flexWrap: "wrap", marginTop: 18, paddingTop: 16, borderTopWidth: 1, gap: 18 }, meta: { gap: 3 }, metaWide: { width: "100%" },
   cardCopy: { marginTop: 8, lineHeight: 21 }, authActions: { marginTop: 18, gap: 10 },
   section: { gap: 10 }, menu: { borderWidth: 1, borderRadius: 22, overflow: "hidden" }, menuRow: { minHeight: 72, paddingHorizontal: 15, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 12 },
   menuIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" }, chevron: { fontSize: 27, lineHeight: 29 }, divider: { height: StyleSheet.hairlineWidth, marginLeft: 65 },
