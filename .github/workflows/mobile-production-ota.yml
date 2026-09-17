@@ -91,15 +91,26 @@ jobs:
             exit 1
           fi
 
-      - name: Publish production OTA update
+      - name: Publish production OTA update to iOS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
         run: >-
           npx --yes eas-cli@latest update
           --channel production
-          --message "Production OTA ${{ github.sha }}"
-          --non-interactive
+          --platform ios
+          --message "Production OTA iOS ${{ github.sha }}"
+
+      - name: Publish production OTA update to Android
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+        run: >-
+          npx --yes eas-cli@latest update
+          --channel production
+          --platform android
+          --message "Production OTA Android ${{ github.sha }}"
 
       - name: Record release
         run: |
-          echo "Published ${{ github.sha }} to the production EAS Update channel." >> "$GITHUB_STEP_SUMMARY"
+          echo "Published ${{ github.sha }} to the production EAS Update channel for iOS and Android." >> "$GITHUB_STEP_SUMMARY"
