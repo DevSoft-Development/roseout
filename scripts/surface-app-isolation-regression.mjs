@@ -215,6 +215,17 @@ if (!productionCi.includes("grep -Evq '^(apps/admin/|packages/(auth|db|config)/|
   throw new Error("Production CI must reserve the fast quality lane for isolated Admin/shared-boundary changes only.");
 }
 
+const surfaceIsolationWorkflow = read(".github/workflows/surface-app-isolation-foundation.yml");
+if (!surfaceIsolationWorkflow.includes("Detect surface scope")) {
+  throw new Error("Surface isolation workflow must target builds to changed surfaces.");
+}
+if (!surfaceIsolationWorkflow.includes("No changes require the")) {
+  throw new Error("Surface isolation workflow must preserve successful skipped-surface jobs.");
+}
+if (!surfaceIsolationWorkflow.includes("apps/\\${SURFACE}/") && !surfaceIsolationWorkflow.includes('^apps/${SURFACE}/')) {
+  throw new Error("Surface isolation workflow must detect per-surface app changes.");
+}
+
 const rootTsconfig = JSON.parse(read("tsconfig.json"));
 for (const excluded of ["apps", "packages"]) {
   if (!rootTsconfig.exclude?.includes(excluded)) {
