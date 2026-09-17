@@ -1,0 +1,1 @@
+create index if not exists social_community_conversations_contact_idx on public.social_community_conversations(contact_id);
