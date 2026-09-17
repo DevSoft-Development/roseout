@@ -12,6 +12,12 @@ type SignUpInput = {
   password: string;
   phone: string;
   birthMonth: number;
+  homeNeighborhood: {
+    neighborhood: string;
+    borough: string | null;
+    city: string | null;
+    state: string | null;
+  };
   smsConsent: boolean;
   captchaToken: string;
 };
@@ -82,6 +88,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             first_name: input.firstName.trim(),
             phone_e164: input.phone,
             birth_month: input.birthMonth,
+            home_neighborhood: input.homeNeighborhood.neighborhood,
+            home_borough: input.homeNeighborhood.borough,
+            home_city: input.homeNeighborhood.city,
+            home_state: input.homeNeighborhood.state,
             sms_consent: input.smsConsent,
             sms_consent_text: input.smsConsent ? SMS_CONSENT_TEXT : null,
             signup_source: "mobile_app",
