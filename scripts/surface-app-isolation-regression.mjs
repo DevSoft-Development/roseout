@@ -5,7 +5,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const surfaces = ["consumer", "admin", "business"];
-const sharedPackages = ["auth", "config"];
+const sharedPackages = ["auth", "config", "db"];
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
@@ -62,6 +62,21 @@ if (!adminLogin.includes("@theouthaven/auth/browser-client") || !adminLogin.incl
   throw new Error("Admin login must consume the shared auth package boundary.");
 }
 
+const adminCallback = read("apps/admin/app/auth/admin/callback/route.ts");
+for (const dependency of [
+  "@theouthaven/auth/server-client",
+  "@theouthaven/auth/admin-roles",
+  "@theouthaven/config/web-surface-origin",
+  "@theouthaven/db/admin-client",
+]) {
+  if (!adminCallback.includes(dependency)) {
+    throw new Error(`Admin OAuth callback must consume shared dependency: ${dependency}`);
+  }
+}
+if (adminCallback.includes("@/lib/supabase") || adminCallback.includes("@/lib/users/roles")) {
+  throw new Error("Admin OAuth callback must not depend on root monolith auth/database modules.");
+}
+
 const pkg = JSON.parse(read("package.json"));
 for (const surface of surfaces) {
   const key = `build:surface:${surface}`;
@@ -70,4 +85,4 @@ for (const surface of surfaces) {
   }
 }
 
-console.log("Surface app isolation and shared package regression passed.");
+console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
