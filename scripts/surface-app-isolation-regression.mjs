@@ -124,6 +124,28 @@ if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavig
   throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
 }
 
+const platformLogsPage = read("apps/admin/app/admin/dashboard/logs/page.tsx");
+if (!platformLogsPage.includes("@theouthaven/auth/admin-session") || !platformLogsPage.includes("@/lib/admin-logs")) {
+  throw new Error("Platform Logs page must use isolated Admin auth and data loader.");
+}
+if (platformLogsPage.includes("@/lib/supabase") || platformLogsPage.includes("@/lib/admin-auth")) {
+  throw new Error("Platform Logs page must not import root monolith auth/database modules.");
+}
+
+const platformLogsApi = read("apps/admin/app/api/admin/logs/route.ts");
+if (!platformLogsApi.includes("@theouthaven/auth/admin-session") || !platformLogsApi.includes("@/lib/admin-logs")) {
+  throw new Error("Platform Logs API must use isolated Admin auth and data loader.");
+}
+
+const platformLogsLoader = read("apps/admin/lib/admin-logs.ts");
+if (!platformLogsLoader.includes("@theouthaven/db/admin-client") || platformLogsLoader.includes("@/lib/")) {
+  throw new Error("Platform Logs data loader must use the shared DB package and avoid root lib imports.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/logs")) {
+  throw new Error("Platform Logs navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
