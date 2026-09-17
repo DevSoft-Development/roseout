@@ -34,6 +34,10 @@ requireText(workflow, '/theouthaven/${TARGET_ENV}/edge-runtime/env', 'AWS web su
 requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy credentials must not be copied into ECS runtime secrets.');
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN"');
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN"');
+requireText(workflow, 'Build or reuse immutable application image');
+requireText(workflow, 'aws ecr describe-images', 'Immutable ECR tags must be checked before push so workflow reruns are idempotent.');
+requireText(workflow, '--image-ids imageTag="$GITHUB_SHA"', 'ECR reuse must be keyed by the immutable Git SHA tag.');
+requireText(workflow, 'Reusing existing immutable ECR image for ${GITHUB_SHA}.');
 requireText(workflow, 'docker push "$IMAGE_URI"');
 requireText(workflow, 'Recover failed services stack');
 requireText(workflow, 'ROLLBACK_COMPLETE');
