@@ -26,8 +26,8 @@ test.describe("public planner routing", () => {
     await submit.click();
 
     await expect(page).toHaveURL(/step=2/);
-    await expect(page.getByText("MAKE IT YOURS")).toBeVisible();
-    await expect(page.getByText("Step 2 of 4")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Make it yours." })).toBeVisible();
+    await expect(page.getByText("Step 2 of 4", { exact: true })).toBeVisible();
   });
 
   test("Create Outing returns to the homepage planner", async ({ page }) => {
