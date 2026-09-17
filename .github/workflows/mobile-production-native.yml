@@ -1,0 +1,80 @@
+name: Mobile production native build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - mobile/app.json
+      - mobile/eas.json
+      - mobile/package.json
+      - mobile/package-lock.json
+      - mobile/assets/**
+      - mobile/plugins/**
+      - mobile/ios/**
+      - mobile/android/**
+      - mobile/.eas/workflows/build-production.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-production-native-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  eas-production:
+    name: EAS iOS + Android production build and submit
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify Expo credential is configured
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "EXPO_TOKEN is not configured for this repository." >&2
+            exit 1
+          fi
+
+      - name: Run EAS production workflow and wait for completion
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes eas-cli@latest workflow:run .eas/workflows/build-production.yml \
+            --ref "${GITHUB_SHA}" \
+            --non-interactive \
+            --wait \
+            --json | tee "$RUNNER_TEMP/eas-production-workflow.json"
+
+      - name: Publish EAS result to GitHub job summary
+        if: always()
+        run: |
+          {
+            echo "## Expo EAS production workflow"
+            echo
+            echo "Commit: \`${GITHUB_SHA}\`"
+            echo
+            if [ -f "$RUNNER_TEMP/eas-production-workflow.json" ]; then
+              echo '```json'
+              cat "$RUNNER_TEMP/eas-production-workflow.json"
+              echo
+              echo '```'
+            else
+              echo "EAS did not return a workflow result. Check the preceding step for the failure reason."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
