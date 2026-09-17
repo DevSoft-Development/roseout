@@ -58,7 +58,8 @@ test.describe("public product readiness", () => {
     await submit.click();
 
     await expect(page).toHaveURL(/\/create\?.*step=2/);
-    expect(decodeURIComponent(page.url())).toContain("Italian dinner and comedy in Manhattan");
+    const plannerUrl = new URL(page.url());
+    expect(plannerUrl.searchParams.get("prompt")).toBe("Italian dinner and comedy in Manhattan");
   });
 
   test("Explore is directly reachable from the homepage", async ({ page }) => {
