@@ -74,14 +74,23 @@ jobs:
         env:
           CRITICAL_SMS_FROM: ${{ vars.CRITICAL_ALERT_SMS_FROM }}
           CRITICAL_SMS_TO: ${{ vars.CRITICAL_ALERT_SMS_TO }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
+          CONFIGURED_JOB_GATEWAY_URL: ${{ vars.AWS_PLATFORM_JOB_GATEWAY_URL }}
         run: |
           set -euo pipefail
           TOPIC_ARN="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
           DR_SECRET_ARN="$(aws secretsmanager describe-secret --secret-id /theouthaven/production/dr-reconciler/env --query ARN --output text)"
+          JOB_GATEWAY_URL="${CONFIGURED_JOB_GATEWAY_URL:-}"
+          if [ -z "$JOB_GATEWAY_URL" ]; then
+            JOB_GATEWAY_URL="$(aws lambda get-function-url-config --function-name toh-production-platform-job-gateway --query FunctionUrl --output text)"
+          fi
           test -n "$TOPIC_ARN" && test "$TOPIC_ARN" != None
           test -n "$DR_SECRET_ARN" && test "$DR_SECRET_ARN" != None
+          test -n "$JOB_GATEWAY_URL" && test "$JOB_GATEWAY_URL" != None
+          test -n "$JOB_GATEWAY_SECRET" || { echo 'Missing AWS_PLATFORM_JOB_GATEWAY_SECRET.' >&2; exit 1; }
           echo "topic_arn=$TOPIC_ARN" >> "$GITHUB_OUTPUT"
           echo "dr_secret_arn=$DR_SECRET_ARN" >> "$GITHUB_OUTPUT"
+          echo "job_gateway_url=${JOB_GATEWAY_URL%/}" >> "$GITHUB_OUTPUT"
           if [ -n "${CRITICAL_SMS_FROM:-}" ] && [ -n "${CRITICAL_SMS_TO:-}" ]; then
             echo 'SMS escalation routing is configured.' >> "$GITHUB_STEP_SUMMARY"
           else
@@ -106,6 +115,8 @@ jobs:
           DR_SECRET_ARN: ${{ steps.config.outputs.dr_secret_arn }}
           CRITICAL_SMS_FROM: ${{ vars.CRITICAL_ALERT_SMS_FROM }}
           CRITICAL_SMS_TO: ${{ vars.CRITICAL_ALERT_SMS_TO }}
+          JOB_GATEWAY_URL: ${{ steps.config.outputs.job_gateway_url }}
+          JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
         run: |
           set -euo pipefail
           aws cloudformation deploy \
@@ -119,6 +130,8 @@ jobs:
               DrSecretArn="$DR_SECRET_ARN" \
               CriticalSmsFrom="${CRITICAL_SMS_FROM:-}" \
               CriticalSmsTo="${CRITICAL_SMS_TO:-}" \
+              CredentialVaultGatewayUrl="$JOB_GATEWAY_URL" \
+              CredentialVaultGatewaySecret="$JOB_GATEWAY_SECRET" \
             --tags Project=TheOutHaven Environment=production Service=CriticalAlerting
 
       - name: Show CloudFormation failure events
@@ -148,7 +161,7 @@ jobs:
           set -euo pipefail
           aws lambda invoke --function-name toh-production-critical-platform-monitor --payload '{}' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
           jq -e '.ok == true or .ok == false' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
-          jq '{ok,productionReachable,replicationHealthy,storage,replication}' "$RUNNER_TEMP/critical-monitor.json" >> "$GITHUB_STEP_SUMMARY"
+          jq '{ok,productionReachable,supabase,replicationHealthy,credentialVaultHealthy,vercel,criticalCronFailures,storage,replication}' "$RUNNER_TEMP/critical-monitor.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify critical alarms and subscriptions
         run: |
