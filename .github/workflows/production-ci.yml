@@ -27,8 +27,66 @@ env:
   OPENAI_API_KEY: dummy_openai_key
 
 jobs:
+  scope:
+    name: Detect affected services
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.domains.outputs.web }}
+      consumer: ${{ steps.domains.outputs.consumer }}
+      admin: ${{ steps.domains.outputs.admin }}
+      business: ${{ steps.domains.outputs.business }}
+      reserve: ${{ steps.domains.outputs.reserve }}
+      workers: ${{ steps.domains.outputs.workers }}
+      mobile: ${{ steps.domains.outputs.mobile }}
+      infrastructure: ${{ steps.domains.outputs.infrastructure }}
+      shared: ${{ steps.domains.outputs.shared }}
+      docs_only: ${{ steps.domains.outputs.docs_only }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test service-boundary classifier
+        run: node --test scripts/ci-service-domains.test.mjs
+
+      - name: Detect affected service boundaries
+        id: domains
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            node scripts/ci-service-domains.mjs "$BASE_SHA" "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
+          else
+            for key in web consumer admin business reserve workers mobile infrastructure shared; do
+              echo "$key=true" >> "$GITHUB_OUTPUT"
+            done
+            echo 'docs_only=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report service boundaries
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ### Service-boundary CI
+          - Web: ${{ steps.domains.outputs.web }}
+          - Consumer: ${{ steps.domains.outputs.consumer }}
+          - Admin: ${{ steps.domains.outputs.admin }}
+          - Business: ${{ steps.domains.outputs.business }}
+          - Reserve: ${{ steps.domains.outputs.reserve }}
+          - Workers: ${{ steps.domains.outputs.workers }}
+          - Mobile: ${{ steps.domains.outputs.mobile }}
+          - AWS infrastructure: ${{ steps.domains.outputs.infrastructure }}
+          - Shared: ${{ steps.domains.outputs.shared }}
+          - Docs only: ${{ steps.domains.outputs.docs_only }}
+          EOF
+
   quality:
     name: Typecheck, lint, build, and audit
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -62,6 +120,7 @@ jobs:
 
   regressions:
     name: Business-critical regressions
+    needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -88,7 +147,7 @@ jobs:
 
           matches() { printf '%s\n' "$CHANGED" | grep -Eq "$1"; }
           all=false
-          if matches '^(package(-lock)?\.json|tsconfig.*\.json|\.github/workflows/production-ci\.yml)$'; then all=true; fi
+          if matches '^(package(-lock)?\.json|tsconfig.*\.json|\.github/workflows/production-ci\.yml|scripts/ci-service-domains(?:\.test)?\.mjs)$'; then all=true; fi
 
           security=false
           search=false
@@ -99,7 +158,7 @@ jobs:
 
           if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
-          if [ "$all" = true ] || matches '^(lib/reserve/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
+          if [ "$all" = true ] || matches '^(lib/(reserve|reservations)/|app/api/reserve/|app/reserve/|components/reserve/)'; then reserve=true; fi
           if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe)|scripts/billing-production-regression\.mjs$)'; then billing=true; fi
           if [ "$all" = true ] || matches '^(lib/beta/|app/api/beta/|app/beta/|scripts/.*beta)'; then beta=true; fi
           if [ "$all" = true ] || matches '^(lib/locations/|app/api/locations/|app/locations/|components/.*location)'; then location=true; fi
@@ -178,8 +237,10 @@ jobs:
   e2e:
     name: Required browser smoke tests
     needs:
+      - scope
       - quality
       - regressions
+    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
