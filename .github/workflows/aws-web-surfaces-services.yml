@@ -134,20 +134,12 @@ jobs:
           RAW_JSON="$RUNNER_TEMP/runtime-env.raw.json"
           RUNTIME_JSON="$RUNNER_TEMP/runtime-env.json"
           ENV_FILE="$RUNNER_TEMP/web-surfaces.env"
-
-          aws secretsmanager get-secret-value \
-            --secret-id "$RUNTIME_SECRET" \
-            --query SecretString \
-            --output text > "$RAW_JSON"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --query SecretString --output text > "$RAW_JSON"
           jq -e 'type == "object" and length > 0' "$RAW_JSON" >/dev/null
           jq 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)' "$RAW_JSON" > "$RUNTIME_JSON"
           jq -e 'type == "object" and length > 0' "$RUNTIME_JSON" >/dev/null
-
           python3 - "$RUNTIME_JSON" "$ENV_FILE" <<'PY'
-          import json
-          import re
-          import sys
-
+          import json, re, sys
           source, destination = sys.argv[1:3]
           values = json.load(open(source, encoding='utf-8'))
           key_pattern = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
@@ -167,7 +159,6 @@ jobs:
               handle.write('\n'.join(lines) + '\n')
           PY
           chmod 600 "$ENV_FILE" "$RUNTIME_JSON"
-
           aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN" --secret-string "file://$RUNTIME_JSON" >/dev/null
           aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN" --secret-string "file://$RUNTIME_JSON" >/dev/null
           echo "env_file=$ENV_FILE" >> "$GITHUB_OUTPUT"
@@ -188,10 +179,7 @@ jobs:
         run: |
           set -euo pipefail
           IMAGE_URI="${REPOSITORY_URI}:${GITHUB_SHA}"
-          docker build \
-            --file "$DOCKERFILE" \
-            --secret "id=platform_env,src=$ENV_FILE" \
-            --tag "$IMAGE_URI" .
+          docker build --file "$DOCKERFILE" --secret "id=platform_env,src=$ENV_FILE" --tag "$IMAGE_URI" .
           docker push "$IMAGE_URI"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
@@ -228,6 +216,18 @@ jobs:
               AdminAppEnvSecretArn="$ADMIN_ENV" BusinessAppEnvSecretArn="$BUSINESS_ENV" \
               ImageUri="$IMAGE_URI" GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
+
+      - name: Show CloudFormation service failure events
+        if: failure()
+        env:
+          STACK: ${{ steps.config.outputs.services_stack }}
+        run: |
+          set +e
+          echo 'Recent CloudFormation failure events:'
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK" \
+            --query "StackEvents[?contains(ResourceStatus, 'FAILED') || contains(ResourceStatus, 'ROLLBACK')].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+            --output table
 
       - name: Wait for stable services
         if: steps.config.outputs.desired_count != '0'
