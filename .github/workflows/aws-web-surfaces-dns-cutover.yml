@@ -43,7 +43,7 @@ env:
   AWS_REGION: us-east-1
   DOMAIN_NAME: theouthaven.com
   FOUNDATION_STACK: theouthaven-web-surfaces-production
-  SNAPSHOT_PARAMETER: /theouthaven/production/web-surfaces/dns-cutover-last-snapshot
+  SNAPSHOT_SECRET: theouthaven/production/web-surfaces/dns-cutover-last-snapshot
 
 jobs:
   validate:
@@ -103,44 +103,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-
-      - name: Bootstrap narrowly scoped cutover permissions
-        env:
-          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
-        run: |
-          set -euo pipefail
-          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
-          cat > "$RUNNER_TEMP/web-surfaces-dns-cutover-bootstrap.json" <<JSON
-          {
-            "Version":"2012-10-17",
-            "Statement":[
-              {
-                "Sid":"WebSurfaceDnsCutoverReadWrite",
-                "Effect":"Allow",
-                "Action":[
-                  "route53:ListHostedZones",
-                  "route53:ListResourceRecordSets",
-                  "route53:ChangeResourceRecordSets",
-                  "route53:GetChange",
-                  "cloudformation:DescribeStacks",
-                  "elasticloadbalancing:DescribeLoadBalancers"
-                ],
-                "Resource":"*"
-              },
-              {
-                "Sid":"WebSurfaceDnsSnapshot",
-                "Effect":"Allow",
-                "Action":["ssm:GetParameter","ssm:PutParameter"],
-                "Resource":"arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter${SNAPSHOT_PARAMETER}"
-              }
-            ]
-          }
-          JSON
-          aws iam put-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenWebSurfaceDnsCutoverBootstrap \
-            --policy-document "file://$RUNNER_TEMP/web-surfaces-dns-cutover-bootstrap.json"
-          sleep 8
 
       - name: Resolve production DNS and ALB target
         id: target
@@ -210,7 +172,7 @@ jobs:
           snapshot = {'surfaces': selected, 'records': records}
           raw = json.dumps(snapshot, separators=(',', ':'))
           if len(raw.encode()) > 3500:
-              raise SystemExit('DNS snapshot is unexpectedly large for safe SSM storage.')
+              raise SystemExit('DNS snapshot is unexpectedly large for safe rollback storage.')
           open(os.environ['RUNNER_TEMP'] + '/dns-snapshot.json', 'w').write(raw)
           print(json.dumps(snapshot, indent=2))
           PY
@@ -219,11 +181,17 @@ jobs:
         if: inputs.operation == 'cutover'
         run: |
           set -euo pipefail
-          aws ssm put-parameter \
-            --name "$SNAPSHOT_PARAMETER" \
-            --type String \
-            --overwrite \
-            --value "$(cat "$RUNNER_TEMP/dns-snapshot.json")" >/dev/null
+          SNAPSHOT_VALUE="$(cat "$RUNNER_TEMP/dns-snapshot.json")"
+          if aws secretsmanager describe-secret --secret-id "$SNAPSHOT_SECRET" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value \
+              --secret-id "$SNAPSHOT_SECRET" \
+              --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          else
+            aws secretsmanager create-secret \
+              --name "$SNAPSHOT_SECRET" \
+              --description 'TheOutHaven Admin/Business DNS pre-cutover rollback snapshot' \
+              --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          fi
           echo 'Saved the exact pre-cutover DNS state for rollback.'
 
       - name: Show cutover plan
@@ -322,7 +290,9 @@ jobs:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
         run: |
           set -euo pipefail
-          aws ssm get-parameter --name "$SNAPSHOT_PARAMETER" --query Parameter.Value --output text > "$RUNNER_TEMP/rollback-snapshot.json"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SNAPSHOT_SECRET" \
+            --query SecretString --output text > "$RUNNER_TEMP/rollback-snapshot.json"
           aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/rollback-current.json"
           python - <<'PY'
           import json, os
@@ -344,7 +314,9 @@ jobs:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
         run: |
           set -euo pipefail
-          aws ssm get-parameter --name "$SNAPSHOT_PARAMETER" --query Parameter.Value --output text > "$RUNNER_TEMP/rollback-snapshot.json"
+          aws secretsmanager get-secret-value \
+            --secret-id "$SNAPSHOT_SECRET" \
+            --query SecretString --output text > "$RUNNER_TEMP/rollback-snapshot.json"
           aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/rollback-current.json"
           python - <<'PY'
           import json, os
@@ -364,14 +336,3 @@ jobs:
           CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/manual-rollback.json" --query 'ChangeInfo.Id' --output text)"
           aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
           echo "Manual DNS rollback completed: $CHANGE_ID"
-
-      - name: Remove temporary cutover permissions
-        if: always()
-        env:
-          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
-        run: |
-          set -euo pipefail
-          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
-          aws iam delete-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenWebSurfaceDnsCutoverBootstrap || true
