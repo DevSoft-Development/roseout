@@ -1,0 +1,35 @@
+name: Surface app isolation foundation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'scripts/surface-app-isolation-regression.mjs'
+      - 'package.json'
+      - '.github/workflows/surface-app-isolation-foundation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'scripts/surface-app-isolation-regression.mjs'
+      - 'package.json'
+      - '.github/workflows/surface-app-isolation-foundation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        surface: [consumer, admin, business]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:surface-app-isolation
+      - run: npm run build:surface:${{ matrix.surface }}
