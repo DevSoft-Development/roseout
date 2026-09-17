@@ -246,6 +246,28 @@ jobs:
             --output text >/dev/null
           sleep 8
 
+      - name: Recover failed first-create stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-web-surfaces-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || true)"
+
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Stack $STACK is in ROLLBACK_COMPLETE; deleting failed first-create stack before recreation."
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+            echo "Failed stack deleted; recreation can proceed."
+          elif [ -n "$STATUS" ]; then
+            echo "Stack $STACK is in $STATUS; leaving it intact for normal CloudFormation update handling."
+          else
+            echo "Stack $STACK does not exist yet; normal first creation will proceed."
+          fi
+
       - name: Deploy Admin and Business foundation
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
