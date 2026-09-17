@@ -2,6 +2,7 @@ import {
   Flag,
   Home,
   Mail,
+  MessageSquareText,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
@@ -40,6 +41,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: Flag,
     migrated: true,
     roles: ["superadmin"],
+  },
+  {
+    label: "Reviews",
+    href: "/admin/dashboard/reviews",
+    icon: MessageSquareText,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "experience_team", "viewer"],
   },
   {
     label: "Microsoft 365",
