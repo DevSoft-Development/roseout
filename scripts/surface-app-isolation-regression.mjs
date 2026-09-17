@@ -101,6 +101,29 @@ if (adminCallback.includes("@/lib/supabase") || adminCallback.includes("@/lib/us
   throw new Error("Admin OAuth callback must not depend on root monolith auth/database modules.");
 }
 
+const platformErrorsPage = read("apps/admin/app/admin/dashboard/platform-errors/page.tsx");
+if (!platformErrorsPage.includes('@theouthaven/auth/admin-session') || !platformErrorsPage.includes('@/lib/platform-errors')) {
+  throw new Error("Platform Errors page must use isolated Admin auth and data loader.");
+}
+if (platformErrorsPage.includes("@/lib/supabase") || platformErrorsPage.includes("@/lib/admin-auth")) {
+  throw new Error("Platform Errors page must not import root monolith auth/database modules.");
+}
+
+const platformErrorsApi = read("apps/admin/app/api/admin/platform-errors/route.ts");
+if (!platformErrorsApi.includes("@theouthaven/auth/admin-session") || !platformErrorsApi.includes("@/lib/platform-errors")) {
+  throw new Error("Platform Errors API must use isolated Admin auth and data loader.");
+}
+
+const platformErrorsLoader = read("apps/admin/lib/platform-errors.ts");
+if (!platformErrorsLoader.includes("@theouthaven/db/admin-client") || platformErrorsLoader.includes("@/lib/")) {
+  throw new Error("Platform Errors data loader must use the shared DB package and avoid root lib imports.");
+}
+
+const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
+if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavigation.includes('roles: ["superadmin"]')) {
+  throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
+}
+
 const pkg = JSON.parse(read("package.json"));
 for (const surface of surfaces) {
   const key = `build:surface:${surface}`;
