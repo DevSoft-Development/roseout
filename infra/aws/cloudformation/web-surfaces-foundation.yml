@@ -2,8 +2,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   TheOutHaven primary-region web surface foundation for independently deployed Admin and Business
   Next.js runtimes. Provides shared network/ALB/ECS infrastructure with isolated target groups,
-  runtime environment secret references, logs, and task roles. ECS services are registered only after a
-  verified image has been pushed so the foundation can be created safely before cutover.
+  runtime environment secret references, logs, task roles, TLS termination, and managed WAF protection.
+  ECS services are registered only after a verified image has been pushed so the foundation can be
+  created safely before cutover.
 
 Parameters:
   Environment:
@@ -16,6 +17,9 @@ Parameters:
   BusinessHost:
     Type: String
     Default: business.theouthaven.com
+  CertificateArn:
+    Type: String
+    Description: ARN of an issued ACM certificate covering the Admin and Business hostnames.
   AdminAppEnvSecretArn:
     Type: String
     Description: ARN of the pre-existing isolated Admin runtime environment secret.
@@ -107,6 +111,10 @@ Resources:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
           CidrIp: 0.0.0.0/0
       Tags:
         - { Key: Project, Value: TheOutHaven }
@@ -206,6 +214,22 @@ Resources:
             ContentType: text/plain
             MessageBody: Not found
 
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: Not found
+
   AdminHostRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
@@ -231,6 +255,80 @@ Resources:
       Actions:
         - Type: forward
           TargetGroupArn: !Ref BusinessTargetGroup
+
+  AdminHttpsHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values: [!Ref AdminHost]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref AdminTargetGroup
+
+  BusinessHttpsHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 20
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values: [!Ref BusinessHost]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref BusinessTargetGroup
+
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub 'toh-${Environment}-web-surfaces'
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      Description: Managed edge protection for TheOutHaven Admin and Business web surfaces.
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub 'toh-${Environment}-web-surfaces'
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 10
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub 'toh-${Environment}-common-rules'
+            SampledRequestsEnabled: true
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 20
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub 'toh-${Environment}-known-bad-inputs'
+            SampledRequestsEnabled: true
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: WebSurfaces }
+
+  WebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref LoadBalancer
+      WebACLArn: !GetAtt WebAcl.Arn
 
   WebRepository:
     Type: AWS::ECR::Repository
@@ -369,3 +467,9 @@ Outputs:
     Value: !GetAtt AdminTaskRole.Arn
   BusinessTaskRoleArn:
     Value: !GetAtt BusinessTaskRole.Arn
+  HttpsListenerArn:
+    Value: !Ref HttpsListener
+  WebAclArn:
+    Value: !GetAtt WebAcl.Arn
+  CertificateArn:
+    Value: !Ref CertificateArn
