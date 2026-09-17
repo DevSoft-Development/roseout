@@ -124,6 +124,13 @@ if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavig
   throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
 }
 
+const rootTsconfig = JSON.parse(read("tsconfig.json"));
+for (const excluded of ["apps", "packages"]) {
+  if (!rootTsconfig.exclude?.includes(excluded)) {
+    throw new Error(`Root consumer tsconfig must exclude isolated monorepo boundary: ${excluded}`);
+  }
+}
+
 const pkg = JSON.parse(read("package.json"));
 for (const surface of surfaces) {
   const key = `build:surface:${surface}`;
