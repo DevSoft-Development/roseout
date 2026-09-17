@@ -62,6 +62,30 @@ if (!adminLogin.includes("@theouthaven/auth/browser-client") || !adminLogin.incl
   throw new Error("Admin login must consume the shared auth package boundary.");
 }
 
+const adminSession = read("packages/auth/admin-session.ts");
+for (const dependency of [
+  "./server-client",
+  "./admin-roles",
+  "@theouthaven/db/admin-client",
+]) {
+  if (!adminSession.includes(dependency)) {
+    throw new Error(`Admin session guard must consume isolated dependency: ${dependency}`);
+  }
+}
+if (adminSession.includes("@/lib/")) {
+  throw new Error("Shared Admin session guard must not import root monolith modules.");
+}
+
+const adminDashboardLayout = read("apps/admin/app/admin/dashboard/layout.tsx");
+if (!adminDashboardLayout.includes("@theouthaven/auth/admin-session") || !adminDashboardLayout.includes("./AdminShell")) {
+  throw new Error("Admin dashboard must use the isolated session guard and Admin shell.");
+}
+
+const adminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
+if (!adminShell.includes("@theouthaven/auth/browser-client") || adminShell.includes("@/lib/")) {
+  throw new Error("Admin shell must use shared auth and must not import root monolith modules.");
+}
+
 const adminCallback = read("apps/admin/app/auth/admin/callback/route.ts");
 for (const dependency of [
   "@theouthaven/auth/server-client",
