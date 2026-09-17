@@ -30,6 +30,7 @@
         "ec2:DeleteVpc",
         "ec2:ModifyVpcAttribute",
         "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones",
         "ec2:CreateInternetGateway",
         "ec2:DeleteInternetGateway",
         "ec2:AttachInternetGateway",
