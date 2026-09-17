@@ -205,16 +205,6 @@ export default function AuthScreen() {
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
 
-        <View style={styles.footer}>
-          <AppText variant="caption" muted>TheOutHaven · Plan better OUTings.</AppText>
-          <View style={styles.footerLinks}>
-            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/support`)}><AppText variant="caption" muted>Support</AppText></Pressable>
-            <AppText variant="caption" muted>·</AppText>
-            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/privacy`)}><AppText variant="caption" muted>Privacy</AppText></Pressable>
-            <AppText variant="caption" muted>·</AppText>
-            <Pressable onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/terms`)}><AppText variant="caption" muted>Terms</AppText></Pressable>
-          </View>
-        </View>
       </ScrollView>
 
       <Modal transparent animationType="fade" visible={monthPickerOpen} onRequestClose={() => setMonthPickerOpen(false)}>
@@ -263,6 +253,5 @@ const styles = StyleSheet.create({
   consent: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 18, padding: 14, alignItems: "flex-start" }, checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
   security: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: 16, padding: 13 }, securityIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, securityCopy: { flex: 1, gap: 2 }, securityHint: { lineHeight: 17 },
-  footer: { alignItems: "center", gap: 8, paddingTop: 6 }, footerLinks: { flexDirection: "row", alignItems: "center", gap: 9 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
