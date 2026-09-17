@@ -9,6 +9,7 @@
     "embeddings:backfill": "node scripts/backfill-embeddings.js",
     "start": "next start",
     "lint": "eslint",
+    "lint:surface:admin": "eslint apps/admin packages/auth packages/db packages/config",
     "verify:homepage": "node scripts/verify-homepage-lock.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test scripts/search-intent-regression.ts lib/searchIntent.ts && node .tmp-test/scripts/search-intent-regression.js",
