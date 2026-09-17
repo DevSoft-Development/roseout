@@ -1,11 +1,16 @@
 name: AWS website wildcard certificate
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-website-wildcard-certificate.yml'
+      - 'scripts/website-wildcard-certificate-regression.mjs'
   push:
     branches:
       - main
     paths:
       - '.github/workflows/aws-website-wildcard-certificate.yml'
+      - 'scripts/website-wildcard-certificate-regression.mjs'
   workflow_dispatch:
 
 permissions:
@@ -16,11 +21,22 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   CERTIFICATE_DOMAIN: '*.theouthaven.com'
+  ROOT_DOMAIN: theouthaven.com
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate wildcard certificate DNS safety contract
+        run: node scripts/website-wildcard-certificate-regression.mjs
+
   bootstrap:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 20
     steps:
       - name: Resolve AWS deploy role
         id: config
@@ -43,7 +59,7 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
-      - name: Repair ACM bootstrap permissions
+      - name: Repair ACM validation bootstrap permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
@@ -61,7 +77,11 @@ jobs:
                   "acm:ListCertificates",
                   "acm:DescribeCertificate",
                   "acm:AddTagsToCertificate",
-                  "acm:ListTagsForCertificate"
+                  "acm:ListTagsForCertificate",
+                  "route53:ListHostedZones",
+                  "route53:ListResourceRecordSets",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:GetChange"
                 ],
                 "Resource": "*"
               }
@@ -83,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           ARN="$(aws acm list-certificates \
-            --certificate-statuses PENDING_VALIDATION ISSUED INACTIVE EXPIRED VALIDATION_TIMED_OUT REVOKED FAILED \
+            --certificate-statuses ISSUED PENDING_VALIDATION \
             --query "CertificateSummaryList[?DomainName=='${CERTIFICATE_DOMAIN}'] | [0].CertificateArn" \
             --output text)"
 
@@ -103,7 +123,6 @@ jobs:
           echo "certificate_arn=$ARN" >> "$GITHUB_OUTPUT"
           echo "created=$CREATED" >> "$GITHUB_OUTPUT"
 
-          # ACM can take a few seconds to populate ResourceRecord after a request.
           for attempt in $(seq 1 20); do
             NAME="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Name' --output text 2>/dev/null || true)"
             VALUE="$(aws acm describe-certificate --certificate-arn "$ARN" --query 'Certificate.DomainValidationOptions[0].ResourceRecord.Value' --output text 2>/dev/null || true)"
@@ -120,25 +139,61 @@ jobs:
           test -n "$NAME" && test "$NAME" != "None" || { echo "ACM DNS validation name is not available yet" >&2; exit 1; }
           test -n "$VALUE" && test "$VALUE" != "None" || { echo "ACM DNS validation value is not available yet" >&2; exit 1; }
 
+          NAME_NO_DOT="${NAME%.}"
+          VALUE_NO_DOT="${VALUE%.}"
+          case "$NAME_NO_DOT" in
+            _*.theouthaven.com) ;;
+            *) echo "Refusing unexpected ACM validation name: $NAME" >&2; exit 1 ;;
+          esac
+          case "$VALUE_NO_DOT" in
+            _*.acm-validations.aws) ;;
+            *) echo "Refusing unexpected ACM validation target: $VALUE" >&2; exit 1 ;;
+          esac
+
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
           echo "validation_name=$NAME" >> "$GITHUB_OUTPUT"
           echo "validation_value=$VALUE" >> "$GITHUB_OUTPUT"
 
-          echo "ACM_WILDCARD created=$CREATED status=$STATUS arn=$ARN validation_name=$NAME validation_value=$VALUE"
+      - name: Resolve public Route 53 hosted zone
+        id: dns
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/hosted-zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${ROOT_DOMAIN}." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/hosted-zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID" || { echo "Public Route 53 hosted zone for $ROOT_DOMAIN was not found." >&2; exit 1; }
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
 
-          {
-            echo '### TheOutHaven website wildcard certificate'
-            echo ''
-            echo "- Domain: \`$CERTIFICATE_DOMAIN\`"
-            echo "- Created this run: \`$CREATED\`"
-            echo "- Status: \`$STATUS\`"
-            echo "- Certificate ARN: \`$ARN\`"
-            echo "- DNS validation type: \`CNAME\`"
-            echo "- DNS validation name: \`$NAME\`"
-            echo "- DNS validation value: \`$VALUE\`"
-            echo ''
-            echo 'This workflow does not modify DNS or website traffic.'
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish only ACM validation CNAME
+        id: publish
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+          VALIDATION_NAME: ${{ steps.certificate.outputs.validation_name }}
+          VALIDATION_VALUE: ${{ steps.certificate.outputs.validation_value }}
+        run: |
+          set -euo pipefail
+          NAME="${VALIDATION_NAME%.}"
+          VALUE="${VALIDATION_VALUE%.}"
+          case "$NAME" in
+            _*.theouthaven.com) ;;
+            *) echo "Refusing non-ACM DNS name: $NAME" >&2; exit 1 ;;
+          esac
+          case "$VALUE" in
+            _*.acm-validations.aws) ;;
+            *) echo "Refusing non-ACM DNS target: $VALUE" >&2; exit 1 ;;
+          esac
+
+          jq -n \
+            --arg name "$NAME" \
+            --arg value "$VALUE" \
+            '{Comment:"ACM wildcard certificate DNS validation only",Changes:[{Action:"UPSERT",ResourceRecordSet:{Name:$name,Type:"CNAME",TTL:300,ResourceRecords:[{Value:$value}]}}]}' \
+            > "$RUNNER_TEMP/acm-validation-change.json"
+
+          CHANGE_ID="$(aws route53 change-resource-record-sets \
+            --hosted-zone-id "$HOSTED_ZONE_ID" \
+            --change-batch "file://$RUNNER_TEMP/acm-validation-change.json" \
+            --query 'ChangeInfo.Id' --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo "change_id=$CHANGE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Verify public ACM validation CNAME
         env:
@@ -148,16 +203,40 @@ jobs:
           set -euo pipefail
           NAME="${VALIDATION_NAME%.}"
           EXPECTED="${EXPECTED_VALUE%.}"
-          RESOLVED="$(dig +short CNAME "$NAME" | sed 's/\.$//' | head -n 1)"
-          if [ -z "$RESOLVED" ]; then
-            echo "ACM_DNS published=false name=$NAME expected=$EXPECTED"
-            echo '- Public DNS validation CNAME: `NOT FOUND`' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if [ "$RESOLVED" != "$EXPECTED" ]; then
-            echo "ACM_DNS published=true match=false name=$NAME resolved=$RESOLVED expected=$EXPECTED"
-            echo "- Public DNS validation CNAME: \`MISMATCH ($RESOLVED)\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "ACM_DNS published=true match=true name=$NAME resolved=$RESOLVED"
-          echo '- Public DNS validation CNAME: `PUBLISHED AND MATCHING`' >> "$GITHUB_STEP_SUMMARY"
+          for attempt in $(seq 1 30); do
+            RESOLVED="$(dig +short CNAME "$NAME" | sed 's/\.$//' | head -n 1)"
+            if [ "$RESOLVED" = "$EXPECTED" ]; then
+              echo "ACM_DNS published=true match=true name=$NAME"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "ACM validation CNAME did not propagate with the expected value." >&2
+          exit 1
+
+      - name: Wait for ACM certificate issuance
+        env:
+          CERTIFICATE_ARN: ${{ steps.certificate.outputs.certificate_arn }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            STATUS="$(aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" --query 'Certificate.Status' --output text)"
+            if [ "$STATUS" = "ISSUED" ]; then
+              echo "Wildcard ACM certificate is issued: $CERTIFICATE_ARN"
+              {
+                echo '### TheOutHaven wildcard certificate'
+                echo ''
+                echo '- Status: `ISSUED`'
+                echo '- ACM validation CNAME: `PUBLISHED`'
+                echo '- Application traffic DNS records changed: `NO`'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "$STATUS" != "PENDING_VALIDATION" ]; then
+              echo "ACM entered unexpected status: $STATUS" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          echo 'Timed out waiting for ACM certificate issuance.' >&2
+          exit 1
