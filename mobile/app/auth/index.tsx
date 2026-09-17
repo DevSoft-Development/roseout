@@ -46,6 +46,7 @@ export default function AuthScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [birthMonth, setBirthMonth] = useState<number | null>(null);
+  const [homeNeighborhood, setHomeNeighborhood] = useState("");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -70,8 +71,10 @@ export default function AuthScreen() {
       && strength.strong
       && passwordsMatch
       && phone.replace(/\D/g, "").length === 10
-      && birthMonth !== null;
-  }, [birthMonth, email, firstName, mode, password, passwordsMatch, phone, strength.strong]);
+      && birthMonth !== null
+      && homeNeighborhood.trim().length >= 2
+      && homeNeighborhood.trim().length <= 120;
+  }, [birthMonth, email, firstName, homeNeighborhood, mode, password, passwordsMatch, phone, strength.strong]);
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", ({ url }) => {
@@ -88,7 +91,7 @@ export default function AuthScreen() {
       void submit(token);
     });
     return () => subscription.remove();
-  }, [mode, email, password, phone, birthMonth, smsConsent, firstName]);
+  }, [mode, email, password, phone, birthMonth, homeNeighborhood, smsConsent, firstName]);
 
   async function startVerification() {
     if (!valid || busy || verifying) return;
@@ -111,7 +114,7 @@ export default function AuthScreen() {
     setMessage(null);
     const result = mode === "signin"
       ? await signIn({ email, password, captchaToken })
-      : await signUp({ firstName: firstName.trim(), email, password, phone: `+1${phone.replace(/\D/g, "")}`, birthMonth: birthMonth || 0, smsConsent, captchaToken });
+      : await signUp({ firstName: firstName.trim(), email, password, phone: `+1${phone.replace(/\D/g, "")}`, birthMonth: birthMonth || 0, homeNeighborhood: homeNeighborhood.trim(), smsConsent, captchaToken });
     setBusy(false);
     if (result.error) {
       setMessage(result.error);
@@ -185,6 +188,10 @@ export default function AuthScreen() {
                 <AppText style={{ color: birthMonth ? theme.colors.text : theme.colors.textMuted }}>{birthMonth ? MONTHS[birthMonth - 1] : "Select month"}</AppText>
                 <AppText muted style={styles.selectChevron}>⌄</AppText>
               </Pressable>
+            </Field>
+
+            <Field label="Home neighborhood" hint="Helps personalize nearby OUTings. Neighborhood only — never your street address.">
+              <TextInput autoCapitalize="words" autoComplete="street-address" placeholder="e.g., Astoria, Williamsburg, Garden City" placeholderTextColor={theme.colors.textMuted} value={homeNeighborhood} onChangeText={(value) => setHomeNeighborhood(value.slice(0, 120))} style={[styles.input, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, color: theme.colors.text }]} />
             </Field>
 
             <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: smsConsent }} onPress={() => setSmsConsent((value) => !value)} style={[styles.consent, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
