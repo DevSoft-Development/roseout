@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - mobile/package.json
+      - mobile/package-lock.json
       - mobile/.eas/workflows/**
       - .github/workflows/mobile-production-native.yml
   push:
@@ -14,13 +16,11 @@ on:
       - mobile/app.json
       - mobile/eas.json
       - mobile/package.json
-      - mobile/package-lock.json
       - mobile/assets/**
       - mobile/plugins/**
       - mobile/ios/**
       - mobile/android/**
       - mobile/.eas/workflows/build-production.yml
-      - .github/workflows/mobile-production-native.yml
   workflow_dispatch:
 
 permissions:
@@ -31,6 +31,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-mobile-lockfile:
+    name: Validate mobile package lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify package.json and package-lock.json are synchronized
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund --dry-run
+
   validate-eas-workflow:
     name: Validate EAS production workflow
     runs-on: ubuntu-latest
@@ -54,7 +75,7 @@ jobs:
 
   eas-production:
     name: EAS iOS + Android production build and submit
-    needs: [validate-eas-workflow]
+    needs: [validate-mobile-lockfile, validate-eas-workflow]
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
