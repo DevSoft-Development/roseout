@@ -1,6 +1,7 @@
 import {
   Flag,
   Home,
+  ListChecks,
   Mail,
   MessageSquareText,
   ScrollText,
@@ -48,6 +49,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: MessageSquareText,
     migrated: true,
     roles: ["superadmin", "admin", "editor", "experience_team", "viewer"],
+  },
+  {
+    label: "Launch Checklist",
+    href: "/admin/dashboard/launch-checklist",
+    icon: ListChecks,
+    migrated: true,
+    roles: ["superadmin"],
   },
   {
     label: "Microsoft 365",
