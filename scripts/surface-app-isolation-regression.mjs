@@ -3938,3 +3938,31 @@ for (const helper of [
 ]) {
   read(helper);
 }
+
+
+const crmOpportunityPages = [
+  "apps/admin/app/admin/dashboard/crm/opportunities/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/opportunities/[id]/page.tsx",
+];
+for (const route of crmOpportunityPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM opportunity page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM opportunity page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const crmOpportunityActions = read("apps/admin/app/admin/dashboard/crm/opportunities/actions.ts");
+if (!crmOpportunityActions.includes("@theouthaven/auth/admin-session") || crmOpportunityActions.includes("@/lib/admin-auth")) {
+  throw new Error("CRM opportunity actions must use isolated Admin auth.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/opportunities/service.ts",
+  "apps/admin/lib/crm/activities.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM opportunity write helper must use shared Admin DB: ${helper}`);
+  }
+}
