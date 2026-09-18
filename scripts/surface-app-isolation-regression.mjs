@@ -798,6 +798,19 @@ if (!locationToolsMarketsApi.includes("@theouthaven/auth/admin-session") || !loc
   throw new Error("Location Tools market repair API must use isolated Admin auth, DB, and market taxonomy.");
 }
 
+const hiddenLocationsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/hidden-locations/page.tsx");
+if (!hiddenLocationsPage.includes("@theouthaven/auth/admin-session") || !hiddenLocationsPage.includes("@theouthaven/db/admin-client") || !hiddenLocationsPage.includes("@/components/admin/location-tools/HiddenLocationsRepairClient")) {
+  throw new Error("Hidden Locations page must use isolated Admin auth, DB, and local repair client.");
+}
+
+const hiddenLocationsApi = read("apps/admin/app/api/admin/locations/hidden-repair/route.ts");
+if (!hiddenLocationsApi.includes("@theouthaven/auth/admin-session") || !hiddenLocationsApi.includes("@theouthaven/db/admin-client")) {
+  throw new Error("Hidden Locations API must use isolated Admin auth and DB.");
+}
+if (hiddenLocationsApi.includes("requireAdminApiRole") || hiddenLocationsApi.includes("@/lib/supabase-admin")) {
+  throw new Error("Hidden Locations API must not use root Admin auth/database helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
