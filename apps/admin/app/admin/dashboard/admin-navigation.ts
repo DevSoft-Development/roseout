@@ -128,6 +128,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     roles: ["superadmin", "admin"],
   },
   {
+    label: "SEO Operations",
+    href: "/admin/dashboard/seo",
+    icon: Search,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "viewer"],
+  },
+  {
     label: "SEO Tools",
     href: "/admin/dashboard/seo-tools",
     icon: Search,
