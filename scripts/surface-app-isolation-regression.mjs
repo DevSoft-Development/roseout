@@ -3063,6 +3063,31 @@ for (const source of [searchAnchorsCuratedReviewPage, searchAnchorsCuratedReview
   }
 }
 
+const searchAnchorsOperationsPage = read("apps/admin/app/admin/dashboard/search-anchors/operations/page.tsx");
+const searchAnchorsOperationsClient = read("apps/admin/app/admin/dashboard/search-anchors/operations/SearchAnchorOperationsControls.tsx");
+const searchAnchorsReconciliationRoute = read("apps/admin/app/api/admin/search-anchors/reconciliation/route.ts");
+if (
+  !searchAnchorsOperationsPage.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsOperationsPage.includes('from("search_anchor_reconciliation_queue")') ||
+  !searchAnchorsOperationsClient.includes("/api/admin/search-anchors/reconciliation") ||
+  !searchAnchorsReconciliationRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsReconciliationRoute.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsReconciliationRoute.includes('new Set(["superadmin", "admin", "manager"])') ||
+  !searchAnchorsReconciliationRoute.includes("/api/cron/search-anchor-reconciliation")
+) {
+  throw new Error("Search Anchors operations must use isolated Admin auth/shared DB and preserve reconciliation actions.");
+}
+for (const source of [searchAnchorsOperationsPage, searchAnchorsReconciliationRoute]) {
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions")
+  ) {
+    throw new Error("Search Anchors operations must not import root monolith auth/database helpers.");
+  }
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
