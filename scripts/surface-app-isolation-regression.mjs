@@ -615,6 +615,60 @@ for (const emailRuntimeFile of [
   }
 }
 
+const googlePlacesBudgetPage = read("apps/admin/app/admin/dashboard/settings/google-places/page.tsx");
+if (
+  !googlePlacesBudgetPage.includes("@theouthaven/auth/admin-session") ||
+  !googlePlacesBudgetPage.includes("@/lib/google/google-places-budget") ||
+  !googlePlacesBudgetPage.includes("@/lib/google/google-places-cost-control-admin") ||
+  !googlePlacesBudgetPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Google Places Budget page must use isolated Admin auth and local budget helpers.");
+}
+if (
+  googlePlacesBudgetPage.includes("@/lib/supabase-admin") ||
+  googlePlacesBudgetPage.includes('from "@/lib/google/google-places-cost-control"') ||
+  googlePlacesBudgetPage.includes("from '@/lib/google/google-places-cost-control'")
+) {
+  throw new Error("Google Places Budget page must not import root monolith database/cost-control modules.");
+}
+
+const googlePlacesBudgetRoute = read("apps/admin/app/api/admin/settings/google-places-budget/route.ts");
+if (
+  !googlePlacesBudgetRoute.includes("@theouthaven/auth/admin-session") ||
+  !googlePlacesBudgetRoute.includes("@theouthaven/db/admin-client") ||
+  !googlePlacesBudgetRoute.includes("@/lib/google/google-places-budget") ||
+  !googlePlacesBudgetRoute.includes("@/lib/google/google-places-cost-control-admin") ||
+  !googlePlacesBudgetRoute.includes("@/lib/aws/location-intelligence-api")
+) {
+  throw new Error("Google Places Budget API must use isolated Admin auth, shared DB, and local AWS/budget helpers.");
+}
+if (
+  googlePlacesBudgetRoute.includes("@/lib/supabase-server") ||
+  googlePlacesBudgetRoute.includes("@/lib/supabase-admin") ||
+  googlePlacesBudgetRoute.includes("@/lib/auth/get-admin-login-role")
+) {
+  throw new Error("Google Places Budget API must not import root monolith auth/database helpers.");
+}
+
+for (const googleBudgetRuntime of [
+  "apps/admin/lib/google/google-places-budget.ts",
+  "apps/admin/lib/google/google-places-cost-control-admin.ts",
+  "apps/admin/lib/aws/location-intelligence-api.ts",
+  "apps/admin/lib/aws/integration-api.ts",
+  "apps/admin/lib/email/system-alerts.ts",
+]) {
+  const source = read(googleBudgetRuntime);
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/aws/integration-api") && !googleBudgetRuntime.endsWith("email/system-alerts.ts")) {
+    throw new Error(`Google budget runtime must not import root monolith infrastructure: ${googleBudgetRuntime}`);
+  }
+}
+if (!read("apps/admin/lib/google/google-places-budget.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("Google Places Budget config must use the shared Admin DB package.");
+}
+if (!read("apps/admin/lib/google/google-places-cost-control-admin.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("Google Places cost-control snapshot must use the shared Admin DB package.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
