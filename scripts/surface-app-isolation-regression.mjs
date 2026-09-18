@@ -4604,6 +4604,31 @@ if (
 }
 
 
+const marketingOpportunitiesPage = read("apps/admin/app/admin/dashboard/marketing/opportunities/page.tsx");
+if (
+  !marketingOpportunitiesPage.includes("@theouthaven/auth/admin-session")
+  || !marketingOpportunitiesPage.includes("@theouthaven/db/admin-client")
+  || marketingOpportunitiesPage.includes("@/lib/admin-auth")
+  || marketingOpportunitiesPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing opportunities page must use isolated Admin auth and shared Admin DB.");
+}
+const marketingOpportunitiesHelper = read("apps/admin/lib/marketing/opportunities.ts");
+if (
+  !marketingOpportunitiesHelper.includes("@theouthaven/db/admin-client")
+  || marketingOpportunitiesHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing opportunities helper must use shared Admin DB.");
+}
+const marketingOpportunityApi = read("apps/admin/app/api/admin/marketing/opportunities/[id]/feature/route.ts");
+if (
+  !marketingOpportunityApi.includes("@/lib/admin-api-auth")
+  || !marketingOpportunityApi.includes("@/lib/marketing/opportunities")
+) {
+  throw new Error("Marketing opportunities feature API must preserve isolated Admin API auth and opportunity helper.");
+}
+
+
 const marketingContentReviewPage = read("apps/admin/app/admin/dashboard/marketing/content/[id]/review/page.tsx");
 if (
   !marketingContentReviewPage.includes("@theouthaven/auth/admin-session")
