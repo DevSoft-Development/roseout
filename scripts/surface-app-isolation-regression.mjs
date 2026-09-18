@@ -4578,3 +4578,27 @@ if (
 ) {
   throw new Error("Marketing creator partnership API must use isolated Admin auth and shared Admin DB.");
 }
+
+
+const marketingPostcardFollowupPage = read("apps/admin/app/admin/dashboard/marketing/postcard-followups/[locationId]/page.tsx");
+if (
+  !marketingPostcardFollowupPage.includes("@theouthaven/auth/admin-session")
+  || !marketingPostcardFollowupPage.includes("@theouthaven/db/admin-client")
+  || marketingPostcardFollowupPage.includes("@/lib/admin-auth")
+  || marketingPostcardFollowupPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing postcard follow-up page must use isolated Admin auth and shared Admin DB.");
+}
+const marketingPostcardFollowupForm = read("apps/admin/components/marketing/PostcardSocialFollowupForm.tsx");
+if (!marketingPostcardFollowupForm.includes("/api/admin/marketing/postcard-followups/")) {
+  throw new Error("Marketing postcard follow-up form must preserve the isolated postcard follow-up API.");
+}
+const marketingPostcardFollowupApi = read("apps/admin/app/api/admin/marketing/postcard-followups/[locationId]/route.ts");
+if (
+  !marketingPostcardFollowupApi.includes("@theouthaven/db/admin-client")
+  || !marketingPostcardFollowupApi.includes("@/lib/admin-api-auth")
+  || !marketingPostcardFollowupApi.includes("@/lib/crm/tasks/service")
+  || marketingPostcardFollowupApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing postcard follow-up API must use isolated Admin API auth, shared Admin DB, and isolated task service.");
+}
