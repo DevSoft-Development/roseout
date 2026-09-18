@@ -4850,3 +4850,34 @@ for (const route of [
     throw new Error(`Locations redirect must remain inside isolated Admin app: ${route}`);
   }
 }
+
+
+const isolatedLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
+if (
+  !isolatedLocationsPage.includes("@theouthaven/auth/admin-session") ||
+  !isolatedLocationsPage.includes("@theouthaven/db/admin-client") ||
+  isolatedLocationsPage.includes("@/lib/admin-auth") ||
+  isolatedLocationsPage.includes("@/lib/supabase")
+) {
+  throw new Error("Locations command center must use isolated Admin auth and DB.");
+}
+
+const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx");
+if (
+  !isolatedLocationDetail.includes("@theouthaven/auth/admin-session") ||
+  !isolatedLocationDetail.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Location detail must use isolated Admin auth and DB.");
+}
+
+const isolatedLocationSearch = read("apps/admin/app/api/admin/search-locations/route.ts");
+if (
+  !isolatedLocationSearch.includes("@theouthaven/db/admin-client") ||
+  isolatedLocationSearch.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Location search API must use shared Admin DB.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/locations")) {
+  throw new Error("Locations navigation must be present in isolated Admin shell.");
+}
