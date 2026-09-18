@@ -722,6 +722,28 @@ for (const claimRuntimeFile of [
   }
 }
 
+const ticketOrdersPage = read("apps/admin/app/admin/dashboard/ticket-orders/page.tsx");
+if (
+  !ticketOrdersPage.includes("@theouthaven/auth/admin-session") ||
+  !ticketOrdersPage.includes("@theouthaven/db/admin-client") ||
+  !ticketOrdersPage.includes('requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"])')
+) {
+  throw new Error("Ticket Orders page must use isolated Admin auth, shared DB, and preserve access roles.");
+}
+if (
+  ticketOrdersPage.includes("@/lib/admin-auth") ||
+  ticketOrdersPage.includes("@/lib/admin-permissions") ||
+  ticketOrdersPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Ticket Orders page must not import root monolith auth/database modules.");
+}
+if (ticketOrdersPage.includes('href="/admin/dashboard/payouts"')) {
+  throw new Error("Ticket Orders must not link to unmigrated Payouts from the isolated Admin app.");
+}
+if (!adminNavigation.includes("/admin/dashboard/ticket-orders")) {
+  throw new Error("Ticket Orders navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
