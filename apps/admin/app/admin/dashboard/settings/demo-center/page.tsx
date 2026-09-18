@@ -57,7 +57,17 @@ function withDemoContext(path: string, locationId?: string, type = "restaurant")
     demo: "1",
     fromDemoCenter: "1",
   });
-  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+  const businessOrigin = String(
+    process.env.NEXT_PUBLIC_BUSINESS_SITE_URL || "https://business.theouthaven.com",
+  ).replace(/\/$/, "");
+  const usesBusinessSurface =
+    path.startsWith("/locations/dashboard") ||
+    path.startsWith("/locations/restaurants/") ||
+    path.startsWith("/locations/activities/") ||
+    path.startsWith("/business/") ||
+    path.startsWith("/reserve/");
+  const origin = usesBusinessSurface ? businessOrigin : "";
+  return `${origin}${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
 }
 
 function Submit({
