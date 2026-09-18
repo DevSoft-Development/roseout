@@ -950,6 +950,77 @@ if (
   throw new Error("Demo Center public profile redirect must target the Consumer surface using isolated demo data.");
 }
 
+for (const settingsSearchRuntime of [
+  "apps/admin/lib/search-usage-limits.ts",
+  "apps/admin/lib/ai-tag-helper-settings.ts",
+  "apps/admin/lib/search/rankingRollout.ts",
+  "apps/admin/lib/search/v2/retrieval/searchProfileMode.ts",
+  "apps/admin/lib/search/v2/retrieval/searchProfileRolloutConfig.ts",
+  "apps/admin/lib/search/searchCoreConfig.ts",
+]) {
+  const source = read(settingsSearchRuntime);
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/auth/get-admin-login-role")
+  ) {
+    throw new Error(`Settings search-control runtime must not import root monolith DB/auth helpers: ${settingsSearchRuntime}`);
+  }
+}
+
+for (const settingsSearchDbRuntime of [
+  "apps/admin/lib/ai-tag-helper-settings.ts",
+  "apps/admin/lib/search/rankingRollout.ts",
+  "apps/admin/lib/search/v2/retrieval/searchProfileRolloutConfig.ts",
+  "apps/admin/lib/search/searchCoreConfig.ts",
+]) {
+  if (!read(settingsSearchDbRuntime).includes("@theouthaven/db/admin-client")) {
+    throw new Error(`Settings search-control runtime must use shared Admin DB: ${settingsSearchDbRuntime}`);
+  }
+}
+
+for (const settingsSearchRoute of [
+  "apps/admin/app/api/admin/settings/search-limits/route.ts",
+  "apps/admin/app/api/admin/settings/ai-tag-helper/route.ts",
+  "apps/admin/app/api/admin/settings/search-ml-rollout/route.ts",
+  "apps/admin/app/api/admin/settings/search-profile-rollout/route.ts",
+  "apps/admin/app/api/admin/settings/search-core/route.ts",
+]) {
+  const source = read(settingsSearchRoute);
+  if (!source.includes("@/lib/admin-api-auth")) {
+    throw new Error(`Settings search-control API must use isolated Admin API auth: ${settingsSearchRoute}`);
+  }
+  if (
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Settings search-control API must not import root monolith permissions/DB helpers: ${settingsSearchRoute}`);
+  }
+}
+
+const searchLimitsRoute = read("apps/admin/app/api/admin/settings/search-limits/route.ts");
+const aiTagHelperRoute = read("apps/admin/app/api/admin/settings/ai-tag-helper/route.ts");
+if (
+  !searchLimitsRoute.includes('requireAdminApiRole(["superadmin"])') ||
+  !aiTagHelperRoute.includes('requireAdminApiRole(["superadmin"])')
+) {
+  throw new Error("Search Limits and AI Tag Helper settings must remain superadmin-only.");
+}
+
+for (const rolloutRoute of [
+  "apps/admin/app/api/admin/settings/search-ml-rollout/route.ts",
+  "apps/admin/app/api/admin/settings/search-profile-rollout/route.ts",
+  "apps/admin/app/api/admin/settings/search-core/route.ts",
+]) {
+  const source = read(rolloutRoute);
+  if (
+    !source.includes('"superadmin"') ||
+    !source.includes('"admin"') ||
+    !source.includes('"experience_team"')
+  ) {
+    throw new Error(`Search rollout API must preserve Search Health roles: ${rolloutRoute}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
