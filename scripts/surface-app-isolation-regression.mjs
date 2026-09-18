@@ -1905,6 +1905,39 @@ if (!adminNavigation.includes("/admin/dashboard/payouts")) {
   throw new Error("Payouts navigation must be present in the isolated Admin shell.");
 }
 
+const billingPage = read("apps/admin/app/admin/dashboard/billing/page.tsx");
+const billingRuntime = read("apps/admin/lib/admin/admin-billing.ts");
+const billingCoreApi = read("apps/admin/lib/aws/core-api.ts");
+const billingPlans = read("apps/admin/lib/billing/plans.ts");
+if (
+  !billingPage.includes("@theouthaven/auth/admin-session") ||
+  !billingPage.includes('requireAdminRole(["superadmin"])') ||
+  !billingPage.includes("@/lib/admin/admin-billing") ||
+  !billingRuntime.includes("@theouthaven/db/admin-client") ||
+  !billingRuntime.includes("@/lib/aws/core-api") ||
+  !billingRuntime.includes("@/lib/billing/plans")
+) {
+  throw new Error("Billing must use isolated superadmin auth, shared DB, and isolated billing runtime.");
+}
+for (const source of [billingPage, billingRuntime, billingCoreApi, billingPlans]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/aws/core-api")
+      && source === billingPage
+  ) {
+    throw new Error("Billing slice must not import root monolith auth/database/runtime modules.");
+  }
+}
+if (
+  !billingCoreApi.includes("/v1/admin/billing/read") ||
+  !billingCoreApi.includes("AWS_PLATFORM_CORE_API_URL") ||
+  !billingCoreApi.includes("createHmac")
+) {
+  throw new Error("Billing Core API reader must preserve signed AWS billing reads.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
