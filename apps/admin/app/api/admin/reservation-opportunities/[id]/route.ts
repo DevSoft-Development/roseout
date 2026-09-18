@@ -1,0 +1,91 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getCurrentAdminOrNull } from "@theouthaven/auth/admin-session";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const ALLOWED_STATUSES = new Set([
+  "not_contacted",
+  "contacted",
+  "interested",
+  "not_interested",
+  "claimed",
+  "onboarded",
+]);
+
+function getSupabaseAdmin() {
+  return getAdminDatabaseClient();
+}
+
+const RESERVATION_ROLES = new Set(["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience_team", "viewer"]);
+
+async function requireAuthorization(request: NextRequest) {
+  const authHeader = request.headers.get("authorization") || "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+  const xAdminSecret = request.headers.get("x-admin-secret")?.trim() || "";
+  const adminSecret = process.env.ADMIN_API_SECRET?.trim();
+
+  if (
+    adminSecret &&
+    (bearerToken === adminSecret || xAdminSecret === adminSecret)
+  )
+    return null;
+
+  const admin = await getCurrentAdminOrNull();
+  if (!admin) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (!RESERVATION_ROLES.has(admin.role)) return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  return null;
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const authError = await requireAuthorization(request);
+  if (authError) return authError;
+
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const status =
+    typeof body.reservation_outreach_status === "string"
+      ? body.reservation_outreach_status.trim()
+      : "";
+
+  if (!ALLOWED_STATUSES.has(status)) {
+    return NextResponse.json(
+      { success: false, error: "Invalid reservation_outreach_status" },
+      { status: 400 },
+    );
+  }
+
+  const notes =
+    typeof body.reservation_outreach_notes === "string"
+      ? body.reservation_outreach_notes
+      : null;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("locations")
+    .update({
+      reservation_outreach_status: status,
+      reservation_outreach_notes: notes,
+    })
+    .eq("id", id)
+    .select("id,reservation_outreach_status,reservation_outreach_notes")
+    .maybeSingle();
+
+  if (error)
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 },
+    );
+  if (!data)
+    return NextResponse.json(
+      { success: false, error: "Opportunity not found" },
+      { status: 404 },
+    );
+
+  return NextResponse.json({ success: true, opportunity: data });
+}
