@@ -2147,6 +2147,41 @@ if (
   throw new Error("Careers Internships must not import root monolith auth/database/UI helpers.");
 }
 
+const careersTeamConversionPage = read("apps/admin/app/admin/dashboard/careers/team-conversion/page.tsx");
+const careersMicrosoftReadinessClient = read("apps/admin/app/admin/dashboard/careers/team-conversion/MicrosoftReadinessCheck.tsx");
+const careersMicrosoftReadinessRoute = read("apps/admin/app/api/admin/careers/team-conversion/microsoft-readiness/route.ts");
+if (
+  !careersTeamConversionPage.includes("@theouthaven/auth/admin-session") ||
+  !careersTeamConversionPage.includes("@theouthaven/db/admin-client") ||
+  !careersTeamConversionPage.includes("@/lib/careers/format") ||
+  !careersTeamConversionPage.includes('requireAdminRole(["superadmin", "admin"])') ||
+  !careersTeamConversionPage.includes('from("career_team_conversions")')
+) {
+  throw new Error("Careers Team Conversion must use isolated Admin auth/shared DB and preserve employee conversion access.");
+}
+for (const source of [careersTeamConversionPage, careersMicrosoftReadinessClient, careersMicrosoftReadinessRoute]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Careers Team Conversion slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (!careersMicrosoftReadinessClient.includes("/api/admin/careers/team-conversion/microsoft-readiness")) {
+  throw new Error("Careers Team Conversion readiness client must call the isolated Admin API.");
+}
+if (
+  !careersMicrosoftReadinessRoute.includes("@theouthaven/auth/admin-session") ||
+  !careersMicrosoftReadinessRoute.includes("@theouthaven/db/admin-client") ||
+  !careersMicrosoftReadinessRoute.includes("getCurrentAdminOrNull") ||
+  !careersMicrosoftReadinessRoute.includes('"career-microsoft-readiness"')
+) {
+  throw new Error("Careers Microsoft readiness API must use isolated auth/shared DB and preserve Edge Function invocation.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
