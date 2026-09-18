@@ -3213,6 +3213,14 @@ if (adminOverviewPage.includes("Admin dashboard migration scaffold")) {
   throw new Error("Admin Overview must not remain a migration scaffold.");
 }
 
+const googleEnrichmentRedirectPage = read("apps/admin/app/admin/dashboard/locations/google-enrichment/page.tsx");
+if (
+  !googleEnrichmentRedirectPage.includes('redirect("/admin/dashboard/settings/location-tools/enrichment")') ||
+  googleEnrichmentRedirectPage.includes("@/lib/")
+) {
+  throw new Error("Google Enrichment legacy route must remain an isolated redirect to location tools enrichment.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
