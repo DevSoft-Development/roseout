@@ -2962,6 +2962,14 @@ if (
   throw new Error("Legacy Reservation route must remain an isolated redirect to Reservations opportunities.");
 }
 
+const legacyReservePage = read("apps/admin/app/admin/dashboard/reserve/page.tsx");
+if (
+  !legacyReservePage.includes('redirect("/admin/dashboard/reservations?tab=floor")') ||
+  legacyReservePage.includes("@/lib/")
+) {
+  throw new Error("Legacy Reserve route must remain an isolated redirect to Reservations floor.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
