@@ -55,3 +55,18 @@ export async function isWorkspaceLocationPermitted(profile: any, locationId: str
   }
   return false;
 }
+
+
+export function labelize(value: string | null | undefined) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}
