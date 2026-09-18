@@ -3221,6 +3221,50 @@ if (
   throw new Error("Google Enrichment legacy route must remain an isolated redirect to location tools enrichment.");
 }
 
+const searchHealthPage = read("apps/admin/app/admin/dashboard/search-health/page.tsx");
+const searchHealthDashboardRuntime = read("apps/admin/lib/admin/search-health-dashboard.ts");
+const searchHealthClient = read("apps/admin/app/admin/dashboard/search-health/SearchHealthClient.tsx");
+const searchHealthQaRunner = read("apps/admin/app/admin/dashboard/search-health/BatchQaRunner.tsx");
+const searchHealthQualityPanel = read("apps/admin/app/admin/dashboard/search-health/SearchQualityReviewPanel.tsx");
+if (
+  !searchHealthPage.includes("@theouthaven/auth/admin-session") ||
+  !searchHealthPage.includes("@theouthaven/auth/admin-roles") ||
+  !searchHealthPage.includes("@theouthaven/db/admin-client") ||
+  !searchHealthPage.includes("@/lib/admin/search-health-dashboard") ||
+  !searchHealthPage.includes("@/lib/search/searchCoreConfig")
+) {
+  throw new Error("Search Health dashboard must use isolated Admin auth/shared DB and isolated search-health runtime.");
+}
+for (const source of [searchHealthPage, searchHealthDashboardRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Search Health dashboard slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !searchHealthDashboardRuntime.includes("@theouthaven/db/admin-client") ||
+  !searchHealthDashboardRuntime.includes('from("search_events")') ||
+  !searchHealthDashboardRuntime.includes('from("search_health_events")') ||
+  !searchHealthDashboardRuntime.includes('rpc("admin_search_health_kpis"')
+) {
+  throw new Error("Search Health dashboard runtime must preserve search events, issues, and KPI reads.");
+}
+if (
+  !searchHealthClient.includes("/api/admin/search-health") ||
+  !searchHealthClient.includes("/api/admin/search-health/test-event") ||
+  !searchHealthClient.includes("/api/admin/search-health/send-digest") ||
+  !searchHealthQaRunner.includes("/api/admin/search-health/qa-prompts") ||
+  !searchHealthQaRunner.includes("/api/admin/search-health/batch-run") ||
+  !searchHealthQualityPanel.includes("/api/admin/search-health/quality-review")
+) {
+  throw new Error("Search Health clients must preserve the protected Admin API contract for later route isolation.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
