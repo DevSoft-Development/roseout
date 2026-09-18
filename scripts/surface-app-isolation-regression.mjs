@@ -4211,6 +4211,18 @@ if (
 }
 
 
+const crmContactCreatePage = read("apps/admin/app/admin/dashboard/crm/contacts/new/page.tsx");
+const crmContactCreateActions = read("apps/admin/app/admin/dashboard/crm/contacts/new/actions.ts");
+if (!crmContactCreatePage.includes("@theouthaven/auth/admin-session") || crmContactCreatePage.includes("@/lib/admin-auth")) {
+  throw new Error("CRM contact-create page must use isolated Admin auth.");
+}
+for (const dependency of ["@theouthaven/auth/admin-session","@theouthaven/db/admin-client","@/lib/sms/telnyx","@/lib/crm/permissions"]) {
+  if (!crmContactCreateActions.includes(dependency)) throw new Error(`CRM contact-create action missing isolated dependency: ${dependency}`);
+}
+if (crmContactCreateActions.includes("@/lib/admin-auth") || crmContactCreateActions.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM contact-create action must not import root monolith auth/DB helpers.");
+}
+
 const crmAccountsPages = [
   "apps/admin/app/admin/dashboard/crm/accounts/page.tsx",
   "apps/admin/app/admin/dashboard/crm/accounts/[id]/page.tsx",
