@@ -2954,6 +2954,14 @@ if (
   throw new Error("Team Demo must not import root monolith auth/database/team helpers.");
 }
 
+const legacyReservationPage = read("apps/admin/app/admin/dashboard/reservation/page.tsx");
+if (
+  !legacyReservationPage.includes('redirect("/admin/dashboard/reservations?tab=opportunities")') ||
+  legacyReservationPage.includes("@/lib/")
+) {
+  throw new Error("Legacy Reservation route must remain an isolated redirect to Reservations opportunities.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
