@@ -1,4 +1,5 @@
 import {
+  CalendarDays,
   Database,
   Flag,
   Home,
@@ -94,6 +95,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: KeyRound,
     migrated: true,
     roles: ["superadmin"],
+  },
+  {
+    label: "Events & Experiences",
+    href: "/admin/dashboard/events-experiences",
+    icon: CalendarDays,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor"],
   },
   {
     label: "Ticket Orders",
