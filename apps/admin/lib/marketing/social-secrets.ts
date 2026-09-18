@@ -49,7 +49,7 @@ export async function storeSocialConnectionSecrets(input: {
 }
 
 export async function loadSocialConnectionSecrets(connectionId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("marketing_social_connection_secrets")
     .select("access_token_ciphertext,refresh_token_ciphertext,token_type,scopes,expires_at")
     .eq("connection_id", connectionId)
