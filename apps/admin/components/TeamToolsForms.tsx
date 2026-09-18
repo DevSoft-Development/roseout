@@ -66,6 +66,56 @@ const WORK_TYPES = [
   "other",
 ] as const;
 
+export function AdminReviewButtons({ sessionId }: { sessionId: string }) {
+  const [message, setMessage] = useState("");
+
+  async function review(action: "approve" | "correction" | "reject") {
+    const reason =
+      action === "approve"
+        ? ""
+        : window.prompt("Reason or correction note") || "";
+
+    const res = await fetch("/api/admin/team/work-sessions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, action, reason }),
+    });
+    const data = await res.json();
+    setMessage(
+      res.ok
+        ? `${labelize(action)} saved.`
+        : data.error || "Could not review session.",
+    );
+    if (res.ok) window.location.reload();
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={() => review("approve")}
+        className="rounded-full bg-emerald-500 px-3 py-2 text-xs font-black text-black"
+      >
+        Approve
+      </button>
+      <button
+        onClick={() => review("correction")}
+        className="rounded-full bg-amber-400 px-3 py-2 text-xs font-black text-black"
+      >
+        Correction
+      </button>
+      <button
+        onClick={() => review("reject")}
+        className="rounded-full bg-red-500 px-3 py-2 text-xs font-black text-white"
+      >
+        Reject
+      </button>
+      {message ? (
+        <span className="text-xs font-bold text-white/55">{message}</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function TeamMemberProfileForm({
   users,
   profile,

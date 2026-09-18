@@ -1413,6 +1413,40 @@ if (
   throw new Error("Team Assignment client must use isolated assignment APIs.");
 }
 
+const teamWorkSessionsPage = read("apps/admin/app/admin/dashboard/team/work-sessions/page.tsx");
+if (
+  !teamWorkSessionsPage.includes("@theouthaven/auth/admin-session") ||
+  !teamWorkSessionsPage.includes("@theouthaven/db/admin-client") ||
+  !teamWorkSessionsPage.includes("@/components/TeamToolsForms") ||
+  !teamWorkSessionsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Work Sessions page must use isolated manager auth, shared DB, and local review UI.");
+}
+if (
+  teamWorkSessionsPage.includes("@/lib/admin-auth") ||
+  teamWorkSessionsPage.includes("@/lib/admin-permissions") ||
+  teamWorkSessionsPage.includes("@/lib/supabase-admin") ||
+  teamWorkSessionsPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Work Sessions page must not import root monolith auth/database/team helpers.");
+}
+
+const teamWorkSessionsApi = read("apps/admin/app/api/admin/team/work-sessions/route.ts");
+if (
+  !teamWorkSessionsApi.includes("@theouthaven/auth/admin-session") ||
+  !teamWorkSessionsApi.includes("@theouthaven/db/admin-client") ||
+  !teamWorkSessionsApi.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Work Sessions API must use isolated manager auth and shared DB.");
+}
+if (
+  teamWorkSessionsApi.includes("@/lib/admin-api-auth") ||
+  teamWorkSessionsApi.includes("@/lib/admin-permissions") ||
+  teamWorkSessionsApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Work Sessions API must not import root monolith auth/database helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
