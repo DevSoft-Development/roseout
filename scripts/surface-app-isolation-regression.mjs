@@ -407,6 +407,42 @@ if (microsoftSyncRoute.includes("@/lib/admin-auth") || microsoftSyncRoute.includ
   throw new Error("Microsoft 365 sync route must not import root monolith auth helpers.");
 }
 
+const microsoftSettingsPage = read("apps/admin/app/admin/dashboard/settings/microsoft-365/page.tsx");
+if (
+  !microsoftSettingsPage.includes("@theouthaven/auth/admin-session") ||
+  !microsoftSettingsPage.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Microsoft 365 settings page must use isolated Admin auth and shared DB.");
+}
+if (
+  microsoftSettingsPage.includes("@/lib/admin-auth") ||
+  microsoftSettingsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Microsoft 365 settings page must not import root monolith auth/database modules.");
+}
+for (const actionPath of [
+  "/api/admin/integrations/microsoft-365/connect",
+  "/api/admin/integrations/microsoft-365/sync",
+  "/api/admin/integrations/microsoft-365/preferences",
+  "/api/admin/integrations/microsoft-365/disconnect",
+]) {
+  if (!microsoftSettingsPage.includes(actionPath)) {
+    throw new Error(`Microsoft 365 settings page must retain isolated action: ${actionPath}`);
+  }
+}
+if (
+  !adminNavigation.includes("/admin/dashboard/settings/microsoft-365") ||
+  !adminNavigation.includes('label: "Microsoft 365"')
+) {
+  throw new Error("Microsoft 365 navigation must be present in the isolated Admin shell.");
+}
+if (
+  adminNavigation.includes('label: "Microsoft 365"') &&
+  !adminNavigation.includes('migrated: true')
+) {
+  throw new Error("Microsoft 365 navigation must be marked migrated after page and sync migration.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
