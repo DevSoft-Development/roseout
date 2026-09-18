@@ -2128,6 +2128,25 @@ if (
   throw new Error("Careers Talent Pool must not import root monolith auth/database/UI helpers.");
 }
 
+const careersInternshipsPage = read("apps/admin/app/admin/dashboard/careers/internships/page.tsx");
+if (
+  !careersInternshipsPage.includes("@theouthaven/auth/admin-session") ||
+  !careersInternshipsPage.includes("@theouthaven/db/admin-client") ||
+  !careersInternshipsPage.includes("@/lib/careers/access") ||
+  !careersInternshipsPage.includes("@/lib/careers/format") ||
+  !careersInternshipsPage.includes('from("career_internship_programs")')
+) {
+  throw new Error("Careers Internships must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersInternshipsPage.includes("@/lib/admin-auth") ||
+  careersInternshipsPage.includes("@/lib/admin-permissions") ||
+  careersInternshipsPage.includes("@/lib/supabase-admin") ||
+  careersInternshipsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Internships must not import root monolith auth/database/UI helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
