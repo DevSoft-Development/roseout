@@ -2444,6 +2444,64 @@ if (
   throw new Error("Website Hosting DR runtimes must use the shared Admin DB.");
 }
 
+const usersPage = read("apps/admin/app/admin/dashboard/users/page.tsx");
+const usersReadRuntime = read("apps/admin/lib/admin/admin-users-read.ts");
+const usersCoreApi = read("apps/admin/lib/aws/admin-users-core-api.ts");
+const usersBetaControl = read("apps/admin/app/admin/dashboard/users/BetaAccessSelect.tsx");
+const usersBetaRoute = read("apps/admin/app/api/admin/users/[userId]/beta-access/route.ts");
+const usersBetaRuntime = read("apps/admin/lib/beta/program-access.ts");
+
+if (
+  !usersPage.includes("@theouthaven/auth/admin-session") ||
+  !usersPage.includes("@theouthaven/db/admin-client") ||
+  !usersPage.includes("@/lib/admin/admin-users-read") ||
+  !usersPage.includes('requireAdminRole(["superadmin"])') ||
+  !usersPage.includes("./BetaAccessSelect")
+) {
+  throw new Error("Users page must preserve superadmin-only isolated auth, KPIs, read runtime, and beta access control.");
+}
+for (const source of [usersPage, usersReadRuntime, usersBetaRoute, usersBetaRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Users slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !usersReadRuntime.includes("@theouthaven/auth/admin-session") ||
+  !usersReadRuntime.includes("@theouthaven/db/admin-client") ||
+  !usersReadRuntime.includes("@/lib/aws/admin-users-core-api") ||
+  !usersReadRuntime.includes('from("user_profiles")') ||
+  !usersReadRuntime.includes('from("beta_testers")') ||
+  !usersReadRuntime.includes('from("support_tickets")') ||
+  !usersCoreApi.includes("/v1/admin/users/list/read")
+) {
+  throw new Error("Users read path must preserve shared DB fallback and AWS Core API reads.");
+}
+if (
+  !usersBetaControl.includes("/api/admin/users/") ||
+  !usersBetaControl.includes("/beta-access") ||
+  !usersBetaRoute.includes("@theouthaven/auth/admin-session") ||
+  !usersBetaRoute.includes("@/lib/beta/program-access") ||
+  !usersBetaRoute.includes('admin.role !== "superadmin"')
+) {
+  throw new Error("Users beta access control must preserve isolated superadmin API authorization.");
+}
+if (
+  !usersBetaRuntime.includes("@theouthaven/db/admin-client") ||
+  !usersBetaRuntime.includes('from("beta_testers")') ||
+  !usersBetaRuntime.includes('from("beta_applications")') ||
+  !usersBetaRuntime.includes('from("launch_waitlist_signups")') ||
+  !usersBetaRuntime.includes('from("beta_test_sessions")') ||
+  !usersBetaRuntime.includes('from("admin_audit_logs")')
+) {
+  throw new Error("Users beta access runtime must preserve beta synchronization, weekly session, and audit writes.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
