@@ -1,5 +1,6 @@
 import {
   Database,
+  DollarSign,
   Flag,
   Home,
   ListChecks,
@@ -93,6 +94,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: ShoppingBag,
     migrated: true,
     roles: ["superadmin", "admin", "manager", "reviewer", "experience_team"],
+  },
+  {
+    label: "Payouts",
+    href: "/admin/dashboard/payouts",
+    icon: DollarSign,
+    migrated: true,
+    roles: ["superadmin", "admin"],
   },
   { label: "Settings", icon: Settings, migrated: false },
 ] as const;
