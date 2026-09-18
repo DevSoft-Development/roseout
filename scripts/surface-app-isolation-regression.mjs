@@ -1532,6 +1532,25 @@ if (
   throw new Error("Support Work page must not import root monolith auth/database/team helpers.");
 }
 
+const locationChangeRequestsPage = read("apps/admin/app/admin/dashboard/team/location-change-requests/page.tsx");
+if (
+  !locationChangeRequestsPage.includes("@theouthaven/auth/admin-session") ||
+  !locationChangeRequestsPage.includes("@theouthaven/db/admin-client") ||
+  !locationChangeRequestsPage.includes("@/components/TeamReviewList") ||
+  !locationChangeRequestsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !locationChangeRequestsPage.includes("location_change_requests")
+) {
+  throw new Error("Location Change Requests must use isolated manager auth, shared DB, and Team review UI.");
+}
+if (
+  locationChangeRequestsPage.includes("@/lib/admin-auth") ||
+  locationChangeRequestsPage.includes("@/lib/admin-permissions") ||
+  locationChangeRequestsPage.includes("@/lib/supabase-admin") ||
+  locationChangeRequestsPage.includes("@/components/WorkspaceListPage")
+) {
+  throw new Error("Location Change Requests must not import root monolith auth/database/UI helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
