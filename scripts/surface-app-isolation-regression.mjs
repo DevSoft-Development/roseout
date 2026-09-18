@@ -3178,6 +3178,41 @@ for (const source of [
   }
 }
 
+const adminOverviewPage = read("apps/admin/app/admin/dashboard/page.tsx");
+const adminOverviewRuntime = read("apps/admin/lib/admin/admin-overview.ts");
+const adminLocationSearch = read("apps/admin/components/admin/AdminLocationSearch.tsx");
+const adminLocationSearchRoute = read("apps/admin/app/api/admin/locations/search/route.ts");
+
+if (
+  !adminOverviewPage.includes("@theouthaven/auth/admin-session") ||
+  !adminOverviewPage.includes("@theouthaven/auth/admin-roles") ||
+  !adminOverviewPage.includes("@/lib/admin/admin-overview") ||
+  !adminOverviewPage.includes("@/components/admin/AdminLocationSearch") ||
+  !adminOverviewRuntime.includes("@theouthaven/db/admin-client") ||
+  !adminOverviewRuntime.includes('from("location_reservations")') ||
+  !adminOverviewRuntime.includes('from("business_websites")') ||
+  !adminOverviewRuntime.includes('from("website_hosting_nodes")') ||
+  !adminLocationSearch.includes("/api/admin/locations/search") ||
+  !adminLocationSearchRoute.includes("@theouthaven/auth/admin-session") ||
+  !adminLocationSearchRoute.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Admin Overview must use isolated auth/shared DB and preserve overview/search behavior.");
+}
+for (const source of [adminOverviewPage, adminOverviewRuntime, adminLocationSearchRoute]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Admin Overview must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (adminOverviewPage.includes("Admin dashboard migration scaffold")) {
+  throw new Error("Admin Overview must not remain a migration scaffold.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
