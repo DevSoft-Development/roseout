@@ -1240,6 +1240,28 @@ if (
   throw new Error("Team Settings page must not import root monolith auth/permission modules.");
 }
 
+const teamTasksPage = read("apps/admin/app/admin/dashboard/team/tasks/page.tsx");
+const workspaceListPage = read("apps/admin/components/WorkspaceListPage.tsx");
+if (
+  !teamTasksPage.includes("@theouthaven/auth/admin-session") ||
+  !teamTasksPage.includes("@theouthaven/db/admin-client") ||
+  !teamTasksPage.includes("@/components/WorkspaceListPage") ||
+  !teamTasksPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamTasksPage.includes('from("workspace_tasks")')
+) {
+  throw new Error("Team Tasks must use isolated team-management auth, shared DB, and workspace list UI.");
+}
+for (const source of [teamTasksPage, workspaceListPage]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/team-tools")
+  ) {
+    throw new Error("Team Tasks slice must not import root monolith auth/database/team-tools modules.");
+  }
+}
+
 const claimCodeAuditPage = read("apps/admin/app/admin/dashboard/team/claim-code-audit/page.tsx");
 if (
   !claimCodeAuditPage.includes("@theouthaven/auth/admin-session") ||
