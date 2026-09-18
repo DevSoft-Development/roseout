@@ -110,6 +110,13 @@ if (adminCallback.includes("@/lib/supabase") || adminCallback.includes("@/lib/us
   throw new Error("Admin OAuth callback must not depend on root monolith auth/database modules.");
 }
 
+if (
+  adminCallback.includes("microsoft_365_connections") ||
+  adminCallback.includes("/api/admin/integrations/microsoft-365/connect")
+) {
+  throw new Error("Admin login must not require the optional Microsoft 365 Graph connection.");
+}
+
 const platformErrorsPage = read("apps/admin/app/admin/dashboard/platform-errors/page.tsx");
 if (!platformErrorsPage.includes('@theouthaven/auth/admin-session') || !platformErrorsPage.includes('@/lib/platform-errors')) {
   throw new Error("Platform Errors page must use isolated Admin auth and data loader.");
