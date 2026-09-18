@@ -19,7 +19,7 @@ async function claimMicrosoftSyncLease(userId: string): Promise<MicrosoftSyncLea
   const token = randomUUID();
   const expiresAt = new Date(now.getTime() + MICROSOFT_SYNC_LEASE_MS).toISOString();
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("microsoft_365_connections")
     .update({
       sync_lease_token: token,
@@ -34,7 +34,7 @@ async function claimMicrosoftSyncLease(userId: string): Promise<MicrosoftSyncLea
   if (error) throw error;
   if (data?.user_id) return { token, expiresAt };
 
-  const { data: existing, error: existingError } = await supabaseAdmin
+  const { data: existing, error: existingError } = await getAdminDatabaseClient()
     .from("microsoft_365_connections")
     .select("user_id,sync_lease_expires_at")
     .eq("user_id", userId)
@@ -45,7 +45,7 @@ async function claimMicrosoftSyncLease(userId: string): Promise<MicrosoftSyncLea
 }
 
 async function releaseMicrosoftSyncLease(userId: string, token: string) {
-  const { error } = await supabaseAdmin
+  const { error } = await getAdminDatabaseClient()
     .from("microsoft_365_connections")
     .update({
       sync_lease_token: null,
