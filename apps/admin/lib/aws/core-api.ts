@@ -25,6 +25,16 @@ export type CoreAdminBillingResponse = {
   trialRows: Array<Record<string, unknown>>;
 };
 
+export type CoreSupportOperationsSettingsResponse = {
+  success: true;
+  groups: Array<Record<string, unknown>>;
+  slas: Array<Record<string, unknown>>;
+  businessHours: Array<Record<string, unknown>>;
+  macros: Array<Record<string, unknown>>;
+  triggers: Array<Record<string, unknown>>;
+  automations: Array<Record<string, unknown>>;
+};
+
 export type CoreCrmOperationsBucket = {
   data: Array<Record<string, unknown>>;
   count: number;
@@ -96,6 +106,10 @@ export function readCrmReportSnapshotViaCoreApi(input: { start?: string; end?: s
     JSON.stringify(input),
     15_000,
   );
+}
+
+export function readSupportOperationsSettingsViaCoreApi() {
+  return signedJson<CoreSupportOperationsSettingsResponse>("/v1/crm/support/settings/read", "{}", 15_000);
 }
 
 export function readAdminBillingViaCoreApi() {
