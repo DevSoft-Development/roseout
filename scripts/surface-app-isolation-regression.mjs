@@ -3708,3 +3708,41 @@ if (pkg.scripts?.["lint:surface:admin"] !== "eslint apps/admin packages/auth pac
 }
 
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
+
+
+const crmRedirectRoutes = [
+  "apps/admin/app/admin/dashboard/crm/contacts/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/knowledge-base/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/locations/[id]/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/accounts/[id]/contacts/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/escalations/[id]/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/change-requests/[id]/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/escalations/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/work-queue/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/change-requests/page.tsx",
+];
+for (const route of crmRedirectRoutes) {
+  const source = read(route);
+  if (!source.includes("next/navigation")) {
+    throw new Error(`CRM redirect route must remain isolated inside Admin: ${route}`);
+  }
+}
+const crmClaimCodesShim = read("apps/admin/app/admin/dashboard/crm/claims/claim-codes/page.tsx");
+if (!crmClaimCodesShim.includes('export { default } from "../../claim-codes/page"')) {
+  throw new Error("CRM claims claim-codes shim must preserve the isolated claim-codes re-export.");
+}
+const crmClaimCodesPage = read("apps/admin/app/admin/dashboard/crm/claim-codes/page.tsx");
+if (!crmClaimCodesPage.includes("@theouthaven/auth/admin-session") || !crmClaimCodesPage.includes("@/lib/crm/claim-codes")) {
+  throw new Error("CRM claim-codes page must use isolated Admin auth and data access.");
+}
+const crmClaimCodesData = read("apps/admin/lib/crm/claim-codes.ts");
+if (!crmClaimCodesData.includes("@theouthaven/db/admin-client") || crmClaimCodesData.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM claim-codes data helper must use the shared Admin DB boundary.");
+}
+const crmTasksRedirect = read("apps/admin/app/admin/dashboard/crm/tasks/page.tsx");
+if (!crmTasksRedirect.includes("@theouthaven/auth/admin-session") || !crmTasksRedirect.includes("@/lib/crm/permissions")) {
+  throw new Error("CRM tasks redirect must use isolated Admin auth and CRM permissions.");
+}
+if (crmTasksRedirect.includes("@/lib/admin-auth") || crmTasksRedirect.includes("@/lib/admin-permissions")) {
+  throw new Error("CRM tasks redirect must not import root monolith auth modules.");
+}
