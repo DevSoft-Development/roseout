@@ -2228,6 +2228,57 @@ if (
   throw new Error("Legacy Claims route must remain an isolated redirect to the pending-claims CRM view.");
 }
 
+const mlDashboardPage = read("apps/admin/app/admin/dashboard/ml/page.tsx");
+const mlActions = read("apps/admin/components/admin/ml/MlRecalculationActions.tsx");
+const mlLocationRoute = read("apps/admin/app/api/admin/ml/recalculate-location-scores/route.ts");
+const mlPhase2Route = read("apps/admin/app/api/admin/ml/recalculate-phase2/route.ts");
+const mlReviewRoute = read("apps/admin/app/api/admin/ml/recalculate-review-intelligence/route.ts");
+const mlAdvancedRoute = read("apps/admin/app/api/admin/ml/recalculate-advanced-all/route.ts");
+const mlAuth = read("apps/admin/lib/ml/admin-ml-auth.ts");
+const mlAdvancedRuntime = read("apps/admin/lib/ml/advanced/recalculate.ts");
+
+if (
+  !mlDashboardPage.includes("@theouthaven/auth/admin-session") ||
+  !mlDashboardPage.includes("@theouthaven/db/admin-client") ||
+  !mlDashboardPage.includes("@/components/admin/ml/MlRecalculationActions") ||
+  !mlDashboardPage.includes('from("location_ml_features")') ||
+  !mlDashboardPage.includes('from("location_intent_ml_features")') ||
+  !mlDashboardPage.includes('from("location_pair_ml_features")') ||
+  !mlDashboardPage.includes('from("location_review_ml_features")')
+) {
+  throw new Error("Machine Learning dashboard must use isolated Admin auth/shared DB and preserve ML data reads.");
+}
+for (const source of [mlDashboardPage, mlLocationRoute, mlPhase2Route, mlReviewRoute, mlAdvancedRoute, mlAuth, mlAdvancedRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Machine Learning slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !mlActions.includes("/api/admin/ml/recalculate-location-scores") ||
+  !mlActions.includes("/api/admin/ml/recalculate-phase2") ||
+  !mlActions.includes("/api/admin/ml/recalculate-review-intelligence")
+) {
+  throw new Error("Machine Learning recalculation client must preserve protected recalculation endpoints.");
+}
+if (
+  !mlLocationRoute.includes("@theouthaven/db/admin-client") ||
+  !mlLocationRoute.includes("@/lib/ml/admin-ml-auth") ||
+  !mlPhase2Route.includes("@theouthaven/db/admin-client") ||
+  !mlPhase2Route.includes("@/lib/ml/admin-ml-auth") ||
+  !mlReviewRoute.includes("@theouthaven/db/admin-client") ||
+  !mlReviewRoute.includes("@/lib/ml/admin-ml-auth") ||
+  !mlAdvancedRoute.includes("@/lib/ml/admin-ml-auth") ||
+  !mlAdvancedRuntime.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Machine Learning recalculation runtime must use isolated auth and shared Admin DB.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
