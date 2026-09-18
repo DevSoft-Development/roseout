@@ -254,6 +254,34 @@ if (!adminNavigation.includes("/admin/dashboard/settings/promo-codes")) {
   throw new Error("Promo Codes navigation must be present in the isolated Admin shell.");
 }
 
+const securityPage = read("apps/admin/app/admin/dashboard/security/page.tsx");
+if (!securityPage.includes("@theouthaven/auth/admin-session") || !securityPage.includes("@/lib/security")) {
+  throw new Error("Security page must use isolated Admin auth and data loader.");
+}
+if (!securityPage.includes('requireAdminRole(["superadmin"])')) {
+  throw new Error("Security page must remain superadmin-only.");
+}
+if (securityPage.includes("@/lib/admin-auth") || securityPage.includes("@/lib/admin-system")) {
+  throw new Error("Security page must not import root monolith auth/system modules.");
+}
+
+const securityApi = read("apps/admin/app/api/admin/system/security/[userId]/route.ts");
+if (!securityApi.includes("@theouthaven/auth/admin-session") || !securityApi.includes("@/lib/security")) {
+  throw new Error("Security access API must use isolated Admin auth and security loader.");
+}
+if (!securityApi.includes('requireAdminRole(["superadmin"])')) {
+  throw new Error("Security access API must remain superadmin-only.");
+}
+
+const securityLoader = read("apps/admin/lib/security.ts");
+if (!securityLoader.includes("@theouthaven/db/admin-client") || securityLoader.includes("@/lib/")) {
+  throw new Error("Security loader must use the shared Admin DB package and avoid root lib imports.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/security")) {
+  throw new Error("Security navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
