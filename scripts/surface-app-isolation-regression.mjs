@@ -3039,6 +3039,30 @@ if (
   throw new Error("Search Anchors audit must not import root monolith database/auth helpers.");
 }
 
+const searchAnchorsCuratedReviewPage = read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx");
+const searchAnchorsCuratedReviewClient = read("apps/admin/app/admin/dashboard/search-anchors/curated-review/CuratedReviewClient.tsx");
+const searchAnchorsCuratedReviewRoute = read("apps/admin/app/api/admin/search-anchors/curated-review/route.ts");
+if (
+  !searchAnchorsCuratedReviewPage.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsCuratedReviewPage.includes('from("search_anchors")') ||
+  !searchAnchorsCuratedReviewClient.includes("/api/admin/search-anchors/curated-review") ||
+  !searchAnchorsCuratedReviewRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsCuratedReviewRoute.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsCuratedReviewRoute.includes('new Set(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Search Anchors curated review must use isolated Admin DB/auth and preserve review workflow.");
+}
+for (const source of [searchAnchorsCuratedReviewPage, searchAnchorsCuratedReviewRoute]) {
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions")
+  ) {
+    throw new Error("Search Anchors curated review must not import root monolith auth/database helpers.");
+  }
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
