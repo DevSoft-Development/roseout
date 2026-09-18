@@ -4021,3 +4021,48 @@ const supportCoreApiCase = read("apps/admin/lib/aws/core-api.ts");
 if (!supportCoreApiCase.includes("readSupportCaseViaCoreApi")) {
   throw new Error("Isolated Admin Core API must preserve support case reads.");
 }
+
+
+const crmMessagingPages = [
+  "apps/admin/app/admin/dashboard/crm/notifications/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/communications/unmatched/page.tsx",
+];
+for (const route of crmMessagingPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`CRM messaging page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM messaging page must not import root monolith auth/DB: ${route}`);
+  }
+}
+for (const actionFile of [
+  "apps/admin/app/admin/dashboard/crm/notifications/actions.ts",
+  "apps/admin/app/admin/dashboard/crm/communications/unmatched/actions.ts",
+]) {
+  const source = read(actionFile);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`CRM messaging actions must use isolated Admin auth and shared Admin DB: ${actionFile}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM messaging actions must not import root monolith auth/DB: ${actionFile}`);
+  }
+}
+const crmSmsReplyRoute = read("apps/admin/app/api/admin/crm/sms/reply/route.ts");
+for (const dependency of [
+  "@theouthaven/auth/admin-session",
+  "@theouthaven/db/admin-client",
+  "@/lib/sms/telnyx",
+  "@/lib/crm/permissions",
+]) {
+  if (!crmSmsReplyRoute.includes(dependency)) {
+    throw new Error(`CRM SMS reply route missing isolated dependency: ${dependency}`);
+  }
+}
+if (
+  crmSmsReplyRoute.includes("@/lib/admin-api-auth")
+  || crmSmsReplyRoute.includes("@/lib/admin-permissions")
+  || crmSmsReplyRoute.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM SMS reply route must not import root monolith auth/DB helpers.");
+}
