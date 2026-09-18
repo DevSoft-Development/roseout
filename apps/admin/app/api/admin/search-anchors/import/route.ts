@@ -1,0 +1,245 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getCurrentAdminOrNull } from "@theouthaven/auth/admin-session";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import { platformIntegrationApiConfigured, searchGooglePlacesTextViaIntegrationApi } from "@/lib/aws/integration-api";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
+const roles = new Set(["superadmin", "admin", "manager"]);
+const MAX_BYTES = 2 * 1024 * 1024;
+const MAX_ROWS = 1000;
+const LOOKUP_BATCH_SIZE = 200;
+const TYPES = new Set(["restaurant", "activity", "landmark", "stadium", "arena", "park", "beach", "mall", "theater", "museum", "hotel", "transit_hub", "university", "event_venue", "neighborhood", "airport", "attraction"]);
+const STRATEGIES = new Set(["dense_urban", "urban", "stadium", "mall", "beach", "large_park", "suburban", "long_island", "transit", "airport"]);
+
+type CoordinateEnrichmentResult =
+  | { error: string }
+  | {
+      latitude: number;
+      longitude: number;
+      placeId: string | null;
+      formattedAddress: string | null;
+      matchedName: string | null;
+    };
+
+type ExistingAnchor = {
+  id: string;
+  normalized_name: string;
+  market: string | null;
+  city: string | null;
+  state: string | null;
+};
+
+function normalize(value: unknown) {
+  return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (quoted && char === '"' && next === '"') { cell += '"'; i += 1; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (!quoted && char === ",") { row.push(cell); cell = ""; continue; }
+    if (!quoted && (char === "\n" || char === "\r")) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell);
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+    cell += char;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  const [headers = [], ...body] = rows;
+  const normalizedHeaders = headers.map((header) => normalize(header).replace(/ /g, "_"));
+  return body.map((values) => Object.fromEntries(normalizedHeaders.map((header, index) => [header, values[index]?.trim() ?? ""]))) as Record<string, string>[];
+}
+
+function numberValue(value: string | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function anchorKey(row: Pick<ExistingAnchor, "normalized_name" | "market" | "city" | "state">) {
+  return [row.normalized_name, row.market ?? "", row.city ?? "", row.state ?? ""].join("|");
+}
+
+type PlacesCandidate = {
+  id?: string;
+  formattedAddress?: string;
+  displayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
+};
+
+async function enrichCoordinates(row: Record<string, string>): Promise<CoordinateEnrichmentResult> {
+  if (!platformIntegrationApiConfigured()) {
+    return { error: "AWS Integration API is not configured for Google Places" };
+  }
+
+  const query = [
+    row.search_query || row.canonical_name,
+    row.city || row.city_hint,
+    row.state,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  try {
+    const candidate = (await searchGooglePlacesTextViaIntegrationApi<PlacesCandidate>(query, { pageSize: 1, regionCode: "US", fieldMode: "rich" }))[0];
+    const latitude = candidate?.location?.latitude;
+    const longitude = candidate?.location?.longitude;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return { error: "No coordinate match from Google Places API (New)" };
+    }
+    return {
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      placeId: candidate?.id ?? null,
+      formattedAddress: candidate?.formattedAddress ?? null,
+      matchedName: candidate?.displayName?.text ?? null,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Google Places enrichment failed",
+    };
+  }
+}
+
+async function attachExistingIds(rows: Array<Record<string, unknown>>) {
+  const normalizedNames = [...new Set(rows.map((row) => String(row.normalized_name || "")).filter(Boolean))];
+  const existing: ExistingAnchor[] = [];
+
+  for (let start = 0; start < normalizedNames.length; start += LOOKUP_BATCH_SIZE) {
+    const batch = normalizedNames.slice(start, start + LOOKUP_BATCH_SIZE);
+    const { data, error } = await getAdminDatabaseClient()
+      .from("search_anchors")
+      .select("id, normalized_name, market, city, state")
+      .in("normalized_name", batch);
+    if (error) throw error;
+    existing.push(...((data ?? []) as ExistingAnchor[]));
+  }
+
+  const existingByKey = new Map(existing.map((row) => [anchorKey(row), row.id]));
+  return rows.map((row) => {
+    const id = existingByKey.get(anchorKey({
+      normalized_name: String(row.normalized_name || ""),
+      market: typeof row.market === "string" ? row.market : null,
+      city: typeof row.city === "string" ? row.city : null,
+      state: typeof row.state === "string" ? row.state : null,
+    }));
+    return { ...row, id: id ?? crypto.randomUUID() };
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const admin = await getCurrentAdminOrNull();
+  if (!admin) return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+  if (!roles.has(admin.role)) return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
+
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const mode = String(formData.get("mode") || "validate");
+    const enrichMissing = String(formData.get("enrichMissing") || "false") === "true";
+    if (!(file instanceof File)) return NextResponse.json({ success: false, error: "Select a CSV file" }, { status: 400 });
+    if (!file.name.toLowerCase().endsWith(".csv")) return NextResponse.json({ success: false, error: "Only CSV files are supported" }, { status: 400 });
+    if (file.size > MAX_BYTES) return NextResponse.json({ success: false, error: "CSV exceeds the 2 MB limit" }, { status: 400 });
+
+    const records = parseCsv(await file.text());
+    if (!records.length) return NextResponse.json({ success: false, error: "CSV contains no data rows" }, { status: 400 });
+    if (records.length > MAX_ROWS) return NextResponse.json({ success: false, error: `CSV exceeds the ${MAX_ROWS}-row limit` }, { status: 400 });
+
+    const names = new Set<string>();
+    const errors: Array<{ line: number; message: string }> = [];
+    const warnings: Array<{ line: number; message: string }> = [];
+    const rows = [] as Array<Record<string, unknown>>;
+    let enriched = 0;
+
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      const line = index + 2;
+      const canonicalName = record.canonical_name?.trim();
+      const normalizedName = normalize(canonicalName);
+      if (!canonicalName) errors.push({ line, message: "canonical_name is required" });
+      if (names.has(normalizedName)) errors.push({ line, message: `duplicate canonical_name: ${canonicalName}` });
+      names.add(normalizedName);
+      if (!TYPES.has(record.anchor_type)) errors.push({ line, message: `invalid anchor_type: ${record.anchor_type || "blank"}` });
+      if (!STRATEGIES.has(record.radius_strategy)) errors.push({ line, message: `invalid radius_strategy: ${record.radius_strategy || "blank"}` });
+
+      let latitude = numberValue(record.latitude || record.lat);
+      let longitude = numberValue(record.longitude || record.lng || record.lon || record.long);
+      let enrichment: CoordinateEnrichmentResult | null = null;
+      if ((latitude === null || longitude === null) && enrichMissing) {
+        enrichment = await enrichCoordinates(record);
+        if ("error" in enrichment) warnings.push({ line, message: enrichment.error });
+        else {
+          latitude = enrichment.latitude;
+          longitude = enrichment.longitude;
+          enriched += 1;
+        }
+      }
+      if (latitude === null || latitude < -90 || latitude > 90) errors.push({ line, message: "valid latitude is required" });
+      if (longitude === null || longitude < -180 || longitude > 180) errors.push({ line, message: "valid longitude is required" });
+
+      rows.push({
+        canonical_name: canonicalName,
+        normalized_name: normalizedName,
+        aliases: String(record.aliases || "").split(/[|;]/).map(normalize).filter(Boolean),
+        anchor_type: record.anchor_type,
+        city: record.city || record.city_hint || null,
+        state: record.state || null,
+        borough: record.borough || null,
+        neighborhood: record.neighborhood || null,
+        county: record.county || null,
+        market: record.market || null,
+        latitude,
+        longitude,
+        default_radius_miles: numberValue(record.default_radius_miles) ?? 1,
+        max_radius_miles: numberValue(record.max_radius_miles) ?? 3,
+        radius_strategy: record.radius_strategy,
+        priority: numberValue(record.priority) ?? 50,
+        source_type: "curated",
+        review_status: record.review_status || "pending_review",
+        is_active: true,
+        is_searchable: true,
+        metadata: {
+          source_name: record.source_name || "Admin CSV upload",
+          source_url: record.source_url || null,
+          search_query: record.search_query || null,
+          region: record.region || null,
+          validation_status: record.validation_status || null,
+          notes: record.notes || null,
+          google_place_id: enrichment && !("error" in enrichment) ? enrichment.placeId : null,
+          formatted_address: enrichment && !("error" in enrichment) ? enrichment.formattedAddress : null,
+          matched_name: enrichment && !("error" in enrichment) ? enrichment.matchedName : null,
+          coordinate_source: enrichment && !("error" in enrichment) ? "google_places_new" : "csv",
+          imported_at: new Date().toISOString(),
+        },
+      });
+    }
+
+    const responseBody = { validated: records.length, enriched, attemptedEnrichment: enrichMissing, errors, warnings, preview: rows.slice(0, 10) };
+    if (errors.length) return NextResponse.json({ success: false, ...responseBody }, { status: 400 });
+    if (mode === "validate") return NextResponse.json({ success: true, ...responseBody });
+
+    const rowsWithIds = await attachExistingIds(rows);
+    const { error } = await getAdminDatabaseClient().from("search_anchors").upsert(rowsWithIds);
+    if (error) throw error;
+    return NextResponse.json({ success: true, imported: rows.length, enriched, warnings });
+  } catch (error) {
+    console.error("[search-anchors/import] CSV import failed", error);
+    const message = error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : "Unable to import search anchors";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}

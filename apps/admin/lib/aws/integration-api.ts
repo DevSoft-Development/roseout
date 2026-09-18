@@ -104,6 +104,24 @@ async function signedJson<T>(
   }
 }
 
+export async function searchGooglePlacesTextViaIntegrationApi<T>(
+  textQuery: string,
+  options: { pageSize?: number; regionCode?: string; fieldMode?: "ids-only" | "rich" } = {},
+): Promise<T[]> {
+  const result = await signedJson<{ places?: T[] }>(
+    "/v1/google-places/search-text",
+    {
+      mode: "text-search",
+      textQuery,
+      pageSize: options.pageSize,
+      regionCode: options.regionCode,
+      fieldMode: options.fieldMode,
+    },
+    15_000,
+  );
+  return Array.isArray(result.places) ? result.places : [];
+}
+
 export function sendEmailViaIntegrationApi(input: {
   from: string;
   to: string | string[];
