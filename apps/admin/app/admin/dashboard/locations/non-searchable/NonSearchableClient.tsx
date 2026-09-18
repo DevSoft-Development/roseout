@@ -1,0 +1,25 @@
+"use client";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+export default function NonSearchableClient({ rows, filters }: { rows:any[]; filters:any }) {
+  const router = useRouter();
+  const [selected,setSelected]=useState<string[]>([]); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false);
+  async function post(body:any){ setBusy(true); setMessage(""); const res=await fetch('/api/admin/locations/repair-publishability',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}); const data=await res.json(); setBusy(false); setMessage(data.success ? `Approved ${data.approved ?? (data.after?1:0)} locations for search. Skipped ${data.skipped ?? 0} that still need fixes.` : (data.message || data.error || 'Action failed')); router.refresh(); }
+  const ready=rows.filter(r=>r.publishability.isReadyToApprove).length;
+  return <div className="space-y-6">
+    {message && <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 p-4 text-sm font-bold text-emerald-100">{message}</div>}
+    <div className="grid gap-3 md:grid-cols-4"><Card label="Non-searchable total" value={rows.length}/><Card label="Ready to approve" value={ready}/><Card label="Needs photo" value={rows.filter(r=>r.publishability.reviewLabel==='Needs photo').length}/><Card label="Low-level / hidden" value={rows.filter(r=>r.publishability.reviewLabel==='Low-level / hidden').length}/></div>
+    <form className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 md:grid-cols-5">
+      <select name="state" defaultValue={filters.state||""} className="rounded-xl bg-black/50 p-3"><option value="">All active markets</option><option>NY</option><option>NJ</option><option>CT</option></select>
+      <select name="locationType" defaultValue={filters.locationType||""} className="rounded-xl bg-black/50 p-3"><option value="">All types</option><option value="restaurant">restaurant</option><option value="activity">activity</option></select>
+      <input name="city" defaultValue={filters.city||""} placeholder="City" className="rounded-xl bg-black/50 p-3" />
+      <input name="query" defaultValue={filters.query||""} placeholder="Search name/address" className="rounded-xl bg-black/50 p-3" />
+      <button className="rounded-xl bg-white px-4 py-3 font-black text-black">Filter</button>
+    </form>
+    <div className="flex flex-wrap gap-3"><button disabled={!selected.length||busy} onClick={()=>post({action:'bulk_approve_ready',locationIds:selected})} className="rounded-xl bg-rose-600 px-4 py-3 font-black disabled:opacity-40">Approve selected</button><button disabled={busy} onClick={()=>confirm('This will approve only eligible locations in the current selection. Hidden, low-level, imported-unverified, missing-photo, duplicate, and out-of-market rows will be skipped.')&&post({action:'bulk_approve_ready',filters,limit:500})} className="rounded-xl border border-white/15 px-4 py-3 font-black">Approve all ready in current filter</button></div>
+    <div className="overflow-hidden rounded-3xl border border-white/10"><table className="w-full text-sm"><thead className="bg-white/[0.06] text-left text-xs uppercase text-white/50"><tr><th className="p-3"></th><th>Name</th><th>Location</th><th>Status</th><th>Main reason</th><th>Action</th></tr></thead><tbody>{rows.map((r:any)=><tr key={r.id} className="border-t border-white/10"><td className="p-3"><input type="checkbox" checked={selected.includes(r.id)} onChange={e=>setSelected(e.target.checked?[...selected,r.id]:selected.filter(id=>id!==r.id))}/></td><td className="p-3 font-bold"><div>{r.name||'Unnamed'}</div><div className="text-xs text-white/50">{r.location_type} · {r.address}</div></td><td>{r.city}, {r.state}</td><td><Badge>{r.publishability.reviewLabel}</Badge><div className="mt-1 text-xs text-white/50">quality {r.quality_status||'—'} · source {r.source_quality_status||'—'} · confidence {r.import_confidence||'—'}</div></td><td className="max-w-xs text-white/70">{r.publishability.reasons[0]||'Ready'}<div className="text-xs text-white/40">{r.publishability.reasons.slice(1).join(', ')}</div></td><td>{r.publishability.isReadyToApprove?<button disabled={busy} onClick={()=>post({action:'approve',locationId:r.id})} className="rounded-lg bg-emerald-600 px-3 py-2 font-black">Approve for search</button>:<button disabled title={r.publishability.reasons.join(', ')} className="rounded-lg bg-white/10 px-3 py-2 font-black text-white/40">Needs Fix</button>}</td></tr>)}</tbody></table>{!rows.length&&<div className="p-10 text-center text-white/60">No non-searchable locations match these filters.</div>}</div>
+  </div>
+}
+function Card({label,value}:{label:string;value:number}){return <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5"><div className="text-3xl font-black">{value}</div><div className="text-sm text-white/55">{label}</div></div>}
+function Badge({children}:{children:any}){return <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-xs font-black">{children}</span>}
