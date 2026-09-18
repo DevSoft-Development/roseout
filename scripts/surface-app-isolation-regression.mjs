@@ -1447,6 +1447,35 @@ if (
   throw new Error("Work Sessions API must not import root monolith auth/database helpers.");
 }
 
+const managerReviewPage = read("apps/admin/app/admin/dashboard/team/review/page.tsx");
+if (
+  !managerReviewPage.includes("@theouthaven/auth/admin-session") ||
+  !managerReviewPage.includes("@theouthaven/db/admin-client") ||
+  !managerReviewPage.includes("@/components/TeamReviewList") ||
+  !managerReviewPage.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Manager Review page must use isolated manager auth, shared DB, and Team review UI.");
+}
+if (
+  managerReviewPage.includes("@/lib/admin-auth") ||
+  managerReviewPage.includes("@/lib/admin-permissions") ||
+  managerReviewPage.includes("@/lib/supabase-admin") ||
+  managerReviewPage.includes("@/components/WorkspaceListPage")
+) {
+  throw new Error("Manager Review page must not import root monolith auth/database/UI helpers.");
+}
+for (const reviewTable of [
+  "team_work_sessions",
+  "location_change_requests",
+  "team_proofs",
+  "ambassador_site_visits",
+  "ambassador_social_outreach",
+]) {
+  if (!managerReviewPage.includes(reviewTable)) {
+    throw new Error(`Manager Review must preserve review queue: ${reviewTable}`);
+  }
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
