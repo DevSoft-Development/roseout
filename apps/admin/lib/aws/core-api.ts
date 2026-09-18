@@ -35,6 +35,13 @@ export type CoreSupportOperationsSettingsResponse = {
   automations: Array<Record<string, unknown>>;
 };
 
+export type CoreSupportCaseResponse = {
+  success: true;
+  ticket: Record<string, unknown>;
+  messages: Array<Record<string, unknown>>;
+  activities: Array<Record<string, unknown>>;
+};
+
 export type CoreCrmOperationsBucket = {
   data: Array<Record<string, unknown>>;
   count: number;
@@ -110,6 +117,14 @@ export function readCrmReportSnapshotViaCoreApi(input: { start?: string; end?: s
 
 export function readSupportOperationsSettingsViaCoreApi() {
   return signedJson<CoreSupportOperationsSettingsResponse>("/v1/crm/support/settings/read", "{}", 15_000);
+}
+
+export function readSupportCaseViaCoreApi(ticketId: string) {
+  return signedJson<CoreSupportCaseResponse>(
+    "/v1/crm/support/case/read",
+    JSON.stringify({ ticketId }),
+    15_000,
+  );
 }
 
 export function readAdminBillingViaCoreApi() {
