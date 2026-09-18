@@ -139,3 +139,34 @@ export async function readStripeConnectPayoutsViaIntegrationApi(
     20_000,
   );
 }
+
+
+export type IntegrationTelnyxPurpose =
+  | "transactional"
+  | "crm"
+  | "reservations"
+  | "support"
+  | "marketing"
+  | "concierge";
+
+export type IntegrationTelnyxSendResponse = {
+  ok: true;
+  provider: "telnyx";
+  purpose: Exclude<IntegrationTelnyxPurpose, "transactional">;
+  id: string | null;
+  status: string;
+  from: string;
+  to: string;
+};
+
+export async function sendTelnyxSmsViaIntegrationApi(
+  purpose: IntegrationTelnyxPurpose,
+  to: string,
+  body: string,
+): Promise<IntegrationTelnyxSendResponse> {
+  return signedJson<IntegrationTelnyxSendResponse>(
+    "/v1/telnyx/messages/send",
+    { purpose, to, body },
+    12_000,
+  );
+}
