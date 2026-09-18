@@ -3746,3 +3746,30 @@ if (!crmTasksRedirect.includes("@theouthaven/auth/admin-session") || !crmTasksRe
 if (crmTasksRedirect.includes("@/lib/admin-auth") || crmTasksRedirect.includes("@/lib/admin-permissions")) {
   throw new Error("CRM tasks redirect must not import root monolith auth modules.");
 }
+
+
+const crmGtmIntelligencePages = [
+  "apps/admin/app/admin/dashboard/crm/gtm/revenue/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/gtm/territories/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/gtm/attribution/page.tsx",
+];
+for (const route of crmGtmIntelligencePages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@/lib/gtm/")) {
+    throw new Error(`CRM GTM intelligence page must use isolated Admin auth/data helpers: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM GTM intelligence page must not import root monolith auth/database modules: ${route}`);
+  }
+}
+for (const helper of [
+  "apps/admin/lib/gtm/revenue.ts",
+  "apps/admin/lib/gtm/territories.ts",
+  "apps/admin/lib/gtm/attribution.ts",
+  "apps/admin/lib/gtm/benchmarks.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM GTM helper must use shared Admin DB: ${helper}`);
+  }
+}
