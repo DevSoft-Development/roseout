@@ -45,12 +45,12 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
   const now = new Date().toISOString();
 
   const [{ data: activeEventRows, error: eventsError }, { data: activeExperienceRows, error: experiencesError }] = await Promise.all([
-    supabaseAdmin
+    adminDb
       .from("events")
       .select("id,location_id,organization_id,status,searchable,starts_at,ends_at")
       .eq("source_kind", "native")
       .in("status", ["scheduled", "postponed"]),
-    supabaseAdmin
+    adminDb
       .from("experiences")
       .select("id,location_id,organization_id,status,searchable")
       .eq("status", "published"),
@@ -83,7 +83,7 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
   const activeOrganizationIds = [...organizationSummary.keys()];
 
   const slotsPromise = activeExperienceIds.length
-    ? supabaseAdmin
+    ? adminDb
         .from("experience_slots")
         .select("id,experience_id,starts_at,status")
         .in("experience_id", activeExperienceIds)
@@ -92,14 +92,14 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
     : Promise.resolve({ data: [] as Array<{ id: string; experience_id: string; starts_at: string; status: string }>, error: null });
 
   const locationsPromise = q
-    ? supabaseAdmin
+    ? adminDb
         .from("locations")
         .select("id,name,city,state")
         .ilike("name", `%${q}%`)
         .order("name", { ascending: true })
         .limit(50)
     : activeLocationIds.length
-      ? supabaseAdmin
+      ? adminDb
           .from("locations")
           .select("id,name,city,state")
           .in("id", activeLocationIds)
@@ -107,7 +107,7 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
       : Promise.resolve({ data: [] as Array<{ id: string; name: string; city: string | null; state: string | null }>, error: null });
 
   const organizationsPromise = !q && activeOrganizationIds.length
-    ? supabaseAdmin
+    ? adminDb
         .from("organizations")
         .select("id,name")
         .in("id", activeOrganizationIds)
@@ -131,12 +131,12 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
   const visibleLocationIds = locations.map((location) => location.id);
   if (q && visibleLocationIds.length) {
     const [{ data: searchedEvents }, { data: searchedExperiences }] = await Promise.all([
-      supabaseAdmin
+      adminDb
         .from("events")
         .select("location_id,status,searchable,starts_at,ends_at")
         .eq("source_kind", "native")
         .in("location_id", visibleLocationIds),
-      supabaseAdmin
+      adminDb
         .from("experiences")
         .select("location_id,status,searchable")
         .in("location_id", visibleLocationIds),
