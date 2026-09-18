@@ -1240,6 +1240,65 @@ if (
   throw new Error("Team Settings page must not import root monolith auth/permission modules.");
 }
 
+const claimCodeAuditPage = read("apps/admin/app/admin/dashboard/team/claim-code-audit/page.tsx");
+if (
+  !claimCodeAuditPage.includes("@theouthaven/auth/admin-session") ||
+  !claimCodeAuditPage.includes("@theouthaven/db/admin-client") ||
+  !claimCodeAuditPage.includes("@/components/TeamReviewList") ||
+  !claimCodeAuditPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Claim Code Audit must use isolated admin auth, shared DB, and Team review UI.");
+}
+if (
+  claimCodeAuditPage.includes("@/lib/admin-auth") ||
+  claimCodeAuditPage.includes("@/lib/admin-permissions") ||
+  claimCodeAuditPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Claim Code Audit must not import root monolith auth/database modules.");
+}
+
+const teamReviewRoute = read("apps/admin/app/api/admin/team/review-item/route.ts");
+if (
+  !teamReviewRoute.includes("@theouthaven/auth/admin-session") ||
+  !teamReviewRoute.includes("@theouthaven/db/admin-client") ||
+  !teamReviewRoute.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Team review API must preserve isolated team-management access.");
+}
+for (const requiredTable of [
+  "claim_code_audit_logs",
+  "password_reset_audit_logs",
+  "workspace_escalations",
+  "location_change_requests",
+  "team_work_sessions",
+]) {
+  if (!teamReviewRoute.includes(requiredTable)) {
+    throw new Error(`Team review API must preserve review table: ${requiredTable}`);
+  }
+}
+if (
+  !teamReviewRoute.includes('"approve"') ||
+  !teamReviewRoute.includes('"reject"')
+) {
+  throw new Error("Team review API must remain restricted to approve/reject actions.");
+}
+if (
+  teamReviewRoute.includes("@/lib/admin-api-auth") ||
+  teamReviewRoute.includes("@/lib/admin-permissions") ||
+  teamReviewRoute.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Team review API must not import root monolith auth/database modules.");
+}
+
+const teamReviewList = read("apps/admin/components/TeamReviewList.tsx");
+const teamReviewActionButton = read("apps/admin/components/TeamReviewActionButton.tsx");
+if (!teamReviewList.includes("./TeamReviewActionButton")) {
+  throw new Error("Team review list must use isolated review action button.");
+}
+if (!teamReviewActionButton.includes("/api/admin/team/review-item")) {
+  throw new Error("Team review action button must call the isolated review API.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
