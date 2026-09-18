@@ -2562,6 +2562,65 @@ if (
   throw new Error("Planner Analytics runtime must use shared Admin DB and preserve funnel data sources.");
 }
 
+const betaAdminPage = read("apps/admin/app/admin/dashboard/beta/page.tsx");
+const betaAdminClient = read("apps/admin/app/admin/dashboard/beta/BetaAdminClient.tsx");
+const betaSearchLabRedirect = read("apps/admin/app/admin/dashboard/beta/search-lab/page.tsx");
+const betaApiShared = read("apps/admin/app/api/admin/beta/_shared.ts");
+const betaWeeklyTasks = read("apps/admin/lib/beta/weeklyTasks.ts");
+const betaReminderEmails = read("apps/admin/lib/beta/reminderEmails.ts");
+const betaProgramAccess = read("apps/admin/lib/beta/program-access.ts");
+const betaEmailSend = read("apps/admin/lib/email/send.ts");
+const betaApiRoutes = [
+  "weekly-settings",
+  "weekly-sessions",
+  "test-weekly-session",
+  "reminders",
+  "applications",
+  "testers",
+  "feedback",
+  "bugs",
+  "tasks",
+].map((name) => read(`apps/admin/app/api/admin/beta/${name}/route.ts`));
+
+if (
+  !betaAdminPage.includes("@theouthaven/auth/admin-session") ||
+  !betaAdminPage.includes("@theouthaven/db/admin-client") ||
+  !betaAdminPage.includes('["superadmin", "admin", "experience_team"]') ||
+  !betaAdminClient.includes("/api/admin/beta/weekly-settings") ||
+  !betaAdminClient.includes("/api/admin/beta/tasks")
+) {
+  throw new Error("Beta Admin dashboard must preserve isolated access, shared DB reads, and Admin Beta actions.");
+}
+if (
+  !betaApiShared.includes("@theouthaven/auth/admin-session") ||
+  !betaApiShared.includes("@theouthaven/db/admin-client") ||
+  !betaWeeklyTasks.includes("@theouthaven/db/admin-client") ||
+  !betaReminderEmails.includes("@theouthaven/db/admin-client") ||
+  !betaProgramAccess.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Beta Admin runtime must use isolated auth and shared Admin DB.");
+}
+for (const source of [betaAdminPage, betaApiShared, betaWeeklyTasks, betaReminderEmails, betaProgramAccess, ...betaApiRoutes]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Beta Admin slice must not import root monolith auth/database helpers.");
+  }
+}
+if (
+  !betaReminderEmails.includes("@/lib/email/send") ||
+  !betaEmailSend.includes("@/lib/aws/integration-api") ||
+  !betaEmailSend.includes("sendEmailViaIntegrationApi")
+) {
+  throw new Error("Beta Admin reminders must use the isolated branded email integration path.");
+}
+if (!betaSearchLabRedirect.includes("/admin/dashboard/search-health")) {
+  throw new Error("Beta Search Lab redirect must continue to Search Health.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
