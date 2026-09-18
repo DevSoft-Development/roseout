@@ -4066,3 +4066,41 @@ if (
 ) {
   throw new Error("CRM SMS reply route must not import root monolith auth/DB helpers.");
 }
+
+
+const crmWorkQueuePages = [
+  "apps/admin/app/admin/dashboard/crm/my-work/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/work-queue/new/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/work-queue/[taskId]/page.tsx",
+];
+for (const route of crmWorkQueuePages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM work queue page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM work queue page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const crmWorkQueueActions = read("apps/admin/app/admin/dashboard/crm/work-queue/actions.ts");
+if (!crmWorkQueueActions.includes("@theouthaven/auth/admin-session") || crmWorkQueueActions.includes("@/lib/admin-auth")) {
+  throw new Error("CRM work queue actions must use isolated Admin auth.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/tasks/queries.ts",
+  "apps/admin/lib/crm/tasks/service.ts",
+  "apps/admin/lib/admin-organization-people.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM work queue helper must use shared Admin DB: ${helper}`);
+  }
+}
+const crmTaskTypes = read("apps/admin/lib/crm/tasks/types.ts");
+const crmTaskValidation = read("apps/admin/lib/crm/tasks/validation.ts");
+if (!crmTaskTypes.includes("@theouthaven/auth/admin-roles") || !crmTaskValidation.includes("@theouthaven/auth/admin-roles")) {
+  throw new Error("CRM task role types must use isolated Admin role definitions.");
+}
+if (crmTaskValidation.includes('"experience"')) {
+  throw new Error("CRM task validation must not preserve the legacy experience role.");
+}
