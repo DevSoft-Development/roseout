@@ -2914,6 +2914,26 @@ if (!careersInternshipActivePage.includes('from("career_applications")')) throw 
 if (!careersInternshipAssignmentsPage.includes('from("career_internship_assignments")')) throw new Error("Internship Assignments must preserve assignment reads.");
 if (!careersInternshipCompliancePage.includes('from("career_jobs")')) throw new Error("Internship Compliance must preserve career job compliance reads.");
 
+const teamEscalationsPage = read("apps/admin/app/admin/dashboard/team/escalations/page.tsx");
+if (
+  !teamEscalationsPage.includes("@theouthaven/auth/admin-session") ||
+  !teamEscalationsPage.includes("@theouthaven/db/admin-client") ||
+  !teamEscalationsPage.includes("@/components/TeamReviewList") ||
+  !teamEscalationsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamEscalationsPage.includes('from("workspace_escalations")') ||
+  !teamEscalationsPage.includes('table="workspace_escalations"')
+) {
+  throw new Error("Team Escalations must use isolated Admin auth/shared DB and the isolated review UI.");
+}
+if (
+  teamEscalationsPage.includes("@/lib/admin-auth") ||
+  teamEscalationsPage.includes("@/lib/admin-permissions") ||
+  teamEscalationsPage.includes("@/lib/supabase-admin") ||
+  teamEscalationsPage.includes("@/components/WorkspaceListPage")
+) {
+  throw new Error("Team Escalations must not import root monolith auth/database/review modules.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
