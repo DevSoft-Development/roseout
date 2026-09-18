@@ -1,14 +1,13 @@
 import 'server-only';
 import { getAdminDatabaseClient } from '@theouthaven/db/admin-client';
-const supabaseAdmin = getAdminDatabaseClient();
 
 function paidLocation(row:any){const status=String(row.subscription_status||'').toLowerCase(); const plan=String(row.subscription_plan||row.plan||'').toLowerCase(); return Boolean(row.is_pro)||['active','paid','trialing'].includes(status)||/essential|pro|paid/.test(plan)&&status!=='canceled'&&status!=='cancelled';}
 
 export async function getGtmRevenueIntelligence(){
   const [states,costs,refs]=await Promise.all([
-    supabaseAdmin.from('gtm_location_state').select('location_id,first_touch_source,last_touch_source,assisted_sources,locations!inner(id,subscription_status,subscription_plan,plan,is_pro,subscription_amount_cents)'),
-    supabaseAdmin.from('gtm_channel_costs').select('channel,spend,labor_cost,units'),
-    supabaseAdmin.from('gtm_referrals').select('status,attributed_mrr'),
+    getAdminDatabaseClient().from('gtm_location_state').select('location_id,first_touch_source,last_touch_source,assisted_sources,locations!inner(id,subscription_status,subscription_plan,plan,is_pro,subscription_amount_cents)'),
+    getAdminDatabaseClient().from('gtm_channel_costs').select('channel,spend,labor_cost,units'),
+    getAdminDatabaseClient().from('gtm_referrals').select('status,attributed_mrr'),
   ]);
   for(const r of [states,costs,refs])if(r.error)throw r.error;
   const customers=(states.data||[]).filter((r:any)=>{const l=Array.isArray(r.locations)?r.locations[0]:r.locations; return paidLocation(l);});
