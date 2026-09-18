@@ -1354,6 +1354,65 @@ if (!teamToolsForms.includes("/api/admin/team/members")) {
   throw new Error("Team Members form must call the isolated Team Members API.");
 }
 
+const teamAssignmentsPage = read("apps/admin/app/admin/dashboard/team/assignments/page.tsx");
+if (
+  !teamAssignmentsPage.includes("@theouthaven/auth/admin-session") ||
+  !teamAssignmentsPage.includes("@/components/AdminAssignLocationsClient") ||
+  !teamAssignmentsPage.includes("@/lib/team-assignment-query-safe") ||
+  !teamAssignmentsPage.includes("@/lib/team-assignment-members") ||
+  !teamAssignmentsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Team Assignments page must use isolated auth, local runtime, and local assignment client.");
+}
+if (
+  teamAssignmentsPage.includes("@/lib/admin-auth") ||
+  teamAssignmentsPage.includes("@/lib/supabase-admin") ||
+  teamAssignmentsPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Team Assignments page must not import root monolith auth/database/team helpers.");
+}
+
+for (const assignmentRoute of [
+  "apps/admin/app/api/admin/workspace/assign-locations/route.ts",
+  "apps/admin/app/api/admin/workspace/assign-locations/search/route.ts",
+]) {
+  const source = read(assignmentRoute);
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+  ) {
+    throw new Error(`Team Assignment route must preserve isolated manager access: ${assignmentRoute}`);
+  }
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Team Assignment route must not import root auth/database helpers: ${assignmentRoute}`);
+  }
+}
+
+for (const assignmentRuntime of [
+  "apps/admin/lib/team-assignment-members.ts",
+  "apps/admin/lib/team-assignment-query-safe.ts",
+  "apps/admin/lib/team-assignment-service.ts",
+]) {
+  const source = read(assignmentRuntime);
+  if (
+    !source.includes("@theouthaven/db/admin-client") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Team Assignment runtime must use shared Admin DB access: ${assignmentRuntime}`);
+  }
+}
+
+const assignmentClient = read("apps/admin/components/AdminAssignLocationsClient.tsx");
+if (
+  !assignmentClient.includes("/api/admin/workspace/assign-locations") ||
+  !assignmentClient.includes("/api/admin/workspace/assign-locations/search")
+) {
+  throw new Error("Team Assignment client must use isolated assignment APIs.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
