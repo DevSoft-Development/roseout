@@ -2085,6 +2085,39 @@ if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin
   throw new Error("SEO Tools navigation must be present in the isolated Admin shell.");
 }
 
+const seoOperationsPage = read("apps/admin/app/admin/dashboard/seo/page.tsx");
+const seoOperationsClient = read("apps/admin/app/admin/dashboard/seo/SeoOperationsClient.tsx");
+if (
+  !seoOperationsPage.includes("@theouthaven/auth/admin-session") ||
+  !seoOperationsPage.includes("@/lib/admin-permissions") ||
+  seoOperationsPage.includes("@/lib/admin-auth") ||
+  seoOperationsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("SEO Operations page must use isolated auth and local presentation.");
+}
+for (const seoOperationsRoute of [
+  "apps/admin/app/api/admin/seo/runs/route.ts",
+  "apps/admin/app/api/admin/seo/issues/route.ts",
+  "apps/admin/app/api/admin/seo/inspect/route.ts",
+]) {
+  const source = read(seoOperationsRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`SEO Operations route must preserve isolated auth/database boundaries: ${seoOperationsRoute}`);
+  }
+}
+for (const endpoint of ["/api/admin/seo/runs", "/api/admin/seo/issues", "/api/admin/seo/inspect", "/api/admin/seo/audit"]) {
+  if (!seoOperationsClient.includes(endpoint)) {
+    throw new Error(`SEO Operations client must use isolated endpoint: ${endpoint}`);
+  }
+}
+if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/seo")) {
+  throw new Error("SEO Operations navigation must be present in isolated Admin.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
