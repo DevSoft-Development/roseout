@@ -1960,6 +1960,38 @@ if (
   throw new Error("Campaigns page must not import root monolith auth/database helpers.");
 }
 
+const careersPage = read("apps/admin/app/admin/dashboard/careers/page.tsx");
+if (
+  !careersPage.includes("@theouthaven/auth/admin-session") ||
+  !careersPage.includes("@theouthaven/db/admin-client") ||
+  !careersPage.includes('"superadmin"') ||
+  !careersPage.includes('"admin"') ||
+  !careersPage.includes('"manager"') ||
+  !careersPage.includes('"editor"') ||
+  !careersPage.includes('"reviewer"') ||
+  !careersPage.includes('"ambassador"') ||
+  !careersPage.includes('"experience_team"') ||
+  !careersPage.includes('"viewer"')
+) {
+  throw new Error("Careers hub must use isolated Admin auth/shared DB and preserve core staff access.");
+}
+if (
+  careersPage.includes("@/lib/admin-auth") ||
+  careersPage.includes("@/lib/admin-permissions") ||
+  careersPage.includes("@/lib/supabase-admin") ||
+  careersPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers hub must not import root monolith auth/database/UI helpers.");
+}
+if (
+  !careersPage.includes('from("career_jobs")') ||
+  !careersPage.includes('from("career_applications")') ||
+  !careersPage.includes('from("career_interviews")') ||
+  !careersPage.includes('from("career_offers")')
+) {
+  throw new Error("Careers hub must preserve hiring dashboard data sources.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
