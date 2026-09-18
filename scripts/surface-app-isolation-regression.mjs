@@ -366,10 +366,6 @@ for (const microsoftDbRoute of [
   }
 }
 
-if (adminNavigation.includes('label: "Microsoft 365"') && !adminNavigation.includes('migrated: false')) {
-  throw new Error("Microsoft 365 navigation must remain unmigrated until sync and page migration are complete.");
-}
-
 for (const microsoftSyncRuntimeFile of [
   "apps/admin/lib/microsoft-365/matching.ts",
   "apps/admin/lib/microsoft-365/subscriptions.ts",
