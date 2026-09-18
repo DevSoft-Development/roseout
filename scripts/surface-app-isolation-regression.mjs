@@ -1494,6 +1494,25 @@ if (
   throw new Error("Site Visits page must not import root monolith auth/database/team helpers.");
 }
 
+const teamSocialOutreachPage = read("apps/admin/app/admin/dashboard/team/social-outreach/page.tsx");
+if (
+  !teamSocialOutreachPage.includes("@theouthaven/auth/admin-session") ||
+  !teamSocialOutreachPage.includes("@theouthaven/db/admin-client") ||
+  !teamSocialOutreachPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamSocialOutreachPage.includes("ambassador_social_outreach") ||
+  !teamSocialOutreachPage.includes("social_outreach_templates")
+) {
+  throw new Error("Social Outreach page must use isolated manager auth/shared DB and preserve outreach/template data.");
+}
+if (
+  teamSocialOutreachPage.includes("@/lib/admin-auth") ||
+  teamSocialOutreachPage.includes("@/lib/admin-permissions") ||
+  teamSocialOutreachPage.includes("@/lib/supabase-admin") ||
+  teamSocialOutreachPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Social Outreach page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
