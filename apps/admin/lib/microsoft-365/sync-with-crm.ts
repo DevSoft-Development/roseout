@@ -3,7 +3,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
-const supabaseAdmin = getAdminDatabaseClient();
 import { syncMicrosoft365ForUser } from "./sync";
 import { syncMicrosoft365TasksWithCrm } from "./task-crm-sync";
 
