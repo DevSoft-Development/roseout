@@ -4305,3 +4305,39 @@ const crmCommunicationCenter = read("apps/admin/components/admin/crm/Communicati
 if (!crmCommunicationCenter.includes("/api/admin/crm/communication-center")) {
   throw new Error("CRM CommunicationCenter must preserve isolated communication-center API usage.");
 }
+
+
+const crmRootPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
+if (
+  !crmRootPage.includes("@theouthaven/auth/admin-session")
+  || !crmRootPage.includes("@/lib/crm/location-scope")
+  || !crmRootPage.includes("@/lib/admin-crm")
+  || crmRootPage.includes("@/lib/admin-auth")
+  || crmRootPage.includes("@/lib/team-tools")
+) {
+  throw new Error("CRM root page must use isolated Admin auth, CRM runtime, and scoped location access.");
+}
+const crmLocationsPage = read("apps/admin/app/admin/dashboard/crm/locations/page.tsx");
+if (!crmLocationsPage.includes("/admin/dashboard/crm/claims") || crmLocationsPage.includes("@/app/admin/claims/AdminClaimsPage")) {
+  throw new Error("CRM locations route must reuse the isolated CRM claims workflow for pending claims.");
+}
+const crmRuntime = read("apps/admin/lib/admin-crm.ts");
+if (!crmRuntime.includes("@theouthaven/db/admin-client") || crmRuntime.includes("@/lib/supabase-admin")) {
+  throw new Error("Isolated CRM runtime must use the shared Admin DB boundary.");
+}
+const crmLocationScope = read("apps/admin/lib/crm/location-scope.ts");
+if (!crmLocationScope.includes("@theouthaven/db/admin-client")) {
+  throw new Error("CRM location scope must use shared Admin DB.");
+}
+for (const helper of [
+  "apps/admin/lib/location-market-validation.ts",
+  "apps/admin/lib/location-url.ts",
+  "apps/admin/lib/location-growth/photoDetection.ts",
+  "apps/admin/lib/location-growth/repairPhotoPublishability.ts",
+  "apps/admin/lib/search/lowLevel.ts",
+]) {
+  const source = read(helper);
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`CRM isolated helper must not depend on root auth/DB modules: ${helper}`);
+  }
+}
