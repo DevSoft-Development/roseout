@@ -1316,6 +1316,44 @@ if (
   throw new Error("Password Reset Audit must not import root monolith auth/database modules.");
 }
 
+const teamMembersPage = read("apps/admin/app/admin/dashboard/team/members/page.tsx");
+if (
+  !teamMembersPage.includes("@theouthaven/auth/admin-session") ||
+  !teamMembersPage.includes("@theouthaven/db/admin-client") ||
+  !teamMembersPage.includes("@/components/TeamToolsForms") ||
+  !teamMembersPage.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Team Members page must use isolated superadmin auth, shared DB, and local form UI.");
+}
+if (
+  teamMembersPage.includes("@/lib/admin-auth") ||
+  teamMembersPage.includes("@/lib/admin-permissions") ||
+  teamMembersPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Team Members page must not import root monolith auth/database modules.");
+}
+
+const teamMembersApi = read("apps/admin/app/api/admin/team/members/route.ts");
+if (
+  !teamMembersApi.includes("@theouthaven/auth/admin-session") ||
+  !teamMembersApi.includes("@theouthaven/db/admin-client") ||
+  !teamMembersApi.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Team Members API must use isolated superadmin auth and shared DB.");
+}
+if (
+  teamMembersApi.includes("@/lib/admin-api-auth") ||
+  teamMembersApi.includes("@/lib/admin-permissions") ||
+  teamMembersApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Team Members API must not import root monolith auth/database modules.");
+}
+
+const teamToolsForms = read("apps/admin/components/TeamToolsForms.tsx");
+if (!teamToolsForms.includes("/api/admin/team/members")) {
+  throw new Error("Team Members form must call the isolated Team Members API.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
