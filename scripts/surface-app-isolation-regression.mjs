@@ -1866,6 +1866,29 @@ if (!adminNavigation.includes("/admin/dashboard/events-experiences")) {
   throw new Error("Events & Experiences navigation must be present in the isolated Admin shell.");
 }
 
+const experiencesPage = read("apps/admin/app/admin/dashboard/experiences/page.tsx");
+if (
+  !experiencesPage.includes("@theouthaven/auth/admin-session") ||
+  !experiencesPage.includes("@theouthaven/db/admin-client") ||
+  !experiencesPage.includes('requireAdminRole(["superadmin", "admin", "editor"])')
+) {
+  throw new Error("Experiences page must use isolated Admin auth/shared DB and preserve event roles.");
+}
+if (
+  experiencesPage.includes("@/lib/admin-auth") ||
+  experiencesPage.includes("@/lib/admin-permissions") ||
+  experiencesPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Experiences page must not import root monolith auth/database helpers.");
+}
+if (
+  !experiencesPage.includes('process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com"') ||
+  !experiencesPage.includes('href={`${consumerOrigin}/experiences`}') ||
+  !experiencesPage.includes('href={`${consumerOrigin}/experiences/${row.id}`}')
+) {
+  throw new Error("Experiences public links must remain on the consumer surface.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
