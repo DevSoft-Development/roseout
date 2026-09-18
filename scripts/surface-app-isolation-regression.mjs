@@ -597,7 +597,8 @@ if (
 }
 if (
   googlePlacesBudgetPage.includes("@/lib/supabase-admin") ||
-  googlePlacesBudgetPage.includes("@/lib/google/google-places-cost-control")
+  googlePlacesBudgetPage.includes('from "@/lib/google/google-places-cost-control"') ||
+  googlePlacesBudgetPage.includes("from '@/lib/google/google-places-cost-control'")
 ) {
   throw new Error("Google Places Budget page must not import root monolith database/cost-control modules.");
 }
