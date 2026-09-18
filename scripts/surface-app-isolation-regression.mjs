@@ -2109,6 +2109,25 @@ if (
   throw new Error("Careers Offers must not import root monolith auth/database/UI helpers.");
 }
 
+const careersTalentPoolPage = read("apps/admin/app/admin/dashboard/careers/talent-pool/page.tsx");
+if (
+  !careersTalentPoolPage.includes("@theouthaven/auth/admin-session") ||
+  !careersTalentPoolPage.includes("@theouthaven/db/admin-client") ||
+  !careersTalentPoolPage.includes("@/lib/careers/access") ||
+  !careersTalentPoolPage.includes("@/lib/careers/format") ||
+  !careersTalentPoolPage.includes('from("career_talent_pool")')
+) {
+  throw new Error("Careers Talent Pool must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersTalentPoolPage.includes("@/lib/admin-auth") ||
+  careersTalentPoolPage.includes("@/lib/admin-permissions") ||
+  careersTalentPoolPage.includes("@/lib/supabase-admin") ||
+  careersTalentPoolPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Talent Pool must not import root monolith auth/database/UI helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
