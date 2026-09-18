@@ -41,6 +41,10 @@ export async function logAdminAuditEvent(input: {
   entityType: string;
   entityId?: string | null;
   summary?: string | null;
+  targetUserId?: string | null;
+  targetEmail?: string | null;
+  beforeData?: unknown;
+  afterData?: unknown;
   metadata?: Record<string, unknown>;
   request?: Request;
 }) {
@@ -54,8 +58,12 @@ export async function logAdminAuditEvent(input: {
       actor_role: input.actor?.role ?? null,
       action: input.action,
       entity_type: input.entityType,
-      entity_id: input.entityId ?? null,
+      entity_id: input.entityId ?? input.targetUserId ?? null,
+      target_user_id: input.targetUserId ?? null,
+      target_email: input.targetEmail ?? null,
       summary: input.summary ?? null,
+      before_data: redact(input.beforeData ?? null),
+      after_data: redact(input.afterData ?? null),
       metadata: redact(input.metadata || {}),
       ip_address: meta.ip,
       user_agent: meta.ua,
