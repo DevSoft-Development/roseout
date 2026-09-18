@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { ADMIN_ROLES } from "@theouthaven/auth/admin-roles";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import {
   getSearchHealthDashboardData,
@@ -192,7 +191,7 @@ function IssueDetail({ issue, closeHref }: { issue: SearchHealthIssueDetail; clo
 }
 
 export default async function SearchHealthPage({ searchParams }: { searchParams: Params }) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.searchHealth);
+  await requireAdminRole(["superadmin", "admin", "experience_team"]);
 
   const resolvedSearchParams = await searchParams;
   const activeTab = resolveTab(resolvedSearchParams.tab);
