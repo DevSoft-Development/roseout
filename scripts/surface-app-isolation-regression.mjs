@@ -3228,8 +3228,8 @@ const searchHealthQaRunner = read("apps/admin/app/admin/dashboard/search-health/
 const searchHealthQualityPanel = read("apps/admin/app/admin/dashboard/search-health/SearchQualityReviewPanel.tsx");
 if (
   !searchHealthPage.includes("@theouthaven/auth/admin-session") ||
-  !searchHealthPage.includes("@theouthaven/auth/admin-roles") ||
   !searchHealthPage.includes("@theouthaven/db/admin-client") ||
+  !searchHealthPage.includes('requireAdminRole(["superadmin", "admin", "experience_team"])') ||
   !searchHealthPage.includes("@/lib/admin/search-health-dashboard") ||
   !searchHealthPage.includes("@/lib/search/searchCoreConfig")
 ) {
