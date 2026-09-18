@@ -42,6 +42,33 @@ export type CoreSupportCaseResponse = {
   activities: Array<Record<string, unknown>>;
 };
 
+export type CoreCrmLocationHealthResponse = {
+  success: true;
+  rows: Array<Record<string, unknown>>;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  duplicateCount: number;
+  activeRun: Record<string, unknown> | null;
+  latestRun: Record<string, unknown> | null;
+  reviewItems: Array<{
+    locationId: string;
+    name: string;
+    reasons: string[];
+    changedFields: string[];
+    lastError: string | null;
+  }>;
+  ownerUpdateCount: number;
+};
+
+export type CoreCrmLocationHealthInput = {
+  page: number;
+  pageSize: number;
+  q: string;
+  view: string;
+};
+
 export type CoreCrmOperationsBucket = {
   data: Array<Record<string, unknown>>;
   count: number;
@@ -100,6 +127,14 @@ export function platformCoreApiConfigured() {
   return Boolean(
     String(process.env.AWS_PLATFORM_CORE_API_URL || "").trim()
       && String(process.env.AWS_PLATFORM_CORE_API_SECRET || process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim(),
+  );
+}
+
+export function readCrmLocationHealthViaCoreApi(input: CoreCrmLocationHealthInput) {
+  return signedJson<CoreCrmLocationHealthResponse>(
+    "/v1/crm/location-health/read",
+    JSON.stringify(input),
+    15_000,
   );
 }
 
