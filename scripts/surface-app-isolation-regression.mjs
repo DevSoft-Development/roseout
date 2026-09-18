@@ -737,11 +737,61 @@ if (
 ) {
   throw new Error("Ticket Orders page must not import root monolith auth/database modules.");
 }
-if (ticketOrdersPage.includes('href="/admin/dashboard/payouts"')) {
-  throw new Error("Ticket Orders must not link to unmigrated Payouts from the isolated Admin app.");
+if (!ticketOrdersPage.includes('href="/admin/dashboard/payouts"')) {
+  throw new Error("Ticket Orders must link to migrated Payouts in the isolated Admin app.");
 }
 if (!adminNavigation.includes("/admin/dashboard/ticket-orders")) {
   throw new Error("Ticket Orders navigation must be present in the isolated Admin shell.");
+}
+
+const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
+if (
+  !payoutsPage.includes("@theouthaven/auth/admin-session") ||
+  !payoutsPage.includes("@/lib/admin/admin-payouts") ||
+  !payoutsPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Payouts page must use isolated Admin auth, local payout snapshot, and preserve access roles.");
+}
+if (
+  payoutsPage.includes("@/lib/admin-auth") ||
+  payoutsPage.includes("@/components/admin/")
+) {
+  throw new Error("Payouts page must not import root monolith Admin modules/components.");
+}
+
+const payoutsRuntime = read("apps/admin/lib/admin/admin-payouts.ts");
+for (const dependency of [
+  "@/lib/aws/core-api",
+  "@/lib/aws/integration-api",
+  "@/lib/stripe/server",
+  "@theouthaven/db/admin-client",
+]) {
+  if (!payoutsRuntime.includes(dependency)) {
+    throw new Error(`Payouts runtime must use isolated dependency: ${dependency}`);
+  }
+}
+if (payoutsRuntime.includes("@/lib/supabase-admin")) {
+  throw new Error("Payouts runtime must not import root Supabase admin.");
+}
+
+const payoutsCoreApi = read("apps/admin/lib/aws/core-api.ts");
+if (
+  !payoutsCoreApi.includes("createHmac") ||
+  !payoutsCoreApi.includes("/v1/admin/payouts/read")
+) {
+  throw new Error("Payouts Core API helper must preserve signed AWS payout reads.");
+}
+
+const payoutsIntegrationApi = read("apps/admin/lib/aws/integration-api.ts");
+if (
+  !payoutsIntegrationApi.includes("/v1/stripe-connect/payouts/read") ||
+  !payoutsIntegrationApi.includes("/v1/stripe/request")
+) {
+  throw new Error("Payouts Integration API helper must preserve Stripe Connect and fallback request paths.");
+}
+
+if (!adminNavigation.includes("/admin/dashboard/payouts")) {
+  throw new Error("Payouts navigation must be present in the isolated Admin shell.");
 }
 
 const productionCi = read(".github/workflows/production-ci.yml");
