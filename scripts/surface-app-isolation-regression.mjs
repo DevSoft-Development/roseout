@@ -2279,6 +2279,34 @@ if (
   throw new Error("Machine Learning recalculation runtime must use isolated auth and shared Admin DB.");
 }
 
+const websiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
+const websiteHostingTabs = read("apps/admin/components/admin/WebsiteHostingTabs.tsx");
+if (
+  !websiteHostingPage.includes("@theouthaven/auth/admin-session") ||
+  !websiteHostingPage.includes("@theouthaven/auth/admin-roles") ||
+  !websiteHostingPage.includes("@theouthaven/db/admin-client") ||
+  !websiteHostingPage.includes("@/components/admin/WebsiteHostingTabs") ||
+  !websiteHostingPage.includes('from("website_hosting_nodes")') ||
+  !websiteHostingPage.includes('from("business_websites")')
+) {
+  throw new Error("Website Hosting overview must use isolated Admin auth/shared DB and preserve hosting telemetry reads.");
+}
+if (
+  websiteHostingPage.includes("@/lib/admin-auth") ||
+  websiteHostingPage.includes("@/lib/admin-permissions") ||
+  websiteHostingPage.includes("@/lib/supabase-admin") ||
+  websiteHostingPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Website Hosting overview must not import root monolith auth/database/UI helpers.");
+}
+if (
+  !websiteHostingTabs.includes("/admin/dashboard/website-hosting/migrations") ||
+  !websiteHostingTabs.includes("/admin/dashboard/website-hosting/verification") ||
+  !websiteHostingTabs.includes("/admin/dashboard/website-hosting/testing")
+) {
+  throw new Error("Website Hosting tabs must preserve operations navigation.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
