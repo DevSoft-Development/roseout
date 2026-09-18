@@ -4149,3 +4149,45 @@ const crmLocationHealthCoreApi = read("apps/admin/lib/aws/core-api.ts");
 if (!crmLocationHealthCoreApi.includes("readCrmLocationHealthViaCoreApi")) {
   throw new Error("Isolated Admin Core API must expose CRM Location Health reads.");
 }
+
+
+const crmTodayCalendarPages = [
+  "apps/admin/app/admin/dashboard/crm/today/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/calendar/page.tsx",
+];
+for (const route of crmTodayCalendarPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`CRM Today/Calendar page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/admin-permissions") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM Today/Calendar page must not import root monolith auth/DB helpers: ${route}`);
+  }
+}
+const crmTodayUnreadMessages = read("apps/admin/components/admin/crm/TodayUnreadMessages.tsx");
+if (!crmTodayUnreadMessages.includes("/api/admin/crm/communication-center?scope=crm")) {
+  throw new Error("CRM Today unread messages must use the isolated communication-center feed.");
+}
+const crmCalendarCreator = read("apps/admin/components/admin/crm/CalendarEventCreator.tsx");
+if (!crmCalendarCreator.includes("/api/admin/integrations/microsoft-365/calendar/events")) {
+  throw new Error("CRM Calendar event creator must preserve isolated Microsoft 365 event creation.");
+}
+const crmCalendarEventRoute = read("apps/admin/app/api/admin/integrations/microsoft-365/calendar/events/route.ts");
+if (!crmCalendarEventRoute.includes("@theouthaven/auth/admin-session") || crmCalendarEventRoute.includes("@/lib/admin-auth")) {
+  throw new Error("CRM Calendar event route must use isolated Admin auth.");
+}
+const crmCalendarRuntime = read("apps/admin/lib/microsoft-365/calendar.ts");
+if (!crmCalendarRuntime.includes("@theouthaven/db/admin-client") || crmCalendarRuntime.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM Calendar runtime must use shared Admin DB.");
+}
+const crmCommunicationCenterRoute = read("apps/admin/app/api/admin/crm/communication-center/route.ts");
+for (const dependency of ["@theouthaven/auth/admin-session","@theouthaven/db/admin-client","@/lib/aws/core-api"]) {
+  if (!crmCommunicationCenterRoute.includes(dependency)) throw new Error(`CRM communication center missing isolated dependency: ${dependency}`);
+}
+if (crmCommunicationCenterRoute.includes("@/lib/admin-auth") || crmCommunicationCenterRoute.includes("@/lib/admin-permissions") || crmCommunicationCenterRoute.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM communication center must not import root monolith auth/DB helpers.");
+}
+const crmTodayCalendarCoreApi = read("apps/admin/lib/aws/core-api.ts");
+if (!crmTodayCalendarCoreApi.includes("readCrmCommunicationCenterViaCoreApi")) {
+  throw new Error("Isolated Admin Core API must preserve CRM communication-center reads.");
+}
