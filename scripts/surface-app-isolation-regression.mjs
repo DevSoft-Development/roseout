@@ -4803,3 +4803,50 @@ if (
 ) {
   throw new Error("Marketing reports API must use isolated Admin auth/DB and AWS Integration email.");
 }
+
+
+const locationsNonSearchablePage = read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx");
+if (
+  !locationsNonSearchablePage.includes("@theouthaven/auth/admin-session")
+  || !locationsNonSearchablePage.includes("@theouthaven/db/admin-client")
+  || locationsNonSearchablePage.includes("@/lib/admin-auth")
+  || locationsNonSearchablePage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Non-searchable Locations page must use isolated Admin auth and shared Admin DB.");
+}
+
+const locationsPublishabilityApi = read("apps/admin/app/api/admin/locations/repair-publishability/route.ts");
+if (
+  !locationsPublishabilityApi.includes("@theouthaven/db/admin-client")
+  || locationsPublishabilityApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Location publishability repair API must use shared Admin DB.");
+}
+
+for (const helper of [
+  "apps/admin/lib/location-growth/repairAllPublishability.ts",
+  "apps/admin/lib/google/google-places-cost-control.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Location repair helper must use shared Admin DB: ${helper}`);
+  }
+}
+
+const locationsGooglePlacesClient = read("apps/admin/lib/google/places-new-client.ts");
+if (
+  !locationsGooglePlacesClient.includes("@/lib/aws/integration-api")
+  || !locationsGooglePlacesClient.includes("@/lib/google/google-places-cost-control")
+) {
+  throw new Error("Isolated Google Places client must preserve Integration API and cost-control boundaries.");
+}
+
+for (const route of [
+  "apps/admin/app/admin/dashboard/locations/duplicates/page.tsx",
+  "apps/admin/app/admin/dashboard/locations/import/page.tsx",
+]) {
+  const source = read(route);
+  if (!source.includes("next/navigation")) {
+    throw new Error(`Locations redirect must remain inside isolated Admin app: ${route}`);
+  }
+}
