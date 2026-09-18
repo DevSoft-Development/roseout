@@ -2502,6 +2502,38 @@ if (
   throw new Error("Users beta access runtime must preserve beta synchronization, weekly session, and audit writes.");
 }
 
+const analyticsPage = read("apps/admin/app/admin/dashboard/analytics/page.tsx");
+const analyticsRuntime = read("apps/admin/lib/admin/analytics/getAdminSaasAnalytics.ts");
+const analyticsCache = read("apps/admin/lib/admin/analytics/getCachedAdminSaasAnalytics.ts");
+const analyticsLog = read("apps/admin/lib/admin/logAdminEvent.ts");
+const analyticsTabs = read("apps/admin/app/admin/dashboard/analytics/AnalyticsTabs.tsx");
+
+if (
+  !analyticsPage.includes("@theouthaven/auth/admin-session") ||
+  !analyticsPage.includes("@/lib/admin/analytics/getCachedAdminSaasAnalytics") ||
+  !analyticsPage.includes("@/lib/admin/logAdminEvent") ||
+  !analyticsPage.includes("@/components/admin/AdminDesignSystem") ||
+  !analyticsPage.includes('requireAdminRole(["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience_team", "viewer"])')
+) {
+  throw new Error("Analytics must use isolated Admin auth/runtime and preserve analytics role access.");
+}
+for (const source of [analyticsPage, analyticsRuntime, analyticsCache, analyticsLog, analyticsTabs]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Analytics slice must not import root monolith auth/database helpers.");
+  }
+}
+if (
+  !analyticsRuntime.includes("@theouthaven/db/admin-client") ||
+  !analyticsLog.includes("@theouthaven/db/admin-client") ||
+  !analyticsCache.includes("unstable_cache")
+) {
+  throw new Error("Analytics runtime must use shared Admin DB and preserve cached analytics reads.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
