@@ -77,7 +77,7 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     label: "Microsoft 365",
     href: "/admin/dashboard/settings/microsoft-365",
     icon: Mail,
-    migrated: false,
+    migrated: true,
   },
   {
     label: "Security",
