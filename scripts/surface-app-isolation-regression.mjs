@@ -3862,3 +3862,19 @@ const crmContextBanner = read("apps/admin/components/admin/crm/CrmContextBanner.
 if (!crmContextBanner.includes("@theouthaven/db/admin-client") || crmContextBanner.includes("@/lib/supabase-admin")) {
   throw new Error("CRM context banner must use shared Admin DB.");
 }
+
+
+const crmAutomationPages = [
+  "apps/admin/app/admin/dashboard/crm/communications/automation/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/communications/automation/settings/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/communications/automation/executions/[executionId]/page.tsx",
+];
+for (const route of crmAutomationPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`CRM automation page must use shared Admin DB: ${route}`);
+  }
+  if (source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM automation page must not import root monolith DB helper: ${route}`);
+  }
+}
