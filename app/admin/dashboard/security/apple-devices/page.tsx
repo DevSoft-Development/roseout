@@ -74,6 +74,14 @@ export default async function AppleDeviceEnrollmentPage() {
   const enrolledCount = appleMobileDevices.filter((device) => managedBySerial.has(device.attributes?.serialNumber || device.id)).length;
   const readyCount = Math.max(0, assignedCount - enrolledCount);
   const depToken = depSettings[0] || null;
+  const automationConnected = Boolean(
+    appleConfigured
+      && !appleError
+      && !intuneError
+      && intuneOverview
+      && intuneServer
+      && depToken,
+  );
 
   return (
     <AdminPageShell>
@@ -81,7 +89,7 @@ export default async function AppleDeviceEnrollmentPage() {
         eyebrow="TheOutHaven Admin / System"
         title="Apple Device Enrollment"
         subtitle="Prepare company iPads and iPhones for zero-touch enrollment through Apple Business Manager and Microsoft Intune."
-        badge={appleConfigured && intuneOverview ? <AdminStatusBadge tone="green">Automation connected</AdminStatusBadge> : <AdminStatusBadge tone="amber">Setup needs attention</AdminStatusBadge>}
+        badge={automationConnected ? <AdminStatusBadge tone="green">Automation connected</AdminStatusBadge> : <AdminStatusBadge tone="amber">Setup needs attention</AdminStatusBadge>}
         actions={
           <>
             <AdminActionButton href="/admin/dashboard/security/devices">Managed Devices</AdminActionButton>
@@ -115,11 +123,17 @@ export default async function AppleDeviceEnrollmentPage() {
         </AdminSectionCard>
       ) : null}
 
-      {intuneError ? (
+      {intuneError || !depToken ? (
         <AdminSectionCard className="border-amber-300/20 p-5 sm:p-6">
-          <div className="flex gap-3">
-            <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-200" />
-            <div><p className="font-black text-white">Intune enrollment connection needs attention</p><p className="mt-1 text-sm font-semibold text-white/50">Reconnect Microsoft 365 after granting the Intune service configuration ReadWrite permissions required for ADE synchronization.</p></div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex gap-3">
+              <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-200" />
+              <div>
+                <p className="font-black text-white">Intune enrollment connection needs attention</p>
+                <p className="mt-1 text-sm font-semibold text-white/50">Reauthorize Microsoft 365 to grant the Intune service configuration ReadWrite permissions required for ADE synchronization.</p>
+              </div>
+            </div>
+            <AdminActionButton href="/api/admin/integrations/microsoft-365/connect?next=/admin/dashboard/security/apple-devices" variant="primary">Reauthorize Microsoft 365</AdminActionButton>
           </div>
         </AdminSectionCard>
       ) : null}
@@ -140,12 +154,16 @@ export default async function AppleDeviceEnrollmentPage() {
               Apple service: {intuneServer?.attributes?.serverName || "Not detected"} · Intune ADE token: {depToken?.tokenName || "Not detected"} · Last Intune sync: {formatDate(depToken?.lastSuccessfulSyncDateTime)}
             </p>
           </div>
-          <form action="/api/admin/integrations/apple-device-enrollment/prepare" method="post">
-            <input type="hidden" name="action" value="sync-intune" />
-            <button disabled={!depToken} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-sm font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40">
-              <RefreshCw className="h-4 w-4" /> Sync Apple with Intune
-            </button>
-          </form>
+          {depToken ? (
+            <form action="/api/admin/integrations/apple-device-enrollment/prepare" method="post">
+              <input type="hidden" name="action" value="sync-intune" />
+              <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-sm font-black text-white transition hover:bg-rose-500">
+                <RefreshCw className="h-4 w-4" /> Sync Apple with Intune
+              </button>
+            </form>
+          ) : (
+            <AdminActionButton href="/api/admin/integrations/microsoft-365/connect?next=/admin/dashboard/security/apple-devices" variant="primary">Reauthorize Microsoft 365</AdminActionButton>
+          )}
         </div>
       </AdminSectionCard>
 
