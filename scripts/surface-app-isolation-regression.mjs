@@ -788,6 +788,16 @@ for (const logsUiFile of [
   }
 }
 
+const locationToolsMarketsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/markets/page.tsx");
+if (!locationToolsMarketsPage.includes("@theouthaven/auth/admin-session") || !locationToolsMarketsPage.includes("@theouthaven/db/admin-client")) {
+  throw new Error("Location Tools Markets page must use isolated Admin auth and DB.");
+}
+
+const locationToolsMarketsApi = read("apps/admin/app/api/admin/location-growth/repair-markets/route.ts");
+if (!locationToolsMarketsApi.includes("@theouthaven/auth/admin-session") || !locationToolsMarketsApi.includes("@theouthaven/db/admin-client") || !locationToolsMarketsApi.includes("@/lib/location-markets")) {
+  throw new Error("Location Tools market repair API must use isolated Admin auth, DB, and market taxonomy.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
