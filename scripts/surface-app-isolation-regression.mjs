@@ -2307,6 +2307,33 @@ if (
   throw new Error("Website Hosting tabs must preserve operations navigation.");
 }
 
+const websiteMigrationsPage = read("apps/admin/app/admin/dashboard/website-hosting/migrations/page.tsx");
+if (
+  !websiteMigrationsPage.includes("@theouthaven/auth/admin-session") ||
+  !websiteMigrationsPage.includes("@theouthaven/auth/admin-roles") ||
+  !websiteMigrationsPage.includes("@theouthaven/db/admin-client") ||
+  !websiteMigrationsPage.includes("@/components/admin/WebsiteHostingTabs") ||
+  !websiteMigrationsPage.includes('from("business_websites")')
+) {
+  throw new Error("Website Hosting migrations must use isolated Admin auth/shared DB and preserve business website migration reads.");
+}
+if (
+  websiteMigrationsPage.includes("@/lib/admin-auth") ||
+  websiteMigrationsPage.includes("@/lib/admin-permissions") ||
+  websiteMigrationsPage.includes("@/lib/supabase-admin") ||
+  websiteMigrationsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Website Hosting migrations must not import root monolith auth/database/UI helpers.");
+}
+if (
+  !websiteMigrationsPage.includes("website_import") ||
+  !websiteMigrationsPage.includes("dns_stalled") ||
+  !websiteMigrationsPage.includes("ssl_stalled") ||
+  !websiteMigrationsPage.includes("health_stale")
+) {
+  throw new Error("Website Hosting migrations must preserve import, domain, and live-health state tracking.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
