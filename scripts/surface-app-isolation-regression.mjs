@@ -2934,6 +2934,26 @@ if (
   throw new Error("Team Escalations must not import root monolith auth/database/review modules.");
 }
 
+const teamDemoPage = read("apps/admin/app/admin/dashboard/team/demo/page.tsx");
+if (
+  !teamDemoPage.includes("@theouthaven/auth/admin-session") ||
+  !teamDemoPage.includes("@theouthaven/db/admin-client") ||
+  !teamDemoPage.includes("@/lib/address-utils") ||
+  !teamDemoPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamDemoPage.includes('from("crm_demo_locations")') ||
+  !teamDemoPage.includes('from("crm_demo_sessions")')
+) {
+  throw new Error("Team Demo must use isolated Admin auth/shared DB and preserve demo/training reads.");
+}
+if (
+  teamDemoPage.includes("@/lib/admin-auth") ||
+  teamDemoPage.includes("@/lib/admin-permissions") ||
+  teamDemoPage.includes("@/lib/supabase-admin") ||
+  teamDemoPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Team Demo must not import root monolith auth/database/team helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
