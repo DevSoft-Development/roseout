@@ -2182,6 +2182,25 @@ if (
   throw new Error("Careers Microsoft readiness API must use isolated auth/shared DB and preserve Edge Function invocation.");
 }
 
+const careersMarketingPage = read("apps/admin/app/admin/dashboard/careers/marketing/page.tsx");
+if (
+  !careersMarketingPage.includes("@theouthaven/auth/admin-session") ||
+  !careersMarketingPage.includes("@theouthaven/db/admin-client") ||
+  !careersMarketingPage.includes("@/lib/careers/access") ||
+  !careersMarketingPage.includes("@/lib/careers/format") ||
+  !careersMarketingPage.includes('from("career_content_tests")')
+) {
+  throw new Error("Careers Marketing must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersMarketingPage.includes("@/lib/admin-auth") ||
+  careersMarketingPage.includes("@/lib/admin-permissions") ||
+  careersMarketingPage.includes("@/lib/supabase-admin") ||
+  careersMarketingPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Marketing must not import root monolith auth/database/UI helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
