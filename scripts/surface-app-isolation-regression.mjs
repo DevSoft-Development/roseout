@@ -4881,3 +4881,38 @@ if (
 if (!adminNavigation.includes("/admin/dashboard/locations")) {
   throw new Error("Locations navigation must be present in isolated Admin shell.");
 }
+
+
+const knowledgeBasePage = read("apps/admin/app/admin/dashboard/knowledge-base/page.tsx");
+if (!knowledgeBasePage.includes("@theouthaven/auth/admin-session") || !knowledgeBasePage.includes("@/lib/knowledge-base/server")) {
+  throw new Error("Knowledge Base must use isolated Admin auth and local runtime.");
+}
+for (const kbRuntime of [
+  "apps/admin/lib/knowledge-base/server.ts",
+  "apps/admin/lib/knowledge-base/access.ts",
+  "apps/admin/lib/knowledge-base/types.ts",
+  "apps/admin/lib/knowledge-base/render.ts",
+]) {
+  const source = read(kbRuntime);
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`Knowledge Base runtime must not import root monolith modules: ${kbRuntime}`);
+  }
+}
+if (!read("apps/admin/lib/knowledge-base/server.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("Knowledge Base must use isolated Admin auth and shared DB.");
+}
+for (const kbRoute of [
+  "apps/admin/app/api/admin/knowledge-base/articles/route.ts",
+  "apps/admin/app/api/admin/knowledge-base/articles/[id]/route.ts",
+  "apps/admin/app/api/admin/knowledge-base/categories/route.ts",
+  "apps/admin/app/api/admin/knowledge-base/templates/render/route.ts",
+  "apps/admin/app/api/admin/knowledge-base/ai/route.ts",
+]) {
+  const source = read(kbRoute);
+  if (!source.includes("@/lib/admin-api-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Knowledge Base API must use isolated auth/DB boundaries: ${kbRoute}`);
+  }
+}
+if (!adminNavigation.includes("/admin/dashboard/knowledge-base")) {
+  throw new Error("Knowledge Base navigation must be present in isolated Admin shell.");
+}
