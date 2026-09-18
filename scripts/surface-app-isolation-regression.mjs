@@ -4699,3 +4699,45 @@ const communityReplyRoute = read("apps/admin/app/api/admin/marketing/community/r
 if (!communityReplyRoute.includes("@/lib/marketing/social-community-provider")) {
   throw new Error("Marketing community reply API must preserve the isolated provider delivery path.");
 }
+
+
+const marketingSocialAccountsPage = read("apps/admin/app/admin/dashboard/marketing/social-accounts/page.tsx");
+if (
+  !marketingSocialAccountsPage.includes("@theouthaven/auth/admin-session")
+  || !marketingSocialAccountsPage.includes("@theouthaven/db/admin-client")
+  || !marketingSocialAccountsPage.includes("@/lib/marketing/social-oauth")
+  || marketingSocialAccountsPage.includes("@/lib/admin-auth")
+  || marketingSocialAccountsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Social Accounts page must use isolated Admin auth, shared Admin DB, and isolated Social OAuth.");
+}
+const socialConnectionActions = read("apps/admin/components/marketing/SocialConnectionActions.tsx");
+if (
+  !socialConnectionActions.includes("/api/admin/marketing/social/oauth/")
+  || !socialConnectionActions.includes("/api/admin/marketing/social/connections/")
+) {
+  throw new Error("Marketing Social Accounts actions must preserve isolated OAuth and disconnect API targets.");
+}
+const marketingSocialOauth = read("apps/admin/lib/marketing/social-oauth.ts");
+if (
+  !marketingSocialOauth.includes("@theouthaven/db/admin-client")
+  || !marketingSocialOauth.includes("./social-secrets")
+  || marketingSocialOauth.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Social OAuth helper must use shared Admin DB and isolated social secret storage.");
+}
+for (const route of [
+  "apps/admin/app/api/admin/marketing/social/connections/[id]/route.ts",
+  "apps/admin/app/api/admin/marketing/social/oauth/[provider]/route.ts",
+  "apps/admin/app/api/admin/marketing/social/oauth/[provider]/callback/route.ts",
+]) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/auth/admin-session")
+    || source.includes("@/lib/admin-api-auth")
+    || source.includes("@/lib/admin-auth")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing Social Accounts API must use isolated Admin auth and no root monolith DB: ${route}`);
+  }
+}
