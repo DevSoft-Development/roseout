@@ -4239,3 +4239,28 @@ if (
 ) {
   throw new Error("CRM Calls list helper must use shared Admin DB.");
 }
+
+
+const crmOutreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.tsx");
+if (
+  !crmOutreachPage.includes("@theouthaven/auth/admin-session")
+  || !crmOutreachPage.includes("@/lib/crm/outreach")
+  || !crmOutreachPage.includes("@/lib/crm/location-outreach-communications")
+  || crmOutreachPage.includes("@/lib/admin-auth")
+  || crmOutreachPage.includes("@/lib/admin-permissions")
+  || crmOutreachPage.includes("@/lib/crm/core-modules")
+) {
+  throw new Error("CRM Outreach page must use isolated Admin auth and focused CRM helpers.");
+}
+const crmOutreachHelper = read("apps/admin/lib/crm/outreach.ts");
+if (!crmOutreachHelper.includes("@theouthaven/db/admin-client") || crmOutreachHelper.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM Outreach helper must use shared Admin DB.");
+}
+const crmLocationOutreach = read("apps/admin/lib/crm/location-outreach-communications.ts");
+if (!crmLocationOutreach.includes("@theouthaven/db/admin-client") || crmLocationOutreach.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM location outreach helper must use shared Admin DB.");
+}
+const crmCommunicationCenter = read("apps/admin/components/admin/crm/CommunicationCenter.tsx");
+if (!crmCommunicationCenter.includes("/api/admin/crm/communication-center")) {
+  throw new Error("CRM CommunicationCenter must preserve isolated communication-center API usage.");
+}
