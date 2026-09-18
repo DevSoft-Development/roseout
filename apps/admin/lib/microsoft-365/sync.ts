@@ -2,7 +2,6 @@ import "server-only";
 
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
-const supabaseAdmin = getAdminDatabaseClient();
 import { matchCrmByEmails, shouldIgnoreMailboxMessage } from "./matching";
 import { microsoftGraphFetch } from "./graph";
 import { ensureMicrosoft365Subscriptions } from "./subscriptions";
@@ -61,13 +60,13 @@ async function getPreferences(userId: string): Promise<SyncPreferences> {
     calendar_sync_enabled: true,
     task_sync_enabled: true,
   };
-  const { data, error } = await supabaseAdmin.from("microsoft_365_sync_preferences").select("email_sync_enabled,email_sync_mode,include_internal_mail,sync_attachments,queue_unmatched_email,calendar_sync_enabled,task_sync_enabled").eq("user_id", userId).maybeSingle();
+  const { data, error } = await getAdminDatabaseClient().from("microsoft_365_sync_preferences").select("email_sync_enabled,email_sync_mode,include_internal_mail,sync_attachments,queue_unmatched_email,calendar_sync_enabled,task_sync_enabled").eq("user_id", userId).maybeSingle();
   if (error) throw error;
   return { ...defaults, ...(data || {}) } as SyncPreferences;
 }
 
 async function getMailbox(userId: string) {
-  const { data, error } = await supabaseAdmin.from("microsoft_365_connections").select("email").eq("user_id", userId).eq("status", "active").maybeSingle();
+  const { data, error } = await getAdminDatabaseClient().from("microsoft_365_connections").select("email").eq("user_id", userId).eq("status", "active").maybeSingle();
   if (error) throw error;
   if (!data?.email) throw new Error("M365_NOT_CONNECTED");
   return cleanEmail(data.email);
@@ -87,7 +86,7 @@ async function getDeltaLink(userId: string, resource: SyncResource, resourceKey 
 
 async function saveDeltaState(userId: string, resource: SyncResource, resourceKey: string, deltaLink: string) {
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("microsoft_365_sync_state").upsert({
+  const { error } = await getAdminDatabaseClient().from("microsoft_365_sync_state").upsert({
     user_id: userId,
     resource,
     resource_key: resourceKey,
@@ -102,7 +101,7 @@ async function saveDeltaState(userId: string, resource: SyncResource, resourceKe
 
 async function recordDeltaError(userId: string, resource: SyncResource, resourceKey: string, error: unknown) {
   const now = new Date().toISOString();
-  await supabaseAdmin.from("microsoft_365_sync_state").upsert({
+  await getAdminDatabaseClient().from("microsoft_365_sync_state").upsert({
     user_id: userId,
     resource,
     resource_key: resourceKey,
@@ -149,11 +148,11 @@ async function runDelta<T>(options: {
 async function getOrCreateConversation(userId: string, message: GraphMessage, match: Awaited<ReturnType<typeof matchCrmByEmails>>) {
   const providerThread = message.conversationId || message.id;
   const key = `m365:${userId}:${providerThread}`;
-  const { data: existing, error: existingError } = await supabaseAdmin.from("crm_conversations").select("id").eq("conversation_key", key).maybeSingle();
+  const { data: existing, error: existingError } = await getAdminDatabaseClient().from("crm_conversations").select("id").eq("conversation_key", key).maybeSingle();
   if (existingError) throw existingError;
   if (existing?.id) return existing.id;
 
-  const { data, error } = await supabaseAdmin.from("crm_conversations").insert({
+  const { data, error } = await getAdminDatabaseClient().from("crm_conversations").insert({
     conversation_key: key,
     channel: "email",
     status: "open",
@@ -177,7 +176,7 @@ async function persistMatchedMessage(userId: string, mailboxEmail: string, messa
   const cc = addressesOf(message.ccRecipients);
   const outbound = senderEmail === mailboxEmail;
   const conversationId = await getOrCreateConversation(userId, message, match);
-  const { data: existing, error: existingError } = await supabaseAdmin.from("crm_messages").select("id").eq("provider", "microsoft_graph").eq("provider_message_id", message.id).maybeSingle();
+  const { data: existing, error: existingError } = await getAdminDatabaseClient().from("crm_messages").select("id").eq("provider", "microsoft_graph").eq("provider_message_id", message.id).maybeSingle();
   if (existingError) throw existingError;
 
   const rawBody = message.body?.content || "";
@@ -208,10 +207,10 @@ async function persistMatchedMessage(userId: string, mailboxEmail: string, messa
   };
   let messageId = existing?.id as string | undefined;
   if (messageId) {
-    const { error } = await supabaseAdmin.from("crm_messages").update(payload).eq("id", messageId);
+    const { error } = await getAdminDatabaseClient().from("crm_messages").update(payload).eq("id", messageId);
     if (error) throw error;
   } else {
-    const { data, error } = await supabaseAdmin.from("crm_messages").insert(payload).select("id").single();
+    const { data, error } = await getAdminDatabaseClient().from("crm_messages").insert(payload).select("id").single();
     if (error || !data?.id) throw error || new Error("M365_MESSAGE_CREATE_FAILED");
     messageId = data.id;
   }
@@ -223,10 +222,10 @@ async function persistMatchedMessage(userId: string, mailboxEmail: string, messa
     conversationPatch.last_inbound_at = now;
     conversationPatch.is_unread = true;
   }
-  await supabaseAdmin.from("crm_conversations").update(conversationPatch).eq("id", conversationId);
+  await getAdminDatabaseClient().from("crm_conversations").update(conversationPatch).eq("id", conversationId);
 
   if (!existing?.id) {
-    await supabaseAdmin.from("crm_activities").insert({
+    await getAdminDatabaseClient().from("crm_activities").insert({
       account_id: match.accountId,
       location_id: match.locationId,
       contact_id: match.contactId,
@@ -250,7 +249,7 @@ async function persistMatchedMessage(userId: string, mailboxEmail: string, messa
 async function queueUnmatched(userId: string, message: GraphMessage) {
   const senderEmail = addressOf(message.from);
   const recipients = [...addressesOf(message.toRecipients), ...addressesOf(message.ccRecipients)];
-  const { error } = await supabaseAdmin.from("microsoft_365_unmatched_email").upsert({
+  const { error } = await getAdminDatabaseClient().from("microsoft_365_unmatched_email").upsert({
     user_id: userId,
     provider_message_id: message.id,
     provider_thread_id: message.conversationId || null,
@@ -319,13 +318,13 @@ async function syncCalendar(userId: string, prefs: SyncPreferences) {
     process: async (event) => {
       if (!event?.id) return;
       if (event["@removed"]) {
-        await supabaseAdmin.from("microsoft_365_calendar_events").delete().eq("user_id", userId).eq("provider_event_id", event.id);
+        await getAdminDatabaseClient().from("microsoft_365_calendar_events").delete().eq("user_id", userId).eq("provider_event_id", event.id);
         return;
       }
       const organizerEmail = cleanEmail(event.organizer?.emailAddress?.address);
       const attendeeEmails = (event.attendees || []).map((a: any) => cleanEmail(a?.emailAddress?.address)).filter(Boolean);
       const match = await matchCrmByEmails([organizerEmail, ...attendeeEmails]);
-      const { error } = await supabaseAdmin.from("microsoft_365_calendar_events").upsert({
+      const { error } = await getAdminDatabaseClient().from("microsoft_365_calendar_events").upsert({
         user_id: userId,
         provider_event_id: event.id,
         provider_change_key: event.changeKey || null,
@@ -352,7 +351,7 @@ async function syncCalendar(userId: string, prefs: SyncPreferences) {
     },
   });
   const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  await supabaseAdmin.from("microsoft_365_sync_state").delete().eq("user_id", userId).eq("resource", "calendar").neq("resource_key", resourceKey).lt("updated_at", staleBefore);
+  await getAdminDatabaseClient().from("microsoft_365_sync_state").delete().eq("user_id", userId).eq("resource", "calendar").neq("resource_key", resourceKey).lt("updated_at", staleBefore);
   return count;
 }
 
@@ -378,10 +377,10 @@ async function syncTasks(userId: string, prefs: SyncPreferences) {
       process: async (task) => {
         if (!task?.id) return;
         if (task["@removed"]) {
-          await supabaseAdmin.from("microsoft_365_todo_tasks").delete().eq("user_id", userId).eq("provider_list_id", list.id).eq("provider_task_id", task.id);
+          await getAdminDatabaseClient().from("microsoft_365_todo_tasks").delete().eq("user_id", userId).eq("provider_list_id", list.id).eq("provider_task_id", task.id);
           return;
         }
-        const { error } = await supabaseAdmin.from("microsoft_365_todo_tasks").upsert({
+        const { error } = await getAdminDatabaseClient().from("microsoft_365_todo_tasks").upsert({
           user_id: userId,
           provider_list_id: list.id,
           provider_task_id: task.id,
@@ -414,10 +413,10 @@ export async function syncMicrosoft365ForUser(userId: string) {
       syncTasks(userId, prefs),
     ]);
     const subscriptions = await ensureMicrosoft365Subscriptions(userId);
-    await supabaseAdmin.from("microsoft_365_connections").update({ last_error: null, updated_at: new Date().toISOString() }).eq("user_id", userId);
+    await getAdminDatabaseClient().from("microsoft_365_connections").update({ last_error: null, updated_at: new Date().toISOString() }).eq("user_id", userId);
     return { mail, calendar, tasks, subscriptions, startedAt, completedAt: new Date().toISOString() };
   } catch (error) {
-    await supabaseAdmin.from("microsoft_365_connections").update({ last_error: error instanceof Error ? error.message.slice(0, 1000) : "Microsoft sync failed", updated_at: new Date().toISOString() }).eq("user_id", userId);
+    await getAdminDatabaseClient().from("microsoft_365_connections").update({ last_error: error instanceof Error ? error.message.slice(0, 1000) : "Microsoft sync failed", updated_at: new Date().toISOString() }).eq("user_id", userId);
     throw error;
   }
 }
