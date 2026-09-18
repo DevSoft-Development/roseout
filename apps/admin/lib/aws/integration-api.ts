@@ -47,6 +47,9 @@ export type IntegrationTelnyxSendResponse = {
   to: string;
 };
 
+type IntegrationGooglePlaceDetailsResponse<T> = { ok: true; place: T };
+type IntegrationGooglePhotoMetadataResponse<T> = { ok: true; photos: T[] };
+
 export function platformIntegrationApiConfigured() {
   return Boolean(
     process.env.AWS_PLATFORM_INTEGRATION_API_URL?.trim() &&
@@ -138,6 +141,64 @@ export async function searchGooglePlacesTextViaIntegrationApi<T>(
     15_000,
   );
   return Array.isArray(result.places) ? result.places : [];
+}
+
+export async function getGooglePlaceDetailsViaIntegrationApi<T>(
+  placeId: string,
+  options: { sessionToken?: string; fieldMode?: "address" | "rich" } = {},
+): Promise<T> {
+  const result = await signedJson<IntegrationGooglePlaceDetailsResponse<T>>(
+    "/v1/google-places/details",
+    {
+      placeId,
+      sessionToken: options.sessionToken || undefined,
+      fieldMode: options.fieldMode,
+    },
+    15_000,
+  );
+  return result.place;
+}
+
+export async function getGooglePlacePhotosViaIntegrationApi<T>(
+  placeId: string,
+): Promise<T[]> {
+  const result = await signedJson<IntegrationGooglePhotoMetadataResponse<T>>(
+    "/v1/google-places/photo-metadata",
+    { placeId },
+    15_000,
+  );
+  return Array.isArray(result.photos) ? result.photos : [];
+}
+
+export async function fetchGooglePlacePhotoViaIntegrationApi(
+  photoName: string,
+  maxWidthPx: number,
+): Promise<Response> {
+  const { baseUrl, secret } = config();
+  const pathName = "/v1/google-places/photo-media";
+  const body = JSON.stringify({ photoName, maxWidthPx });
+  const timestamp = Date.now().toString();
+  const signature = createHmac("sha256", secret)
+    .update([timestamp, "POST", pathName, body].join("\n"))
+    .digest("hex");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 18_000);
+
+  try {
+    return await fetch(baseUrl + pathName, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        "x-toh-timestamp": timestamp,
+        "x-toh-signature": signature,
+      },
+      body,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function sendEmailViaIntegrationApi(input: {
