@@ -4223,6 +4223,23 @@ if (crmContactCreateActions.includes("@/lib/admin-auth") || crmContactCreateActi
   throw new Error("CRM contact-create action must not import root monolith auth/DB helpers.");
 }
 
+const crmCallsListPage = read("apps/admin/app/admin/dashboard/crm/calls/page.tsx");
+if (
+  !crmCallsListPage.includes("@theouthaven/auth/admin-session")
+  || !crmCallsListPage.includes("@/lib/crm/calls")
+  || crmCallsListPage.includes("@/lib/admin-auth")
+  || crmCallsListPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Calls list must use isolated Admin auth and focused calls helper.");
+}
+const crmCallsListHelper = read("apps/admin/lib/crm/calls.ts");
+if (
+  !crmCallsListHelper.includes("@theouthaven/db/admin-client")
+  || crmCallsListHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Calls list helper must use shared Admin DB.");
+}
+
 const crmAccountsPages = [
   "apps/admin/app/admin/dashboard/crm/accounts/page.tsx",
   "apps/admin/app/admin/dashboard/crm/accounts/[id]/page.tsx",
