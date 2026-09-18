@@ -25,7 +25,7 @@ type HistoryRow = { id: string; created_at: string; from_stage: string | null; t
 const applicationProjection = "id,job_id,first_name,last_name,email,phone,city,state,resume_url,linkedin_url,portfolio_url,website_url,social_handle,source,submitted_at,stage,score,cover_letter,career_jobs(title,department,slug,is_internship,internship_type)";
 
 export default async function ApplicationDetail({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"]);
+  await requireAdminRole(["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]);
   const { id } = await params;
   const results = await Promise.all([
     getAdminDatabaseClient().from("career_applications").select(applicationProjection).eq("id", id).maybeSingle(),
