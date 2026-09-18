@@ -4104,3 +4104,48 @@ if (!crmTaskTypes.includes("@theouthaven/auth/admin-roles") || !crmTaskValidatio
 if (crmTaskValidation.includes('"experience"')) {
   throw new Error("CRM task validation must not preserve the legacy experience role.");
 }
+
+const crmLocationHealthPage = read("apps/admin/app/admin/dashboard/crm/location-health/page.tsx");
+if (
+  !crmLocationHealthPage.includes("@theouthaven/auth/admin-session")
+  || !crmLocationHealthPage.includes("@/lib/crm/location-health-permissions")
+  || crmLocationHealthPage.includes("@/lib/admin-auth")
+  || crmLocationHealthPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("CRM Location Health page must use isolated Admin auth and role constants.");
+}
+const crmLocationHealthDuplicateSection = read("apps/admin/app/admin/dashboard/crm/location-health/DuplicateReviewSection.tsx");
+if (
+  !crmLocationHealthDuplicateSection.includes("@theouthaven/db/admin-client")
+  || crmLocationHealthDuplicateSection.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Location Health duplicate section must use shared Admin DB.");
+}
+for (const route of [
+  "apps/admin/app/api/admin/crm/location-health/route.ts",
+  "apps/admin/app/api/admin/locations/duplicates/route.ts",
+  "apps/admin/app/api/admin/locations/duplicates/summary/route.ts",
+]) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`Location Health API must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+  if (
+    source.includes("@/lib/admin-api-auth")
+    || source.includes("@/lib/admin-permissions")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Location Health API must not import root monolith auth/DB: ${route}`);
+  }
+}
+const crmLocationHealthApi = read("apps/admin/app/api/admin/crm/location-health/route.ts");
+if (
+  !crmLocationHealthApi.includes("@/lib/aws/core-api")
+  || !crmLocationHealthApi.includes('functions.invoke("location-health-runner"')
+) {
+  throw new Error("CRM Location Health API must preserve Core API reads and isolated repair invocation.");
+}
+const crmLocationHealthCoreApi = read("apps/admin/lib/aws/core-api.ts");
+if (!crmLocationHealthCoreApi.includes("readCrmLocationHealthViaCoreApi")) {
+  throw new Error("Isolated Admin Core API must expose CRM Location Health reads.");
+}
