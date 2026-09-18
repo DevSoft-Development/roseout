@@ -1519,6 +1519,45 @@ if (!adminNavigation.includes("/admin/dashboard/events-experiences")) {
   throw new Error("Events & Experiences navigation must be present in the isolated Admin shell.");
 }
 
+const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
+if (
+  !payoutsPage.includes("@theouthaven/auth/admin-session") ||
+  !payoutsPage.includes("@/lib/admin/admin-payouts") ||
+  !payoutsPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Payouts page must use isolated Admin auth/runtime and preserve payout roles.");
+}
+if (
+  payoutsPage.includes("@/lib/admin-auth") ||
+  payoutsPage.includes("@/lib/admin-permissions") ||
+  payoutsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Payouts page must not import root monolith auth/design-system modules.");
+}
+
+const payoutsRuntime = read("apps/admin/lib/admin/admin-payouts.ts");
+if (
+  !payoutsRuntime.includes("@theouthaven/db/admin-client") ||
+  !payoutsRuntime.includes("@/lib/aws/integration-api")
+) {
+  throw new Error("Payouts runtime must use shared Admin DB and isolated Stripe integration API.");
+}
+if (
+  payoutsRuntime.includes("@/lib/supabase-admin") ||
+  payoutsRuntime.includes("@/lib/stripe/server") ||
+  payoutsRuntime.includes("@/lib/aws/core-api")
+) {
+  throw new Error("Payouts runtime must not import root DB, Stripe, or core API helpers.");
+}
+
+const payoutsIntegration = read("apps/admin/lib/aws/integration-api.ts");
+if (!payoutsIntegration.includes("readStripeConnectPayoutsViaIntegrationApi")) {
+  throw new Error("Isolated integration API must expose Stripe Connect payout reads.");
+}
+if (!adminNavigation.includes("/admin/dashboard/payouts")) {
+  throw new Error("Payouts navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
