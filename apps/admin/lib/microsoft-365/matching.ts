@@ -2,7 +2,6 @@ import "server-only";
 
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
-const supabaseAdmin = getAdminDatabaseClient();
 
 export type CrmMatch = {
   contactId: string | null;
