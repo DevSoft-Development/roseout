@@ -2706,6 +2706,61 @@ if (
   throw new Error("Business overview tabs must point at the isolated legacy redirect routes.");
 }
 
+const careersJobEditPage = read("apps/admin/app/admin/dashboard/careers/jobs/[id]/page.tsx");
+const careersJobNewPage = read("apps/admin/app/admin/dashboard/careers/jobs/new/page.tsx");
+const careersJobForm = read("apps/admin/components/admin/careers/CareerJobEditForm.tsx");
+const careersJobTypes = read("apps/admin/lib/careers/types.ts");
+const careersJobCompliance = read("apps/admin/lib/careers/new-york-compliance.ts");
+const careersJobsRoute = read("apps/admin/app/api/admin/careers/jobs/route.ts");
+const careersJobDetailRoute = read("apps/admin/app/api/admin/careers/jobs/[id]/route.ts");
+const careersJobsAiRoute = read("apps/admin/app/api/admin/careers/jobs/ai-helper/route.ts");
+
+for (const source of [
+  careersJobEditPage,
+  careersJobNewPage,
+  careersJobForm,
+  careersJobTypes,
+  careersJobCompliance,
+  careersJobsRoute,
+  careersJobDetailRoute,
+  careersJobsAiRoute,
+]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Careers Jobs slice must not import root monolith auth/database helpers.");
+  }
+}
+if (
+  !careersJobEditPage.includes("@theouthaven/auth/admin-session") ||
+  !careersJobEditPage.includes("@theouthaven/db/admin-client") ||
+  !careersJobNewPage.includes("@theouthaven/auth/admin-session") ||
+  !careersJobForm.includes("@/lib/careers/new-york-compliance") ||
+  !careersJobForm.includes("/api/admin/careers/jobs") ||
+  !careersJobForm.includes("/api/admin/careers/jobs/ai-helper")
+) {
+  throw new Error("Careers Jobs pages/form must preserve isolated auth, shared DB, compliance, and API actions.");
+}
+for (const source of [careersJobsRoute, careersJobDetailRoute]) {
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes("@/lib/careers/new-york-compliance")
+  ) {
+    throw new Error("Careers Jobs APIs must preserve isolated API auth, shared DB, and New York compliance checks.");
+  }
+}
+if (
+  !careersJobsAiRoute.includes("@/lib/admin-api-auth") ||
+  !careersJobsAiRoute.includes('requireAdminApiRole(["superadmin", "admin", "editor"])') ||
+  !careersJobsAiRoute.includes("buildFallbackCareerJobDraft") ||
+  !careersJobsAiRoute.includes("OPENAI_API_KEY")
+) {
+  throw new Error("Careers Jobs AI helper must preserve isolated authorization and deterministic fallback behavior.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
