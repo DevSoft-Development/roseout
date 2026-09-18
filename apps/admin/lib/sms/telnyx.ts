@@ -59,3 +59,16 @@ export async function sendTelnyxSmsFromNumber(params: {
   const purpose = purposeForTelnyxNumber(params.fromNumber) || "support";
   return sendTelnyxSmsViaIntegrationApi(purpose, to, body);
 }
+
+
+export function sendCrmSms(params: { to: string; body: string }) {
+  const to = normalizePhone(params.to);
+  const body = String(params.body || "").trim();
+  if (!to) throw new Error("SMS recipient is missing.");
+  if (!body) throw new Error("SMS body is missing.");
+  if (body.length > 1600) throw new Error("SMS body must be 1600 characters or fewer.");
+  if (!platformIntegrationApiConfigured()) {
+    throw new Error("AWS Integration API is required for Telnyx SMS.");
+  }
+  return sendTelnyxSmsViaIntegrationApi("crm", to, body);
+}

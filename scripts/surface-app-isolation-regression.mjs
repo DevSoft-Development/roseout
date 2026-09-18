@@ -4971,3 +4971,130 @@ for (const guard of ["stamps_postage_status !== \"purchased\"", "productionBatch
 if (!adminNavigation.includes("/admin/dashboard/operations/mailing-batches")) {
   throw new Error("Mailing Batches navigation must be present in isolated Admin shell.");
 }
+
+
+const reservationOpportunitiesPage = read("apps/admin/app/admin/dashboard/reservation-opportunities/page.tsx");
+const reservationOpportunitiesApi = read("apps/admin/app/api/admin/reservation-opportunities/route.ts");
+if (
+  !reservationOpportunitiesPage.includes("@theouthaven/auth/admin-session")
+  || !reservationOpportunitiesApi.includes("@theouthaven/db/admin-client")
+  || reservationOpportunitiesApi.includes("@/lib/supabase-admin")
+  || reservationOpportunitiesApi.includes("@/lib/admin-auth")
+) {
+  throw new Error("Reservation Opportunities must use isolated Admin auth and shared Admin DB.");
+}
+
+const adminLocationLayoutBoundary = read("apps/admin/app/admin/dashboard/location-layout/create/page.tsx");
+if (
+  !adminLocationLayoutBoundary.includes("NEXT_PUBLIC_RESERVE_APP_URL")
+  || !adminLocationLayoutBoundary.includes("/dashboard/location-layout/create")
+  || adminLocationLayoutBoundary.includes("LocationLayoutClient")
+) {
+  throw new Error("Admin location layout must remain a boundary link; Reserve-specific layout runtime stays in the separate Reserve system.");
+}
+
+const trustPage = read("apps/admin/app/admin/dashboard/trust/page.tsx");
+const trustApi = read("apps/admin/app/api/admin/trust/verification/route.ts");
+if (
+  !trustPage.includes("@theouthaven/auth/admin-session")
+  || !trustPage.includes("VerificationWork")
+  || !trustApi.includes("@theouthaven/auth/admin-session")
+  || !trustApi.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Trust and Verification must remain fully isolated in the Admin app.");
+}
+
+const fraudPage = read("apps/admin/app/admin/dashboard/fraud/page.tsx");
+const fraudActions = read("apps/admin/app/admin/dashboard/fraud/actions.ts");
+const fraudRuntime = read("apps/admin/lib/fraud.ts");
+for (const [label, source] of [["page", fraudPage], ["actions", fraudActions]]) {
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Fraud ${label} must use isolated Admin auth and shared DB.`);
+  }
+}
+if (!fraudRuntime.includes("@theouthaven/db/admin-client") || fraudRuntime.includes("@/lib/supabase-admin")) {
+  throw new Error("Fraud decision runtime must use shared Admin DB.");
+}
+
+const giveawayRetiredPage = read("apps/admin/app/admin/dashboard/giveaway/page.tsx");
+if (!giveawayRetiredPage.includes("Giveaway has been retired") || giveawayRetiredPage.includes("/api/admin/giveaway/")) {
+  throw new Error("Cancelled Giveaway functionality must stay retired rather than being migrated into isolated Admin.");
+}
+
+const supportTail = read("apps/admin/app/admin/dashboard/support/page.tsx");
+const communicationTail = read("apps/admin/app/admin/dashboard/communication/page.tsx");
+if (!supportTail.includes('redirect("/admin/dashboard/crm/support")')) {
+  throw new Error("Support tail must route to isolated CRM Support.");
+}
+if (!communicationTail.includes('redirect("/admin/dashboard/crm/operations?view=communication-center")')) {
+  throw new Error("Communication tail must route to isolated CRM Operations.");
+}
+
+const careersDetail = read("apps/admin/app/admin/dashboard/careers/applications/[id]/page.tsx");
+if (
+  !careersDetail.includes("@theouthaven/auth/admin-session")
+  || !careersDetail.includes("@theouthaven/db/admin-client")
+  || !careersDetail.includes("HiringWorkflow")
+) {
+  throw new Error("Careers application detail must use isolated Admin auth/DB and preserve structured hiring workflow.");
+}
+for (const route of [
+  "apps/admin/app/api/admin/careers/applications/[id]/workflow/route.ts",
+  "apps/admin/app/api/admin/careers/applications/[id]/scorecard/route.ts",
+  "apps/admin/app/api/admin/careers/applications/[id]/schedule-interview/route.ts",
+  "apps/admin/app/api/admin/careers/applications/[id]/interview-session/route.ts",
+]) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`Careers detail API must use isolated Admin boundaries: ${route}`);
+  }
+}
+
+const eventModerationPage = read("apps/admin/app/admin/dashboard/events-experiences/moderation/page.tsx");
+const eventModerationActions = read("apps/admin/app/admin/dashboard/events-experiences/moderation/actions.ts");
+if (
+  !eventModerationPage.includes("@theouthaven/auth/admin-session")
+  || !eventModerationPage.includes("@theouthaven/db/admin-client")
+  || !eventModerationActions.includes("fraudDecisionPreventsSensitiveAction")
+  || !eventModerationActions.includes("getFraudDecision")
+  || !eventModerationActions.includes("stripe_connect_charges_enabled")
+  || !eventModerationActions.includes("stripe_connect_payouts_enabled")
+  || !eventModerationActions.includes("@/lib/email/send")
+  || eventModerationActions.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Events moderation must preserve fraud, payout, publication, notification, and isolated Admin boundaries.");
+}
+
+const searchHealthBatch = read("apps/admin/app/api/admin/search-health/batch-run/route.ts");
+const searchHealthTrend = read("apps/admin/app/api/admin/search-health/trend/route.ts");
+const searchHealthTest = read("apps/admin/app/api/admin/search-health/test-event/route.ts");
+const searchHealthQaPrompts = read("apps/admin/app/api/admin/search-health/qa-prompts/route.ts");
+if (
+  !searchHealthBatch.includes("CONSUMER_APP_ORIGIN")
+  || !searchHealthBatch.includes("/api/generate")
+  || !searchHealthTrend.includes("@theouthaven/db/admin-client")
+  || !searchHealthTest.includes("@theouthaven/db/admin-client")
+  || !searchHealthQaPrompts.includes("@/lib/search/enterprise/qa-prompts")
+) {
+  throw new Error("Search Health tail must preserve isolated Admin data access and canonical consumer search service boundary.");
+}
+
+const teamDemoDetail = read("apps/admin/app/admin/dashboard/team/demo/[sessionId]/reservations/page.tsx");
+if (
+  !teamDemoDetail.includes("@theouthaven/auth/admin-session")
+  || !teamDemoDetail.includes("@theouthaven/db/admin-client")
+  || teamDemoDetail.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Team demo detail must use isolated Admin auth and shared DB.");
+}
+
+for (const href of [
+  "/admin/dashboard/reservation-opportunities",
+  "/admin/dashboard/trust",
+  "/admin/dashboard/fraud",
+  "/admin/dashboard/search-health",
+]) {
+  if (!adminNavigation.includes(href)) throw new Error(`Missing final isolated Admin navigation entry: ${href}`);
+}
+
+console.log("Final Admin tail isolation regression passed.");

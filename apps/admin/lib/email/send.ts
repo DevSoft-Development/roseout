@@ -1,6 +1,6 @@
 import { sendEmailViaIntegrationApi } from "@/lib/aws/integration-api";
 import { renderBrandedEmail } from "./render";
-import type { EmailCta, EmailDepartment } from "./types";
+import type { EmailCta, EmailDepartment, EmailSection } from "./types";
 import { getEmailTemplate } from "./registry";
 import { resolveEmailSender } from "./brand";
 import { recordEmailSendLog } from "./logging";
@@ -23,6 +23,7 @@ export async function sendRawBrandedEmail(params: {
   heading?: string;
   preview?: string;
   body?: string;
+  sections?: EmailSection[];
   cta?: EmailCta;
   department?: EmailDepartment | string;
   replyTo?: string;
@@ -36,7 +37,8 @@ export async function sendRawBrandedEmail(params: {
     subject: params.subject,
     preview: params.preview || params.subject,
     heading: params.heading || params.subject,
-    intro: params.body || "",
+    intro: params.sections?.length ? undefined : params.body || "",
+    sections: params.sections || [],
     cta: params.cta,
   });
   const sender = resolveEmailSender(department);
