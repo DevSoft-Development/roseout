@@ -1,0 +1,7 @@
+import { clampScore, confidenceWeight } from './scoring';
+export function buildPairKey(r:string,a:string){ return [r,a].filter(Boolean).join(':'); }
+export function calculateDistanceFit(pair:any,intent?:any,market?:any){ const d=Number(pair?.distance_miles??pair?.pair_distance_miles??0); const walking=Number(market?.walking_preference_score||0)>60 || /walk|nearby|same/.test(String(intent?.rawQuery||'').toLowerCase()); const max=walking?2.5:12; return clampScore(100-(d/max)*100); }
+export function calculateVibeCompatibility(r:any,a:any,intent:any){ const q=String(intent?.rawQuery||'').toLowerCase(); let s=50; if(/quiet|date/.test(q)) s+=(r?.quiet_score||0)*.15-(a?.loud_score||0)*.08; if(/girls|birthday|group/.test(q)) s+=(r?.group_score||0)*.12+(a?.lively_score||0)*.12; return clampScore(s); }
+export function calculatePairCompatibilityScore(i:any){ return clampScore((i.distance_fit_score??calculateDistanceFit(i))*0.28+(i.review_compatibility_score||50)*0.22+(i.time_fit_score||50)*0.15+(i.market_fit_score||50)*0.15+(i.result_quality_score||50)*0.2); }
+export function formatPairCompatibilitySummary(f:any){ return f?`Pair score ${Math.round(f.pair_compatibility_score||0)}; best for ${(f.best_for_terms||[]).slice(0,3).join(', ')||'similar outings'}.`:'No pair compatibility data yet.'; }
+export function pairConfidence(f:any){ return confidenceWeight((f?.shown_count||0)+(f?.click_count||0)*2,40); }
