@@ -13,6 +13,7 @@ import {
   ShoppingBag,
   Settings,
   TicketPercent,
+  WalletCards,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminRole } from "@theouthaven/auth/admin-roles";
@@ -109,6 +110,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: ShoppingBag,
     migrated: true,
     roles: ["superadmin", "admin", "manager", "reviewer", "experience_team"],
+  },
+  {
+    label: "Payouts",
+    href: "/admin/dashboard/payouts",
+    icon: WalletCards,
+    migrated: true,
+    roles: ["superadmin", "admin"],
   },
   { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, migrated: true },
 ] as const;
