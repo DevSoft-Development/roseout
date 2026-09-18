@@ -1476,6 +1476,24 @@ for (const reviewTable of [
   }
 }
 
+const teamSiteVisitsPage = read("apps/admin/app/admin/dashboard/team/site-visits/page.tsx");
+if (
+  !teamSiteVisitsPage.includes("@theouthaven/auth/admin-session") ||
+  !teamSiteVisitsPage.includes("@theouthaven/db/admin-client") ||
+  !teamSiteVisitsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamSiteVisitsPage.includes("ambassador_site_visits")
+) {
+  throw new Error("Site Visits page must use isolated manager auth/shared DB and preserve visit data.");
+}
+if (
+  teamSiteVisitsPage.includes("@/lib/admin-auth") ||
+  teamSiteVisitsPage.includes("@/lib/admin-permissions") ||
+  teamSiteVisitsPage.includes("@/lib/supabase-admin") ||
+  teamSiteVisitsPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Site Visits page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
