@@ -201,6 +201,20 @@ if (!adminNavigation.includes("/admin/dashboard/launch-checklist")) {
   throw new Error("Launch Checklist navigation must be present in the isolated Admin shell.");
 }
 
+const dataQualityPage = read("apps/admin/app/admin/dashboard/data-quality/page.tsx");
+if (!dataQualityPage.includes("@theouthaven/auth/admin-session")) {
+  throw new Error("Data Quality page must use isolated Admin auth.");
+}
+if (dataQualityPage.includes("@/lib/")) {
+  throw new Error("Data Quality page must not import root monolith modules.");
+}
+if (!dataQualityPage.includes('requireAdminRole(["superadmin", "admin"])')) {
+  throw new Error("Data Quality page must preserve superadmin/admin access.");
+}
+if (!adminNavigation.includes("/admin/dashboard/data-quality")) {
+  throw new Error("Data Quality navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
