@@ -1943,6 +1943,23 @@ if (
   throw new Error("SMS Operations page must not import root monolith auth/database helpers.");
 }
 
+const campaignsPage = read("apps/admin/app/admin/dashboard/campaigns/page.tsx");
+if (
+  !campaignsPage.includes("@theouthaven/auth/admin-session") ||
+  !campaignsPage.includes("@theouthaven/db/admin-client") ||
+  !campaignsPage.includes("@/lib/admin/formatters") ||
+  !campaignsPage.includes('requireAdminRole(["superadmin","admin","editor","viewer","marketing_intern","marketing_specialist","marketing_manager"])')
+) {
+  throw new Error("Campaigns page must use isolated Admin auth/shared DB and preserve campaign roles.");
+}
+if (
+  campaignsPage.includes("@/lib/admin-auth") ||
+  campaignsPage.includes("@/lib/admin-permissions") ||
+  campaignsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Campaigns page must not import root monolith auth/database helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
