@@ -82,3 +82,31 @@ export function getCompensationLabel(job: {
   }
   return job.is_paid === false ? "Educational experience" : "Compensation shared during hiring";
 }
+
+
+export function calculateApplicantDisplayName(app: {
+  first_name?: string | null;
+  last_name?: string | null;
+  email: string;
+}) {
+  return `${app.first_name || ""} ${app.last_name || ""}`.trim() || app.email;
+}
+
+export function getNextRecommendedAction(stage?: string | null) {
+  const map: Record<string, string> = {
+    submitted: "Review application",
+    portfolio_review: "Review portfolio links",
+    under_review: "Shortlist or send update",
+    shortlisted: "Request interview",
+    interview_requested: "Schedule interview",
+    interview_scheduled: "Complete interview",
+    interview_completed: "Complete scorecard",
+    content_test: "Review content test",
+    offer_pending: "Prepare offer",
+    offer_sent: "Await candidate response",
+    hired: "Start team conversion",
+    not_selected: "No action needed",
+    talent_pool: "Follow up later",
+  };
+  return map[String(stage || "")] || "Review application";
+}
