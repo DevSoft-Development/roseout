@@ -2053,6 +2053,38 @@ if (
   throw new Error("Roles & Permissions navigation must be present in the isolated Admin shell.");
 }
 
+const seoToolsPage = read("apps/admin/app/admin/dashboard/seo-tools/page.tsx");
+if (
+  !seoToolsPage.includes("@theouthaven/auth/admin-session") ||
+  !seoToolsPage.includes("@theouthaven/db/admin-client") ||
+  !seoToolsPage.includes("@/lib/admin-permissions") ||
+  seoToolsPage.includes("@/lib/admin-auth") ||
+  seoToolsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("SEO Tools page must use isolated Admin auth, permissions, and shared DB.");
+}
+for (const seoRoute of [
+  "apps/admin/app/api/admin/seo/setup/route.ts",
+  "apps/admin/app/api/admin/seo/audit/route.ts",
+]) {
+  const source = read(seoRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@/lib/admin-permissions") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`SEO Tools API must preserve isolated auth and shared DB access: ${seoRoute}`);
+  }
+}
+const seoInspection = read("apps/admin/lib/admin/seo/live-inspection.ts");
+if (seoInspection.includes("@/lib/")) {
+  throw new Error("SEO live inspection runtime must remain self-contained.");
+}
+if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/seo-tools")) {
+  throw new Error("SEO Tools navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
