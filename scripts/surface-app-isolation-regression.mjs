@@ -2118,6 +2118,49 @@ if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin
   throw new Error("SEO Operations navigation must be present in isolated Admin.");
 }
 
+const productionFinishLinePage = read("apps/admin/app/admin/dashboard/production/page.tsx");
+const productionFinishLineClient = read("apps/admin/app/admin/dashboard/production/ProductionCommandCenterClient.tsx");
+if (
+  !productionFinishLinePage.includes("@theouthaven/auth/admin-session") ||
+  !productionFinishLinePage.includes("@/lib/admin-permissions") ||
+  productionFinishLinePage.includes("@/lib/admin-auth")
+) {
+  throw new Error("Production Finish Line page must use isolated Admin auth and permissions.");
+}
+for (const endpoint of [
+  "/api/admin/production-finish-line",
+  "/api/admin/production-finish-line/run-gate",
+]) {
+  if (!productionFinishLineClient.includes(endpoint)) {
+    throw new Error(`Production Finish Line client must use isolated endpoint: ${endpoint}`);
+  }
+}
+for (const productionRoute of [
+  "apps/admin/app/api/admin/production-finish-line/route.ts",
+  "apps/admin/app/api/admin/production-finish-line/run-gate/route.ts",
+]) {
+  const source = read(productionRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@/lib/admin-permissions") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Production Finish Line route must preserve isolated auth/database boundaries: ${productionRoute}`);
+  }
+}
+for (const productionRuntime of [
+  "apps/admin/lib/production-finish-line/seeds.ts",
+  "apps/admin/lib/production-finish-line/gate-tests.ts",
+]) {
+  if (read(productionRuntime).includes("@/lib/")) {
+    throw new Error(`Production Finish Line runtime must remain self-contained: ${productionRuntime}`);
+  }
+}
+if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/production")) {
+  throw new Error("Production Finish Line navigation must be present in isolated Admin.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
