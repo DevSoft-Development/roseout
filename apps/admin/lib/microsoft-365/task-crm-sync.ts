@@ -133,7 +133,7 @@ function graphDateTime(value: string | null) {
 }
 
 async function getTaskPreferences(userId: string): Promise<TaskPreferences> {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("microsoft_365_sync_preferences")
     .select("task_sync_enabled,task_sync_direction,task_link_to_crm")
     .eq("user_id", userId)
@@ -155,7 +155,7 @@ function historyEvent(before: CrmTaskRow, next: { status: string; priority: stri
 
 async function createCrmTaskForTodo(userId: string, row: TodoRow) {
   const recordId = sourceRecordId(row);
-  const { data: existing, error: existingError } = await supabaseAdmin
+  const { data: existing, error: existingError } = await getAdminDatabaseClient()
     .from("crm_tasks")
     .select("id,title,description,status,priority,due_at,reminder_at,completed_at,assigned_to_user_id,source,source_record_id,metadata,updated_at,version,archived_at")
     .eq("source", "microsoft_365")
@@ -169,7 +169,7 @@ async function createCrmTaskForTodo(userId: string, row: TodoRow) {
   const priority = graphImportanceToCrm(row.importance);
   const completedAt = status === "completed" ? (row.completed_at || row.graph_last_modified_at || new Date().toISOString()) : null;
   const now = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("crm_tasks")
     .insert({
       title: row.title || "Untitled Microsoft To Do task",
@@ -238,7 +238,7 @@ async function updateCrmTaskFromTodo(userId: string, crm: CrmTaskRow, row: TodoR
     version: crm.version + 1,
     ...(status !== crm.status ? { last_status_changed_at: updatedAt } : {}),
   };
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("crm_tasks")
     .update(patch)
     .eq("id", crm.id)
@@ -268,7 +268,7 @@ async function updateCrmTaskFromTodo(userId: string, crm: CrmTaskRow, row: TodoR
 }
 
 async function linkMicrosoftTasksIntoCrm(userId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("microsoft_365_todo_tasks")
     .select("id,user_id,provider_list_id,provider_task_id,title,body_text,status,importance,due_at,reminder_at,completed_at,matched_crm_task_id,graph_last_modified_at,metadata")
     .eq("user_id", userId)
@@ -282,7 +282,7 @@ async function linkMicrosoftTasksIntoCrm(userId: string) {
     const row = raw as TodoRow;
     let crm: CrmTaskRow | null = null;
     if (row.matched_crm_task_id) {
-      const { data: linked, error: linkedError } = await supabaseAdmin
+      const { data: linked, error: linkedError } = await getAdminDatabaseClient()
         .from("crm_tasks")
         .select("id,title,description,status,priority,due_at,reminder_at,completed_at,assigned_to_user_id,source,source_record_id,metadata,updated_at,version,archived_at")
         .eq("id", row.matched_crm_task_id)
@@ -294,7 +294,7 @@ async function linkMicrosoftTasksIntoCrm(userId: string) {
     if (!crm) {
       crm = await createCrmTaskForTodo(userId, row);
       created += 1;
-      const { error: linkError } = await supabaseAdmin
+      const { error: linkError } = await getAdminDatabaseClient()
         .from("microsoft_365_todo_tasks")
         .update({ matched_crm_task_id: crm.id, updated_at: new Date().toISOString() })
         .eq("id", row.id);
@@ -362,7 +362,7 @@ async function persistGraphTaskMapping(userId: string, listId: string, graph: Gr
 }
 
 async function pushCrmTasksToMicrosoft(userId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("crm_tasks")
     .select("id,title,description,status,priority,due_at,reminder_at,completed_at,assigned_to_user_id,source,source_record_id,metadata,updated_at,version,archived_at")
     .eq("assigned_to_user_id", userId)
@@ -376,7 +376,7 @@ async function pushCrmTasksToMicrosoft(userId: string) {
   let crmListId: string | null = null;
   for (const raw of data || []) {
     const crm = raw as CrmTaskRow;
-    const { data: mapped, error: mappedError } = await supabaseAdmin
+    const { data: mapped, error: mappedError } = await getAdminDatabaseClient()
       .from("microsoft_365_todo_tasks")
       .select("id,user_id,provider_list_id,provider_task_id,title,body_text,status,importance,due_at,reminder_at,completed_at,matched_crm_task_id,graph_last_modified_at,metadata")
       .eq("user_id", userId)
