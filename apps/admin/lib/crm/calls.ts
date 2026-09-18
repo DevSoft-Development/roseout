@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import { listPermittedCrmLocationIds } from "@/lib/crm/location-scope";
 
 type CallsRow = {
   id: string;
@@ -13,37 +14,6 @@ type CallsRow = {
   region: string;
   crm_status: string;
 };
-
-function broadAccess(role: string, profile: any) {
-  return ["superadmin", "admin", "manager"].includes(String(role || "").toLowerCase())
-    || ["superadmin", "admin", "manager"].includes(String(profile?.team_type || "").toLowerCase());
-}
-
-async function permittedLocationIds(userId: string, role: string) {
-  const db = getAdminDatabaseClient();
-  const { data: profile, error } = await db
-    .from("team_member_profiles")
-    .select("id,team_type,assigned_location_ids")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw error;
-  if (broadAccess(role, profile)) return null;
-
-  const direct = Array.isArray(profile?.assigned_location_ids)
-    ? profile.assigned_location_ids.map((value: unknown) => String(value || "").trim()).filter(Boolean)
-    : [];
-  if (direct.length) return direct;
-  if (!profile?.id) return [];
-
-  const { data: assignments, error: assignmentError } = await db
-    .from("team_location_assignments")
-    .select("location_id")
-    .eq("team_member_id", profile.id)
-    .eq("status", "active")
-    .limit(2000);
-  if (assignmentError) throw assignmentError;
-  return (assignments || []).map((row: any) => String(row.location_id || "")).filter(Boolean);
-}
 
 function displayName(row: any) {
   return String(row.location_name || row.name || row.restaurant_name || row.activity_name || "Untitled location");
@@ -80,7 +50,7 @@ export async function listCallableCrmLocations(input: {
   pageSize?: number;
 }) {
   const db = getAdminDatabaseClient();
-  const allowed = await permittedLocationIds(input.userId, input.role);
+  const allowed = await listPermittedCrmLocationIds(input.userId, input.role);
   if (Array.isArray(allowed) && allowed.length === 0) {
     return { rows: [] as CallsRow[], total: 0, page: 1, pageSize: input.pageSize || 50 };
   }
