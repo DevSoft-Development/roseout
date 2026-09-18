@@ -3731,6 +3731,14 @@ const crmClaimCodesShim = read("apps/admin/app/admin/dashboard/crm/claims/claim-
 if (!crmClaimCodesShim.includes('export { default } from "../../claim-codes/page"')) {
   throw new Error("CRM claims claim-codes shim must preserve the isolated claim-codes re-export.");
 }
+const crmClaimCodesPage = read("apps/admin/app/admin/dashboard/crm/claim-codes/page.tsx");
+if (!crmClaimCodesPage.includes("@theouthaven/auth/admin-session") || !crmClaimCodesPage.includes("@/lib/crm/claim-codes")) {
+  throw new Error("CRM claim-codes page must use isolated Admin auth and data access.");
+}
+const crmClaimCodesData = read("apps/admin/lib/crm/claim-codes.ts");
+if (!crmClaimCodesData.includes("@theouthaven/db/admin-client") || crmClaimCodesData.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM claim-codes data helper must use the shared Admin DB boundary.");
+}
 const crmTasksRedirect = read("apps/admin/app/admin/dashboard/crm/tasks/page.tsx");
 if (!crmTasksRedirect.includes("@theouthaven/auth/admin-session") || !crmTasksRedirect.includes("@/lib/crm/permissions")) {
   throw new Error("CRM tasks redirect must use isolated Admin auth and CRM permissions.");
