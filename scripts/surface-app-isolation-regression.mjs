@@ -1992,6 +1992,35 @@ if (
   throw new Error("Careers hub must preserve hiring dashboard data sources.");
 }
 
+const careersJobsPage = read("apps/admin/app/admin/dashboard/careers/jobs/page.tsx");
+const careersAccess = read("apps/admin/lib/careers/access.ts");
+const careersFormat = read("apps/admin/lib/careers/format.ts");
+if (
+  !careersJobsPage.includes("@theouthaven/auth/admin-session") ||
+  !careersJobsPage.includes("@theouthaven/db/admin-client") ||
+  !careersJobsPage.includes("@/lib/careers/access") ||
+  !careersJobsPage.includes("@/lib/careers/format")
+) {
+  throw new Error("Careers Jobs Manager must use isolated Admin auth/shared DB and isolated careers helpers.");
+}
+for (const source of [careersJobsPage, careersAccess, careersFormat]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Careers Jobs slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !careersJobsPage.includes('from("career_jobs")') ||
+  !careersJobsPage.includes('from("career_applications")') ||
+  !careersJobsPage.includes('process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com"')
+) {
+  throw new Error("Careers Jobs Manager must preserve job/application reads and consumer-surface previews.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
