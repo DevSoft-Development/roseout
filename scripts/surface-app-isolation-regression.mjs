@@ -4412,3 +4412,37 @@ for (const dependency of [
     throw new Error(`Final CRM detail dependency must not import root Admin auth/DB modules: ${dependency}`);
   }
 }
+
+
+const marketingCalendarPage = read("apps/admin/app/admin/dashboard/marketing/calendar/page.tsx");
+if (
+  !marketingCalendarPage.includes("@theouthaven/auth/admin-session")
+  || !marketingCalendarPage.includes("@theouthaven/db/admin-client")
+  || marketingCalendarPage.includes("@/lib/admin-auth")
+  || marketingCalendarPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Calendar must use isolated Admin auth and shared Admin DB.");
+}
+const marketingSettingsPage = read("apps/admin/app/admin/dashboard/marketing/settings/page.tsx");
+if (
+  !marketingSettingsPage.includes("@theouthaven/auth/admin-session")
+  || !marketingSettingsPage.includes("@theouthaven/db/admin-client")
+  || marketingSettingsPage.includes("@/lib/admin-auth")
+  || marketingSettingsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Settings must use isolated Admin auth and shared Admin DB.");
+}
+const marketingSettingsApi = read("apps/admin/app/api/admin/marketing/settings/route.ts");
+if (
+  !marketingSettingsApi.includes("@theouthaven/db/admin-client")
+  || marketingSettingsApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Settings API must use shared Admin DB.");
+}
+const isolatedMarketingAdmin = read("apps/admin/lib/marketing-admin.ts");
+if (
+  !isolatedMarketingAdmin.includes("@theouthaven/db/admin-client")
+  || isolatedMarketingAdmin.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Admin helper must use shared Admin DB.");
+}
