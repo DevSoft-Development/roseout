@@ -19,7 +19,11 @@ export default async function DemoPublicProfilePreview() {
   ).toLowerCase();
   const type = rawType.includes("activ") ? "activity" : "restaurant";
 
+  const consumerOrigin = String(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com",
+  ).replace(/\/$/, "");
+
   redirect(
-    `/locations/${type}/${location.id}?adminLocationId=${location.id}&locationId=${location.id}&type=${type}&demo=1&fromDemoCenter=1`,
+    `${consumerOrigin}/locations/${type}/${location.id}?adminLocationId=${location.id}&locationId=${location.id}&type=${type}&demo=1&fromDemoCenter=1`,
   );
 }
