@@ -136,6 +136,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     roles: ["superadmin", "admin"],
   },
   {
+    label: "Critical Incidents",
+    href: "/admin/dashboard/infrastructure/incidents",
+    icon: ShieldAlert,
+    migrated: true,
+    roles: ["superadmin", "admin"],
+  },
+  {
     label: "SEO Operations",
     href: "/admin/dashboard/seo",
     icon: Search,
