@@ -36,7 +36,6 @@ export async function GET(_req: Request, context: { params: Promise<{ provider: 
   if (!ADMIN_PAGE_ACCESS.marketingSocialAccounts.includes(adminUser.role)) {
     return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
   }
-  if (!adminUser) return redirectError("Unauthorized social account connection attempt.");
 
   const { provider: rawProvider } = await context.params;
   const provider = providerValue(rawProvider);
