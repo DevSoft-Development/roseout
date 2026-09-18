@@ -2562,6 +2562,30 @@ if (
   throw new Error("User detail actions must target isolated Admin APIs and role options.");
 }
 
+const ownerAccountsPage = read("apps/admin/app/admin/dashboard/owner-accounts/page.tsx");
+if (
+  !ownerAccountsPage.includes("@theouthaven/auth/admin-session") ||
+  !ownerAccountsPage.includes("@theouthaven/db/admin-client") ||
+  !ownerAccountsPage.includes("@/components/admin/ImpersonateButton") ||
+  !ownerAccountsPage.includes('requireAdminRole([\n    "superadmin",\n    "admin",\n    "ambassador",\n    "experience_team",\n  ])') ||
+  !ownerAccountsPage.includes('/admin/dashboard/users/')
+) {
+  throw new Error("Owner Accounts must use isolated auth/DB, preserve owner-account roles, and link to isolated user details.");
+}
+if (
+  ownerAccountsPage.includes("@/lib/admin-auth") ||
+  ownerAccountsPage.includes("@/lib/admin-permissions") ||
+  ownerAccountsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Owner Accounts must not import root monolith auth/database helpers.");
+}
+if (
+  !ownerAccountsPage.includes('currentAdmin.role === "superadmin"') ||
+  !ownerAccountsPage.includes('targetType="user"')
+) {
+  throw new Error("Owner Accounts impersonation must remain superadmin-only and target user accounts.");
+}
+
 const analyticsPage = read("apps/admin/app/admin/dashboard/analytics/page.tsx");
 const analyticsRuntime = read("apps/admin/lib/admin/analytics/getAdminSaasAnalytics.ts");
 const analyticsCache = read("apps/admin/lib/admin/analytics/getCachedAdminSaasAnalytics.ts");
