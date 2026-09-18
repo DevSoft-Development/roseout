@@ -4541,3 +4541,14 @@ for (const route of marketingTodayAnalyticsPages) {
     throw new Error(`Marketing Today/Analytics page must use isolated Admin auth and shared Admin DB: ${route}`);
   }
 }
+
+
+const marketingContentPipelinePage = read("apps/admin/app/admin/dashboard/marketing/content/page.tsx");
+if (
+  !marketingContentPipelinePage.includes("@theouthaven/auth/admin-session")
+  || !marketingContentPipelinePage.includes("@theouthaven/db/admin-client")
+  || marketingContentPipelinePage.includes("@/lib/admin-auth")
+  || marketingContentPipelinePage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Content Pipeline must use isolated Admin auth and shared Admin DB.");
+}
