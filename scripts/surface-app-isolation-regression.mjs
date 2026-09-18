@@ -1615,6 +1615,37 @@ if (
   throw new Error("Proof Review page must not import root monolith auth/database/team helpers.");
 }
 
+const teamHubPage = read("apps/admin/app/admin/dashboard/team/page.tsx");
+const teamWorkspaceRuntime = read("apps/admin/lib/team-workspace.ts");
+const teamWorkspaceClient = read("apps/admin/components/TeamWorkSessionClient.tsx");
+const teamWorkspaceApi = read("apps/admin/app/api/team/work-session/route.ts");
+if (
+  !teamHubPage.includes("@theouthaven/auth/admin-session") ||
+  !teamHubPage.includes("@theouthaven/db/admin-client") ||
+  !teamHubPage.includes("@/lib/team-workspace") ||
+  !teamHubPage.includes("@/components/TeamWorkSessionClient")
+) {
+  throw new Error("Team Tools hub must use isolated auth, DB, workspace runtime, and client.");
+}
+for (const source of [teamHubPage, teamWorkspaceRuntime, teamWorkspaceApi]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/team-tools")
+  ) {
+    throw new Error("Team Tools hub slice must not import root monolith auth/database/team helpers.");
+  }
+}
+if (
+  !teamWorkspaceRuntime.includes("getAdminDatabaseClient") ||
+  !teamWorkspaceRuntime.includes("getCurrentAdmin") ||
+  !teamWorkspaceApi.includes("/admin/dashboard/team/work-sessions") ||
+  !teamWorkspaceClient.includes("/api/team/work-session")
+) {
+  throw new Error("Team Tools workspace runtime/client/API boundary is incomplete.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
