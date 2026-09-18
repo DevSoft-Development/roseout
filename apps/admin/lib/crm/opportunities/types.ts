@@ -1,4 +1,4 @@
-import type { AdminRole } from "@/lib/users/roles";
+import type { AdminRole } from "@theouthaven/auth/admin-roles";
 import type { PipelineKey } from "../pipelines";
 
 export const FORECAST_CATEGORIES = ["pipeline", "best_case", "commit", "closed", "omitted"] as const;
