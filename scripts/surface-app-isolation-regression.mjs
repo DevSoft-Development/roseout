@@ -4916,3 +4916,58 @@ for (const kbRoute of [
 if (!adminNavigation.includes("/admin/dashboard/knowledge-base")) {
   throw new Error("Knowledge Base navigation must be present in isolated Admin shell.");
 }
+
+
+const mailingBatchesPage = read("apps/admin/app/admin/dashboard/operations/mailing-batches/page.tsx");
+if (
+  !mailingBatchesPage.includes("@theouthaven/auth/admin-session") ||
+  !mailingBatchesPage.includes("@theouthaven/db/admin-client") ||
+  mailingBatchesPage.includes("@/lib/admin-auth") ||
+  mailingBatchesPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Mailing Batches page must use isolated Admin auth and shared DB.");
+}
+
+for (const postcardRoute of [
+  "apps/admin/app/api/admin/mailing-batches/route.ts",
+  "apps/admin/app/api/admin/mailing-batches/[id]/status/route.ts",
+  "apps/admin/app/api/admin/mailing-batches/postcard-template/route.ts",
+  "apps/admin/app/api/admin/mailing-batches/[id]/postage/preview/route.ts",
+  "apps/admin/app/api/admin/mailing-batches/[id]/postage/staging-proof/route.ts",
+  "apps/admin/app/api/admin/mailing-batches/[id]/postage/production-proof/route.ts",
+]) {
+  const source = read(postcardRoute);
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`Postcard Admin route must not import root monolith auth/database modules: ${postcardRoute}`);
+  }
+}
+
+const postcardProductionProof = read("apps/admin/app/api/admin/mailing-batches/[id]/postage/production-proof/route.ts");
+for (const guard of [
+  "createStampsPostcardProductionProofViaIntegrationApi",
+  "getStampsStatusViaIntegrationApi",
+  'stamps_postage_status: "reserved"',
+  '.is("stamps_postage_status", null)',
+  'stamps_postage_status: "manual_review"',
+  "This live attempt will not be retried automatically.",
+]) {
+  if (!postcardProductionProof.includes(guard)) {
+    throw new Error(`Postcard production proof must preserve AWS-only live postage safety: ${guard}`);
+  }
+}
+
+const stampsRuntime = read("apps/admin/lib/stamps-postcard.ts");
+if (!stampsRuntime.includes("Stamps.com production SOAP calls must run through the AWS Integration API.")) {
+  throw new Error("Postcard direct SOAP runtime must fail closed for live production traffic.");
+}
+
+const postcardPrintPage = read("apps/admin/app/admin/dashboard/operations/mailing-batches/[id]/print/page.tsx");
+for (const guard of ["stamps_postage_status !== \"purchased\"", "productionBatch", "Do not purchase"]) {
+  if (!postcardPrintPage.includes(guard)) {
+    throw new Error(`Postcard print center must preserve purchased-postage fail-closed guard: ${guard}`);
+  }
+}
+
+if (!adminNavigation.includes("/admin/dashboard/operations/mailing-batches")) {
+  throw new Error("Mailing Batches navigation must be present in isolated Admin shell.");
+}
