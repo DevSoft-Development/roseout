@@ -811,6 +811,32 @@ if (hiddenLocationsApi.includes("requireAdminApiRole") || hiddenLocationsApi.inc
   throw new Error("Hidden Locations API must not use root Admin auth/database helpers.");
 }
 
+const claimUrlsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/claim-urls/page.tsx");
+if (!claimUrlsPage.includes("@theouthaven/auth/admin-session") || !claimUrlsPage.includes("@theouthaven/db/admin-client") || !claimUrlsPage.includes("@/app/admin/dashboard/claim-tools/ClaimToolsClient") || !claimUrlsPage.includes("@/app/admin/dashboard/claim-qrs/RepairClaimQrButton")) {
+  throw new Error("Claim URLs settings page must use isolated Admin auth/DB and isolated claim tooling.");
+}
+
+const claimQrPage = read("apps/admin/app/admin/dashboard/claim-qrs/page.tsx");
+if (!claimQrPage.includes("@theouthaven/auth/admin-session") || !claimQrPage.includes("@theouthaven/db/admin-client") || !claimQrPage.includes("@/lib/claimQrServer")) {
+  throw new Error("Claim QR print page must use isolated Admin auth, DB, and claim runtime.");
+}
+if (claimQrPage.includes("@/lib/admin-auth") || claimQrPage.includes("@/lib/supabase")) {
+  throw new Error("Claim QR print page must not import root monolith auth/database helpers.");
+}
+
+const claimQrMaintenancePage = read("apps/admin/app/admin/dashboard/claim-qrs/maintenance/page.tsx");
+if (!claimQrMaintenancePage.includes("@theouthaven/auth/admin-session") || !claimQrMaintenancePage.includes("@/lib/claimQrServer")) {
+  throw new Error("Claim QR maintenance page must use isolated Admin auth and claim runtime.");
+}
+
+const claimQrBackfillApi = read("apps/admin/app/api/admin/locations/backfill-qr/route.ts");
+if (!claimQrBackfillApi.includes("@theouthaven/auth/admin-session") || !claimQrBackfillApi.includes("@theouthaven/db/admin-client") || !claimQrBackfillApi.includes('requireAdminRole(["superadmin"])')) {
+  throw new Error("Claim QR repair job API must preserve isolated superadmin authorization and shared DB access.");
+}
+if (claimQrBackfillApi.includes("@/lib/admin-auth") || claimQrBackfillApi.includes("@/lib/supabase-admin")) {
+  throw new Error("Claim QR repair job API must not import root monolith auth/database helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
