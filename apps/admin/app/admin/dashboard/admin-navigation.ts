@@ -6,6 +6,7 @@ import {
   KeyRound,
   ListChecks,
   Mail,
+  MapPin,
   MessageSquareText,
   Rocket,
   ScrollText,
@@ -31,6 +32,13 @@ export type AdminShellNavItem = {
 
 export const adminShellNavigation: readonly AdminShellNavItem[] = [
   { label: "Overview", href: "/admin/dashboard", icon: Home, migrated: true },
+  {
+    label: "Locations",
+    href: "/admin/dashboard/locations",
+    icon: MapPin,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "reviewer", "viewer"],
+  },
   {
     label: "Platform Errors",
     href: "/admin/dashboard/platform-errors",
