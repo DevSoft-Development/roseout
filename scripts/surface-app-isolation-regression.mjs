@@ -1513,6 +1513,25 @@ if (
   throw new Error("Social Outreach page must not import root monolith auth/database/team helpers.");
 }
 
+const teamSupportWorkPage = read("apps/admin/app/admin/dashboard/team/support-work/page.tsx");
+if (
+  !teamSupportWorkPage.includes("@theouthaven/auth/admin-session") ||
+  !teamSupportWorkPage.includes("@theouthaven/db/admin-client") ||
+  !teamSupportWorkPage.includes('requireAdminRole(["superadmin", "admin", "experience_team", "viewer"])') ||
+  !teamSupportWorkPage.includes("team_work_activities") ||
+  !teamSupportWorkPage.includes('"support_ticket"')
+) {
+  throw new Error("Support Work page must use isolated experience inbox auth/shared DB and preserve support activity data.");
+}
+if (
+  teamSupportWorkPage.includes("@/lib/admin-auth") ||
+  teamSupportWorkPage.includes("@/lib/admin-permissions") ||
+  teamSupportWorkPage.includes("@/lib/supabase-admin") ||
+  teamSupportWorkPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Support Work page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
