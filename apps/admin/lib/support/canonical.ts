@@ -35,7 +35,7 @@ export function normalizeSupportStatus(value: unknown): SupportStatus {
 }
 
 export async function getCanonicalSupportTicket(ticketId: string) {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_tickets")
     .select("*")
     .eq("id", ticketId)
@@ -72,7 +72,7 @@ export async function updateCanonicalSupportStatus(ticketId: string, status: Sup
   if (status === "reopened") patch.reopened_at = now;
   if (status !== "closed") patch.closed_at = null;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_tickets")
     .update(patch)
     .eq("id", ticketId)
@@ -90,7 +90,7 @@ export async function updateCanonicalSupportStatus(ticketId: string, status: Sup
 
 export async function updateCanonicalSupportPriority(ticketId: string, priority: SupportPriority, actorUserId?: string | null) {
   const now = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_tickets")
     .update({ priority, updated_at: now })
     .eq("id", ticketId)
@@ -113,7 +113,7 @@ export async function assignCanonicalSupportTicket(ticketId: string, input: { us
     assigned_admin_email: input.email || null,
     assigned_admin_name: input.name || null,
   };
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_tickets")
     .update(patch)
     .eq("id", ticketId)
@@ -142,7 +142,7 @@ export async function addCanonicalSupportMessage(input: {
   if (!body) throw new Error("Message is required.");
   const now = new Date().toISOString();
   const senderRole = input.senderRole || "admin";
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_ticket_messages")
     .insert({
       ticket_id: input.ticketId,
@@ -177,7 +177,7 @@ export async function markCanonicalSupportEscalated(ticketId: string, actorUserI
   const currentMetadata = ticket?.metadata && typeof ticket.metadata === "object" && !Array.isArray(ticket.metadata)
     ? ticket.metadata as Record<string, unknown>
     : {};
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("support_tickets")
     .update({
       status: "escalated",
