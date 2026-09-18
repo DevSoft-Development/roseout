@@ -4524,3 +4524,20 @@ for (const dependency of [
 ]) {
   read(dependency);
 }
+
+
+const marketingTodayAnalyticsPages = [
+  "apps/admin/app/admin/dashboard/marketing/today/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/analytics/page.tsx",
+];
+for (const route of marketingTodayAnalyticsPages) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/auth/admin-session")
+    || !source.includes("@theouthaven/db/admin-client")
+    || source.includes("@/lib/admin-auth")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing Today/Analytics page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+}
