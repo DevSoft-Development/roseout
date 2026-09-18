@@ -4552,3 +4552,29 @@ if (
 ) {
   throw new Error("Marketing Content Pipeline must use isolated Admin auth and shared Admin DB.");
 }
+
+
+const marketingCreatorsGrowthPages = [
+  "apps/admin/app/admin/dashboard/marketing/creators/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/growth/page.tsx",
+];
+for (const route of marketingCreatorsGrowthPages) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/auth/admin-session")
+    || !source.includes("@theouthaven/db/admin-client")
+    || source.includes("@/lib/admin-auth")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing Creators/Growth page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+}
+const creatorPartnershipApi = read("apps/admin/app/api/admin/marketing/creators/partnership/route.ts");
+if (
+  !creatorPartnershipApi.includes("@theouthaven/auth/admin-session")
+  || !creatorPartnershipApi.includes("@theouthaven/db/admin-client")
+  || creatorPartnershipApi.includes("@/lib/admin-auth")
+  || creatorPartnershipApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing creator partnership API must use isolated Admin auth and shared Admin DB.");
+}
