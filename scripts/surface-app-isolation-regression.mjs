@@ -2502,6 +2502,66 @@ if (
   throw new Error("Users beta access runtime must preserve beta synchronization, weekly session, and audit writes.");
 }
 
+const userDetailPage = read("apps/admin/app/admin/dashboard/users/[userId]/page.tsx");
+const userDetailActions = read("apps/admin/app/admin/dashboard/users/UserActions.tsx");
+const userDetailRuntime = read("apps/admin/lib/admin/admin-user-detail.ts");
+const userDetailRoute = read("apps/admin/app/api/admin/users/[userId]/route.ts");
+const userPasswordResetRoute = read("apps/admin/app/api/admin/users/[userId]/password-reset/route.ts");
+const isolatedUserRoles = read("apps/admin/lib/users/roles.ts");
+
+if (
+  !userDetailPage.includes("@theouthaven/auth/admin-session") ||
+  !userDetailPage.includes("@/lib/admin/admin-user-detail") ||
+  !userDetailPage.includes('requireAdminRole(["superadmin"])') ||
+  !userDetailPage.includes("../UserActions")
+) {
+  throw new Error("User detail page must preserve isolated superadmin auth, detail runtime, and actions.");
+}
+for (const source of [userDetailPage, userDetailActions, userDetailRuntime, userDetailRoute, userPasswordResetRoute, isolatedUserRoles]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("User detail slice must not import root monolith auth/database helpers.");
+  }
+}
+if (
+  !userDetailRuntime.includes("@theouthaven/db/admin-client") ||
+  !userDetailRuntime.includes("@/lib/admin-audit-log") ||
+  !userDetailRuntime.includes('from("user_profiles")') ||
+  !userDetailRuntime.includes('from("admin_users")') ||
+  !userDetailRuntime.includes('from("customer_subscriptions")') ||
+  !userDetailRuntime.includes("resetPasswordForEmail")
+) {
+  throw new Error("User detail runtime must preserve shared DB, audit, subscription, role, and password-reset behavior.");
+}
+if (
+  !userDetailRoute.includes("@/lib/admin-api-auth") ||
+  !userDetailRoute.includes('requireAdminApiRole(["superadmin"])') ||
+  !userDetailRoute.includes("updateAdminUserProfile") ||
+  !userDetailRoute.includes("updateUserRole") ||
+  !userDetailRoute.includes("updateUserPlan") ||
+  !userDetailRoute.includes("disableAdminUser")
+) {
+  throw new Error("User detail API must preserve superadmin-only profile, role, plan, and disable actions.");
+}
+if (
+  !userPasswordResetRoute.includes("@/lib/admin-api-auth") ||
+  !userPasswordResetRoute.includes('requireAdminApiRole(["superadmin"])') ||
+  !userPasswordResetRoute.includes("sendUserPasswordReset") ||
+  !userPasswordResetRoute.includes("logAdminAuditEvent")
+) {
+  throw new Error("User password reset API must preserve isolated superadmin authorization and audit logging.");
+}
+if (
+  !userDetailActions.includes("/api/admin/users/") ||
+  !userDetailActions.includes("/password-reset") ||
+  !userDetailActions.includes("@/lib/users/roles")
+) {
+  throw new Error("User detail actions must target isolated Admin APIs and role options.");
+}
+
 const analyticsPage = read("apps/admin/app/admin/dashboard/analytics/page.tsx");
 const analyticsRuntime = read("apps/admin/lib/admin/analytics/getAdminSaasAnalytics.ts");
 const analyticsCache = read("apps/admin/lib/admin/analytics/getCachedAdminSaasAnalytics.ts");
