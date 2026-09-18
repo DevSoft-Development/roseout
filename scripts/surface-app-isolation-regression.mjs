@@ -761,6 +761,33 @@ if (
   throw new Error("Location Tools launcher must not import root monolith auth/demo/database helpers.");
 }
 
+const locationToolsLogsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/logs/page.tsx");
+if (
+  !locationToolsLogsPage.includes("@theouthaven/auth/admin-session") ||
+  !locationToolsLogsPage.includes("@theouthaven/db/admin-client") ||
+  !locationToolsLogsPage.includes("@/components/admin/location-tools/LocationToolShell") ||
+  !locationToolsLogsPage.includes("@/components/admin/FriendlyJsonView")
+) {
+  throw new Error("Location Tools Logs must use isolated Admin auth/shared DB and local UI helpers.");
+}
+if (
+  locationToolsLogsPage.includes("@/lib/admin-auth") ||
+  locationToolsLogsPage.includes("@/lib/supabase-admin") ||
+  locationToolsLogsPage.includes("@/components/admin/location-tools/LocationToolShell") === false
+) {
+  throw new Error("Location Tools Logs must not import root monolith auth/database helpers.");
+}
+for (const logsUiFile of [
+  "apps/admin/components/admin/location-tools/LocationToolShell.tsx",
+  "apps/admin/components/admin/FriendlyJsonView.tsx",
+  "apps/admin/lib/display-values.ts",
+]) {
+  const source = read(logsUiFile);
+  if (source.includes("../../../../components/") || source.includes("@/../")) {
+    throw new Error(`Location Tools Logs helper must stay inside isolated Admin boundary: ${logsUiFile}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
