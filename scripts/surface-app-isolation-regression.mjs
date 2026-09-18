@@ -3835,3 +3835,30 @@ for (const dependency of [
     throw new Error(`Isolated Admin Core API helper must expose CRM operation/report dependency: ${dependency}`);
   }
 }
+
+
+const crmClaimsPages = [
+  "apps/admin/app/admin/dashboard/crm/claims/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/claims/[id]/page.tsx",
+];
+for (const route of crmClaimsPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@/lib/crm/claims")) {
+    throw new Error(`CRM claims page must use isolated Admin auth/data helper: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/crm/core-modules")) {
+    throw new Error(`CRM claims page must not import root monolith auth/data modules: ${route}`);
+  }
+}
+const crmClaimsHelper = read("apps/admin/lib/crm/claims.ts");
+if (!crmClaimsHelper.includes("@theouthaven/db/admin-client") || crmClaimsHelper.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM claims helper must use shared Admin DB.");
+}
+const crmContextHelper = read("apps/admin/lib/crm/context.ts");
+if (!crmContextHelper.includes("@theouthaven/db/admin-client") || crmContextHelper.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM context helper must use shared Admin DB.");
+}
+const crmContextBanner = read("apps/admin/components/admin/crm/CrmContextBanner.tsx");
+if (!crmContextBanner.includes("@theouthaven/db/admin-client") || crmContextBanner.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM context banner must use shared Admin DB.");
+}
