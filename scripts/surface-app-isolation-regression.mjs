@@ -4446,3 +4446,39 @@ if (
 ) {
   throw new Error("Marketing Admin helper must use shared Admin DB.");
 }
+
+
+const marketingFoundationPages = [
+  "apps/admin/app/admin/dashboard/marketing/content/new/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/promotions/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/discover/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/calendar/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/content/[id]/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/settings/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/social-manager/weekly-plan/page.tsx",
+];
+for (const route of marketingFoundationPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`Marketing foundation page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Marketing foundation page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const marketingContentOperations = read("apps/admin/lib/marketing/content-operations.ts");
+if (
+  !marketingContentOperations.includes("@theouthaven/db/admin-client")
+  || marketingContentOperations.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing content operations must use shared Admin DB.");
+}
+for (const dependency of [
+  "apps/admin/components/marketing/MarketingContentEditor.tsx",
+  "apps/admin/components/marketing/MarketingPublishNowButton.tsx",
+  "apps/admin/components/marketing/MarketingSettingsForm.tsx",
+  "apps/admin/app/admin/dashboard/marketing/promotions/PromotionsAdminClient.tsx",
+  "apps/admin/app/admin/dashboard/marketing/discover/DiscoverMerchandisingClient.tsx",
+]) {
+  read(dependency);
+}
