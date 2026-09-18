@@ -2970,6 +2970,44 @@ if (
   throw new Error("Legacy Reserve route must remain an isolated redirect to Reservations floor.");
 }
 
+const careersApplicationDetailPage = read("apps/admin/app/admin/dashboard/careers/applications/[id]/page.tsx");
+const careersHiringWorkflow = read("apps/admin/app/admin/dashboard/careers/applications/[id]/HiringWorkflow.tsx");
+const careersInterviewSessionPanel = read("apps/admin/app/admin/dashboard/careers/applications/[id]/InterviewSessionPanel.tsx");
+const careersLifecycleActions = read("apps/admin/app/admin/dashboard/careers/team-conversion/EmployeeLifecycleActions.tsx");
+const careersWorkflowRoute = read("apps/admin/app/api/admin/careers/applications/[id]/workflow/route.ts");
+const careersScorecardRoute = read("apps/admin/app/api/admin/careers/applications/[id]/scorecard/route.ts");
+const careersScheduleInterviewRoute = read("apps/admin/app/api/admin/careers/applications/[id]/schedule-interview/route.ts");
+const careersInterviewSessionRoute = read("apps/admin/app/api/admin/careers/applications/[id]/interview-session/route.ts");
+const careersOnboardRoute = read("apps/admin/app/api/admin/careers/team-conversion/[id]/onboard/route.ts");
+const careersOffboardRoute = read("apps/admin/app/api/admin/careers/team-conversion/[id]/offboard/route.ts");
+const careersInterviewGuide = read("apps/admin/lib/careers/interview-guide.ts");
+const careersCalendar = read("apps/admin/lib/microsoft-365/calendar.ts");
+const careersSms = read("apps/admin/lib/sms/telnyx.ts");
+const careersRelations = read("apps/admin/lib/supabase/relations.ts");
+const adminIntegrationApi = read("apps/admin/lib/aws/integration-api.ts");
+
+const careersApplicationManageRoles = '["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]';
+for (const source of [careersApplicationDetailPage, careersWorkflowRoute, careersScorecardRoute, careersScheduleInterviewRoute, careersInterviewSessionRoute]) {
+  if (!source.includes(careersApplicationManageRoles)) throw new Error("Careers application-detail slice must preserve careersApplicationsManage role access.");
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/admin-permissions") || source.includes("@/lib/supabase-admin")) {
+    throw new Error("Careers application-detail slice must not import root monolith auth/database helpers.");
+  }
+}
+if (!careersApplicationDetailPage.includes("@theouthaven/auth/admin-session") || !careersApplicationDetailPage.includes("@theouthaven/db/admin-client") || !careersApplicationDetailPage.includes("@/lib/supabase/relations") || !careersHiringWorkflow.includes("/workflow") || !careersHiringWorkflow.includes("/scorecard") || !careersHiringWorkflow.includes("/schedule-interview") || !careersInterviewSessionPanel.includes("/interview-session")) {
+  throw new Error("Careers application detail must preserve isolated data access and hiring workflow endpoints.");
+}
+if (!careersScheduleInterviewRoute.includes("@/lib/careers/interview-guide") || !careersScheduleInterviewRoute.includes("@/lib/email/send") || !careersScheduleInterviewRoute.includes("@/lib/microsoft-365/calendar") || !careersScheduleInterviewRoute.includes("@/lib/sms/telnyx") || !careersInterviewGuide.includes("buildFallbackInterviewGuide") || !careersCalendar.includes("@theouthaven/db/admin-client") || !careersSms.includes("sendTelnyxSmsViaIntegrationApi") || !adminIntegrationApi.includes("sendTelnyxSmsViaIntegrationApi")) {
+  throw new Error("Careers interview scheduling must preserve Microsoft 365, email, SMS, and fallback interview-guide behavior.");
+}
+for (const source of [careersOnboardRoute, careersOffboardRoute]) {
+  if (!source.includes("@theouthaven/db/admin-client") || !source.includes('["superadmin", "admin"]') || !source.includes('functions.invoke("career-workflow"')) {
+    throw new Error("Careers lifecycle APIs must preserve isolated Admin authorization and career-workflow invocation.");
+  }
+}
+if (!careersLifecycleActions.includes("/onboard") || !careersLifecycleActions.includes("/offboard") || !careersRelations.includes("normalizeSingleRelation")) {
+  throw new Error("Careers application-detail UI must preserve lifecycle actions and relation normalization.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
