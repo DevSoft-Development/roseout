@@ -744,6 +744,23 @@ if (!adminNavigation.includes("/admin/dashboard/ticket-orders")) {
   throw new Error("Ticket Orders navigation must be present in the isolated Admin shell.");
 }
 
+const locationToolsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/page.tsx");
+if (
+  !locationToolsPage.includes("@theouthaven/auth/admin-session") ||
+  !locationToolsPage.includes("@theouthaven/db/admin-client") ||
+  !locationToolsPage.includes('requireAdminRole(["superadmin", "admin"])') ||
+  !locationToolsPage.includes('MIRROR_DEMO_KEY = "real_location_mirror_demo"')
+) {
+  throw new Error("Location Tools launcher must use isolated Admin auth/shared DB and preserve the hidden demo lookup.");
+}
+if (
+  locationToolsPage.includes("@/lib/admin-auth") ||
+  locationToolsPage.includes("@/lib/demo/") ||
+  locationToolsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Location Tools launcher must not import root monolith auth/demo/database helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
