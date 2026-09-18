@@ -669,6 +669,59 @@ if (!read("apps/admin/lib/google/google-places-cost-control-admin.ts").includes(
   throw new Error("Google Places cost-control snapshot must use the shared Admin DB package.");
 }
 
+const claimToolsPage = read("apps/admin/app/admin/dashboard/claim-tools/page.tsx");
+if (
+  !claimToolsPage.includes("@theouthaven/auth/admin-session") ||
+  !claimToolsPage.includes('requireAdminRole(["superadmin", "admin", "ambassador"])')
+) {
+  throw new Error("Claim Tools page must preserve isolated claimTools role access.");
+}
+if (
+  claimToolsPage.includes("@/lib/admin-auth") ||
+  claimToolsPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Claim Tools page must not import root monolith auth/permission modules.");
+}
+
+for (const claimToolsRoute of [
+  "apps/admin/app/api/admin/claim-tools/route.ts",
+  "apps/admin/app/api/admin/claim-tools/regenerate/route.ts",
+]) {
+  const source = read(claimToolsRoute);
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes('requireAdminRole(["superadmin", "admin", "ambassador"])')
+  ) {
+    throw new Error(`Claim Tools API must preserve isolated role access and shared DB: ${claimToolsRoute}`);
+  }
+  if (
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Claim Tools API must not import root auth/database modules: ${claimToolsRoute}`);
+  }
+}
+
+const claimQrServerRuntime = read("apps/admin/lib/claimQrServer.ts");
+if (
+  !claimQrServerRuntime.includes("@theouthaven/db/admin-client") ||
+  claimQrServerRuntime.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Claim QR server runtime must use shared Admin DB.");
+}
+for (const claimRuntimeFile of [
+  "apps/admin/lib/address-utils.ts",
+  "apps/admin/lib/claimQr.ts",
+  "apps/admin/lib/site-url.ts",
+]) {
+  const source = read(claimRuntimeFile);
+  if (source.includes("@/lib/")) {
+    throw new Error(`Claim Tools helper must not import root monolith modules: ${claimRuntimeFile}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
