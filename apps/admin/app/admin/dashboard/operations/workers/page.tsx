@@ -18,7 +18,11 @@ function unsupportedWorkerEvent(events: EventRow[]) { return events.find((event)
 function RuntimeConfigurationError({ job, event }: { job: JobRow; event: EventRow }) { const metadata = event.metadata || {}; return <div className="mt-2 rounded-xl border border-amber-400/25 bg-amber-500/10 p-3 text-xs text-amber-50"><strong className="block text-sm">Runtime configuration error</strong><p className="mt-1 text-amber-100/80">The worker is available in the admin catalog but is not registered with the production dispatcher.</p><details className="mt-2"><summary className="cursor-pointer font-bold text-amber-100">Technical details</summary><dl className="mt-2 grid gap-1 text-amber-50/80"><div><dt className="font-semibold">Worker key</dt><dd><code>{job.job_type}</code></dd></div><div><dt className="font-semibold">Dispatcher</dt><dd><code>{String(metadata.dispatcher || metadata.worker || "production-cron-dispatcher")}</code></dd></div><div><dt className="font-semibold">Error code</dt><dd><code>{String(metadata.code || "UNSUPPORTED_WORKER_JOB_TYPE")}</code></dd></div><div><dt className="font-semibold">Job ID</dt><dd><code>{job.id}</code></dd></div>{metadata.deployment_sha ? <div><dt className="font-semibold">Deployment SHA</dt><dd><code>{String(metadata.deployment_sha)}</code></dd></div> : null}<div><dt className="font-semibold">Raw error</dt><dd><pre className="mt-1 whitespace-pre-wrap rounded-lg bg-black/40 p-2 text-amber-50/70">{event.message || job.last_error || "Unsupported worker job type"}</pre></dd></div></dl></details></div>; }
 
 export default async function WorkerOperationsPage({
-  await requireAdminRole(["superadmin", "admin", "experience_team"]); searchParams }: { searchParams?: Promise<Record<string,string|undefined>> }) {
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | undefined>>;
+}) {
+  await requireAdminRole(["superadmin", "admin", "experience_team"]);
   const filters = (await searchParams) || {};
   const now = Date.now();
   const dayAgoIso = new Date(now - 24 * 60 * 60 * 1000).toISOString();
