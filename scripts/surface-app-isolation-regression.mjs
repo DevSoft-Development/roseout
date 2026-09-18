@@ -1116,6 +1116,81 @@ for (const workerMutationRoute of [
   }
 }
 
+const searchBenchmarkPage = read("apps/admin/app/admin/dashboard/search-benchmark/page.tsx");
+if (
+  !searchBenchmarkPage.includes("@theouthaven/auth/admin-session") ||
+  !searchBenchmarkPage.includes('requireAdminRole(["superadmin", "admin", "experience_team"])')
+) {
+  throw new Error("Search Benchmark page must preserve isolated search-health role access.");
+}
+if (
+  searchBenchmarkPage.includes("@/lib/admin-auth") ||
+  searchBenchmarkPage.includes("@/components/admin/")
+) {
+  throw new Error("Search Benchmark page must not import root Admin auth/design-system modules.");
+}
+
+for (const searchBenchmarkClient of [
+  "apps/admin/app/admin/dashboard/search-benchmark/SearchBenchmarkClient.tsx",
+  "apps/admin/app/admin/dashboard/search-benchmark/SearchRankingRolloutClient.tsx",
+  "apps/admin/app/admin/dashboard/search-benchmark/SearchRankingShadowValidationClient.tsx",
+]) {
+  const source = read(searchBenchmarkClient);
+  if (source.includes("@/lib/") || source.includes("@/components/admin/")) {
+    throw new Error(`Search Benchmark client must remain self-contained: ${searchBenchmarkClient}`);
+  }
+}
+
+for (const searchBenchmarkDbRoute of [
+  "apps/admin/app/api/admin/search-benchmark/labels/route.ts",
+  "apps/admin/app/api/admin/search-ranking-rollout/route.ts",
+  "apps/admin/app/api/admin/search-ranking-shadow-reviews/route.ts",
+]) {
+  const source = read(searchBenchmarkDbRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes('["superadmin", "admin", "experience_team"]')
+  ) {
+    throw new Error(`Search Benchmark DB route must use isolated auth/shared DB and preserve search-health roles: ${searchBenchmarkDbRoute}`);
+  }
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-permissions")
+  ) {
+    throw new Error(`Search Benchmark DB route must not import root monolith auth/database modules: ${searchBenchmarkDbRoute}`);
+  }
+}
+
+const searchBenchmarkRunRoute = read("apps/admin/app/api/admin/search-benchmark/run/route.ts");
+if (
+  !searchBenchmarkRunRoute.includes("@/lib/admin-api-auth") ||
+  !searchBenchmarkRunRoute.includes("THEOUTHAVEN_CONSUMER_ORIGIN") ||
+  !searchBenchmarkRunRoute.includes('headers.set("cookie", cookie)') ||
+  !searchBenchmarkRunRoute.includes("/api/admin/search-benchmark/run")
+) {
+  throw new Error("Search Benchmark run route must use authenticated consumer-surface proxying.");
+}
+if (
+  searchBenchmarkRunRoute.includes("@/lib/search/runSearch") ||
+  searchBenchmarkRunRoute.includes("runOutingSearch")
+) {
+  throw new Error("Search Benchmark must not copy the consumer search engine into the isolated Admin runtime.");
+}
+
+const searchBenchmarkProjections = read("apps/admin/lib/admin/search-security-projections.ts");
+if (searchBenchmarkProjections.includes("@/lib/")) {
+  throw new Error("Search Benchmark security projections must remain self-contained.");
+}
+
+const isolatedRankingRollout = read("apps/admin/lib/search/rankingRollout.ts");
+if (
+  !isolatedRankingRollout.includes("@theouthaven/db/admin-client") ||
+  isolatedRankingRollout.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Isolated ranking rollout helper must use shared Admin DB access.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
