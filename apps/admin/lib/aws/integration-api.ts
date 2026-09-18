@@ -2,6 +2,33 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
+export type IntegrationBalanceAmount = { amount: number; currency: string };
+export type IntegrationStripePayout = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  arrival_date?: number | null;
+  created?: number | null;
+  method?: string | null;
+  type?: string | null;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  destination?: string | null;
+};
+export type IntegrationStripeConnectSnapshot = {
+  accountId: string;
+  available: IntegrationBalanceAmount[];
+  pending: IntegrationBalanceAmount[];
+  payouts: IntegrationStripePayout[];
+  error: string | null;
+};
+export type IntegrationStripeConnectSnapshotResponse = {
+  ok: true;
+  snapshots: IntegrationStripeConnectSnapshot[];
+  partial: boolean;
+};
+
 function config() {
   const baseUrl = String(
     process.env.AWS_PLATFORM_INTEGRATION_API_URL || "",
@@ -80,4 +107,26 @@ export function sendEmailViaIntegrationApi(input: {
     "/v1/resend/emails/send",
     input,
   );
+}
+
+export function readStripeConnectPayoutsViaIntegrationApi(
+  accountIds: string[],
+): Promise<IntegrationStripeConnectSnapshotResponse> {
+  return signedJson<IntegrationStripeConnectSnapshotResponse>(
+    "/v1/stripe-connect/payouts/read",
+    { accountIds },
+  );
+}
+
+export function stripeRequestViaIntegrationApi<T>(input: {
+  apiVersion?: "v1" | "v2";
+  mode?: "live" | "test";
+  method?: "GET" | "POST";
+  path: string;
+  form?: string;
+  body?: Record<string, unknown>;
+  idempotencyKey?: string;
+  stripeAccount?: string;
+}): Promise<T> {
+  return signedJson<T>("/v1/stripe/request", input, 20_000);
 }
