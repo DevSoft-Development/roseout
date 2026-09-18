@@ -93,6 +93,27 @@ export type CoreCrmReportSnapshotResponse = {
   outreach: Array<Record<string, unknown>>;
 };
 
+export type CoreCommunicationScope = "crm" | "reservations" | "support";
+export type CoreCommunicationFeedItem = {
+  id: string;
+  locationId: string | null;
+  locationName: string | null;
+  channel: string;
+  direction: string | null;
+  title: string;
+  preview: string;
+  status: string | null;
+  unread: boolean;
+  timestamp: string;
+  href: string;
+};
+export type CoreCrmCommunicationCenterResponse = {
+  scope: CoreCommunicationScope;
+  items: CoreCommunicationFeedItem[];
+  unreadCount: number;
+  waitingCount: number;
+};
+
 function config() {
   const baseUrl = String(process.env.AWS_PLATFORM_CORE_API_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_CORE_API_SECRET || process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -134,6 +155,14 @@ export function readCrmLocationHealthViaCoreApi(input: CoreCrmLocationHealthInpu
   return signedJson<CoreCrmLocationHealthResponse>(
     "/v1/crm/location-health/read",
     JSON.stringify(input),
+    15_000,
+  );
+}
+
+export function readCrmCommunicationCenterViaCoreApi(scope: CoreCommunicationScope) {
+  return signedJson<CoreCrmCommunicationCenterResponse>(
+    "/v1/crm/communication-center/read",
+    JSON.stringify({ scope }),
     15_000,
   );
 }
