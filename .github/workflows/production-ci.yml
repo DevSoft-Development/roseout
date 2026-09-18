@@ -61,7 +61,7 @@ jobs:
           fi
 
           root=false
-          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/admin/|packages/(auth|db|config)/|scripts/surface-app-isolation-regression\.mjs$)'; then
+          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/(admin|business)/|packages/(auth|db|config)/|infra/aws/web-surfaces/|infra/aws/cloudformation/web-surfaces-services\.yml$|scripts/(surface-app-isolation-regression|web-surfaces-services-regression)\.mjs$|\.github/workflows/aws-web-surfaces-services\.yml$)'; then
             root=true
           fi
 
