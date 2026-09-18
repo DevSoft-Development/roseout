@@ -2,11 +2,16 @@
 
 import type { ReactNode } from "react";
 
-export function AdminPageHeader({eyebrow,title,subtitle}:{eyebrow?:string;title:string;subtitle?:string}) {
+export function AdminPageHeader({eyebrow,title,subtitle,actions}:{eyebrow?:string;title:string;subtitle?:string;actions?:ReactNode}) {
   return <section className="rounded-[1.25rem] border-b border-white/10 bg-transparent py-2">
-    {eyebrow?<p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">{eyebrow}</p>:null}
-    <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{title}</h1>
-    {subtitle?<p className="mt-1 max-w-3xl text-sm leading-6 text-white/60">{subtitle}</p>:null}
+    <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">
+        {eyebrow?<p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">{eyebrow}</p>:null}
+        <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{title}</h1>
+        {subtitle?<p className="mt-1 max-w-3xl text-sm leading-6 text-white/60">{subtitle}</p>:null}
+      </div>
+      {actions?<div className="flex min-w-0 flex-wrap gap-2">{actions}</div>:null}
+    </div>
   </section>;
 }
 export function AdminKpiGrid({children}:{children:ReactNode}) {
