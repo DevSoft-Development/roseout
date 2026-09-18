@@ -370,6 +370,43 @@ if (adminNavigation.includes('label: "Microsoft 365"') && !adminNavigation.inclu
   throw new Error("Microsoft 365 navigation must remain unmigrated until sync and page migration are complete.");
 }
 
+for (const microsoftSyncRuntimeFile of [
+  "apps/admin/lib/microsoft-365/matching.ts",
+  "apps/admin/lib/microsoft-365/subscriptions.ts",
+  "apps/admin/lib/microsoft-365/sync.ts",
+  "apps/admin/lib/microsoft-365/task-crm-sync.ts",
+  "apps/admin/lib/microsoft-365/sync-with-crm.ts",
+]) {
+  const source = read(microsoftSyncRuntimeFile);
+  if (source.includes("@/lib/")) {
+    throw new Error(`Microsoft 365 sync runtime must not import root monolith modules: ${microsoftSyncRuntimeFile}`);
+  }
+}
+
+for (const microsoftDbRuntimeFile of [
+  "apps/admin/lib/microsoft-365/matching.ts",
+  "apps/admin/lib/microsoft-365/sync.ts",
+  "apps/admin/lib/microsoft-365/task-crm-sync.ts",
+  "apps/admin/lib/microsoft-365/sync-with-crm.ts",
+]) {
+  const source = read(microsoftDbRuntimeFile);
+  if (!source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`Microsoft 365 sync runtime must use shared Admin DB package: ${microsoftDbRuntimeFile}`);
+  }
+}
+
+const microsoftSyncRoute = read("apps/admin/app/api/admin/integrations/microsoft-365/sync/route.ts");
+if (
+  !microsoftSyncRoute.includes("@theouthaven/auth/admin-session") ||
+  !microsoftSyncRoute.includes("@theouthaven/auth/redirect") ||
+  !microsoftSyncRoute.includes("@/lib/microsoft-365/sync-with-crm")
+) {
+  throw new Error("Microsoft 365 sync route must use isolated Admin auth, redirect, and sync runtime.");
+}
+if (microsoftSyncRoute.includes("@/lib/admin-auth") || microsoftSyncRoute.includes("@/lib/auth-redirect")) {
+  throw new Error("Microsoft 365 sync route must not import root monolith auth helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
