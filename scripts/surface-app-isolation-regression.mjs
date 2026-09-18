@@ -2374,6 +2374,50 @@ if (
   throw new Error("Website verification must preserve premium design catalog coverage.");
 }
 
+const websiteVerificationPage = read("apps/admin/app/admin/dashboard/website-hosting/verification/page.tsx");
+const websiteVerificationRuntime = read("apps/admin/lib/websites/production-verification.ts");
+const domainGatewayRuntime = read("apps/admin/lib/domains/gateway.ts");
+const websiteCompositionProfiles = read("apps/admin/lib/websites/composition-profiles.ts");
+const websiteDesignDirections = read("apps/admin/lib/websites/design-directions.ts");
+
+if (
+  !websiteVerificationPage.includes("@theouthaven/auth/admin-session") ||
+  !websiteVerificationPage.includes("@theouthaven/auth/admin-roles") ||
+  !websiteVerificationPage.includes("@/components/admin/WebsiteHostingTabs") ||
+  !websiteVerificationPage.includes("@/lib/domains/gateway") ||
+  !websiteVerificationPage.includes("@/lib/websites/production-verification") ||
+  !websiteVerificationPage.includes("@/lib/websites/composition-profiles") ||
+  !websiteVerificationPage.includes("@/lib/websites/design-directions")
+) {
+  throw new Error("Website Hosting verification must use isolated Admin auth and isolated website/domain runtimes.");
+}
+for (const source of [websiteVerificationPage, websiteVerificationRuntime, domainGatewayRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Website Hosting verification must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !websiteVerificationRuntime.includes("@theouthaven/db/admin-client") ||
+  !websiteVerificationRuntime.includes('from("business_websites")') ||
+  !websiteVerificationRuntime.includes('from("website_hosting_nodes")') ||
+  !websiteVerificationRuntime.includes('from("website_hosting_replicas")')
+) {
+  throw new Error("Website production verification must preserve hosted-site, node, and replica checks through the shared Admin DB.");
+}
+if (
+  !domainGatewayRuntime.includes("/v1/status") ||
+  !websiteVerificationPage.includes("WEBSITE_DESIGN_DIRECTIONS.length >= 40") ||
+  !websiteCompositionProfiles.includes("WEBSITE_COMPOSITION_PROFILES") ||
+  !websiteDesignDirections.includes("WEBSITE_DESIGN_DIRECTIONS")
+) {
+  throw new Error("Website Hosting verification must preserve registrar readiness and 40-family design coverage checks.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
