@@ -2021,6 +2021,30 @@ if (
   throw new Error("Careers Jobs Manager must preserve job/application reads and consumer-surface previews.");
 }
 
+const careersApplicationsPage = read("apps/admin/app/admin/dashboard/careers/applications/page.tsx");
+if (
+  !careersApplicationsPage.includes("@theouthaven/auth/admin-session") ||
+  !careersApplicationsPage.includes("@theouthaven/db/admin-client") ||
+  !careersApplicationsPage.includes("@/lib/careers/access") ||
+  !careersApplicationsPage.includes("@/lib/careers/format")
+) {
+  throw new Error("Careers Applications Manager must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersApplicationsPage.includes("@/lib/admin-auth") ||
+  careersApplicationsPage.includes("@/lib/admin-permissions") ||
+  careersApplicationsPage.includes("@/lib/supabase-admin") ||
+  careersApplicationsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Applications Manager must not import root monolith auth/database/UI helpers.");
+}
+if (
+  !careersApplicationsPage.includes('from("career_applications")') ||
+  !careersApplicationsPage.includes('href={`/admin/dashboard/careers/applications/${row.id}`}')
+) {
+  throw new Error("Careers Applications Manager must preserve application reads and detail links.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
