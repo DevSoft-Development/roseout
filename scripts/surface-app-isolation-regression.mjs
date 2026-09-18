@@ -3915,3 +3915,26 @@ const supportCoreApi = read("apps/admin/lib/aws/core-api.ts");
 if (!supportCoreApi.includes("readSupportOperationsSettingsViaCoreApi")) {
   throw new Error("Isolated Admin Core API helper must preserve support settings reads.");
 }
+
+
+const crmForecastPage = read("apps/admin/app/admin/dashboard/crm/forecast/page.tsx");
+if (
+  !crmForecastPage.includes("@theouthaven/auth/admin-session")
+  || !crmForecastPage.includes("@/lib/crm/opportunities/queries")
+  || crmForecastPage.includes("@/lib/admin-auth")
+) {
+  throw new Error("CRM forecast page must use isolated Admin auth and opportunity reads.");
+}
+const crmOpportunityQueries = read("apps/admin/lib/crm/opportunities/queries.ts");
+if (!crmOpportunityQueries.includes("@theouthaven/db/admin-client") || crmOpportunityQueries.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM opportunity query helper must use shared Admin DB.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/pipelines.ts",
+  "apps/admin/lib/crm/opportunities/pipeline-normalization.ts",
+  "apps/admin/lib/crm/opportunities/forecasting.ts",
+  "apps/admin/lib/crm/opportunities/validation.ts",
+  "apps/admin/lib/crm/opportunities/types.ts",
+]) {
+  read(helper);
+}
