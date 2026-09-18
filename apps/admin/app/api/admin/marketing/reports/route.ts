@@ -89,7 +89,6 @@ async function sendReportEmail(to: string[], reportName: string, config: Marketi
     subject: `TheOutHaven Marketing Report — ${reportName || report.title}`,
     html: marketingReportEmailHtml(report),
   });
-  if (!response.sent && !response.id) throw new Error("The report email could not be sent.");
   return { report, providerMessageId: response.id || null, recipients };
 }
 
