@@ -3802,3 +3802,36 @@ const crmGtmPriorityPanel = read("apps/admin/components/admin/crm/GtmPriorityPan
 if (!crmGtmPriorityPanel.includes("/admin/dashboard/crm/gtm")) {
   throw new Error("CRM GTM priority panel must preserve Admin GTM navigation.");
 }
+
+
+const crmOperationsReportsPages = [
+  "apps/admin/app/admin/dashboard/crm/operations/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/reports/page.tsx",
+];
+for (const route of crmOperationsReportsPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || !source.includes("@/lib/crm/operations-reports")) {
+    throw new Error(`CRM operations/report page must use isolated Admin auth/data helper: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/crm/core-modules")) {
+    throw new Error(`CRM operations/report page must not import root monolith auth/data modules: ${route}`);
+  }
+}
+const crmOperationsReportsHelper = read("apps/admin/lib/crm/operations-reports.ts");
+if (
+  !crmOperationsReportsHelper.includes("@theouthaven/db/admin-client")
+  || !crmOperationsReportsHelper.includes("@/lib/aws/core-api")
+  || crmOperationsReportsHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM operations/report helper must preserve isolated Core API fallback and shared Admin DB access.");
+}
+const isolatedCoreApi = read("apps/admin/lib/aws/core-api.ts");
+for (const dependency of [
+  "readCrmOperationsSnapshotViaCoreApi",
+  "readCrmReportSnapshotViaCoreApi",
+  "platformCoreApiConfigured",
+]) {
+  if (!isolatedCoreApi.includes(dependency)) {
+    throw new Error(`Isolated Admin Core API helper must expose CRM operation/report dependency: ${dependency}`);
+  }
+}
