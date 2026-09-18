@@ -80,8 +80,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireAdminApiRole(["superadmin", "admin"]);
-  if (auth.error) return auth.error;
+  await requireAdminRole(["superadmin", "admin"]);
+  const adminDb = getAdminDatabaseClient();
 
   const body = (await request.json().catch(() => ({}))) as { action?: RepairAction; locationIds?: string[]; dryRun?: boolean };
   const action: RepairAction = body.action === "unhide" ? "unhide" : "make_searchable";
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
 
   if (!ids.length) return NextResponse.json({ success: false, error: "Select at least one location." }, { status: 400 });
 
-  const { data, error } = await getAdminDatabaseClient().from("locations").select(SELECT).in("id", ids);
+  const { data, error } = await adminDb.from("locations").select(SELECT).in("id", ids);
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
 
   let repaired = 0;
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
         };
 
     if (!dryRun) {
-      const { error: updateError } = await getAdminDatabaseClient().from("locations").update(update).eq("id", row.id);
+      const { error: updateError } = await adminDb.from("locations").update(update).eq("id", row.id);
       if (updateError) {
         skipped += 1;
         results.push({ id: row.id, name: displayName(row), status: "failed", reasons: [updateError.message] });
