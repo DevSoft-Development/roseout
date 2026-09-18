@@ -104,14 +104,14 @@ export async function completePlatformInstagramOauth(code: string, userId: strin
   const scopes = shortToken.permissions?.length ? shortToken.permissions : SCOPES;
   const now = new Date().toISOString();
 
-  await supabaseAdmin
+  await getAdminDatabaseClient()
     .from("marketing_social_connections")
     .update({ status: "disconnected", updated_at: now })
     .eq("scope", "platform")
     .eq("provider", "instagram")
     .neq("provider_account_id", accountId);
 
-  const { data: existing, error: existingError } = await supabaseAdmin
+  const { data: existing, error: existingError } = await getAdminDatabaseClient()
     .from("marketing_social_connections")
     .select("id,connected_at")
     .eq("scope", "platform")
