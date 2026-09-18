@@ -4495,3 +4495,32 @@ for (const route of marketingSimpleReadPages) {
     throw new Error(`Marketing read page must use isolated Admin auth and shared Admin DB: ${route}`);
   }
 }
+
+
+const marketingFoundationUniquePages = [
+  "apps/admin/app/admin/dashboard/marketing/content/new/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/content/[id]/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/social-manager/weekly-plan/page.tsx",
+];
+for (const route of marketingFoundationUniquePages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`Marketing foundation page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Marketing foundation page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const marketingContentOperations = read("apps/admin/lib/marketing/content-operations.ts");
+if (
+  !marketingContentOperations.includes("@theouthaven/db/admin-client")
+  || marketingContentOperations.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing content operations must use shared Admin DB.");
+}
+for (const dependency of [
+  "apps/admin/components/marketing/MarketingContentEditor.tsx",
+  "apps/admin/components/marketing/MarketingPublishNowButton.tsx",
+]) {
+  read(dependency);
+}
