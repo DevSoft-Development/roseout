@@ -23,7 +23,7 @@ export function domainOf(email: string | null | undefined) {
 export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
   const candidates = [...new Set(emails.map(normalizeEmail).filter(Boolean))].slice(0, 25);
   for (const email of candidates) {
-    const { data: contact, error: contactError } = await supabaseAdmin
+    const { data: contact, error: contactError } = await getAdminDatabaseClient()
       .from("crm_contacts")
       .select("id")
       .ilike("email", email)
@@ -32,7 +32,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
       .maybeSingle();
     if (contactError) throw contactError;
     if (contact?.id) {
-      const { data: link, error: linkError } = await supabaseAdmin
+      const { data: link, error: linkError } = await getAdminDatabaseClient()
         .from("crm_account_contacts")
         .select("account_id")
         .eq("contact_id", contact.id)
@@ -42,7 +42,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
       if (linkError) throw linkError;
       let locationId: string | null = null;
       if (link?.account_id) {
-        const { data: locationLink, error: locationLinkError } = await supabaseAdmin
+        const { data: locationLink, error: locationLinkError } = await getAdminDatabaseClient()
           .from("crm_account_locations")
           .select("location_id")
           .eq("account_id", link.account_id)
@@ -56,7 +56,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
       return { contactId: contact.id, accountId: link?.account_id || null, locationId, reason: "contact_email" };
     }
 
-    const { data: account, error: accountError } = await supabaseAdmin
+    const { data: account, error: accountError } = await getAdminDatabaseClient()
       .from("crm_accounts")
       .select("id")
       .ilike("email", email)
@@ -65,7 +65,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
       .maybeSingle();
     if (accountError) throw accountError;
     if (account?.id) {
-      const { data: locationLink } = await supabaseAdmin
+      const { data: locationLink } = await getAdminDatabaseClient()
         .from("crm_account_locations")
         .select("location_id")
         .eq("account_id", account.id)
@@ -76,7 +76,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
       return { contactId: null, accountId: account.id, locationId: locationLink?.location_id || null, reason: "account_email" };
     }
 
-    const { data: locations, error: locationError } = await supabaseAdmin
+    const { data: locations, error: locationError } = await getAdminDatabaseClient()
       .from("locations")
       .select("id")
       .or(`claimed_by_email.ilike.${email},owner_email.ilike.${email},webmaster_email.ilike.${email},reservation_owner_email.ilike.${email}`)
@@ -84,7 +84,7 @@ export async function matchCrmByEmails(emails: string[]): Promise<CrmMatch> {
     if (locationError) throw locationError;
     if (locations?.[0]?.id) {
       const locationId = locations[0].id;
-      const { data: accountLink } = await supabaseAdmin
+      const { data: accountLink } = await getAdminDatabaseClient()
         .from("crm_account_locations")
         .select("account_id")
         .eq("location_id", locationId)
