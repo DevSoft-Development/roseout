@@ -1226,6 +1226,20 @@ if (
   throw new Error("Settings hub navigation must be marked migrated.");
 }
 
+const teamSettingsPage = read("apps/admin/app/admin/dashboard/team/settings/page.tsx");
+if (
+  !teamSettingsPage.includes("@theouthaven/auth/admin-session") ||
+  !teamSettingsPage.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Team Settings page must preserve isolated superadmin/admin/manager access.");
+}
+if (
+  teamSettingsPage.includes("@/lib/admin-auth") ||
+  teamSettingsPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Team Settings page must not import root monolith auth/permission modules.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
