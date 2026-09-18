@@ -4209,3 +4209,45 @@ if (
 ) {
   throw new Error("CRM Call workspace must not import root monolith auth/DB helpers.");
 }
+
+
+const crmAccountsPages = [
+  "apps/admin/app/admin/dashboard/crm/accounts/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/accounts/[id]/page.tsx",
+];
+for (const route of crmAccountsPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM Accounts page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM Accounts page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+for (const helper of [
+  "apps/admin/lib/crm/queries/account-summary.ts",
+  "apps/admin/lib/crm/accounts.ts",
+  "apps/admin/lib/organizations/admin-verification.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM Accounts helper must use shared Admin DB: ${helper}`);
+  }
+}
+const crmAccountsActions = read("apps/admin/app/admin/dashboard/crm/accounts/actions.ts");
+if (!crmAccountsActions.includes("@theouthaven/auth/admin-session") || crmAccountsActions.includes("@/lib/admin-auth")) {
+  throw new Error("CRM Accounts actions must use isolated Admin auth.");
+}
+const crmVerificationQueue = read("apps/admin/components/admin/trust/VerificationQueue.tsx");
+if (!crmVerificationQueue.includes("/api/admin/trust/verification")) {
+  throw new Error("CRM Accounts verification queue must preserve the verification API workflow.");
+}
+const crmVerificationApi = read("apps/admin/app/api/admin/trust/verification/route.ts");
+if (
+  !crmVerificationApi.includes("@theouthaven/auth/admin-session")
+  || !crmVerificationApi.includes("@theouthaven/db/admin-client")
+  || crmVerificationApi.includes("@/lib/admin-api-auth")
+  || crmVerificationApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Accounts verification API must use isolated Admin auth and shared Admin DB.");
+}
