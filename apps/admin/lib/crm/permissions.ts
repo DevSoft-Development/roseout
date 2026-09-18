@@ -14,7 +14,6 @@ export const CRM_WRITE_ROLES = [
   "manager",
   "editor",
   "ambassador",
-  "experience",
   "partner_ambassador",
   "experience_team",
 ] as const;
