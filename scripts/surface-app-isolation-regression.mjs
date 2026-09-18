@@ -3711,7 +3711,6 @@ console.log("Surface app isolation, shared packages, and Admin auth regression p
 
 
 const crmRedirectRoutes = [
-  "apps/admin/app/admin/dashboard/crm/claims/claim-codes/page.tsx",
   "apps/admin/app/admin/dashboard/crm/contacts/page.tsx",
   "apps/admin/app/admin/dashboard/crm/knowledge-base/page.tsx",
   "apps/admin/app/admin/dashboard/crm/locations/[id]/page.tsx",
@@ -3727,6 +3726,10 @@ for (const route of crmRedirectRoutes) {
   if (!source.includes("next/navigation")) {
     throw new Error(`CRM redirect route must remain isolated inside Admin: ${route}`);
   }
+}
+const crmClaimCodesShim = read("apps/admin/app/admin/dashboard/crm/claims/claim-codes/page.tsx");
+if (!crmClaimCodesShim.includes('export { default } from "../../claim-codes/page"')) {
+  throw new Error("CRM claims claim-codes shim must preserve the isolated claim-codes re-export.");
 }
 const crmTasksRedirect = read("apps/admin/app/admin/dashboard/crm/tasks/page.tsx");
 if (!crmTasksRedirect.includes("@theouthaven/auth/admin-session") || !crmTasksRedirect.includes("@/lib/crm/permissions")) {
