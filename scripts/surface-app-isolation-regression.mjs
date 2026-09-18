@@ -1570,6 +1570,33 @@ if (
   throw new Error("Payroll page must not import root monolith auth/database/team helpers.");
 }
 
+const teamPerformancePage = read("apps/admin/app/admin/dashboard/team/performance/page.tsx");
+if (
+  !teamPerformancePage.includes("@theouthaven/auth/admin-session") ||
+  !teamPerformancePage.includes("@theouthaven/db/admin-client") ||
+  !teamPerformancePage.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Performance page must use isolated manager auth and shared DB.");
+}
+for (const performanceSource of [
+  "team_work_sessions",
+  "team_work_activities",
+  "ambassador_site_visits",
+  "ambassador_social_outreach",
+]) {
+  if (!teamPerformancePage.includes(performanceSource)) {
+    throw new Error(`Performance page must preserve data source: ${performanceSource}`);
+  }
+}
+if (
+  teamPerformancePage.includes("@/lib/admin-auth") ||
+  teamPerformancePage.includes("@/lib/admin-permissions") ||
+  teamPerformancePage.includes("@/lib/supabase-admin") ||
+  teamPerformancePage.includes("@/lib/team-tools")
+) {
+  throw new Error("Performance page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
