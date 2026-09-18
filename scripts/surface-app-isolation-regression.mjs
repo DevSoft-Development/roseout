@@ -1299,6 +1299,23 @@ if (!teamReviewActionButton.includes("/api/admin/team/review-item")) {
   throw new Error("Team review action button must call the isolated review API.");
 }
 
+const passwordResetAuditPage = read("apps/admin/app/admin/dashboard/team/password-reset-audit/page.tsx");
+if (
+  !passwordResetAuditPage.includes("@theouthaven/auth/admin-session") ||
+  !passwordResetAuditPage.includes("@theouthaven/db/admin-client") ||
+  !passwordResetAuditPage.includes("@/components/TeamReviewList") ||
+  !passwordResetAuditPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Password Reset Audit must use isolated admin auth, shared DB, and Team review UI.");
+}
+if (
+  passwordResetAuditPage.includes("@/lib/admin-auth") ||
+  passwordResetAuditPage.includes("@/lib/admin-permissions") ||
+  passwordResetAuditPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Password Reset Audit must not import root monolith auth/database modules.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
