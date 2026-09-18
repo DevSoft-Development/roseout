@@ -3915,3 +3915,109 @@ const supportCoreApi = read("apps/admin/lib/aws/core-api.ts");
 if (!supportCoreApi.includes("readSupportOperationsSettingsViaCoreApi")) {
   throw new Error("Isolated Admin Core API helper must preserve support settings reads.");
 }
+
+
+const crmForecastPage = read("apps/admin/app/admin/dashboard/crm/forecast/page.tsx");
+if (
+  !crmForecastPage.includes("@theouthaven/auth/admin-session")
+  || !crmForecastPage.includes("@/lib/crm/opportunities/queries")
+  || crmForecastPage.includes("@/lib/admin-auth")
+) {
+  throw new Error("CRM forecast page must use isolated Admin auth and opportunity reads.");
+}
+const crmOpportunityQueries = read("apps/admin/lib/crm/opportunities/queries.ts");
+if (!crmOpportunityQueries.includes("@theouthaven/db/admin-client") || crmOpportunityQueries.includes("@/lib/supabase-admin")) {
+  throw new Error("CRM opportunity query helper must use shared Admin DB.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/pipelines.ts",
+  "apps/admin/lib/crm/opportunities/pipeline-normalization.ts",
+  "apps/admin/lib/crm/opportunities/forecasting.ts",
+  "apps/admin/lib/crm/opportunities/validation.ts",
+  "apps/admin/lib/crm/opportunities/types.ts",
+]) {
+  read(helper);
+}
+
+
+const crmOpportunityPages = [
+  "apps/admin/app/admin/dashboard/crm/opportunities/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/opportunities/[id]/page.tsx",
+];
+for (const route of crmOpportunityPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM opportunity page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM opportunity page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const crmOpportunityActions = read("apps/admin/app/admin/dashboard/crm/opportunities/actions.ts");
+if (!crmOpportunityActions.includes("@theouthaven/auth/admin-session") || crmOpportunityActions.includes("@/lib/admin-auth")) {
+  throw new Error("CRM opportunity actions must use isolated Admin auth.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/opportunities/service.ts",
+  "apps/admin/lib/crm/activities.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM opportunity write helper must use shared Admin DB: ${helper}`);
+  }
+}
+
+
+const crmSupportCasePage = read("apps/admin/app/admin/dashboard/crm/support/[id]/page.tsx");
+if (
+  !crmSupportCasePage.includes("@theouthaven/auth/admin-session")
+  || !crmSupportCasePage.includes("@/lib/crm/support-case")
+  || crmSupportCasePage.includes("@/lib/admin-auth")
+  || crmSupportCasePage.includes("@/lib/crm/core-modules")
+) {
+  throw new Error("CRM support case page must use isolated Admin auth and support-case data helper.");
+}
+const crmSupportCaseActions = read("apps/admin/app/admin/dashboard/crm/support/[id]/actions.ts");
+for (const dependency of [
+  "@theouthaven/auth/admin-session",
+  "@/lib/crm/support-tasks",
+  "@/lib/support/replies",
+  "@/lib/support/canonical",
+  "@/lib/support/operations",
+]) {
+  if (!crmSupportCaseActions.includes(dependency)) {
+    throw new Error(`CRM support case actions missing isolated dependency: ${dependency}`);
+  }
+}
+for (const forbidden of [
+  "@/lib/admin-auth",
+  "@/lib/supabase-admin",
+  "@/lib/support/cross-channel-sms",
+  "@/lib/crm/tasks/service",
+]) {
+  if (crmSupportCaseActions.includes(forbidden)) {
+    throw new Error(`CRM support case actions must not import root monolith dependency: ${forbidden}`);
+  }
+}
+for (const helper of [
+  "apps/admin/lib/crm/support-case.ts",
+  "apps/admin/lib/crm/support-tasks.ts",
+  "apps/admin/lib/support/replies.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM support case helper must use shared Admin DB: ${helper}`);
+  }
+}
+const supportTelnyx = read("apps/admin/lib/sms/telnyx.ts");
+if (!supportTelnyx.includes("@/lib/aws/integration-api") || supportTelnyx.includes("@/lib/sms/telnyx")) {
+  throw new Error("Isolated Admin support SMS helper must use AWS Integration API.");
+}
+const supportIntegrationApi = read("apps/admin/lib/aws/integration-api.ts");
+if (!supportIntegrationApi.includes("sendTelnyxSmsViaIntegrationApi")) {
+  throw new Error("Isolated Admin Integration API must expose Telnyx SMS delivery.");
+}
+const supportCoreApiCase = read("apps/admin/lib/aws/core-api.ts");
+if (!supportCoreApiCase.includes("readSupportCaseViaCoreApi")) {
+  throw new Error("Isolated Admin Core API must preserve support case reads.");
+}

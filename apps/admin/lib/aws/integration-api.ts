@@ -29,6 +29,24 @@ export type IntegrationStripeConnectSnapshotResponse = {
   partial: boolean;
 };
 
+export type IntegrationTelnyxPurpose =
+  | "transactional"
+  | "crm"
+  | "reservations"
+  | "support"
+  | "marketing"
+  | "concierge";
+
+export type IntegrationTelnyxSendResponse = {
+  ok: true;
+  provider: "telnyx";
+  purpose: Exclude<IntegrationTelnyxPurpose, "transactional">;
+  id: string | null;
+  status: string;
+  from: string;
+  to: string;
+};
+
 export function platformIntegrationApiConfigured() {
   return Boolean(
     process.env.AWS_PLATFORM_INTEGRATION_API_URL?.trim() &&
@@ -132,6 +150,18 @@ export function sendEmailViaIntegrationApi(input: {
   return signedJson<{ id?: string; sent?: boolean }>(
     "/v1/resend/emails/send",
     input,
+  );
+}
+
+export function sendTelnyxSmsViaIntegrationApi(
+  purpose: IntegrationTelnyxPurpose,
+  to: string,
+  body: string,
+) {
+  return signedJson<IntegrationTelnyxSendResponse>(
+    "/v1/telnyx/messages/send",
+    { purpose, to, body },
+    12_000,
   );
 }
 
