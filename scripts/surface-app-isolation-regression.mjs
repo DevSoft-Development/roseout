@@ -2161,6 +2161,24 @@ if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin
   throw new Error("Production Finish Line navigation must be present in isolated Admin.");
 }
 
+const criticalIncidentsPage = read("apps/admin/app/admin/dashboard/infrastructure/incidents/page.tsx");
+if (
+  !criticalIncidentsPage.includes("@theouthaven/auth/admin-session") ||
+  !criticalIncidentsPage.includes("@theouthaven/db/admin-client") ||
+  !criticalIncidentsPage.includes("@/lib/admin-permissions") ||
+  criticalIncidentsPage.includes("@/lib/admin-auth") ||
+  criticalIncidentsPage.includes("@/lib/supabase-admin") ||
+  criticalIncidentsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Critical Incidents must use isolated Admin auth/shared DB and local presentation.");
+}
+if (!criticalIncidentsPage.includes('.eq("category", "critical_alert")')) {
+  throw new Error("Critical Incidents must remain scoped to critical alert history.");
+}
+if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/infrastructure/incidents")) {
+  throw new Error("Critical Incidents navigation must be present in isolated Admin.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
