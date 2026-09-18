@@ -1056,6 +1056,10 @@ if (
 ) {
   throw new Error("Operations Workers page must use isolated Admin auth/shared DB and preserve monitoring roles.");
 }
+if (operationsWorkersPage.includes('{\n  await requireAdminRole(["superadmin", "admin", "experience_team"]); searchParams')) {
+  throw new Error("Operations Workers auth guard must remain inside the page function body.");
+}
+
 if (
   operationsWorkersPage.includes("@/lib/supabase-admin") ||
   operationsWorkersPage.includes("@/lib/admin-auth") ||
