@@ -1314,6 +1314,21 @@ if (
   throw new Error("Completed Search Profiles page must not import root monolith auth/database helpers.");
 }
 
+const completedReviewCenterPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/review-center/page.tsx");
+if (
+  !completedReviewCenterPage.includes("@theouthaven/auth/admin-session") ||
+  !completedReviewCenterPage.includes("@theouthaven/db/admin-client") ||
+  !completedReviewCenterPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Completed Review Center page must use isolated Admin auth and shared DB.");
+}
+if (
+  completedReviewCenterPage.includes("@/lib/admin-auth") ||
+  completedReviewCenterPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Completed Review Center page must not import root monolith auth/database helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
