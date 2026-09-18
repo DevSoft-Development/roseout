@@ -73,7 +73,7 @@ async function getMailbox(userId: string) {
 }
 
 async function getDeltaLink(userId: string, resource: SyncResource, resourceKey = "default") {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getAdminDatabaseClient()
     .from("microsoft_365_sync_state")
     .select("delta_link")
     .eq("user_id", userId)
