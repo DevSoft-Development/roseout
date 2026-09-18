@@ -2761,6 +2761,53 @@ if (
   throw new Error("Careers Jobs AI helper must preserve isolated authorization and deterministic fallback behavior.");
 }
 
+const careersInternActivePage = read("apps/admin/app/admin/dashboard/careers/internships/active/page.tsx");
+const careersInternAssignmentsPage = read("apps/admin/app/admin/dashboard/careers/internships/assignments/page.tsx");
+const careersInternCompliancePage = read("apps/admin/app/admin/dashboard/careers/internships/compliance/page.tsx");
+
+for (const source of [
+  careersInternActivePage,
+  careersInternAssignmentsPage,
+  careersInternCompliancePage,
+]) {
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes("@/lib/careers/format") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Careers internship pages must preserve isolated auth/shared DB and Careers formatting.");
+  }
+}
+if (
+  !careersInternActivePage.includes('from("career_applications")') ||
+  !careersInternAssignmentsPage.includes('from("career_internship_assignments")') ||
+  !careersInternCompliancePage.includes('from("career_jobs")')
+) {
+  throw new Error("Careers internship pages must preserve their live CRM data sources.");
+}
+
+const careersInternshipActivePage = read("apps/admin/app/admin/dashboard/careers/internships/active/page.tsx");
+const careersInternshipAssignmentsPage = read("apps/admin/app/admin/dashboard/careers/internships/assignments/page.tsx");
+const careersInternshipCompliancePage = read("apps/admin/app/admin/dashboard/careers/internships/compliance/page.tsx");
+for (const source of [careersInternshipActivePage, careersInternshipAssignmentsPage, careersInternshipCompliancePage]) {
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes("@/lib/careers/format") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Careers internship pages must use isolated Admin auth/shared DB and existing Careers formatting helpers.");
+  }
+}
+if (!careersInternshipActivePage.includes('from("career_applications")')) throw new Error("Active Interns must preserve career application reads.");
+if (!careersInternshipAssignmentsPage.includes('from("career_internship_assignments")')) throw new Error("Internship Assignments must preserve assignment reads.");
+if (!careersInternshipCompliancePage.includes('from("career_jobs")')) throw new Error("Internship Compliance must preserve career job compliance reads.");
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
