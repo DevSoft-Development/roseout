@@ -1,7 +1,11 @@
 import "server-only";
 
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
-import type { AdminRole } from "@theouthaven/auth/admin-roles";
+import {
+  ADMIN_ROLES,
+  isAdminRole,
+  type AdminRole,
+} from "@theouthaven/auth/admin-roles";
 
 export type AdminStaffSecurityRow = {
   admin_id: string;
@@ -14,20 +18,6 @@ export type AdminStaffSecurityRow = {
   email_confirmed_at: string | null;
   banned_until: string | null;
 };
-
-const ADMIN_ROLES: readonly AdminRole[] = [
-  "superadmin",
-  "admin",
-  "editor",
-  "reviewer",
-  "viewer",
-  "ambassador",
-  "experience_team",
-];
-
-function isAdminRole(value: unknown): value is AdminRole {
-  return typeof value === "string" && (ADMIN_ROLES as readonly string[]).includes(value);
-}
 
 async function countSuperadmins() {
   const adminDb = getAdminDatabaseClient();
@@ -180,10 +170,13 @@ export async function setAdminAccessState(input: {
     summary,
     before_data: { banned_until: null },
     after_data: { banned_until: authUser.user?.banned_until || null },
+    metadata: {},
     ip_address: requestIp(input.request),
-    created_at: new Date().toISOString(),
+    user_agent: input.request?.headers.get("user-agent") || null,
   });
-  if (auditError) throw auditError;
+  if (auditError) {
+    console.error("ADMIN_AUDIT_LOG_FAILED", auditError);
+  }
 
   return { banned_until: authUser.user?.banned_until || null };
 }
