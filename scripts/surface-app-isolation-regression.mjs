@@ -4191,3 +4191,21 @@ const crmTodayCalendarCoreApi = read("apps/admin/lib/aws/core-api.ts");
 if (!crmTodayCalendarCoreApi.includes("readCrmCommunicationCenterViaCoreApi")) {
   throw new Error("Isolated Admin Core API must preserve CRM communication-center reads.");
 }
+
+
+const crmCallWorkspacePage = read("apps/admin/app/admin/dashboard/crm/[id]/call/page.tsx");
+if (
+  !crmCallWorkspacePage.includes("@theouthaven/auth/admin-session")
+  || !crmCallWorkspacePage.includes("@theouthaven/db/admin-client")
+  || !crmCallWorkspacePage.includes("@/lib/crm/permissions")
+  || !crmCallWorkspacePage.includes("@/lib/integrations/three-cx")
+) {
+  throw new Error("CRM Call workspace must use isolated Admin auth, shared DB, CRM roles, and isolated 3CX helper.");
+}
+if (
+  crmCallWorkspacePage.includes("@/lib/admin-auth")
+  || crmCallWorkspacePage.includes("@/lib/admin-permissions")
+  || crmCallWorkspacePage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Call workspace must not import root monolith auth/DB helpers.");
+}
