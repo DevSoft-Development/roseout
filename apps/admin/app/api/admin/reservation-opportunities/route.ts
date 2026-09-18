@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";\nimport { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
@@ -42,10 +43,7 @@ const RESERVATION_FRIENDLY_CATEGORY = /(steakhouse|french|seafood|italian|japane
 const PRIORITY_RANK: Record<SalesPriority, number> = { top: 0, strong: 1, standard: 2, verification: 3 };
 
 function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing Supabase admin environment variables");
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  return getAdminDatabaseClient();
 }
 
 async function requireAuthorization(request: NextRequest) {
