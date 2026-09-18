@@ -3113,6 +3113,31 @@ if (
   throw new Error("Search Anchors reconciliation API must use isolated Admin auth and shared DB access.");
 }
 
+const searchAnchorsUploadPage = read("apps/admin/app/admin/dashboard/search-anchors/upload/page.tsx");
+const searchAnchorsUploadClient = read("apps/admin/app/admin/dashboard/search-anchors/upload/SearchAnchorCsvUploader.tsx");
+const searchAnchorsImportRoute = read("apps/admin/app/api/admin/search-anchors/import/route.ts");
+if (
+  !searchAnchorsUploadClient.includes("/api/admin/search-anchors/import") ||
+  !searchAnchorsImportRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsImportRoute.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsImportRoute.includes("@/lib/aws/integration-api") ||
+  !searchAnchorsImportRoute.includes('new Set(["superadmin", "admin", "manager"])') ||
+  !searchAnchorsImportRoute.includes('from("search_anchors")')
+) {
+  throw new Error("Search Anchors CSV upload must use isolated Admin auth/shared DB and preserve import behavior.");
+}
+for (const source of [searchAnchorsUploadPage, searchAnchorsImportRoute]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/google/places-new-client")
+  ) {
+    throw new Error("Search Anchors CSV upload must not import root monolith auth/database/Google helpers.");
+  }
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
