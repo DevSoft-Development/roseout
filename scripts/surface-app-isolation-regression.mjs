@@ -4653,3 +4653,49 @@ if (
 ) {
   throw new Error("Marketing approval API must use isolated Admin auth and isolated content operations.");
 }
+
+
+const marketingSocialManagerCorePages = [
+  "apps/admin/app/admin/dashboard/marketing/community/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/social-manager/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/social-manager/settings/page.tsx",
+];
+for (const route of marketingSocialManagerCorePages) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/auth/admin-session")
+    || !source.includes("@theouthaven/db/admin-client")
+    || source.includes("@/lib/admin-auth")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing Social Manager page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+}
+for (const helper of [
+  "apps/admin/lib/marketing/social-manager.ts",
+  "apps/admin/lib/marketing/social-community-provider.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Marketing Social Manager helper must use shared Admin DB: ${helper}`);
+  }
+}
+const socialCommunityProvider = read("apps/admin/lib/marketing/social-community-provider.ts");
+if (!socialCommunityProvider.includes("@/lib/marketing/social-secrets")) {
+  throw new Error("Marketing social community provider must preserve isolated social secrets access.");
+}
+for (const route of [
+  "apps/admin/app/api/admin/marketing/community/reply/route.ts",
+  "apps/admin/app/api/admin/marketing/community/take-over/route.ts",
+  "apps/admin/app/api/admin/marketing/community/close/route.ts",
+  "apps/admin/app/api/admin/marketing/community/settings/route.ts",
+]) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Marketing community API must use isolated Admin auth and no root monolith DB: ${route}`);
+  }
+}
+const communityReplyRoute = read("apps/admin/app/api/admin/marketing/community/reply/route.ts");
+if (!communityReplyRoute.includes("@/lib/marketing/social-community-provider")) {
+  throw new Error("Marketing community reply API must preserve the isolated provider delivery path.");
+}
