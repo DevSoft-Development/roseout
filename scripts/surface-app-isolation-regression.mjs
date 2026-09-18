@@ -4741,3 +4741,65 @@ for (const route of [
     throw new Error(`Marketing Social Accounts API must use isolated Admin auth and no root monolith DB: ${route}`);
   }
 }
+
+
+const marketingCenterPage = read("apps/admin/app/admin/dashboard/marketing/page.tsx");
+if (
+  !marketingCenterPage.includes("@theouthaven/auth/admin-session")
+  || !marketingCenterPage.includes("@theouthaven/db/admin-client")
+  || marketingCenterPage.includes("@/lib/admin-auth")
+  || marketingCenterPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Center page must use isolated Admin auth and shared Admin DB.");
+}
+
+for (const route of [
+  "apps/admin/app/api/admin/marketing/campaigns/route.ts",
+  "apps/admin/app/api/admin/marketing/campaigns/[id]/route.ts",
+]) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/db/admin-client")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing campaign API must use shared Admin DB: ${route}`);
+  }
+}
+
+const marketingPublicHelper = read("apps/admin/lib/marketing-public.ts");
+if (
+  !marketingPublicHelper.includes("@theouthaven/db/admin-client")
+  || marketingPublicHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing public helper must use shared Admin DB.");
+}
+
+const marketingReportsPage = read("apps/admin/app/admin/dashboard/marketing/reports/page.tsx");
+if (
+  !marketingReportsPage.includes("@theouthaven/auth/admin-session")
+  || !marketingReportsPage.includes("@theouthaven/db/admin-client")
+  || marketingReportsPage.includes("@/lib/admin-auth")
+  || marketingReportsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing Reports page must use isolated Admin auth and shared Admin DB.");
+}
+
+const marketingReportEngine = read("apps/admin/lib/admin/marketing-report-engine.ts");
+if (
+  !marketingReportEngine.includes("@theouthaven/db/admin-client")
+  || marketingReportEngine.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing report engine must use shared Admin DB.");
+}
+
+const marketingReportsApi = read("apps/admin/app/api/admin/marketing/reports/route.ts");
+if (
+  !marketingReportsApi.includes("@theouthaven/auth/admin-session")
+  || !marketingReportsApi.includes("@theouthaven/db/admin-client")
+  || !marketingReportsApi.includes("@/lib/aws/integration-api")
+  || marketingReportsApi.includes("@/lib/admin-auth")
+  || marketingReportsApi.includes("@/lib/supabase-admin")
+  || marketingReportsApi.includes("@/lib/resend")
+) {
+  throw new Error("Marketing reports API must use isolated Admin auth/DB and AWS Integration email.");
+}
