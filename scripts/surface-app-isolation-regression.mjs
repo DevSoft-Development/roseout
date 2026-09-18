@@ -2378,6 +2378,72 @@ if (
   throw new Error("Website Hosting verification must preserve registrar readiness and 40-family design coverage checks.");
 }
 
+const websiteTestingPage = read("apps/admin/app/admin/dashboard/website-hosting/testing/page.tsx");
+const websiteDrPanel = read("apps/admin/components/admin/HostingDrTestPanel.tsx");
+const websiteDrRoute = read("apps/admin/app/api/admin/hosting/dr-test/route.ts");
+const websiteLiveDrillRoute = read("apps/admin/app/api/admin/hosting/live-drill/route.ts");
+const websiteDrSimulation = read("apps/admin/lib/hosting/dr-simulation.ts");
+const websiteWildcardFailover = read("apps/admin/lib/domains/vercel-wildcard-failover.ts");
+const websiteLightsailFailover = read("apps/admin/lib/hosting/lightsail-failover.ts");
+const websiteMutationLease = read("apps/admin/lib/hosting/website-mutation-lease.ts");
+const websiteReplication = read("apps/admin/lib/hosting/website-replication.ts");
+
+if (
+  !websiteTestingPage.includes("@theouthaven/auth/admin-session") ||
+  !websiteTestingPage.includes("@/components/admin/HostingDrTestPanel") ||
+  !websiteTestingPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Website Hosting testing must preserve protected isolated Admin access and DR panel.");
+}
+if (
+  !websiteDrPanel.includes("/api/admin/hosting/dr-test") ||
+  !websiteDrPanel.includes("/api/admin/hosting/live-drill") ||
+  !websiteDrPanel.includes("LIVE DR THEOUTHAVEN LOUNGE")
+) {
+  throw new Error("Website Hosting DR panel must preserve simulation and guarded live-drill endpoints.");
+}
+for (const source of [
+  websiteTestingPage,
+  websiteDrRoute,
+  websiteLiveDrillRoute,
+  websiteDrSimulation,
+  websiteWildcardFailover,
+  websiteLightsailFailover,
+  websiteMutationLease,
+  websiteReplication,
+]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Website Hosting testing slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !websiteDrRoute.includes("@theouthaven/auth/admin-session") ||
+  !websiteDrRoute.includes("@theouthaven/db/admin-client") ||
+  !websiteDrRoute.includes("@/lib/hosting/dr-simulation") ||
+  !websiteLiveDrillRoute.includes("@theouthaven/auth/admin-session") ||
+  !websiteLiveDrillRoute.includes("@theouthaven/db/admin-client") ||
+  !websiteLiveDrillRoute.includes("@/lib/domains/vercel-wildcard-failover") ||
+  !websiteLiveDrillRoute.includes("@/lib/hosting/lightsail-failover") ||
+  !websiteLiveDrillRoute.includes("@/lib/hosting/website-mutation-lease") ||
+  !websiteLiveDrillRoute.includes("@/lib/hosting/website-replication")
+) {
+  throw new Error("Website Hosting DR APIs must preserve isolated auth, shared DB, and failover dependencies.");
+}
+if (
+  !websiteDrSimulation.includes("@theouthaven/db/admin-client") ||
+  !websiteWildcardFailover.includes("@theouthaven/db/admin-client") ||
+  !websiteLightsailFailover.includes("@theouthaven/db/admin-client") ||
+  !websiteMutationLease.includes("@theouthaven/db/admin-client") ||
+  !websiteReplication.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Website Hosting DR runtimes must use the shared Admin DB.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
