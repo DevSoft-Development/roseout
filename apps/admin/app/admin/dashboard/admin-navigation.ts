@@ -94,5 +94,5 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     migrated: true,
     roles: ["superadmin", "admin", "manager", "reviewer", "experience_team"],
   },
-  { label: "Settings", icon: Settings, migrated: false },
+  { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, migrated: true },
 ] as const;
