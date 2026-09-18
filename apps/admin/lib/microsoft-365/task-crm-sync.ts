@@ -2,7 +2,6 @@ import "server-only";
 
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
-const supabaseAdmin = getAdminDatabaseClient();
 import { microsoftGraphFetch } from "./graph";
 
 type TaskDirection = "microsoft_to_theouthaven" | "theouthaven_to_microsoft" | "two_way";
@@ -204,7 +203,7 @@ async function createCrmTaskForTodo(userId: string, row: TodoRow) {
     .single();
   if (error || !data?.id) throw error || new Error("M365_CRM_TASK_CREATE_FAILED");
 
-  await supabaseAdmin.from("crm_task_history").insert({
+  await getAdminDatabaseClient().from("crm_task_history").insert({
     task_id: data.id,
     actor_user_id: userId,
     event_type: "created",
@@ -249,7 +248,7 @@ async function updateCrmTaskFromTodo(userId: string, crm: CrmTaskRow, row: TodoR
   if (error) throw error;
   if (!data) return crm;
 
-  await supabaseAdmin.from("crm_task_history").insert({
+  await getAdminDatabaseClient().from("crm_task_history").insert({
     task_id: crm.id,
     actor_user_id: userId,
     event_type: historyEvent(crm, patch),
@@ -343,7 +342,7 @@ function stagingMatchesCrm(row: TodoRow, crm: CrmTaskRow) {
 }
 
 async function persistGraphTaskMapping(userId: string, listId: string, graph: GraphTask, crm: CrmTaskRow) {
-  const { error } = await supabaseAdmin.from("microsoft_365_todo_tasks").upsert({
+  const { error } = await getAdminDatabaseClient().from("microsoft_365_todo_tasks").upsert({
     user_id: userId,
     provider_list_id: listId,
     provider_task_id: graph.id,
