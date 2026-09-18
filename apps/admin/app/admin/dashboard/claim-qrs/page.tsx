@@ -83,7 +83,7 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
     adminDb.from("locations").select("id", { count: "exact", head: true }).or("is_claimed.eq.false,is_claimed.is.null"),
   ]);
 
-  let query = supabase
+  let query = adminDb
     .from("locations")
     .select("id, name, restaurant_name, activity_name, location_type, source_table, address, city, state, zip_code, claim_url, claim_code, qr_code_data_url, claim_qr_url, is_claimed, phone, google_place_id", { count: "exact" })
     .order("name", { ascending: true });
