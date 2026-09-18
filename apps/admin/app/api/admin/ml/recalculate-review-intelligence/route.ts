@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { aggregateReviewSignals } from "@/lib/ml/reviewIntelligence";
+import { authorizeReviewMlRequest } from "@/lib/ml/admin-ml-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,13 +14,6 @@ const REVIEW_SIGNAL_FIELDS = [
 ].join(",");
 
 type ReviewSignalRow = Record<string, unknown> & { location_id?: string | null };
-
-function bearer(req: NextRequest) {
-  const h = req.headers.get("authorization") || "";
-  return h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : null;
-}
-
-import { authorizeReviewMlRequest } from "@/lib/ml/admin-ml-auth";
 
 async function authorize(req: NextRequest) { return authorizeReviewMlRequest(req); }
 
