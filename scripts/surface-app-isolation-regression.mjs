@@ -554,6 +554,38 @@ if (
   throw new Error("Domain Benefit runtime must use the shared Admin DB package.");
 }
 
+const generatedWebsitesPage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
+if (
+  !generatedWebsitesPage.includes("@theouthaven/auth/admin-session") ||
+  !generatedWebsitesPage.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Generated Websites page must remain isolated and superadmin-only.");
+}
+if (
+  generatedWebsitesPage.includes("@/lib/admin-auth") ||
+  generatedWebsitesPage.includes("@/components/admin/")
+) {
+  throw new Error("Generated Websites page must not import root monolith Admin modules/components.");
+}
+
+const generatedWebsitesRoute = read("apps/admin/app/api/admin/websites/route.ts");
+if (
+  !generatedWebsitesRoute.includes("@theouthaven/auth/admin-session") ||
+  !generatedWebsitesRoute.includes("@theouthaven/db/admin-client") ||
+  !generatedWebsitesRoute.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Generated Websites route must use isolated superadmin auth and shared Admin DB.");
+}
+if (
+  generatedWebsitesRoute.includes("@/lib/admin-api-auth") ||
+  generatedWebsitesRoute.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Generated Websites route must not import root monolith auth/database modules.");
+}
+if (!generatedWebsitesRoute.includes('confirmation !== "DELETE"')) {
+  throw new Error("Generated Websites delete route must retain explicit DELETE confirmation.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
