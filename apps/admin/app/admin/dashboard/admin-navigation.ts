@@ -74,6 +74,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     roles: ["superadmin", "admin"],
   },
   {
+    label: "Launch Catalog",
+    href: "/admin/dashboard/launch-catalog",
+    icon: Database,
+    migrated: true,
+    roles: ["superadmin", "admin"],
+  },
+  {
     label: "Promo Codes",
     href: "/admin/dashboard/settings/promo-codes",
     icon: TicketPercent,
