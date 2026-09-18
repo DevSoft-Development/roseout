@@ -35,6 +35,27 @@ export type CoreSupportOperationsSettingsResponse = {
   automations: Array<Record<string, unknown>>;
 };
 
+export type CoreCommunicationScope = "crm" | "reservations" | "support";
+export type CoreCommunicationFeedItem = {
+  id: string;
+  locationId: string | null;
+  locationName: string | null;
+  channel: string;
+  direction: string | null;
+  title: string;
+  preview: string;
+  status: string | null;
+  unread: boolean;
+  timestamp: string;
+  href: string;
+};
+export type CoreCrmCommunicationCenterResponse = {
+  scope: CoreCommunicationScope;
+  items: CoreCommunicationFeedItem[];
+  unreadCount: number;
+  waitingCount: number;
+};
+
 export type CoreSupportCaseResponse = {
   success: true;
   ticket: Record<string, unknown>;
@@ -152,6 +173,14 @@ export function readCrmReportSnapshotViaCoreApi(input: { start?: string; end?: s
 
 export function readSupportOperationsSettingsViaCoreApi() {
   return signedJson<CoreSupportOperationsSettingsResponse>("/v1/crm/support/settings/read", "{}", 15_000);
+}
+
+export function readCrmCommunicationCenterViaCoreApi(scope: CoreCommunicationScope) {
+  return signedJson<CoreCrmCommunicationCenterResponse>(
+    "/v1/crm/communication-center/read",
+    JSON.stringify({ scope }),
+    15_000,
+  );
 }
 
 export function readSupportCaseViaCoreApi(ticketId: string) {

@@ -4149,3 +4149,32 @@ const crmLocationHealthCoreApi = read("apps/admin/lib/aws/core-api.ts");
 if (!crmLocationHealthCoreApi.includes("readCrmLocationHealthViaCoreApi")) {
   throw new Error("Isolated Admin Core API must expose CRM Location Health reads.");
 }
+
+
+const crmTodayPage = read("apps/admin/app/admin/dashboard/crm/today/page.tsx");
+if (
+  !crmTodayPage.includes("@theouthaven/auth/admin-session")
+  || !crmTodayPage.includes("@theouthaven/db/admin-client")
+  || crmTodayPage.includes("@/lib/admin-auth")
+  || crmTodayPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM Today page must use isolated Admin auth and shared Admin DB.");
+}
+const crmTodayUnread = read("apps/admin/components/admin/crm/TodayUnreadMessages.tsx");
+if (!crmTodayUnread.includes("/api/admin/crm/communication-center?scope=crm")) {
+  throw new Error("CRM Today unread component must preserve communication-center API usage.");
+}
+const crmCommunicationCenterApi = read("apps/admin/app/api/admin/crm/communication-center/route.ts");
+if (
+  !crmCommunicationCenterApi.includes("@theouthaven/auth/admin-session")
+  || !crmCommunicationCenterApi.includes("@theouthaven/db/admin-client")
+  || !crmCommunicationCenterApi.includes("@/lib/aws/core-api")
+  || crmCommunicationCenterApi.includes("@/lib/admin-auth")
+  || crmCommunicationCenterApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM communication-center API must use isolated auth, shared Admin DB, and Core API fallback.");
+}
+const crmTodayCoreApi = read("apps/admin/lib/aws/core-api.ts");
+if (!crmTodayCoreApi.includes("readCrmCommunicationCenterViaCoreApi")) {
+  throw new Error("Isolated Admin Core API must expose CRM communication-center reads.");
+}
