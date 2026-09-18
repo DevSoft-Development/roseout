@@ -61,6 +61,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     roles: ["superadmin"],
   },
   {
+    label: "Mailing Batches",
+    href: "/admin/dashboard/operations/mailing-batches",
+    icon: Mail,
+    migrated: true,
+    roles: ["superadmin", "admin", "manager"],
+  },
+  {
     label: "Knowledge Base",
     href: "/admin/dashboard/knowledge-base",
     icon: ScrollText,
