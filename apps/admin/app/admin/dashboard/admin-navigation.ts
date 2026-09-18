@@ -8,6 +8,7 @@ import {
   Mail,
   MessageSquareText,
   ScrollText,
+  Search,
   ShieldAlert,
   ShieldCheck,
   ShoppingBag,
@@ -125,6 +126,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: WalletCards,
     migrated: true,
     roles: ["superadmin", "admin"],
+  },
+  {
+    label: "SEO Tools",
+    href: "/admin/dashboard/seo-tools",
+    icon: Search,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "viewer"],
   },
   { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, migrated: true },
 ] as const;
