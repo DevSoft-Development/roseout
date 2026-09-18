@@ -1938,6 +1938,23 @@ if (
   throw new Error("Billing Core API reader must preserve signed AWS billing reads.");
 }
 
+const plansPage = read("apps/admin/app/admin/dashboard/plans/page.tsx");
+if (
+  !plansPage.includes("@theouthaven/auth/admin-session") ||
+  !plansPage.includes("@theouthaven/db/admin-client") ||
+  !plansPage.includes('requireAdminRole(["superadmin"])') ||
+  !plansPage.includes("@/lib/billing/plans")
+) {
+  throw new Error("Plans page must use isolated superadmin auth, shared DB, and isolated billing helpers.");
+}
+if (
+  plansPage.includes("@/lib/admin-auth") ||
+  plansPage.includes("@/lib/admin-permissions") ||
+  plansPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Plans page must not import root monolith auth/database modules.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
