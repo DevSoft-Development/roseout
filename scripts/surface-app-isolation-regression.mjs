@@ -2970,6 +2970,24 @@ if (
   throw new Error("Legacy Reserve route must remain an isolated redirect to Reservations floor.");
 }
 
+const searchAnchorsPage = read("apps/admin/app/admin/dashboard/search-anchors/page.tsx");
+if (
+  !searchAnchorsPage.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsPage.includes('from("search_anchors")') ||
+  !searchAnchorsPage.includes('from("search_anchor_discoveries")') ||
+  !searchAnchorsPage.includes("/admin/dashboard/search-anchors/sync-preview") ||
+  !searchAnchorsPage.includes("/admin/dashboard/search-anchors/audit")
+) {
+  throw new Error("Search Anchors overview must use shared Admin DB and preserve anchor operations links.");
+}
+if (
+  searchAnchorsPage.includes("@/lib/supabase-admin") ||
+  searchAnchorsPage.includes("@/lib/admin-auth") ||
+  searchAnchorsPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Search Anchors overview must not import root monolith database/auth helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
