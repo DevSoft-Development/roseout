@@ -2179,6 +2179,41 @@ if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin
   throw new Error("Critical Incidents navigation must be present in isolated Admin.");
 }
 
+const launchCatalogPage = read("apps/admin/app/admin/dashboard/launch-catalog/page.tsx");
+const launchCatalogClient = read("apps/admin/app/admin/dashboard/launch-catalog/LaunchCatalogClient.tsx");
+const launchCatalogRoute = read("apps/admin/app/api/admin/launch-catalog/route.ts");
+const launchCatalogRuntime = read("apps/admin/lib/admin/location-launch-health.ts");
+if (
+  !launchCatalogPage.includes("@theouthaven/auth/admin-session") ||
+  !launchCatalogPage.includes("@/lib/admin/location-launch-health") ||
+  launchCatalogPage.includes("@/lib/admin-auth") ||
+  launchCatalogPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Launch Catalog page must use isolated Admin auth/runtime and local presentation.");
+}
+if (!launchCatalogClient.includes("/api/admin/launch-catalog")) {
+  throw new Error("Launch Catalog client must use isolated Launch Catalog API.");
+}
+if (
+  !launchCatalogRoute.includes("@/lib/admin-api-auth") ||
+  !launchCatalogRoute.includes("@/lib/admin-permissions") ||
+  !launchCatalogRoute.includes("@/lib/admin/location-launch-health")
+) {
+  throw new Error("Launch Catalog API must preserve isolated Admin auth and runtime.");
+}
+if (
+  !launchCatalogRuntime.includes("@theouthaven/db/admin-client") ||
+  launchCatalogRuntime.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Launch Catalog runtime must use shared Admin DB access.");
+}
+if (launchCatalogRuntime.includes("const supabaseAdmin = getAdminDatabaseClient()")) {
+  throw new Error("Launch Catalog runtime must not initialize the Admin DB client at module scope.");
+}
+if (!read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/launch-catalog")) {
+  throw new Error("Launch Catalog navigation must be present in isolated Admin.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
