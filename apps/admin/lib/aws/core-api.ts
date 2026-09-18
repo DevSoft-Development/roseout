@@ -25,6 +25,30 @@ export type CoreAdminBillingResponse = {
   trialRows: Array<Record<string, unknown>>;
 };
 
+export type CoreCrmOperationsBucket = {
+  data: Array<Record<string, unknown>>;
+  count: number;
+};
+
+export type CoreCrmOperationsSnapshotResponse = {
+  success: true;
+  claims: CoreCrmOperationsBucket;
+  hidden: CoreCrmOperationsBucket;
+  support: CoreCrmOperationsBucket;
+  tasks: CoreCrmOperationsBucket;
+  codes: CoreCrmOperationsBucket;
+};
+
+export type CoreCrmReportSnapshotResponse = {
+  success: true;
+  start: string;
+  end: string;
+  opps: Array<Record<string, unknown>>;
+  claims: Array<Record<string, unknown>>;
+  support: Array<Record<string, unknown>>;
+  outreach: Array<Record<string, unknown>>;
+};
+
 function config() {
   const baseUrl = String(process.env.AWS_PLATFORM_CORE_API_URL || "").trim().replace(/\/$/, "");
   const secret = String(process.env.AWS_PLATFORM_CORE_API_SECRET || process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim();
@@ -53,6 +77,25 @@ async function signedJson<T>(path: string, body = "{}", timeoutMs = 18_000): Pro
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function platformCoreApiConfigured() {
+  return Boolean(
+    String(process.env.AWS_PLATFORM_CORE_API_URL || "").trim()
+      && String(process.env.AWS_PLATFORM_CORE_API_SECRET || process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET || "").trim(),
+  );
+}
+
+export function readCrmOperationsSnapshotViaCoreApi() {
+  return signedJson<CoreCrmOperationsSnapshotResponse>("/v1/crm/operations-snapshot/read", "{}", 15_000);
+}
+
+export function readCrmReportSnapshotViaCoreApi(input: { start?: string; end?: string }) {
+  return signedJson<CoreCrmReportSnapshotResponse>(
+    "/v1/crm/report-snapshot/read",
+    JSON.stringify(input),
+    15_000,
+  );
 }
 
 export function readAdminBillingViaCoreApi() {
