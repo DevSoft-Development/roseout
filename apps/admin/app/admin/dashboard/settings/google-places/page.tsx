@@ -33,8 +33,8 @@ export default async function GooglePlacesSettingsPage() {
               Control monthly Google spend and monitor location enrichment, five-image profile media, and address autocomplete from one place.
             </p>
           </div>
-          <Link href="/admin/dashboard/settings" className="text-sm font-black text-rose-300 hover:text-rose-200">
-            Back to Settings
+          <Link href="/admin/dashboard" className="text-sm font-black text-rose-300 hover:text-rose-200">
+            Back to Dashboard
           </Link>
         </div>
         <GooglePlacesBudgetClient initialSettings={settings} initialSummary={summary} initialControls={controls} />
