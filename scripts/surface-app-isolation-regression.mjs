@@ -837,6 +837,61 @@ if (claimQrBackfillApi.includes("@/lib/admin-auth") || claimQrBackfillApi.includ
   throw new Error("Claim QR repair job API must not import root monolith auth/database helpers.");
 }
 
+const cronJobsPage = read("apps/admin/app/admin/dashboard/settings/cron-jobs/page.tsx");
+if (
+  !cronJobsPage.includes("@theouthaven/auth/admin-session") ||
+  !cronJobsPage.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Cron Jobs page must use isolated Admin auth and preserve admin/superadmin access.");
+}
+
+const cronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
+if (
+  cronJobsClient.includes("@/components/admin/") ||
+  !cronJobsClient.includes("./CronJobsUi")
+) {
+  throw new Error("Cron Jobs client must use local isolated UI primitives.");
+}
+
+for (const cronRoute of [
+  "apps/admin/app/api/admin/cron-jobs/route.ts",
+  "apps/admin/app/api/admin/cron-jobs/[jobKey]/route.ts",
+  "apps/admin/app/api/admin/cron-jobs/[jobKey]/runs/route.ts",
+  "apps/admin/app/api/admin/cron-jobs/[jobKey]/run/route.ts",
+]) {
+  const source = read(cronRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@theouthaven/db/admin-client")
+  ) {
+    throw new Error(`Cron Jobs API must use isolated API auth and shared Admin DB: ${cronRoute}`);
+  }
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-api-auth") && !cronRoute.startsWith("apps/admin/")
+  ) {
+    throw new Error(`Cron Jobs API must not import root monolith DB/auth helpers: ${cronRoute}`);
+  }
+}
+
+const cronRunRoute = read("apps/admin/app/api/admin/cron-jobs/[jobKey]/run/route.ts");
+if (
+  !cronRunRoute.includes('NEXT_PUBLIC_SITE_URL') ||
+  !cronRunRoute.includes('new URL("/api/cron/managed", consumerOrigin)')
+) {
+  throw new Error("Manual Cron execution must target the consumer origin after Admin isolation.");
+}
+
+const cronControlPlane = read("apps/admin/lib/cron/controlPlane.ts");
+if (
+  cronControlPlane.includes("@/config/") ||
+  cronControlPlane.includes("@/infra/") ||
+  cronControlPlane.includes("@/vercel.json") ||
+  !cronControlPlane.includes("./manifests/cron-jobs.json")
+) {
+  throw new Error("Cron control plane must use isolated deployment-manifest snapshots.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
