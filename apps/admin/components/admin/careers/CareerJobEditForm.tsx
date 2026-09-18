@@ -1,0 +1,95 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { FormEvent, ReactNode } from "react";
+import { useMemo, useState } from "react";
+import { AdminActionButton, AdminSectionCard } from "@/components/admin/AdminDesignSystem";
+import { validateNewYorkJobPosting } from "@/lib/careers/new-york-compliance";
+import type { CareerJob } from "@/lib/careers/types";
+
+const statuses = ["draft", "open", "paused", "closed", "filled", "archived"];
+const visibilities = ["public", "private_link", "internal_only", "hidden"];
+const internshipTypes = ["paid", "unpaid_educational", "college_credit", "stipend", "campus_ambassador", "creator_program"];
+const workplaceTypes = ["remote", "hybrid", "onsite"];
+const employmentTypes = ["full_time", "part_time", "contract", "internship", "commission", "temporary"];
+const compensationTypes = ["", "salary", "hourly", "stipend", "commission", "unpaid"];
+
+type FormState = Partial<CareerJob>;
+
+function text(value: unknown) { return typeof value === "string" ? value : value == null ? "" : String(value); }
+function numberText(value: unknown) { return typeof value === "number" ? String(value) : text(value); }
+function cleanNumber(value: unknown) { const raw = text(value).trim(); if (!raw) return null; const parsed = Number(raw); return Number.isFinite(parsed) ? parsed : null; }
+function label(value: string) { return value ? value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Not set"; }
+
+function Field({ label, helper, children }: { label: string; helper?: string; children: ReactNode }) {
+  return <label className="block min-w-0 space-y-2"><span className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{label}</span>{children}{helper ? <span className="block text-xs font-semibold leading-5 text-white/45">{helper}</span> : null}</label>;
+}
+function inputClass() { return "w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm font-semibold text-white outline-none placeholder:text-white/30 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10"; }
+function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) { return <input {...props} className={inputClass()} />; }
+function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) { return <select {...props} className={inputClass()} />; }
+function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) { return <textarea {...props} className={`${inputClass()} min-h-28 leading-6`} />; }
+function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) { return <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm font-bold text-white/75"><input type="checkbox" checked={checked} onChange={(e)=>onChange(e.target.checked)} className="h-4 w-4 accent-[#ec0b5b]" />{label}</label>; }
+
+export function CareerJobEditForm({ job, mode = "edit" }: { job?: Partial<CareerJob>; mode?: "edit" | "create" }) {
+  const router = useRouter();
+  const [form, setForm] = useState<FormState>({ status: "draft", visibility: "hidden", workplace_type: "remote", employment_type: "full_time", is_internship: false, is_paid: true, supports_college_credit: false, requires_school_credit: false, ...job });
+  const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const previewHref = useMemo(() => form.slug ? `/careers/${form.slug}` : null, [form.slug]);
+  const nyComplianceIssue = useMemo(() => validateNewYorkJobPosting({ ...form, status: "open" } as Record<string, unknown>), [form]);
+  const update = (key: keyof FormState, value: unknown) => setForm((current) => ({ ...current, [key]: value }));
+
+  async function onGenerateDraft() {
+    setGenerating(true); setMessage(null); setError(null);
+    try {
+      const response = await fetch("/api/admin/careers/jobs/ai-helper", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: form.title, department: form.department, subdepartment: form.subdepartment, location: form.location, workplace_type: form.workplace_type, employment_type: form.employment_type, compensation_text: form.compensation_text, internship_type: form.internship_type, is_internship: form.is_internship, is_paid: form.is_paid, supports_college_credit: form.supports_college_credit, weekly_hours_min: form.weekly_hours_min, weekly_hours_max: form.weekly_hours_max, program_duration_weeks: form.program_duration_weeks, existing: { summary: form.summary, overview: form.overview, responsibilities: form.responsibilities, requirements: form.requirements, nice_to_have: form.nice_to_have, benefits: form.benefits, schedule: form.schedule, hiring_process: form.hiring_process } }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.draft) throw new Error(data.error || "We could not generate a draft right now.");
+      setForm((current) => ({ ...current, ...data.draft }));
+      setMessage(data.source === "ai" ? "Generated with AI" : "Generated from template");
+    } catch (err) { setError(err instanceof Error ? err.message : "We could not generate a draft right now."); }
+    finally { setGenerating(false); }
+  }
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault(); setSaving(true); setMessage(null); setError(null);
+    const payload: Record<string, unknown> = {};
+    const textFields = ["title","slug","department","subdepartment","role_track","location","workplace_type","employment_type","compensation_type","compensation_text","summary","overview","responsibilities","requirements","nice_to_have","benefits","schedule","hiring_process","status","visibility","internship_type","learning_objectives","compliance_status","compliance_notes"] as const;
+    textFields.forEach((key) => { const value = text(form[key]).trim(); payload[key] = value || null; });
+    ["compensation_min","compensation_max","weekly_hours_min","weekly_hours_max","program_duration_weeks"].forEach((key) => { payload[key] = cleanNumber(form[key as keyof FormState]); });
+    ["is_internship","is_paid","supports_college_credit","requires_school_credit"].forEach((key) => { payload[key] = Boolean(form[key as keyof FormState]); });
+
+    if (text(form.status) === "open") {
+      const issue = validateNewYorkJobPosting(payload);
+      if (issue) { setError(issue.message); setSaving(false); return; }
+    }
+
+    try {
+      const response = await fetch(mode === "create" ? "/api/admin/careers/jobs" : `/api/admin/careers/jobs/${job?.id}`, { method: mode === "create" ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.record) throw new Error(data.error || (mode === "create" ? "We could not create this job posting." : "We could not update this job posting."));
+      setMessage(mode === "create" ? "Job posting created." : "Job posting updated.");
+      if (mode === "create") router.push(`/admin/dashboard/careers/jobs/${data.record.id}`); else router.refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : mode === "create" ? "We could not create this job posting." : "We could not update this job posting."); }
+    finally { setSaving(false); }
+  }
+
+  return <form onSubmit={onSubmit} className="space-y-5">
+    {(message || error) ? <div className={`rounded-2xl border p-4 text-sm font-bold ${error ? "border-red-300/25 bg-red-500/10 text-red-100" : "border-emerald-300/25 bg-emerald-500/10 text-emerald-100"}`}>{error || message}</div> : null}
+
+    <AdminSectionCard className={`p-5 ${nyComplianceIssue ? "border-amber-300/25" : "border-emerald-300/20"}`}><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">New York hiring compliance</p><h2 className="mt-1 text-xl font-black text-white">{nyComplianceIssue ? "Needs attention before publishing" : "Ready for New York publishing"}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">Open roles use New York State requirements plus the stricter NYC hiring safeguards by default. The system blocks publication if the posting is missing a good-faith pay disclosure, meaningful job description, or contains prohibited salary-history / pre-offer criminal-history language.</p></div><span className={`inline-flex h-fit rounded-full border px-3 py-1 text-xs font-black ${nyComplianceIssue ? "border-amber-300/25 bg-amber-500/10 text-amber-100" : "border-emerald-300/25 bg-emerald-500/10 text-emerald-100"}`}>{nyComplianceIssue ? "BLOCKED" : "READY"}</span></div>{nyComplianceIssue ? <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold text-amber-50">{nyComplianceIssue.message}</div> : null}<div className="mt-4 grid gap-2 text-xs leading-5 text-white/55 sm:grid-cols-2"><p>• No salary-history questions or reliance on prior compensation.</p><p>• Paid postings require a good-faith salary/hourly range; commission-only roles must say so.</p><p>• NYC Fair Chance: no pre-offer criminal-history questions or “background check required” ad language.</p><p>• No automated hiring decision; structured human review stays authoritative.</p><p>• Protected characteristics and medical/accommodation information stay out of scoring.</p><p>• Reasonable accommodations are handled separately from candidate evaluation.</p></div></AdminSectionCard>
+
+    <AdminSectionCard className="p-5"><div className="grid gap-4 md:grid-cols-2"><Field label="Role Title"><TextInput value={text(form.title)} onChange={(e)=>update("title", e.target.value)} required /></Field><Field label="Public URL Slug" helper="Changing the slug changes the public job posting URL."><TextInput value={text(form.slug)} onChange={(e)=>update("slug", e.target.value.toLowerCase())} required /></Field><Field label="Department"><TextInput value={text(form.department)} onChange={(e)=>update("department", e.target.value)} /></Field><Field label="Subdepartment"><TextInput value={text(form.subdepartment)} onChange={(e)=>update("subdepartment", e.target.value)} /></Field><Field label="Role Track"><TextInput value={text(form.role_track)} onChange={(e)=>update("role_track", e.target.value)} /></Field><Field label="Location"><TextInput value={text(form.location)} onChange={(e)=>update("location", e.target.value)} /></Field><Field label="Workplace Type"><SelectInput value={text(form.workplace_type)} onChange={(e)=>update("workplace_type", e.target.value)}>{workplaceTypes.map((v)=><option key={v} value={v}>{label(v)}</option>)}</SelectInput></Field><Field label="Employment Type"><SelectInput value={text(form.employment_type)} onChange={(e)=>update("employment_type", e.target.value)}>{employmentTypes.map((v)=><option key={v} value={v}>{label(v)}</option>)}</SelectInput></Field></div></AdminSectionCard>
+
+    <AdminSectionCard className="p-5"><div className="grid gap-4 md:grid-cols-3"><Field label="Compensation Type" helper="Required before a New York role can be opened."><SelectInput value={text(form.compensation_type)} onChange={(e)=>update("compensation_type", e.target.value)}>{compensationTypes.map((v)=><option key={v || "none"} value={v}>{label(v)}</option>)}</SelectInput></Field><Field label="Compensation Min" helper="Good-faith minimum annual salary or hourly rate."><TextInput type="number" min="0" step="0.01" value={numberText(form.compensation_min)} onChange={(e)=>update("compensation_min", e.target.value)} /></Field><Field label="Compensation Max" helper="Good-faith maximum annual salary or hourly rate."><TextInput type="number" min="0" step="0.01" value={numberText(form.compensation_max)} onChange={(e)=>update("compensation_max", e.target.value)} /></Field><Field label="Compensation Text" helper="Use for commission, stipend, or helpful context. Do not ask for salary history."><TextInput value={text(form.compensation_text)} onChange={(e)=>update("compensation_text", e.target.value)} placeholder="e.g. $20-$25/hour; commission-based; unpaid educational internship" /></Field><Field label="Status"><SelectInput value={text(form.status)} onChange={(e)=>update("status", e.target.value)}>{statuses.map((v)=><option key={v} value={v}>{label(v)}</option>)}</SelectInput></Field><Field label="Visibility"><SelectInput value={text(form.visibility)} onChange={(e)=>update("visibility", e.target.value)}>{visibilities.map((v)=><option key={v} value={v}>{label(v)}</option>)}</SelectInput></Field></div></AdminSectionCard>
+
+    <AdminSectionCard className="p-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-black text-white">Posting Copy</h2><p className="mt-1 text-sm font-semibold text-white/50">Generate a concise editable draft. Final publication is still checked against New York hiring rules.</p></div><button type="button" onClick={onGenerateDraft} disabled={generating || saving} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-rose-200/20 bg-rose-500/15 px-4 py-2 text-sm font-black text-rose-100 hover:border-rose-200/40 disabled:cursor-not-allowed disabled:opacity-60">{generating ? "Generating…" : "Generate Draft"}</button></div><div className="grid gap-4"><Field label="Public Summary"><TextArea value={text(form.summary)} onChange={(e)=>update("summary", e.target.value)} /></Field><Field label="Role Overview"><TextArea value={text(form.overview)} onChange={(e)=>update("overview", e.target.value)} /></Field><Field label="Responsibilities"><TextArea value={text(form.responsibilities)} onChange={(e)=>update("responsibilities", e.target.value)} /></Field><Field label="Requirements"><TextArea value={text(form.requirements)} onChange={(e)=>update("requirements", e.target.value)} /></Field><Field label="Nice to Have"><TextArea value={text(form.nice_to_have)} onChange={(e)=>update("nice_to_have", e.target.value)} /></Field><Field label="Benefits"><TextArea value={text(form.benefits)} onChange={(e)=>update("benefits", e.target.value)} /></Field><Field label="Schedule"><TextArea value={text(form.schedule)} onChange={(e)=>update("schedule", e.target.value)} /></Field><Field label="Hiring Process"><TextArea value={text(form.hiring_process)} onChange={(e)=>update("hiring_process", e.target.value)} /></Field></div></AdminSectionCard>
+
+    <AdminSectionCard className="p-5"><div className="grid gap-4 md:grid-cols-2"><Checkbox label="Internship Role" checked={Boolean(form.is_internship)} onChange={(v)=>update("is_internship", v)} /><Checkbox label="Paid Role" checked={Boolean(form.is_paid)} onChange={(v)=>update("is_paid", v)} /><Checkbox label="Supports College Credit" checked={Boolean(form.supports_college_credit)} onChange={(v)=>update("supports_college_credit", v)} /><Checkbox label="Requires School Credit" checked={Boolean(form.requires_school_credit)} onChange={(v)=>update("requires_school_credit", v)} /><Field label="Internship Type"><SelectInput value={text(form.internship_type)} onChange={(e)=>update("internship_type", e.target.value)}><option value="">Not set</option>{internshipTypes.map((v)=><option key={v} value={v}>{label(v)}</option>)}</SelectInput></Field><Field label="Weekly Hours Min"><TextInput type="number" value={numberText(form.weekly_hours_min)} onChange={(e)=>update("weekly_hours_min", e.target.value)} /></Field><Field label="Weekly Hours Max"><TextInput type="number" value={numberText(form.weekly_hours_max)} onChange={(e)=>update("weekly_hours_max", e.target.value)} /></Field><Field label="Program Duration"><TextInput type="number" value={numberText(form.program_duration_weeks)} onChange={(e)=>update("program_duration_weeks", e.target.value)} /></Field><Field label="Compliance Status"><TextInput value={text(form.compliance_status)} onChange={(e)=>update("compliance_status", e.target.value)} /></Field><Field label="Compliance Notes"><TextArea value={text(form.compliance_notes)} onChange={(e)=>update("compliance_notes", e.target.value)} /></Field><div className="md:col-span-2"><Field label="Learning Objectives"><TextArea value={text(form.learning_objectives)} onChange={(e)=>update("learning_objectives", e.target.value)} /></Field></div></div></AdminSectionCard>
+
+    <div className="flex flex-wrap gap-2"><AdminActionButton type="submit" variant="primary">{saving ? "Saving…" : mode === "create" ? "Create Job" : "Save Changes"}</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/jobs">Back to Jobs</AdminActionButton>{previewHref ? <Link href={previewHref} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 hover:border-rose-200/30">Preview Public Posting</Link> : null}</div>
+  </form>;
+}
