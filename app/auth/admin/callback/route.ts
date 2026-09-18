@@ -112,8 +112,20 @@ export async function GET(request: NextRequest) {
     request,
   });
 
-  // Microsoft Entra authentication and the active Admin role are the login gate.
-  // The separate Microsoft 365 Graph connection powers optional Admin integrations
-  // and must never block access to the Admin dashboard.
+  const { data: m365Connection, error: m365ConnectionError } = await supabaseAdmin
+    .from("microsoft_365_connections")
+    .select("status")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (m365ConnectionError) {
+    console.error("ADMIN_M365_CONNECTION_LOOKUP_FAILED", m365ConnectionError);
+  } else if (m365Connection?.status !== "active") {
+    const connectUrl = new URL("/api/admin/integrations/microsoft-365/connect", origin);
+    connectUrl.searchParams.set("auto", "1");
+    connectUrl.searchParams.set("next", next);
+    return NextResponse.redirect(connectUrl);
+  }
+
   return NextResponse.redirect(new URL(next, origin));
 }
