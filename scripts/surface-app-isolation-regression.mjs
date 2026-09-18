@@ -722,6 +722,22 @@ for (const claimRuntimeFile of [
   }
 }
 
+for (const [legacyRouteFile, expectedType] of [
+  ["apps/admin/app/admin/activities/page.tsx", "activities"],
+  ["apps/admin/app/admin/restaurants/page.tsx", "restaurants"],
+]) {
+  const source = read(legacyRouteFile);
+  if (
+    !source.includes('redirect(`/admin/dashboard/locations?') ||
+    !source.includes(`query.set("type", "${expectedType}")`) ||
+    !source.includes('if (params.q) query.set("q", params.q)') ||
+    !source.includes('if (params.status) query.set("status", params.status)') ||
+    !source.includes('if (params.page) query.set("page", params.page)')
+  ) {
+    throw new Error(`Legacy Admin location redirect must preserve filters and type: ${legacyRouteFile}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
