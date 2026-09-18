@@ -875,6 +875,9 @@ if (
 ) {
   throw new Error("Worker jobs API must use isolated Admin API auth, shared DB, and local enqueue runtime.");
 }
+if (workerJobsRoute.includes("supabaseAdmin")) {
+  throw new Error("Worker jobs API must not reference the root Supabase admin client.");
+}
 if (
   !workerJobsRoute.includes('["superadmin", "admin", "experience_team"]') ||
   !workerJobsRoute.includes('["superadmin"]')
