@@ -3282,6 +3282,23 @@ if (
   throw new Error("Primary Search Health API must not import root monolith permissions/database helpers.");
 }
 
+const searchHealthDetailApiRoute = read("apps/admin/app/api/admin/search-health/[id]/route.ts");
+if (
+  !searchHealthDetailApiRoute.includes("@/lib/admin-api-auth") ||
+  !searchHealthDetailApiRoute.includes("@theouthaven/db/admin-client") ||
+  !searchHealthDetailApiRoute.includes('requireAdminApiRole(["superadmin", "admin", "experience_team"])') ||
+  !searchHealthDetailApiRoute.includes('from("search_health_events")') ||
+  !searchHealthDetailApiRoute.includes("REVIEW_STATUSES")
+) {
+  throw new Error("Search Health detail API must use isolated auth/shared DB and preserve issue review behavior.");
+}
+if (
+  searchHealthDetailApiRoute.includes("@/lib/admin-permissions") ||
+  searchHealthDetailApiRoute.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search Health detail API must not import root monolith permissions/database helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
