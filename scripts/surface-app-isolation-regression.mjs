@@ -282,6 +282,33 @@ if (!adminNavigation.includes("/admin/dashboard/security")) {
   throw new Error("Security navigation must be present in the isolated Admin shell.");
 }
 
+for (const microsoftRuntimeFile of [
+  "apps/admin/lib/web-surface-auth-origin.ts",
+  "apps/admin/lib/microsoft-365/credential-vault.ts",
+  "apps/admin/lib/microsoft-365/config.ts",
+  "apps/admin/lib/microsoft-365/crypto.ts",
+  "apps/admin/lib/microsoft-365/integration-api.ts",
+  "apps/admin/lib/microsoft-365/oauth.ts",
+  "apps/admin/lib/microsoft-365/graph.ts",
+]) {
+  const source = read(microsoftRuntimeFile);
+  if (source.includes("@/lib/")) {
+    throw new Error(`Microsoft 365 isolated runtime must not import root monolith modules: ${microsoftRuntimeFile}`);
+  }
+}
+const microsoftGraphRuntime = read("apps/admin/lib/microsoft-365/graph.ts");
+if (!microsoftGraphRuntime.includes("@theouthaven/db/admin-client")) {
+  throw new Error("Microsoft 365 Graph runtime must use the shared Admin DB package.");
+}
+const microsoftConfigRuntime = read("apps/admin/lib/microsoft-365/config.ts");
+if (!microsoftConfigRuntime.includes("./credential-vault")) {
+  throw new Error("Microsoft 365 config must preserve credential-vault resolution.");
+}
+const microsoftIntegrationRuntime = read("apps/admin/lib/microsoft-365/integration-api.ts");
+if (!microsoftIntegrationRuntime.includes("AWS_PLATFORM_INTEGRATION_API_URL") || !microsoftIntegrationRuntime.includes("createHmac")) {
+  throw new Error("Microsoft 365 integration runtime must preserve signed AWS integration calls.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
