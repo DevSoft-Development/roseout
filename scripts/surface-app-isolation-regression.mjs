@@ -892,6 +892,64 @@ if (
   throw new Error("Cron control plane must use isolated deployment-manifest snapshots.");
 }
 
+const demoCenterPage = read("apps/admin/app/admin/dashboard/settings/demo-center/page.tsx");
+if (
+  !demoCenterPage.includes("@theouthaven/auth/admin-session") ||
+  !demoCenterPage.includes("@theouthaven/auth/admin-roles") ||
+  !demoCenterPage.includes("@theouthaven/db/admin-client") ||
+  !demoCenterPage.includes("@/lib/demo/demo-center")
+) {
+  throw new Error("Demo Center page must use isolated Admin auth, shared DB, and local demo runtime.");
+}
+if (
+  demoCenterPage.includes("@/lib/admin-auth") ||
+  demoCenterPage.includes("@/lib/admin-permissions") ||
+  demoCenterPage.includes("@/lib/supabase-admin") ||
+  demoCenterPage.includes("@/lib/routes")
+) {
+  throw new Error("Demo Center page must not import root monolith Admin/database/route helpers.");
+}
+if (
+  !demoCenterPage.includes("NEXT_PUBLIC_BUSINESS_SITE_URL") ||
+  !demoCenterPage.includes("https://business.theouthaven.com")
+) {
+  throw new Error("Demo Center owner tools must route to the Business surface after Admin isolation.");
+}
+
+const demoCenterActions = read("apps/admin/app/admin/dashboard/settings/demo-center/actions.ts");
+if (
+  !demoCenterActions.includes("@theouthaven/auth/admin-session") ||
+  !demoCenterActions.includes("@theouthaven/db/admin-client") ||
+  !demoCenterActions.includes('requireAdminRole(["superadmin", "admin", "manager"])')
+) {
+  throw new Error("Demo Center actions must use isolated Admin auth/shared DB and preserve management roles.");
+}
+if (
+  demoCenterActions.includes("@/lib/admin-auth") ||
+  demoCenterActions.includes("@/lib/admin-permissions") ||
+  demoCenterActions.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Demo Center actions must not import root monolith auth/database modules.");
+}
+
+const demoCenterRuntime = read("apps/admin/lib/demo/demo-center.ts");
+if (
+  !demoCenterRuntime.includes("@theouthaven/db/admin-client") ||
+  !demoCenterRuntime.includes("@/lib/email/send") ||
+  demoCenterRuntime.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Demo Center runtime must use shared Admin DB and isolated email runtime.");
+}
+
+const demoPublicProfile = read("apps/admin/app/admin/dashboard/settings/demo-center/public-profile/page.tsx");
+if (
+  !demoPublicProfile.includes("NEXT_PUBLIC_SITE_URL") ||
+  !demoPublicProfile.includes("https://theouthaven.com") ||
+  !demoPublicProfile.includes("@/lib/demo/demo-center")
+) {
+  throw new Error("Demo Center public profile redirect must target the Consumer surface using isolated demo data.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
