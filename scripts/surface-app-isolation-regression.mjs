@@ -1597,6 +1597,24 @@ if (
   throw new Error("Performance page must not import root monolith auth/database/team helpers.");
 }
 
+const teamProofReviewPage = read("apps/admin/app/admin/dashboard/team/proof-review/page.tsx");
+if (
+  !teamProofReviewPage.includes("@theouthaven/auth/admin-session") ||
+  !teamProofReviewPage.includes("@theouthaven/db/admin-client") ||
+  !teamProofReviewPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !teamProofReviewPage.includes("team_proofs")
+) {
+  throw new Error("Proof Review page must use isolated manager auth/shared DB and preserve proof data.");
+}
+if (
+  teamProofReviewPage.includes("@/lib/admin-auth") ||
+  teamProofReviewPage.includes("@/lib/admin-permissions") ||
+  teamProofReviewPage.includes("@/lib/supabase-admin") ||
+  teamProofReviewPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Proof Review page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
