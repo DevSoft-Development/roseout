@@ -2071,6 +2071,25 @@ if (
   throw new Error("Careers Pipeline must preserve application stage workflow data.");
 }
 
+const careersInterviewsPage = read("apps/admin/app/admin/dashboard/careers/interviews/page.tsx");
+if (
+  !careersInterviewsPage.includes("@theouthaven/auth/admin-session") ||
+  !careersInterviewsPage.includes("@theouthaven/db/admin-client") ||
+  !careersInterviewsPage.includes("@/lib/careers/access") ||
+  !careersInterviewsPage.includes("@/lib/careers/format") ||
+  !careersInterviewsPage.includes('from("career_interviews")')
+) {
+  throw new Error("Careers Interviews must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersInterviewsPage.includes("@/lib/admin-auth") ||
+  careersInterviewsPage.includes("@/lib/admin-permissions") ||
+  careersInterviewsPage.includes("@/lib/supabase-admin") ||
+  careersInterviewsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Interviews must not import root monolith auth/database/UI helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
