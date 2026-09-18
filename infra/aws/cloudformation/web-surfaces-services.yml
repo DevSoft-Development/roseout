@@ -30,7 +30,9 @@ Parameters:
     Type: String
   BusinessAppEnvSecretArn:
     Type: String
-  ImageUri:
+  AdminImageUri:
+    Type: String
+  BusinessImageUri:
     Type: String
   GitSha:
     Type: String
@@ -53,7 +55,7 @@ Resources:
       TaskRoleArn: !Ref AdminTaskRoleArn
       ContainerDefinitions:
         - Name: admin-web
-          Image: !Ref ImageUri
+          Image: !Ref AdminImageUri
           Essential: true
           PortMappings:
             - ContainerPort: 3000
@@ -99,7 +101,7 @@ Resources:
       TaskRoleArn: !Ref BusinessTaskRoleArn
       ContainerDefinitions:
         - Name: business-web
-          Image: !Ref ImageUri
+          Image: !Ref BusinessImageUri
           Essential: true
           PortMappings:
             - ContainerPort: 3000
