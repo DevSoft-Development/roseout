@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     ),
   );
 
-  let query = supabaseAdmin
+  let query = getAdminDatabaseClient()
     .from("worker_jobs")
     .select(
       [
