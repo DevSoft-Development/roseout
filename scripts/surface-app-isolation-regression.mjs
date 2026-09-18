@@ -3138,6 +3138,46 @@ for (const source of [searchAnchorsUploadPage, searchAnchorsImportRoute]) {
   }
 }
 
+const searchAnchorsSyncPreviewPage = read("apps/admin/app/admin/dashboard/search-anchors/sync-preview/page.tsx");
+const searchAnchorsSyncPreviewClient = read("apps/admin/app/admin/dashboard/search-anchors/sync-preview/SyncPreviewClient.tsx");
+const searchAnchorsSyncPreviewRoute = read("apps/admin/app/api/admin/search-anchors/sync-preview/route.ts");
+const searchAnchorsSyncApproveRoute = read("apps/admin/app/api/admin/search-anchors/sync-preview/[runId]/approve/route.ts");
+const searchAnchorsBackfillRoute = read("apps/admin/app/api/admin/search-anchors/backfill/route.ts");
+const searchAnchorsBackfillRuntime = read("apps/admin/lib/search/anchors/backfill.ts");
+const searchAnchorsSyncPreviewRuntime = read("apps/admin/lib/search/anchors/syncPreview.ts");
+
+if (
+  !searchAnchorsSyncPreviewClient.includes("/api/admin/search-anchors/sync-preview") ||
+  !searchAnchorsSyncPreviewClient.includes("/api/admin/search-anchors/backfill") ||
+  !searchAnchorsSyncPreviewRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsSyncPreviewRoute.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsSyncPreviewRoute.includes("@/lib/search/anchors/syncPreview") ||
+  !searchAnchorsSyncApproveRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsSyncApproveRoute.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsBackfillRoute.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsBackfillRoute.includes("@/lib/search/anchors/backfill") ||
+  !searchAnchorsBackfillRuntime.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Search Anchors Dry Run & Approval must use isolated Admin auth/shared DB and preserve preview/approval/backfill behavior.");
+}
+for (const source of [
+  searchAnchorsSyncPreviewPage,
+  searchAnchorsSyncPreviewRoute,
+  searchAnchorsSyncApproveRoute,
+  searchAnchorsBackfillRoute,
+  searchAnchorsBackfillRuntime,
+  searchAnchorsSyncPreviewRuntime,
+]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Search Anchors Dry Run & Approval must not import root monolith auth/database helpers.");
+  }
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
