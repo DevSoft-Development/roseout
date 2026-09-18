@@ -3773,3 +3773,32 @@ for (const helper of [
     throw new Error(`CRM GTM helper must use shared Admin DB: ${helper}`);
   }
 }
+
+
+const crmGtmCorePages = [
+  "apps/admin/app/admin/dashboard/crm/gtm/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/gtm/sequences/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/gtm/[locationId]/page.tsx",
+];
+for (const route of crmGtmCorePages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM GTM core page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM GTM core page must not import root monolith auth/database modules: ${route}`);
+  }
+}
+for (const helper of [
+  "apps/admin/lib/gtm/queries.ts",
+  "apps/admin/lib/gtm/sequenceMetrics.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM GTM core helper must use shared Admin DB: ${helper}`);
+  }
+}
+const crmGtmPriorityPanel = read("apps/admin/components/admin/crm/GtmPriorityPanel.tsx");
+if (!crmGtmPriorityPanel.includes("/admin/dashboard/crm/gtm")) {
+  throw new Error("CRM GTM priority panel must preserve Admin GTM navigation.");
+}
