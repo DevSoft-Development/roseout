@@ -23,7 +23,7 @@ async function latestInterview(applicationId: string) {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"]);
+    await requireAdminRole(["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]);
     const { id } = await params;
     const interview = await latestInterview(id);
     if (!interview) return NextResponse.json({ error: "Schedule the interview before opening the interview workspace." }, { status: 404 });
@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"]);
+    const admin = await requireAdminRole(["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]);
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const interview = await latestInterview(id);
