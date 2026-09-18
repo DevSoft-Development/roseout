@@ -366,10 +366,6 @@ for (const microsoftDbRoute of [
   }
 }
 
-if (adminNavigation.includes('label: "Microsoft 365"') && !adminNavigation.includes('migrated: false')) {
-  throw new Error("Microsoft 365 navigation must remain unmigrated until sync and page migration are complete.");
-}
-
 for (const microsoftSyncRuntimeFile of [
   "apps/admin/lib/microsoft-365/matching.ts",
   "apps/admin/lib/microsoft-365/subscriptions.ts",
@@ -1189,6 +1185,45 @@ if (
   isolatedRankingRollout.includes("@/lib/supabase-admin")
 ) {
   throw new Error("Isolated ranking rollout helper must use shared Admin DB access.");
+}
+
+const settingsHubPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
+if (
+  !settingsHubPage.includes("@theouthaven/auth/admin-session") ||
+  !settingsHubPage.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Settings hub must use isolated Admin auth and shared DB.");
+}
+if (
+  settingsHubPage.includes("@/lib/supabase-admin") ||
+  settingsHubPage.includes("@/lib/admin-auth")
+) {
+  throw new Error("Settings hub must not import root monolith auth/database modules.");
+}
+
+for (const settingsClient of [
+  "SearchLimitsClient.tsx",
+  "SearchMaintenanceClient.tsx",
+  "AiTagHelperSettingsClient.tsx",
+  "SearchMlRolloutClient.tsx",
+  "SearchProfileRolloutClient.tsx",
+  "SearchCoreRolloutClient.tsx",
+  "AdminAppearanceSettings.tsx",
+]) {
+  const source = read(`apps/admin/app/admin/dashboard/settings/${settingsClient}`);
+  if (source.includes("@/lib/supabase") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`Settings client must remain isolated: ${settingsClient}`);
+  }
+}
+
+if (!adminNavigation.includes('href: "/admin/dashboard/settings"')) {
+  throw new Error("Settings hub navigation must be present in isolated Admin.");
+}
+if (
+  adminNavigation.includes('label: "Settings"') &&
+  !adminNavigation.includes('href: "/admin/dashboard/settings", icon: Settings, migrated: true')
+) {
+  throw new Error("Settings hub navigation must be marked migrated.");
 }
 
 const productionCi = read(".github/workflows/production-ci.yml");
