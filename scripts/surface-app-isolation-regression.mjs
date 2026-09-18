@@ -3002,6 +3002,24 @@ if (
   throw new Error("Search Anchors layout must not import root monolith auth/permission helpers.");
 }
 
+const searchAnchorsVerificationPage = read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx");
+if (
+  !searchAnchorsVerificationPage.includes("@theouthaven/db/admin-client") ||
+  !searchAnchorsVerificationPage.includes('from("locations")') ||
+  !searchAnchorsVerificationPage.includes('from("search_anchors")') ||
+  !searchAnchorsVerificationPage.includes('from("search_anchor_reconciliation_queue")') ||
+  !searchAnchorsVerificationPage.includes('from("search_anchor_discoveries")')
+) {
+  throw new Error("Search Anchors verification must use shared Admin DB and preserve verification telemetry reads.");
+}
+if (
+  searchAnchorsVerificationPage.includes("@/lib/supabase-admin") ||
+  searchAnchorsVerificationPage.includes("@/lib/admin-auth") ||
+  searchAnchorsVerificationPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Search Anchors verification must not import root monolith database/auth helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
