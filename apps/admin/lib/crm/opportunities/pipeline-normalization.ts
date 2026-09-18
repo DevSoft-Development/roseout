@@ -1,0 +1,5 @@
+import { CRM_PIPELINES, type PipelineKey } from "@/lib/crm/pipelines";
+export type PipelineFilter = PipelineKey | "unassigned" | "legacy" | "unknown" | "all";
+const legacy: Record<string, PipelineKey|"legacy"> = { claims:"business_claim", claim:"business_claim", reserve:"reserve_pro", reservations:"reserve_pro", ads:"promoted_listing", advertising:"promoted_listing", partner_launch:"partnership", sales:"legacy" };
+export function normalizeOpportunityPipeline(raw?: string|null): { filter: PipelineFilter; storageValues: (string|null)[]; label: string } { const v=raw?.trim(); if(!v||v==="all") return {filter:"all",storageValues:[],label:"All"}; if(v in CRM_PIPELINES) return {filter:v as PipelineKey,storageValues:[v],label:v.replaceAll("_"," ")}; if(v==="unassigned"||v==="__null__") return {filter:"unassigned",storageValues:[null],label:"Unassigned Pipeline"}; const mapped=legacy[v]; if(mapped && mapped!=="legacy") return {filter:mapped,storageValues:[mapped,v],label:`${mapped.replaceAll("_"," ")} (legacy alias)`}; return {filter:"legacy",storageValues:[v],label:"Legacy Pipeline"}; }
+export const resolveOpportunityPipelineFilter = normalizeOpportunityPipeline;
