@@ -2988,6 +2988,20 @@ if (
   throw new Error("Search Anchors overview must not import root monolith database/auth helpers.");
 }
 
+const searchAnchorsLayout = read("apps/admin/app/admin/dashboard/search-anchors/layout.tsx");
+if (
+  !searchAnchorsLayout.includes("@theouthaven/auth/admin-session") ||
+  !searchAnchorsLayout.includes('requireAdminRole(["superadmin", "admin"])')
+) {
+  throw new Error("Search Anchors layout must preserve data-quality access in the isolated Admin app.");
+}
+if (
+  searchAnchorsLayout.includes("@/lib/admin-auth") ||
+  searchAnchorsLayout.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Search Anchors layout must not import root monolith auth/permission helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
