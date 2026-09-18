@@ -1,4 +1,5 @@
 import {
+  DatabaseZap,
   Flag,
   Home,
   ListChecks,
@@ -56,6 +57,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: ListChecks,
     migrated: true,
     roles: ["superadmin"],
+  },
+  {
+    label: "Data Quality",
+    href: "/admin/dashboard/data-quality",
+    icon: DatabaseZap,
+    migrated: true,
+    roles: ["superadmin", "admin"],
   },
   {
     label: "Microsoft 365",
