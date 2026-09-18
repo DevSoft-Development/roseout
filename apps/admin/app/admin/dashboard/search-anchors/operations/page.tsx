@@ -28,7 +28,7 @@ export default async function SearchAnchorOperationsPage({
   const db = getAdminDatabaseClient();
 
   const [queueResult, locationCount, anchorCount, linkedCount, curatedCount, recentRuns] = await Promise.all([
-    supabaseAdmin
+    db
       .from("search_anchor_reconciliation_queue")
       .select("id, location_id, event_type, reason_code, status, priority, attempts, max_attempts, available_at, locked_at, locked_by, processed_at, last_error, created_at, updated_at")
       .order("updated_at", { ascending: false })
@@ -37,7 +37,7 @@ export default async function SearchAnchorOperationsPage({
     db.from("search_anchors").select("id", { count: "exact", head: true }),
     db.from("search_anchors").select("id", { count: "exact", head: true }).eq("source_type", "linked_location"),
     db.from("search_anchors").select("id", { count: "exact", head: true }).eq("source_type", "curated"),
-    supabaseAdmin
+    db
       .from("cron_job_runs")
       .select("id, job_key, status, started_at, completed_at, duration_ms, result, error_message")
       .eq("job_key", "search-anchor-reconciliation")
