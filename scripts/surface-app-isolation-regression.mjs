@@ -4477,3 +4477,21 @@ const marketingDiscoverClient = read("apps/admin/app/admin/dashboard/marketing/d
 if (!marketingDiscoverClient.includes("/api/admin/marketing/discover")) {
   throw new Error("Marketing Discover client must preserve protected API usage.");
 }
+
+
+const marketingSimpleReadPages = [
+  "apps/admin/app/admin/dashboard/marketing/featured-outings/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/media/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/approvals/page.tsx",
+];
+for (const route of marketingSimpleReadPages) {
+  const source = read(route);
+  if (
+    !source.includes("@theouthaven/auth/admin-session")
+    || !source.includes("@theouthaven/db/admin-client")
+    || source.includes("@/lib/admin-auth")
+    || source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Marketing read page must use isolated Admin auth and shared Admin DB: ${route}`);
+  }
+}
