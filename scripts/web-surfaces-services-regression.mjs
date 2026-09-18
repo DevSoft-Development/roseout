@@ -15,6 +15,8 @@ const microsoft365Oauth = fs.readFileSync('lib/microsoft-365/oauth.ts', 'utf8');
 const microsoft365Config = fs.readFileSync('lib/microsoft-365/config.ts', 'utf8');
 const adminTopBar = fs.readFileSync('app/admin/components/AdminTopBar.tsx', 'utf8');
 const adminPortalLoginLink = fs.readFileSync('components/auth/AdminPortalLoginLink.tsx', 'utf8');
+const isolatedAdminHealth = fs.readFileSync('apps/admin/app/api/health/platform-dr/route.ts', 'utf8');
+const isolatedBusinessHealth = fs.readFileSync('apps/business/app/api/health/platform-dr/route.ts', 'utf8');
 
 function requireText(source, value, message) {
   if (!source.includes(value)) throw new Error(message || `Missing: ${value}`);
@@ -33,6 +35,10 @@ requireText(template, 'Value: aws-admin');
 requireText(template, 'Value: aws-business');
 requireText(template, 'AdminAppEnvSecretArn');
 requireText(template, 'BusinessAppEnvSecretArn');
+requireText(template, 'AdminImageUri:');
+requireText(template, 'BusinessImageUri:');
+requireText(template, 'Image: !Ref AdminImageUri');
+requireText(template, 'Image: !Ref BusinessImageUri');
 requireText(template, 'AdminTaskRoleArn');
 requireText(template, 'BusinessTaskRoleArn');
 requireText(template, 'DeploymentCircuitBreaker:');
@@ -45,6 +51,9 @@ if (template.includes('CMD-SHELL') || template.includes('node -e') || template.i
   throw new Error('ECS health checks must not depend on inline shell commands, node -e quoting, or wget.');
 }
 
+requireText(dockerfile, 'build:surface:admin');
+requireText(dockerfile, 'build:surface:business');
+requireText(dockerfile, 'WEB_SURFACE');
 requireText(dockerfile, '.next/standalone');
 requireText(dockerfile, 'runtime-env-loader.cjs');
 requireText(dockerfile, 'healthcheck.cjs');
@@ -55,6 +64,8 @@ requireText(healthcheck, "path: '/api/health/platform-dr'");
 requireText(healthcheck, 'status >= 200 && status < 300');
 requireText(healthcheck, "request.on('timeout'");
 requireText(healthcheck, "request.on('error'");
+requireText(isolatedAdminHealth, 'PLATFORM_RUNTIME_PROVIDER', 'Isolated Admin image must expose the ALB health route.');
+requireText(isolatedBusinessHealth, 'PLATFORM_RUNTIME_PROVIDER', 'Isolated Business image must expose the ALB health route.');
 
 requireText(proxy, 'THEOUTHAVEN_WEB_SURFACE', 'AWS runtime surface isolation must be driven by the task-specific surface flag.');
 requireText(proxy, 'surface === "admin" || surface === "business"', 'Only the isolated Admin and Business runtimes should activate the surface guard.');
@@ -103,7 +114,7 @@ requireText(adminPortalLoginLink, 'https://admin.theouthaven.com/admin/login?aut
 
 const pullRequestPaths = workflow.match(/  pull_request:\n    paths:\n([\s\S]*?)\n  push:/)?.[1] || '';
 const pushPaths = workflow.match(/  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] || '';
-for (const path of ['app/auth/**', 'app/api/auth/**', 'app/api/admin/**', 'lib/**']) {
+for (const path of ['apps/admin/**', 'apps/business/**', 'packages/auth/**', 'packages/db/**', 'packages/config/**', 'app/auth/**', 'app/api/auth/**', 'app/api/admin/**', 'lib/**']) {
   requireText(pullRequestPaths, `- '${path}'`, `Pull request validation must run when ${path} changes.`);
   requireText(pushPaths, `- '${path}'`, `Production Admin/Business deployment must run when ${path} changes on main.`);
 }
@@ -112,10 +123,12 @@ requireText(workflow, '/theouthaven/${TARGET_ENV}/edge-runtime/env', 'AWS web su
 requireText(workflow, 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)', 'Vercel deploy credentials must not be copied into ECS runtime secrets.');
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$ADMIN_SECRET_ARN"');
 requireText(workflow, 'aws secretsmanager put-secret-value --secret-id "$BUSINESS_SECRET_ARN"');
-requireText(workflow, 'Build or reuse immutable application image');
+requireText(workflow, 'Build or reuse isolated Admin and Business images');
+requireText(workflow, 'for surface in admin business; do', 'AWS deployment must build independently isolated surface images.');
+requireText(workflow, '--build-arg "WEB_SURFACE=${surface}"');
+requireText(workflow, 'IMAGE_TAG="${GITHUB_SHA}-${surface}"');
+requireText(workflow, 'AdminImageUri="$ADMIN_IMAGE_URI" BusinessImageUri="$BUSINESS_IMAGE_URI"');
 requireText(workflow, 'aws ecr describe-images', 'Immutable ECR tags must be checked before push so workflow reruns are idempotent.');
-requireText(workflow, '--image-ids imageTag="$GITHUB_SHA"', 'ECR reuse must be keyed by the immutable Git SHA tag.');
-requireText(workflow, 'Reusing existing immutable ECR image for ${GITHUB_SHA}.');
 requireText(workflow, 'docker push "$IMAGE_URI"');
 requireText(workflow, 'Recover failed services stack');
 requireText(workflow, 'ROLLBACK_COMPLETE');
