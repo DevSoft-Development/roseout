@@ -88,7 +88,7 @@ function decisionReason(prefix: string, reasonCode: string, note: unknown) {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"]);
+    const admin = await requireAdminRole(["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]);
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
     const action = typeof body.action === "string" ? body.action : "";
