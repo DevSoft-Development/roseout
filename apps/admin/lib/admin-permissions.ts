@@ -4,7 +4,7 @@ export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
   superadmin: "Superadmin", admin: "Admin", manager: "Manager", editor: "Editor", reviewer: "Reviewer",
   ambassador: "Ambassador Team", experience_team: "Experience Team", partner_ambassador: "Partner Ambassador",
   marketing_intern: "Marketing Intern", marketing_specialist: "Marketing Specialist", marketing_manager: "Marketing Manager",
-  viewer: "Viewer", experience: "Experience Team",
+  viewer: "Viewer",
 };
 
 export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
@@ -20,7 +20,6 @@ export const ADMIN_ROLE_DESCRIPTIONS: Record<AdminRole, string> = {
   marketing_specialist: "Marketing operations access for content, campaigns, creators, community, analytics, scheduling, and approved publishing workflows.",
   marketing_manager: "Marketing team oversight with routine content approvals, campaign management, creator management, publishing, and full marketing analytics.",
   viewer: "Read-only access to approved dashboard areas.",
-  experience: "Legacy compatibility token that normalizes to Experience Team and is not assignable.",
 };
 
 export const ALL_ADMIN_ROLES = ["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience_team", "partner_ambassador", "marketing_intern", "marketing_specialist", "marketing_manager", "viewer"] as const satisfies readonly AdminRole[];
