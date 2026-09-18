@@ -2001,6 +2001,58 @@ if (
   throw new Error("Short Links APIs must preserve isolated short-link runtime helpers.");
 }
 
+const rolesPage = read("apps/admin/app/admin/dashboard/roles/page.tsx");
+const rolesConsole = read("apps/admin/components/admin/AdminRolesConsole.tsx");
+const adminPermissions = read("apps/admin/lib/admin-permissions.ts");
+const adminRolePolicy = read("apps/admin/lib/admin-role-policy.ts");
+const adminRoleAudit = read("apps/admin/lib/admin-role-audit.ts");
+const adminSystem = read("apps/admin/lib/admin-system.ts");
+for (const source of [rolesPage, rolesConsole, adminPermissions, adminRolePolicy, adminRoleAudit, adminSystem]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/users/roles")
+  ) {
+    throw new Error("Roles & Permissions slice must not import root monolith auth/database/role helpers.");
+  }
+}
+if (
+  !rolesPage.includes("@theouthaven/auth/admin-session") ||
+  !rolesPage.includes('requireAdminRole(["superadmin"])') ||
+  !rolesPage.includes("@/lib/admin-role-policy") ||
+  !rolesPage.includes("@/lib/admin-system") ||
+  !rolesPage.includes("@/lib/admin-role-audit")
+) {
+  throw new Error("Roles & Permissions page must preserve isolated superadmin authorization and runtime loaders.");
+}
+for (const roleRoute of [
+  "apps/admin/app/api/admin/system/role-policies/[role]/route.ts",
+  "apps/admin/app/api/admin/system/role-members/route.ts",
+  "apps/admin/app/api/admin/system/role-members/[adminId]/route.ts",
+]) {
+  const source = read(roleRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes('requireAdminApiRole(["superadmin"])') ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Roles API must enforce isolated superadmin API authorization: ${roleRoute}`);
+  }
+}
+if (
+  !adminRolePolicy.includes("@theouthaven/db/admin-client") ||
+  !adminSystem.includes("@theouthaven/db/admin-client") ||
+  !adminRoleAudit.includes("@theouthaven/db/admin-client")
+) {
+  throw new Error("Roles runtimes must use the shared Admin DB package.");
+}
+if (
+  !read("apps/admin/app/admin/dashboard/admin-navigation.ts").includes("/admin/dashboard/roles")
+) {
+  throw new Error("Roles & Permissions navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
