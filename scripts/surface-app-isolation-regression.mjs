@@ -1048,6 +1048,65 @@ for (const searchDocumentHelper of [
   }
 }
 
+const operationsWorkersPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
+if (
+  !operationsWorkersPage.includes("@theouthaven/auth/admin-session") ||
+  !operationsWorkersPage.includes("@theouthaven/db/admin-client") ||
+  !operationsWorkersPage.includes('requireAdminRole(["superadmin", "admin", "experience_team"])')
+) {
+  throw new Error("Operations Workers page must use isolated Admin auth/shared DB and preserve monitoring roles.");
+}
+if (
+  operationsWorkersPage.includes("@/lib/supabase-admin") ||
+  operationsWorkersPage.includes("@/lib/admin-auth") ||
+  operationsWorkersPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Operations Workers page must not import root monolith auth/database modules.");
+}
+
+const workerJobsRoute = read("apps/admin/app/api/admin/workers/jobs/route.ts");
+if (
+  !workerJobsRoute.includes("@/lib/admin-api-auth") ||
+  !workerJobsRoute.includes("@theouthaven/db/admin-client") ||
+  !workerJobsRoute.includes("@/lib/workers/enqueue")
+) {
+  throw new Error("Worker jobs API must use isolated API auth, shared DB, and local enqueue runtime.");
+}
+if (
+  !workerJobsRoute.includes('["superadmin", "admin", "experience_team"]') ||
+  !workerJobsRoute.includes('["superadmin"]')
+) {
+  throw new Error("Worker jobs API must preserve read versus mutation role split.");
+}
+
+for (const workerMutationRoute of [
+  "apps/admin/app/api/admin/workers/jobs/[id]/retry/route.ts",
+  "apps/admin/app/api/admin/workers/jobs/[id]/cancel/route.ts",
+]) {
+  const source = read(workerMutationRoute);
+  if (
+    !source.includes("@/lib/admin-api-auth") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    !source.includes('requireAdminApiRole(["superadmin"])')
+  ) {
+    throw new Error(`Worker mutation API must remain isolated and superadmin-only: ${workerMutationRoute}`);
+  }
+}
+
+for (const workerRuntime of [
+  "apps/admin/lib/workers/catalog.ts",
+  "apps/admin/lib/workers/operationsMetrics.ts",
+  "apps/admin/lib/workers/enqueue.ts",
+]) {
+  const source = read(workerRuntime);
+  if (source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Worker runtime must not import root Supabase helper: ${workerRuntime}`);
+  }
+}
+if (!read("apps/admin/lib/workers/enqueue.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("Worker enqueue runtime must use shared Admin DB.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
