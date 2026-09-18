@@ -2334,6 +2334,46 @@ if (
   throw new Error("Website Hosting migrations must preserve import, domain, and live-health state tracking.");
 }
 
+const websiteVerificationPage = read("apps/admin/app/admin/dashboard/website-hosting/verification/page.tsx");
+const websiteVerificationRuntime = read("apps/admin/lib/websites/production-verification.ts");
+const websiteGatewayRuntime = read("apps/admin/lib/domains/gateway.ts");
+const websiteDesignDirections = read("apps/admin/lib/websites/design-directions.ts");
+const websiteCompositionProfiles = read("apps/admin/lib/websites/composition-profiles.ts");
+if (
+  !websiteVerificationPage.includes("@theouthaven/auth/admin-session") ||
+  !websiteVerificationPage.includes("@theouthaven/auth/admin-roles") ||
+  !websiteVerificationPage.includes("@/lib/websites/production-verification") ||
+  !websiteVerificationPage.includes("@/lib/domains/gateway") ||
+  !websiteVerificationPage.includes("@/lib/websites/composition-profiles") ||
+  !websiteVerificationPage.includes("@/lib/websites/design-directions")
+) {
+  throw new Error("Website Hosting verification must use isolated Admin auth and verification runtimes.");
+}
+for (const source of [websiteVerificationPage, websiteVerificationRuntime, websiteGatewayRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/components/admin/AdminDesignSystem")
+  ) {
+    throw new Error("Website Hosting verification slice must not import root monolith auth/database/UI helpers.");
+  }
+}
+if (
+  !websiteVerificationRuntime.includes("@theouthaven/db/admin-client") ||
+  !websiteVerificationRuntime.includes('from("business_websites")') ||
+  !websiteVerificationRuntime.includes('from("website_hosting_nodes")') ||
+  !websiteVerificationRuntime.includes('from("website_hosting_replicas")')
+) {
+  throw new Error("Website production verification must preserve shared DB-backed website, node, and replica checks.");
+}
+if (
+  !websiteDesignDirections.includes("WEBSITE_DESIGN_DIRECTIONS") ||
+  !websiteCompositionProfiles.includes("WEBSITE_COMPOSITION_PROFILES")
+) {
+  throw new Error("Website verification must preserve premium design catalog coverage.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
