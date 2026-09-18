@@ -2621,6 +2621,30 @@ if (!betaSearchLabRedirect.includes("/admin/dashboard/search-health")) {
   throw new Error("Beta Search Lab redirect must continue to Search Health.");
 }
 
+const legacyBusinessChurnRisk = read("apps/admin/app/admin/dashboard/businesses/churn-risk/page.tsx");
+const legacyBusinessCommunicationCenter = read("apps/admin/app/admin/dashboard/businesses/communication-center/page.tsx");
+const legacyBusinessFollowups = read("apps/admin/app/admin/dashboard/businesses/followups/page.tsx");
+
+if (!legacyBusinessChurnRisk.includes('/admin/dashboard/crm/operations?view=churn-risk')) {
+  throw new Error("Legacy Business churn-risk redirect must preserve CRM operations target.");
+}
+if (!legacyBusinessCommunicationCenter.includes('/admin/dashboard/crm/operations?view=communication-center')) {
+  throw new Error("Legacy Business communication-center redirect must preserve CRM operations target.");
+}
+if (!legacyBusinessFollowups.includes('/admin/dashboard/crm/work-queue?view=follow-ups')) {
+  throw new Error("Legacy Business followups redirect must preserve CRM work-queue target.");
+}
+for (const source of [legacyBusinessChurnRisk, legacyBusinessCommunicationCenter, legacyBusinessFollowups]) {
+  if (
+    source.includes("@/lib/routes") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Legacy Business redirects must remain self-contained inside isolated Admin.");
+  }
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
