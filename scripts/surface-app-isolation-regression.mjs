@@ -1551,6 +1551,25 @@ if (
   throw new Error("Location Change Requests must not import root monolith auth/database/UI helpers.");
 }
 
+const teamPayrollPage = read("apps/admin/app/admin/dashboard/team/payroll/page.tsx");
+if (
+  !teamPayrollPage.includes("@theouthaven/auth/admin-session") ||
+  !teamPayrollPage.includes("@theouthaven/db/admin-client") ||
+  !teamPayrollPage.includes('requireAdminRole(["superadmin", "admin"])') ||
+  !teamPayrollPage.includes("team_work_sessions") ||
+  !teamPayrollPage.includes("team_payroll_batches")
+) {
+  throw new Error("Payroll page must use isolated security-audit auth/shared DB and preserve payroll data.");
+}
+if (
+  teamPayrollPage.includes("@/lib/admin-auth") ||
+  teamPayrollPage.includes("@/lib/admin-permissions") ||
+  teamPayrollPage.includes("@/lib/supabase-admin") ||
+  teamPayrollPage.includes("@/lib/team-tools")
+) {
+  throw new Error("Payroll page must not import root monolith auth/database/team helpers.");
+}
+
 const completedSearchProfilesPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/completed/page.tsx");
 if (
   !completedSearchProfilesPage.includes("@theouthaven/auth/admin-session") ||
