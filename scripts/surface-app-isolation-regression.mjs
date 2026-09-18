@@ -1889,6 +1889,44 @@ if (
   throw new Error("Experiences public links must remain on the consumer surface.");
 }
 
+const eventsPage = read("apps/admin/app/admin/dashboard/events/page.tsx");
+const eventsActions = read("apps/admin/app/admin/dashboard/events/actions.ts");
+if (
+  !eventsPage.includes("@theouthaven/auth/admin-session") ||
+  !eventsPage.includes("@theouthaven/db/admin-client") ||
+  !eventsPage.includes('requireAdminRole(["superadmin", "admin", "editor"])')
+) {
+  throw new Error("Events page must use isolated Admin auth/shared DB and preserve event roles.");
+}
+if (
+  eventsPage.includes("@/lib/admin-auth") ||
+  eventsPage.includes("@/lib/admin-permissions") ||
+  eventsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Events page must not import root monolith auth/database helpers.");
+}
+if (
+  !eventsPage.includes('href={`${consumerOrigin}/events`}') ||
+  !eventsPage.includes('href={`${consumerOrigin}/organizers/dashboard`}') ||
+  !eventsPage.includes('href={`${consumerOrigin}/events/${event.id}`}')
+) {
+  throw new Error("Events public links must remain on the consumer surface.");
+}
+if (
+  !eventsActions.includes("@theouthaven/auth/admin-session") ||
+  !eventsActions.includes("@theouthaven/db/admin-client") ||
+  !eventsActions.includes('requireAdminRole(["superadmin", "admin", "editor"])')
+) {
+  throw new Error("Events actions must use isolated Admin auth/shared DB and preserve management roles.");
+}
+if (
+  eventsActions.includes("@/lib/admin-auth") ||
+  eventsActions.includes("@/lib/admin-permissions") ||
+  eventsActions.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Events actions must not import root monolith auth/database helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
