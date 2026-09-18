@@ -23,7 +23,7 @@ function score(value: unknown, required = true) {
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdminRole(["superadmin", "admin", "manager", "reviewer", "experience_team"]);
+    const admin = await requireAdminRole(["superadmin", "admin", "manager", "editor", "ambassador", "experience_team", "viewer"]);
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
