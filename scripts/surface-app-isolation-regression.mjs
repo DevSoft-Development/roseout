@@ -443,6 +443,41 @@ if (
   throw new Error("Microsoft 365 navigation must be marked migrated after page and sync migration.");
 }
 
+const intuneDevicesPage = read("apps/admin/app/admin/dashboard/security/devices/page.tsx");
+if (
+  !intuneDevicesPage.includes("@theouthaven/auth/admin-session") ||
+  !intuneDevicesPage.includes("@/lib/microsoft-365/intune") ||
+  !intuneDevicesPage.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Device Management page must use isolated superadmin auth and Intune runtime.");
+}
+if (
+  intuneDevicesPage.includes("@/lib/admin-auth") ||
+  intuneDevicesPage.includes("@/lib/admin-permissions")
+) {
+  throw new Error("Device Management page must not import root monolith auth/permission modules.");
+}
+
+const intuneDeviceActionRoute = read("apps/admin/app/api/admin/integrations/intune/device-action/route.ts");
+if (
+  !intuneDeviceActionRoute.includes("@theouthaven/auth/admin-session") ||
+  !intuneDeviceActionRoute.includes("@/lib/microsoft-365/intune") ||
+  !intuneDeviceActionRoute.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Intune device action must remain isolated and superadmin-only.");
+}
+if (!intuneDeviceActionRoute.includes('action !== "syncDevice"')) {
+  throw new Error("Intune device action route must remain restricted to syncDevice.");
+}
+
+const intuneRuntime = read("apps/admin/lib/microsoft-365/intune.ts");
+if (
+  !intuneRuntime.includes("./graph") ||
+  intuneRuntime.includes("@/lib/")
+) {
+  throw new Error("Intune runtime must use isolated Microsoft Graph helpers and avoid root lib imports.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
