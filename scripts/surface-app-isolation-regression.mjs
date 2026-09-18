@@ -478,6 +478,44 @@ if (
   throw new Error("Intune runtime must use isolated Microsoft Graph helpers and avoid root lib imports.");
 }
 
+const appleEnrollmentPage = read("apps/admin/app/admin/dashboard/security/apple-devices/page.tsx");
+if (
+  !appleEnrollmentPage.includes("@theouthaven/auth/admin-session") ||
+  !appleEnrollmentPage.includes("@/lib/apple-business/api") ||
+  !appleEnrollmentPage.includes("@/lib/microsoft-365/intune") ||
+  !appleEnrollmentPage.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Apple Enrollment page must use isolated superadmin auth, Apple Business runtime, and Intune runtime.");
+}
+if (
+  appleEnrollmentPage.includes("@/lib/admin-auth") ||
+  appleEnrollmentPage.includes("@/lib/admin-permissions") ||
+  appleEnrollmentPage.includes("@/components/admin/")
+) {
+  throw new Error("Apple Enrollment page must not import root monolith Admin modules/components.");
+}
+
+const appleEnrollmentRoute = read("apps/admin/app/api/admin/integrations/apple-device-enrollment/prepare/route.ts");
+if (
+  !appleEnrollmentRoute.includes("@theouthaven/auth/admin-session") ||
+  !appleEnrollmentRoute.includes("@/lib/apple-business/api") ||
+  !appleEnrollmentRoute.includes("@/lib/microsoft-365/intune") ||
+  !appleEnrollmentRoute.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Apple Enrollment action route must remain isolated and superadmin-only.");
+}
+if (
+  !appleEnrollmentRoute.includes('action === "prepare"') ||
+  !appleEnrollmentRoute.includes('action !== "sync-intune"')
+) {
+  throw new Error("Apple Enrollment action route must remain restricted to prepare and sync-intune.");
+}
+
+const appleBusinessRuntime = read("apps/admin/lib/apple-business/api.ts");
+if (appleBusinessRuntime.includes("@/lib/")) {
+  throw new Error("Apple Business runtime must not import root monolith modules.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
