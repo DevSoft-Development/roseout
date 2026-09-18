@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  await requireAdminApiRole(ADMIN_PAGE_ACCESS.searchHealth);
+  const auth = await requireAdminApiRole(["superadmin", "admin", "experience_team"]);
+  if (auth.error) return auth.error;
   const body = await request.json();
   const id = String(body?.id ?? "");
   const status = String(body?.status ?? "");
