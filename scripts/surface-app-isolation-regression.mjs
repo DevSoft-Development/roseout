@@ -2645,6 +2645,67 @@ for (const source of [legacyBusinessChurnRisk, legacyBusinessCommunicationCenter
   }
 }
 
+const businessesPage = read("apps/admin/app/admin/dashboard/businesses/page.tsx");
+const businessViewPage = read("apps/admin/app/admin/dashboard/businesses/view/page.tsx");
+const businessDetailPage = read("apps/admin/app/admin/dashboard/businesses/[id]/page.tsx");
+const businessOutreachPage = read("apps/admin/app/admin/dashboard/businesses/outreach/page.tsx");
+const businessUpgradePage = read("apps/admin/app/admin/dashboard/businesses/upgrade-opportunities/page.tsx");
+const businessCrmRuntime = read("apps/admin/lib/admin/business-crm.ts");
+const businessCommunicationSection = read("apps/admin/components/admin/business/BusinessCommunicationSection.tsx");
+const businessImpersonateButton = read("apps/admin/components/admin/ImpersonateButton.tsx");
+const businessImpersonateRoute = read("apps/admin/app/api/admin/impersonate/route.ts");
+
+for (const source of [
+  businessViewPage,
+  businessDetailPage,
+  businessOutreachPage,
+  businessUpgradePage,
+  businessCrmRuntime,
+  businessCommunicationSection,
+  businessImpersonateRoute,
+]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-crm")
+  ) {
+    throw new Error("Business CRM slice must not import root monolith auth/database/CRM helpers.");
+  }
+}
+if (
+  !businessViewPage.includes("@theouthaven/auth/admin-session") ||
+  !businessViewPage.includes("@/lib/admin/business-crm") ||
+  !businessDetailPage.includes("@theouthaven/db/admin-client") ||
+  !businessOutreachPage.includes('requireAdminRole(["superadmin", "admin", "ambassador"])') ||
+  !businessUpgradePage.includes('requireAdminRole(["superadmin", "admin", "ambassador"])')
+) {
+  throw new Error("Business CRM pages must preserve isolated auth, role access, and shared DB reads.");
+}
+if (
+  !businessCrmRuntime.includes("@theouthaven/db/admin-client") ||
+  !businessCrmRuntime.includes('"admin_crm_locations_view"') ||
+  !businessCrmRuntime.includes('"business_crm_snapshot"') ||
+  !businessCrmRuntime.includes('"locations"') ||
+  !businessCrmRuntime.includes("getUpgradeFlags")
+) {
+  throw new Error("Business CRM runtime must preserve CRM fallback sources and upgrade signals.");
+}
+if (
+  !businessImpersonateButton.includes("/api/admin/impersonate") ||
+  !businessImpersonateRoute.includes("@/lib/admin-api-auth") ||
+  !businessImpersonateRoute.includes("@theouthaven/db/admin-client") ||
+  !businessImpersonateRoute.includes('requireAdminApiRole(["superadmin"])')
+) {
+  throw new Error("Business CRM impersonation must preserve isolated superadmin-only API behavior.");
+}
+if (
+  !businessesPage.includes("/admin/dashboard/businesses/followups") ||
+  !businessesPage.includes("/admin/dashboard/businesses/communication-center")
+) {
+  throw new Error("Business overview tabs must point at the isolated legacy redirect routes.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
