@@ -109,7 +109,18 @@ export function TeamMemberProfileForm({
     if (res.ok) window.location.reload();
   }
 
-  const flagFields: Array<[keyof TeamProfile, string]> = [
+  type FlagField =
+    | "include_in_payroll"
+    | "can_clock_in"
+    | "can_track_work"
+    | "can_do_site_visits"
+    | "can_do_social_outreach"
+    | "can_work_support_tickets"
+    | "can_send_claim_codes"
+    | "can_send_owner_password_reset"
+    | "can_use_demo_mode";
+
+  const flagFields: Array<[FlagField, string]> = [
     ["include_in_payroll", "Include in payroll"],
     ["can_clock_in", "Can clock in"],
     ["can_track_work", "Can track work"],
@@ -225,17 +236,19 @@ export function TeamMemberProfileForm({
             className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm font-bold"
           >
             <input
-              name={{
-                include_in_payroll: "includeInPayroll",
-                can_clock_in: "canClockIn",
-                can_track_work: "canTrackWork",
-                can_do_site_visits: "canDoSiteVisits",
-                can_do_social_outreach: "canDoSocialOutreach",
-                can_work_support_tickets: "canWorkSupportTickets",
-                can_send_claim_codes: "canSendClaimCodes",
-                can_send_owner_password_reset: "canSendOwnerPasswordReset",
-                can_use_demo_mode: "canUseDemoMode",
-              }[field]}
+              name={
+                ({
+                  include_in_payroll: "includeInPayroll",
+                  can_clock_in: "canClockIn",
+                  can_track_work: "canTrackWork",
+                  can_do_site_visits: "canDoSiteVisits",
+                  can_do_social_outreach: "canDoSocialOutreach",
+                  can_work_support_tickets: "canWorkSupportTickets",
+                  can_send_claim_codes: "canSendClaimCodes",
+                  can_send_owner_password_reset: "canSendOwnerPasswordReset",
+                  can_use_demo_mode: "canUseDemoMode",
+                } satisfies Record<FlagField, string>)[field]
+              }
               type="checkbox"
               defaultChecked={
                 profile
