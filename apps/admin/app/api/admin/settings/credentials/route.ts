@@ -1,0 +1,298 @@
+import { NextRequest } from "next/server";
+import { platformIntegrationApiConfigured, testStampsConnectionViaIntegrationApi } from "@/lib/aws/integration-api";
+import { getCurrentAdminOrNull } from "@theouthaven/auth/admin-session";
+import { logAdminAuditEvent } from "@/lib/admin-audit-log";
+import {
+  CREDENTIAL_PROVIDERS,
+  allowedCredentialFieldKeys,
+  getCredentialProvider,
+  type CredentialProviderId,
+} from "@/lib/admin/credential-vault-catalog";
+import {
+  getRuntimeCredentialStatus,
+  getRuntimeCredentialValues,
+} from "@/lib/admin/credential-runtime-inventory";
+import {
+  deleteCredentialVaultProvider,
+  getCredentialVaultSummary,
+  requestCredentialVaultRuntimeSync,
+  testCredentialVaultProvider,
+  updateCredentialVaultProvider,
+  type CredentialVaultEnvironment,
+} from "@/lib/aws/admin-credential-vault";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+async function requireSuperadminApi() {
+  const admin = await getCurrentAdminOrNull();
+  if (!admin) {
+    return {
+      admin: null,
+      response: Response.json({ ok: false, error: "unauthorized" }, { status: 401 }),
+    };
+  }
+  if (admin.role !== "superadmin") {
+    return {
+      admin: null,
+      response: Response.json({ ok: false, error: "forbidden" }, { status: 403 }),
+    };
+  }
+  return { admin, response: null };
+}
+
+function environmentFrom(value: unknown): CredentialVaultEnvironment | null {
+  return value === "production" || value === "staging" ? value : null;
+}
+
+function providerFrom(value: unknown): CredentialProviderId | null {
+  return getCredentialProvider(value)?.id ?? null;
+}
+
+function safeError(error: unknown) {
+  const code = error instanceof Error ? error.message : "credential_vault_error";
+  const stampsMessages: Record<string, string> = {
+    stamps_getaccountinfo_failed: "Stamps.com authentication failed. Use the Stamps API/partner username, not the email address used to sign in to the Stamps website. In Stamps.com, go to Manage Account > Profile > Personal Contact Info > Get Username, save that username in the vault, then test again.",
+    stamps_credentials_not_configured: "Stamps.com production credentials are incomplete. Save the Production Integration ID, API username, and password, then test again.",
+    stamps_getaccountinfo_unavailable: "Stamps.com could not be reached for the non-transactional account test. No postage was purchased. Try the test again later.",
+    stamps_wsdl_unavailable: "The approved Stamps.com SWS/IM v160 service definition could not be reached. No postage was purchased.",
+    stamps_wsdl_namespace_mismatch: "The Stamps.com service definition did not match the approved SWS/IM v160 namespace. No postage was purchased.",
+    stamps_unavailable: "The AWS Stamps.com integration is temporarily unavailable. No postage was purchased.",
+  };
+  if (stampsMessages[code]) return stampsMessages[code];
+
+  const allowed = new Set([
+    "credential_vault_gateway_not_configured",
+    "credential_vault_gateway_requires_https",
+    "credential_not_configured",
+    "runtime_credential_not_available",
+    "github_credential_test_failed",
+    "vercel_credential_test_failed",
+    "huggingface_credential_test_failed",
+    "resend_credential_test_failed",
+    "supabase_credential_test_failed",
+    "twilio_credential_test_failed",
+    "meta_credential_test_failed",
+    "microsoft_credential_test_failed",
+  ]);
+  return allowed.has(code) ? code : "credential_vault_request_failed";
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireSuperadminApi();
+  if (auth.response) return auth.response;
+
+  const environment = environmentFrom(request.nextUrl.searchParams.get("environment")) || "production";
+  try {
+    const summary = await getCredentialVaultSummary(environment);
+    const providers = summary.providers.map((provider) => ({
+      ...provider,
+      ...getRuntimeCredentialStatus(provider.provider, provider.configuredFields),
+    }));
+    return Response.json({ ...summary, providers }, { headers: { "cache-control": "no-store" } });
+  } catch (vaultError) {
+    return Response.json({ ok: false, error: safeError(vaultError) }, { status: 502 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  const auth = await requireSuperadminApi();
+  if (auth.response || !auth.admin) return auth.response!;
+  const adminUser = auth.admin;
+
+  const body = await request.json().catch(() => null) as {
+    provider?: unknown;
+    environment?: unknown;
+    values?: unknown;
+    clearFields?: unknown;
+  } | null;
+
+  const provider = providerFrom(body?.provider);
+  const environment = environmentFrom(body?.environment);
+  if (!provider || !environment || !body?.values || typeof body.values !== "object" || Array.isArray(body.values)) {
+    return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
+  }
+
+  const allowedFields = allowedCredentialFieldKeys(provider);
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(body.values as Record<string, unknown>)) {
+    if (!allowedFields.has(key) || typeof value !== "string") {
+      return Response.json({ ok: false, error: "invalid_credential_field" }, { status: 400 });
+    }
+    if (value.trim()) values[key] = value.trim();
+  }
+
+  const clearFields = Array.isArray(body.clearFields)
+    ? body.clearFields.filter((value): value is string => typeof value === "string" && allowedFields.has(value))
+    : [];
+
+  if (!Object.keys(values).length && !clearFields.length) {
+    return Response.json({ ok: false, error: "no_credential_changes" }, { status: 400 });
+  }
+
+  try {
+    const result = await updateCredentialVaultProvider({ provider, environment, values, clearFields });
+    const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
+    await logAdminAuditEvent({
+      actor: adminUser,
+      action: "credential_vault.updated",
+      entityType: "credential_provider",
+      entityId: `${environment}:${provider}`,
+      summary: `Updated ${provider} credentials for ${environment}`,
+      metadata: {
+        provider,
+        environment,
+        updatedFields: Object.keys(values),
+        clearedFields: clearFields,
+        configuredFields: result.configuredFields,
+        runtimeSync,
+      },
+      request,
+    });
+    return Response.json({ ...result, runtimeSync }, { headers: { "cache-control": "no-store" } });
+  } catch (vaultError) {
+    return Response.json({ ok: false, error: safeError(vaultError) }, { status: 502 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireSuperadminApi();
+  if (auth.response || !auth.admin) return auth.response!;
+  const adminUser = auth.admin;
+
+  const body = await request.json().catch(() => null) as {
+    provider?: unknown;
+    environment?: unknown;
+    action?: unknown;
+  } | null;
+  const environment = environmentFrom(body?.environment);
+  if (!environment) {
+    return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
+  }
+
+  try {
+    if (body?.action === "import_all_runtime") {
+      const summary = await getCredentialVaultSummary(environment);
+      const existingByProvider = new Map(summary.providers.map((item) => [item.provider, item]));
+      const migrated: Array<{ provider: CredentialProviderId; fields: string[] }> = [];
+      const skipped: Array<{ provider: CredentialProviderId; reason: string }> = [];
+
+      for (const definition of CREDENTIAL_PROVIDERS) {
+        const current = existingByProvider.get(definition.id);
+        if (current?.configuredFields?.length) {
+          skipped.push({ provider: definition.id, reason: "already_vault_managed" });
+          continue;
+        }
+        const values = getRuntimeCredentialValues(definition.id);
+        if (!Object.keys(values).length) {
+          const state = getRuntimeCredentialStatus(definition.id, []).migrationState;
+          skipped.push({ provider: definition.id, reason: state });
+          continue;
+        }
+        const result = await updateCredentialVaultProvider({ provider: definition.id, environment, values });
+        migrated.push({ provider: definition.id, fields: result.configuredFields });
+      }
+
+      const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
+      await logAdminAuditEvent({
+        actor: adminUser,
+        action: "credential_vault.runtime_imported_all",
+        entityType: "credential_vault",
+        entityId: environment,
+        summary: `Imported all runtime-readable credentials into the central vault for ${environment}`,
+        metadata: {
+          environment,
+          migrated: migrated.map((item) => ({ provider: item.provider, fields: item.fields })),
+          skipped,
+          runtimeSync,
+        },
+        request,
+      });
+      return Response.json({ ok: true, migrated, skipped, runtimeSync }, { headers: { "cache-control": "no-store" } });
+    }
+
+    const provider = providerFrom(body?.provider);
+    if (!provider) {
+      return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
+    }
+
+    if (body?.action === "import_runtime") {
+      const values = getRuntimeCredentialValues(provider);
+      if (!Object.keys(values).length) {
+        return Response.json({ ok: false, error: "runtime_credential_not_available" }, { status: 409 });
+      }
+      const result = await updateCredentialVaultProvider({ provider, environment, values });
+      const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
+      await logAdminAuditEvent({
+        actor: adminUser,
+        action: "credential_vault.runtime_imported",
+        entityType: "credential_provider",
+        entityId: `${environment}:${provider}`,
+        summary: `Imported existing runtime ${provider} credentials into the central vault`,
+        metadata: {
+          provider,
+          environment,
+          importedFields: Object.keys(values),
+          configuredFields: result.configuredFields,
+          runtimeSync,
+        },
+        request,
+      });
+      return Response.json({ ...result, migrationState: "vault_managed", runtimeSync }, { headers: { "cache-control": "no-store" } });
+    }
+
+    if (provider === "stamps" && environment === "production" && !platformIntegrationApiConfigured()) {
+      throw new Error("credential_vault_gateway_not_configured");
+    }
+
+    const result = provider === "stamps" && environment === "production"
+      ? await testStampsConnectionViaIntegrationApi().then((connection) => ({
+          ok: connection.ok,
+          provider: "stamps" as const,
+          status: "healthy" as const,
+          detail: connection.message,
+        }))
+      : await testCredentialVaultProvider(provider, environment);
+    await logAdminAuditEvent({
+      actor: adminUser,
+      action: "credential_vault.tested",
+      entityType: "credential_provider",
+      entityId: `${environment}:${provider}`,
+      summary: `Tested ${provider} credentials for ${environment}`,
+      metadata: { provider, environment, status: result.status },
+      request,
+    });
+    return Response.json(result, { headers: { "cache-control": "no-store" } });
+  } catch (vaultError) {
+    return Response.json({ ok: false, error: safeError(vaultError) }, { status: 502 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireSuperadminApi();
+  if (auth.response || !auth.admin) return auth.response!;
+  const adminUser = auth.admin;
+
+  const provider = providerFrom(request.nextUrl.searchParams.get("provider"));
+  const environment = environmentFrom(request.nextUrl.searchParams.get("environment"));
+  if (!provider || !environment) {
+    return Response.json({ ok: false, error: "invalid_credential_request" }, { status: 400 });
+  }
+
+  try {
+    const result = await deleteCredentialVaultProvider(provider, environment);
+    const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
+    await logAdminAuditEvent({
+      actor: adminUser,
+      action: "credential_vault.cleared",
+      entityType: "credential_provider",
+      entityId: `${environment}:${provider}`,
+      summary: `Cleared ${provider} credentials for ${environment}`,
+      metadata: { provider, environment, configuredFields: [], runtimeSync },
+      request,
+    });
+    return Response.json({ ...result, runtimeSync }, { headers: { "cache-control": "no-store" } });
+  } catch (vaultError) {
+    return Response.json({ ok: false, error: safeError(vaultError) }, { status: 502 });
+  }
+}

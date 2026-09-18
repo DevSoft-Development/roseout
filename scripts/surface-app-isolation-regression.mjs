@@ -1440,6 +1440,66 @@ for (const searchProfileDetailRoute of [
   }
 }
 
+const credentialsVaultPage = read("apps/admin/app/admin/dashboard/credentials/page.tsx");
+if (
+  !credentialsVaultPage.includes("@theouthaven/auth/admin-session") ||
+  !credentialsVaultPage.includes('requireAdminRole(["superadmin"])')
+) {
+  throw new Error("Credentials Vault page must use isolated superadmin auth.");
+}
+if (credentialsVaultPage.includes("@/lib/admin-auth")) {
+  throw new Error("Credentials Vault page must not import root Admin auth.");
+}
+
+const credentialsVaultApi = read("apps/admin/app/api/admin/settings/credentials/route.ts");
+if (
+  !credentialsVaultApi.includes("@theouthaven/auth/admin-session") ||
+  !credentialsVaultApi.includes("@/lib/admin-audit-log") ||
+  !credentialsVaultApi.includes("@/lib/aws/admin-credential-vault") ||
+  !credentialsVaultApi.includes("@/lib/admin/credential-runtime-inventory")
+) {
+  throw new Error("Credentials Vault API must use isolated Admin auth, audit, runtime inventory, and vault helpers.");
+}
+if (
+  credentialsVaultApi.includes("@/lib/admin-api-auth") ||
+  credentialsVaultApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Credentials Vault API must not import root API auth/database modules.");
+}
+
+for (const credentialRuntimeFile of [
+  "apps/admin/lib/admin/credential-vault-catalog.ts",
+  "apps/admin/lib/admin/credential-runtime-inventory.ts",
+  "apps/admin/lib/aws/admin-credential-vault.ts",
+  "apps/admin/lib/marketing/social-secrets.ts",
+  "apps/admin/lib/marketing/social-provider-config.ts",
+  "apps/admin/lib/marketing/platform-instagram-oauth.ts",
+]) {
+  const source = read(credentialRuntimeFile);
+  if (source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Credentials runtime must not import root Supabase admin: ${credentialRuntimeFile}`);
+  }
+}
+
+const instagramCredentialStart = read("apps/admin/app/api/admin/settings/credentials/instagram/route.ts");
+const instagramCredentialCallback = read("apps/admin/app/api/admin/settings/credentials/instagram/callback/route.ts");
+for (const source of [instagramCredentialStart, instagramCredentialCallback]) {
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    source.includes("@/lib/admin-api-auth")
+  ) {
+    throw new Error("Credentials Instagram OAuth routes must use isolated Admin auth.");
+  }
+}
+if (
+  !read("apps/admin/lib/marketing/platform-instagram-oauth.ts").includes("https://admin.theouthaven.com")
+) {
+  throw new Error("Credentials Instagram OAuth runtime must default to the Admin host.");
+}
+if (!adminNavigation.includes("/admin/dashboard/credentials")) {
+  throw new Error("Credentials Vault navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");

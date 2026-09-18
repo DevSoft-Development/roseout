@@ -2,6 +2,14 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
+export function platformIntegrationApiConfigured() {
+  return Boolean(
+    process.env.AWS_PLATFORM_INTEGRATION_API_URL?.trim() &&
+      (process.env.AWS_PLATFORM_INTEGRATION_API_SECRET?.trim() ||
+        process.env.AWS_PLATFORM_JOB_GATEWAY_SECRET?.trim()),
+  );
+}
+
 function config() {
   const baseUrl = String(
     process.env.AWS_PLATFORM_INTEGRATION_API_URL || "",
@@ -79,5 +87,17 @@ export function sendEmailViaIntegrationApi(input: {
   return signedJson<{ id?: string; sent?: boolean }>(
     "/v1/resend/emails/send",
     input,
+  );
+}
+
+
+export async function testStampsConnectionViaIntegrationApi(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  return signedJson<{ ok: boolean; message: string }>(
+    "/v1/stamps/connection-test",
+    {},
+    20_000,
   );
 }
