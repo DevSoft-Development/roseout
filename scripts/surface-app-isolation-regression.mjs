@@ -2201,6 +2201,25 @@ if (
   throw new Error("Careers Marketing must not import root monolith auth/database/UI helpers.");
 }
 
+const careersSettingsPage = read("apps/admin/app/admin/dashboard/careers/settings/page.tsx");
+if (
+  !careersSettingsPage.includes("@theouthaven/auth/admin-session") ||
+  !careersSettingsPage.includes("@theouthaven/db/admin-client") ||
+  !careersSettingsPage.includes("@/lib/careers/access") ||
+  !careersSettingsPage.includes("@/lib/careers/format") ||
+  !careersSettingsPage.includes('from("career_email_events")')
+) {
+  throw new Error("Careers Settings must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersSettingsPage.includes("@/lib/admin-auth") ||
+  careersSettingsPage.includes("@/lib/admin-permissions") ||
+  careersSettingsPage.includes("@/lib/supabase-admin") ||
+  careersSettingsPage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Settings must not import root monolith auth/database/UI helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
