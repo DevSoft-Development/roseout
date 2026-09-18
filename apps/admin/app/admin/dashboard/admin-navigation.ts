@@ -79,6 +79,12 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: Mail,
     migrated: false,
   },
-  { label: "Security", icon: ShieldCheck, migrated: false },
+  {
+    label: "Security",
+    href: "/admin/dashboard/security",
+    icon: ShieldCheck,
+    migrated: true,
+    roles: ["superadmin"],
+  },
   { label: "Settings", icon: Settings, migrated: false },
 ] as const;
