@@ -2045,6 +2045,32 @@ if (
   throw new Error("Careers Applications Manager must preserve application reads and detail links.");
 }
 
+const careersPipelinePage = read("apps/admin/app/admin/dashboard/careers/pipeline/page.tsx");
+if (
+  !careersPipelinePage.includes("@theouthaven/auth/admin-session") ||
+  !careersPipelinePage.includes("@theouthaven/db/admin-client") ||
+  !careersPipelinePage.includes("@/lib/careers/access") ||
+  !careersPipelinePage.includes("@/lib/careers/format")
+) {
+  throw new Error("Careers Pipeline must use isolated Admin auth/shared DB and careers helpers.");
+}
+if (
+  careersPipelinePage.includes("@/lib/admin-auth") ||
+  careersPipelinePage.includes("@/lib/admin-permissions") ||
+  careersPipelinePage.includes("@/lib/supabase-admin") ||
+  careersPipelinePage.includes("@/components/admin/AdminDesignSystem")
+) {
+  throw new Error("Careers Pipeline must not import root monolith auth/database/UI helpers.");
+}
+if (
+  !careersPipelinePage.includes('from("career_applications")') ||
+  !careersPipelinePage.includes('"interview_requested"') ||
+  !careersPipelinePage.includes('"offer_pending"') ||
+  !careersPipelinePage.includes('"talent_pool"')
+) {
+  throw new Error("Careers Pipeline must preserve application stage workflow data.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
