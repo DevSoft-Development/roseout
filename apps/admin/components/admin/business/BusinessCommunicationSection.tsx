@@ -1,4 +1,4 @@
-import type { BusinessCRMRow } from "@/lib/admin/business-crm";
+import type { BusinessCRMRow } from "@/lib/business-crm";
 
 type Props = {
   business: Pick<BusinessCRMRow, "id" | "name" | "crm_status">;
@@ -19,7 +19,7 @@ export default function BusinessCommunicationSection({ business, compact = false
         <p>Next follow-up: —</p>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {['Draft Email','Draft SMS','Mark Contacted','Schedule Follow-up','Add Quick Note'].map((label)=>(
+        {["Draft Email","Draft SMS","Mark Contacted","Schedule Follow-up","Add Quick Note"].map((label)=>(
           <button key={label} type="button" className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-semibold hover:bg-white/10">{label}</button>
         ))}
       </div>

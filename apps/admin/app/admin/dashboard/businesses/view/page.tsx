@@ -1,8 +1,9 @@
 import Link from "next/link";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { getUpgradeFlags, listBusinessCRM } from "@/lib/admin/business-crm";
+import { getUpgradeFlags, listBusinessCRM } from "@/lib/business-crm";
 import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
+
 
 export const dynamic = "force-dynamic";
 

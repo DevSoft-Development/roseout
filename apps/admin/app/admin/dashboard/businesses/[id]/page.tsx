@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { getBusinessCRM, getUpgradeFlags } from "@/lib/admin/business-crm";
+import { getBusinessCRM, getUpgradeFlags } from "@/lib/business-crm";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
 export const dynamic = "force-dynamic";

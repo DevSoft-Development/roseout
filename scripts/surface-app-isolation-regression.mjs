@@ -2706,6 +2706,23 @@ if (
   throw new Error("Business overview tabs must point at the isolated legacy redirect routes.");
 }
 
+const businessOverviewPage = read("apps/admin/app/admin/dashboard/businesses/page.tsx");
+const businessViewPage = read("apps/admin/app/admin/dashboard/businesses/view/page.tsx");
+const businessDetailPage = read("apps/admin/app/admin/dashboard/businesses/[id]/page.tsx");
+const businessOutreachPage = read("apps/admin/app/admin/dashboard/businesses/outreach/page.tsx");
+const businessUpgradePage = read("apps/admin/app/admin/dashboard/businesses/upgrade-opportunities/page.tsx");
+const businessCrmRuntime = read("apps/admin/lib/business-crm.ts");
+const businessCommunicationSection = read("apps/admin/components/admin/business/BusinessCommunicationSection.tsx");
+const businessImpersonateButton = read("apps/admin/components/admin/ImpersonateButton.tsx");
+const businessImpersonateRoute = read("apps/admin/app/api/admin/impersonate/route.ts");
+if (!businessViewPage.includes("@theouthaven/auth/admin-session") || !businessViewPage.includes("@/lib/business-crm") || !businessDetailPage.includes("@theouthaven/db/admin-client")) throw new Error("Business CRM pages must use isolated Admin auth/runtime and shared Admin DB.");
+for (const source of [businessOverviewPage,businessViewPage,businessDetailPage,businessOutreachPage,businessUpgradePage,businessCrmRuntime,businessCommunicationSection,businessImpersonateButton,businessImpersonateRoute]) {
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/admin-permissions") || source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-crm")) throw new Error("Business CRM slice must not import root monolith auth/database/CRM helpers.");
+}
+if (!businessCrmRuntime.includes("@theouthaven/db/admin-client") || !businessCrmRuntime.includes("admin_crm_locations_view") || !businessCrmRuntime.includes("business_crm_snapshot")) throw new Error("Business CRM runtime must preserve CRM source fallbacks through shared Admin DB.");
+if (!businessImpersonateRoute.includes('requireAdminRole(["superadmin"])') || !businessImpersonateButton.includes("/api/admin/impersonate")) throw new Error("Business impersonation must preserve isolated superadmin guard and API workflow.");
+if (!businessOverviewPage.includes("/admin/dashboard/businesses/followups") || !businessOverviewPage.includes("/admin/dashboard/businesses/communication-center")) throw new Error("Businesses overview must link to isolated legacy redirect routes.");
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||

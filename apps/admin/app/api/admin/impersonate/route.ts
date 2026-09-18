@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
 export const dynamic = "force-dynamic";
@@ -44,8 +44,7 @@ async function logImpersonation(payload: Record<string, unknown>) {
 
 export async function POST(req: Request) {
   try {
-    const { error, adminUser } = await requireAdminApiRole(["superadmin"]);
-    if (error) return error;
+    const adminUser = await requireAdminRole(["superadmin"]);
 
     const body = await req.json();
     const locationId = typeof body.locationId === "string" ? body.locationId : null;
