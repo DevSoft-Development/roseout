@@ -4602,3 +4602,29 @@ if (
 ) {
   throw new Error("Marketing postcard follow-up API must use isolated Admin API auth, shared Admin DB, and isolated task service.");
 }
+
+
+const marketingContentReviewPage = read("apps/admin/app/admin/dashboard/marketing/content/[id]/review/page.tsx");
+if (
+  !marketingContentReviewPage.includes("@theouthaven/auth/admin-session")
+  || !marketingContentReviewPage.includes("@theouthaven/db/admin-client")
+  || !marketingContentReviewPage.includes("@/lib/marketing/content-operations")
+  || marketingContentReviewPage.includes("@/lib/admin-auth")
+  || marketingContentReviewPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing content review page must use isolated Admin auth, shared Admin DB, and isolated content operations.");
+}
+const marketingApprovalClient = read("apps/admin/components/marketing/MarketingApprovalActions.tsx");
+if (!marketingApprovalClient.includes("/api/admin/marketing/content/")) {
+  throw new Error("Marketing approval client must preserve the isolated approval API target.");
+}
+const marketingApprovalApi = read("apps/admin/app/api/admin/marketing/content/[id]/approval/route.ts");
+if (
+  !marketingApprovalApi.includes("@theouthaven/auth/admin-session")
+  || !marketingApprovalApi.includes("@/lib/marketing/content-operations")
+  || marketingApprovalApi.includes("@/lib/admin-api-auth")
+  || marketingApprovalApi.includes("@/lib/admin-auth")
+  || marketingApprovalApi.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Marketing approval API must use isolated Admin auth and isolated content operations.");
+}
