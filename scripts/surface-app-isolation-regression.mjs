@@ -586,6 +586,35 @@ if (!generatedWebsitesRoute.includes('confirmation !== "DELETE"')) {
   throw new Error("Generated Websites delete route must retain explicit DELETE confirmation.");
 }
 
+const emailQaPage = read("apps/admin/app/admin/dashboard/settings/email-qa/page.tsx");
+if (
+  !emailQaPage.includes("@theouthaven/auth/admin-session") ||
+  !emailQaPage.includes("@/lib/email/registry") ||
+  !emailQaPage.includes("@/lib/email/sample-data")
+) {
+  throw new Error("Email QA page must use isolated Admin auth and local email runtime.");
+}
+if (
+  emailQaPage.includes("@/lib/admin-auth") ||
+  emailQaPage.includes("@/components/admin/")
+) {
+  throw new Error("Email QA page must not import root monolith Admin modules/components.");
+}
+
+for (const emailRuntimeFile of [
+  "apps/admin/lib/email/types.ts",
+  "apps/admin/lib/email/brand.ts",
+  "apps/admin/lib/email/render.ts",
+  "apps/admin/lib/email/templates.ts",
+  "apps/admin/lib/email/sample-data.ts",
+  "apps/admin/lib/email/registry.ts",
+]) {
+  const source = read(emailRuntimeFile);
+  if (source.includes("@/lib/")) {
+    throw new Error(`Email QA runtime must not import root monolith modules: ${emailRuntimeFile}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
