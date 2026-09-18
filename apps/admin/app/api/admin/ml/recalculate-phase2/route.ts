@@ -33,6 +33,7 @@ import {
   recommendation,
   text,
 } from "@/lib/ml/recalculationSignals";
+import { authorizeSearchHealthMlRequest } from "@/lib/ml/admin-ml-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -109,13 +110,6 @@ function sanitizePairFeatureRow(row: any) {
     ),
   );
 }
-function bearer(req: NextRequest) {
-  const h = req.headers.get("authorization") || "";
-  return h.toLowerCase().startsWith("bearer ") ? h.slice(7).trim() : null;
-}
-import { authorizeSearchHealthMlRequest } from "@/lib/ml/admin-ml-auth";
-
-import { authorizeSearchHealthMlRequest } from "@/lib/ml/admin-ml-auth";
 async function authorize(req: NextRequest) { return authorizeSearchHealthMlRequest(req); }
 function inc(row: any, event: string, recent7: boolean) {
   if (VIEW_EVENTS.has(event)) {
