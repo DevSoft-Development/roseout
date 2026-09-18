@@ -1021,6 +1021,33 @@ for (const rolloutRoute of [
   }
 }
 
+const searchDocumentBackfillRoute = read("apps/admin/app/api/admin/locations/backfill-search-document/route.ts");
+if (
+  !searchDocumentBackfillRoute.includes("@/lib/admin-api-auth") ||
+  !searchDocumentBackfillRoute.includes("@theouthaven/db/admin-client") ||
+  !searchDocumentBackfillRoute.includes("@/lib/admin/location-data-projections") ||
+  !searchDocumentBackfillRoute.includes("@/lib/location-profile-fields") ||
+  !searchDocumentBackfillRoute.includes('requireAdminApiRole(["superadmin"])')
+) {
+  throw new Error("Search-document backfill API must use isolated superadmin auth, shared DB, and local document helpers.");
+}
+if (
+  searchDocumentBackfillRoute.includes("@/lib/admin-permissions") ||
+  searchDocumentBackfillRoute.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search-document backfill API must not import root monolith permission/database helpers.");
+}
+
+for (const searchDocumentHelper of [
+  "apps/admin/lib/admin/location-data-projections.ts",
+  "apps/admin/lib/location-profile-fields.ts",
+]) {
+  const source = read(searchDocumentHelper);
+  if (source.includes("@/lib/")) {
+    throw new Error(`Search-document helper must remain self-contained: ${searchDocumentHelper}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
