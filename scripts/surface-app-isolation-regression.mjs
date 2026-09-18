@@ -1955,6 +1955,52 @@ if (
   throw new Error("Plans page must not import root monolith auth/database modules.");
 }
 
+const shortLinksPage = read("apps/admin/app/admin/dashboard/short-links/page.tsx");
+const shortLinksListRoute = read("apps/admin/app/api/admin/short-links/route.ts");
+const shortLinksDetailRoute = read("apps/admin/app/api/admin/short-links/[id]/route.ts");
+const shortLinksDestinationsRoute = read("apps/admin/app/api/admin/short-links/destinations/route.ts");
+const shortLinksHelper = read("apps/admin/lib/outings/short-links.ts");
+const shortLinksService = read("apps/admin/lib/short-links/service.ts");
+for (const source of [
+  shortLinksPage,
+  shortLinksListRoute,
+  shortLinksDetailRoute,
+  shortLinksDestinationsRoute,
+  shortLinksHelper,
+  shortLinksService,
+]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/users/roles")
+  ) {
+    throw new Error("Short Links slice must not import root monolith auth/database/role helpers.");
+  }
+}
+if (
+  !shortLinksPage.includes("@theouthaven/auth/admin-session") ||
+  !shortLinksPage.includes('requireAdminRole(["superadmin", "admin", "manager", "marketing_specialist", "marketing_manager"])')
+) {
+  throw new Error("Short Links page must preserve isolated role authorization.");
+}
+for (const route of [shortLinksListRoute, shortLinksDetailRoute, shortLinksDestinationsRoute]) {
+  if (
+    !route.includes("@/lib/admin-api-auth") ||
+    !route.includes("@theouthaven/db/admin-client") ||
+    !route.includes("@theouthaven/auth/admin-roles")
+  ) {
+    throw new Error("Short Links APIs must use isolated API auth, shared DB, and shared roles.");
+  }
+}
+if (
+  !shortLinksListRoute.includes("@/lib/outings/short-links") ||
+  !shortLinksListRoute.includes("@/lib/short-links/service") ||
+  !shortLinksDetailRoute.includes("@/lib/outings/short-links")
+) {
+  throw new Error("Short Links APIs must preserve isolated short-link runtime helpers.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
