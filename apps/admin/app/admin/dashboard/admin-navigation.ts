@@ -61,6 +61,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     roles: ["superadmin"],
   },
   {
+    label: "Knowledge Base",
+    href: "/admin/dashboard/knowledge-base",
+    icon: ScrollText,
+    migrated: true,
+    roles: ["superadmin", "admin", "editor", "reviewer", "ambassador", "experience_team", "partner_ambassador", "marketing_intern", "marketing_specialist", "marketing_manager", "viewer"],
+  },
+  {
     label: "Reviews",
     href: "/admin/dashboard/reviews",
     icon: MessageSquareText,
