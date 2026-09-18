@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     if (auth.error) return auth.error;
     const admin = auth.adminUser;
     const body = await req.json().catch(() => ({}));
-    const result = buildRecord(body, admin.user_id);
+    const result = buildRecord(body, admin?.user_id);
     if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
     if (!result.record) return NextResponse.json({ error: "We could not create this job posting." }, { status: 400 });
 
