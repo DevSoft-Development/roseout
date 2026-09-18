@@ -1375,6 +1375,71 @@ for (const runActionRoute of [
   }
 }
 
+const searchProfileDetailPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/[locationId]/page.tsx");
+if (
+  !searchProfileDetailPage.includes("@theouthaven/auth/admin-session") ||
+  !searchProfileDetailPage.includes("@theouthaven/db/admin-client") ||
+  !searchProfileDetailPage.includes("@/components/admin/location-tools/SearchProfileReviewForm")
+) {
+  throw new Error("Search Profile detail page must use isolated Admin auth/DB and local review form.");
+}
+if (
+  searchProfileDetailPage.includes("@/lib/admin-auth") ||
+  searchProfileDetailPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search Profile detail page must not import root monolith auth/database helpers.");
+}
+
+const searchProfileRepository = read("apps/admin/lib/search/profile/profileRepository.ts");
+if (
+  !searchProfileRepository.includes("@theouthaven/db/admin-client") ||
+  searchProfileRepository.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search Profile repository must use the shared Admin DB package.");
+}
+
+for (const searchProfileRuntimeFile of [
+  "apps/admin/lib/search/v2/taxonomy/index.ts",
+  "apps/admin/lib/search/profile/profileTypes.ts",
+  "apps/admin/lib/search/profile/profileEvidence.ts",
+  "apps/admin/lib/search/profile/profileHash.ts",
+  "apps/admin/lib/search/profile/profileClassificationSanitizer.ts",
+  "apps/admin/lib/search/profile/validateLocationSearchProfile.ts",
+  "apps/admin/lib/search/profile/mealPeriodEvidence.ts",
+  "apps/admin/lib/search/profile/providerCategoryEvidence.ts",
+  "apps/admin/lib/search/profile/buildLocationSearchProfile.ts",
+]) {
+  const source = read(searchProfileRuntimeFile);
+  if (
+    source.includes("@/lib/supabase-admin") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-api-auth")
+  ) {
+    throw new Error(`Search Profile rebuild runtime must not import root Admin/database helpers: ${searchProfileRuntimeFile}`);
+  }
+}
+
+for (const searchProfileDetailRoute of [
+  "apps/admin/app/api/admin/location-tools/search-profiles/[locationId]/review/route.ts",
+  "apps/admin/app/api/admin/location-tools/search-profiles/[locationId]/rebuild/route.ts",
+]) {
+  const source = read(searchProfileDetailRoute);
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@/lib/search/profile/profileRepository") ||
+    !source.includes("getCurrentAdminOrNull")
+  ) {
+    throw new Error(`Search Profile detail action must use isolated API auth and rebuild runtime: ${searchProfileDetailRoute}`);
+  }
+  if (
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Search Profile detail action must not import root monolith helpers: ${searchProfileDetailRoute}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
