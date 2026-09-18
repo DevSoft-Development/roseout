@@ -4446,3 +4446,34 @@ if (
 ) {
   throw new Error("Marketing Admin helper must use shared Admin DB.");
 }
+
+
+for (const route of [
+  "apps/admin/app/admin/dashboard/marketing/promotions/page.tsx",
+  "apps/admin/app/admin/dashboard/marketing/discover/page.tsx",
+]) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`Marketing page must use isolated Admin auth: ${route}`);
+  }
+}
+for (const route of [
+  "apps/admin/app/api/admin/marketing/promotions/route.ts",
+  "apps/admin/app/api/admin/marketing/discover/route.ts",
+]) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Marketing API must use shared Admin DB: ${route}`);
+  }
+  if (!source.includes("@/lib/marketing-admin")) {
+    throw new Error(`Marketing API must preserve Marketing authorization helper: ${route}`);
+  }
+}
+const marketingPromotionsClient = read("apps/admin/app/admin/dashboard/marketing/promotions/PromotionsAdminClient.tsx");
+if (!marketingPromotionsClient.includes("/api/admin/marketing/promotions")) {
+  throw new Error("Marketing Promotions client must preserve protected API usage.");
+}
+const marketingDiscoverClient = read("apps/admin/app/admin/dashboard/marketing/discover/DiscoverMerchandisingClient.tsx");
+if (!marketingDiscoverClient.includes("/api/admin/marketing/discover")) {
+  throw new Error("Marketing Discover client must preserve protected API usage.");
+}
