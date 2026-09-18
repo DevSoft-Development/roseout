@@ -1329,6 +1329,52 @@ if (
   throw new Error("Completed Review Center page must not import root monolith auth/database helpers.");
 }
 
+const searchProfileRunPage = read("apps/admin/app/admin/dashboard/settings/location-tools/search-profiles/runs/[runId]/page.tsx");
+if (
+  !searchProfileRunPage.includes("@theouthaven/auth/admin-session") ||
+  !searchProfileRunPage.includes("@theouthaven/db/admin-client") ||
+  !searchProfileRunPage.includes("@/components/admin/location-tools/ProfileRunActions") ||
+  !searchProfileRunPage.includes("@/components/admin/location-tools/ProfileRunLiveRefresh")
+) {
+  throw new Error("Search Profile run page must use isolated Admin auth/DB and local run clients.");
+}
+if (
+  searchProfileRunPage.includes("@/lib/admin-auth") ||
+  searchProfileRunPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search Profile run page must not import root monolith auth/database helpers.");
+}
+
+const searchProfileRunRepository = read("apps/admin/lib/search/profile/profileRunRepository.ts");
+if (
+  !searchProfileRunRepository.includes("@theouthaven/db/admin-client") ||
+  searchProfileRunRepository.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Search Profile run repository must use the shared Admin DB package.");
+}
+
+for (const runActionRoute of [
+  "apps/admin/app/api/admin/location-tools/search-profiles/runs/[runId]/cancel/route.ts",
+  "apps/admin/app/api/admin/location-tools/search-profiles/runs/[runId]/resume/route.ts",
+  "apps/admin/app/api/admin/location-tools/search-profiles/runs/[runId]/retry-failed/route.ts",
+]) {
+  const source = read(runActionRoute);
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@/lib/search/profile/profileRunRepository") ||
+    !source.includes("getCurrentAdminOrNull")
+  ) {
+    throw new Error(`Search Profile run action must use isolated API auth and repository: ${runActionRoute}`);
+  }
+  if (
+    source.includes("@/lib/admin-api-auth") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`Search Profile run action must not import root monolith helpers: ${runActionRoute}`);
+  }
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
