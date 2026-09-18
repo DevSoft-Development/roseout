@@ -8,6 +8,7 @@ import {
   ScrollText,
   ShieldAlert,
   ShieldCheck,
+  ShoppingBag,
   Settings,
   TicketPercent,
   type LucideIcon,
@@ -85,6 +86,13 @@ export const adminShellNavigation: readonly AdminShellNavItem[] = [
     icon: ShieldCheck,
     migrated: true,
     roles: ["superadmin"],
+  },
+  {
+    label: "Ticket Orders",
+    href: "/admin/dashboard/ticket-orders",
+    icon: ShoppingBag,
+    migrated: true,
+    roles: ["superadmin", "admin", "manager", "reviewer", "experience_team"],
   },
   { label: "Settings", icon: Settings, migrated: false },
 ] as const;
