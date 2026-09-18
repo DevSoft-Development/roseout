@@ -2534,6 +2534,34 @@ if (
   throw new Error("Analytics runtime must use shared Admin DB and preserve cached analytics reads.");
 }
 
+const plannerAnalyticsPage = read("apps/admin/app/admin/dashboard/analytics/planner/page.tsx");
+const plannerAnalyticsRuntime = read("apps/admin/lib/admin/planner-funnel.ts");
+
+if (
+  !plannerAnalyticsPage.includes("@theouthaven/auth/admin-session") ||
+  !plannerAnalyticsPage.includes("@/lib/admin/planner-funnel") ||
+  !plannerAnalyticsPage.includes('requireAdminRole(["superadmin", "admin", "manager", "editor", "reviewer", "ambassador", "experience_team", "viewer"])')
+) {
+  throw new Error("Planner Analytics must preserve isolated Admin auth, analytics access, and funnel runtime.");
+}
+for (const source of [plannerAnalyticsPage, plannerAnalyticsRuntime]) {
+  if (
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/admin-permissions") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error("Planner Analytics slice must not import root monolith auth/database helpers.");
+  }
+}
+if (
+  !plannerAnalyticsRuntime.includes("@theouthaven/db/admin-client") ||
+  !plannerAnalyticsRuntime.includes('from("analytics_events")') ||
+  !plannerAnalyticsRuntime.includes('from("outings")') ||
+  !plannerAnalyticsRuntime.includes('from("location_reviews")')
+) {
+  throw new Error("Planner Analytics runtime must use shared Admin DB and preserve funnel data sources.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
