@@ -4351,3 +4351,64 @@ if (
 ) {
   throw new Error("CRM root dashboard helper must provide safe optional-table reads through shared Admin DB.");
 }
+
+
+const crmDetailPage = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+if (
+  !crmDetailPage.includes("@theouthaven/auth/admin-session")
+  || !crmDetailPage.includes("@theouthaven/db/admin-client")
+  || crmDetailPage.includes("@/lib/admin-auth")
+  || crmDetailPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM detail page must use isolated Admin auth and shared Admin DB.");
+}
+for (const dependency of [
+  "apps/admin/lib/team-tools.ts",
+  "apps/admin/lib/growth-pro/data.ts",
+  "apps/admin/lib/admin/location-intelligence.ts",
+  "apps/admin/lib/locations/menu.ts",
+]) {
+  const source = read(dependency);
+  if (source.includes("@/lib/supabase-admin") || source.includes("@/lib/admin-auth")) {
+    throw new Error(`CRM detail dependency must not import root monolith auth/DB modules: ${dependency}`);
+  }
+}
+if (!read("apps/admin/lib/team-tools.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("CRM detail team-tools helper must use shared Admin DB.");
+}
+if (!read("apps/admin/lib/growth-pro/data.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("CRM detail Growth Pro helper must use shared Admin DB.");
+}
+if (!read("apps/admin/lib/locations/menu.ts").includes("@theouthaven/db/admin-client")) {
+  throw new Error("CRM detail menu helper must use shared Admin DB.");
+}
+
+
+const crmFinalDetailPage = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+if (
+  !crmFinalDetailPage.includes("@theouthaven/auth/admin-session")
+  || !crmFinalDetailPage.includes("@theouthaven/db/admin-client")
+  || crmFinalDetailPage.includes("@/lib/admin-auth")
+  || crmFinalDetailPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Final CRM detail page must use isolated Admin auth and shared Admin DB.");
+}
+for (const dependency of [
+  "apps/admin/app/admin/dashboard/crm/[id]/CommunicationPanel.tsx",
+  "apps/admin/app/admin/dashboard/crm/[id]/PhotosPanel.tsx",
+  "apps/admin/app/admin/dashboard/crm/[id]/ReservationPanel.tsx",
+  "apps/admin/app/admin/dashboard/crm/[id]/ListingEnhancementEditor.tsx",
+  "apps/admin/components/admin/LocationHoursEditor.tsx",
+  "apps/admin/components/admin/LocationProfileEditor.tsx",
+  "apps/admin/components/admin/location-workspace/LocationWorkspaceNavigation.tsx",
+  "apps/admin/lib/growth-pro/data.ts",
+  "apps/admin/lib/locations/menu.ts",
+  "apps/admin/lib/team-tools.ts",
+  "apps/admin/lib/admin/location-intelligence.ts",
+  "apps/admin/lib/admin/location-qr-status.ts",
+]) {
+  const source = read(dependency);
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Final CRM detail dependency must not import root Admin auth/DB modules: ${dependency}`);
+  }
+}
