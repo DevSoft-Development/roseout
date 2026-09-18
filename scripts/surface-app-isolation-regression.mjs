@@ -309,6 +309,67 @@ if (!microsoftIntegrationRuntime.includes("AWS_PLATFORM_INTEGRATION_API_URL") ||
   throw new Error("Microsoft 365 integration runtime must preserve signed AWS integration calls.");
 }
 
+for (const microsoftConnectionRoute of [
+  "apps/admin/app/api/admin/integrations/microsoft-365/connect/route.ts",
+  "apps/admin/app/api/admin/integrations/microsoft-365/callback/route.ts",
+  "apps/admin/app/api/admin/integrations/microsoft-365/preferences/route.ts",
+  "apps/admin/app/api/admin/integrations/microsoft-365/disconnect/route.ts",
+]) {
+  const source = read(microsoftConnectionRoute);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`Microsoft 365 connection route must use isolated Admin auth: ${microsoftConnectionRoute}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`Microsoft 365 connection route must not import root monolith auth/database modules: ${microsoftConnectionRoute}`);
+  }
+}
+
+const microsoftConnectRoute = read("apps/admin/app/api/admin/integrations/microsoft-365/connect/route.ts");
+if (
+  !microsoftConnectRoute.includes("@theouthaven/auth/redirect") ||
+  !microsoftConnectRoute.includes("@/lib/microsoft-365/config") ||
+  !microsoftConnectRoute.includes("@/lib/web-surface-auth-origin") ||
+  !microsoftConnectRoute.includes("/api/admin/integrations/microsoft-365/callback")
+) {
+  throw new Error("Microsoft 365 connect route must preserve Admin-origin PKCE OAuth flow.");
+}
+
+const microsoftCallbackRoute = read("apps/admin/app/api/admin/integrations/microsoft-365/callback/route.ts");
+for (const dependency of [
+  "@theouthaven/auth/redirect",
+  "@theouthaven/db/admin-client",
+  "@/lib/microsoft-365/config",
+  "@/lib/microsoft-365/crypto",
+  "@/lib/microsoft-365/graph",
+  "@/lib/microsoft-365/oauth",
+  "@/lib/web-surface-auth-origin",
+]) {
+  if (!microsoftCallbackRoute.includes(dependency)) {
+    throw new Error(`Microsoft 365 callback must use isolated dependency: ${dependency}`);
+  }
+}
+if (
+  !microsoftCallbackRoute.includes("toh_m365_state") ||
+  !microsoftCallbackRoute.includes("toh_m365_pkce") ||
+  !microsoftCallbackRoute.includes("The Microsoft 365 account must match")
+) {
+  throw new Error("Microsoft 365 callback must preserve OAuth state, PKCE, and identity matching.");
+}
+
+for (const microsoftDbRoute of [
+  "apps/admin/app/api/admin/integrations/microsoft-365/preferences/route.ts",
+  "apps/admin/app/api/admin/integrations/microsoft-365/disconnect/route.ts",
+]) {
+  const source = read(microsoftDbRoute);
+  if (!source.includes("@theouthaven/db/admin-client")) {
+    throw new Error(`Microsoft 365 DB route must use shared Admin DB package: ${microsoftDbRoute}`);
+  }
+}
+
+if (adminNavigation.includes('label: "Microsoft 365"') && !adminNavigation.includes('migrated: false')) {
+  throw new Error("Microsoft 365 navigation must remain unmigrated until sync and page migration are complete.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
