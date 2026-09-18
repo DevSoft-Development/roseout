@@ -1,0 +1,209 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { requireAdminApiRole } from "@/lib/admin-api-auth";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+
+export const dynamic = "force-dynamic";
+
+type LocationType = "restaurants" | "activities";
+type TargetType = "user" | "location_owner" | "admin_location";
+
+function normalizeTargetType(value: unknown, hasLocation: boolean): TargetType {
+  if (value === "admin_location") return "admin_location";
+  if (value === "location_owner") return "location_owner";
+  return hasLocation ? "location_owner" : "user";
+}
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 30,
+};
+
+function normalizeLocationType(value: unknown): LocationType | null {
+  if (value === "activities" || value === "activity") return "activities";
+  if (value === "restaurants" || value === "restaurant") return "restaurants";
+  return null;
+}
+
+async function logImpersonation(payload: Record<string, unknown>) {
+  await getAdminDatabaseClient().from("admin_impersonation_logs").insert(payload);
+  await getAdminDatabaseClient().from("admin_system_logs").insert({
+    category: "Impersonation",
+    level: "info",
+    message: "Admin impersonation started.",
+    actor_id: payload.admin_id ?? null,
+    actor_email: payload.admin_email ?? null,
+    entity_type: payload.action ?? "impersonation",
+    entity_id: payload.target_user_id ?? payload.location_id ?? null,
+    metadata: payload,
+  });
+}
+
+export async function POST(req: Request) {
+  try {
+    const { error, adminUser } = await requireAdminApiRole(["superadmin"]);
+    if (error) return error;
+
+    const body = await req.json();
+    const locationId = typeof body.locationId === "string" ? body.locationId : null;
+    const locationType = typeof body.locationType === "string" ? body.locationType : null;
+    const targetType = normalizeTargetType(body.targetType, Boolean(locationId));
+    const requestedUserId = typeof body.targetUserId === "string" ? body.targetUserId : typeof body.userId === "string" ? body.userId : null;
+
+    const cookieStore = await cookies();
+
+    if (targetType === "user" && requestedUserId) {
+      const { data: targetUser } = await getAdminDatabaseClient()
+        .from("users")
+        .select("id,email,full_name,role")
+        .eq("id", requestedUserId)
+        .maybeSingle();
+
+      if (!targetUser) {
+        return NextResponse.json({ error: "Target user not found" }, { status: 404 });
+      }
+
+      if (targetUser.id === adminUser?.user_id || targetUser.email === adminUser?.email) {
+        return NextResponse.json({ error: "You cannot impersonate yourself." }, { status: 400 });
+      }
+
+      const { data: targetAdminUser } = await getAdminDatabaseClient()
+        .from("admin_users")
+        .select("role")
+        .eq("user_id", targetUser.id)
+        .maybeSingle();
+      const targetRoleSource = targetAdminUser?.role || targetUser.role;
+      const targetRole = targetRoleSource === "superuser" || targetRoleSource === "super_admin" ? "superadmin" : targetRoleSource;
+      if (targetRole === "superadmin" && adminUser?.role !== "superadmin") {
+        return NextResponse.json({ error: "Only super admins can impersonate another super admin." }, { status: 403 });
+      }
+
+      cookieStore.delete("theouthaven_impersonate_location_id");
+      cookieStore.delete("theouthaven_impersonate_location_type");
+      cookieStore.delete("theouthaven_impersonate_target_type");
+      cookieStore.set("theouthaven_impersonate_user_id", targetUser.id, cookieOptions);
+
+      await logImpersonation({
+        admin_id: adminUser?.user_id,
+        admin_email: adminUser?.email,
+        target_user_id: targetUser.id,
+        target_user_email: targetUser.email,
+        target_type: "user",
+        action: "started_user",
+      });
+
+      return NextResponse.json({ success: true, message: "User impersonation started.", redirectTo: "/user/dashboard" });
+    }
+
+    if (!locationId || !locationType) {
+      return NextResponse.json({ error: "Missing location impersonation target" }, { status: 400 });
+    }
+
+    const normalizedType = normalizeLocationType(locationType);
+
+    if (targetType === "admin_location") {
+      const { data: location } = await getAdminDatabaseClient()
+        .from("locations")
+        .select("id, location_type, type, primary_category, owner_email, owner_user_id")
+        .eq("id", locationId)
+        .maybeSingle();
+
+      if (!location) {
+        return NextResponse.json({ error: "Location not found" }, { status: 404 });
+      }
+
+      const table = normalizedType || (String(location.location_type || location.type || location.primary_category || "").toLowerCase().includes("activ") ? "activities" : "restaurants");
+
+      cookieStore.delete("theouthaven_impersonate_user_id");
+      cookieStore.set("theouthaven_impersonate_location_id", String(location.id), cookieOptions);
+      cookieStore.set("theouthaven_impersonate_location_type", table, cookieOptions);
+      cookieStore.set("theouthaven_impersonate_target_type", "admin_location", cookieOptions);
+
+      await logImpersonation({
+        admin_id: adminUser?.user_id,
+        admin_email: adminUser?.email,
+        target_user_id: null,
+        target_user_email: location.owner_email || null,
+        target_type: "admin_location",
+        location_id: location.id,
+        location_type: table,
+        action: "started_admin_location",
+      });
+
+      return NextResponse.json({ success: true, message: "Admin location mode started.", redirectTo: "/locations/dashboard" });
+    }
+
+    if (!normalizedType) {
+      return NextResponse.json({ error: "Invalid location type" }, { status: 400 });
+    }
+
+    const table = normalizedType;
+    const nameField = table === "restaurants" ? "restaurant_name" : "activity_name";
+    const { data: location } = await getAdminDatabaseClient()
+      .from(table)
+      .select(`id, ${nameField}, owner_email, owner_user_id`)
+      .eq("id", locationId)
+      .maybeSingle();
+
+    if (!location) {
+      return NextResponse.json({ error: "Location not found" }, { status: 404 });
+    }
+
+    if (!location.owner_user_id) {
+      return NextResponse.json({ error: "This location has no connected owner account." }, { status: 400 });
+    }
+
+    if (requestedUserId && requestedUserId !== location.owner_user_id) {
+      return NextResponse.json({ error: "Target owner is not connected to this location." }, { status: 400 });
+    }
+
+    const { data: targetUser } = await getAdminDatabaseClient()
+      .from("users")
+      .select("id,email,full_name,role")
+      .eq("id", location.owner_user_id)
+      .maybeSingle();
+
+    if (!targetUser) {
+      return NextResponse.json({ error: "Connected owner account not found" }, { status: 404 });
+    }
+
+    if (targetUser.id === adminUser?.user_id || targetUser.email === adminUser?.email) {
+      return NextResponse.json({ error: "You cannot impersonate yourself." }, { status: 400 });
+    }
+
+    const { data: targetAdminUser } = await getAdminDatabaseClient()
+      .from("admin_users")
+      .select("role")
+      .eq("user_id", targetUser.id)
+      .maybeSingle();
+    const targetRoleSource = targetAdminUser?.role || targetUser.role;
+    const targetRole = targetRoleSource === "superuser" || targetRoleSource === "super_admin" ? "superadmin" : targetRoleSource;
+    if (targetRole === "superadmin" && adminUser?.role !== "superadmin") {
+      return NextResponse.json({ error: "Only super admins can impersonate another super admin." }, { status: 403 });
+    }
+
+    cookieStore.delete("theouthaven_impersonate_user_id");
+    cookieStore.set("theouthaven_impersonate_location_id", String(location.id), cookieOptions);
+    cookieStore.set("theouthaven_impersonate_location_type", table, cookieOptions);
+    cookieStore.set("theouthaven_impersonate_target_type", "location_owner", cookieOptions);
+
+    await logImpersonation({
+      admin_id: adminUser?.user_id,
+      admin_email: adminUser?.email,
+      target_user_id: targetUser.id,
+      target_user_email: targetUser.email || location.owner_email || null,
+      target_type: "location_owner",
+      location_id: location.id,
+      location_type: table,
+      action: `started_location_${table}`,
+    });
+
+    return NextResponse.json({ success: true, message: "Location owner impersonation started.", redirectTo: "/locations/dashboard" });
+  } catch (error) {
+    console.error("Impersonation error:", error);
+    return NextResponse.json({ error: "Failed to start impersonation" }, { status: 500 });
+  }
+}
