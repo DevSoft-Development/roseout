@@ -2220,6 +2220,14 @@ if (
   throw new Error("Careers Settings must not import root monolith auth/database/UI helpers.");
 }
 
+const claimsRedirectPage = read("apps/admin/app/admin/dashboard/claims/page.tsx");
+if (
+  !claimsRedirectPage.includes('redirect("/admin/dashboard/crm/locations?view=pending-claims")') ||
+  claimsRedirectPage.includes("@/lib/")
+) {
+  throw new Error("Legacy Claims route must remain an isolated redirect to the pending-claims CRM view.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
