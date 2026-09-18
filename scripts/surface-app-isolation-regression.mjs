@@ -1500,6 +1500,25 @@ if (!adminNavigation.includes("/admin/dashboard/credentials")) {
   throw new Error("Credentials Vault navigation must be present in the isolated Admin shell.");
 }
 
+const eventsExperiencesPage = read("apps/admin/app/admin/dashboard/events-experiences/page.tsx");
+if (
+  !eventsExperiencesPage.includes("@theouthaven/auth/admin-session") ||
+  !eventsExperiencesPage.includes("@theouthaven/db/admin-client") ||
+  !eventsExperiencesPage.includes('requireAdminRole(["superadmin", "admin", "editor"])')
+) {
+  throw new Error("Events & Experiences page must use isolated Admin auth/shared DB and preserve event roles.");
+}
+if (
+  eventsExperiencesPage.includes("@/lib/admin-auth") ||
+  eventsExperiencesPage.includes("@/lib/admin-permissions") ||
+  eventsExperiencesPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Events & Experiences page must not import root monolith auth/database helpers.");
+}
+if (!adminNavigation.includes("/admin/dashboard/events-experiences")) {
+  throw new Error("Events & Experiences navigation must be present in the isolated Admin shell.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
