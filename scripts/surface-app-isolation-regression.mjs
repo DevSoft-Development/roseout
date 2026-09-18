@@ -516,6 +516,44 @@ if (appleBusinessRuntime.includes("@/lib/")) {
   throw new Error("Apple Business runtime must not import root monolith modules.");
 }
 
+const domainBenefitPage = read("apps/admin/app/admin/dashboard/settings/domain-benefit/page.tsx");
+if (
+  !domainBenefitPage.includes("@theouthaven/auth/admin-session") ||
+  !domainBenefitPage.includes("@/lib/domains/benefit-settings")
+) {
+  throw new Error("Domain Benefit page must use isolated Admin auth and domain benefit runtime.");
+}
+if (
+  domainBenefitPage.includes("@/lib/admin-auth") ||
+  domainBenefitPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Domain Benefit page must not import root monolith auth/database modules.");
+}
+
+const domainBenefitRoute = read("apps/admin/app/api/admin/settings/domain-benefit/route.ts");
+if (
+  !domainBenefitRoute.includes("@theouthaven/auth/admin-session") ||
+  !domainBenefitRoute.includes("@theouthaven/db/admin-client") ||
+  !domainBenefitRoute.includes("@/lib/domains/benefit-settings")
+) {
+  throw new Error("Domain Benefit route must use isolated Admin auth, shared DB, and local settings helper.");
+}
+if (
+  domainBenefitRoute.includes("@/lib/supabase-server") ||
+  domainBenefitRoute.includes("@/lib/supabase-admin") ||
+  domainBenefitRoute.includes("@/lib/auth/get-admin-login-role")
+) {
+  throw new Error("Domain Benefit route must not import root monolith Supabase/auth helpers.");
+}
+
+const domainBenefitRuntime = read("apps/admin/lib/domains/benefit-settings.ts");
+if (
+  !domainBenefitRuntime.includes("@theouthaven/db/admin-client") ||
+  domainBenefitRuntime.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Domain Benefit runtime must use the shared Admin DB package.");
+}
+
 const productionCi = read(".github/workflows/production-ci.yml");
 if (productionCi.includes("tsconfig.*\\.json|\\.github/workflows/production-ci\\.yml")) {
   throw new Error("Production CI must not classify root tsconfig/workflow-only changes as every regression domain.");
