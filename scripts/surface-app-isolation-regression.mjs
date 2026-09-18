@@ -3878,3 +3878,40 @@ for (const route of crmAutomationPages) {
     throw new Error(`CRM automation page must not import root monolith DB helper: ${route}`);
   }
 }
+
+
+const crmSupportQueueSettingsPages = [
+  "apps/admin/app/admin/dashboard/crm/support/page.tsx",
+  "apps/admin/app/admin/dashboard/crm/support/settings/page.tsx",
+];
+for (const route of crmSupportQueueSettingsPages) {
+  const source = read(route);
+  if (!source.includes("@theouthaven/auth/admin-session")) {
+    throw new Error(`CRM support page must use isolated Admin auth: ${route}`);
+  }
+  if (source.includes("@/lib/admin-auth") || source.includes("@/lib/admin-permissions") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM support page must not import root monolith auth/DB modules: ${route}`);
+  }
+}
+const crmSupportSettingsActions = read("apps/admin/app/admin/dashboard/crm/support/settings/actions.ts");
+if (
+  !crmSupportSettingsActions.includes("@theouthaven/auth/admin-session")
+  || !crmSupportSettingsActions.includes("@theouthaven/db/admin-client")
+  || crmSupportSettingsActions.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM support settings actions must use isolated Admin auth and shared Admin DB.");
+}
+for (const helper of [
+  "apps/admin/lib/crm/support.ts",
+  "apps/admin/lib/support/operations.ts",
+  "apps/admin/lib/support/canonical.ts",
+]) {
+  const source = read(helper);
+  if (!source.includes("@theouthaven/db/admin-client") || source.includes("@/lib/supabase-admin")) {
+    throw new Error(`CRM support helper must use shared Admin DB: ${helper}`);
+  }
+}
+const supportCoreApi = read("apps/admin/lib/aws/core-api.ts");
+if (!supportCoreApi.includes("readSupportOperationsSettingsViaCoreApi")) {
+  throw new Error("Isolated Admin Core API helper must preserve support settings reads.");
+}
