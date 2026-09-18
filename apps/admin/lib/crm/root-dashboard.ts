@@ -1320,6 +1320,20 @@ function normalizeClaim(row: any, sourceTable = "claims"): PendingCRMClaim {
   };
 }
 
+async function safeSelect(table: string, builder: (query: any) => any) {
+  try {
+    const { data, error } = await builder(getAdminDatabaseClient().from(table));
+    if (error) {
+      console.error(`Optional CRM table ${table} unavailable`, error.message);
+      return [];
+    }
+    return data || [];
+  } catch (error) {
+    console.error(`Optional CRM table ${table} failed`, error);
+    return [];
+  }
+}
+
 async function fetchClaimRows(table: string) {
   const ordered = await safeSelect(table, (q) =>
     q.select("*").order("created_at", { ascending: false }).limit(1000),

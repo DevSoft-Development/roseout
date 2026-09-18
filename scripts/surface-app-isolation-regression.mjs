@@ -4341,3 +4341,13 @@ for (const helper of [
     throw new Error(`CRM isolated helper must not depend on root auth/DB modules: ${helper}`);
   }
 }
+
+
+const crmRootDashboardHelper = read("apps/admin/lib/crm/root-dashboard.ts");
+if (
+  !crmRootDashboardHelper.includes("@theouthaven/db/admin-client")
+  || !crmRootDashboardHelper.includes("async function safeSelect")
+  || crmRootDashboardHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("CRM root dashboard helper must provide safe optional-table reads through shared Admin DB.");
+}
