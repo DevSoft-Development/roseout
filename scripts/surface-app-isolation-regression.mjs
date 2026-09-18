@@ -1927,6 +1927,22 @@ if (
   throw new Error("Events actions must not import root monolith auth/database helpers.");
 }
 
+const smsOperationsPage = read("apps/admin/app/admin/dashboard/sms/page.tsx");
+if (
+  !smsOperationsPage.includes("@theouthaven/auth/admin-session") ||
+  !smsOperationsPage.includes("@theouthaven/db/admin-client") ||
+  !smsOperationsPage.includes('requireAdminRole(["superadmin", "admin", "ambassador", "experience_team", "viewer"])')
+) {
+  throw new Error("SMS Operations page must use isolated Admin auth/shared DB and preserve SMS roles.");
+}
+if (
+  smsOperationsPage.includes("@/lib/admin-auth") ||
+  smsOperationsPage.includes("@/lib/admin-permissions") ||
+  smsOperationsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("SMS Operations page must not import root monolith auth/database helpers.");
+}
+
 const payoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
 if (
   !payoutsPage.includes("@theouthaven/auth/admin-session") ||
