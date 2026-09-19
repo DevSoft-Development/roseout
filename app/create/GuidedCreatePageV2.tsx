@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackClientEvent } from "@/lib/analytics/trackClientEvent";
 import { detectRequestedGeo } from "@/lib/search/geo-matching";
+import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
 import GuidedJourneySteps from "@/components/planner/GuidedJourneySteps";
 
 type PlanType = "outing" | "restaurant" | "activity";
@@ -173,10 +174,16 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
   }
 
   function buildPrompt() {
-    const typeInstruction = planType === "restaurant" ? "restaurant only" : planType === "activity" ? "activity only" : "restaurant and activity outing";
-    const timing = [customDate || (when !== "No specific time" ? when : null), customTime || null].filter(Boolean).join(" ");
-    const allMatters = [...preferences, ...customMatters];
-    return [`Plan a ${typeInstruction}.`, idea.trim(), `Location: ${location.trim() || "near me"}.`, timing ? `When: ${timing}.` : "", allMatters.length ? `Preferences: ${allMatters.join(", ")}.` : "", "Return the best options, ranked by fit."].filter(Boolean).join(" ");
+    return buildGuidedSearchPrompt({
+      query: idea.trim(),
+      planType,
+      location: location.trim() || "near me",
+      when,
+      customDate,
+      customTime,
+      preferences,
+      customMatters,
+    });
   }
 
   function showPicks() {
