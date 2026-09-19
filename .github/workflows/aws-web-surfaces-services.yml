@@ -161,6 +161,15 @@ jobs:
           CONFIGURED_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
         run: |
           set -euo pipefail
+          if [ -z "${CONFIGURED_JOB_GATEWAY_URL:-}" ]; then
+            WORKER_STACK="theouthaven-workers-${TARGET_ENV}"
+            CONFIGURED_JOB_GATEWAY_URL="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
+          fi
+          if [ -z "${CONFIGURED_JOB_GATEWAY_URL:-}" ] || [ "$CONFIGURED_JOB_GATEWAY_URL" = "None" ]; then
+            echo "Unable to resolve AWS platform job gateway URL from GitHub variables or $WORKER_STACK." >&2
+            exit 1
+          fi
+          export CONFIGURED_JOB_GATEWAY_URL
           RUNTIME_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
           RAW_JSON="$RUNNER_TEMP/runtime-env.raw.json"
           RUNTIME_JSON="$RUNNER_TEMP/runtime-env.json"
