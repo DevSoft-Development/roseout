@@ -109,7 +109,7 @@ jobs:
 
       - name: Audit production dependencies
         if: github.event_name != 'pull_request'
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
 
   regressions:
     name: Business-critical regressions
