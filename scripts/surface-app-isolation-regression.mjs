@@ -120,13 +120,6 @@ if (
 ) {
   throw new Error("Admin OAuth start must use one exact callback URL and store the intended destination in a secure cookie.");
 }
-if (
-  !adminCallback.includes('request.cookies.get("toh_admin_next")') ||
-  !adminCallback.includes('response.cookies.set("toh_admin_next", ""')
-) {
-  throw new Error("Admin OAuth callback must restore and clear the secure intended-destination cookie.");
-}
-
 const adminAuthRedirectWorkflow = read(".github/workflows/supabase-admin-auth-redirect.yml");
 for (const marker of [
   "https://admin.theouthaven.com/auth/admin/callback",
@@ -176,6 +169,13 @@ if (!adminShell.includes("@theouthaven/auth/browser-client") || adminShell.inclu
 }
 
 const adminCallback = read("apps/admin/app/auth/admin/callback/route.ts");
+if (
+  !adminCallback.includes('request.cookies.get("toh_admin_next")') ||
+  !adminCallback.includes('response.cookies.set("toh_admin_next", ""')
+) {
+  throw new Error("Admin OAuth callback must restore and clear the secure intended-destination cookie.");
+}
+
 for (const dependency of [
   "@theouthaven/auth/server-client",
   "@theouthaven/auth/admin-roles",
