@@ -8,7 +8,7 @@ import {
 } from "@/lib/reservations/reservationDate";
 
 const reservePage = readFileSync(
-  "app/reserve/location/[locationId]/page.tsx",
+  "apps/reserve/app/reserve/location/[locationId]/page.tsx",
   "utf8",
 );
 const reservationCta = readFileSync(
@@ -43,14 +43,14 @@ describe("reservation public-to-booking E2E safeguards", () => {
         id: "location-123",
         location_type: "restaurant",
       }),
-    ).toBe("/reserve/location/location-123?type=restaurant");
+    ).toBe("https://reserve.theouthaven.com/reserve/location/location-123?type=restaurant");
 
     expect(
       getInternalReservationHref({
         id: "activity-456",
         location_type: "activity",
       }),
-    ).toBe("/reserve/location/activity-456?type=activity");
+    ).toBe("https://reserve.theouthaven.com/reserve/location/activity-456?type=activity");
   });
 
   it("uses New York calendar dates instead of UTC date slicing", () => {
