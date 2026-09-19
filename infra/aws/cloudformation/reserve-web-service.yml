@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven isolated Reserve ECS Fargate service.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  ClusterName: { Type: String }
+  SubnetIds: { Type: CommaDelimitedList }
+  TaskSecurityGroupId: { Type: AWS::EC2::SecurityGroup::Id }
+  TargetGroupArn: { Type: String }
+  TaskExecutionRoleArn: { Type: String }
+  TaskRoleArn: { Type: String }
+  LogGroupName: { Type: String }
+  AppEnvSecretArn: { Type: String }
+  ImageUri: { Type: String }
+  GitSha: { Type: String }
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 4
+
+Resources:
+  ReserveTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'toh-${Environment}-reserve-web'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref TaskRoleArn
+      ContainerDefinitions:
+        - Name: reserve-web
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: PLATFORM_RUNTIME_PROVIDER
+              Value: aws-reserve
+            - Name: PLATFORM_RUNTIME_GIT_SHA
+              Value: !Ref GitSha
+            - Name: THEOUTHAVEN_WEB_SURFACE
+              Value: reserve
+            - Name: HOSTNAME
+              Value: 0.0.0.0
+          Secrets:
+            - Name: RUNTIME_ENV_JSON
+              ValueFrom: !Ref AppEnvSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: [CMD, node, /app/healthcheck.cjs]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: ReserveWeb }
+
+  ReserveService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'toh-${Environment}-reserve-web'
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      DesiredCount: !Ref DesiredCount
+      TaskDefinition: !Ref ReserveTaskDefinition
+      EnableECSManagedTags: true
+      PropagateTags: SERVICE
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 90
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref TaskSecurityGroupId]
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - ContainerName: reserve-web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref TargetGroupArn
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: ReserveWeb }
+
+Outputs:
+  ReserveServiceName: { Value: !Sub 'toh-${Environment}-reserve-web' }
+  ReserveTaskDefinitionArn: { Value: !Ref ReserveTaskDefinition }
