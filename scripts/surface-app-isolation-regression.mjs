@@ -253,7 +253,21 @@ const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
+const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
 const adminSettingsPrimitives = read("apps/admin/app/admin/dashboard/settings/SettingsControlPrimitives.tsx");
+for (const marker of [
+  "Cloud Infrastructure",
+  "Expanded platform view",
+  "Platform topology",
+  "AWS Lightsail",
+  "Supabase",
+  "Google Cloud",
+  "Lightsail fleet and failover readiness",
+]) {
+  if (!adminWebsiteHostingPage.includes(marker)) {
+    throw new Error(`Admin Website Hosting enterprise control plane must preserve marker: ${marker}`);
+  }
+}
 for (const marker of [
   "Location directory",
   "Brief overview",
