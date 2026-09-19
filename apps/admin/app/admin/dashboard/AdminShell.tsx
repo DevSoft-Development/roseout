@@ -2,11 +2,54 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, LogOut, Menu, Search, X } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, LogOut, Menu, Moon, Search, Sun, X } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createBrowserSupabaseClient } from "@theouthaven/auth/browser-client";
 import type { AdminRole } from "@theouthaven/auth/admin-roles";
 import { adminShellNavigationGroups } from "./admin-navigation";
+
+type AdminAppearanceMode = "auto" | "light" | "dark";
+type AdminAppearanceSettings = {
+  mode: AdminAppearanceMode;
+  lightStart: string;
+  darkStart: string;
+};
+
+const ADMIN_APPEARANCE_STORAGE_KEY = "theouthaven.admin.appearance.v1";
+const ADMIN_APPEARANCE_EVENT = "theouthaven:admin-appearance-change";
+const DEFAULT_ADMIN_APPEARANCE: AdminAppearanceSettings = {
+  mode: "auto",
+  lightStart: "07:00",
+  darkStart: "19:00",
+};
+
+function normalizeAdminAppearance(value: unknown): AdminAppearanceSettings {
+  if (!value || typeof value !== "object") return DEFAULT_ADMIN_APPEARANCE;
+  const raw = value as Partial<AdminAppearanceSettings>;
+  const mode: AdminAppearanceMode =
+    raw.mode === "light" || raw.mode === "dark" || raw.mode === "auto" ? raw.mode : "auto";
+  const validTime = (time: unknown): time is string =>
+    typeof time === "string" && /^([01]\\d|2[0-3]):[0-5]\\d$/.test(time);
+  return {
+    mode,
+    lightStart: validTime(raw.lightStart) ? raw.lightStart : DEFAULT_ADMIN_APPEARANCE.lightStart,
+    darkStart: validTime(raw.darkStart) ? raw.darkStart : DEFAULT_ADMIN_APPEARANCE.darkStart,
+  };
+}
+
+function resolveAdminTheme(settings: AdminAppearanceSettings, now = new Date()): "light" | "dark" {
+  if (settings.mode === "light" || settings.mode === "dark") return settings.mode;
+  const minutes = (value: string) => {
+    const [hour, minute] = value.split(":").map(Number);
+    return hour * 60 + minute;
+  };
+  const current = now.getHours() * 60 + now.getMinutes();
+  const light = minutes(settings.lightStart);
+  const dark = minutes(settings.darkStart);
+  if (light === dark) return "light";
+  if (light < dark) return current >= light && current < dark ? "light" : "dark";
+  return current >= light || current < dark ? "light" : "dark";
+}
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   superadmin: "Superadmin",
@@ -39,6 +82,16 @@ function isRouteActive(pathname: string, href?: string) {
   return href === "/admin/dashboard" ? pathname === href : pathname.startsWith(href);
 }
 
+function readAppearance(): AdminAppearanceSettings {
+  if (typeof window === "undefined") return DEFAULT_ADMIN_APPEARANCE;
+  try {
+    const raw = window.localStorage.getItem(ADMIN_APPEARANCE_STORAGE_KEY);
+    return raw ? normalizeAdminAppearance(JSON.parse(raw)) : DEFAULT_ADMIN_APPEARANCE;
+  } catch {
+    return DEFAULT_ADMIN_APPEARANCE;
+  }
+}
+
 export default function AdminShell({
   children,
   adminName,
@@ -52,6 +105,38 @@ export default function AdminShell({
 }) {
   const pathname = usePathname() || "";
   const [open, setOpen] = useState(false);
+  const [appearance, setAppearance] = useState<AdminAppearanceSettings>(DEFAULT_ADMIN_APPEARANCE);
+  const [appearanceNow, setAppearanceNow] = useState(() => new Date(0));
+
+  useEffect(() => {
+    const syncAppearance = () => {
+      setAppearance(readAppearance());
+      setAppearanceNow(new Date());
+    };
+    syncAppearance();
+    window.addEventListener("storage", syncAppearance);
+    window.addEventListener(ADMIN_APPEARANCE_EVENT, syncAppearance as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncAppearance);
+      window.removeEventListener(ADMIN_APPEARANCE_EVENT, syncAppearance as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (appearance.mode !== "auto") return;
+    const timer = window.setInterval(() => setAppearanceNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [appearance.mode]);
+
+  const resolvedTheme = resolveAdminTheme(appearance, appearanceNow);
+
+  const setResolvedTheme = (theme: "light" | "dark") => {
+    const next = { ...appearance, mode: theme } as AdminAppearanceSettings;
+    window.localStorage.setItem(ADMIN_APPEARANCE_STORAGE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new Event(ADMIN_APPEARANCE_EVENT));
+    setAppearance(next);
+    setAppearanceNow(new Date());
+  };
 
   const visibleGroups = useMemo(
     () =>
@@ -153,7 +238,7 @@ export default function AdminShell({
   );
 
   return (
-    <div className="admin-shell" data-admin-theme="dark">
+    <div className="admin-shell" data-admin-theme={resolvedTheme} data-admin-theme-mode={appearance.mode}>
       <aside className="admin-shell-sidebar">
         <div className="admin-shell-brand">
           <span className="admin-shell-logo">OH</span>
@@ -194,6 +279,14 @@ export default function AdminShell({
           <strong>{currentItem?.label || "Command Center"}</strong>
         </div>
         <div className="admin-shell-header-status">
+          <button
+            type="button"
+            className="admin-shell-theme-toggle-mobile"
+            onClick={() => setResolvedTheme(resolvedTheme === "dark" ? "light" : "dark")}
+            aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <span className="admin-shell-status-dot" />
           <span>Production</span>
         </div>
@@ -205,6 +298,16 @@ export default function AdminShell({
           <strong>{currentItem?.label || "Command Center"}</strong>
         </div>
         <div className="admin-shell-topbar-actions">
+          <button
+            type="button"
+            className="admin-shell-topbar-action"
+            onClick={() => setResolvedTheme(resolvedTheme === "dark" ? "light" : "dark")}
+            aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{resolvedTheme === "dark" ? "Light" : "Dark"}</span>
+          </button>
           <Link href="/admin/dashboard/search-health" className="admin-shell-topbar-action">
             <Search size={16} /> Search Health
           </Link>
