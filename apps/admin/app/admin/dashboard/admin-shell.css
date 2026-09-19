@@ -359,6 +359,158 @@ body {
   color: var(--admin-shell-text);
 }
 
+.admin-enterprise-surface > :is(main, section, div) {
+  width: 100%;
+  max-width: 1540px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.admin-enterprise-surface > :is(main, section, div):not([class*="px-"]):not([class*="p-"]):not(.admin-page-shell) {
+  padding: 28px 28px 40px;
+}
+
+
+.admin-shell[data-admin-theme="light"] {
+  --admin-shell-bg: #f5f7fa;
+  --admin-shell-panel: #ffffff;
+  --admin-shell-card: #ffffff;
+  --admin-shell-card-strong: #f3f5f8;
+  --admin-shell-border: rgba(15, 23, 42, 0.10);
+  --admin-shell-border-strong: rgba(15, 23, 42, 0.16);
+  --admin-shell-text: #151821;
+  --admin-shell-muted: rgba(21, 24, 33, 0.56);
+  --admin-shell-soft: rgba(21, 24, 33, 0.76);
+  --admin-shell-accent: #d8072d;
+  --admin-shell-accent-hover: #bd0628;
+  --admin-shell-accent-soft: rgba(216, 7, 45, 0.08);
+  --admin-shell-accent-border: rgba(216, 7, 45, 0.22);
+  color-scheme: light;
+  background:
+    radial-gradient(circle at 86% -8%, rgba(216, 7, 45, 0.055), transparent 34rem),
+    #f5f7fa;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-shell-sidebar {
+  border-color: var(--admin-shell-border);
+  background: rgba(255,255,255,.98);
+  box-shadow: 20px 0 55px rgba(15,23,42,.06);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-shell-desktop-topbar,
+.admin-shell[data-admin-theme="light"] .admin-shell-header {
+  border-color: var(--admin-shell-border);
+  background: rgba(255,255,255,.90);
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] :is(
+  .admin-shell-brand strong,
+  .admin-shell-user strong,
+  .admin-shell-desktop-topbar strong,
+  .admin-shell-header-copy strong,
+  .admin-shell-nav-group-trigger:hover,
+  .admin-shell-nav-item:hover,
+  .admin-shell-nav-item.is-active
+) {
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-shell-nav-group-trigger,
+.admin-shell[data-admin-theme="light"] .admin-shell-nav-item,
+.admin-shell[data-admin-theme="light"] .admin-shell-topbar-action,
+.admin-shell[data-admin-theme="light"] .admin-shell-topbar-runtime {
+  color: var(--admin-shell-soft);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-shell-nav-group-icon,
+.admin-shell[data-admin-theme="light"] .admin-shell-environment,
+.admin-shell[data-admin-theme="light"] .admin-shell-topbar-action,
+.admin-shell[data-admin-theme="light"] .admin-shell-topbar-runtime,
+.admin-shell[data-admin-theme="light"] .admin-shell-user button,
+.admin-shell[data-admin-theme="light"] .admin-shell-menu,
+.admin-shell[data-admin-theme="light"] .admin-shell-theme-toggle-mobile {
+  border-color: var(--admin-shell-border);
+  background: rgba(15,23,42,.025);
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface {
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-white, [class*="text-white/"]) {
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#0"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#1"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#2"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-black/"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-white/"] {
+  background-color: rgba(255,255,255,.92) !important;
+  background-image: none !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="border-white/"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface input,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface textarea,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface select {
+  border-color: var(--admin-shell-border-strong) !important;
+  background: #ffffff !important;
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface input::placeholder,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface textarea::placeholder {
+  color: rgba(21,24,33,.42) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-rose-100,.text-rose-200,.text-rose-300) {
+  color: #9f1239 !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-emerald-100,.text-emerald-200,.text-emerald-300) {
+  color: #166534 !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-amber-100,.text-amber-200,.text-amber-300) {
+  color: #92400e !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface a[class~="bg-white"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface button[class~="bg-white"] {
+  border-color: var(--admin-shell-border-strong) !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  box-shadow: 0 8px 24px rgba(15,23,42,.08);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  a[class*="bg-rose-"],
+  button[class*="bg-rose-"],
+  a[class*="bg-[#e1062a]"],
+  button[class*="bg-[#e1062a]"]
+) {
+  color: #ffffff !important;
+}
+
+.admin-shell-theme-toggle-mobile {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--admin-shell-border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  color: var(--admin-shell-text);
+  cursor: pointer;
+}
+
 /* Enterprise Admin compatibility layer.
  * This intentionally normalizes the many historical Admin route styles at the shell
  * boundary so business logic can remain untouched while every route shares one visual system.
@@ -438,8 +590,8 @@ body {
   border-color: var(--admin-shell-border);
 }
 
-.admin-enterprise-surface a[class*="bg-white"],
-.admin-enterprise-surface button[class*="bg-white"] {
+.admin-enterprise-surface a[class~="bg-white"],
+.admin-enterprise-surface button[class~="bg-white"] {
   border: 1px solid rgba(255,255,255,.82) !important;
   background: #fff !important;
   color: #09090b !important;
@@ -539,6 +691,10 @@ body {
 
   .admin-enterprise-surface {
     min-height: calc(100vh - 64px);
+  }
+
+  .admin-enterprise-surface > :is(main, section, div):not([class*="px-"]):not([class*="p-"]):not(.admin-page-shell) {
+    padding: 20px 18px 32px;
   }
 
   .admin-shell-drawer {
