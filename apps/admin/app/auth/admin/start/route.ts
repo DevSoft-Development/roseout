@@ -11,6 +11,24 @@ function loginError(request: NextRequest, requestUrl: URL) {
 }
 
 export async function GET(request: NextRequest) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  const ip =
+    forwarded?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("cf-connecting-ip") ||
+    "Unknown";
+  const userAgent = request.headers.get("user-agent") || "Unknown";
+
+  console.info(
+    "ADMIN_MICROSOFT_SIGN_IN_ATTEMPT",
+    JSON.stringify({
+      ip,
+      userAgent,
+      timestamp: new Date().toISOString(),
+      host: request.headers.get("host") || null,
+    }),
+  );
+
   const requestUrl = new URL(request.url);
   const origin = resolveWebSurfaceAuthOrigin(request, requestUrl, "admin");
   const requestedNext = sanitizeIntendedPath(requestUrl.searchParams.get("next"));

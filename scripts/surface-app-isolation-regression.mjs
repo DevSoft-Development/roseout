@@ -67,6 +67,27 @@ if (adminLogin.includes("@theouthaven/auth/browser-client") || adminLogin.includ
 if (!adminLogin.includes("cursor-pointer") || !adminLogin.includes("Sign in with Microsoft")) {
   throw new Error("Admin login must render an unmistakably interactive Microsoft sign-in control.");
 }
+if (
+  !adminLogin.includes("/api/security-context") ||
+  !adminLogin.includes("Security notice") ||
+  !adminLogin.includes("Logging active") ||
+  !adminLogin.includes("/theouthaven-icon.png")
+) {
+  throw new Error("Admin login must preserve branded security context and monitoring notice.");
+}
+
+const adminSecurityContext = read("apps/admin/app/api/security-context/route.ts");
+for (const marker of [
+  "ADMIN_LOGIN_SECURITY_CONTEXT",
+  "x-forwarded-for",
+  "user-agent",
+  "Cache-Control",
+]) {
+  if (!adminSecurityContext.includes(marker)) {
+    throw new Error(`Admin security context route must preserve security marker: ${marker}`);
+  }
+}
+
 
 const adminOauthStart = read("apps/admin/app/auth/admin/start/route.ts");
 for (const dependency of [
@@ -85,6 +106,14 @@ if (
 ) {
   throw new Error("Admin OAuth start route must create a server-side Azure OAuth redirect to the isolated Admin callback.");
 }
+if (
+  !adminOauthStart.includes("ADMIN_MICROSOFT_SIGN_IN_ATTEMPT") ||
+  !adminOauthStart.includes("x-forwarded-for") ||
+  !adminOauthStart.includes("user-agent")
+) {
+  throw new Error("Admin OAuth start route must log connection metadata for security audit visibility.");
+}
+
 
 const adminSession = read("packages/auth/admin-session.ts");
 for (const dependency of [
