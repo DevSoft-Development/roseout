@@ -132,6 +132,19 @@ for (const marker of [
     throw new Error(`Supabase Admin auth redirect workflow must preserve marker: ${marker}`);
   }
 }
+if (
+  adminAuthRedirectWorkflow.includes("\\${{ secrets.SUPABASE_ACCESS_TOKEN }}") ||
+  adminAuthRedirectWorkflow.includes("\\${ref}")
+) {
+  throw new Error("Supabase Admin auth redirect workflow must not escape GitHub expressions or shell ref expansion.");
+}
+if (
+  adminLogin.includes('["Microsoft 365", "Identity protected"]') ||
+  adminLogin.includes('["AWS", "Isolated Admin runtime"]') ||
+  adminLogin.includes('["Audit", "Security activity logged"]')
+) {
+  throw new Error("Admin login must not render the removed trust badge cards.");
+}
 
 
 
