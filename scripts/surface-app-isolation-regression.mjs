@@ -229,7 +229,7 @@ if (!platformErrorsLoader.includes("@theouthaven/db/admin-client") || platformEr
 }
 
 const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
-const adminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
+const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 for (const marker of [
   "Command Center",
@@ -256,7 +256,7 @@ for (const marker of [
   "Production · AWS",
   "admin-enterprise-surface",
 ]) {
-  if (!adminShell.includes(marker)) {
+  if (!enterpriseAdminShell.includes(marker)) {
     throw new Error(`Enterprise Admin shell must include: ${marker}`);
   }
 }
