@@ -3681,8 +3681,13 @@ if (!productionCi.includes("apps/admin/") || !productionCi.includes("packages/(a
 if (!productionCi.includes("Detect quality scope") || !productionCi.includes("Lint isolated Admin surface")) {
   throw new Error("Production CI must keep the targeted isolated Admin quality lane.");
 }
-if (!productionCi.includes("grep -Evq '^(apps/admin/|packages/(auth|db|config)/|scripts/surface-app-isolation-regression\\.mjs$)'")) {
-  throw new Error("Production CI must reserve the fast quality lane for isolated Admin/shared-boundary changes only.");
+if (
+  !productionCi.includes("apps/(admin|business)/") ||
+  !productionCi.includes("infra/aws/web-surfaces/") ||
+  !productionCi.includes("infra/aws/cloudformation/web-surfaces-services\\.yml") ||
+  !productionCi.includes("scripts/(surface-app-isolation-regression|web-surfaces-services-regression)\\.mjs")
+) {
+  throw new Error("Production CI must reserve the fast quality lane for isolated Admin/Business and their AWS service boundary changes.");
 }
 
 const surfaceIsolationWorkflow = read(".github/workflows/surface-app-isolation-foundation.yml");
