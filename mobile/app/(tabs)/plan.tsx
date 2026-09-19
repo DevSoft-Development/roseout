@@ -299,6 +299,7 @@ export default function PlanScreen() {
           Show My Picks →
         </Button>
       )}
+      stickyFooterBottomOffset={0}
       showBrandHeader
       showBack
       backLabel="Back"
