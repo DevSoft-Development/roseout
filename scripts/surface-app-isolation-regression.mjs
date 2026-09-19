@@ -252,7 +252,19 @@ const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts
 const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
+const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
 const adminSettingsPrimitives = read("apps/admin/app/admin/dashboard/settings/SettingsControlPrimitives.tsx");
+for (const marker of [
+  "Location directory",
+  "Brief overview",
+  "Open full record",
+  "Searchable on page",
+  "<details key={id}",
+]) {
+  if (!adminLocationsPage.includes(marker)) {
+    throw new Error(`Admin Locations enterprise directory must preserve marker: ${marker}`);
+  }
+}
 for (const marker of [
   "admin-settings-page",
   "Control center",
