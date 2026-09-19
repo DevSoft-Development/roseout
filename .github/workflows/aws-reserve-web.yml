@@ -1,0 +1,219 @@
+name: AWS Reserve web
+
+on:
+  pull_request:
+    paths:
+      - 'apps/reserve/**'
+      - 'infra/aws/cloudformation/reserve-web-foundation.yml'
+      - 'infra/aws/cloudformation/reserve-web-service.yml'
+      - 'infra/aws/web-surfaces/**'
+      - 'scripts/reserve-web-isolation-regression.mjs'
+      - '.github/workflows/aws-reserve-web.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/reserve/**'
+      - 'infra/aws/cloudformation/reserve-web-foundation.yml'
+      - 'infra/aws/cloudformation/reserve-web-service.yml'
+      - 'infra/aws/web-surfaces/**'
+      - 'scripts/reserve-web-isolation-regression.mjs'
+      - '.github/workflows/aws-reserve-web.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: production
+        type: choice
+        options: [staging, production]
+      desired_count:
+        description: Reserve tasks
+        required: true
+        default: '1'
+        type: choice
+        options: ['0', '1', '2']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-reserve-web-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  FOUNDATION_TEMPLATE: infra/aws/cloudformation/reserve-web-foundation.yml
+  SERVICE_TEMPLATE: infra/aws/cloudformation/reserve-web-service.yml
+  DOCKERFILE: infra/aws/web-surfaces/Dockerfile
+  BOOTSTRAP_POLICY_FILE: infra/aws/iam/web-surfaces-bootstrap-policy.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Reserve isolation contract
+        run: node scripts/reserve-web-isolation-regression.mjs
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Lint Reserve CloudFormation
+        run: |
+          cfn-lint "$FOUNDATION_TEMPLATE"
+          cfn-lint "$SERVICE_TEMPLATE"
+      - name: Verify Reserve surface build
+        run: |
+          set -euo pipefail
+          grep -F 'build:surface:reserve' package.json >/dev/null
+          grep -F 'reserve) npm run build:surface:reserve' "$DOCKERFILE" >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve configuration
+        id: config
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          INPUT_DESIRED: ${{ github.event.inputs.desired_count }}
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-production}"
+          DESIRED="${INPUT_DESIRED:-1}"
+          case "$TARGET_ENV" in production|staging) ;; *) exit 2 ;; esac
+          case "$DESIRED" in 0|1|2) ;; *) exit 2 ;; esac
+          ROLE_ARN="${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}"
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "desired_count=$DESIRED" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+          echo "foundation_stack=theouthaven-reserve-web-foundation-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+          echo "service_stack=theouthaven-reserve-web-service-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Ensure Reserve infrastructure permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenWebSurfacesBootstrap             --policy-document "file://$BOOTSTRAP_POLICY_FILE"
+          sleep 8
+
+      - name: Resolve wildcard TLS certificate
+        id: tls
+        run: |
+          set -euo pipefail
+          CERTIFICATE_ARN="$(aws acm list-certificates             --certificate-statuses ISSUED             --query "CertificateSummaryList[?DomainName=='*.theouthaven.com'] | [0].CertificateArn"             --output text)"
+          test -n "$CERTIFICATE_ARN" && test "$CERTIFICATE_ARN" != "None"
+          echo "certificate_arn=$CERTIFICATE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy dedicated Reserve foundation
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          STACK: ${{ steps.config.outputs.foundation_stack }}
+          CERTIFICATE_ARN: ${{ steps.tls.outputs.certificate_arn }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK"             --template-file "$FOUNDATION_TEMPLATE"             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides               Environment="$TARGET_ENV"               ReserveHost="reserve.theouthaven.com"               CertificateArn="$CERTIFICATE_ARN"             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveWeb ManagedBy=CloudFormation
+
+      - name: Resolve foundation outputs
+        id: foundation
+        env:
+          STACK: ${{ steps.config.outputs.foundation_stack }}
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name "$STACK" > "$RUNNER_TEMP/reserve-foundation.json"
+          output() { jq -r --arg key "$1" '.Stacks[0].Outputs[] | select(.OutputKey==$key) | .OutputValue' "$RUNNER_TEMP/reserve-foundation.json"; }
+          for key in ReserveLoadBalancerDnsName ReserveSubnetIds ReserveTaskSecurityGroupId ReserveTargetGroupArn ReserveRepositoryName ReserveRepositoryUri ReserveClusterName ReserveLogGroupName ReserveAppEnvSecretArn ReserveExecutionRoleArn ReserveTaskRoleArn; do
+            value="$(output "$key")"
+            test -n "$value" && test "$value" != "null"
+            echo "${key,,}=$value" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Populate isolated Reserve runtime environment
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          RESERVE_SECRET_ARN: ${{ steps.foundation.outputs.reserveappenvsecretarn }}
+        run: |
+          set -euo pipefail
+          SOURCE_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
+          aws secretsmanager get-secret-value --secret-id "$SOURCE_SECRET" --query SecretString --output text > "$RUNNER_TEMP/source-env.json"
+          jq 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN, .VERCEL_RUNTIME_TOKEN)' "$RUNNER_TEMP/source-env.json" > "$RUNNER_TEMP/reserve-env.json"
+          aws secretsmanager put-secret-value --secret-id "$RESERVE_SECRET_ARN" --secret-string "file://$RUNNER_TEMP/reserve-env.json" >/dev/null
+
+      - name: Build and push isolated Reserve image
+        id: image
+        env:
+          REPOSITORY_NAME: ${{ steps.foundation.outputs.reserverepositoryname }}
+          REPOSITORY_URI: ${{ steps.foundation.outputs.reserverepositoryuri }}
+          RESERVE_SECRET_ARN: ${{ steps.foundation.outputs.reserveappenvsecretarn }}
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${REPOSITORY_URI%%/*}"
+          aws secretsmanager get-secret-value --secret-id "$RESERVE_SECRET_ARN" --query SecretString --output text > "$RUNNER_TEMP/platform-env"
+          IMAGE_TAG="${GITHUB_SHA}-reserve"
+          IMAGE_URI="${REPOSITORY_URI}:${IMAGE_TAG}"
+          if ! aws ecr describe-images --repository-name "$REPOSITORY_NAME" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            docker build               --file "$DOCKERFILE"               --build-arg "WEB_SURFACE=reserve"               --secret "id=platform_env,src=$RUNNER_TEMP/platform-env"               --tag "$IMAGE_URI"               .
+            docker push "$IMAGE_URI"
+          fi
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Reserve ECS service
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          STACK: ${{ steps.config.outputs.service_stack }}
+          DESIRED_COUNT: ${{ steps.config.outputs.desired_count }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          CLUSTER: ${{ steps.foundation.outputs.reserveclustername }}
+          SUBNETS: ${{ steps.foundation.outputs.reservesubnetids }}
+          SG: ${{ steps.foundation.outputs.reservetasksecuritygroupid }}
+          TG: ${{ steps.foundation.outputs.reservetargetgrouparn }}
+          EXEC_ROLE: ${{ steps.foundation.outputs.reserveexecutionrolearn }}
+          TASK_ROLE: ${{ steps.foundation.outputs.reservetaskrolearn }}
+          LOG_GROUP: ${{ steps.foundation.outputs.reserveloggrouPname }}
+          APP_ENV: ${{ steps.foundation.outputs.reserveappenvsecretarn }}
+        run: |
+          set -euo pipefail
+          LOG_GROUP="${LOG_GROUP:-${{ steps.foundation.outputs.reserveloggroupname }}}"
+          aws cloudformation deploy             --stack-name "$STACK"             --template-file "$SERVICE_TEMPLATE"             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides               Environment="$TARGET_ENV" ClusterName="$CLUSTER" SubnetIds="$SUBNETS"               TaskSecurityGroupId="$SG" TargetGroupArn="$TG"               TaskExecutionRoleArn="$EXEC_ROLE" TaskRoleArn="$TASK_ROLE"               LogGroupName="$LOG_GROUP" AppEnvSecretArn="$APP_ENV"               ImageUri="$IMAGE_URI" GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT"             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveWeb ManagedBy=CloudFormation
+
+      - name: Wait for Reserve service
+        if: steps.config.outputs.desired_count != '0'
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          CLUSTER: ${{ steps.foundation.outputs.reserveclustername }}
+        run: |
+          set -euo pipefail
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "toh-${TARGET_ENV}-reserve-web"
+
+      - name: Verify isolated Reserve origin
+        if: steps.config.outputs.desired_count != '0'
+        env:
+          ORIGIN: ${{ steps.foundation.outputs.reserveloadbalancerdnsname }}
+        run: |
+          set -euo pipefail
+          BODY="$(curl --fail --silent --show-error --max-time 20 -H 'Host: reserve.theouthaven.com' "http://$ORIGIN/api/health/platform-dr")"
+          printf '%s' "$BODY" | jq -e '.ok == true and .service == "reserve-web" and .provider == "aws-reserve"' >/dev/null
+          echo 'Reserve AWS origin is healthy. DNS/public cutover is intentionally separate.'
