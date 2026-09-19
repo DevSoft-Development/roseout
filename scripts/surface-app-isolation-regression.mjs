@@ -30,7 +30,7 @@ for (const surface of surfaces) {
   }
 
   const tsconfig = read(`apps/${surface}/tsconfig.json`);
-  const expectedRootAlias = surface === "reserve" ? '"@/*": ["../../*"]' : '"@/*": ["./*"]';
+  const expectedRootAlias = surface === "reserve" || surface === "business" ? '"@/*": ["../../*"]' : '"@/*": ["./*"]';
   if (!tsconfig.includes(expectedRootAlias)) {
     throw new Error(`${surface} must preserve its expected migration-time @/* boundary.`);
   }
