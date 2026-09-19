@@ -25,7 +25,7 @@ requireText(workflow, 'theouthaven-web-surfaces-production', 'Isolation smoke mu
 requireText(workflow, '--connect-to "${host}:443:${ORIGIN}:443"', 'Isolation smoke must exercise the real HTTPS listener without changing public DNS.');
 requireText(workflow, "require_allowed 'admin.theouthaven.com' '/admin/login'", 'Admin login must remain reachable on the Admin runtime.');
 requireText(workflow, "require_denied 'admin.theouthaven.com' '/locations/dashboard'", 'Admin runtime must reject the Business dashboard.');
-requireText(workflow, "require_denied 'admin.theouthaven.com' '/'", 'Admin runtime must reject the consumer homepage.');
+requireText(workflow, "require_allowed 'admin.theouthaven.com' '/'", 'Admin root must remain reachable so the isolated runtime can redirect to Admin login.');
 requireText(workflow, "require_location_prefix 'admin.theouthaven.com' '/auth/admin/callback' 'https://admin.theouthaven.com/admin/login'", 'Admin callback failures must remain on the Admin hostname.');
 requireText(workflow, "require_allowed 'business.theouthaven.com' '/login'", 'Business shared login must remain reachable.');
 requireText(workflow, "require_allowed 'business.theouthaven.com' '/locations/dashboard'", 'Business dashboard must remain reachable on the Business runtime.');
