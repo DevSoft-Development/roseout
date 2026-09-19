@@ -1,0 +1,2 @@
+import { NextResponse } from "next/server"; import { getCurrentUserCareerApplication } from "@/lib/careers/queries";
+export async function GET(_:Request,{params}:{params:Promise<{applicationId:string}>}){ try { const {applicationId}=await params; const application=await getCurrentUserCareerApplication(applicationId); if(!application) return NextResponse.json({ error:"Application not found." },{status:404}); return NextResponse.json({ application }); } catch { return NextResponse.json({ error:"We could not load this application." },{status:500}); } }
