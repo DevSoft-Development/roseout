@@ -30,7 +30,7 @@ requireText(workflow, "require_location_prefix 'admin.theouthaven.com' '/auth/ad
 requireText(workflow, "require_allowed 'business.theouthaven.com' '/business/login'", 'Business login must remain reachable on the isolated Business runtime.');
 requireText(workflow, "require_allowed 'business.theouthaven.com' '/locations/dashboard'", 'Business dashboard must remain reachable on the Business runtime.');
 requireText(workflow, "require_denied 'business.theouthaven.com' '/admin/login'", 'Business runtime must reject Admin login.');
-requireText(workflow, "require_denied 'business.theouthaven.com' '/'", 'Business runtime must reject the consumer homepage.');
+requireText(workflow, "require_location_prefix 'business.theouthaven.com' '/' 'https://business.theouthaven.com/business/login'", 'Business root must redirect to the isolated Business login page.');
 requireText(workflow, "require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/business/login'", 'Business callback failures must remain on the Business hostname and Business login route.');
 requireText(workflow, ".ok == true and .provider == $provider", 'Both isolated origins must prove their expected runtime provider.');
 requireText(workflow, "status" + '" != \'404\'', 'Denied surface routes must require exact HTTP 404.');
