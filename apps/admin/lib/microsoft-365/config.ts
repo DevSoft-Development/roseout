@@ -68,16 +68,15 @@ export async function getMicrosoft365Config(options?: {
     environment = vault.environment;
     tenantId = String(vault.values.tenantId || "").trim();
     clientId = String(vault.values.clientId || "").trim();
-  } catch {
-    if (environment === "production") {
-      throw new Error("M365_CREDENTIAL_VAULT_UNAVAILABLE");
-    }
+  } catch (error) {
+    console.warn(
+      "M365 credential vault lookup unavailable; using the vault-synced runtime copy.",
+      error instanceof Error ? error.message : "credential_vault_unavailable",
+    );
   }
 
-  if (environment !== "production") {
-    tenantId ||= resolveConsistentEnv(TENANT_ENV_KEYS, "M365_TENANT");
-    clientId ||= resolveConsistentEnv(CLIENT_ENV_KEYS, "M365_CLIENT");
-  }
+  tenantId ||= resolveConsistentEnv(TENANT_ENV_KEYS, "M365_TENANT");
+  clientId ||= resolveConsistentEnv(CLIENT_ENV_KEYS, "M365_CLIENT");
 
   const requestedRedirectUri = options?.redirectUri?.trim() || "";
   const fallbackOrigin = String(
