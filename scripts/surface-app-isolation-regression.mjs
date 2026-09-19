@@ -255,7 +255,19 @@ const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
 const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
 const adminWorkerOperationsPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
+const adminCronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
 const adminSettingsPrimitives = read("apps/admin/app/admin/dashboard/settings/SettingsControlPrimitives.tsx");
+for (const marker of [
+  "Operations control plane",
+  "Recovery-aware scheduler health",
+  "Daily health email",
+  "No cron jobs match this view",
+  "Recent runs",
+]) {
+  if (!adminCronJobsClient.includes(marker)) {
+    throw new Error(`Admin Cron Jobs enterprise scheduler console must preserve marker: ${marker}`);
+  }
+}
 for (const marker of [
   "Worker Operations",
   "Queue and lease health",
@@ -1147,9 +1159,10 @@ if (
 const cronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
 if (
   cronJobsClient.includes("@/components/admin/") ||
-  !cronJobsClient.includes("./CronJobsUi")
+  cronJobsClient.includes("./CronJobsUi") ||
+  !cronJobsClient.includes("../../../../../components/admin/AdminDesignSystem")
 ) {
-  throw new Error("Cron Jobs client must use local isolated UI primitives.");
+  throw new Error("Cron Jobs client must use the isolated Admin design system without root monolith UI imports.");
 }
 
 for (const cronRoute of [
