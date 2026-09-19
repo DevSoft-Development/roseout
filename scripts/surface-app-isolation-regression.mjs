@@ -868,7 +868,7 @@ if (
 const generatedWebsitesPage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
 if (
   !generatedWebsitesPage.includes("@theouthaven/auth/admin-session") ||
-  !generatedWebsitesPage.includes('requireAdminRole(["superadmin"])')
+  !generatedWebsitesEnterprisePage.includes('requireAdminRole(["superadmin"])')
 ) {
   throw new Error("Generated Websites page must remain isolated and superadmin-only.");
 }
@@ -4042,22 +4042,22 @@ if (
   throw new Error("Search Health must remain directly visible in the default-open Admin Command Center group.");
 }
 
-const generatedWebsitesPage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
-const generatedWebsitesClient = read("apps/admin/app/admin/dashboard/settings/websites/WebsiteResetClient.tsx");
+const generatedWebsitesEnterprisePage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
+const generatedWebsitesEnterpriseClient = read("apps/admin/app/admin/dashboard/settings/websites/WebsiteResetClient.tsx");
 for (const marker of [
   "Generated Websites",
   "Controlled website reset",
   "Per-site",
   "Registered domains",
 ]) {
-  if (!generatedWebsitesPage.includes(marker)) {
+  if (!generatedWebsitesEnterprisePage.includes(marker)) {
     throw new Error(`Generated Websites enterprise page must preserve marker: ${marker}`);
   }
 }
 if (
-  !generatedWebsitesPage.includes("../../../../../components/admin/AdminDesignSystem") ||
-  !generatedWebsitesPage.includes('requireAdminRole(["superadmin"])') ||
-  generatedWebsitesPage.includes("./websites.css")
+  !generatedWebsitesEnterprisePage.includes("../../../../../components/admin/AdminDesignSystem") ||
+  !generatedWebsitesEnterprisePage.includes('requireAdminRole(["superadmin"])') ||
+  generatedWebsitesEnterprisePage.includes("./websites.css")
 ) {
   throw new Error("Generated Websites must use the isolated shared Admin design system and preserve superadmin-only access.");
 }
@@ -4069,13 +4069,13 @@ for (const marker of [
   "Permanent website reset",
   "No generated websites match this search",
 ]) {
-  if (!generatedWebsitesClient.includes(marker)) {
+  if (!generatedWebsitesEnterpriseClient.includes(marker)) {
     throw new Error(`Generated Websites reset console must preserve marker: ${marker}`);
   }
 }
 if (
-  !generatedWebsitesClient.includes("../../../../../components/admin/AdminDesignSystem") ||
-  generatedWebsitesClient.includes("@/components/admin/")
+  !generatedWebsitesEnterpriseClient.includes("../../../../../components/admin/AdminDesignSystem") ||
+  generatedWebsitesEnterpriseClient.includes("@/components/admin/")
 ) {
   throw new Error("Generated Websites client must use the isolated Admin design system without root monolith UI imports.");
 }
