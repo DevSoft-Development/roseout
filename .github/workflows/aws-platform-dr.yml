@@ -130,6 +130,30 @@ jobs:
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           PRESERVE='TheOutHavenPlatformCloudFormation'
+          INSPECTION_POLICY='TheOutHavenPlatformDrSelfInspectionBootstrap'
+
+          cat > "$RUNNER_TEMP/platform-dr-self-inspection.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"PlatformDrSelfInspection",
+                "Effect":"Allow",
+                "Action":[
+                  "iam:ListRolePolicies",
+                  "iam:GetRolePolicy"
+                ],
+                "Resource":"arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole"
+              }
+            ]
+          }
+          JSON
+
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$INSPECTION_POLICY" \
+            --policy-document "file://$RUNNER_TEMP/platform-dr-self-inspection.json"
+          sleep 8
 
           mapfile -t TEMPORARY_POLICIES <<'EOF'
           TheOutHavenPlatformDrBootstrap
@@ -219,6 +243,9 @@ jobs:
             --policy-name TheOutHavenPlatformDrBootstrap \
             --policy-document "file://$RUNNER_TEMP/platform-dr-bootstrap.json"
           sleep 8
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$INSPECTION_POLICY"
 
       - name: Resolve persistent DR secrets
         id: secrets
@@ -805,3 +832,6 @@ jobs:
           aws iam delete-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name TheOutHavenPlatformDrBootstrap 2>/dev/null || true
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenPlatformDrSelfInspectionBootstrap 2>/dev/null || true
