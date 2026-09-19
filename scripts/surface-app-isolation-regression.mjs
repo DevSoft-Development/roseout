@@ -4120,6 +4120,31 @@ if (
   throw new Error("Mailing Batch creation flow must use the isolated Admin design system without root monolith UI imports.");
 }
 
+const enterpriseMarketingPage = read("apps/admin/app/admin/dashboard/marketing/page.tsx");
+for (const marker of [
+  "Marketing Center",
+  "Campaign Pulse",
+  "Create Marketing Campaign",
+  "Campaigns and drafts",
+  "Consent-first targeting",
+]) {
+  if (!enterpriseMarketingPage.includes(marker)) {
+    throw new Error(`Marketing enterprise control center must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterpriseMarketingPage.includes("../../../../components/admin/AdminDesignSystem") ||
+  !enterpriseMarketingPage.includes("MarketingCampaignActions") ||
+  !enterpriseMarketingPage.includes("MarketingCampaignCardActions") ||
+  !enterpriseMarketingPage.includes("SocialGeneratorPreview") ||
+  !enterpriseMarketingPage.includes("marketing_campaigns") ||
+  !enterpriseMarketingPage.includes("marketing_send_logs") ||
+  enterpriseMarketingPage.includes("bg-[#f8f3ef]") ||
+  enterpriseMarketingPage.includes("text-[#1b1210]")
+) {
+  throw new Error("Marketing Center must preserve campaign operations while using the isolated enterprise Admin presentation.");
+}
+
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
 
 
