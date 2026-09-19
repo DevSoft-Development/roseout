@@ -60,6 +60,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Reserve isolation contract
         run: node scripts/reserve-web-isolation-regression.mjs
+      - name: Validate Reserve route migration parity
+        run: node scripts/reserve-route-migration-regression.mjs
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
       - name: Lint Reserve CloudFormation
