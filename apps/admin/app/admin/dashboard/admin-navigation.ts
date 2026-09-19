@@ -113,6 +113,13 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
         migrated: true,
         roles: ["superadmin", "admin"],
       },
+      {
+        label: "Search Health",
+        href: "/admin/dashboard/search-health",
+        icon: Search,
+        migrated: true,
+        roles: ["superadmin", "admin", "experience_team"],
+      },
     ],
   },
   {
@@ -294,13 +301,6 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
         icon: Search,
         migrated: true,
         roles: ["superadmin", "admin", "editor", "viewer"],
-      },
-      {
-        label: "Search Health",
-        href: "/admin/dashboard/search-health",
-        icon: Search,
-        migrated: true,
-        roles: ["superadmin", "admin", "experience_team"],
       },
     ],
   },
