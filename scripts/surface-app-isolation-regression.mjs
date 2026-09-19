@@ -261,6 +261,35 @@ for (const marker of [
     throw new Error(`Enterprise Admin shell must include: ${marker}`);
   }
 }
+
+for (const marker of [
+  "theouthaven.admin.appearance.v1",
+  "theouthaven:admin-appearance-change",
+  "data-admin-theme={resolvedTheme}",
+  "Switch to light mode",
+  "Switch to dark mode",
+]) {
+  if (!enterpriseAdminShell.includes(marker)) {
+    throw new Error(`Enterprise Admin appearance contract must include: ${marker}`);
+  }
+}
+if (enterpriseAdminShell.includes('data-admin-theme="dark"')) {
+  throw new Error("Enterprise Admin shell must not hard-code dark mode.");
+}
+if (
+  !adminShellCss.includes('a[class~="bg-white"]') ||
+  !adminShellCss.includes('button[class~="bg-white"]') ||
+  adminShellCss.includes('a[class*="bg-white"]') ||
+  adminShellCss.includes('button[class*="bg-white"]')
+) {
+  throw new Error("Enterprise Admin theme must only promote exact bg-white actions, not translucent bg-white/* surfaces.");
+}
+if (
+  !adminShellCss.includes('.admin-shell[data-admin-theme="light"]') ||
+  !adminShellCss.includes('padding: 28px 28px 40px')
+) {
+  throw new Error("Enterprise Admin shell must preserve global light mode and consistent desktop content spacing.");
+}
 for (const marker of [
   "--admin-shell-accent: #e1062a",
   ".admin-shell-nav-group",
