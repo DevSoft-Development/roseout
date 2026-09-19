@@ -113,10 +113,49 @@ export async function GET(request: NextRequest) {
     request,
   });
 
-  // Microsoft Entra authentication and the active Admin role are the login gate.
-  // The separate Microsoft 365 Graph connection powers optional Admin integrations
-  // and must never block access to the Admin dashboard.
-  const response = NextResponse.redirect(new URL(next, origin));
+  let microsoft365Connected = false;
+  let microsoft365LookupSucceeded = false;
+  try {
+    const { data: microsoft365Connection, error: microsoft365LookupError } =
+      await supabaseAdmin
+        .from("microsoft_365_connections")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+    if (microsoft365LookupError) {
+      console.error(
+        "ADMIN_MICROSOFT_365_CONNECTION_LOOKUP_FAILED",
+        microsoft365LookupError,
+      );
+    } else {
+      microsoft365LookupSucceeded = true;
+      microsoft365Connected = microsoft365Connection?.status === "active";
+    }
+  } catch (microsoft365LookupException) {
+    console.error(
+      "ADMIN_MICROSOFT_365_CONNECTION_LOOKUP_EXCEPTION",
+      microsoft365LookupException,
+    );
+  }
+
+  const shouldAutoConnectMicrosoft365 =
+    microsoft365LookupSucceeded && !microsoft365Connected;
+  const destination = shouldAutoConnectMicrosoft365
+    ? new URL("/api/admin/integrations/microsoft-365/connect", origin)
+    : new URL(next, origin);
+
+  if (shouldAutoConnectMicrosoft365) {
+    destination.searchParams.set("auto", "1");
+    destination.searchParams.set("next", next);
+  }
+
+  // Microsoft Entra authentication and the active Admin role remain the login gate.
+  // On the first successful sign-in, automatically continue into the Microsoft 365
+  // Graph authorization flow. Once an active Graph connection exists, future sign-ins
+  // go directly to the intended Admin page. Integration lookup failures fail open to
+  // the Admin page so an optional integration can never lock out an administrator.
+  const response = NextResponse.redirect(destination);
   response.cookies.set("toh_admin_next", "", {
     httpOnly: true,
     secure: true,
