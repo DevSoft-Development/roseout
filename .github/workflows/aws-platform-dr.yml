@@ -398,6 +398,7 @@ jobs:
                   handle.write(f'{key}={json.dumps(resolved[key])}\\n')
           print(f'vercel_production_environment_keys={len(resolved)}')
           PY
+          python -m pip install --disable-pip-version-check python-dotenv
           GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
           echo "::add-mask::$GATEWAY_SECRET"
           ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
