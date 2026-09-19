@@ -6,17 +6,27 @@ import {
   randomBytes,
 } from "node:crypto";
 
-function getKey(): Buffer {
+export function getMicrosoft365EncryptionKey(): Buffer {
   const raw = process.env.M365_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw) throw new Error("M365_TOKEN_ENCRYPTION_KEY_MISSING");
-  const key = Buffer.from(raw, "base64");
-  if (key.length !== 32) throw new Error("M365_TOKEN_ENCRYPTION_KEY_INVALID");
-  return key;
+
+  const base64 = Buffer.from(raw, "base64");
+  if (base64.length === 32) return base64;
+
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) {
+    const hex = Buffer.from(raw, "hex");
+    if (hex.length === 32) return hex;
+  }
+
+  const utf8 = Buffer.from(raw, "utf8");
+  if (utf8.length === 32) return utf8;
+
+  throw new Error("M365_TOKEN_ENCRYPTION_KEY_INVALID");
 }
 
 export function encryptMicrosoftToken(value: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", getMicrosoft365EncryptionKey(), iv);
   const encrypted = Buffer.concat([
     cipher.update(value, "utf8"),
     cipher.final(),
@@ -39,7 +49,7 @@ export function decryptMicrosoftToken(value: string): string {
 
   const decipher = createDecipheriv(
     "aes-256-gcm",
-    getKey(),
+    getMicrosoft365EncryptionKey(),
     Buffer.from(ivPart, "base64url"),
   );
   decipher.setAuthTag(Buffer.from(tagPart, "base64url"));
