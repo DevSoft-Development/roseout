@@ -868,7 +868,7 @@ if (
 const generatedWebsitesPage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
 if (
   !generatedWebsitesPage.includes("@theouthaven/auth/admin-session") ||
-  !generatedWebsitesEnterprisePage.includes('requireAdminRole(["superadmin"])')
+  !generatedWebsitesPage.includes('requireAdminRole(["superadmin"])')
 ) {
   throw new Error("Generated Websites page must remain isolated and superadmin-only.");
 }
