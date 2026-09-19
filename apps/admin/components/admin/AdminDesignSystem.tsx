@@ -102,7 +102,7 @@ export function AdminActionButton({
 }) {
   const className =
     variant === "primary"
-      ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-300/60"
+      ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-300/60"
       : variant === "ghost"
         ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black text-white/70 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50"
         : "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 hover:border-rose-200/30 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50";
@@ -229,7 +229,7 @@ export function AdminFilterGroup({ label, children }: { label: string; children:
 }
 
 export function AdminFilterChip({ active, children, href }: { active?: boolean; children: ReactNode; href?: string }) {
-  const className = `shrink-0 rounded-xl border px-3 py-2 text-xs font-black transition ${active ? "border-rose-300/60 bg-[#ec0b5b] text-white shadow-lg shadow-rose-950/25" : "border-white/10 bg-white/[0.05] text-white/65 hover:border-white/20 hover:text-white"}`;
+  const className = `shrink-0 rounded-xl border px-3 py-2 text-xs font-black transition ${active ? "border-rose-300/60 bg-[#e1062a] text-white shadow-lg shadow-rose-950/25" : "border-white/10 bg-white/[0.05] text-white/65 hover:border-white/20 hover:text-white"}`;
   return href ? <Link href={href} className={className}>{children}</Link> : <span className={className}>{children}</span>;
 }
 
@@ -238,7 +238,7 @@ export function AdminSearchInput(props: InputHTMLAttributes<HTMLInputElement>) {
 }
 
 export function AdminToolbar({ children }: { children: ReactNode }) { return <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">{children}</div>; }
-export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`rounded-2xl border p-4 transition ${active ? "border-[#ec0b5b]/70 bg-rose-500/[0.045]" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.045]"}`}>{children}</div>; }
+export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`rounded-2xl border p-4 transition ${active ? "border-[#e1062a]/70 bg-rose-500/[0.045]" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.045]"}`}>{children}</div>; }
 export function AdminDataTableShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10 bg-black/20">{children}</div>{footer ? <div className="border-t border-white/10 px-1 pt-4 sm:px-2">{footer}</div> : null}</AdminSectionCard>; }
 export function AdminDetailPanel({ children, className = "" }: { children: ReactNode; className?: string }) { return <aside className={`min-w-0 rounded-[1.35rem] border border-white/10 bg-[#101012] p-5 shadow-2xl shadow-black/30 xl:sticky xl:top-6 xl:h-fit ${className}`}>{children}</aside>; }
 export function AdminDetailSection({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black text-white">{title}</h3>{action}</div><div className="mt-3">{children}</div></section>; }
