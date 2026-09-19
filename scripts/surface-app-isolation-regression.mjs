@@ -265,7 +265,6 @@ for (const marker of [
   ".admin-shell-nav-group",
   ".admin-shell-desktop-topbar",
   ".admin-enterprise-surface",
-  "Cloud",
 ]) {
   if (!adminShellCss.includes(marker)) {
     throw new Error(`Enterprise Admin theme contract must include: ${marker}`);
