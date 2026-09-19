@@ -146,10 +146,10 @@ jobs:
           require_allowed 'admin.theouthaven.com' '/'
           require_location_prefix 'admin.theouthaven.com' '/auth/admin/callback' 'https://admin.theouthaven.com/admin/login'
 
-          require_allowed 'business.theouthaven.com' '/login'
+          require_allowed 'business.theouthaven.com' '/business/login'
           require_allowed 'business.theouthaven.com' '/locations/dashboard'
           require_denied 'business.theouthaven.com' '/admin/login'
           require_denied 'business.theouthaven.com' '/'
-          require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/login'
+          require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/business/login'
 
           echo 'Admin and Business HTTPS runtime, route isolation, and auth callback host boundaries passed. No DNS/public routing changes were made.'
