@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        surface: [consumer, admin, business]
+        surface: [consumer, admin, business, reserve]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
