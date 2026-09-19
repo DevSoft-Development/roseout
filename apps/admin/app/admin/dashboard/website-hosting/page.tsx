@@ -22,7 +22,7 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../components/admin/AdminDesignSystem";
 import { WebsiteHostingTabs } from "@/components/admin/WebsiteHostingTabs";
 
 export const metadata: Metadata = {
