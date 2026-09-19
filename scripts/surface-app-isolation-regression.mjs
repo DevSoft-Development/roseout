@@ -4028,16 +4028,16 @@ if (pkg.scripts?.["lint:surface:admin"] !== "eslint apps/admin packages/auth pac
   throw new Error("Missing targeted Admin surface lint script.");
 }
 
-const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
-const commandGroupStart = adminNavigation.indexOf('id: "command"');
-const revenueGroupStart = adminNavigation.indexOf('id: "revenue"');
-const searchHealthNav = adminNavigation.indexOf('label: "Search Health"');
+const adminNavigationSearchHealth = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
+const commandGroupStart = adminNavigationSearchHealth.indexOf('id: "command"');
+const revenueGroupStart = adminNavigationSearchHealth.indexOf('id: "revenue"');
+const searchHealthNav = adminNavigationSearchHealth.indexOf('label: "Search Health"');
 if (
   commandGroupStart < 0 ||
   revenueGroupStart < 0 ||
   searchHealthNav < commandGroupStart ||
   searchHealthNav > revenueGroupStart ||
-  !adminNavigation.includes('href: "/admin/dashboard/search-health"')
+  !adminNavigationSearchHealth.includes('href: "/admin/dashboard/search-health"')
 ) {
   throw new Error("Search Health must remain directly visible in the default-open Admin Command Center group.");
 }
