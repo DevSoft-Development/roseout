@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AdminKpiCard, AdminKpiGrid, AdminPageHeader, AdminSectionCard } from "./CronJobsUi";
+import { Activity, AlertTriangle, Clock3, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  AdminActionButton,
+  AdminEmptyState,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminSearchInput,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 type Job = Record<string, any>;
 type Run = Record<string, any>;
@@ -30,21 +40,17 @@ function sourceLabel(source?: string | null) {
 
 function badge(status?: string | null) {
   const value = String(status || "unknown");
-  const classes =
+  const tone =
     value === "success" || value === "succeeded" || value === "recovered"
-      ? "bg-emerald-400/10 text-emerald-200 border-emerald-400/20"
+      ? "green"
       : value === "failed" || value === "error"
-        ? "bg-rose-400/10 text-rose-200 border-rose-400/20"
+        ? "red"
         : value === "running" || value === "recovering"
-          ? "bg-sky-400/10 text-sky-200 border-sky-400/20"
+          ? "blue"
           : value === "slow" || value === "skipped"
-            ? "bg-amber-400/10 text-amber-100 border-amber-400/20"
-            : "bg-white/5 text-white/55 border-white/10";
-  return (
-    <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${classes}`}>
-      {value}
-    </span>
-  );
+            ? "amber"
+            : "muted";
+  return <AdminStatusBadge tone={tone}>{value}</AdminStatusBadge>;
 }
 
 function helper(job: Job) {
@@ -231,45 +237,95 @@ export default function CronJobsClient() {
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        eyebrow="Settings · Operations"
+        eyebrow="Operations control plane"
         title="Cron Jobs"
-        subtitle="Control scheduled jobs, distinguish transient failures from persistent incidents, and monitor recoveries and slow runs."
-        actions={<button onClick={() => void load()} className="rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80">Refresh</button>}
+        subtitle="Monitor and control scheduled work across Supabase, Vercel, and application routes with recovery-aware health, run history, and daily reporting controls."
+        actions={
+          <button
+            onClick={() => void load()}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </button>
+        }
       />
 
       {error && <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm text-rose-100">{error}</p>}
       {notice && <p className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-sm text-emerald-100">{notice}</p>}
 
-      <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4">
-        <p className="font-black text-emerald-100">Recovery-aware system health</p>
-        <p className="mt-1 text-sm leading-6 text-white/60">One isolated failure enters a recovery window. Two consecutive failures, an unrecovered failure older than five minutes, or repeated abnormally slow successful runs move into <b className="text-white/80">Needs attention</b>. A later success is shown as <b className="text-emerald-200">Recovered</b>.</p>
-      </div>
+      <AdminSectionCard className="p-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-200" />
+          <div>
+            <p className="font-black text-white">Recovery-aware scheduler health</p>
+            <p className="mt-1 text-sm leading-6 text-white/55">
+              One isolated failure enters a recovery window. Two consecutive failures, an unrecovered failure older than five minutes, or repeated abnormally slow successful runs move into <b className="text-white/80">Needs attention</b>. A later success is recorded as <b className="text-emerald-200">Recovered</b>.
+            </p>
+          </div>
+        </div>
+      </AdminSectionCard>
 
       <AdminKpiGrid>
-        {cards.map(([label, value]) => <AdminKpiCard key={String(label)} label={String(label)} value={value ?? 0} />)}
+        <AdminKpiCard label="Active jobs" value={counts.active_count ?? 0} helper={`${counts.total ?? 0} total registered`} icon={Activity} />
+        <AdminKpiCard label="Healthy" value={counts.success ?? 0} helper={`${counts.recovered ?? 0} recently recovered`} icon={ShieldCheck} />
+        <AdminKpiCard label="Needs attention" value={counts.needs_attention ?? 0} helper={`${counts.slow ?? 0} slow · ${counts.recovering ?? 0} recovering`} icon={AlertTriangle} />
+        <AdminKpiCard label="Daily health email" value={digestIncluded} helper={`${counts.paused_count ?? 0} paused · ${counts.pg_cron_count ?? 0} Supabase crons`} icon={MailCheck} />
       </AdminKpiGrid>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["Total jobs", counts.total, "Registry size"],
+          ["Paused", counts.paused_count, "Execution disabled"],
+          ["Slow", counts.slow, "Above expected duration"],
+          ["Vercel crons", counts.vercel_cron_count, "Detected scheduler source"],
+        ].map(([label, value, helperText]) => (
+          <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/35">{label}</p>
+            <p className="mt-2 text-2xl font-black text-white">{String(value ?? 0)}</p>
+            <p className="mt-1 text-xs text-white/40">{helperText}</p>
+          </div>
+        ))}
+      </section>
 
       <AdminSectionCard>
         <div className="space-y-4 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex max-w-full gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
               {tabs.map((item) => (
-                <button key={item} onClick={() => setTab(item)} className={`rounded-full px-4 py-2 text-sm font-black ${tab === item ? "bg-rose-500 text-white" : "border border-white/10 bg-black/20 text-white/65"}`}>
+                <button
+                  key={item}
+                  onClick={() => setTab(item)}
+                  className={`shrink-0 rounded-xl border px-3 py-2 text-xs font-black transition ${
+                    tab === item
+                      ? "border-rose-300/60 bg-[#e1062a] text-white shadow-lg shadow-rose-950/20"
+                      : "border-white/10 bg-white/[0.04] text-white/60 hover:border-white/20 hover:text-white"
+                  }`}
+                >
                   {item}
                 </button>
               ))}
             </div>
-            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Search job name, key, source…" className="min-h-11 rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white placeholder:text-white/35 lg:w-80" />
+            <div className="lg:w-80">
+              <AdminSearchInput
+                value={q}
+                onChange={(event) => setQ(event.target.value)}
+                placeholder="Search job name, key, source…"
+                aria-label="Search cron jobs"
+              />
+            </div>
           </div>
 
           <p className="text-sm text-white/55">The <b className="text-white/75">Job</b> switch controls execution. The <b className="text-white/75">Include in daily email</b> switch only controls reporting.</p>
 
           {loading ? (
-            <p className="p-6 text-white/60">Reconciling schedulers and run history…</p>
-          ) : (
+            <div className="grid gap-3">
+              {[0, 1, 2].map((item) => <div key={item} className="h-40 animate-pulse rounded-[1.25rem] border border-white/10 bg-white/[0.025]" />)}
+            </div>
+          ) : filtered.length ? (
             <div className="grid gap-3">
               {filtered.map((job) => (
-                <article key={job.job_key} className="rounded-[1.25rem] border border-white/10 bg-[#0f0f12]/90 p-4 shadow-xl shadow-black/10">
+                <article key={job.job_key} className="rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-4 transition hover:bg-white/[0.04]">
                   <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr_1fr_1.1fr_1.25fr_auto]">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -303,9 +359,9 @@ export default function CronJobsClient() {
                       <Switch label="Include in daily email" helperText="Reporting only" tone="emerald" checked={job.include_in_daily_digest !== false} disabled={Boolean(saving)} onClick={() => void patch(job, "include_in_daily_digest")} />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <button onClick={() => void open(job)} className="h-11 rounded-full border border-white/10 bg-white/[0.08] px-4 text-xs font-black">Details</button>
+                      <button onClick={() => void open(job)} className="h-11 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-xs font-black text-white/80 hover:border-rose-300/30 hover:text-white">Details</button>
                       {job.is_manually_runnable && (
-                        <button disabled={Boolean(running) || job.is_active === false} onClick={() => void runNow(job)} className="h-11 rounded-full bg-rose-500 px-4 text-xs font-black text-white disabled:opacity-50">
+                        <button disabled={Boolean(running) || job.is_active === false} onClick={() => void runNow(job)} className="h-11 rounded-xl bg-[#e1062a] px-4 text-xs font-black text-white shadow-lg shadow-rose-950/20 hover:bg-rose-500 disabled:opacity-50">
                           {running === job.job_key ? "Running…" : "Run now"}
                         </button>
                       )}
@@ -317,6 +373,11 @@ export default function CronJobsClient() {
                 </article>
               ))}
             </div>
+          ) : (
+            <AdminEmptyState
+              title="No cron jobs match this view"
+              body="Change the status filter or broaden the search query to see more scheduled jobs."
+            />
           )}
         </div>
       </AdminSectionCard>
@@ -330,7 +391,7 @@ export default function CronJobsClient() {
                 <h2 className="mt-1 text-2xl font-black text-white">{selected.job_name}</h2>
                 <p className="text-sm text-white/45">{selected.job_key}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/65">Close</button>
+              <button onClick={() => setSelected(null)} className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-black text-white/65 hover:text-white">Close</button>
             </div>
 
             <OutcomeSummary outcome={selected.latest_outcome} />
