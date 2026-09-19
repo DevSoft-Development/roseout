@@ -99,6 +99,10 @@ function vercelPrivateSurfaceRedirect(request: NextRequest) {
     return NextResponse.redirect(`https://admin.theouthaven.com${pathname}${search}`, 308);
   }
 
+  if (pathMatches(pathname, "/reserve")) {
+    return NextResponse.redirect(`https://reserve.theouthaven.com${pathname}${search}`, 308);
+  }
+
   if (pathMatches(pathname, "/locations/dashboard") || pathMatches(pathname, "/business/dashboard") || pathname === "/business/login") {
     return NextResponse.redirect(`https://business.theouthaven.com${pathname}${search}`, 308);
   }
