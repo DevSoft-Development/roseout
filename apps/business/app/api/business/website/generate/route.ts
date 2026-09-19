@@ -1,0 +1,360 @@
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+import { createClient } from "@/lib/supabase-server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
+import { getAuthorizedWebsiteLocation } from "@/lib/websites/access";
+import {
+  blueprintGeneratedContent,
+  blueprintToWebsiteSections,
+  buildWebsiteBlueprintPrompt,
+  enforceRequestedWebsiteDesignDirection,
+  fallbackWebsiteBlueprint,
+  inferWebsiteDesignDirectionFromVision,
+  normalizeWebsiteBlueprint,
+} from "@/lib/websites/blueprint";
+import { WEBSITE_AI_IMAGE_GENERATION_ENABLED, WEBSITE_AI_MODEL, estimateWebsiteAiCostMicros } from "@/lib/websites/ai-config";
+import { getWebsiteDesignDirection } from "@/lib/websites/design-directions";
+import { getGeneratedWebsiteLocationSnapshot } from "@/lib/websites/location-content";
+import {
+  applyMigrationSections,
+  migrationPromptContext,
+  normalizeWebsiteMigrationMode,
+  resolveMigrationDirection,
+  type WebsiteMigrationMode,
+} from "@/lib/websites/migration-mode";
+import type { WebsiteSection } from "@/lib/websites/data";
+
+export const runtime = "nodejs";
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
+}
+
+function isUnlimitedWebsiteDemo(location: Record<string, unknown>) {
+  return location.is_demo === true && String(location.demo_key || "") === MIRROR_DEMO_KEY;
+}
+
+function quotaMessage(message: string) {
+  if (message.includes("generation_already_running")) return "Another website AI request is already running for this location.";
+  if (message.includes("monthly_cost_limit_reached")) return "This location has reached its monthly website AI budget.";
+  if (message.includes("redesign_limit_reached")) return "This location has used its included website redesigns for this month.";
+  if (message.includes("initial_build_limit_reached")) return "The included initial AI website build has already been used. Use a redesign instead.";
+  return null;
+}
+
+function transientAssistantFailure(error: unknown) {
+  const status = Number((error as { status?: unknown } | null)?.status || 0);
+  const message = error instanceof Error ? error.message : String(error || "");
+  return status === 408
+    || status === 409
+    || status === 429
+    || status >= 500
+    || /assistant_upstream_unavailable|openai_unavailable|timeout|timed out|ECONNRESET|ECONNREFUSED|fetch failed/i.test(message);
+}
+
+async function persistBlueprint(input: {
+  websiteId: string;
+  blueprint: ReturnType<typeof normalizeWebsiteBlueprint>;
+  vision: string;
+  existingTheme: Record<string, unknown>;
+  existingCustomContent: Record<string, unknown>;
+  existingSections: WebsiteSection[];
+  migrationMode: WebsiteMigrationMode;
+  source: "ai" | "rules";
+}) {
+  const direction = getWebsiteDesignDirection(input.blueprint.design.directionId);
+  const generatedSections = blueprintToWebsiteSections(input.blueprint, input.existingSections);
+  const sections = applyMigrationSections(input.migrationMode, generatedSections, input.existingSections);
+  const theme = {
+    ...input.existingTheme,
+    ...(direction?.theme || {}),
+    design_direction_id: input.blueprint.design.directionId,
+    visual_hierarchy: input.blueprint.design.visualHierarchy,
+    image_strategy: input.blueprint.design.imageStrategy,
+    migration_mode: input.migrationMode,
+    design_lock: input.migrationMode === "preserve_exact",
+  };
+  const customContent = {
+    ...input.existingCustomContent,
+    design_vision: input.vision,
+    blueprint: input.blueprint,
+    blueprint_version: 3,
+    blueprint_source: input.source,
+    generated: blueprintGeneratedContent(input.blueprint),
+    cta_strategy: input.blueprint.conversion,
+    migration_application: {
+      mode: input.migrationMode,
+      structure_locked: input.migrationMode === "preserve_exact",
+      brand_retained: input.migrationMode !== "redesign",
+      applied_at: new Date().toISOString(),
+    },
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("business_websites")
+    .update({
+      theme,
+      sections,
+      custom_content: customContent,
+      editor_status: "draft",
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.websiteId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Please log in to continue." }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const locationId = String(body?.location_id || "").trim();
+  const vision = String(body?.vision || "").trim().slice(0, 1200);
+  const requestedMode = body?.mode === "redesign" ? "redesign" : "auto";
+  if (!locationId || vision.length < 10) {
+    return NextResponse.json({ error: "Add a location and describe the website you want." }, { status: 400 });
+  }
+
+  const location = await getAuthorizedWebsiteLocation(user, locationId, "*");
+  if (!location) return NextResponse.json({ error: "Location not found." }, { status: 404 });
+
+  const { data: website, error: websiteError } = await supabaseAdmin
+    .from("business_websites")
+    .select("*")
+    .eq("location_id", locationId)
+    .maybeSingle();
+  if (websiteError) return NextResponse.json({ error: "Unable to load the website draft." }, { status: 500 });
+  if (!website) return NextResponse.json({ error: "Create the website draft before generating it." }, { status: 409 });
+
+  if (WEBSITE_AI_IMAGE_GENERATION_ENABLED) {
+    return NextResponse.json({ error: "Website AI image generation must remain disabled." }, { status: 503 });
+  }
+
+  const locationRecord = location as unknown as Record<string, unknown>;
+  const liveContent = await getGeneratedWebsiteLocationSnapshot(locationRecord);
+  const unlimitedDemo = isUnlimitedWebsiteDemo(locationRecord);
+  const metadata = objectValue(locationRecord.metadata);
+  const name = liveContent.name || liveContent.title || "Your business";
+  const category = firstString(locationRecord, ["category", "primary_category", "location_type", "type"])
+    || firstString(metadata, ["category", "primary_category", "location_type"]);
+  const cuisine = firstString(locationRecord, ["cuisine", "cuisine_type"]) || firstString(metadata, ["cuisine", "cuisine_type"]);
+  const city = firstString(locationRecord, ["city"]) || firstString(metadata, ["city"]);
+  const neighborhood = firstString(locationRecord, ["neighborhood"]) || firstString(metadata, ["neighborhood"]);
+
+  const locationContext = {
+    name,
+    category,
+    cuisine,
+    city,
+    neighborhood,
+    address: liveContent.address,
+    hours: liveContent.hours,
+    phone: liveContent.phone,
+    reservationAvailable: Boolean(liveContent.reservation_link || metadata.reservation_mode),
+    photoCount: liveContent.photos.length,
+    hasRealPhoto: liveContent.photos.length > 0,
+    hasPublishedMenu: Boolean(liveContent.menu),
+    menuItemCount: liveContent.menu?.items.length || 0,
+    approvedVerifiedReviewCount: liveContent.reviews.length,
+  };
+
+  const existingTheme = objectValue(website.theme);
+  const existingCustomContent = objectValue(website.custom_content);
+  const existingBlueprint = objectValue(existingCustomContent.blueprint);
+  const websiteImport = objectValue(existingCustomContent.website_import);
+  const migrationMode = normalizeWebsiteMigrationMode(existingTheme.migration_mode || websiteImport.mode);
+  const existingSections = Array.isArray(website.sections) ? website.sections as WebsiteSection[] : [];
+  const generationType = requestedMode === "redesign" || migrationMode === "redesign" || Object.keys(existingBlueprint).length > 0 || website.published_version
+    ? "full_redesign"
+    : "initial_build";
+  const inferredDirectionId = inferWebsiteDesignDirectionFromVision(vision);
+  const existingDirectionId = firstString(existingTheme, ["design_direction_id"]);
+  const requestedDirectionId = resolveMigrationDirection({
+    mode: migrationMode,
+    requestedDirectionId: inferredDirectionId,
+    existingDirectionId,
+  });
+  const fallback = fallbackWebsiteBlueprint({
+    name,
+    category: category || cuisine,
+    vision,
+    directionId: requestedDirectionId || (generationType === "initial_build" ? existingDirectionId : null),
+  });
+  const importedThemeColor = firstString(existingTheme, ["imported_theme_color"]);
+  const migrationContext = migrationPromptContext({
+    mode: migrationMode,
+    importedProvider: firstString(websiteImport, ["provider"]),
+    importedTitle: firstString(websiteImport, ["title"]),
+    importedDescription: firstString(websiteImport, ["description"]),
+    importedThemeColor,
+    importedPages: stringArray(websiteImport.discovered_pages),
+  });
+  const promptVision = `${vision}\n\nMigration constraints:\n${migrationContext}`;
+
+  if (!process.env.OPENAI_API_KEY) {
+    const blueprint = enforceRequestedWebsiteDesignDirection(fallback, requestedDirectionId);
+    const saved = await persistBlueprint({
+      websiteId: website.id,
+      blueprint,
+      vision,
+      existingTheme,
+      existingCustomContent,
+      existingSections,
+      migrationMode,
+      source: "rules",
+    });
+    return NextResponse.json({
+      ok: true,
+      website: saved,
+      blueprint,
+      source: "rules",
+      generation_type: generationType,
+      migration_mode: migrationMode,
+      requested_direction_id: requestedDirectionId,
+      selected_direction_id: blueprint.design.directionId,
+      quota_bypassed: unlimitedDemo,
+    });
+  }
+
+  let usageId: string | null = null;
+  if (!unlimitedDemo) {
+    const estimatedCostMicros = estimateWebsiteAiCostMicros(5000, 2200);
+    const requestKey = `website_v3:${locationId}:${randomUUID()}`;
+    const { data, error: beginError } = await supabaseAdmin.rpc("begin_location_website_ai_generation", {
+      p_location_id: locationId,
+      p_generation_type: generationType,
+      p_provider: "openai",
+      p_model: WEBSITE_AI_MODEL,
+      p_request_key: requestKey,
+      p_estimated_cost_micros: estimatedCostMicros,
+    });
+    usageId = data ? String(data) : null;
+    if (beginError || !usageId) {
+      const friendly = quotaMessage(String(beginError?.message || ""));
+      if (friendly) return NextResponse.json({ error: friendly }, { status: 429 });
+      console.error("Website V3 quota guard unavailable", beginError);
+      return NextResponse.json({ error: "Website AI generation is temporarily unavailable." }, { status: 503 });
+    }
+  }
+
+  try {
+    const prompt = buildWebsiteBlueprintPrompt({ vision: promptVision, location: locationContext, fallback, requestedDirectionId });
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completion = await openai.chat.completions.create({
+      model: WEBSITE_AI_MODEL,
+      temperature: 0.2,
+      max_tokens: 2600,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+    });
+    const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
+    const normalized = normalizeWebsiteBlueprint(parsed, fallback);
+    const blueprint = enforceRequestedWebsiteDesignDirection(normalized, requestedDirectionId);
+    const saved = await persistBlueprint({
+      websiteId: website.id,
+      blueprint,
+      vision,
+      existingTheme,
+      existingCustomContent,
+      existingSections,
+      migrationMode,
+      source: "ai",
+    });
+    const inputTokens = completion.usage?.prompt_tokens || 0;
+    const outputTokens = completion.usage?.completion_tokens || 0;
+    if (usageId) {
+      await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+        p_usage_id: usageId,
+        p_status: "succeeded",
+        p_input_tokens: inputTokens,
+        p_output_tokens: outputTokens,
+        p_actual_cost_micros: estimateWebsiteAiCostMicros(inputTokens, outputTokens),
+        p_error_code: null,
+      });
+    }
+    return NextResponse.json({
+      ok: true,
+      website: saved,
+      blueprint,
+      source: "ai",
+      generation_type: generationType,
+      migration_mode: migrationMode,
+      model: WEBSITE_AI_MODEL,
+      requested_direction_id: requestedDirectionId,
+      selected_direction_id: blueprint.design.directionId,
+      quota_bypassed: unlimitedDemo,
+    });
+  } catch (error) {
+    const shouldFallback = transientAssistantFailure(error);
+    if (usageId) {
+      await supabaseAdmin.rpc("finish_location_website_ai_generation", {
+        p_usage_id: usageId,
+        p_status: "failed",
+        p_input_tokens: 0,
+        p_output_tokens: 0,
+        p_actual_cost_micros: 0,
+        p_error_code: shouldFallback ? "website_v3_ai_upstream_fallback" : "website_v3_generation_failed",
+      });
+    }
+    console.error("Website V3 generation failed", error);
+
+    if (shouldFallback) {
+      try {
+        const blueprint = enforceRequestedWebsiteDesignDirection(fallback, requestedDirectionId);
+        const saved = await persistBlueprint({
+          websiteId: website.id,
+          blueprint,
+          vision,
+          existingTheme,
+          existingCustomContent,
+          existingSections,
+          migrationMode,
+          source: "rules",
+        });
+        console.warn("Website V3 used deterministic fallback after assistant outage", {
+          locationId,
+          model: WEBSITE_AI_MODEL,
+        });
+        return NextResponse.json({
+          ok: true,
+          website: saved,
+          blueprint,
+          source: "rules",
+          degraded: true,
+          fallback_reason: "ai_upstream_unavailable",
+          generation_type: generationType,
+          migration_mode: migrationMode,
+          requested_direction_id: requestedDirectionId,
+          selected_direction_id: blueprint.design.directionId,
+          quota_bypassed: unlimitedDemo,
+        });
+      } catch (fallbackError) {
+        console.error("Website V3 deterministic fallback failed", fallbackError);
+      }
+    }
+
+    return NextResponse.json({ error: "We could not generate the website right now. Your existing draft was not changed." }, { status: 502 });
+  }
+}
