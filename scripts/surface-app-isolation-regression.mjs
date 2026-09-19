@@ -1159,9 +1159,10 @@ if (
 const cronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
 if (
   cronJobsClient.includes("@/components/admin/") ||
-  !cronJobsClient.includes("./CronJobsUi")
+  cronJobsClient.includes("./CronJobsUi") ||
+  !cronJobsClient.includes("../../../../../components/admin/AdminDesignSystem")
 ) {
-  throw new Error("Cron Jobs client must use local isolated UI primitives.");
+  throw new Error("Cron Jobs client must use the isolated Admin design system without root monolith UI imports.");
 }
 
 for (const cronRoute of [
