@@ -302,9 +302,9 @@ export default async function AdminSettingsPage() {
               <Bot size={15} />
               Search & AI systems
             </div>
-            <h2 className="mt-2 text-xl font-black sm:text-2xl">Advanced platform controls</h2>
+            <h2 className="mt-2 text-xl font-black sm:text-2xl">Search & AI control plane</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--admin-shell-soft)]">
-              Manage maintenance, rollout gates, ML behavior, AI tagging, and search usage limits in one advanced section.
+              Production-grade controls for search maintenance, rollout gates, ranking, AI assistance, and customer usage policy.
             </p>
           </div>
 
