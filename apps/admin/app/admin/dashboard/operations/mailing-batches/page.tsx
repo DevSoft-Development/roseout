@@ -1,8 +1,18 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Mail, MousePointerClick, PackageCheck, QrCode } from "lucide-react";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminDataTableShell,
+  AdminEmptyState,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 import MailingBatchCreateForm from "./MailingBatchCreateForm";
 
 export const dynamic = "force-dynamic";
@@ -29,21 +39,22 @@ type BatchRow = {
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function formatStatus(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function metric(label: string, value: number | string, detail: string) {
-  return (
-    <div className="rounded-2xl border border-[var(--admin-border)] bg-[var(--admin-card)] p-4 shadow-sm">
-      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-muted)]">{label}</p>
-      <p className="mt-2 text-2xl font-black text-[var(--admin-text)]">{value}</p>
-      <p className="mt-1 text-xs font-semibold text-[var(--admin-muted)]">{detail}</p>
-    </div>
-  );
+function statusTone(value: string): "green" | "amber" | "red" | "blue" | "muted" {
+  const status = value.toLowerCase();
+  if (["completed", "mailed"].includes(status)) return "green";
+  if (["queued", "printed"].includes(status)) return "blue";
+  if (status === "cancelled") return "red";
+  if (status === "draft") return "amber";
+  return "muted";
 }
 
 export default async function MailingBatchesPage() {
@@ -64,93 +75,100 @@ export default async function MailingBatchesPage() {
   const mailed = Number(mailedItems || 0);
   const scans = Number(scannedItems || 0);
   const claims = Number(claimedItems || 0);
+  const activeBatches = rows.filter((row) => !["completed", "cancelled"].includes(row.status)).length;
   const scanRate = mailed ? `${((scans / mailed) * 100).toFixed(1)}%` : "—";
   const claimRate = mailed ? `${((claims / mailed) * 100).toFixed(1)}%` : "—";
 
   return (
-    <main className="min-h-screen bg-[var(--admin-bg)] px-4 py-6 text-[var(--admin-text)] md:px-8">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <section className="rounded-[2rem] border border-[var(--admin-border)] bg-[var(--admin-card)] p-6 shadow-xl">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-[var(--admin-accent)]">Operations</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight text-[var(--admin-text)] sm:text-4xl">Mailing Batches</h1>
-              <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-[var(--admin-muted)]">
-                Build claim-postcard batches, keep each business matched to its permanent claim code, track printing and mailing, and measure scans and completed claims.
-              </p>
-            </div>
-            <Link
-              href="/admin/dashboard/claim-qrs"
-              className="rounded-full border border-[var(--admin-border-strong)] bg-[var(--admin-panel)] px-4 py-2.5 text-sm font-black text-[var(--admin-text)] transition hover:border-[var(--admin-accent-border)] hover:bg-[var(--admin-accent-soft)]"
-            >
-              Claim QR codes
-            </Link>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Operations"
+        title="Mailing Batches"
+        subtitle="Build claim-postcard batches, preserve permanent claim-code matching, track print and mail progression, and measure QR scans through completed claims."
+        actions={
+          <AdminActionButton href="/admin/dashboard/claim-qrs">
+            <QrCode className="h-4 w-4" />
+            Claim QR codes
+          </AdminActionButton>
+        }
+      />
+
+      <AdminKpiGrid>
+        <AdminKpiCard label="Postcards mailed" value={mailed.toLocaleString()} helper="All mailing batches" icon={Mail} />
+        <AdminKpiCard label="QR scans" value={scans.toLocaleString()} helper={`Scan rate ${scanRate}`} icon={MousePointerClick} />
+        <AdminKpiCard label="Claims completed" value={claims.toLocaleString()} helper={`Claim rate ${claimRate}`} icon={PackageCheck} />
+        <AdminKpiCard label="Active batches" value={activeBatches} helper="Draft through mailed" icon={QrCode} />
+      </AdminKpiGrid>
+
+      <MailingBatchCreateForm />
+
+      {error ? (
+        <div className="rounded-[1.35rem] border border-rose-300/20 bg-rose-500/10 p-5">
+          <h2 className="font-black text-rose-100">Mailing batch data could not be loaded</h2>
+          <p className="mt-1 text-sm text-rose-100/70">{error.message}</p>
+        </div>
+      ) : null}
+
+      {rows.length ? (
+        <AdminDataTableShell
+          footer={
+            <p className="text-xs font-semibold text-white/40">
+              Showing the 50 most recently created mailing batches.
+            </p>
+          }
+        >
+          <div className="border-b border-white/10 px-5 py-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Batch ledger</p>
+            <h2 className="mt-1 text-xl font-black text-white">Recent mailing batches</h2>
+            <p className="mt-1 text-sm text-white/50">Open a batch to review locations, print state, scans, returns, and claim conversion.</p>
           </div>
-        </section>
-
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {metric("Postcards mailed", mailed.toLocaleString(), "All mailing batches")}
-          {metric("QR scans", scans.toLocaleString(), `Scan rate ${scanRate}`)}
-          {metric("Claims completed", claims.toLocaleString(), `Claim rate ${claimRate}`)}
-          {metric("Active batches", rows.filter((row) => !["completed", "cancelled"].includes(row.status)).length, "Draft through mailed")}
-        </section>
-
-        <MailingBatchCreateForm />
-
-        {error ? (
-          <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-700 dark:text-rose-100">{error.message}</div>
-        ) : null}
-
-        <section className="overflow-hidden rounded-3xl border border-[var(--admin-border)] bg-[var(--admin-card)] shadow-sm">
-          <div className="border-b border-[var(--admin-border)] px-5 py-4">
-            <h2 className="text-xl font-black text-[var(--admin-text)]">Recent batches</h2>
-            <p className="mt-1 text-sm font-semibold text-[var(--admin-muted)]">Open a batch to review its locations, print status, scans, and claim results.</p>
-          </div>
-          {rows.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm text-[var(--admin-text)]">
-                <thead className="bg-[var(--admin-card-strong)] text-[11px] font-black uppercase tracking-[0.16em] text-[var(--admin-muted)]">
-                  <tr>
-                    <th className="px-5 py-3">Batch</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Cards</th>
-                    <th className="px-4 py-3">Scans</th>
-                    <th className="px-4 py-3">Claims</th>
-                    <th className="px-4 py-3">Planned mail date</th>
-                    <th className="px-5 py-3 text-right">Open</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--admin-border)]">
-                  {rows.map((row) => (
-                    <tr key={row.id} className="transition hover:bg-[var(--admin-accent-soft)]">
-                      <td className="px-5 py-4">
-                        <p className="font-black text-[var(--admin-text)]">{row.name}</p>
-                        <p className="mt-1 text-xs font-semibold text-[var(--admin-muted)]">Created {formatDate(row.created_at)}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="rounded-full border border-[var(--admin-border-strong)] bg-[var(--admin-card-strong)] px-2.5 py-1 text-xs font-bold text-[var(--admin-soft)]">
-                          {formatStatus(row.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 font-bold">{Number(row.item_count || 0).toLocaleString()}</td>
-                      <td className="px-4 py-4">{Number(row.scanned_count || 0).toLocaleString()}</td>
-                      <td className="px-4 py-4">{Number(row.claimed_count || 0).toLocaleString()}</td>
-                      <td className="px-4 py-4 font-semibold text-[var(--admin-soft)]">{formatDate(row.planned_mail_date)}</td>
-                      <td className="px-5 py-4 text-right">
-                        <Link href={`/admin/dashboard/operations/mailing-batches/${row.id}`} className="rounded-xl bg-[var(--admin-accent)] px-3 py-2 text-xs font-black text-white transition hover:bg-[var(--admin-accent-hover)]">
-                          View batch
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-10 text-center text-sm font-semibold text-[var(--admin-muted)]">No mailing batches yet. Create the first one above.</div>
-          )}
-        </section>
-      </div>
-    </main>
+          <table className="min-w-[980px] w-full text-left text-sm">
+            <thead className="bg-white/[0.035] text-[10px] font-black uppercase tracking-[0.16em] text-white/40">
+              <tr>
+                <th className="px-5 py-3">Batch</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Cards</th>
+                <th className="px-4 py-3">Scans</th>
+                <th className="px-4 py-3">Claims</th>
+                <th className="px-4 py-3">Returns</th>
+                <th className="px-4 py-3">Planned mail</th>
+                <th className="px-5 py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {rows.map((row) => (
+                <tr key={row.id} className="transition hover:bg-white/[0.025]">
+                  <td className="px-5 py-4">
+                    <p className="font-black text-white">{row.name}</p>
+                    <p className="mt-1 text-xs font-semibold text-white/35">Created {formatDate(row.created_at)}</p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <AdminStatusBadge tone={statusTone(row.status)}>{formatStatus(row.status)}</AdminStatusBadge>
+                  </td>
+                  <td className="px-4 py-4 font-black text-white/80">{Number(row.item_count || 0).toLocaleString()}</td>
+                  <td className="px-4 py-4 font-semibold text-white/60">{Number(row.scanned_count || 0).toLocaleString()}</td>
+                  <td className="px-4 py-4 font-semibold text-white/60">{Number(row.claimed_count || 0).toLocaleString()}</td>
+                  <td className="px-4 py-4 font-semibold text-white/60">{Number(row.returned_count || 0).toLocaleString()}</td>
+                  <td className="px-4 py-4 font-semibold text-white/55">{formatDate(row.planned_mail_date)}</td>
+                  <td className="px-5 py-4 text-right">
+                    <Link
+                      href={`/admin/dashboard/operations/mailing-batches/${row.id}`}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl bg-[#e1062a] px-3 text-xs font-black text-white hover:bg-rose-500"
+                    >
+                      View batch
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </AdminDataTableShell>
+      ) : (
+        <AdminEmptyState
+          title="No mailing batches yet"
+          body="Create the first tracked postcard batch above. Eligible locations must be unclaimed, have a complete mailing address, and have a permanent claim code."
+        />
+      )}
+    </AdminPageShell>
   );
 }
