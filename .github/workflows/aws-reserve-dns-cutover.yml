@@ -5,6 +5,11 @@ on:
     paths:
       - '.github/workflows/aws-reserve-dns-cutover.yml'
       - 'scripts/reserve-dns-cutover-regression.mjs'
+      - 'infra/aws/reserve-dns-cutover-request.json'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/reserve-dns-cutover-request.json'
   workflow_dispatch:
     inputs:
       operation:
@@ -41,25 +46,35 @@ jobs:
       - run: node scripts/reserve-dns-cutover-regression.mjs
 
   execute:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate operator confirmation
+      - name: Resolve requested operation
+        id: request
         env:
-          OPERATION: ${{ inputs.operation }}
-          CONFIRMATION: ${{ inputs.confirmation }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_OPERATION: ${{ steps.request.outputs.operation }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            OPERATION="$(jq -r '.operation' infra/aws/reserve-dns-cutover-request.json)"
+            CONFIRMATION="$(jq -r '.confirmation' infra/aws/reserve-dns-cutover-request.json)"
+          else
+            OPERATION="$INPUT_OPERATION"
+            CONFIRMATION="$INPUT_CONFIRMATION"
+          fi
           case "$OPERATION" in
             plan) test -z "$CONFIRMATION" ;;
             cutover) test "$CONFIRMATION" = 'CUTOVER_RESERVE' ;;
             rollback) test "$CONFIRMATION" = 'ROLLBACK_RESERVE' ;;
             *) exit 2 ;;
           esac
+          echo "operation=$OPERATION" >> "$GITHUB_OUTPUT"
 
       - name: Resolve deployment role
         id: config
@@ -96,7 +111,7 @@ jobs:
           echo "alb_zone_id=$ALB_ZONE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Verify Reserve origin before DNS changes
-        if: inputs.operation != 'rollback'
+        if: steps.request.outputs.operation != 'rollback'
         env:
           ALB_DNS: ${{ steps.target.outputs.alb_dns }}
         run: |
@@ -105,7 +120,7 @@ jobs:
           printf '%s' "$BODY" | jq -e '.ok == true and .service == "reserve-web" and .provider == "aws-reserve"' >/dev/null
 
       - name: Capture current Reserve DNS
-        if: inputs.operation != 'rollback'
+        if: steps.request.outputs.operation != 'rollback'
         id: snapshot
         env:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
@@ -126,7 +141,7 @@ jobs:
           PY
 
       - name: Save rollback snapshot
-        if: inputs.operation == 'cutover'
+        if: steps.request.outputs.operation == 'cutover'
         run: |
           set -euo pipefail
           VALUE="$(cat "$RUNNER_TEMP/snapshot.json")"
@@ -137,7 +152,7 @@ jobs:
           fi
 
       - name: Show Reserve cutover plan
-        if: inputs.operation == 'plan'
+        if: steps.request.outputs.operation == 'plan'
         env:
           ALB_DNS: ${{ steps.target.outputs.alb_dns }}
         run: |
@@ -145,7 +160,7 @@ jobs:
           cat "$RUNNER_TEMP/snapshot.json" | jq .
 
       - name: Build Route 53 Reserve cutover
-        if: inputs.operation == 'cutover'
+        if: steps.request.outputs.operation == 'cutover'
         env:
           ALB_DNS: ${{ steps.target.outputs.alb_dns }}
           ALB_ZONE_ID: ${{ steps.target.outputs.alb_zone_id }}
@@ -167,7 +182,7 @@ jobs:
           PY
 
       - name: Apply Reserve cutover
-        if: inputs.operation == 'cutover'
+        if: steps.request.outputs.operation == 'cutover'
         id: apply
         env:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
@@ -178,7 +193,7 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify public Reserve hostname
-        if: inputs.operation == 'cutover'
+        if: steps.request.outputs.operation == 'cutover'
         run: |
           set -euo pipefail
           for attempt in $(seq 1 20); do
@@ -192,7 +207,7 @@ jobs:
           exit 1
 
       - name: Automatic rollback after failed cutover validation
-        if: failure() && inputs.operation == 'cutover' && steps.apply.outputs.changed == 'true'
+        if: failure() && steps.request.outputs.operation == 'cutover' && steps.apply.outputs.changed == 'true'
         env:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
         run: |
@@ -213,7 +228,7 @@ jobs:
           aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
 
       - name: Restore saved Reserve DNS snapshot
-        if: inputs.operation == 'rollback'
+        if: steps.request.outputs.operation == 'rollback'
         env:
           HOSTED_ZONE_ID: ${{ steps.target.outputs.hosted_zone_id }}
         run: |
