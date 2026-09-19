@@ -20,6 +20,6 @@ export function resolveWebSurfaceAuthOrigin(request: NextRequest, requestUrl: UR
 export function webSurfaceAuthFallbackPath() {
   const surface = process.env.THEOUTHAVEN_WEB_SURFACE?.trim().toLowerCase();
   if (surface === "admin") return "/admin/login";
-  if (surface === "business") return "/login";
+  if (surface === "business") return "/business/login";
   return "/create";
 }
