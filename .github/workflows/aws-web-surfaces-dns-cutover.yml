@@ -278,11 +278,29 @@ jobs:
             both) verify_public admin; verify_public business ;;
           esac
 
-          admin_location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://admin.theouthaven.com/auth/admin/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
-          case "$admin_location" in https://admin.theouthaven.com/admin/login*) ;; *) echo "Admin callback boundary failed after cutover: $admin_location" >&2; exit 1;; esac
+          verify_admin_callback() {
+            local location
+            location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://admin.theouthaven.com/auth/admin/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
+            case "$location" in
+              https://admin.theouthaven.com/admin/login*) ;;
+              *) echo "Admin callback boundary failed after cutover: $location" >&2; return 1 ;;
+            esac
+          }
 
-          business_location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://business.theouthaven.com/auth/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
-          case "$business_location" in https://business.theouthaven.com/login*) ;; *) echo "Business callback boundary failed after cutover: $business_location" >&2; exit 1;; esac
+          verify_business_callback() {
+            local location
+            location="$(curl --silent --show-error --max-time 20 --output /dev/null --dump-header - https://business.theouthaven.com/auth/callback | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/\r$/, ""); sub(/^[Ll]ocation:[[:space:]]*/, ""); print; exit}')"
+            case "$location" in
+              https://business.theouthaven.com/login*) ;;
+              *) echo "Business callback boundary failed after cutover: $location" >&2; return 1 ;;
+            esac
+          }
+
+          case "$SURFACES" in
+            admin) verify_admin_callback ;;
+            business) verify_business_callback ;;
+            both) verify_admin_callback; verify_business_callback ;;
+          esac
 
       - name: Restore saved DNS automatically after failed cutover validation
         if: failure() && inputs.operation == 'cutover' && steps.apply.outputs.changed == 'true'
