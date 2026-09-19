@@ -26,6 +26,7 @@ on:
       - 'infra/aws/web-surfaces/**'
       - 'infra/aws/cloudformation/web-surfaces-services.yml'
       - 'scripts/web-surfaces-services-regression.mjs'
+      - 'scripts/private-surface-aws-ownership-regression.mjs'
       - '.github/workflows/aws-web-surfaces-services.yml'
   push:
     branches: [main]
@@ -92,6 +93,8 @@ jobs:
         run: node scripts/web-surfaces-services-regression.mjs
       - name: Validate Business route migration parity
         run: node scripts/business-route-migration-regression.mjs
+      - name: Validate private surface AWS ownership
+        run: node scripts/private-surface-aws-ownership-regression.mjs
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
       - name: Lint service template
