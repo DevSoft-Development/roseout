@@ -1,4 +1,20 @@
 import Link from "next/link";
+import {
+  Activity,
+  ArrowUpRight,
+  BadgePercent,
+  Bot,
+  CalendarClock,
+  CheckCircle2,
+  Globe2,
+  MailCheck,
+  MapPinned,
+  MonitorCog,
+  Search,
+  Settings2,
+  Sparkles,
+  Workflow,
+} from "lucide-react";
 import SearchLimitsClient from "./SearchLimitsClient";
 import SearchMaintenanceClient from "./SearchMaintenanceClient";
 import AiTagHelperSettingsClient from "./AiTagHelperSettingsClient";
@@ -15,6 +31,181 @@ import { getRankingRolloutSettings } from "@/lib/search/rankingRollout";
 import { getEffectiveSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
 
 export const dynamic = "force-dynamic";
+
+type SettingsLink = {
+  href: string;
+  title: string;
+  description: string;
+  eyebrow: string;
+  icon: typeof Settings2;
+  badge?: string;
+};
+
+const platformLinks: SettingsLink[] = [
+  {
+    href: "/admin/dashboard/operations/workers",
+    title: "Background Services",
+    description:
+      "Monitor worker queues, maintenance jobs, failures, retries, and operational health from one command center.",
+    eyebrow: "Operations",
+    icon: Workflow,
+    badge: "Production",
+  },
+  {
+    href: "/admin/dashboard/settings/cron-jobs",
+    title: "Cron Jobs",
+    description:
+      "Review schedules, recent runs, failures, and notification settings for automated jobs.",
+    eyebrow: "Automation",
+    icon: CalendarClock,
+  },
+  {
+    href: "/admin/dashboard/settings/websites",
+    title: "Generated Websites",
+    description:
+      "Manage hosted location websites, resets, and testing controls without touching the consumer app.",
+    eyebrow: "Website Operations",
+    icon: Globe2,
+  },
+  {
+    href: "/admin/dashboard/settings/email-qa",
+    title: "Email QA Center",
+    description:
+      "Preview templates, run delivery tests, and monitor sender and message health.",
+    eyebrow: "Messaging",
+    icon: MailCheck,
+  },
+];
+
+const businessLinks: SettingsLink[] = [
+  {
+    href: "/admin/dashboard/settings/domain-benefit",
+    title: "Domain Benefit Controls",
+    description:
+      "Control first-year domain benefits and sponsored renewal behavior without redeploying.",
+    eyebrow: "Partner Pro",
+    icon: MonitorCog,
+  },
+  {
+    href: "/admin/dashboard/settings/google-places",
+    title: "Google Places Budget",
+    description:
+      "Manage monthly spend, usage, credits, photos, place details, and autocomplete allocation.",
+    eyebrow: "Location Intelligence",
+    icon: MapPinned,
+  },
+  {
+    href: "/admin/dashboard/settings/promo-codes",
+    title: "Promo Codes",
+    description:
+      "Create, manage, and review promotional codes and redemption activity.",
+    eyebrow: "Commercial Controls",
+    icon: BadgePercent,
+  },
+  {
+    href: "/admin/dashboard/settings/demo-center",
+    title: "Demo Center",
+    description:
+      "Create, reset, train, and demonstrate TheOutHaven using controlled real-location mirrors.",
+    eyebrow: "Enablement",
+    icon: Sparkles,
+  },
+];
+
+const intelligenceLinks: SettingsLink[] = [
+  {
+    href: "/admin/dashboard/search-benchmark",
+    title: "Search Benchmark",
+    description:
+      "Run the golden benchmark and compare control versus shadow search quality before rollout changes.",
+    eyebrow: "Search Quality",
+    icon: Search,
+  },
+  {
+    href: "/admin/dashboard/launch-checklist",
+    title: "Launch Checklist",
+    description:
+      "Track production readiness across the systems that matter most before release.",
+    eyebrow: "Readiness",
+    icon: CheckCircle2,
+  },
+];
+
+function SettingsCard({ item }: { item: SettingsLink }) {
+  const Icon = item.icon;
+
+  return (
+    <Link
+      href={item.href}
+      className="group flex min-h-[220px] flex-col justify-between rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5 shadow-[0_12px_32px_rgba(0,0,0,0.08)] transition duration-200 hover:-translate-y-0.5 hover:border-[var(--admin-shell-accent-border)] hover:shadow-[0_18px_40px_rgba(0,0,0,0.14)] sm:p-6"
+    >
+      <div>
+        <div className="flex items-start justify-between gap-4">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] text-[var(--admin-shell-soft)] transition group-hover:border-[var(--admin-shell-accent-border)] group-hover:text-[var(--admin-shell-accent)]">
+            <Icon size={18} />
+          </span>
+          {item.badge ? (
+            <span className="rounded-full border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[var(--admin-shell-muted)]">
+              {item.badge}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-5 text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-shell-muted)]">
+          {item.eyebrow}
+        </p>
+        <h3 className="mt-2 text-lg font-black tracking-[-0.02em] text-[var(--admin-shell-text)]">
+          {item.title}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-[var(--admin-shell-soft)]">
+          {item.description}
+        </p>
+      </div>
+
+      <div className="mt-5 flex items-center justify-between border-t border-[var(--admin-shell-border)] pt-4 text-sm font-black text-[var(--admin-shell-soft)]">
+        <span>Open settings</span>
+        <ArrowUpRight
+          size={17}
+          className="transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[var(--admin-shell-accent)]"
+        />
+      </div>
+    </Link>
+  );
+}
+
+function SettingsSection({
+  eyebrow,
+  title,
+  description,
+  items,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  items: SettingsLink[];
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-shell-accent)]">
+            {eyebrow}
+          </p>
+          <h2 className="mt-2 text-xl font-black text-[var(--admin-shell-text)] sm:text-2xl">
+            {title}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--admin-shell-soft)]">
+            {description}
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <SettingsCard key={item.href} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default async function AdminSettingsPage() {
   await getCurrentAdmin();
@@ -37,90 +228,95 @@ export default async function AdminSettingsPage() {
   } catch {}
 
   return (
-    <main className="admin-page min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <h1 className="text-3xl font-black">Settings</h1>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <AdminAppearanceSettings />
-
-          <Link
-            href="/admin/dashboard/operations/workers"
-            className="md:col-span-2 rounded-3xl border border-rose-400/25 bg-gradient-to-br from-[#24100f] via-[#160d0b] to-[#0d0908] p-6 transition-all hover:border-rose-300/50 hover:shadow-[0_12px_32px_rgba(225,6,42,0.18)]"
-          >
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Operations</p>
-                <h2 className="mt-2 text-2xl font-black text-white">Background Services Command Center</h2>
-                <p className="mt-2 max-w-3xl text-sm text-white/70">
-                  Monitor durable worker queues, run production maintenance jobs, review failures, retry or cancel jobs, and inspect operational health from one place.
-                </p>
+    <main className="admin-page admin-settings-page px-4 pb-14 pt-6 text-[var(--admin-shell-text)] sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1500px] space-y-8">
+        <header className="overflow-hidden rounded-[2rem] border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] shadow-[0_18px_60px_rgba(0,0,0,0.10)]">
+          <div className="grid gap-8 p-6 md:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="max-w-4xl">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-[var(--admin-shell-accent)]">
+                <Settings2 size={15} />
+                Administration settings
               </div>
-              <span className="inline-flex shrink-0 items-center justify-center rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white">
-                Open Operations Center
-              </span>
+              <h1 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">
+                Control center
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--admin-shell-soft)] sm:text-[15px]">
+                Configure platform behavior, operational controls, search systems, and business-wide preferences from one consistent workspace.
+              </p>
             </div>
-          </Link>
 
-          <Link href="/admin/dashboard/settings/websites" className="rounded-3xl border border-amber-300/20 bg-[#120d0b] p-6 hover:border-amber-300/45">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-200">Website operations</p>
-            <h2 className="mt-2 text-xl font-bold text-white">Generated Websites</h2>
-            <p className="mt-2 text-sm text-white/70">View generated websites and delete/reset one location website at a time for testing or future operations.</p>
-            <span className="mt-4 inline-block rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-black">Manage Websites</span>
-          </Link>
+            <div className="grid min-w-[240px] gap-2 rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-xs font-bold text-[var(--admin-shell-muted)]">Environment</span>
+                <span className="inline-flex items-center gap-2 text-xs font-black text-[var(--admin-shell-text)]">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  Production
+                </span>
+              </div>
+              <div className="h-px bg-[var(--admin-shell-border)]" />
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-xs font-bold text-[var(--admin-shell-muted)]">Runtime</span>
+                <span className="text-xs font-black text-[var(--admin-shell-text)]">AWS Admin</span>
+              </div>
+            </div>
+          </div>
+        </header>
 
-          <Link href="/admin/dashboard/settings/domain-benefit" className="rounded-3xl border border-rose-300/20 bg-[#120d0b] p-6 hover:border-rose-300/45">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Partner Pro</p>
-            <h2 className="mt-2 text-xl font-bold text-rose-100">Domain Benefit Controls</h2>
-            <p className="mt-2 text-sm text-white/70">Turn the free first-year domain and sponsored renewal benefits on or off without redeploying.</p>
-            <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Manage Domain Benefit</span>
-          </Link>
+        <section className="space-y-4">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-shell-accent)]">
+              Workspace
+            </p>
+            <h2 className="mt-2 text-xl font-black sm:text-2xl">Appearance & operator experience</h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--admin-shell-soft)]">
+              Keep the Admin workspace consistent across desktop, tablet, and mobile.
+            </p>
+          </div>
+          <AdminAppearanceSettings />
+        </section>
 
-          <Link href="/admin/dashboard/settings/google-places" className="rounded-3xl border border-emerald-300/20 bg-[#0f1510] p-6 hover:border-emerald-300/45">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">Location Intelligence</p>
-            <h2 className="mt-2 text-xl font-bold text-white">Google Places Budget</h2>
-            <p className="mt-2 text-sm text-white/70">Adjust monthly Google spend and see current usage, remaining budget, credits, photos, rich Details, and address autocomplete.</p>
-            <span className="mt-4 inline-block rounded-full bg-emerald-300 px-4 py-2 text-sm font-black text-black">Manage Google Budget</span>
-          </Link>
+        <SettingsSection
+          eyebrow="Platform"
+          title="Operations & infrastructure"
+          description="Core controls for the systems that run, schedule, host, and deliver TheOutHaven."
+          items={platformLinks}
+        />
 
-          <Link href="/admin/dashboard/settings/demo-center" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
-            <h2 className="text-xl font-bold text-rose-100">Demo Center</h2>
-            <p className="mt-2 text-sm text-white/70">Create, reset, train, and demo TheOutHaven using a real-location mirror.</p>
-            <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Open Demo Center</span>
-          </Link>
+        <SettingsSection
+          eyebrow="Business"
+          title="Commercial & location controls"
+          description="Business-wide controls for location intelligence, domains, promotions, and demos."
+          items={businessLinks}
+        />
 
-          <Link href="/admin/dashboard/search-benchmark" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_10px_28px_rgba(120,35,60,0.28)]">
-            <h2 className="text-xl font-bold text-rose-100">Search Benchmark</h2>
-            <p className="mt-2 text-sm text-white/70">Run the golden benchmark and compare control and shadow ranking quality.</p>
-            <span className="mt-4 inline-block rounded-full bg-rose-600 px-4 py-2 text-sm font-black">Open Search Benchmark</span>
-          </Link>
+        <SettingsSection
+          eyebrow="Intelligence"
+          title="Quality & release controls"
+          description="Tools for measuring search quality and confirming production readiness before changes roll out."
+          items={intelligenceLinks}
+        />
 
-          <Link href="/admin/dashboard/settings/cron-jobs" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
-            <h2 className="text-xl font-bold text-rose-100">Cron Jobs</h2>
-            <p className="mt-2 text-sm text-white/70">Monitor scheduled jobs, run history, and notification email settings.</p>
-          </Link>
+        <section className="space-y-4">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[var(--admin-shell-accent)]">
+              <Bot size={15} />
+              Search & AI systems
+            </div>
+            <h2 className="mt-2 text-xl font-black sm:text-2xl">Advanced platform controls</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--admin-shell-soft)]">
+              Manage maintenance, rollout gates, ML behavior, AI tagging, and search usage limits in one advanced section.
+            </p>
+          </div>
 
-          <Link href="/admin/dashboard/settings/email-qa" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
-            <h2 className="text-xl font-bold text-rose-100">Enterprise Email QA Center</h2>
-            <p className="mt-2 text-sm text-white/70">Preview, test, and monitor templates, senders, and delivery health.</p>
-          </Link>
-
-          <Link href="/admin/dashboard/settings/promo-codes" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 hover:border-rose-300/40">
-            <h2 className="text-xl font-bold text-rose-100">Promo Codes</h2>
-            <p className="mt-2 text-sm text-white/70">Create and manage promo codes and view redemptions.</p>
-          </Link>
-
-          <Link href="/admin/dashboard/launch-checklist" className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 transition-all hover:border-rose-300/40">
-            <h2 className="text-xl font-bold text-rose-100">Launch Checklist</h2>
-            <p className="mt-2 text-sm text-white/70">Monitor production readiness across critical systems.</p>
-          </Link>
-
-          <div className="md:col-span-2"><SearchMaintenanceClient /></div>
-          <div className="md:col-span-2"><SearchCoreRolloutClient initial={searchCoreConfig} /></div>
-          <div className="md:col-span-2"><SearchProfileRolloutClient initial={searchProfileRollout} /></div>
-          <div className="md:col-span-2"><SearchMlRolloutClient initial={mlRolloutSettings} /></div>
-          <div className="md:col-span-2"><AiTagHelperSettingsClient initial={aiSettings} /></div>
-          <div className="md:col-span-2"><SearchLimitsClient initial={{ ...DEFAULT_SEARCH_LIMITS, ...(data?.value || {}) }} /></div>
-        </div>
+          <div className="grid gap-4">
+            <div><SearchMaintenanceClient /></div>
+            <div><SearchCoreRolloutClient initial={searchCoreConfig} /></div>
+            <div><SearchProfileRolloutClient initial={searchProfileRollout} /></div>
+            <div><SearchMlRolloutClient initial={mlRolloutSettings} /></div>
+            <div><AiTagHelperSettingsClient initial={aiSettings} /></div>
+            <div><SearchLimitsClient initial={{ ...DEFAULT_SEARCH_LIMITS, ...(data?.value || {}) }} /></div>
+          </div>
+        </section>
       </div>
     </main>
   );

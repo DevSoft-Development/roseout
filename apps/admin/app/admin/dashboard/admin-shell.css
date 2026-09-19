@@ -645,6 +645,91 @@ body {
   color: #fff;
 }
 
+/* Settings control center
+ * Keeps every legacy settings module on the same enterprise surface while the
+ * individual controls are progressively migrated to shared components.
+ */
+.admin-settings-page {
+  --settings-surface: var(--admin-shell-card);
+  --settings-surface-strong: var(--admin-shell-card-strong);
+  --settings-border: var(--admin-shell-border);
+  --settings-border-strong: var(--admin-shell-border-strong);
+}
+
+.admin-settings-page :is(
+  section[class*="rounded-3xl"],
+  section[class*="rounded-[2rem]"],
+  div[class*="rounded-3xl"][class*="border"]
+) {
+  border-color: var(--settings-border) !important;
+  background-color: var(--settings-surface) !important;
+  background-image: none !important;
+  color: var(--admin-shell-text) !important;
+  box-shadow: 0 14px 38px rgba(0,0,0,.09);
+}
+
+.admin-settings-page :is(
+  [class*="text-rose-100"],
+  [class*="text-rose-200"],
+  [class*="text-rose-300"],
+  [class*="text-amber-100"],
+  [class*="text-amber-200"],
+  [class*="text-amber-300"],
+  [class*="text-emerald-100"],
+  [class*="text-emerald-200"],
+  [class*="text-emerald-300"]
+) {
+  color: var(--admin-shell-accent) !important;
+}
+
+.admin-settings-page :is(
+  [class*="bg-rose-"],
+  [class*="bg-amber-"],
+  [class*="bg-emerald-"],
+  [class*="bg-[#e1062a]"]
+):is(button, a) {
+  border-color: transparent !important;
+  background: var(--admin-shell-accent) !important;
+  color: #fff !important;
+}
+
+.admin-settings-page :is(
+  button,
+  a
+)[class*="rounded-full"] {
+  border-radius: 11px !important;
+}
+
+.admin-settings-page :is(
+  input,
+  textarea,
+  select,
+  [class*="bg-black/"],
+  [class*="bg-black"]
+) {
+  border-color: var(--settings-border-strong) !important;
+  background-color: var(--settings-surface-strong) !important;
+}
+
+.admin-settings-page [class*="border-rose-"],
+.admin-settings-page [class*="border-amber-"],
+.admin-settings-page [class*="border-emerald-"],
+.admin-settings-page [class*="border-white/"] {
+  border-color: var(--settings-border) !important;
+}
+
+.admin-settings-page [role="status"] {
+  color: var(--admin-shell-soft) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-settings-page :is(
+  section[class*="rounded-3xl"],
+  section[class*="rounded-[2rem]"],
+  div[class*="rounded-3xl"][class*="border"]
+) {
+  box-shadow: 0 12px 32px rgba(15,23,42,.055);
+}
+
 .admin-shell-drawer { display: none; }
 
 @media (max-width: 1023px) {
