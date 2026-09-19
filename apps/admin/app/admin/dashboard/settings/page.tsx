@@ -228,7 +228,7 @@ export default async function AdminSettingsPage() {
   } catch {}
 
   return (
-    <main className="admin-page px-4 pb-14 pt-6 text-[var(--admin-shell-text)] sm:px-6 lg:px-8">
+    <main className="admin-page admin-settings-page px-4 pb-14 pt-6 text-[var(--admin-shell-text)] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px] space-y-8">
         <header className="overflow-hidden rounded-[2rem] border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] shadow-[0_18px_60px_rgba(0,0,0,0.10)]">
           <div className="grid gap-8 p-6 md:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
