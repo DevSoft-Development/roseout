@@ -34,6 +34,34 @@ export type IntuneDepOnboardingSetting = {
 
 type GraphCollection<T> = { value?: T[]; "@odata.nextLink"?: string };
 
+type IntuneIosConfiguration = {
+  id: string;
+  displayName?: string | null;
+  description?: string | null;
+  "@odata.type"?: string | null;
+};
+
+export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Apple Business Standard";
+
+const BUSINESS_STANDARD_IOS_CONFIGURATION = {
+  "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
+  displayName: THEOUTHAVEN_BUSINESS_STANDARD_PROFILE,
+  description:
+    "TheOutHaven company-owned iPhone/iPad baseline: supervised and remotely manageable without kiosk-style restrictions.",
+  appStoreBlocked: false,
+  appStoreBlockUIAppInstallation: false,
+  appStoreBlockAutomaticDownloads: false,
+  airDropBlocked: false,
+  airDropForceUnmanagedDropTarget: true,
+  cameraBlocked: false,
+  documentsBlockManagedDocumentsInUnmanagedApps: true,
+  documentsBlockUnmanagedDocumentsInManagedApps: false,
+  configurationProfileBlockChanges: true,
+  deviceBlockEraseContentAndSettings: true,
+  iCloudRequireEncryptedBackup: true,
+  safariBlockFraudWarning: false,
+} as const;
+
 async function getAllPages<T>(userId: string, path: string, maxPages = 10): Promise<T[]> {
   const items: T[] = [];
   let next: string | null = path;
@@ -114,4 +142,61 @@ export async function runIntuneDeviceAction(userId: string, deviceId: string, ac
     method: "POST",
     body: JSON.stringify({}),
   });
+}
+
+
+export async function getBusinessStandardProfile(userId: string) {
+  const profiles = await getAllPages<IntuneIosConfiguration>(
+    userId,
+    "/deviceManagement/deviceConfigurations?$select=id,displayName,description",
+  );
+  return profiles.find((profile) => profile.displayName === THEOUTHAVEN_BUSINESS_STANDARD_PROFILE) || null;
+}
+
+export async function applyBusinessStandardProfile(userId: string) {
+  const existing = await getBusinessStandardProfile(userId);
+  let profileId = existing?.id;
+
+  if (profileId) {
+    await microsoftGraphFetch(
+      userId,
+      `/deviceManagement/deviceConfigurations/${encodeURIComponent(profileId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(BUSINESS_STANDARD_IOS_CONFIGURATION),
+      },
+    );
+  } else {
+    const created = await microsoftGraphFetch<IntuneIosConfiguration>(
+      userId,
+      "/deviceManagement/deviceConfigurations",
+      {
+        method: "POST",
+        body: JSON.stringify(BUSINESS_STANDARD_IOS_CONFIGURATION),
+      },
+    );
+    profileId = created.id;
+  }
+
+  if (!profileId) throw new Error("INTUNE_BUSINESS_STANDARD_PROFILE_MISSING_ID");
+
+  await microsoftGraphFetch(
+    userId,
+    `/deviceManagement/deviceConfigurations/${encodeURIComponent(profileId)}/assign`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        assignments: [
+          {
+            "@odata.type": "#microsoft.graph.deviceConfigurationAssignment",
+            target: {
+              "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+            },
+          },
+        ],
+      }),
+    },
+  );
+
+  return { id: profileId, displayName: THEOUTHAVEN_BUSINESS_STANDARD_PROFILE };
 }
