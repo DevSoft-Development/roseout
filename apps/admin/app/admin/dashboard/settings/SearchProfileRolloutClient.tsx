@@ -3,12 +3,20 @@
 import { useState } from "react";
 import type { SearchProfileMode } from "@/lib/search/v2/retrieval/searchProfileMode";
 import type { SearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
+import {
+  SettingsControlCard,
+  SettingsField,
+  SettingsToggle,
+  settingsInputClass,
+  settingsPrimaryButtonClass,
+  settingsSecondaryButtonClass,
+} from "./SettingsControlPrimitives";
 
 const modes: Array<[SearchProfileMode, string, string]> = [
   ["off", "Off", "Serve legacy retrieval only."],
-  ["shadow", "Shadow", "Serve legacy results while canonical profiles run for comparison."],
+  ["shadow", "Shadow", "Run canonical profiles for comparison while legacy results remain authoritative."],
   ["canary", "Canary", "Serve canonical profiles to a stable percentage of requests."],
-  ["primary", "Primary", "Serve canonical profile retrieval for all requests, with bounded domain fallback."],
+  ["primary", "Primary", "Use canonical profile retrieval for all requests with bounded domain fallback."],
 ];
 
 export default function SearchProfileRolloutClient({ initial }: { initial: SearchProfileRolloutConfig }) {
@@ -23,12 +31,9 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
       config.mode === "primary" ||
       (config.mode === "canary" && config.canaryPercent > baseline.canaryPercent) ||
       (!config.killSwitch && baseline.killSwitch);
-    const confirmed = window.confirm(
-      increasesTraffic
-        ? "This can increase canonical profile traffic in production. Confirm the mode, percentage, and Search Health status before proceeding."
-        : "Apply Search Profile rollout configuration?",
-    );
-    if (!confirmed) return;
+    if (!window.confirm(increasesTraffic
+      ? "This can increase canonical profile traffic in production. Confirm the mode, percentage, and Search Health status before proceeding."
+      : "Apply Search Profile rollout configuration?")) return;
 
     setSaving(true);
     setNotice("");
@@ -53,111 +58,55 @@ export default function SearchProfileRolloutClient({ initial }: { initial: Searc
   }
 
   return (
-    <section
-      id="search-profile-rollout"
-      className="rounded-3xl border border-rose-400/25 bg-gradient-to-br from-[#24100f] via-[#160d0b] to-[#0d0908] p-6 transition-all hover:border-rose-300/40 hover:shadow-[0_12px_32px_rgba(225,6,42,0.14)]"
+    <SettingsControlCard
+      eyebrow="Search API cutover"
+      title="Search Profile Rollout"
+      description="Control when canonical search profiles run in shadow, limited canary traffic, or as the authoritative retrieval path."
+      meta={<>Source · {config.source}</>}
     >
-      <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-300">Search API cutover</p>
-      <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-black text-white">Search Profile Rollout</h2>
-          <p className="mt-2 max-w-3xl text-sm text-white/70">
-            Control whether public search serves legacy retrieval, shadows canonical profiles, uses a canary percentage, or makes canonical profiles authoritative.
-          </p>
-        </div>
-        <span className="rounded-full border border-rose-300/20 bg-rose-500/5 px-3 py-1 text-xs font-black text-rose-100">
-          Source: {config.source}
-        </span>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {modes.map(([value, label, description]) => {
+          const active = config.mode === value;
+          return (
+            <button key={value} type="button" onClick={() => setConfig({ ...config, mode: value })}
+              className={`rounded-2xl border p-4 text-left transition ${active ? "border-[var(--admin-shell-accent-border)] bg-[var(--admin-shell-accent-soft)]" : "border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] hover:border-[var(--admin-shell-border-strong)]"}`}>
+              <span className="text-sm font-black text-[var(--admin-shell-text)]">{label}</span>
+              <span className="mt-1 block text-xs leading-5 text-[var(--admin-shell-muted)]">{description}</span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <label className="text-sm font-bold text-white">
-          SEARCH_PROFILE_MODE
-          <select
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20"
-            value={config.mode}
-            onChange={(event) => setConfig({ ...config, mode: event.target.value as SearchProfileMode })}
-          >
-            {modes.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <SettingsField label="Selected mode" helper="The friendly control above and this select stay synchronized.">
+          <select className={settingsInputClass} value={config.mode} onChange={(event) => setConfig({ ...config, mode: event.target.value as SearchProfileMode })}>
+            {modes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-        </label>
-
-        <label className="text-sm font-bold text-white">
-          SEARCH_PROFILE_CANARY_PERCENT
-          <input
-            className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20 disabled:cursor-not-allowed disabled:opacity-45"
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            disabled={config.mode !== "canary"}
-            value={config.canaryPercent}
-            onChange={(event) => setConfig({ ...config, canaryPercent: Number(event.target.value) })}
-          />
-        </label>
+        </SettingsField>
+        <SettingsField label="Canary traffic" helper="Used only when Canary mode is selected.">
+          <div className="relative">
+            <input className={settingsInputClass} type="number" min={0} max={100} step={1} disabled={config.mode !== "canary"} value={config.canaryPercent} onChange={(event) => setConfig({ ...config, canaryPercent: Number(event.target.value) })} />
+            <span className="pointer-events-none absolute right-3 top-3 text-xs font-black text-[var(--admin-shell-muted)]">%</span>
+          </div>
+        </SettingsField>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {modes.map(([value, label, description]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setConfig({ ...config, mode: value })}
-            className={`rounded-2xl border p-4 text-left transition-all ${
-              config.mode === value
-                ? "border-rose-300/60 bg-rose-500/10 shadow-[0_8px_22px_rgba(225,6,42,0.12)]"
-                : "border-white/10 bg-black/20 hover:border-rose-300/30 hover:bg-rose-500/[0.04]"
-            }`}
-          >
-            <span className={config.mode === value ? "font-black text-rose-100" : "font-black text-white"}>{label}</span>
-            <span className="mt-1 block text-xs text-white/60">{description}</span>
-          </button>
-        ))}
+      <div className="mt-5">
+        <SettingsToggle checked={config.killSwitch} onChange={(checked) => setConfig({ ...config, killSwitch: checked })} label="Emergency kill switch" description="Immediately forces effective mode to Off without deleting the selected rollout mode." danger />
       </div>
 
-      <label className="mt-4 flex items-start gap-3 rounded-2xl border border-rose-400/25 bg-rose-500/5 p-4">
-        <input
-          className="mt-1 accent-rose-600"
-          type="checkbox"
-          checked={config.killSwitch}
-          onChange={(event) => setConfig({ ...config, killSwitch: event.target.checked })}
-        />
-        <span>
-          <span className="block text-sm font-black text-rose-100">Emergency kill switch</span>
-          <span className="mt-1 block text-xs text-white/60">Immediately forces effective mode to off without deleting the selected rollout mode.</span>
-        </span>
-      </label>
-
-      <label className="mt-4 block text-sm font-bold text-white">
-        Change reason
-        <input
-          className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-3 text-white outline-none transition placeholder:text-white/30 focus:border-rose-300/50 focus:ring-2 focus:ring-rose-500/20"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Why is this rollout changing?"
-        />
-      </label>
+      <div className="mt-5">
+        <SettingsField label="Change reason" helper="Provide context for the audit trail when changing production rollout behavior.">
+          <input className={settingsInputClass} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why is this rollout changing?" />
+        </SettingsField>
+      </div>
 
       <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={save}
-          className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white transition hover:bg-[#f0183a] disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Review and save"}
-        </button>
-        <a href="/admin/dashboard/search-health?tab=configuration" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black text-white transition hover:border-rose-300/40 hover:text-rose-100">
-          View Search Health
-        </a>
-        <a href="/admin/dashboard/settings/location-tools/search-profiles" className="rounded-full border border-white/15 px-5 py-3 text-sm font-black text-white transition hover:border-rose-300/40 hover:text-rose-100">
-          Open Search Profiles
-        </a>
+        <button type="button" disabled={saving} onClick={save} className={settingsPrimaryButtonClass}>{saving ? "Saving…" : "Review and save"}</button>
+        <a href="/admin/dashboard/search-health?tab=configuration" className={settingsSecondaryButtonClass}>View Search Health</a>
+        <a href="/admin/dashboard/settings/location-tools/search-profiles" className={settingsSecondaryButtonClass}>Open Search Profiles</a>
       </div>
-
-      {notice ? <p role="status" className="mt-4 text-sm text-amber-100">{notice}</p> : null}
-    </section>
+      {notice ? <p role="status" className="mt-4 text-sm font-bold text-[var(--admin-shell-soft)]">{notice}</p> : null}
+    </SettingsControlCard>
   );
 }
