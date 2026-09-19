@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import MenuEditorClient from "@/app/business/dashboard/menu/MenuEditorClient";
+import MenuEditorClient from "@/apps/business/app/business/dashboard/menu/MenuEditorClient";
 import type { LocationEditorContext } from "./location-editor-context";
 
 export default function LocationEditorMenuPanel({ context, returnHref }: { context: LocationEditorContext; returnHref: string }) {
