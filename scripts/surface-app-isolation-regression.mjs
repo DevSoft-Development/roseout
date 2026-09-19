@@ -520,6 +520,15 @@ if (
 ) {
   throw new Error("Microsoft 365 connect route must preserve Admin-origin PKCE OAuth flow.");
 }
+for (const marker of [
+  "Microsoft 365 connect configuration failed:",
+  'fallback.searchParams.set("error", error)',
+  'NextResponse.redirect(fallback)',
+]) {
+  if (!microsoftConnectRoute.includes(marker)) {
+    throw new Error(`Microsoft 365 connect route must return configuration failures to the Admin settings page: ${marker}`);
+  }
+}
 
 const microsoftCallbackRoute = read("apps/admin/app/api/admin/integrations/microsoft-365/callback/route.ts");
 for (const dependency of [
