@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 env:
-  PRIMARY_SUPABASE_REF: hnhbzynoyrhjndefbwkh
-  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  EAST_PRIMARY_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  WEST_OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
   ADMIN_CALLBACK_URL: https://admin.theouthaven.com/auth/admin/callback
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          for ref in "$PRIMARY_SUPABASE_REF" "$EAST_SUPABASE_REF"; do
+          for ref in "$EAST_PRIMARY_SUPABASE_REF" "$WEST_OREGON_SUPABASE_REF"; do
             current="$RUNNER_TEMP/auth-\${ref}.json"
             payload="$RUNNER_TEMP/auth-\${ref}-patch.json"
 
@@ -78,7 +78,7 @@ jobs:
           PY
           done
 
-          echo "Admin callback is present in both Supabase Auth redirect allowlists."
+          echo "Admin callback is present in East primary and West/Oregon DR Supabase Auth redirect allowlists."
 
       - name: Remove temporary Auth config files
         if: always()
