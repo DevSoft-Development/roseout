@@ -4028,6 +4028,58 @@ if (pkg.scripts?.["lint:surface:admin"] !== "eslint apps/admin packages/auth pac
   throw new Error("Missing targeted Admin surface lint script.");
 }
 
+const adminNavigationSearchHealth = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
+const commandGroupStart = adminNavigationSearchHealth.indexOf('id: "command"');
+const revenueGroupStart = adminNavigationSearchHealth.indexOf('id: "revenue"');
+const searchHealthNav = adminNavigationSearchHealth.indexOf('label: "Search Health"');
+if (
+  commandGroupStart < 0 ||
+  revenueGroupStart < 0 ||
+  searchHealthNav < commandGroupStart ||
+  searchHealthNav > revenueGroupStart ||
+  !adminNavigationSearchHealth.includes('href: "/admin/dashboard/search-health"')
+) {
+  throw new Error("Search Health must remain directly visible in the default-open Admin Command Center group.");
+}
+
+const generatedWebsitesEnterprisePage = read("apps/admin/app/admin/dashboard/settings/websites/page.tsx");
+const generatedWebsitesEnterpriseClient = read("apps/admin/app/admin/dashboard/settings/websites/WebsiteResetClient.tsx");
+for (const marker of [
+  "Generated Websites",
+  "Controlled website reset",
+  "Per-site",
+  "Registered domains",
+]) {
+  if (!generatedWebsitesEnterprisePage.includes(marker)) {
+    throw new Error(`Generated Websites enterprise page must preserve marker: ${marker}`);
+  }
+}
+if (
+  !generatedWebsitesEnterprisePage.includes("../../../../../components/admin/AdminDesignSystem") ||
+  !generatedWebsitesEnterprisePage.includes('requireAdminRole(["superadmin"])') ||
+  generatedWebsitesEnterprisePage.includes("./websites.css")
+) {
+  throw new Error("Generated Websites must use the isolated shared Admin design system and preserve superadmin-only access.");
+}
+for (const marker of [
+  "/api/admin/websites",
+  'method: "DELETE"',
+  'confirmation !== "DELETE"',
+  "Website inventory",
+  "Permanent website reset",
+  "No generated websites match this search",
+]) {
+  if (!generatedWebsitesEnterpriseClient.includes(marker)) {
+    throw new Error(`Generated Websites reset console must preserve marker: ${marker}`);
+  }
+}
+if (
+  !generatedWebsitesEnterpriseClient.includes("../../../../../components/admin/AdminDesignSystem") ||
+  generatedWebsitesEnterpriseClient.includes("@/components/admin/")
+) {
+  throw new Error("Generated Websites client must use the isolated Admin design system without root monolith UI imports.");
+}
+
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
 
 
