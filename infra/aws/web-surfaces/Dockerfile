@@ -11,7 +11,10 @@ ARG WEB_SURFACE
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN --mount=type=secret,id=platform_env,target=/app/.env.production.local,required=true \
+RUN --mount=type=secret,id=platform_env,target=/tmp/platform_env,required=true \
+    set -eux; \
+    cp /tmp/platform_env "apps/$WEB_SURFACE/.env.production.local"; \
+    trap 'rm -f "apps/$WEB_SURFACE/.env.production.local"' EXIT; \
     case "$WEB_SURFACE" in \
       admin) npm run build:surface:admin ;; \
       business) npm run build:surface:business ;; \
