@@ -58,13 +58,43 @@ export default function AdminLoginPage() {
   }, [signInWithMicrosoft]);
 
   return (
-    <main data-surface="admin">
-      <h1>TheOutHaven Administration</h1>
-      <p>Sign in with your authorized Microsoft 365 account.</p>
-      {error ? <p role="alert">{error}</p> : null}
-      <button type="button" onClick={signInWithMicrosoft} disabled={loading}>
-        {loading ? "Redirecting to Microsoft…" : "Sign in with Microsoft"}
-      </button>
+    <main
+      data-surface="admin"
+      className="flex min-h-screen items-center justify-center bg-black px-6 py-12 text-white"
+    >
+      <section className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-8 shadow-2xl">
+        <div className="mb-6">
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-white/55">
+            TheOutHaven
+          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Administration</h1>
+          <p className="mt-3 text-sm leading-6 text-white/70">
+            Sign in with your authorized Microsoft 365 account.
+          </p>
+        </div>
+
+        {error ? (
+          <p
+            role="alert"
+            className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100"
+          >
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={signInWithMicrosoft}
+          disabled={loading}
+          className="inline-flex min-h-14 w-full cursor-pointer items-center justify-center rounded-2xl bg-white px-5 text-sm font-bold text-black shadow-lg transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Redirecting to Microsoft…" : "Sign in with Microsoft"}
+        </button>
+
+        <p className="mt-4 text-center text-xs text-white/45">
+          Authorized administrative accounts only.
+        </p>
+      </section>
     </main>
   );
 }
