@@ -137,18 +137,6 @@ export default function AdminLoginPage() {
               </div>
             </div>
 
-            <div className="mt-12 grid gap-3 sm:grid-cols-3 lg:mt-0">
-              {[
-                ["Microsoft 365", "Identity protected"],
-                ["AWS", "Isolated Admin runtime"],
-                ["Audit", "Security activity logged"],
-              ].map(([title, detail]) => (
-                <div key={title} className="rounded-2xl border border-white/8 bg-white/[0.035] p-4">
-                  <p className="text-xs font-black text-white">{title}</p>
-                  <p className="mt-1 text-[11px] leading-5 text-white/38">{detail}</p>
-                </div>
-              ))}
-            </div>
           </div>
 
           <div className="flex items-center p-7 sm:p-10 lg:p-12">
