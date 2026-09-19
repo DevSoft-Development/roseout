@@ -58,11 +58,32 @@ for (const surface of surfaces) {
 }
 
 const adminLogin = read("apps/admin/app/admin/login/page.tsx");
-if (!adminLogin.includes("@theouthaven/auth/browser-client") || !adminLogin.includes("@theouthaven/auth/redirect")) {
-  throw new Error("Admin login must consume the shared auth package boundary.");
+if (!adminLogin.includes("@theouthaven/auth/redirect") || !adminLogin.includes("/auth/admin/start")) {
+  throw new Error("Admin login must route Microsoft sign-in through the isolated server OAuth start boundary.");
+}
+if (adminLogin.includes("@theouthaven/auth/browser-client") || adminLogin.includes("signInWithOAuth")) {
+  throw new Error("Admin login must not depend on browser-bundled Supabase OAuth configuration.");
 }
 if (!adminLogin.includes("cursor-pointer") || !adminLogin.includes("Sign in with Microsoft")) {
   throw new Error("Admin login must render an unmistakably interactive Microsoft sign-in control.");
+}
+
+const adminOauthStart = read("apps/admin/app/auth/admin/start/route.ts");
+for (const dependency of [
+  "@theouthaven/auth/server-client",
+  "@theouthaven/auth/redirect",
+  "@theouthaven/config/web-surface-origin",
+]) {
+  if (!adminOauthStart.includes(dependency)) {
+    throw new Error(`Admin OAuth start route must consume shared dependency: ${dependency}`);
+  }
+}
+if (
+  !adminOauthStart.includes('provider: "azure"') ||
+  !adminOauthStart.includes("skipBrowserRedirect: true") ||
+  !adminOauthStart.includes("/auth/admin/callback")
+) {
+  throw new Error("Admin OAuth start route must create a server-side Azure OAuth redirect to the isolated Admin callback.");
 }
 
 const adminSession = read("packages/auth/admin-session.ts");
