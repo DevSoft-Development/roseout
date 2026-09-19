@@ -1,0 +1,394 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050505;
+  --foreground: #ffffff;
+
+  --toh-red: #e1062a;
+  --toh-red-hover: #ff173d;
+  --toh-red-soft: rgba(225, 6, 42, 0.14);
+  --toh-red-border: rgba(225, 6, 42, 0.34);
+  --toh-black: #050505;
+  --toh-panel: #0d0d0d;
+  --toh-card: #1a1a1a;
+  --toh-border: rgba(255, 255, 255, 0.1);
+  --toh-border-strong: rgba(255, 255, 255, 0.16);
+  --toh-text-muted: rgba(255, 255, 255, 0.55);
+  --toh-text-soft: rgba(255, 255, 255, 0.72);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-toh-red: var(--toh-red);
+  --color-toh-black: var(--toh-black);
+  --color-toh-panel: var(--toh-panel);
+  --color-toh-card: var(--toh-card);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ✅ Mobile screen overflow protection */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  background: var(--toh-black);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+button,
+input,
+textarea,
+select {
+  max-width: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+/* ✅ Prevent long text/buttons/cards from forcing mobile width */
+a,
+p,
+span,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+button,
+div {
+  overflow-wrap: anywhere;
+}
+
+/* ✅ TheOutHaven global page shell */
+.toh-page {
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(225, 6, 42, 0.18),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(225, 6, 42, 0.12),
+      transparent 28%
+    ),
+    #050505;
+  color: white;
+}
+
+.toh-card {
+  max-width: 100%;
+  border: 1px solid var(--toh-border);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.025)
+  );
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+}
+
+.toh-glass {
+  max-width: 100%;
+  border: 1px solid var(--toh-border);
+  background: rgba(13, 13, 13, 0.82);
+  backdrop-filter: blur(20px);
+}
+
+.toh-btn {
+  max-width: 100%;
+  border-radius: 9999px;
+  background: var(--toh-red);
+  color: white;
+  font-weight: 900;
+  box-shadow: 0 18px 50px rgba(225, 6, 42, 0.28);
+  transition: all 0.2s ease;
+}
+
+.toh-btn:hover {
+  background: var(--toh-red-hover);
+  transform: translateY(-1px);
+}
+
+.toh-btn-outline {
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  color: white;
+  font-weight: 800;
+  transition: all 0.2s ease;
+}
+
+.toh-btn-outline:hover {
+  background: white;
+  color: black;
+}
+
+.toh-red-text {
+  color: var(--toh-red);
+}
+
+.toh-muted {
+  color: var(--toh-text-muted);
+}
+
+/* ✅ Helpful reusable mobile-safe containers */
+.toh-container {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 640px) {
+  .toh-container {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .toh-container {
+    padding-inline: 2rem;
+  }
+}
+
+/* ✅ Prevent iPhone Safari from zooming when tapping search/input areas */
+@media screen and (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+@keyframes testimonial-left-to-right {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.testimonial-track {
+  animation: testimonial-left-to-right 34s linear infinite;
+}
+
+.testimonial-track:hover {
+  animation-play-state: paused;
+}
+
+/*
+ * TheOutHaven admin visual contract.
+ * The admin layout owns these tokens so every current and future admin page
+ * inherits the same black / charcoal / TheOutHaven red visual system by default.
+ */
+.admin-theme {
+  --admin-bg: var(--toh-black);
+  --admin-panel: #0d0d0d;
+  --admin-card: #151110;
+  --admin-card-strong: #1b1513;
+  --admin-border: var(--toh-border);
+  --admin-border-strong: var(--toh-border-strong);
+  --admin-accent: var(--toh-red);
+  --admin-accent-hover: var(--toh-red-hover);
+  --admin-accent-soft: var(--toh-red-soft);
+  --admin-accent-border: var(--toh-red-border);
+  --admin-text: #ffffff;
+  --admin-muted: var(--toh-text-muted);
+  --admin-soft: var(--toh-text-soft);
+  min-height: 100vh;
+  color: var(--admin-text);
+  color-scheme: dark;
+  accent-color: var(--admin-accent);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(225, 6, 42, 0.16), transparent 26rem),
+    radial-gradient(circle at 88% 8%, rgba(225, 6, 42, 0.08), transparent 22rem),
+    var(--admin-bg);
+}
+
+.admin-theme .admin-page {
+  min-height: 100vh;
+  background: transparent;
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-card {
+  border: 1px solid var(--admin-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  color: var(--admin-text);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.3);
+}
+
+.admin-theme .admin-panel {
+  border: 1px solid var(--admin-border);
+  background: var(--admin-panel);
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-kicker {
+  color: #fb7185;
+}
+
+.admin-theme .admin-muted {
+  color: var(--admin-muted);
+}
+
+.admin-theme .admin-primary {
+  border: 1px solid transparent;
+  background: var(--admin-accent);
+  color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 14px 38px rgba(225, 6, 42, 0.24);
+  transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-theme .admin-primary:hover {
+  background: var(--admin-accent-hover);
+  transform: translateY(-1px);
+}
+
+.admin-theme .admin-secondary {
+  border: 1px solid var(--admin-border-strong);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--admin-text);
+  font-weight: 800;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.admin-theme .admin-secondary:hover {
+  border-color: var(--admin-accent-border);
+  background: var(--admin-accent-soft);
+}
+
+.admin-theme .admin-field {
+  border: 1px solid var(--admin-border-strong);
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--admin-text);
+}
+
+.admin-theme .admin-field:focus {
+  border-color: var(--admin-accent-border);
+  outline: 2px solid rgba(225, 6, 42, 0.18);
+  outline-offset: 1px;
+}
+
+.admin-theme input[type="checkbox"],
+.admin-theme input[type="radio"] {
+  accent-color: var(--admin-accent);
+}
+
+.admin-theme :focus-visible {
+  outline-color: var(--admin-accent);
+}
+
+/* Admin dashboard safety rails: prevent nested full-width panels from causing page-level horizontal scroll. */
+.admin-page-shell,
+.admin-page-shell * {
+  min-width: 0;
+}
+
+.admin-page-shell table {
+  max-width: 100%;
+}
+
+/* Phase 4.5 mobile polish safety utilities */
+:root { --toh-safe-bottom: env(safe-area-inset-bottom, 0px); }
+html { -webkit-text-size-adjust: 100%; }
+.toh-mobile-page { padding-bottom: calc(1.5rem + var(--toh-safe-bottom)); }
+.toh-mobile-sticky { padding-bottom: var(--toh-safe-bottom); }
+.toh-touch-target { min-height: 44px; min-width: 44px; }
+.toh-mobile-card-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+@media (min-width: 768px) { .toh-mobile-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .toh-mobile-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .toh-mobile-compact-hero { padding-top: 5.5rem; padding-bottom: 1rem; }
+  .toh-mobile-hide-overflow, .toh-mobile-hide-overflow * { min-width: 0; }
+  .toh-mobile-scroll-chips { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .toh-mobile-scroll-chips > * { flex: 0 0 auto; scroll-snap-align: start; }
+}
+
+.reserve-command-center {
+  --reserve-bg: #050506;
+  --reserve-sidebar: #09090b;
+  --reserve-panel: #0d0d10;
+  --reserve-card: #111115;
+  --reserve-card-strong: #17171c;
+  --reserve-input: #0d0d10;
+  --reserve-border: rgba(255,255,255,.10);
+  --reserve-border-strong: rgba(255,255,255,.16);
+  --reserve-text: #f8fafc;
+  --reserve-muted: rgba(248,250,252,.62);
+  --reserve-muted-strong: rgba(248,250,252,.78);
+  --reserve-primary: #e1062a;
+  --reserve-primary-soft: rgba(225,6,42,.16);
+  --reserve-success: #22c55e;
+  --reserve-warning: #f59e0b;
+  --reserve-danger: #ef4444;
+  --reserve-info: #3b82f6;
+  background: var(--reserve-bg);
+  color: var(--reserve-text);
+}
+.reserve-theme-light.reserve-command-center { --reserve-bg:#f7f4f1; --reserve-sidebar:#ffffff; --reserve-panel:#ffffff; --reserve-card:#ffffff; --reserve-card-strong:#f3ebe7; --reserve-input:#fffaf7; --reserve-border:rgba(60,38,32,.20); --reserve-border-strong:rgba(60,38,32,.28); --reserve-text:#1f1411; --reserve-muted:#684f48; --reserve-muted-strong:#4d3832; --reserve-primary:#c90022; --reserve-primary-soft:rgba(201,0,34,.12); --reserve-danger:#b91c1c; --reserve-success:#166534; --reserve-warning:#92400e; background: linear-gradient(135deg,#fff,#f4f1ef); }
+.reserve-card { border:1px solid var(--reserve-border); background:var(--reserve-card); color:var(--reserve-text); box-shadow:0 14px 40px rgba(0,0,0,.22); }
+.reserve-soft { border:1px solid var(--reserve-border); background:var(--reserve-card-strong); color:var(--reserve-text); }
+.reserve-muted { color:var(--reserve-muted); }
+.reserve-primary { background:var(--reserve-primary); color:white; }
+.reserve-metric-card { border-color: var(--reserve-border); background: var(--reserve-card); color: var(--reserve-text); }
+.reserve-metric-active { outline: 2px solid color-mix(in srgb, var(--reserve-primary) 50%, transparent); border-color: var(--reserve-primary); background: linear-gradient(180deg, var(--reserve-primary-soft), var(--reserve-card)); }
+.reserve-command-center input, .reserve-command-center textarea, .reserve-command-center select { background: var(--reserve-card-strong); color: var(--reserve-text); border-color: var(--reserve-border); }
+.reserve-command-center input::placeholder, .reserve-command-center textarea::placeholder { color: var(--reserve-muted); }
+.reserve-command-center * { min-width: 0; }
+
+.reserve-command-center .reserve-timeline-row {
+  container-type: inline-size;
+}
+
+.reserve-command-center .reserve-timeline-grid {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.reserve-command-center .reserve-timeline-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.reserve-command-center .reserve-status-badge {
+  overflow-wrap: normal;
+}
+
+@container (max-width: 440px) {
+  .reserve-command-center .reserve-timeline-grid {
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .reserve-command-center .reserve-timeline-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    padding-left: 76px;
+  }
+}

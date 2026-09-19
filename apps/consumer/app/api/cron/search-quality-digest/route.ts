@@ -1,0 +1,21 @@
+import { NextRequest, NextResponse } from "next/server";
+import { sendSearchQualityDigest } from "@/lib/search/quality/reporting";
+
+export const dynamic = "force-dynamic";
+
+function authorized(request: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return process.env.NODE_ENV !== "production";
+  const header = request.headers.get("authorization") || "";
+  return header === `Bearer ${secret}`;
+}
+
+export async function GET(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const result = await sendSearchQualityDigest(24);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Digest failed" }, { status: 500 });
+  }
+}
