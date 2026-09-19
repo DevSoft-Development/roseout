@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { getIntuneOverview } from "@/lib/microsoft-365/intune";
+import { getBusinessStandardProfile, getIntuneOverview } from "@/lib/microsoft-365/intune";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +25,21 @@ function formatDate(value?: string | null) {
   }).format(date);
 }
 
-export default async function DeviceManagementPage() {
+export default async function DeviceManagementPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const admin = await requireAdminRole(["superadmin"]);
 
   let overview: Awaited<ReturnType<typeof getIntuneOverview>> | null = null;
   let errorMessage = "";
   let errorDetail = "";
+  let businessStandardProfile: Awaited<ReturnType<typeof getBusinessStandardProfile>> | null = null;
+  const params = (await searchParams) || {};
+  const baselineState = typeof params.baseline === "string" ? params.baseline : "";
 
   try {
-    overview = await getIntuneOverview(admin.user_id);
+    [overview, businessStandardProfile] = await Promise.all([
+      getIntuneOverview(admin.user_id),
+      getBusinessStandardProfile(admin.user_id),
+    ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
 
@@ -110,6 +116,33 @@ export default async function DeviceManagementPage() {
         </section>
       ) : null}
 
+      {baselineState === "applied" ? (
+        <section className="devices-alert devices-alert-success">
+          <ShieldCheck />
+          <div>
+            <small>Apple Business Standard</small>
+            <h2>Baseline applied</h2>
+            <p>
+              Company iPhones and iPads remain supervised and remotely manageable,
+              while App Store access, normal app installation, AirDrop, camera, and
+              everyday device use are restored.
+            </p>
+          </div>
+        </section>
+      ) : baselineState === "failed" ? (
+        <section className="devices-alert">
+          <ShieldAlert />
+          <div>
+            <small>Apple Business Standard</small>
+            <h2>Baseline could not be applied</h2>
+            <p>
+              Confirm Microsoft 365 consent includes
+              DeviceManagementConfiguration.ReadWrite.All, then try again.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       {overview ? (
         <>
           <section className="devices-metrics">
@@ -143,6 +176,32 @@ export default async function DeviceManagementPage() {
               <span>Stale 7d+</span>
               <small>No recent sync</small>
             </article>
+          </section>
+
+          <section className="devices-panel">
+            <header>
+              <div>
+                <small>Apple policy</small>
+                <h2>Business Standard baseline</h2>
+              </div>
+              <span>{businessStandardProfile ? "Configured in Intune" : "Not yet configured"}</span>
+            </header>
+            <div className="devices-policy">
+              <div>
+                <strong>Normal device experience, company controls preserved</strong>
+                <p>
+                  Allows App Store installation, AirDrop, camera, and normal daily use.
+                  Company documents stay blocked from unmanaged apps; MDM removal,
+                  remote management, compliance, and wipe controls remain protected.
+                </p>
+              </div>
+              <form action="/api/admin/integrations/intune/business-standard" method="post">
+                <button type="submit">
+                  <ShieldCheck />
+                  {businessStandardProfile ? "Re-apply baseline" : "Apply baseline"}
+                </button>
+              </form>
+            </div>
           </section>
 
           <section className="devices-panel">
