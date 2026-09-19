@@ -63,7 +63,8 @@
     "build:surface:admin": "next build apps/admin",
     "build:surface:business": "next build apps/business",
     "build:surface:reserve": "next build apps/reserve",
-    "test:surface-app-isolation": "node scripts/surface-app-isolation-regression.mjs"
+    "test:surface-app-isolation": "node scripts/surface-app-isolation-regression.mjs",
+    "test:reserve-surface-migration": "node scripts/reserve-route-migration-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
