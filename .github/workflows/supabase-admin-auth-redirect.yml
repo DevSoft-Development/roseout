@@ -1,0 +1,85 @@
+name: Supabase Admin auth redirect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/admin/app/auth/admin/start/route.ts'
+      - 'apps/admin/app/auth/admin/callback/route.ts'
+      - '.github/workflows/supabase-admin-auth-redirect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  ADMIN_CALLBACK_URL: https://admin.theouthaven.com/auth/admin/callback
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: \${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+
+      - name: Add Admin callback to Auth redirect allowlists
+        env:
+          SUPABASE_ACCESS_TOKEN: \${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          for ref in "$PRIMARY_SUPABASE_REF" "$EAST_SUPABASE_REF"; do
+            current="$RUNNER_TEMP/auth-\${ref}.json"
+            payload="$RUNNER_TEMP/auth-\${ref}-patch.json"
+
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/\${ref}/config/auth" \
+              > "$current"
+
+            python3 - "$current" "$payload" "$ADMIN_CALLBACK_URL" <<'PY'
+          import json, sys
+          source, destination, required = sys.argv[1:4]
+          config = json.load(open(source, encoding="utf-8"))
+          raw = str(config.get("uri_allow_list") or "")
+          urls = [item.strip() for item in raw.split(",") if item.strip()]
+          if required not in urls:
+              urls.append(required)
+          with open(destination, "w", encoding="utf-8") as handle:
+              json.dump({"uri_allow_list": ",".join(urls)}, handle)
+          PY
+
+            curl --fail --silent --show-error --request PATCH \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data-binary "@$payload" \
+              "https://api.supabase.com/v1/projects/\${ref}/config/auth" \
+              >/dev/null
+
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/\${ref}/config/auth" \
+              > "$current"
+
+            python3 - "$current" "$ADMIN_CALLBACK_URL" <<'PY'
+          import json, sys
+          source, required = sys.argv[1:3]
+          config = json.load(open(source, encoding="utf-8"))
+          urls = [item.strip() for item in str(config.get("uri_allow_list") or "").split(",") if item.strip()]
+          if required not in urls:
+              raise SystemExit("Admin callback is missing from Supabase Auth redirect allowlist")
+          PY
+          done
+
+          echo "Admin callback is present in both Supabase Auth redirect allowlists."
+
+      - name: Remove temporary Auth config files
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/auth-*.json
