@@ -254,7 +254,20 @@ const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
 const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
+const adminWorkerOperationsPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
 const adminSettingsPrimitives = read("apps/admin/app/admin/dashboard/settings/SettingsControlPrimitives.tsx");
+for (const marker of [
+  "Worker Operations",
+  "Queue and lease health",
+  "Worker catalog",
+  "Background job activity",
+  "Event timeline",
+  "Operational safety",
+]) {
+  if (!adminWorkerOperationsPage.includes(marker)) {
+    throw new Error(`Admin Worker Operations enterprise surface must preserve marker: ${marker}`);
+  }
+}
 for (const marker of [
   "Cloud Infrastructure",
   "Expanded platform view",
