@@ -1,7 +1,15 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
+import { BriefcaseBusiness, MessageSquareText, ShieldAlert } from "lucide-react";
 import BusinessViewPage from "./view/page";
+import {
+  AdminFilterChip,
+  AdminFilterGroup,
+  AdminFilterPanel,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 const tabs = [
   ["Overview", "/admin/dashboard/businesses"],
@@ -9,12 +17,9 @@ const tabs = [
   ["Outreach", "/admin/dashboard/businesses/outreach"],
   ["Follow-ups", "/admin/dashboard/businesses/followups"],
   ["Communication Center", "/admin/dashboard/businesses/communication-center"],
-  [
-    "Upgrade Opportunities",
-    "/admin/dashboard/businesses/upgrade-opportunities",
-  ],
+  ["Upgrade Opportunities", "/admin/dashboard/businesses/upgrade-opportunities"],
   ["Churn Risk", "/admin/dashboard/businesses/churn-risk"],
-];
+] as const;
 
 export default async function BusinessesPage({
   searchParams,
@@ -22,34 +27,43 @@ export default async function BusinessesPage({
   searchParams: Promise<{ q?: string; locationId?: string }>;
 }) {
   return (
-    <>
-      <div className="bg-[#090706] px-4 pt-8 text-white sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1450px] space-y-6">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">
-              Owners
-            </p>
-            <h1 className="mt-2 text-3xl font-black">Businesses</h1>
-            <p className="mt-2 text-sm text-white/60">
-              Business CRM workflows, outreach, follow-ups, communications,
-              upgrade opportunities, and churn risk now live under this main
-              page.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {tabs.map(([label, href]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/65 transition hover:bg-white/[0.1] hover:text-white"
-                >
-                  {label}
-                </Link>
-              ))}
-            </div>
-          </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Revenue & CRM"
+        title="Businesses"
+        subtitle="Operate the full business lifecycle from one workspace: ownership, outreach, follow-ups, communications, upgrade opportunities, reservation readiness, and churn risk."
+        badge={<AdminStatusBadge tone="rose">Business CRM</AdminStatusBadge>}
+      />
+
+      <AdminFilterPanel>
+        <AdminFilterGroup label="Business operations">
+          {tabs.map(([label, href], index) => (
+            <AdminFilterChip key={href} href={href} active={index === 0}>
+              {label}
+            </AdminFilterChip>
+          ))}
+        </AdminFilterGroup>
+      </AdminFilterPanel>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <BriefcaseBusiness className="h-4 w-4 text-rose-200" />
+          <p className="mt-3 text-sm font-black text-white">Commercial workspace</p>
+          <p className="mt-1 text-xs leading-5 text-white/45">Business account state, plan opportunities, owner access, and CRM workflow in one place.</p>
         </div>
-      </div>
-      <BusinessViewPage searchParams={searchParams} />
-    </>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <MessageSquareText className="h-4 w-4 text-rose-200" />
+          <p className="mt-3 text-sm font-black text-white">Communication visibility</p>
+          <p className="mt-1 text-xs leading-5 text-white/45">Outreach and communication history remain attached to the selected business record.</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <ShieldAlert className="h-4 w-4 text-rose-200" />
+          <p className="mt-3 text-sm font-black text-white">Risk and retention</p>
+          <p className="mt-1 text-xs leading-5 text-white/45">Churn risk and upgrade signals stay visible beside operational account context.</p>
+        </div>
+      </section>
+
+      <BusinessViewPage searchParams={searchParams} embedded />
+    </AdminPageShell>
   );
 }
