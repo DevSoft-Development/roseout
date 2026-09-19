@@ -29,6 +29,6 @@ export function resolveWebSurfaceAuthOrigin(
 
 export function webSurfaceAuthFallbackPath(surface: WebSurface) {
   if (surface === "admin") return "/admin/login";
-  if (surface === "business") return "/login";
+  if (surface === "business") return "/business/login";
   return "/create";
 }
