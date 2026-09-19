@@ -82,7 +82,7 @@ function statusClass(status: string | null | undefined) {
   if (status === "sent") return "border-emerald-300/30 bg-emerald-500/10 text-emerald-100";
   if (status === "scheduled") return "border-sky-300/30 bg-sky-500/10 text-sky-100";
   if (status === "failed") return "border-red-300/30 bg-red-500/10 text-red-100";
-  return "border-rose-300/30 bg-rose-500/100/10 text-rose-100";
+  return "border-rose-300/30 bg-rose-500/10 text-rose-100";
 }
 
 function typeLabel(type: string | null | undefined) {
@@ -175,7 +175,7 @@ export default async function MarketingCenterPage({
     <AdminPageShell>
       <div className="space-y-5">
         <section className="relative overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.28),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-5 shadow-2xl sm:p-7">
-          <div className="absolute right-[-70px] top-[-70px] h-72 w-72 rounded-full bg-rose-500/100/20 blur-3xl" />
+          <div className="absolute right-[-70px] top-[-70px] h-72 w-72 rounded-full bg-rose-500/20 blur-3xl" />
           <div className="absolute bottom-[-80px] left-16 h-56 w-56 rounded-full bg-rose-300/10 blur-3xl" />
           <div className="relative z-10 grid gap-6 xl:grid-cols-[1.15fr_470px] xl:items-end">
             <div>
@@ -238,7 +238,7 @@ export default async function MarketingCenterPage({
               <p className="mt-2 text-sm leading-6 text-white/45">Draft copy, preview content, then schedule or send after confirmation.</p>
             </div>
           ))}
-          <div className="rounded-[1.5rem] border border-rose-400/30 bg-rose-500/100/10 p-5 shadow-xl">
+          <div className="rounded-[1.5rem] border border-rose-400/30 bg-rose-500/10 p-5 shadow-xl">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Loading / Error States</p>
             <p className="mt-2 text-sm leading-6 text-white/60">APIs return structured errors for missing consent, missing providers, duplicate sends, and no recipients. Empty campaign lists show a create-first state below.</p>
           </div>
@@ -293,7 +293,7 @@ export default async function MarketingCenterPage({
                 <span className="text-xs font-black uppercase tracking-wide text-white/40">Location selector</span>
                 <div className="grid gap-3 rounded-[1.25rem] border border-white/10 bg-black/20 p-4 sm:grid-cols-[96px_1fr]">
                   <div className="h-24 overflow-hidden rounded-2xl bg-white/[0.06]">
-                    {params.image ? <img src={params.image} alt={params.location_name || "Selected location"} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm font-black text-black/30">RO</div>}
+                    {params.image ? <img src={params.image} alt={params.location_name || "Selected location"} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm font-black text-white/30">RO</div>}
                   </div>
                   <div>
                     <p className="text-lg font-black">{params.location_name || "No location selected yet"}</p>
@@ -406,7 +406,7 @@ export default async function MarketingCenterPage({
           </aside>
         </section>
 
-        <section id="campaigns" className="mt-5 overflow-hidden rounded-[2rem] border border-white/10 bg-[#f8f3ef] text-[#1b1210] shadow-2xl">
+        <section id="campaigns" className="mt-5 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#101012] text-white shadow-xl shadow-black/20">
           <div className="flex flex-col gap-3 border-b border-white/10 bg-white/[0.035] p-5 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-100">Campaigns</p>
@@ -429,7 +429,7 @@ export default async function MarketingCenterPage({
               <Link
                 key={filter.value}
                 href={filter.value === "all" ? "/admin/dashboard/marketing#campaigns" : `/admin/dashboard/marketing?status=${filter.value}#campaigns`}
-                className={`shrink-0 rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide ${activeStatus === filter.value ? "border-rose-300 bg-rose-500/10 text-rose-100" : "border-white/10 bg-white text-white/40"}`}
+                className={`shrink-0 rounded-full border px-4 py-2 text-[11px] font-black uppercase tracking-wide ${activeStatus === filter.value ? "border-rose-300/50 bg-[#e1062a] text-white" : "border-white/10 bg-white/[0.05] text-white/45"}`}
               >
                 {filter.label}
               </Link>
