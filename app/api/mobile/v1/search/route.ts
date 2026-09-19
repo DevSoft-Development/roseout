@@ -59,19 +59,24 @@ function buildWebGuidedPrompt(body: MobileSearchBody) {
   const query = text(body.query);
   if (!query) return "";
 
+  // Keep this request text byte-for-byte aligned with GuidedCreatePageV2.
+  // Mobile is a transport/response adapter only; search meaning must be owned
+  // by the shared public Search V2 pipeline.
   const typeInstruction = body.planType === "restaurant"
-    ? "Plan a restaurant-only search."
+    ? "restaurant only"
     : body.planType === "activity"
-      ? "Plan an activity-only search."
-      : "";
+      ? "activity only"
+      : "restaurant and activity outing";
+  const when = text(body.when);
+  const normalizedWhen = ["none", "no specific time"].includes(when.toLowerCase()) ? "" : when;
   const timing = [
-    text(body.customDate) || (text(body.when) && text(body.when) !== "none" ? text(body.when) : null),
+    text(body.customDate) || normalizedWhen || null,
     text(body.customTime) || null,
   ].filter(Boolean).join(" ");
   const allMatters = [...list(body.preferences), ...list(body.customMatters)];
 
   return [
-    typeInstruction,
+    `Plan a ${typeInstruction}.`,
     query,
     `Location: ${text(body.area) || "near me"}.`,
     timing ? `When: ${timing}.` : "",
