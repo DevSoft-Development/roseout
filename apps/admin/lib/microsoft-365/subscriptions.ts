@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { microsoftGraphFetch } from "./graph";
+import { getMicrosoft365EncryptionKey } from "./crypto";
 
 const SUBSCRIPTION_LIFETIME_MS = 48 * 60 * 60 * 1000;
 const RENEW_BEFORE_MS = 12 * 60 * 60 * 1000;
@@ -16,9 +17,7 @@ type GraphSubscription = {
 type GraphCollection<T> = { value?: T[]; "@odata.nextLink"?: string };
 
 function webhookKey() {
-  const raw = process.env.M365_TOKEN_ENCRYPTION_KEY?.trim();
-  if (!raw) throw new Error("M365_TOKEN_ENCRYPTION_KEY_MISSING");
-  return Buffer.from(raw, "base64");
+  return getMicrosoft365EncryptionKey();
 }
 
 export function microsoft365WebhookClientState(userId: string) {
