@@ -1,0 +1,3 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireReservePermission } from "@/lib/reserve/locationPermissions";
+export async function POST(req:NextRequest){const body=await req.json(); const auth=await requireReservePermission(String(body.locationId||""),"manageReminders"); if(auth.error)return auth.error; if(!auth.user?.email)return NextResponse.json({success:false,message:"Email is not configured for your account yet."},{status:400}); return NextResponse.json({success:true,message:"Test reminder is ready. Email delivery will use the existing reservation reminder sender when email is configured."});}
