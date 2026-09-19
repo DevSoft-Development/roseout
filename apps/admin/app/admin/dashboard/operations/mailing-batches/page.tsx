@@ -12,7 +12,7 @@ import {
   AdminPageHeader,
   AdminPageShell,
   AdminStatusBadge,
-} from "../../../../components/admin/AdminDesignSystem";
+} from "../../../../../components/admin/AdminDesignSystem";
 import MailingBatchCreateForm from "./MailingBatchCreateForm";
 
 export const dynamic = "force-dynamic";
