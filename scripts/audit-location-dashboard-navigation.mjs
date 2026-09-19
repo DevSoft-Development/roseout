@@ -1,10 +1,10 @@
 import fs from "node:fs";
 
-const nav = fs.readFileSync("app/locations/dashboard/CanonicalLocationModuleNav.tsx", "utf8");
+const nav = fs.readFileSync("apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx", "utf8");
 const hubFiles = [
-  "app/locations/dashboard/business-setup/page.tsx",
-  "app/locations/dashboard/customers/page.tsx",
-  "app/locations/dashboard/marketing-growth/page.tsx",
+  "apps/business/app/locations/dashboard/business-setup/page.tsx",
+  "apps/business/app/locations/dashboard/customers/page.tsx",
+  "apps/business/app/locations/dashboard/marketing-growth/page.tsx",
 ];
 
 const primaryItemCount = (nav.match(/\bicon: [A-Z]/g) || []).length;
