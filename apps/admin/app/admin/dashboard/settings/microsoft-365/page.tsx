@@ -1,6 +1,7 @@
 import "./microsoft-365.css";
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
@@ -58,6 +59,16 @@ export default async function Microsoft365SettingsPage({
   ]);
 
   const connected = connection?.status === "active";
+  const intentionallyDisconnected = params.disconnected === "1";
+  const connectionError = Boolean(params.error || connection?.last_error);
+
+  if (!connected && !intentionallyDisconnected && !connectionError) {
+    const autoConnect = new URLSearchParams({
+      auto: "1",
+      next: "/admin/dashboard/settings/microsoft-365",
+    });
+    redirect("/api/admin/integrations/microsoft-365/connect?" + autoConnect.toString());
+  }
   const pref = {
     email_sync_enabled: preferences?.email_sync_enabled ?? true,
     email_sync_mode: preferences?.email_sync_mode ?? "crm_related_only",
@@ -120,9 +131,11 @@ export default async function Microsoft365SettingsPage({
 
           <div className="m365-actions">
             {!connected ? (
-              <a href="/api/admin/integrations/microsoft-365/connect">
-                Connect Microsoft 365
-              </a>
+              connectionError || intentionallyDisconnected ? (
+                <a href="/api/admin/integrations/microsoft-365/connect?auto=1&next=/admin/dashboard/settings/microsoft-365">
+                  Reauthorize Microsoft 365
+                </a>
+              ) : null
             ) : (
               <>
                 <form
