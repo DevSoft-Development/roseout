@@ -57,7 +57,7 @@ import {
   normalizeGrowthChildTab,
 } from "@/lib/admin/growth-workspace";
 import RepairPublishabilityButton from "./RepairPublishabilityButton";
-import MenuEditorClient from "@/app/business/dashboard/menu/MenuEditorClient";
+import MenuEditorClient from "@/apps/business/app/business/dashboard/menu/MenuEditorClient";
 import {
   getPublicLocationMenuHref,
   getBusinessMenuEditorHref,
