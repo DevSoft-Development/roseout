@@ -1,4 +1,5 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
+import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
 import { mobileJson, mobileError } from "../_lib/response";
 
 export const runtime = "nodejs";
@@ -56,33 +57,16 @@ function laneFor(planType: MobileSearchBody["planType"]) {
 // Mobile must preserve the same automatic intent resolution used by web.
 // Only an explicit restaurant/activity selection should constrain the canonical search lane.
 function buildWebGuidedPrompt(body: MobileSearchBody) {
-  const query = text(body.query);
-  if (!query) return "";
-
-  // Keep this request text byte-for-byte aligned with GuidedCreatePageV2.
-  // Mobile is a transport/response adapter only; search meaning must be owned
-  // by the shared public Search V2 pipeline.
-  const typeInstruction = body.planType === "restaurant"
-    ? "restaurant only"
-    : body.planType === "activity"
-      ? "activity only"
-      : "restaurant and activity outing";
-  const when = text(body.when);
-  const normalizedWhen = ["none", "no specific time"].includes(when.toLowerCase()) ? "" : when;
-  const timing = [
-    text(body.customDate) || normalizedWhen || null,
-    text(body.customTime) || null,
-  ].filter(Boolean).join(" ");
-  const allMatters = [...list(body.preferences), ...list(body.customMatters)];
-
-  return [
-    `Plan a ${typeInstruction}.`,
-    query,
-    `Location: ${text(body.area) || "near me"}.`,
-    timing ? `When: ${timing}.` : "",
-    allMatters.length ? `Preferences: ${allMatters.join(", ")}.` : "",
-    "Return the best options, ranked by fit.",
-  ].filter(Boolean).join(" ");
+  return buildGuidedSearchPrompt({
+    query: text(body.query),
+    planType: body.planType ?? "outing",
+    location: text(body.area) || "near me",
+    when: text(body.when),
+    customDate: text(body.customDate),
+    customTime: text(body.customTime),
+    preferences: list(body.preferences),
+    customMatters: list(body.customMatters),
+  });
 }
 
 function pickName(value: any) {
