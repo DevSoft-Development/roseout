@@ -355,18 +355,49 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${VERCEL_TOKEN:-}" || { echo "VERCEL_TOKEN is required for the production standby sync." >&2; exit 1; }
-          rm -rf .vercel
-          npx --yes vercel@59.3.0 link \
-            --yes \
-            --project "$VERCEL_PROJECT_NAME" \
-            --scope "$VERCEL_TEAM_SLUG" \
-            --token "$VERCEL_TOKEN"
-          npx --yes vercel@59.3.0 env pull "$RUNNER_TEMP/vercel-production.env" \
-            --environment=production \
-            --yes \
-            --scope "$VERCEL_TEAM_SLUG" \
-            --token "$VERCEL_TOKEN"
-          python -m pip install --disable-pip-version-check python-dotenv
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
+            > "$RUNNER_TEMP/vercel-production-env.json"
+
+          VERCEL_ENV_JSON="$RUNNER_TEMP/vercel-production-env.json" \
+          ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
+          python3 - <<'PY'
+          import json, os
+          from collections import defaultdict
+          from pathlib import Path
+
+          source = Path(os.environ['VERCEL_ENV_JSON'])
+          output = Path(os.environ['ENV_FILE'])
+          payload = json.loads(source.read_text())
+          envs = payload.get('envs')
+          if not isinstance(envs, list):
+              raise SystemExit('Vercel environment API did not return an envs array.')
+
+          candidates = defaultdict(list)
+          for entry in envs:
+              key = entry.get('key')
+              targets = entry.get('target') or []
+              if key and 'production' in targets:
+                  candidates[key].append(entry)
+
+          resolved = {}
+          for key, entries in candidates.items():
+              exact = [entry for entry in entries if entry.get('target') == ['production']]
+              selected_pool = exact or entries
+              values = [entry.get('value') for entry in selected_pool if entry.get('value') is not None]
+              if not values:
+                  continue
+              unique = list(dict.fromkeys(values))
+              if len(unique) != 1:
+                  raise SystemExit(f'Ambiguous production environment values for {key}.')
+              resolved[key] = unique[0]
+
+          with output.open('w') as handle:
+              for key in sorted(resolved):
+                  handle.write(f'{key}={json.dumps(resolved[key])}\\n')
+          print(f'vercel_production_environment_keys={len(resolved)}')
+          PY
           GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
           echo "::add-mask::$GATEWAY_SECRET"
           ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
