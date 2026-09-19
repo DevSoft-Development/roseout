@@ -192,11 +192,10 @@ jobs:
           TG: ${{ steps.foundation.outputs.reservetargetgrouparn }}
           EXEC_ROLE: ${{ steps.foundation.outputs.reserveexecutionrolearn }}
           TASK_ROLE: ${{ steps.foundation.outputs.reservetaskrolearn }}
-          LOG_GROUP: ${{ steps.foundation.outputs.reserveloggrouPname }}
+          LOG_GROUP: ${{ steps.foundation.outputs.reserveloggroupname }}
           APP_ENV: ${{ steps.foundation.outputs.reserveappenvsecretarn }}
         run: |
           set -euo pipefail
-          LOG_GROUP="${LOG_GROUP:-${{ steps.foundation.outputs.reserveloggroupname }}}"
           aws cloudformation deploy             --stack-name "$STACK"             --template-file "$SERVICE_TEMPLATE"             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides               Environment="$TARGET_ENV" ClusterName="$CLUSTER" SubnetIds="$SUBNETS"               TaskSecurityGroupId="$SG" TargetGroupArn="$TG"               TaskExecutionRoleArn="$EXEC_ROLE" TaskRoleArn="$TASK_ROLE"               LogGroupName="$LOG_GROUP" AppEnvSecretArn="$APP_ENV"               ImageUri="$IMAGE_URI" GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT"             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveWeb ManagedBy=CloudFormation
 
       - name: Wait for Reserve service
