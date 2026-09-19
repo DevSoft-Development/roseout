@@ -11,7 +11,7 @@ import {
   getLocationCommercePages,
 } from "@/lib/locations/menu";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
-import MenuEditorClient from "@/app/business/dashboard/menu/MenuEditorClient";
+import MenuEditorClient from "../../../business/dashboard/menu/MenuEditorClient";
 import LocationMenuWorkspaceHeader from "./LocationMenuWorkspaceHeader";
 import QuickAddMenuItem from "./QuickAddMenuItem";
 import MenuPageBasics from "./MenuPageBasics";
