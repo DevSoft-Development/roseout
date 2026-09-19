@@ -3,6 +3,11 @@ name: AWS web surfaces services
 on:
   pull_request:
     paths:
+      - 'apps/admin/**'
+      - 'apps/business/**'
+      - 'packages/auth/**'
+      - 'packages/db/**'
+      - 'packages/config/**'
       - 'app/admin/**'
       - 'app/locations/**'
       - 'app/business/**'
@@ -25,6 +30,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'apps/admin/**'
+      - 'apps/business/**'
+      - 'packages/auth/**'
+      - 'packages/db/**'
+      - 'packages/config/**'
       - 'app/admin/**'
       - 'app/locations/**'
       - 'app/business/**'
@@ -88,6 +98,8 @@ jobs:
         run: |
           set -euo pipefail
           test -f "$DOCKERFILE"
+          grep -F 'build:surface:admin' "$DOCKERFILE" >/dev/null
+          grep -F 'build:surface:business' "$DOCKERFILE" >/dev/null
           grep -F '.next/standalone' "$DOCKERFILE" >/dev/null
           grep -F 'runtime-env-loader.cjs' "$DOCKERFILE" >/dev/null
 
@@ -188,26 +200,34 @@ jobs:
           REGISTRY="${REPOSITORY_URI%%/*}"
           aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
 
-      - name: Build or reuse immutable application image
+      - name: Build or reuse isolated Admin and Business images
         id: image
         env:
           REPOSITORY_URI: ${{ steps.foundation.outputs.ecrrepositoryuri }}
           ENV_FILE: ${{ steps.runtime-env.outputs.env_file }}
         run: |
           set -euo pipefail
-          IMAGE_URI="${REPOSITORY_URI}:${GITHUB_SHA}"
           REPOSITORY_NAME="${REPOSITORY_URI##*/}"
-          if aws ecr describe-images \
-            --repository-name "$REPOSITORY_NAME" \
-            --image-ids imageTag="$GITHUB_SHA" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text >/dev/null 2>&1; then
-            echo "Reusing existing immutable ECR image for ${GITHUB_SHA}."
-          else
-            docker build --file "$DOCKERFILE" --secret "id=platform_env,src=$ENV_FILE" --tag "$IMAGE_URI" .
-            docker push "$IMAGE_URI"
-          fi
-          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+          for surface in admin business; do
+            IMAGE_TAG="${GITHUB_SHA}-${surface}"
+            IMAGE_URI="${REPOSITORY_URI}:${IMAGE_TAG}"
+            if aws ecr describe-images \
+              --repository-name "$REPOSITORY_NAME" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text >/dev/null 2>&1; then
+              echo "Reusing existing immutable ECR image for ${IMAGE_TAG}."
+            else
+              docker build \
+                --file "$DOCKERFILE" \
+                --build-arg "WEB_SURFACE=${surface}" \
+                --secret "id=platform_env,src=$ENV_FILE" \
+                --tag "$IMAGE_URI" \
+                .
+              docker push "$IMAGE_URI"
+            fi
+            echo "${surface}_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Recover failed services stack
         env:
@@ -240,7 +260,8 @@ jobs:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           DESIRED_COUNT: ${{ steps.config.outputs.desired_count }}
           STACK: ${{ steps.config.outputs.services_stack }}
-          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
+          BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
           CLUSTER: ${{ steps.foundation.outputs.ecsclustername }}
           SUBNETS: ${{ steps.foundation.outputs.subnetids }}
           SG: ${{ steps.foundation.outputs.tasksecuritygroupid }}
@@ -274,7 +295,8 @@ jobs:
               TaskExecutionRoleArn="$EXEC_ROLE" AdminTaskRoleArn="$ADMIN_ROLE" BusinessTaskRoleArn="$BUSINESS_ROLE" \
               AdminLogGroupName="$ADMIN_LOG" BusinessLogGroupName="$BUSINESS_LOG" \
               AdminAppEnvSecretArn="$ADMIN_ENV" BusinessAppEnvSecretArn="$BUSINESS_ENV" \
-              ImageUri="$IMAGE_URI" GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT" \
+              AdminImageUri="$ADMIN_IMAGE_URI" BusinessImageUri="$BUSINESS_IMAGE_URI" \
+              GitSha="$GITHUB_SHA" DesiredCount="$DESIRED_COUNT" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=WebSurfaces ManagedBy=CloudFormation
 
       - name: Show CloudFormation service failure events

@@ -7,10 +7,23 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG WEB_SURFACE
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN --mount=type=secret,id=platform_env,target=/app/.env.production.local,required=true npm run build
+RUN --mount=type=secret,id=platform_env,target=/app/.env.production.local,required=true \
+    case "$WEB_SURFACE" in \
+      admin) npm run build:surface:admin ;; \
+      business) npm run build:surface:business ;; \
+      *) echo "WEB_SURFACE must be admin or business" >&2; exit 2 ;; \
+    esac
+RUN set -eux; \
+    mkdir -p /runtime; \
+    cp -a "apps/$WEB_SURFACE/.next/standalone/." /runtime/; \
+    mkdir -p "/runtime/apps/$WEB_SURFACE/.next" "/runtime/apps/$WEB_SURFACE/public"; \
+    cp -a "apps/$WEB_SURFACE/.next/static" "/runtime/apps/$WEB_SURFACE/.next/static"; \
+    cp -a public/. "/runtime/apps/$WEB_SURFACE/public/"; \
+    printf 'require("./apps/%s/server.js");\n' "$WEB_SURFACE" > /runtime/start.cjs
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -20,11 +33,9 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /runtime ./
 COPY --chown=nextjs:nextjs infra/aws/web-surfaces/runtime-env-loader.cjs ./runtime-env-loader.cjs
 COPY --chown=nextjs:nextjs infra/aws/web-surfaces/healthcheck.cjs ./healthcheck.cjs
 USER nextjs
 EXPOSE 3000
-CMD ["node", "-r", "./runtime-env-loader.cjs", "server.js"]
+CMD ["node", "-r", "./runtime-env-loader.cjs", "start.cjs"]
