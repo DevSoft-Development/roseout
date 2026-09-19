@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createBrowserSupabaseClient } from "@theouthaven/auth/browser-client";
 import { sanitizeIntendedPath } from "@theouthaven/auth/redirect";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -17,27 +16,13 @@ export default function AdminLoginPage() {
   const [error, setError] = useState("");
   const [nextPath, setNextPath] = useState("/admin/dashboard");
 
-  const signInWithMicrosoft = useCallback(async () => {
+  const signInWithMicrosoft = useCallback(() => {
     setLoading(true);
     setError("");
 
-    const supabase = createBrowserSupabaseClient();
-    const callback = new URL("/auth/admin/callback", window.location.origin);
-    callback.searchParams.set("next", nextPath);
-
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: "azure",
-      options: {
-        scopes: "email",
-        redirectTo: callback.toString(),
-      },
-    });
-
-    if (oauthError) {
-      console.error("Microsoft admin sign-in failed", oauthError);
-      setLoading(false);
-      setError("Microsoft sign-in could not be started. Please try again.");
-    }
+    const startUrl = new URL("/auth/admin/start", window.location.origin);
+    startUrl.searchParams.set("next", nextPath);
+    window.location.assign(startUrl.toString());
   }, [nextPath]);
 
   useEffect(() => {
