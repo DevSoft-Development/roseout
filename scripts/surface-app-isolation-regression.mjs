@@ -113,6 +113,33 @@ if (
 ) {
   throw new Error("Admin OAuth start route must log connection metadata for security audit visibility.");
 }
+if (
+  adminOauthStart.includes('callback.searchParams.set("next"') ||
+  !adminOauthStart.includes('response.cookies.set("toh_admin_next"') ||
+  !adminOauthStart.includes('new URL("/auth/admin/callback", origin)')
+) {
+  throw new Error("Admin OAuth start must use one exact callback URL and store the intended destination in a secure cookie.");
+}
+if (
+  !adminCallback.includes('request.cookies.get("toh_admin_next")') ||
+  !adminCallback.includes('response.cookies.set("toh_admin_next", ""')
+) {
+  throw new Error("Admin OAuth callback must restore and clear the secure intended-destination cookie.");
+}
+
+const adminAuthRedirectWorkflow = read(".github/workflows/supabase-admin-auth-redirect.yml");
+for (const marker of [
+  "https://admin.theouthaven.com/auth/admin/callback",
+  "uri_allow_list",
+  "SUPABASE_ACCESS_TOKEN",
+  "PRIMARY_SUPABASE_REF",
+  "EAST_SUPABASE_REF",
+]) {
+  if (!adminAuthRedirectWorkflow.includes(marker)) {
+    throw new Error(`Supabase Admin auth redirect workflow must preserve marker: ${marker}`);
+  }
+}
+
 
 
 const adminSession = read("packages/auth/admin-session.ts");
