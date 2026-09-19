@@ -91,6 +91,44 @@ jobs:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Bootstrap temporary Reserve DNS permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/reserve-dns-bootstrap.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"ReserveDnsRoute53",
+                "Effect":"Allow",
+                "Action":[
+                  "route53:ListHostedZones",
+                  "route53:ListResourceRecordSets",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:GetChange"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Sid":"ReserveDnsSnapshotSecret",
+                "Effect":"Allow",
+                "Action":[
+                  "secretsmanager:CreateSecret",
+                  "secretsmanager:DescribeSecret",
+                  "secretsmanager:GetSecretValue",
+                  "secretsmanager:PutSecretValue"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenReserveDnsCutoverBootstrap             --policy-document "file://$RUNNER_TEMP/reserve-dns-bootstrap.json"
+          sleep 8
+
       - name: Resolve Route 53 zone and Reserve ALB
         id: target
         run: |
@@ -247,3 +285,12 @@ jobs:
           PY
           CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/rollback-change.json" --query 'ChangeInfo.Id' --output text)"
           aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+
+      - name: Remove temporary Reserve DNS permissions
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenReserveDnsCutoverBootstrap || true
