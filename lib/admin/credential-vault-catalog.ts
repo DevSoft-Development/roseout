@@ -56,8 +56,8 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "github", label: "GitHub", category: "Cloud", description: "GitHub token or GitHub App credentials for repository automation.", note: "The GitHub token used for automatic credential propagation must be allowed to dispatch Actions workflows for this repository.", fields: [
     { key: "token", label: "Token", secret: true }, { key: "appId", label: "GitHub App ID" }, { key: "privateKey", label: "GitHub App private key", secret: true, multiline: true },
   ] },
-  { id: "microsoft", label: "Microsoft / Azure", category: "Identity", description: "Microsoft Entra application credentials and tenant configuration.", fields: [
-    { key: "tenantId", label: "Tenant ID" }, { key: "clientId", label: "Client ID" }, { key: "clientSecret", label: "Client secret", secret: true },
+  { id: "microsoft", label: "Microsoft / Azure", category: "Identity", description: "Microsoft Entra application credentials, tenant configuration, and token encryption.", note: "The token encryption key is propagated automatically to isolated AWS runtimes. Keep the same key to preserve access to already-encrypted Microsoft tokens.", fields: [
+    { key: "tenantId", label: "Tenant ID" }, { key: "clientId", label: "Client ID" }, { key: "clientSecret", label: "Client secret", secret: true }, { key: "tokenEncryptionKey", label: "M365 token encryption key", secret: true },
   ] },
   { id: "openai", label: "OpenAI", category: "AI", description: "OpenAI API credential used by server-side AI features and assistant workloads.", fields: [
     { key: "apiKey", label: "API key", secret: true },

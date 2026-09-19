@@ -29,7 +29,7 @@ ALLOWED_PROVIDERS = {
     "supabase": {"url", "publishableKey", "serviceRoleKey"},
     "vercel": {"token", "teamId"},
     "github": {"token", "appId", "privateKey"},
-    "microsoft": {"tenantId", "clientId", "clientSecret"},
+    "microsoft": {"tenantId", "clientId", "clientSecret", "tokenEncryptionKey"},
     "openai": {"apiKey"},
     "huggingface": {"token"},
     "brave": {"apiKey"},

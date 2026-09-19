@@ -21,6 +21,7 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "tenantId", env: ["MICROSOFT_TENANT_ID", "AZURE_TENANT_ID", "M365_TENANT_ID"] },
     { field: "clientId", env: ["MICROSOFT_CLIENT_ID", "AZURE_CLIENT_ID", "M365_CLIENT_ID"] },
     { field: "clientSecret", env: ["MICROSOFT_CLIENT_SECRET", "AZURE_CLIENT_SECRET", "M365_CLIENT_SECRET"] },
+    { field: "tokenEncryptionKey", env: ["M365_TOKEN_ENCRYPTION_KEY"] },
   ] },
   openai: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["OPENAI_API_KEY"] }] },
   huggingface: { source: "Runtime environment", fields: [{ field: "token", env: ["SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] }] },
