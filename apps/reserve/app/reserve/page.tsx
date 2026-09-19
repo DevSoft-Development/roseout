@@ -25,14 +25,14 @@ export default function ReserveLandingPage() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                href="/create"
+                href="https://theouthaven.com/create"
                 className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg hover:scale-[1.03] transition"
               >
                 Plan an outing
               </Link>
 
               <Link
-                href="/explore"
+                href="https://theouthaven.com/explore"
                 className="rounded-full border border-white/10 bg-white/[0.06] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/[0.1] hover:text-white transition"
               >
                 Browse locations
@@ -92,14 +92,14 @@ export default function ReserveLandingPage() {
 
           <div className="mt-5 flex justify-center gap-3">
             <Link
-              href="/create"
+              href="https://theouthaven.com/create"
               className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg hover:scale-[1.03] transition"
             >
               Start Planning
             </Link>
 
             <Link
-              href="/explore"
+              href="https://theouthaven.com/explore"
               className="rounded-full border border-white/10 bg-white/[0.06] px-6 py-3 text-sm font-black text-white/70 hover:bg-white/[0.1] hover:text-white transition"
             >
               Browse Locations
