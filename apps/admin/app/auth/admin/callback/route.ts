@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const origin = resolveWebSurfaceAuthOrigin(request, requestUrl, "admin");
   const code = requestUrl.searchParams.get("code");
-  const requestedNext = sanitizeIntendedPath(requestUrl.searchParams.get("next"));
+  const requestedNext = sanitizeIntendedPath(request.cookies.get("toh_admin_next")?.value);
   const next = requestedNext?.startsWith("/admin") ? requestedNext : "/admin/dashboard";
 
   if (!code) return redirectToAdminLogin(request, requestUrl, "oauth_failed");
@@ -116,5 +116,13 @@ export async function GET(request: NextRequest) {
   // Microsoft Entra authentication and the active Admin role are the login gate.
   // The separate Microsoft 365 Graph connection powers optional Admin integrations
   // and must never block access to the Admin dashboard.
-  return NextResponse.redirect(new URL(next, origin));
+  const response = NextResponse.redirect(new URL(next, origin));
+  response.cookies.set("toh_admin_next", "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/",
+  });
+  return response;
 }

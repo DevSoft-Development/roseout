@@ -36,7 +36,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const callback = new URL("/auth/admin/callback", origin);
-    callback.searchParams.set("next", next);
 
     const supabase = await createServerSupabaseClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -53,7 +52,15 @@ export async function GET(request: NextRequest) {
       return loginError(request, requestUrl);
     }
 
-    return NextResponse.redirect(data.url);
+    const response = NextResponse.redirect(data.url);
+    response.cookies.set("toh_admin_next", next, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 600,
+      path: "/",
+    });
+    return response;
   } catch (error) {
     console.error("ADMIN_MICROSOFT_OAUTH_START_EXCEPTION", error);
     return loginError(request, requestUrl);
