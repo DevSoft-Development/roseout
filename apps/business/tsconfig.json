@@ -3,12 +3,28 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@theouthaven/auth/*": ["../../packages/auth/*"],
-      "@theouthaven/config/*": ["../../packages/config/*"],
-      "@theouthaven/db/*": ["../../packages/db/*"]
+      "@/*": [
+        "../../*"
+      ],
+      "@theouthaven/auth/*": [
+        "../../packages/auth/*"
+      ],
+      "@theouthaven/config/*": [
+        "../../packages/config/*"
+      ],
+      "@theouthaven/db/*": [
+        "../../packages/db/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "../../next-compiled-ws.d.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -82,8 +82,16 @@ jobs:
         run: npm run test:surface-app-isolation
 
       - name: Build isolated non-Reserve surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface != 'reserve'
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface != 'reserve' && matrix.surface != 'business'
         run: npm run build:surface:${{ matrix.surface }}
+
+      - name: Build isolated Business surface
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'business'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: business-ci-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: business-ci-placeholder
+        run: npm run build:surface:business
 
       - name: Build isolated Reserve surface
         if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'reserve'

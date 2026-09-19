@@ -30,8 +30,10 @@ for (const surface of surfaces) {
   }
 
   const tsconfig = read(`apps/${surface}/tsconfig.json`);
-  const expectedRootAlias = surface === "reserve" ? '"@/*": ["../../*"]' : '"@/*": ["./*"]';
-  if (!tsconfig.includes(expectedRootAlias)) {
+  const parsedTsconfig = JSON.parse(tsconfig);
+  const rootAlias = parsedTsconfig?.compilerOptions?.paths?.["@/*"];
+  const expectedRootAlias = surface === "reserve" || surface === "business" ? "../../*" : "./*";
+  if (!Array.isArray(rootAlias) || rootAlias[0] !== expectedRootAlias) {
     throw new Error(`${surface} must preserve its expected migration-time @/* boundary.`);
   }
   for (const packageName of sharedPackages) {

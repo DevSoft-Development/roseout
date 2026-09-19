@@ -90,6 +90,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate runtime contract
         run: node scripts/web-surfaces-services-regression.mjs
+      - name: Validate Business route migration parity
+        run: node scripts/business-route-migration-regression.mjs
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
       - name: Lint service template
