@@ -18,7 +18,6 @@ export async function GET(request: NextRequest) {
     "/api/admin/integrations/microsoft-365/callback",
     origin,
   ).toString();
-  const config = await getMicrosoft365Config({ redirectUri });
 
   const silent = request.nextUrl.searchParams.get("silent") === "1";
   const automatic = request.nextUrl.searchParams.get("auto") === "1";
@@ -28,6 +27,21 @@ export async function GET(request: NextRequest) {
   const next = requestedNext?.startsWith("/admin")
     ? requestedNext
     : "/admin/dashboard/settings/microsoft-365";
+
+  let config;
+  try {
+    config = await getMicrosoft365Config({ redirectUri });
+  } catch (caught) {
+    const error =
+      caught instanceof Error ? caught.message : "M365_CONNECT_CONFIGURATION_FAILED";
+    console.error("Microsoft 365 connect configuration failed:", error);
+    const fallback = new URL(
+      "/admin/dashboard/settings/microsoft-365",
+      origin,
+    );
+    fallback.searchParams.set("error", error);
+    return NextResponse.redirect(fallback);
+  }
 
   const state = base64url(randomBytes(24));
   const verifier = base64url(randomBytes(64));
