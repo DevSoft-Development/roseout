@@ -132,8 +132,8 @@ for (const marker of [
   "https://admin.theouthaven.com/auth/admin/callback",
   "uri_allow_list",
   "SUPABASE_ACCESS_TOKEN",
-  "PRIMARY_SUPABASE_REF",
-  "EAST_SUPABASE_REF",
+  "EAST_PRIMARY_SUPABASE_REF",
+  "WEST_OREGON_SUPABASE_REF",
 ]) {
   if (!adminAuthRedirectWorkflow.includes(marker)) {
     throw new Error(`Supabase Admin auth redirect workflow must preserve marker: ${marker}`);
