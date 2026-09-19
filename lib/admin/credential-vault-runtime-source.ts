@@ -10,7 +10,7 @@ export const RUNTIME_ENV_MAP: RuntimeEnvMap = {
   supabase: { url: ["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"], publishableKey: ["NEXT_PUBLIC_SUPABASE_ANON_KEY"], serviceRoleKey: ["SUPABASE_SERVICE_ROLE_KEY"] },
   vercel: { token: ["VERCEL_TOKEN"], teamId: ["VERCEL_TEAM_ID", "VERCEL_ORG_ID"] },
   github: { token: ["GITHUB_TOKEN"], appId: ["GITHUB_APP_ID"], privateKey: ["GITHUB_APP_PRIVATE_KEY"] },
-  microsoft: { tenantId: ["MICROSOFT_TENANT_ID", "AZURE_TENANT_ID"], clientId: ["MICROSOFT_CLIENT_ID", "AZURE_CLIENT_ID"], clientSecret: ["MICROSOFT_CLIENT_SECRET", "AZURE_CLIENT_SECRET"] },
+  microsoft: { tenantId: ["MICROSOFT_TENANT_ID", "AZURE_TENANT_ID"], clientId: ["MICROSOFT_CLIENT_ID", "AZURE_CLIENT_ID"], clientSecret: ["MICROSOFT_CLIENT_SECRET", "AZURE_CLIENT_SECRET"], tokenEncryptionKey: ["M365_TOKEN_ENCRYPTION_KEY"] },
   openai: { apiKey: ["OPENAI_API_KEY"] },
   huggingface: { token: ["SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] },
   brave: { apiKey: ["BRAVE_SEARCH_API_KEY"] },
