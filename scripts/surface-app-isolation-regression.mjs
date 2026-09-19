@@ -249,6 +249,28 @@ if (!platformErrorsLoader.includes("@theouthaven/db/admin-client") || platformEr
 const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
 const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
+const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
+for (const marker of [
+  "admin-settings-page",
+  "Control center",
+  "Operations & infrastructure",
+  "Commercial & location controls",
+  "Quality & release controls",
+  "Search & AI systems",
+]) {
+  if (!adminSettingsPage.includes(marker)) {
+    throw new Error(`Admin Settings enterprise redesign must preserve marker: ${marker}`);
+  }
+}
+for (const marker of [
+  ".admin-settings-page",
+  "--settings-surface",
+  "var(--admin-shell-accent)",
+]) {
+  if (!adminShellCss.includes(marker)) {
+    throw new Error(`Admin Settings enterprise theme must preserve marker: ${marker}`);
+  }
+}
 for (const marker of [
   "Command Center",
   "Revenue & CRM",
