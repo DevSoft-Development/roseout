@@ -36,9 +36,49 @@ function dateSuitabilityText(candidate: ScoredCandidate) {
     location.features,
   ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ");
 }
-function pairDateOccasionAdjustment(plan: SearchPlan, restaurant: ScoredCandidate) {
-  if (plan.occasion !== "date_night") return 0;
-  return Math.max(-12, Math.min(10, scoreDateSuitability(dateSuitabilityText(restaurant)).adjustment * 0.4));
+function pairOccasionText(candidate: ScoredCandidate) {
+  const location = locationOf(candidate);
+  return [
+    dateSuitabilityText(candidate),
+    location.activity_name,
+    location.activity_type,
+    location.activity_categories,
+    location.nightlife_categories,
+    location.audience_tags,
+    location.family_tags,
+    location.group_tags,
+  ].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
+}
+
+function pairOccasionAdjustment(plan: SearchPlan, restaurant: ScoredCandidate, activity?: ScoredCandidate) {
+  if (plan.occasion === "date_night") {
+    const restaurantAdjustment = scoreDateSuitability(dateSuitabilityText(restaurant)).adjustment * 0.4;
+    const activityText = activity ? pairOccasionText(activity) : "";
+    const activityAdjustment = /\b(romantic|intimate|date night|date-night|couples?|jazz|museum|gallery|comedy|rooftop|cocktails?|wine|theater|theatre|live music)\b/.test(activityText)
+      ? 5
+      : /\b(team building|corporate|children'?s|kids? only|day camp)\b/.test(activityText)
+        ? -6
+        : 0;
+    return Math.max(-14, Math.min(14, restaurantAdjustment + activityAdjustment));
+  }
+
+  if (plan.occasion === "girls_night") {
+    const text = `${pairOccasionText(restaurant)} ${activity ? pairOccasionText(activity) : ""}`;
+    let adjustment = 0;
+    if (/\b(cocktails?|rooftop|lounge|karaoke|live music|dancing|dance|comedy|arcade|paint and sip|wine|brunch|lively|group friendly|group-friendly)\b/.test(text)) adjustment += 8;
+    if (/\b(children'?s|kids? only|day camp|corporate training)\b/.test(text)) adjustment -= 8;
+    return adjustment;
+  }
+
+  if (plan.occasion === "family_outing") {
+    const text = `${pairOccasionText(restaurant)} ${activity ? pairOccasionText(activity) : ""}`;
+    let adjustment = 0;
+    if (/\b(family friendly|family-friendly|all ages|kid friendly|kid-friendly|museum|bowling|arcade|mini golf|park|zoo|aquarium|theater|theatre)\b/.test(text)) adjustment += 8;
+    if (/\b(adult only|adult-only|21\+|nightclub|hookah|cigar lounge|strip club)\b/.test(text)) adjustment -= 12;
+    return adjustment;
+  }
+
+  return 0;
 }
 function diversifyPairs(pairs: SearchPair[], limit = TARGET_PAIR_COUNT, maxPerRestaurant = 1, maxPerActivity = 1) {
   const restaurantUses = new Map<string, number>();
@@ -149,11 +189,12 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
   const evaluateFrontier = (restaurantLimit: number, activityLimit: number, phase: "initial" | "adaptive") => {
     const frontier: Array<{ restaurant: ScoredCandidate; activity: ScoredCandidate; key: string; upperBound: number }> = [];
     for (const restaurant of restaurants.slice(0, restaurantLimit)) {
-      const dateOccasionAdjustment = pairDateOccasionAdjustment(plan, restaurant);
+      const occasionAdjustment = pairOccasionAdjustment(plan, restaurant);
       for (const activity of activities.slice(0, activityLimit)) {
         const key = `${get(restaurant).id ?? "r"}:${get(activity).id ?? "a"}`;
         if (evaluatedKeys.has(key)) continue;
-        frontier.push({ restaurant, activity, key, upperBound: (restaurant.scores.total + activity.scores.total) * 0.4 + 25 + dateOccasionAdjustment });
+        const pairOccasionBoost = pairOccasionAdjustment(plan, restaurant, activity);
+        frontier.push({ restaurant, activity, key, upperBound: (restaurant.scores.total + activity.scores.total) * 0.4 + 25 + Math.max(occasionAdjustment, pairOccasionBoost) });
       }
     }
     frontier.sort((a, b) => b.upperBound - a.upperBound);
@@ -180,9 +221,9 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
       const tierRank = geoTierRank(geoTier);
       const distanceScore = distance == null ? 40 : Math.max(0, 100 - distance * 12);
       const mlPairBoost = Math.max(restaurantMeta.ml, activityMeta.ml);
-      const dateOccasionAdjustment = pairDateOccasionAdjustment(plan, restaurant);
-      const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost + dateOccasionAdjustment - tierRank * 12;
-      pairs.push({ restaurant, activity, distanceMiles: distance, walkingMinutes: walking, walkingMinutesSource: walking == null ? "unavailable" : "estimated", geoTier, isFallbackPair: geoTier !== "exact_locality", scores: { restaurant: restaurant.scores.total, activity: activity.scores.total, distance: distanceScore, combinedQuality: (restaurant.scores.quality + activity.scores.quality) / 2, sequence: 100, mlPairBoost, total }, reasons: [sameVenue ? "both roles at one venue" : tierReason(geoTier), dateOccasionAdjustment > 0 ? `restaurant date-night fit +${dateOccasionAdjustment.toFixed(1)}` : dateOccasionAdjustment < 0 ? `restaurant date-night fit ${dateOccasionAdjustment.toFixed(1)}` : null, walking == null ? "walking time unavailable" : `about ${walking} minutes walking`].filter(Boolean) as string[] });
+      const occasionAdjustment = pairOccasionAdjustment(plan, restaurant, activity);
+      const total = (restaurant.scores.total + activity.scores.total) * 0.4 + distanceScore * 0.2 + mlPairBoost + occasionAdjustment - tierRank * 12;
+      pairs.push({ restaurant, activity, distanceMiles: distance, walkingMinutes: walking, walkingMinutesSource: walking == null ? "unavailable" : "estimated", geoTier, isFallbackPair: geoTier !== "exact_locality", scores: { restaurant: restaurant.scores.total, activity: activity.scores.total, distance: distanceScore, combinedQuality: (restaurant.scores.quality + activity.scores.quality) / 2, sequence: 100, mlPairBoost, total }, reasons: [sameVenue ? "both roles at one venue" : tierReason(geoTier), occasionAdjustment > 0 ? `${plan.occasion ?? "occasion"} fit +${occasionAdjustment.toFixed(1)}` : occasionAdjustment < 0 ? `${plan.occasion ?? "occasion"} fit ${occasionAdjustment.toFixed(1)}` : null, walking == null ? "walking time unavailable" : `about ${walking} minutes walking`].filter(Boolean) as string[] });
       if (pairs.length >= qualityFrontierMin) {
         const diversified = diversifyPairs(rankedPairs(), targetPairCount);
         const next = frontier[index + 1];
@@ -221,7 +262,7 @@ export async function buildPairs({ plan, restaurants, activities, trace }: { pla
     trace.counts.pairsBuilt = pairs.length;
     trace.counts.pairsValid = diversified.length;
     trace.decisions.push({ stage: "pairing_performance", decision: debug.adaptiveExpansionApplied ? "adaptive_frontier_expanded" : debug.shortCircuitApplied ? "short_circuit_applied" : "initial_frontier_complete", reason: JSON.stringify({ theoreticalPairCandidates, targetPairCount, pairCandidatesEvaluated: debug.pairCandidatesEvaluated, pairCandidatesSkipped: debug.pairCandidatesSkipped, shortCircuitReason: debug.shortCircuitReason, adaptiveExpansionApplied: debug.adaptiveExpansionApplied, initialRestaurantLimit, initialActivityLimit, adaptiveRestaurantLimit, adaptiveActivityLimit }) });
-    if (plan.occasion === "date_night") trace.decisions.push({ stage: "pair_date_suitability", decision: "restaurant_occasion_fit_applied", reason: "date suitability contributes directly to pair score; no restaurant suppression" });
+    if (plan.occasion) trace.decisions.push({ stage: "pair_occasion_suitability", decision: "occasion_fit_applied", reason: `${plan.occasion} suitability contributes directly to pair score without overriding geography or explicit travel constraints` });
     trace.decisions.push({ stage: "pairing_eligibility", decision: debug.eligibilityContractValid ? (diversified.length ? "pairs_available" : "pairs_unavailable") : "pairing_contract_violation", reason: JSON.stringify({ ...debug, servedGeoTier: diversified[0]?.geoTier ?? null }) });
   }
   return diversified;

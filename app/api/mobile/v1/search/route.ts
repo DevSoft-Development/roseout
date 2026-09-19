@@ -1,4 +1,5 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
+import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
 import { mobileJson, mobileError } from "../_lib/response";
 
 export const runtime = "nodejs";
@@ -56,28 +57,16 @@ function laneFor(planType: MobileSearchBody["planType"]) {
 // Mobile must preserve the same automatic intent resolution used by web.
 // Only an explicit restaurant/activity selection should constrain the canonical search lane.
 function buildWebGuidedPrompt(body: MobileSearchBody) {
-  const query = text(body.query);
-  if (!query) return "";
-
-  const typeInstruction = body.planType === "restaurant"
-    ? "Plan a restaurant-only search."
-    : body.planType === "activity"
-      ? "Plan an activity-only search."
-      : "";
-  const timing = [
-    text(body.customDate) || (text(body.when) && text(body.when) !== "none" ? text(body.when) : null),
-    text(body.customTime) || null,
-  ].filter(Boolean).join(" ");
-  const allMatters = [...list(body.preferences), ...list(body.customMatters)];
-
-  return [
-    typeInstruction,
-    query,
-    `Location: ${text(body.area) || "near me"}.`,
-    timing ? `When: ${timing}.` : "",
-    allMatters.length ? `Preferences: ${allMatters.join(", ")}.` : "",
-    "Return the best options, ranked by fit.",
-  ].filter(Boolean).join(" ");
+  return buildGuidedSearchPrompt({
+    query: text(body.query),
+    planType: body.planType ?? "outing",
+    location: text(body.area) || "near me",
+    when: text(body.when),
+    customDate: text(body.customDate),
+    customTime: text(body.customTime),
+    preferences: list(body.preferences),
+    customMatters: list(body.customMatters),
+  });
 }
 
 function pickName(value: any) {
