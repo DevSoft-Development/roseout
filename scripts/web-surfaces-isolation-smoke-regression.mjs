@@ -27,11 +27,11 @@ requireText(workflow, "require_allowed 'admin.theouthaven.com' '/admin/login'", 
 requireText(workflow, "require_denied 'admin.theouthaven.com' '/locations/dashboard'", 'Admin runtime must reject the Business dashboard.');
 requireText(workflow, "require_allowed 'admin.theouthaven.com' '/'", 'Admin root must remain reachable so the isolated runtime can redirect to Admin login.');
 requireText(workflow, "require_location_prefix 'admin.theouthaven.com' '/auth/admin/callback' 'https://admin.theouthaven.com/admin/login'", 'Admin callback failures must remain on the Admin hostname.');
-requireText(workflow, "require_allowed 'business.theouthaven.com' '/login'", 'Business shared login must remain reachable.');
+requireText(workflow, "require_allowed 'business.theouthaven.com' '/business/login'", 'Business login must remain reachable on the isolated Business runtime.');
 requireText(workflow, "require_allowed 'business.theouthaven.com' '/locations/dashboard'", 'Business dashboard must remain reachable on the Business runtime.');
 requireText(workflow, "require_denied 'business.theouthaven.com' '/admin/login'", 'Business runtime must reject Admin login.');
 requireText(workflow, "require_denied 'business.theouthaven.com' '/'", 'Business runtime must reject the consumer homepage.');
-requireText(workflow, "require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/login'", 'Business callback failures must remain on the Business hostname.');
+requireText(workflow, "require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/business/login'", 'Business callback failures must remain on the Business hostname and Business login route.');
 requireText(workflow, ".ok == true and .provider == $provider", 'Both isolated origins must prove their expected runtime provider.');
 requireText(workflow, "status" + '" != \'404\'', 'Denied surface routes must require exact HTTP 404.');
 requireText(workflow, 'No DNS/public routing changes were made.', 'Smoke verification must remain explicitly non-cutover.');
@@ -40,7 +40,7 @@ requireText(authOrigin, 'surface !== "admin" && surface !== "business"', 'Both i
 requireText(authOrigin, 'request.headers.get("x-forwarded-host")', 'Isolated auth callback origin must respect the forwarded request hostname behind the ALB.');
 requireText(authOrigin, 'request.headers.get("x-forwarded-proto")', 'Isolated auth callback origin must preserve HTTPS behind the ALB.');
 requireText(authOrigin, 'if (surface === "admin") return "/admin/login";', 'Admin auth failures must return to the Admin login page.');
-requireText(authOrigin, 'if (surface === "business") return "/login";', 'Business auth failures must return to the Business login page.');
+requireText(authOrigin, 'if (surface === "business") return "/business/login";', 'Business auth failures must return to the Business login page.');
 requireText(callback, 'resolveWebSurfaceAuthOrigin(request, requestUrl)', 'Generic auth callback must use the surface-aware auth origin.');
 requireText(callback, 'const cookieResponse = NextResponse.redirect', 'Auth exchange must retain a response object that receives Supabase cookies.');
 requireText(callback, 'cookieResponse.cookies.getAll().forEach((cookie)', 'Auth exchange cookies must be copied onto the final redirect response.');
