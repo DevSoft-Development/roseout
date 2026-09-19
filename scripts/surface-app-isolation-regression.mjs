@@ -229,6 +229,47 @@ if (!platformErrorsLoader.includes("@theouthaven/db/admin-client") || platformEr
 }
 
 const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
+const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
+const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
+for (const marker of [
+  "Command Center",
+  "Revenue & CRM",
+  "Operations",
+  "Growth & Marketing",
+  "Trust & Support",
+  "Cloud & Platform",
+  "Administration",
+  "/admin/dashboard/crm",
+  "/admin/dashboard/users",
+  "/admin/dashboard/settings",
+  "/admin/dashboard/settings/cron-jobs",
+  "/admin/dashboard/website-hosting",
+]) {
+  if (!adminNavigation.includes(marker)) {
+    throw new Error(`Enterprise Admin navigation must include: ${marker}`);
+  }
+}
+for (const marker of [
+  "admin-shell-nav-group-trigger",
+  "aria-expanded",
+  "Administration Cloud",
+  "Production · AWS",
+  "admin-enterprise-surface",
+]) {
+  if (!enterpriseAdminShell.includes(marker)) {
+    throw new Error(`Enterprise Admin shell must include: ${marker}`);
+  }
+}
+for (const marker of [
+  "--admin-shell-accent: #e1062a",
+  ".admin-shell-nav-group",
+  ".admin-shell-desktop-topbar",
+  ".admin-enterprise-surface",
+]) {
+  if (!adminShellCss.includes(marker)) {
+    throw new Error(`Enterprise Admin theme contract must include: ${marker}`);
+  }
+}
 if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavigation.includes('roles: ["superadmin"]')) {
   throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
 }
