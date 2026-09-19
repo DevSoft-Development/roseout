@@ -42,7 +42,7 @@ export function getInternalReservationHref(
     rawType === "activities" || rawType === "activity" ? "activity" : "restaurant";
 
   return location?.id
-    ? `/reserve/location/${encodeURIComponent(location.id)}?type=${normalizedType}`
+    ? `https://reserve.theouthaven.com/reserve/location/${encodeURIComponent(location.id)}?type=${normalizedType}`
     : null;
 }
 

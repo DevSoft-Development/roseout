@@ -7,13 +7,13 @@ export const ROUTES = {
   adminClaimQrs: "/admin/dashboard/claim-qrs",
   adminClaimQrsForLocation: (locationId: string) => `/admin/dashboard/claim-qrs?locationId=${encodeURIComponent(locationId)}`,
 
-  reserveDashboard: "/reserve/dashboard",
-  reserveDashboardReservations: "/reserve/dashboard/reservations",
+  reserveDashboard: "https://reserve.theouthaven.com/reserve/dashboard",
+  reserveDashboardReservations: "https://reserve.theouthaven.com/reserve/dashboard/reservations",
   reserveBooking: (locationType: string | null | undefined, locationId: string) => {
-    const path = `/reserve/location/${encodeURIComponent(locationId)}`;
+    const path = `https://reserve.theouthaven.com/reserve/location/${encodeURIComponent(locationId)}`;
     return locationType ? `${path}?type=${encodeURIComponent(locationType)}` : path;
   },
-  reserveConfirmation: (token: string) => `/reserve/confirmation/${encodeURIComponent(token)}`,
+  reserveConfirmation: (token: string) => `https://reserve.theouthaven.com/reserve/confirmation/${encodeURIComponent(token)}`,
 
   businessDashboard: "/business/dashboard",
   businessMenu: "/business/dashboard/menu",

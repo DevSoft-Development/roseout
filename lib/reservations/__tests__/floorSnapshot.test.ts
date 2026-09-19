@@ -126,13 +126,13 @@ describe("reserve vocabulary", () => {
 describe("reserve action links", () => {
   it("does not force restaurant type for activity locations", () => {
     const links = getReserveActionLinks({ locationId: "loc_123", locationType: "activity" });
-    expect(links.bookingHref).toBe("/reserve/location/loc_123?type=activity");
+    expect(links.bookingHref).toBe("https://reserve.theouthaven.com/reserve/location/loc_123?type=activity");
     expect(links.embedHref).toBe("/embed/reservations/loc_123?type=activity");
   });
 
   it("omits type when it is unknown", () => {
     const links = getReserveActionLinks({ locationId: "loc_123" });
-    expect(links.bookingHref).toBe("/reserve/location/loc_123");
+    expect(links.bookingHref).toBe("https://reserve.theouthaven.com/reserve/location/loc_123");
   });
 
   it("normalizes Reserve QR links to the location reservation settings page instead of claim QR admin pages", () => {
