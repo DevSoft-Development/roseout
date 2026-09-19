@@ -15,7 +15,8 @@ RUN --mount=type=secret,id=platform_env,target=/app/.env.production.local,requir
     case "$WEB_SURFACE" in \
       admin) npm run build:surface:admin ;; \
       business) npm run build:surface:business ;; \
-      *) echo "WEB_SURFACE must be admin or business" >&2; exit 2 ;; \
+      reserve) npm run build:surface:reserve ;; \
+      *) echo "WEB_SURFACE must be admin, business, or reserve" >&2; exit 2 ;; \
     esac
 RUN set -eux; \
     mkdir -p /runtime; \
