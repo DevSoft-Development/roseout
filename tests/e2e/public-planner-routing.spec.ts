@@ -32,7 +32,7 @@ test.describe("public planner routing", () => {
 
   test("Create Outing returns to the homepage planner", async ({ page }) => {
     await page.goto("/about");
-    await page.getByRole("link", { name: "Create Outing" }).click();
+    await page.getByRole("banner").getByRole("link", { name: "Create Outing" }).click();
 
     await expect(page).toHaveURL(/\/#plan-your-outing$/);
     await expect(page.getByLabel("Describe the outing you want")).toBeVisible();
