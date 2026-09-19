@@ -61,6 +61,9 @@ const adminLogin = read("apps/admin/app/admin/login/page.tsx");
 if (!adminLogin.includes("@theouthaven/auth/browser-client") || !adminLogin.includes("@theouthaven/auth/redirect")) {
   throw new Error("Admin login must consume the shared auth package boundary.");
 }
+if (!adminLogin.includes("cursor-pointer") || !adminLogin.includes("Sign in with Microsoft")) {
+  throw new Error("Admin login must render an unmistakably interactive Microsoft sign-in control.");
+}
 
 const adminSession = read("packages/auth/admin-session.ts");
 for (const dependency of [
