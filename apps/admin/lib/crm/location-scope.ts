@@ -7,6 +7,8 @@ function broadAccess(role: string, profile: any) {
 }
 
 export async function listPermittedCrmLocationIds(userId: string, role: string) {
+  if (broadAccess(role, null)) return null;
+
   const db = getAdminDatabaseClient();
   const { data: profile, error } = await db
     .from("team_member_profiles")
