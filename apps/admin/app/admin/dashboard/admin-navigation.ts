@@ -386,12 +386,7 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
         migrated: true,
         roles: ["superadmin", "admin", "manager"],
       },
-      {
-        label: "Settings",
-        href: "/admin/dashboard/settings",
-        icon: Settings,
-        migrated: true,
-      },
+      { label: "Settings", href: "/admin/dashboard/settings", icon: Settings, migrated: true },
       {
         label: "Microsoft 365",
         href: "/admin/dashboard/settings/microsoft-365",
