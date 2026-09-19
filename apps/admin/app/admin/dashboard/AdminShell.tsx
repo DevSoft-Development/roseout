@@ -7,14 +7,49 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createBrowserSupabaseClient } from "@theouthaven/auth/browser-client";
 import type { AdminRole } from "@theouthaven/auth/admin-roles";
 import { adminShellNavigationGroups } from "./admin-navigation";
-import {
-  ADMIN_APPEARANCE_EVENT,
-  ADMIN_APPEARANCE_STORAGE_KEY,
-  DEFAULT_ADMIN_APPEARANCE,
-  normalizeAdminAppearance,
-  resolveAdminTheme,
-  type AdminAppearanceSettings,
-} from "@/lib/admin-appearance";
+
+type AdminAppearanceMode = "auto" | "light" | "dark";
+type AdminAppearanceSettings = {
+  mode: AdminAppearanceMode;
+  lightStart: string;
+  darkStart: string;
+};
+
+const ADMIN_APPEARANCE_STORAGE_KEY = "theouthaven.admin.appearance.v1";
+const ADMIN_APPEARANCE_EVENT = "theouthaven:admin-appearance-change";
+const DEFAULT_ADMIN_APPEARANCE: AdminAppearanceSettings = {
+  mode: "auto",
+  lightStart: "07:00",
+  darkStart: "19:00",
+};
+
+function normalizeAdminAppearance(value: unknown): AdminAppearanceSettings {
+  if (!value || typeof value !== "object") return DEFAULT_ADMIN_APPEARANCE;
+  const raw = value as Partial<AdminAppearanceSettings>;
+  const mode: AdminAppearanceMode =
+    raw.mode === "light" || raw.mode === "dark" || raw.mode === "auto" ? raw.mode : "auto";
+  const validTime = (time: unknown): time is string =>
+    typeof time === "string" && /^([01]\\d|2[0-3]):[0-5]\\d$/.test(time);
+  return {
+    mode,
+    lightStart: validTime(raw.lightStart) ? raw.lightStart : DEFAULT_ADMIN_APPEARANCE.lightStart,
+    darkStart: validTime(raw.darkStart) ? raw.darkStart : DEFAULT_ADMIN_APPEARANCE.darkStart,
+  };
+}
+
+function resolveAdminTheme(settings: AdminAppearanceSettings, now = new Date()): "light" | "dark" {
+  if (settings.mode === "light" || settings.mode === "dark") return settings.mode;
+  const minutes = (value: string) => {
+    const [hour, minute] = value.split(":").map(Number);
+    return hour * 60 + minute;
+  };
+  const current = now.getHours() * 60 + now.getMinutes();
+  const light = minutes(settings.lightStart);
+  const dark = minutes(settings.darkStart);
+  if (light === dark) return "light";
+  if (light < dark) return current >= light && current < dark ? "light" : "dark";
+  return current >= light || current < dark ? "light" : "dark";
+}
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   superadmin: "Superadmin",
