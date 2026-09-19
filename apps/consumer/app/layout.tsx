@@ -1,14 +1,71 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import type { Metadata, Viewport } from "next";
+import "./globals.css";
+import "./location-editor-layout.css";
+import "./reserve-forms.css";
+import AppShell from "@/components/AppShell";
+import AdminPortalLoginLink from "@/components/auth/AdminPortalLoginLink";
+import GlobalProductTelemetry from "@/lib/analytics/GlobalProductTelemetry";
+import {
+  DEFAULT_DESCRIPTION,
+  DEFAULT_TITLE,
+  SITE_NAME,
+  buildMetadata,
+  jsonLdScript,
+  organizationJsonLd,
+  websiteJsonLd,
+} from "@/lib/seo";
+import { getSiteUrl } from "@/lib/site-url";
 
 export const metadata: Metadata = {
-  title: "TheOutHaven",
+  ...buildMetadata({
+    title: undefined,
+    description: DEFAULT_DESCRIPTION,
+    path: "/",
+  }),
+  metadataBase: new URL(getSiteUrl()),
+  title: {
+    default: DEFAULT_TITLE,
+    template: `%s | ${SITE_NAME}`,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+    ],
+    shortcut: ["/favicon.ico"],
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
-export default function ConsumerRootLayout({ children }: { children: ReactNode }) {
+export const viewport: Viewport = {
+  themeColor: "#070303",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: jsonLdScript([organizationJsonLd(), websiteJsonLd()]),
+          }}
+        />
+        <GlobalProductTelemetry />
+        <AppShell>{children}</AppShell>
+        <AdminPortalLoginLink />
+      </body>
     </html>
   );
 }

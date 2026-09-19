@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function Page(){return <main className="min-h-screen bg-[#090706] px-4 py-16 text-white"><div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[.04] p-8"><h1 className="text-3xl font-black">Application received</h1><p className="mt-3 text-white/70">Thank you for helping shape TheOutHaven before launch. We’ll review your beta application soon.</p><Link href="/beta" className="mt-6 inline-flex rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white">Back to beta</Link></div></main>}

@@ -1,0 +1,3 @@
+import BetaApplyForm from "./BetaApplyForm";
+export const metadata = { title: "Apply for TheOutHaven Beta" };
+export default function Page(){return <main className="min-h-screen bg-[#090706] px-4 py-10 text-white"><div className="mx-auto max-w-4xl"><p className="text-xs font-black uppercase tracking-[.32em] text-rose-200">TheOutHaven Beta</p><h1 className="mt-3 text-4xl font-black">Apply to become a beta tester</h1><p className="mt-3 text-white/65">Approved testers complete 5 quick tests each week. Each test usually takes 2–5 minutes.</p><div className="mt-8"><BetaApplyForm/></div></div></main>}

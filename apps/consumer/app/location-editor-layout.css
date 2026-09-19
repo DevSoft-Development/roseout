@@ -1,0 +1,26 @@
+/* Location Editor workspace safety rails.
+   The old right preview rail duplicated public profile details and squeezed the
+   working panels. Keep the editor/dashboard workspace full-width and move
+   preview actions into headers/cards instead of a permanent right rail. */
+@media (min-width: 1280px) {
+  section.lg\:pl-\[280px\] > div.mx-auto.grid {
+    max-width: 1760px !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  section.lg\:pl-\[280px\] > div.mx-auto.grid > aside {
+    display: none !important;
+  }
+
+  section#menu [class*="xl:grid-cols-[260px_minmax(520px,1fr)_390px]"] {
+    grid-template-columns: 220px minmax(0, 1fr) 340px !important;
+  }
+}
+
+section#menu [class*="grid-cols-[minmax(220px,1fr)_82px_86px_minmax(110px,.55fr)_76px]"] {
+  min-width: 760px;
+}
+
+section#menu [class*="overflow-hidden"][class*="rounded-2xl"][class*="border-white/10"]:has([class*="grid-cols-[minmax(220px,1fr)_82px_86px_minmax(110px,.55fr)_76px]"]) {
+  overflow-x: auto !important;
+}

@@ -64,6 +64,7 @@
     "build:surface:business": "next build apps/business",
     "build:surface:reserve": "next build apps/reserve",
     "test:surface-app-isolation": "node scripts/surface-app-isolation-regression.mjs",
+    "test:consumer-surface-migration": "node scripts/consumer-route-migration-regression.mjs",
     "test:reserve-surface-migration": "node scripts/reserve-route-migration-regression.mjs",
     "test:business-surface-migration": "node scripts/business-route-migration-regression.mjs"
   },

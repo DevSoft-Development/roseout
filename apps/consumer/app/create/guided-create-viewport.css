@@ -1,0 +1,116 @@
+/* Guided planner viewport behavior. The global site header is fixed and shrinks to 64px after scrolling. */
+
+/* Step 2 owns the sticky rail once it is active. Hiding the Step 1 copy prevents two sticky rails from stacking. */
+main:has(#make-it-yours) > section:first-child .guided-journey-steps {
+  display: none !important;
+}
+
+#make-it-yours {
+  min-height: calc(100svh - 4rem);
+  padding-top: 0.85rem !important;
+  padding-bottom: 1rem !important;
+  scroll-margin-top: 4rem !important;
+}
+
+#make-it-yours .guided-journey-steps {
+  margin-top: 0 !important;
+}
+
+/* Guided results start below the fixed site header. */
+main > .guided-journey-steps:first-child {
+  margin-top: 5rem;
+}
+
+/* Keep Step 2 comfortably dense without shrinking the interaction targets. */
+#make-it-yours > div > .mt-4 {
+  margin-top: 0.8rem !important;
+}
+
+#make-it-yours h2 {
+  font-size: clamp(2rem, 3.5vw, 2.6rem) !important;
+  line-height: 1.04 !important;
+}
+
+#make-it-yours > div > .grid {
+  gap: 0.8rem !important;
+}
+
+#make-it-yours input[type="date"],
+#make-it-yours input[type="time"] {
+  min-height: 2.25rem;
+}
+
+/* Build My Own should use the page scroll, not a nested 760px scroll box that cuts cards in half. */
+section[class*="scroll-mt-28"] {
+  scroll-margin-top: 10rem !important;
+  overflow: visible !important;
+}
+
+section[class*="scroll-mt-28"] div[class*="max-h-[760px]"] {
+  max-height: none !important;
+  overflow-y: visible !important;
+  padding-right: 0 !important;
+}
+
+/* The custom-pair summary stays below the site header + sticky journey rail. */
+section[class*="scroll-mt-28"] aside[class*="sticky"] {
+  top: 10rem !important;
+}
+
+@media (min-width: 1024px) {
+  #make-it-yours {
+    padding-top: 0.7rem !important;
+    padding-bottom: 0.85rem !important;
+  }
+
+  #make-it-yours > div > .mt-4 {
+    margin-top: 0.7rem !important;
+  }
+}
+
+@media (max-width: 639px) {
+  /* The site header is 80px tall before the page scrolls. Step 1 previously began at y=0,
+     which placed the hero heading underneath that fixed header. Reserve the header height
+     plus the original 20px hero breathing room so the full CTA is visible on first paint. */
+  main > section:first-child {
+    padding-top: 6.25rem !important;
+  }
+
+  /* On phones the journey rail belongs in normal document flow. Keeping it sticky caused
+     Safari focus/scroll adjustments to pin it over the hero beneath the fixed site header. */
+  .guided-journey-steps {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  main > .guided-journey-steps:first-child {
+    margin-top: 5rem;
+  }
+
+  #make-it-yours {
+    scroll-margin-top: 4rem !important;
+  }
+
+  /* Step 1: keep the selected plan explanation, but make it supporting copy instead of
+     another full card. This saves vertical space while preserving the desktop content. */
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(3) {
+    margin-top: 0.45rem !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    padding: 0.15rem 0 0 !important;
+  }
+
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(3) p {
+    font-size: 0.75rem !important;
+    line-height: 1.15rem !important;
+    color: rgb(255 255 255 / 0.48) !important;
+  }
+
+  main > section:first-child > div > div[class*="max-w-4xl"][class*="rounded"] > div:nth-child(4) {
+    margin-top: 0.85rem !important;
+  }
+
+  section[class*="scroll-mt-28"] {
+    scroll-margin-top: 9rem !important;
+  }
+}
