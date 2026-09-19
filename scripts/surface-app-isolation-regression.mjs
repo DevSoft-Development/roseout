@@ -4080,6 +4080,46 @@ if (
   throw new Error("Generated Websites client must use the isolated Admin design system without root monolith UI imports.");
 }
 
+const enterpriseMailingBatchesPage = read("apps/admin/app/admin/dashboard/operations/mailing-batches/page.tsx");
+const enterpriseMailingBatchesForm = read("apps/admin/app/admin/dashboard/operations/mailing-batches/MailingBatchCreateForm.tsx");
+for (const marker of [
+  "Mailing Batches",
+  "Postcards mailed",
+  "Claims completed",
+  "Recent mailing batches",
+  "View batch",
+]) {
+  if (!enterpriseMailingBatchesPage.includes(marker)) {
+    throw new Error(`Mailing Batches enterprise page must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterpriseMailingBatchesPage.includes("../../../../../components/admin/AdminDesignSystem") ||
+  !enterpriseMailingBatchesPage.includes('requireAdminRole(["superadmin", "admin", "manager"])') ||
+  !enterpriseMailingBatchesPage.includes('from("mailing_batch_summary")') ||
+  !enterpriseMailingBatchesPage.includes('from("mailing_batch_items")')
+) {
+  throw new Error("Mailing Batches must use the isolated Admin design system and preserve operations data/access boundaries.");
+}
+for (const marker of [
+  "/api/admin/mailing-batches",
+  'method: "POST"',
+  "Create a mailing batch",
+  "Choose locations",
+  "Automatic bulk option",
+  "Locations already active in another mailing batch are excluded automatically.",
+]) {
+  if (!enterpriseMailingBatchesForm.includes(marker)) {
+    throw new Error(`Mailing Batch creation flow must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterpriseMailingBatchesForm.includes("../../../../../components/admin/AdminDesignSystem") ||
+  enterpriseMailingBatchesForm.includes("@/components/admin/")
+) {
+  throw new Error("Mailing Batch creation flow must use the isolated Admin design system without root monolith UI imports.");
+}
+
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
 
 
