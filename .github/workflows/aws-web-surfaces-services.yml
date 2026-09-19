@@ -157,6 +157,8 @@ jobs:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           ADMIN_SECRET_ARN: ${{ steps.foundation.outputs.adminappenvsecretarn }}
           BUSINESS_SECRET_ARN: ${{ steps.foundation.outputs.businessappenvsecretarn }}
+          CONFIGURED_JOB_GATEWAY_URL: ${{ vars.AWS_PLATFORM_JOB_GATEWAY_URL }}
+          CONFIGURED_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
         run: |
           set -euo pipefail
           RUNTIME_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
@@ -166,6 +168,24 @@ jobs:
           aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --query SecretString --output text > "$RAW_JSON"
           jq -e 'type == "object" and length > 0' "$RAW_JSON" >/dev/null
           jq 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN)' "$RAW_JSON" > "$RUNTIME_JSON"
+          python3 - "$RUNTIME_JSON" <<'PY'
+          import json, os, sys
+          path = sys.argv[1]
+          values = json.load(open(path, encoding='utf-8'))
+          configured = {
+              "AWS_PLATFORM_JOB_GATEWAY_URL": os.environ.get("CONFIGURED_JOB_GATEWAY_URL", "").strip(),
+              "AWS_PLATFORM_JOB_GATEWAY_SECRET": os.environ.get("CONFIGURED_JOB_GATEWAY_SECRET", "").strip(),
+          }
+          for key, value in configured.items():
+              if value:
+                  values[key] = value
+          if os.environ.get("TARGET_ENV") == "production":
+              missing = [key for key in configured if not str(values.get(key, "")).strip()]
+              if missing:
+                  raise SystemExit("Admin Microsoft credential-vault gateway configuration is incomplete")
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(values, handle)
+          PY
           jq -e 'type == "object" and length > 0' "$RUNTIME_JSON" >/dev/null
           python3 - "$RUNTIME_JSON" "$ENV_FILE" <<'PY'
           import json, re, sys
