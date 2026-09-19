@@ -453,6 +453,22 @@ if (!adminNavigation.includes("/admin/dashboard/security")) {
   throw new Error("Security navigation must be present in the isolated Admin shell.");
 }
 
+const microsoftCryptoRuntime = read("apps/admin/lib/microsoft-365/crypto.ts");
+for (const marker of [
+  'Buffer.from(raw, "base64")',
+  '/^[0-9a-fA-F]{64}$/.test(raw)',
+  'Buffer.from(raw, "utf8")',
+  'M365_TOKEN_ENCRYPTION_KEY_INVALID',
+]) {
+  if (!microsoftCryptoRuntime.includes(marker)) {
+    throw new Error(`Microsoft 365 encryption key runtime must preserve 32-byte key compatibility: ${marker}`);
+  }
+}
+const microsoftSubscriptionsRuntime = read("apps/admin/lib/microsoft-365/subscriptions.ts");
+if (!microsoftSubscriptionsRuntime.includes('getMicrosoft365EncryptionKey')) {
+  throw new Error("Microsoft 365 webhook state must reuse the validated encryption key decoder.");
+}
+
 for (const microsoftRuntimeFile of [
   "apps/admin/lib/web-surface-auth-origin.ts",
   "apps/admin/lib/microsoft-365/credential-vault.ts",
@@ -572,6 +588,21 @@ if (
 }
 if (microsoftSyncRoute.includes("@/lib/admin-auth") || microsoftSyncRoute.includes("@/lib/auth-redirect")) {
   throw new Error("Microsoft 365 sync route must not import root monolith auth helpers.");
+}
+
+const microsoftSettingsTheme = read("apps/admin/app/admin/dashboard/settings/microsoft-365/microsoft-365.css");
+for (const marker of [
+  "var(--admin-shell-card)",
+  "var(--admin-shell-text)",
+  "var(--admin-shell-muted)",
+  'data-admin-theme="dark"',
+]) {
+  if (!microsoftSettingsTheme.includes(marker)) {
+    throw new Error(`Microsoft 365 settings theme must follow the isolated Admin appearance system: ${marker}`);
+  }
+}
+if (microsoftSettingsTheme.includes("background:#120d0b")) {
+  throw new Error("Microsoft 365 settings must not hard-code the legacy dark card background.");
 }
 
 const microsoftSettingsPage = read("apps/admin/app/admin/dashboard/settings/microsoft-365/page.tsx");
