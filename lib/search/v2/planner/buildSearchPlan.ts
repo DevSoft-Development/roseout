@@ -354,8 +354,11 @@ export async function buildSearchPlan({
     preferenceRestaurantFallback;
   const activityRequired =
     input.selectedLane === "activity" || activitySignal || broadOccasionRequest;
-  const pairingRequired =
-    !broadOccasionRequest && restaurantRequired && activityRequired;
+  // A mixed plan is a complete outing contract regardless of how the two
+  // domains were inferred. Broad occasion language (date night, girls' night,
+  // family outing) must not silently downgrade pairing while still requesting
+  // both restaurant and activity lanes.
+  const pairingRequired = restaurantRequired && activityRequired;
   const sameVenueRequired = pairingRequired && p.sameVenueRequired;
   const sameVenuePreferred = pairingRequired && p.sameVenuePreferred;
   const mode = anchored
@@ -455,13 +458,13 @@ export async function buildSearchPlan({
       ? `activity intent restored from original query: ${explicitDomains.activityEvidence.join(",")}`
       : null,
     broadDateRequest
-      ? "broad date intent enables both restaurant and activity retrieval globally without requiring a pair"
+      ? "broad date intent enables both restaurant and activity retrieval and requires a complete paired outing"
       : null,
     broadGirlsNightRequest
-      ? "broad girls-night intent enables both restaurant and activity discovery without requiring a pair"
+      ? "broad girls-night intent enables both restaurant and activity discovery and requires a complete paired outing"
       : null,
     broadFamilyOutingRequest
-      ? "broad family-outing intent enables both family-safe restaurant and activity discovery without requiring a pair"
+      ? "broad family-outing intent enables both family-safe restaurant and activity discovery and requires a complete paired outing"
       : null,
     restaurantBoundHookah
       ? "hookah is bound to the requested restaurant instead of creating a second activity lane"
