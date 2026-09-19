@@ -204,11 +204,28 @@ if (adminCallback.includes("@/lib/supabase") || adminCallback.includes("@/lib/us
   throw new Error("Admin OAuth callback must not depend on root monolith auth/database modules.");
 }
 
+for (const marker of [
+  "microsoft_365_connections",
+  "/api/admin/integrations/microsoft-365/connect",
+  "shouldAutoConnectMicrosoft365",
+  'destination.searchParams.set("auto", "1")',
+  'destination.searchParams.set("next", next)',
+  "microsoft365LookupSucceeded",
+  "ADMIN_MICROSOFT_365_CONNECTION_LOOKUP_FAILED",
+]) {
+  if (!adminCallback.includes(marker)) {
+    throw new Error(`Admin sign-in must preserve automatic first-run Microsoft 365 connection behavior: ${marker}`);
+  }
+}
 if (
-  adminCallback.includes("microsoft_365_connections") ||
-  adminCallback.includes("/api/admin/integrations/microsoft-365/connect")
+  !adminCallback.includes(
+    "microsoft365LookupSucceeded && !microsoft365Connected",
+  ) ||
+  !adminCallback.includes(": new URL(next, origin)")
 ) {
-  throw new Error("Admin login must not require the optional Microsoft 365 Graph connection.");
+  throw new Error(
+    "Admin sign-in must auto-connect Microsoft 365 only after a successful status lookup and must fail open to Admin access.",
+  );
 }
 
 const platformErrorsPage = read("apps/admin/app/admin/dashboard/platform-errors/page.tsx");
