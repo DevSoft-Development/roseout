@@ -1,3 +1,6 @@
+import "../../../app/globals.css";
+import "../../../app/location-editor-layout.css";
+import "../../../app/reserve-forms.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
