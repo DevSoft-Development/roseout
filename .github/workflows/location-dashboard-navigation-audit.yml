@@ -3,7 +3,7 @@ name: Location dashboard navigation audit
 on:
   pull_request:
     paths:
-      - "app/locations/dashboard/**"
+      - "apps/business/app/locations/dashboard/**"
       - "scripts/audit-location-dashboard-navigation.mjs"
       - ".github/workflows/location-dashboard-navigation-audit.yml"
 

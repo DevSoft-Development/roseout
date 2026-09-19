@@ -14,11 +14,11 @@ function walk(dir) {
   });
 }
 
-const layout = read("app/locations/dashboard/layout.tsx");
-const template = read("app/locations/dashboard/template.tsx");
-const dashboard = read("app/locations/dashboard/page.tsx");
-const supportPage = read("app/locations/dashboard/support/page.tsx");
-const supportActions = read("app/locations/dashboard/support/actions.ts");
+const layout = read("apps/business/app/locations/dashboard/layout.tsx");
+const template = read("apps/business/app/locations/dashboard/template.tsx");
+const dashboard = read("apps/business/app/locations/dashboard/page.tsx");
+const supportPage = read("apps/business/app/locations/dashboard/support/page.tsx");
+const supportActions = read("apps/business/app/locations/dashboard/support/actions.ts");
 const ownerAccess = read("lib/auth/locationOwnerAccess.ts");
 const trends = read("app/api/locations/dashboard/business-trends/route.ts");
 const clearInvalid = read("app/api/locations/dashboard/clear-invalid-impersonation/route.ts");
@@ -92,7 +92,7 @@ const checks = {
 const warnings = [];
 if (dashboard.includes('.select("*")')) warnings.push("dashboard overview still contains broad select(*) aggregate reads");
 if (/owner_(?:email|phone|name)/.test(dashboard)) warnings.push("dashboard location projection still references owner contact fields");
-if (!exists("app/locations/dashboard/template.tsx")) warnings.push("location dashboard impersonation template is missing");
+if (!exists("apps/business/app/locations/dashboard/template.tsx")) warnings.push("location dashboard impersonation template is missing");
 
 const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([name]) => name);
 console.log(JSON.stringify({

@@ -1,10 +1,10 @@
 import fs from "node:fs";
 
-const nav = fs.readFileSync("app/locations/dashboard/CanonicalLocationModuleNav.tsx", "utf8");
+const nav = fs.readFileSync("apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx", "utf8");
 const hubFiles = [
-  "app/locations/dashboard/business-setup/page.tsx",
-  "app/locations/dashboard/customers/page.tsx",
-  "app/locations/dashboard/marketing-growth/page.tsx",
+  "apps/business/app/locations/dashboard/business-setup/page.tsx",
+  "apps/business/app/locations/dashboard/customers/page.tsx",
+  "apps/business/app/locations/dashboard/marketing-growth/page.tsx",
 ];
 
 const primaryItemCount = (nav.match(/\bicon: [A-Z]/g) || []).length;
@@ -14,7 +14,6 @@ const requiredPrimaryRoutes = [
   "/locations/dashboard/website",
   "/locations/dashboard/messaging",
   "/locations/dashboard/reservations",
-  "/locations/dashboard/reservations/large-group-bookings",
   "/locations/dashboard/reservations/settings",
   "/locations/dashboard/profile",
   "/locations/dashboard/business-setup",
@@ -27,6 +26,7 @@ const requiredPrimaryRoutes = [
   "/locations/dashboard/settings",
 ];
 const childRoutes = [
+  "/locations/dashboard/reservations/large-group-bookings",
   "/locations/dashboard/branding",
   "/locations/dashboard/domains",
   "/locations/dashboard/qr-codes",
@@ -40,7 +40,7 @@ const childRoutes = [
 ];
 
 const checks = {
-  exactly17PrimaryWorkspaces: primaryItemCount === 17,
+  exactly16PrimaryWorkspaces: primaryItemCount === 16,
   requiredPrimaryRoutesPresent: requiredPrimaryRoutes.every((route) => nav.includes(`href: "${route}"`)),
   consolidatedChildRoutesMapped: childRoutes.every((route) => nav.includes(route)),
   hubPagesExist: hubFiles.every((file) => fs.existsSync(file)),

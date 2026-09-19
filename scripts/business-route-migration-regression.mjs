@@ -5,9 +5,6 @@ import path from "node:path";
 
 const root = process.cwd();
 const mappings = [
-  ["app/locations/dashboard", "apps/business/app/locations/dashboard"],
-  ["app/business/dashboard", "apps/business/app/business/dashboard"],
-  ["app/business/login", "apps/business/app/business/login"],
   ["app/api/locations", "apps/business/app/api/locations"],
   ["app/api/business", "apps/business/app/api/business"],
   ["app/api/auth", "apps/business/app/api/auth"],
@@ -45,8 +42,8 @@ for (const [sourceRoot, isolatedRoot] of mappings) {
   }
 }
 
-if (count < 140) {
-  throw new Error(`Expected at least 140 Business migration files; found ${count}.`);
+if (count < 65) {
+  throw new Error(`Expected at least 65 Business API/auth migration files; found ${count}.`);
 }
 if (mismatches.length) {
   throw new Error(`Business route migration parity failed:\n${mismatches.join("\n")}`);
@@ -70,4 +67,14 @@ for (const required of [
   }
 }
 
-console.log(`Business route migration parity passed for ${count} files.`);
+for (const removedRoot of [
+  "app/locations/dashboard",
+  "app/business/dashboard",
+  "app/business/login",
+]) {
+  if (fs.existsSync(path.join(root, removedRoot))) {
+    throw new Error(`Root private Business UI must be removed after cutover: ${removedRoot}`);
+  }
+}
+
+console.log(`Business isolated ownership and API/auth parity passed for ${count} migration files.`);
