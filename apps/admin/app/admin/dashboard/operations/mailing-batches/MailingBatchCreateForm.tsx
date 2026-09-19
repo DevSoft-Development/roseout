@@ -117,7 +117,8 @@ export default function MailingBatchCreateForm() {
   const inputClass = "h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-rose-300/50 focus:ring-4 focus:ring-rose-300/10";
 
   return (
-    <form onSubmit={submit}>\n      <AdminSectionCard>
+    <form onSubmit={submit}>
+      <AdminSectionCard>
       <div className="border-b border-white/10 p-5 md:p-6">
         <div className="flex flex-col gap-1">
           <p className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-200">New campaign</p>
@@ -192,7 +193,7 @@ export default function MailingBatchCreateForm() {
         <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0d]">
           <div className="max-h-[430px] overflow-auto">
             {results.length ? (
-              <div className="divide-y divide-[var(--admin-border)]">
+              <div className="divide-y divide-white/10">
                 {results.map((location) => {
                   const checked = selected.has(location.id);
                   return (
@@ -202,7 +203,7 @@ export default function MailingBatchCreateForm() {
                       onClick={() => toggleLocation(location)}
                       className={`grid w-full grid-cols-[34px_1fr] gap-2 px-4 py-3 text-left text-white transition hover:bg-rose-500/[0.07] md:grid-cols-[34px_minmax(220px,1.2fr)_minmax(280px,1fr)_130px] ${checked ? "bg-rose-500/[0.07]" : "bg-[#0b0b0d]"}`}
                     >
-                      <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-md border ${checked ? "border-[var(--admin-accent)] bg-[#e1062a] text-white" : "border-white/10 bg-white/[0.035] text-transparent"}`}>
+                      <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-md border ${checked ? "border-[#e1062a] bg-[#e1062a] text-white" : "border-white/10 bg-white/[0.035] text-transparent"}`}>
                         <Check className="h-3.5 w-3.5" />
                       </span>
                       <span>
@@ -267,6 +268,7 @@ export default function MailingBatchCreateForm() {
         {searchMessage && results.length ? <p className="mt-3 text-xs font-bold text-amber-200">{searchMessage}</p> : null}
         {message ? <p className="mt-4 rounded-xl border border-rose-400/25 bg-rose-500/10 p-3 text-sm font-bold text-rose-100">{message}</p> : null}
       </div>
-    </AdminSectionCard>\n    </form>
+    </AdminSectionCard>
+    </form>
   );
 }
