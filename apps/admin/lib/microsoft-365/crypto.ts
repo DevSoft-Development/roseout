@@ -6,8 +6,22 @@ import {
   randomBytes,
 } from "node:crypto";
 
+function runtimeJsonValue(key: string) {
+  const raw = process.env.RUNTIME_ENV_JSON;
+  if (!raw) return "";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const value = parsed?.[key];
+    return typeof value === "string" ? value.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 export function getMicrosoft365EncryptionKey(): Buffer {
-  const raw = process.env.M365_TOKEN_ENCRYPTION_KEY?.trim();
+  const raw =
+    process.env.M365_TOKEN_ENCRYPTION_KEY?.trim() ||
+    runtimeJsonValue("M365_TOKEN_ENCRYPTION_KEY");
   if (!raw) throw new Error("M365_TOKEN_ENCRYPTION_KEY_MISSING");
 
   const base64 = Buffer.from(raw, "base64");

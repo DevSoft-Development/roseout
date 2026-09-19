@@ -60,7 +60,7 @@ export default async function Microsoft365SettingsPage({
 
   const connected = connection?.status === "active";
   const intentionallyDisconnected = params.disconnected === "1";
-  const connectionError = Boolean(params.error || connection?.last_error);
+  const connectionError = Boolean(params.error);
 
   if (!connected && !intentionallyDisconnected && !connectionError) {
     const autoConnect = new URLSearchParams({
@@ -125,8 +125,10 @@ export default async function Microsoft365SettingsPage({
               ? `${connection.display_name || "Microsoft 365 user"} · ${connection.status}`
               : "Use the dedicated TheOutHaven Microsoft 365 integration app."}
           </p>
-          {connection?.last_error ? (
-            <div className="m365-error-detail">{connection.last_error}</div>
+          {!params.error && connection?.last_error ? (
+            <div className="m365-error-detail">
+              Previous connection error: {connection.last_error}
+            </div>
           ) : null}
 
           <div className="m365-actions">
