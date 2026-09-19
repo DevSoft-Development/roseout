@@ -4145,6 +4145,28 @@ if (
   throw new Error("Marketing Center must preserve campaign operations while using the isolated enterprise Admin presentation.");
 }
 
+const enterprisePayoutsPage = read("apps/admin/app/admin/dashboard/payouts/page.tsx");
+for (const marker of [
+  "Stripe Connect readiness",
+  "Payout activity",
+  "Payout audit events",
+  "Available balance",
+  "Pending balance",
+]) {
+  if (!enterprisePayoutsPage.includes(marker)) {
+    throw new Error(`Payouts enterprise console must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterprisePayoutsPage.includes("../../../../components/admin/AdminDesignSystem") ||
+  !enterprisePayoutsPage.includes('requireAdminRole(["superadmin", "admin"])') ||
+  !enterprisePayoutsPage.includes("readAdminPayoutsSnapshot") ||
+  !enterprisePayoutsPage.includes("@/lib/aws/integration-api") ||
+  enterprisePayoutsPage.includes("./payouts.css")
+) {
+  throw new Error("Payouts must preserve protected payout data access, Admin role boundary, and isolated enterprise presentation.");
+}
+
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
 
 
