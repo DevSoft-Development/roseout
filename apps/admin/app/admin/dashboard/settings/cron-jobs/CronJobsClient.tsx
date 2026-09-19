@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, Clock3, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, MailCheck, RefreshCw, ShieldCheck } from "lucide-react";
 import {
-  AdminActionButton,
   AdminEmptyState,
   AdminKpiCard,
   AdminKpiGrid,
@@ -220,19 +219,6 @@ export default function CronJobsClient() {
   );
 
   const digestIncluded = jobs.filter((job) => job.include_in_daily_digest !== false).length;
-  const cards = [
-    ["Total jobs", counts.total],
-    ["Active jobs", counts.active_count],
-    ["Healthy", counts.success],
-    ["Needs attention", counts.needs_attention],
-    ["Recovering", counts.recovering],
-    ["Recovered", counts.recovered],
-    ["Slow", counts.slow],
-    ["Paused jobs", counts.paused_count],
-    ["In daily email", digestIncluded],
-    ["Supabase crons", counts.pg_cron_count],
-    ["Vercel crons", counts.vercel_cron_count],
-  ];
 
   return (
     <div className="space-y-6">
