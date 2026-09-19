@@ -252,6 +252,7 @@ const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts
 const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
+const adminSettingsPrimitives = read("apps/admin/app/admin/dashboard/settings/SettingsControlPrimitives.tsx");
 for (const marker of [
   "admin-settings-page",
   "Control center",
@@ -259,9 +260,20 @@ for (const marker of [
   "Commercial & location controls",
   "Quality & release controls",
   "Search & AI systems",
+  "Search & AI control plane",
 ]) {
   if (!adminSettingsPage.includes(marker)) {
     throw new Error(`Admin Settings enterprise redesign must preserve marker: ${marker}`);
+  }
+}
+for (const marker of [
+  "SettingsControlCard",
+  "SettingsToggle",
+  "settingsPrimaryButtonClass",
+  "var(--admin-shell-accent)",
+]) {
+  if (!adminSettingsPrimitives.includes(marker)) {
+    throw new Error(`Admin Settings advanced-control system must preserve marker: ${marker}`);
   }
 }
 for (const marker of [
