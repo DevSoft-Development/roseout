@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        surface: [consumer, admin, business]
+        surface: [consumer, admin, business, reserve]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -81,9 +81,16 @@ jobs:
         if: steps.surface_scope.outputs.run == 'true'
         run: npm run test:surface-app-isolation
 
-      - name: Build isolated surface
-        if: steps.surface_scope.outputs.run == 'true'
+      - name: Build isolated non-Reserve surface
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface != 'reserve'
         run: npm run build:surface:${{ matrix.surface }}
+
+      - name: Build isolated Reserve surface
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'reserve'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: reserve-ci-placeholder
+        run: npm run build:surface:reserve
 
       - name: Report skipped surface
         if: steps.surface_scope.outputs.run != 'true'
