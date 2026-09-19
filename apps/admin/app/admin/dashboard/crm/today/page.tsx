@@ -55,6 +55,24 @@ function calendarEventIsCrmLinked(event: TodayCalendarEvent) {
   return Boolean(event.matched_contact_id || event.matched_account_id || event.matched_location_id || event.matched_task_id);
 }
 
+async function safeWorkQueue(userId: string, view: string) {
+  try {
+    return await queryWorkQueue(userId, view, {});
+  } catch (error) {
+    console.error(`CRM Today work queue failed for ${view}:`, error);
+    return { tasks: [] as any[], count: 0, page: 1, size: 25, unavailable: true };
+  }
+}
+
+async function safeGtmPriorityQueue(limit = 20) {
+  try {
+    return await getGtmPriorityQueue(limit);
+  } catch (error) {
+    console.error("CRM Today GTM priority queue failed:", error);
+    return [] as any[];
+  }
+}
+
 function TaskList({
   title,
   description,
@@ -108,10 +126,10 @@ export default async function CrmTodayPage() {
   const calendarWindowEnd = new Date(now.getTime() + 36 * 60 * 60 * 1000);
 
   const [dueToday, overdue, followUps, attention, calendarResult, gtmPriority] = await Promise.all([
-    queryWorkQueue(actor.user_id, "due-today", {}),
-    queryWorkQueue(actor.user_id, "overdue", {}),
-    queryWorkQueue(actor.user_id, "follow-ups", {}),
-    queryWorkQueue(actor.user_id, "escalations", {}),
+    safeWorkQueue(actor.user_id, "due-today"),
+    safeWorkQueue(actor.user_id, "overdue"),
+    safeWorkQueue(actor.user_id, "follow-ups"),
+    safeWorkQueue(actor.user_id, "escalations"),
     db
       .from("microsoft_365_calendar_events")
       .select("id,subject,starts_at,ends_at,location_name,is_all_day,web_link,matched_contact_id,matched_account_id,matched_location_id,matched_task_id")
@@ -120,7 +138,7 @@ export default async function CrmTodayPage() {
       .gte("starts_at", calendarWindowStart.toISOString())
       .lt("starts_at", calendarWindowEnd.toISOString())
       .order("starts_at", { ascending: true }),
-    getGtmPriorityQueue(20),
+    safeGtmPriorityQueue(20),
   ]);
 
   const todayCalendarEvents = ((calendarResult.data || []) as TodayCalendarEvent[])
