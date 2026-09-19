@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const surfaces = ["consumer", "admin", "business"];
+const surfaces = ["consumer", "admin", "business", "reserve"];
 const sharedPackages = ["auth", "config", "db"];
 
 function read(file) {
@@ -30,8 +30,9 @@ for (const surface of surfaces) {
   }
 
   const tsconfig = read(`apps/${surface}/tsconfig.json`);
-  if (!tsconfig.includes('"@/*": ["./*"]')) {
-    throw new Error(`${surface} must resolve @/* inside its own app boundary.`);
+  const expectedRootAlias = surface === "reserve" ? '"@/*": ["../../*"]' : '"@/*": ["./*"]';
+  if (!tsconfig.includes(expectedRootAlias)) {
+    throw new Error(`${surface} must preserve its expected migration-time @/* boundary.`);
   }
   for (const packageName of sharedPackages) {
     if (!tsconfig.includes(`"@theouthaven/${packageName}/*"`)) {
