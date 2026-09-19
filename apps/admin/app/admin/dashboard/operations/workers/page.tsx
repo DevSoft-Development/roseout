@@ -205,7 +205,7 @@ export default async function WorkerOperationsPage({
         title="Worker Operations"
         subtitle="Monitor durable background jobs, queue health, leases, retries, manual runs, and execution diagnostics across TheOutHaven."
         badge={
-          <AdminStatusBadge tone={health === "healthy" ? "green" : health === "degraded" ? "amber" : "red"}>
+          <AdminStatusBadge tone={health === "Healthy" ? "green" : health === "Degraded" ? "amber" : "red"}>
             {health}
           </AdminStatusBadge>
         }
