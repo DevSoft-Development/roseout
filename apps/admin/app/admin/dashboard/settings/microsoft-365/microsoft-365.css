@@ -1,33 +1,37 @@
-.m365-page{display:grid;gap:20px}
-.m365-hero,.m365-card,.m365-connection,.m365-stat{border:1px solid rgba(255,255,255,.1);border-radius:24px;background:#120d0b}
+.m365-page{display:grid;gap:20px;color:var(--admin-shell-text)}
+.m365-hero,.m365-card,.m365-connection,.m365-stat{border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text);box-shadow:0 18px 48px rgba(15,23,42,.08)}
 .m365-hero{display:flex;justify-content:space-between;gap:20px;padding:24px}
-.m365-hero p,.m365-connection>small{margin:0;color:#fda4af;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
-.m365-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px)}
-.m365-hero span,.m365-connection p,.m365-card p,.m365-card>small,.m365-stat span,.m365-stat small{color:rgba(255,255,255,.56)}
+.m365-hero p,.m365-connection>small{margin:0;color:#e11d48;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+.m365-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px);color:var(--admin-shell-text)}
+.m365-hero span,.m365-connection p,.m365-card p,.m365-card>small,.m365-stat span,.m365-stat small{color:var(--admin-shell-muted)}
 .m365-hero nav,.m365-actions{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start}
-.m365-hero nav a,.m365-actions a,.m365-actions button,.m365-save{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 13px;background:#e11d48;color:#fff;text-decoration:none;font-size:13px;font-weight:800;cursor:pointer}
-.m365-actions button.secondary{background:rgba(255,255,255,.05)}
+.m365-hero nav a,.m365-actions a,.m365-actions button,.m365-save{border:1px solid var(--admin-shell-accent-border);border-radius:12px;padding:10px 13px;background:var(--admin-shell-accent);color:#fff;text-decoration:none;font-size:13px;font-weight:800;cursor:pointer}
+.m365-hero nav a:hover,.m365-actions a:hover,.m365-actions button:hover,.m365-save:hover{background:var(--admin-shell-accent-hover)}
+.m365-actions button.secondary{border-color:var(--admin-shell-border-strong);background:color-mix(in srgb,var(--admin-shell-card-strong) 88%,transparent);color:var(--admin-shell-text)}
 .m365-notices{display:grid;gap:8px}
 .m365-notices>div,.m365-error-detail{border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700}
-.m365-notices .success{border:1px solid rgba(52,211,153,.25);background:rgba(52,211,153,.08);color:#d1fae5}
-.m365-notices .error,.m365-error-detail{border:1px solid rgba(251,113,133,.25);background:rgba(251,113,133,.08);color:#fecdd3}
+.m365-notices .success{border:1px solid rgba(22,163,74,.24);background:rgba(22,163,74,.08);color:#166534}
+.m365-notices .error,.m365-error-detail{border:1px solid rgba(225,29,72,.24);background:rgba(225,29,72,.08);color:#be123c}
 .m365-summary{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
 .m365-connection,.m365-stat,.m365-card{padding:20px}
-.m365-connection h2{margin:8px 0;font-size:24px}
+.m365-connection h2{margin:8px 0;font-size:24px;color:var(--admin-shell-text)}
 .m365-actions{margin-top:18px}
 .m365-stat{display:flex;min-height:160px;flex-direction:column;justify-content:center}
-.m365-stat strong{font-size:38px}
+.m365-stat strong{font-size:38px;color:var(--admin-shell-text)}
 .m365-settings{display:grid;gap:16px}
 .m365-section-title{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.m365-section-title h2{margin:0}
+.m365-section-title h2{margin:0;color:var(--admin-shell-text)}
 .m365-section-title p{margin:5px 0 0}
 .m365-grid-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
-.m365-card label{display:grid;gap:8px;font-size:13px;font-weight:800}
-.m365-card select{width:100%;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:11px 12px;background:#0b0807;color:#fff}
+.m365-card label{display:grid;gap:8px;font-size:13px;font-weight:800;color:var(--admin-shell-text)}
+.m365-card select{width:100%;border:1px solid var(--admin-shell-border-strong);border-radius:12px;padding:11px 12px;background:var(--admin-shell-panel)!important;color:var(--admin-shell-text)!important}
 .m365-checklist{display:grid;gap:10px}
 .m365-checklist label,.m365-feature-toggle{display:flex;gap:10px;align-items:flex-start}
-.m365-feature-toggle{margin-top:14px;border:1px solid rgba(251,113,133,.2);border-radius:14px;padding:12px;background:rgba(251,113,133,.05)}
+.m365-feature-toggle{margin-top:14px;border:1px solid var(--admin-shell-accent-border);border-radius:14px;padding:12px;background:var(--admin-shell-accent-soft)}
 .m365-feature-toggle span{display:grid;gap:4px}
-.m365-card>a{color:#fda4af;font-size:13px;font-weight:800;text-decoration:none}
+.m365-card>a{color:#be123c;font-size:13px;font-weight:800;text-decoration:none}
 .m365-save{justify-self:start;padding:12px 16px}
+.admin-shell[data-admin-theme="dark"] .m365-hero p,.admin-shell[data-admin-theme="dark"] .m365-connection>small,.admin-shell[data-admin-theme="dark"] .m365-card>a{color:#fda4af}
+.admin-shell[data-admin-theme="dark"] .m365-notices .success{color:#d1fae5}
+.admin-shell[data-admin-theme="dark"] .m365-notices .error,.admin-shell[data-admin-theme="dark"] .m365-error-detail{color:#fecdd3}
 @media(max-width:900px){.m365-summary,.m365-grid-two{grid-template-columns:1fr}.m365-hero{flex-direction:column}}
