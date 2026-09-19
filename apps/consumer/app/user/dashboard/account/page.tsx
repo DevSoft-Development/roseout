@@ -1,0 +1,32 @@
+import Link from "next/link";
+import UserDashboardShell, { DashboardCard } from "@/components/user/UserDashboardShell";
+import { getCurrentUserDashboardContext } from "@/lib/user-dashboard";
+import AccountClient from "./AccountClient";
+
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
+  const ctx = await getCurrentUserDashboardContext();
+  return (
+    <UserDashboardShell isBeta={ctx.isBeta}>
+      <h1 className="text-4xl font-black">Account</h1>
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <DashboardCard>
+          <AccountClient profile={ctx.profile} />
+        </DashboardCard>
+        <DashboardCard>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-rose-200">Snapshot</p>
+          <p className="mt-4">Plan: {ctx.plan.label}</p>
+          <p>Status: {ctx.user.email_confirmed_at ? "Email confirmed" : "Email confirmation pending"}</p>
+          <p>Beta: {ctx.isBeta ? "Yes" : "No"}</p>
+          <p className="mt-3 text-xs font-semibold leading-5 text-white/40">For privacy, your sign-in email is not rendered on this profile page.</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link href="/user/dashboard/preferences" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Preferences</Link>
+            <Link href="/user/dashboard/saved" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Saved</Link>
+            <Link href="/support" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Support</Link>
+          </div>
+        </DashboardCard>
+      </div>
+    </UserDashboardShell>
+  );
+}

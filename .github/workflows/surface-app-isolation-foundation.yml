@@ -6,6 +6,7 @@ on:
       - 'apps/**'
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
+      - 'scripts/consumer-route-migration-regression.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
@@ -15,6 +16,7 @@ on:
       - 'apps/**'
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
+      - 'scripts/consumer-route-migration-regression.mjs'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/surface-app-isolation-foundation.yml'
@@ -62,6 +64,8 @@ jobs:
             run=true
           elif [ "$SURFACE" = "admin" ] && printf '%s\n' "$CHANGED" | grep -Eq '^scripts/surface-app-isolation-regression\.mjs$'; then
             run=true
+          elif [ "$SURFACE" = "consumer" ] && printf '%s\n' "$CHANGED" | grep -Eq '^scripts/(surface-app-isolation-regression|consumer-route-migration-regression)\.mjs$'; then
+            run=true
           fi
 
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -81,9 +85,22 @@ jobs:
         if: steps.surface_scope.outputs.run == 'true'
         run: npm run test:surface-app-isolation
 
-      - name: Build isolated non-Reserve surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface != 'reserve' && matrix.surface != 'business'
-        run: npm run build:surface:${{ matrix.surface }}
+      - name: Validate consumer route ownership
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'consumer'
+        run: npm run test:consumer-surface-migration
+
+      - name: Build isolated Admin surface
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'admin'
+        run: npm run build:surface:admin
+
+      - name: Build isolated Consumer surface
+        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'consumer'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: consumer-ci-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: consumer-ci-placeholder
+          OPENAI_API_KEY: consumer-ci-placeholder
+        run: npm run build:surface:consumer
 
       - name: Build isolated Business surface
         if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'business'

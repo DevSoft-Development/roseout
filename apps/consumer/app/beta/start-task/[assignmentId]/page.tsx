@@ -1,0 +1,1 @@
+import { redirect } from "next/navigation";export default async function Page({params,searchParams}:{params:Promise<{assignmentId:string}>,searchParams:Promise<Record<string,string>>}){const {assignmentId}=await params;const sp=await searchParams;const qs=new URLSearchParams(sp).toString();redirect(`/user/dashboard/beta/tasks/${assignmentId}${qs?`?${qs}`:''}`)}

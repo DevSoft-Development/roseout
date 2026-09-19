@@ -1,0 +1,273 @@
+/* Search Step 2 — active-task layout.
+   Step 2 should read as one polished screen, with no overlap from the journey rail. */
+main:has(#make-it-yours) > section:first-child {
+  display: none !important;
+}
+
+#make-it-yours {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 1rem 1rem 2.25rem !important;
+  background:
+    radial-gradient(circle at 50% -6rem, rgba(225, 6, 42, .16), transparent 28rem),
+    radial-gradient(circle at 92% 26%, rgba(225, 6, 42, .05), transparent 24rem),
+    linear-gradient(180deg, #090706 0%, #050505 42%, #050505 100%);
+}
+
+#make-it-yours::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: .24;
+  background-image:
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, #000, transparent 72%);
+}
+
+#make-it-yours > div {
+  width: min(100%, 72rem);
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0;
+  align-items: start;
+}
+
+#make-it-yours > div > * {
+  grid-column: 1 / -1;
+}
+
+/* Keep the journey rail in normal document flow. Global sticky styles were
+   causing it to sit on top of the Step 2 title at desktop widths. */
+#make-it-yours .guided-journey-steps {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  z-index: 1 !important;
+  margin: 0 0 1.35rem !important;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 1.15rem;
+  background: rgba(11,11,12,.78);
+  padding: .55rem .75rem;
+  box-shadow: 0 14px 40px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.025);
+  backdrop-filter: blur(16px);
+}
+
+/* Title block */
+#make-it-yours > div > div[class*="items-end"][class*="justify-between"] {
+  position: relative;
+  z-index: 0;
+  margin-top: 0 !important;
+  margin-bottom: 1rem !important;
+  align-items: center !important;
+}
+
+#make-it-yours > div > div[class*="items-end"][class*="justify-between"] > div:first-child {
+  max-width: 42rem;
+}
+
+#make-it-yours h2 {
+  margin: 0 !important;
+  font-size: clamp(2.25rem, 4.5vw, 3.65rem) !important;
+  line-height: 1 !important;
+  letter-spacing: -.052em !important;
+}
+
+#make-it-yours h2 + p {
+  margin-top: .55rem !important;
+  max-width: 35rem !important;
+  font-size: .94rem !important;
+  line-height: 1.5 !important;
+  color: rgba(255,255,255,.52) !important;
+}
+
+/* Premium cards */
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"] {
+  position: relative;
+  overflow: hidden;
+  margin-top: .65rem !important;
+  border-radius: 1.35rem !important;
+  border-color: rgba(255,255,255,.09) !important;
+  background: linear-gradient(145deg, rgba(255,255,255,.043), rgba(255,255,255,.018)) !important;
+  padding: 1.15rem !important;
+  box-shadow: 0 18px 55px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.025);
+  backdrop-filter: blur(14px);
+}
+
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 5.5rem;
+  height: 2px;
+  background: linear-gradient(90deg, #e1062a, transparent);
+  opacity: .72;
+}
+
+/* Where stays full-width. When + What matters sit side-by-side on desktop. */
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:has(input[placeholder="Neighborhood, city, or ZIP"]),
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:has(.text-emerald-300) {
+  grid-column: 1 / -1;
+}
+
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:has(button:nth-of-type(4)),
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:has(button[title="Remove"]),
+#make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:has(button[class*="text-[#ff7188]"]) {
+  grid-column: auto;
+}
+
+#make-it-yours > div > div[class*="rounded-[1.25rem]"] p[class*="uppercase"] {
+  font-size: .7rem !important;
+  letter-spacing: .17em !important;
+  color: rgba(255,255,255,.72) !important;
+}
+
+#make-it-yours > div > div[class*="rounded-[1.25rem]"] p[class*="text-white/35"] {
+  margin-top: .25rem !important;
+  font-size: .8rem !important;
+  line-height: 1.4 !important;
+  color: rgba(255,255,255,.4) !important;
+}
+
+#make-it-yours input:not([type="date"]):not([type="time"]) {
+  min-height: 3.35rem !important;
+  border-radius: .95rem !important;
+  border-color: rgba(255,255,255,.1) !important;
+  background: rgba(0,0,0,.34) !important;
+  font-size: .98rem !important;
+}
+
+#make-it-yours input:focus,
+#make-it-yours label:focus-within {
+  border-color: rgba(225,6,42,.62) !important;
+  box-shadow: 0 0 0 3px rgba(225,6,42,.08) !important;
+}
+
+#make-it-yours label[class*="border-white/10"] {
+  border-radius: .9rem !important;
+  background: rgba(0,0,0,.28) !important;
+}
+
+#make-it-yours button {
+  transition: transform .16s ease, border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+#make-it-yours button:hover {
+  transform: translateY(-1px);
+}
+
+#make-it-yours button[class*="rounded-full"][class*="border"] {
+  min-height: 2.55rem;
+  padding-inline: .9rem;
+  border-color: rgba(255,255,255,.1) !important;
+  background: rgba(255,255,255,.032);
+}
+
+#make-it-yours button[class*="rounded-full"][class*="border-[#e1062a]"] {
+  border-color: rgba(225,6,42,.72) !important;
+  background: linear-gradient(180deg, rgba(225,6,42,.2), rgba(225,6,42,.1)) !important;
+  box-shadow: 0 8px 22px rgba(225,6,42,.08);
+}
+
+#make-it-yours button[class*="bg-[#e1062a]"] {
+  min-height: 3.4rem !important;
+  border-radius: 1rem !important;
+  padding-inline: 1.8rem !important;
+  background: linear-gradient(135deg, #f10b32 0%, #c80022 100%) !important;
+  box-shadow: 0 16px 38px rgba(225,6,42,.24), inset 0 1px 0 rgba(255,255,255,.12) !important;
+}
+
+/* Keep the action attached to the content instead of floating in dead space. */
+#make-it-yours > div > div:last-child {
+  margin-top: .85rem !important;
+  padding-top: .9rem;
+  border-top: 1px solid rgba(255,255,255,.065);
+  min-height: 0 !important;
+}
+
+@media (min-width: 900px) {
+  #make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:nth-of-type(4),
+  #make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:nth-of-type(5) {
+    grid-column: auto;
+    min-height: 12.2rem;
+  }
+
+  #make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:nth-of-type(4) {
+    margin-right: .5rem;
+  }
+
+  #make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"]:nth-of-type(5) {
+    margin-left: .5rem;
+  }
+
+  #make-it-yours > div > div:last-child {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+  }
+}
+
+@media (max-width: 899px) {
+  #make-it-yours > div {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  #make-it-yours {
+    padding: .8rem .85rem 1.75rem !important;
+  }
+
+  #make-it-yours .guided-journey-steps {
+    margin-bottom: 1rem !important;
+    border-radius: 1rem;
+    padding: .45rem .5rem;
+  }
+
+  #make-it-yours > div > div[class*="items-end"][class*="justify-between"] {
+    margin-bottom: .75rem !important;
+  }
+
+  #make-it-yours h2 {
+    font-size: 2.35rem !important;
+  }
+
+  #make-it-yours h2 + p {
+    font-size: .88rem !important;
+  }
+
+  #make-it-yours > div > div[class*="rounded-[1.25rem]"][class*="border-white/10"] {
+    border-radius: 1.15rem !important;
+    padding: 1rem !important;
+  }
+
+  #make-it-yours button[class*="bg-[#e1062a]"] {
+    width: 100%;
+  }
+
+  #make-it-yours > div > div:last-child {
+    display: grid !important;
+    grid-template-columns: auto 1fr;
+    gap: .6rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #make-it-yours button {
+    transition: none !important;
+  }
+
+  #make-it-yours button:hover {
+    transform: none !important;
+  }
+}

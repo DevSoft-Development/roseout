@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { createClient, type EmailOtpType } from "@supabase/supabase-js";
+import { getAdminLoginRole } from "@/lib/auth/get-admin-login-role";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function GET(request: NextRequest) {
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.vercel.app";
+
+  const url = new URL(request.url);
+  const tokenHash = url.searchParams.get("token_hash");
+  const type = (url.searchParams.get("type") || "magiclink") as EmailOtpType;
+
+  const response = NextResponse.redirect(`${siteUrl}/restaurants/dashboard`);
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  if (!tokenHash) {
+    response.headers.set("Location", `${siteUrl}/restaurants/apply`);
+    return response;
+  }
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    type,
+    token_hash: tokenHash,
+  });
+
+  if (error || !data.user) {
+    response.headers.set("Location", `${siteUrl}/restaurants/apply`);
+    return response;
+  }
+
+  const user = data.user;
+
+  const email = user.email?.toLowerCase();
+
+  const adminRole = await getAdminLoginRole(supabaseAdmin as any, {
+    id: user.id,
+    email: user.email ?? null,
+  });
+
+  if (adminRole) {
+    response.headers.set("Location", `${siteUrl}/admin/dashboard`);
+    return response;
+  }
+
+  if (!email) {
+    response.headers.set("Location", `${siteUrl}/restaurants/apply`);
+    return response;
+  }
+
+  const { data: restaurant } = await supabaseAdmin
+    .from("restaurants")
+    .select("id")
+    .ilike("email", email)
+    .maybeSingle();
+
+  if (!restaurant) {
+    response.headers.set("Location", `${siteUrl}/restaurants/apply`);
+    return response;
+  }
+
+  
+await supabaseAdmin.from("restaurant_events").insert({
+  restaurant_id: restaurant.id,
+  email,
+  event_type: "login_link_clicked",
+  metadata: {
+    source: "magic_link",
+  },
+});
+
+  await supabaseAdmin.from("restaurant_events").insert({
+  restaurant_id: restaurant.id,
+  email,
+  event_type: "login_link_clicked",
+  metadata: {
+    source: "magic_link",
+  },
+});
+
+  await supabaseAdmin
+    .from("restaurants")
+    .update({
+      owner_user_id: user.id,
+      owner_email: email,
+    })
+    .eq("id", restaurant.id);
+
+  response.headers.set("Location", `${siteUrl}/restaurants/dashboard`);
+  return response;
+}
