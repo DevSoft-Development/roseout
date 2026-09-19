@@ -4120,6 +4120,49 @@ if (
   throw new Error("Mailing Batch creation flow must use the isolated Admin design system without root monolith UI imports.");
 }
 
+const enterpriseBusinessesPage = read("apps/admin/app/admin/dashboard/businesses/page.tsx");
+const enterpriseBusinessViewPage = read("apps/admin/app/admin/dashboard/businesses/view/page.tsx");
+for (const marker of [
+  "Revenue & CRM",
+  "Businesses",
+  "Business operations",
+  "Commercial workspace",
+  "Risk and retention",
+]) {
+  if (!enterpriseBusinessesPage.includes(marker)) {
+    throw new Error(`Businesses enterprise command center must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterpriseBusinessesPage.includes("../../../../components/admin/AdminDesignSystem") ||
+  !enterpriseBusinessesPage.includes("BusinessViewPage") ||
+  !enterpriseBusinessesPage.includes("embedded")
+) {
+  throw new Error("Businesses overview must use the isolated Admin design system and preserve the embedded CRM workspace.");
+}
+for (const marker of [
+  "Business directory",
+  "Find and manage businesses",
+  "Commercial signals",
+  "Owner access",
+  "CRM workspace",
+  "Upgrade opportunities",
+  "Missing reservation links",
+]) {
+  if (!enterpriseBusinessViewPage.includes(marker)) {
+    throw new Error(`Business View enterprise workspace must preserve marker: ${marker}`);
+  }
+}
+if (
+  !enterpriseBusinessViewPage.includes("../../../../../components/admin/AdminDesignSystem") ||
+  !enterpriseBusinessViewPage.includes("@theouthaven/auth/admin-session") ||
+  !enterpriseBusinessViewPage.includes("@/lib/admin/business-crm") ||
+  !enterpriseBusinessViewPage.includes("BusinessCommunicationSection") ||
+  !enterpriseBusinessViewPage.includes("ImpersonateButton")
+) {
+  throw new Error("Business View must preserve isolated Admin auth, CRM runtime, communication, impersonation, and enterprise presentation.");
+}
+
 console.log("Surface app isolation, shared packages, and Admin auth regression passed.");
 
 
