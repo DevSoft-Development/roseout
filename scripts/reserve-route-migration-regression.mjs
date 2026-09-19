@@ -4,11 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const ownedRoots = [
-  "app/reserve",
-  "app/api/reserve",
-  "app/api/v1/reserve",
-  "app/api/reservations",
+const isolatedRoots = [
+  "apps/reserve/app/reserve",
+  "apps/reserve/app/api/reserve",
+  "apps/reserve/app/api/v1/reserve",
+  "apps/reserve/app/api/reservations",
 ];
 
 function walk(dir) {
@@ -19,30 +19,41 @@ function walk(dir) {
   });
 }
 
-const sourceFiles = ownedRoots
+const isolatedFiles = isolatedRoots
   .flatMap((dir) => walk(path.join(root, dir)))
   .filter((file) => /\.(ts|tsx)$/.test(file))
   .sort();
 
-if (sourceFiles.length < 60) {
-  throw new Error(`Expected the Reserve migration surface to contain at least 60 route files; found ${sourceFiles.length}.`);
+if (isolatedFiles.length < 60) {
+  throw new Error(
+    `Expected the isolated Reserve app to contain at least 60 route files; found ${isolatedFiles.length}.`,
+  );
 }
 
-const mismatches = [];
-for (const source of sourceFiles) {
-  const relative = path.relative(root, source);
-  const isolated = path.join(root, "apps/reserve", relative);
-  if (!fs.existsSync(isolated)) {
-    mismatches.push(`${relative}: missing isolated copy`);
-    continue;
-  }
-  const sourceText = fs.readFileSync(source, "utf8");
-  const isolatedText = fs.readFileSync(isolated, "utf8");
-  if (sourceText !== isolatedText) mismatches.push(`${relative}: content drift`);
+const requiredRoutes = [
+  "apps/reserve/app/reserve/page.tsx",
+  "apps/reserve/app/reserve/dashboard/page.tsx",
+  "apps/reserve/app/reserve/location/[locationId]/page.tsx",
+  "apps/reserve/app/reserve/confirmation/[token]/page.tsx",
+  "apps/reserve/app/api/reserve/availability/route.ts",
+  "apps/reserve/app/api/reserve/location/route.ts",
+  "apps/reserve/app/api/reservations/lock-slot/route.ts",
+];
+
+const missing = requiredRoutes.filter((file) => !fs.existsSync(path.join(root, file)));
+if (missing.length) {
+  throw new Error(`Reserve isolated route inventory is incomplete:\n${missing.join("\n")}`);
 }
 
-if (mismatches.length) {
-  throw new Error(`Reserve route migration parity failed:\n${mismatches.join("\n")}`);
+const legacyUiFiles = walk(path.join(root, "app/reserve"))
+  .filter((file) => /\.(ts|tsx)$/.test(file));
+
+if (legacyUiFiles.length) {
+  throw new Error(
+    `Legacy root Reserve UI ownership must remain removed:\n${legacyUiFiles
+      .map((file) => path.relative(root, file))
+      .join("\n")}`,
+  );
 }
 
 const tsconfig = fs.readFileSync(path.join(root, "apps/reserve/tsconfig.json"), "utf8");
@@ -50,4 +61,4 @@ if (!tsconfig.includes('"@/*": ["../../*"]')) {
   throw new Error("Reserve app must resolve shared root dependencies during the migration window.");
 }
 
-console.log(`Reserve route migration parity passed for ${sourceFiles.length} files.`);
+console.log(`Reserve isolated route inventory passed for ${isolatedFiles.length} files.`);
