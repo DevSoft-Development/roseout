@@ -8,7 +8,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/aws-deploy-role-inline-policy-hygiene.yml'
-      - '.github/workflows/aws-platform-dr.yml'
+  workflow_run:
+    workflows: ['AWS platform DR']
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -40,7 +42,7 @@ jobs:
           grep -F 'inline_policy_bytes_after' "$FILE" >/dev/null
 
   clean:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'))
     needs: validate
     runs-on: ubuntu-latest
     environment: production
@@ -62,6 +64,31 @@ jobs:
           ROLE_ARN="${CONFIGURED_ROLE:-$DEPLOY_ROLE_ARN}"
           ROLE_NAME="${ROLE_ARN##*/}"
           PRESERVE='TheOutHavenPlatformCloudFormation'
+          INSPECTION_POLICY='TheOutHavenInlinePolicyHygieneSelfInspection'
+
+          cat > "$RUNNER_TEMP/inline-policy-hygiene-self-inspection.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"InlinePolicyHygieneSelfInspection",
+                "Effect":"Allow",
+                "Action":[
+                  "iam:ListRolePolicies",
+                  "iam:GetRolePolicy",
+                  "iam:DeleteRolePolicy"
+                ],
+                "Resource":"arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole"
+              }
+            ]
+          }
+          JSON
+
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$INSPECTION_POLICY" \
+            --policy-document "file://$RUNNER_TEMP/inline-policy-hygiene-self-inspection.json"
+          sleep 8
 
           mapfile -t TEMPORARY_POLICIES <<'EOF'
           TheOutHavenPlatformDrBootstrap
@@ -118,3 +145,18 @@ jobs:
             exit 1
           }
           jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies-after.json" >/dev/null
+
+          aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$INSPECTION_POLICY"
+
+      - name: Remove temporary hygiene self-inspection permission
+        if: always()
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          ROLE_ARN="${CONFIGURED_ROLE:-$DEPLOY_ROLE_ARN}"
+          ROLE_NAME="${ROLE_ARN##*/}"
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenInlinePolicyHygieneSelfInspection \
+            2>/dev/null || true
