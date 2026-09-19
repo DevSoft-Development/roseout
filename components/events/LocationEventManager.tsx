@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { createLocationEventAction, updateLocationEventStatusAction } from "@/app/locations/dashboard/events/actions";
+import { createLocationEventAction, updateLocationEventStatusAction } from "@/apps/business/app/locations/dashboard/events/actions";
 import VisualDateTimePicker from "@/components/forms/VisualDateTimePicker";
 
 type EventRow = { id:string; title:string; slug:string|null; category:string|null; starts_at:string; ends_at:string|null; status:string; searchable:boolean; is_free:boolean; price_min:number|string|null; capacity:number|null; image_url:string|null };
