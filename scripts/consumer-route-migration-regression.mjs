@@ -72,7 +72,7 @@ for (const required of [
   "apps/consumer/app/about/page.tsx",
   "apps/consumer/app/explore/page.tsx",
   "apps/consumer/app/create/page.tsx",
-  "apps/consumer/app/api/search/route.ts",
+  "apps/consumer/app/api/generate/route.ts",
   "apps/consumer/app/api/auth/sign-in/route.ts",
 ]) {
   if (!fs.existsSync(path.join(root, required))) {
