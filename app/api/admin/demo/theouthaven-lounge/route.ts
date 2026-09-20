@@ -103,8 +103,6 @@ async function normalizeDemoReservationInventory(locationId: string) {
         reservation_duration_minutes: 90,
         is_active: true,
         status: "available",
-        layout_width: 172,
-        layout_height: 118,
         rotation: 0,
         sort_order: index + 1,
         notes: "TheOutHaven Lounge canonical E2E demo space.",
