@@ -579,12 +579,12 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
                 {barResources.map((bar: any) => {
                   const barStyle = floorItemStyle(bar, floorWidth, floorHeight);
                   return (
-                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 min-h-[86px] overflow-visible rounded-[1.4rem] border border-[#e1062a]/30 bg-[linear-gradient(180deg,rgba(225,6,42,0.13),rgba(255,255,255,0.025))] shadow-[0_18px_45px_rgba(0,0,0,0.3)]" style={barStyle}>
-                      <div className="absolute inset-x-3 top-2 rounded-[1rem] border border-white/10 bg-black/35 px-3 py-2 text-center">
-                        <p className="text-[10px] font-black text-white sm:text-xs">{resourceName(bar)}</p>
-                        <p className="mt-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Bar · {resourceCapacity(bar)} seats</p>
+                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 overflow-visible rounded-[1.35rem] border border-[#e1062a]/35 bg-[linear-gradient(180deg,rgba(225,6,42,0.14),rgba(255,255,255,0.03))] shadow-[0_18px_45px_rgba(0,0,0,0.3)]" style={barStyle}>
+                      <div className="absolute inset-x-[4%] bottom-[36%] top-[10%] flex flex-col items-center justify-center rounded-[1rem] border border-white/10 bg-black/35 px-3 text-center">
+                        <p className="text-[11px] font-black text-white sm:text-sm">{resourceName(bar)}</p>
+                        <p className="mt-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/40">Bar · {resourceCapacity(bar)} seats</p>
                       </div>
-                      <div className="absolute -bottom-5 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-full border border-white/10 bg-[#080a0d]/95 px-2 py-1.5 shadow-2xl">
+                      <div className="absolute bottom-[-18px] left-1/2 flex max-w-[94%] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-full border border-white/10 bg-[#080a0d]/95 px-2 py-1.5 shadow-2xl">
                         {Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
                       </div>
                     </div>
