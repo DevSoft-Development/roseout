@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { MIRROR_DEMO_KEY, insertSafe } from "@/lib/demo/demo-center";
+import { MIRROR_DEMO_KEY, insertSafe, safeUpdateExistingColumns } from "@/lib/demo/demo-center";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 const DEMO_SPACES = [
@@ -23,11 +23,16 @@ async function normalizeDemoReservationInventory(locationId: string) {
   const canonicalNames = DEMO_SPACES.map((space) => space.item_name);
 
   for (const table of ["layout_items", "location_bookable_items"] as const) {
+    const spaces =
+      table === "location_bookable_items"
+        ? DEMO_SPACES.filter((space) => space.item_type !== "bar")
+        : DEMO_SPACES;
+    const names = spaces.map((space) => space.item_name);
     const { data: rows, error } = await supabaseAdmin
       .from(table)
       .select("id,item_name,created_at")
       .eq("location_id", locationId)
-      .in("item_name", canonicalNames)
+      .in("item_name", names)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -39,7 +44,7 @@ async function normalizeDemoReservationInventory(locationId: string) {
 
     for (const row of rows || []) {
       const name = String(row.item_name || "");
-      if (!canonicalNames.includes(name as (typeof canonicalNames)[number])) continue;
+      if (!names.includes(name as (typeof names)[number])) continue;
       if (seen.has(name)) duplicateIds.push(String(row.id));
       else seen.add(name);
     }
@@ -55,7 +60,7 @@ async function normalizeDemoReservationInventory(locationId: string) {
     }
 
     const existingByName = new Map((rows || []).map((row) => [String(row.item_name || ""), row]));
-    for (const [index, item] of DEMO_SPACES.entries()) {
+    for (const [index, item] of spaces.entries()) {
       const existing = existingByName.get(item.item_name);
       if (!existing?.id) continue;
       const payload = {
@@ -74,16 +79,20 @@ async function normalizeDemoReservationInventory(locationId: string) {
         notes: "TheOutHaven Lounge canonical E2E demo space.",
         ...item,
       };
-      const updatePayload = { ...payload };
-      delete (updatePayload as any).location_id;
-      const { error: updateError } = await supabaseAdmin.from(table).update(updatePayload).eq("id", existing.id);
-      if (updateError) {
-        const safe = await insertSafe(table, [{ ...payload, id: existing.id }]);
-        if (!safe.ok && !safe.skipped) throw new Error(`Unable to update ${table} demo row ${item.item_name}.`);
+      const updatePayload = { ...payload } as Record<string, unknown>;
+      delete updatePayload.location_id;
+      const synced = await safeUpdateExistingColumns(
+        table,
+        "id",
+        String(existing.id),
+        updatePayload,
+      );
+      if (!synced.applied.length && synced.errors.length) {
+        throw new Error(`Unable to update ${table} demo row ${item.item_name}.`);
       }
     }
 
-    const missing = DEMO_SPACES.filter((space) => !seen.has(space.item_name));
+    const missing = spaces.filter((space) => !seen.has(space.item_name));
     if (missing.length) {
       const payload = missing.map((item, index) => ({
         location_id: locationId,
