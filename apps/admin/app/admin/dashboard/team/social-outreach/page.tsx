@@ -1,5 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -68,13 +73,13 @@ export default async function SocialAdmin() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Social Outreach</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Workflow tracking only. No GPS/location and no stored social
-          passwords.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Outreach"
+        title="Social Outreach"
+        subtitle="Workflow tracking only. No GPS/location and no stored social passwords."
+        badge={<AdminStatusBadge tone="green">{outreachRows.length} outreach records loaded</AdminStatusBadge>}
+      />
 
         <section className="mt-6 rounded-[2rem] border border-white/10 bg-[#111] p-5">
           <h2 className="text-xl font-black">Approved templates</h2>
@@ -123,7 +128,6 @@ export default async function SocialAdmin() {
             );
           })}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
