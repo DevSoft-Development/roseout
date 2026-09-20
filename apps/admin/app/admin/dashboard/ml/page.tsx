@@ -163,7 +163,7 @@ export default async function MlRankingPage() {
           </table></div> : <p className="p-6 text-sm text-white/50">No review intelligence rows yet.</p>}
         </AdminSectionCard>
 
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+        <AdminSectionCard className="p-5">
           <h2 className="text-xl font-black">Advanced ML runs</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {advancedRuns.map((run:any)=><article key={run.id} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="font-black capitalize">{String(run.run_type || "ML run").replaceAll("_"," ")}</p><p className="mt-1 text-sm text-white/55">{run.status || "unknown"} · {run.records_updated || 0} records · {date(run.completed_at || run.started_at)}</p></article>)}
