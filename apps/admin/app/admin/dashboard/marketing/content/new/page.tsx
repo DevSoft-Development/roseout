@@ -1,23 +1,27 @@
-import Link from "next/link";
 import MarketingContentEditor from "@/components/marketing/MarketingContentEditor";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewMarketingContentPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.marketingEdit);
   return (
-    <main className="space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Marketing · Content</p>
-          <h1 className="text-3xl font-semibold">Create content</h1>
-          <p className="mt-1 max-w-3xl text-sm text-neutral-600">Build one master content item from a location, outing, event, experience, or offer. It cannot publish until its current version is approved.</p>
-        </div>
-        <Link href="/admin/dashboard/marketing/content" className="min-h-11 rounded-xl border px-4 py-2.5 text-sm font-semibold">Back to pipeline</Link>
-      </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Content"
+        title="Create Content"
+        subtitle="Build one master content item from a location, outing, event, experience, or offer. It cannot publish until its current version is approved."
+        badge={<AdminStatusBadge tone="amber">Approval required before publish</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/marketing/content">Content Pipeline</AdminActionButton>}
+      />
       <MarketingContentEditor />
-    </main>
+    </AdminPageShell>
   );
 }
