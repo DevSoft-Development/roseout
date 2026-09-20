@@ -9,7 +9,7 @@ import {
   AdminPageHeader,
   AdminPageShell,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = { title: "Search Benchmark – Admin" };
 export const dynamic = "force-dynamic";
