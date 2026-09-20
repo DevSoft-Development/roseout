@@ -5768,3 +5768,54 @@ for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "Admi
     throw new Error(`Machine Learning enterprise console must preserve shared design marker: ${marker}`);
   }
 }
+
+const enterpriseLaunchChecklistPage = read("apps/admin/app/admin/dashboard/launch-checklist/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseLaunchChecklistPage.includes(marker)) {
+    throw new Error(`Launch Checklist enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseLaunchChecklistPage.includes('import "./launch-checklist.css"')) {
+  throw new Error("Launch Checklist must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseSearchBenchmarkPage = read("apps/admin/app/admin/dashboard/search-benchmark/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseSearchBenchmarkPage.includes(marker)) {
+    throw new Error(`Search Benchmark enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseSearchBenchmarkPage.includes('import "./search-benchmark.css"')) {
+  throw new Error("Search Benchmark must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseDomainBenefitPage = read("apps/admin/app/admin/dashboard/settings/domain-benefit/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseDomainBenefitPage.includes(marker)) {
+    throw new Error(`Domain Benefit enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+
+const enterpriseEmailQaPage = read("apps/admin/app/admin/dashboard/settings/email-qa/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseEmailQaPage.includes(marker)) {
+    throw new Error(`Email QA enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseEmailQaPage.includes('import "./email-qa.css"')) {
+  throw new Error("Email QA must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseAppleDevicesPage = read("apps/admin/app/admin/dashboard/security/apple-devices/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminStatusBadge"]) {
+  if (!enterpriseAppleDevicesPage.includes(marker)) {
+    throw new Error(`Apple Device Enrollment enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+
+const enterpriseMicrosoft365Page = read("apps/admin/app/admin/dashboard/settings/microsoft-365/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminStatusBadge"]) {
+  if (!enterpriseMicrosoft365Page.includes(marker)) {
+    throw new Error(`Microsoft 365 enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
