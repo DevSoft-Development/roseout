@@ -185,6 +185,15 @@ for (const [label, route] of [["Business", businessDemoHandoff], ["Reserve", res
     throw new Error(`${label} demo handoff must validate the signed token and set a secure host-only session cookie.`);
   }
 }
+
+if (
+  businessDemoHandoff.includes("new URL(destination, request.url)") ||
+  reserveDemoHandoff.includes("new URL(destination, request.url)") ||
+  !businessDemoHandoff.includes("https://business.theouthaven.com") ||
+  !reserveDemoHandoff.includes("https://reserve.theouthaven.com")
+) {
+  throw new Error("Cross-surface demo handoffs must redirect with their public service origins, never the internal container request URL.");
+}
 if (
   !internalDemoAccess.includes("verifyAdminDemoHandoff") ||
   !internalDemoAccess.includes("ADMIN_DEMO_HANDOFF_COOKIE")
