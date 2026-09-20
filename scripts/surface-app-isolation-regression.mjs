@@ -5645,3 +5645,40 @@ for (const href of [
 }
 
 console.log("Final Admin tail isolation regression passed.");
+
+const enterpriseFeatureFlagsPage = read("apps/admin/app/admin/dashboard/feature-flags/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminDataTableShell"]) {
+  if (!enterpriseFeatureFlagsPage.includes(marker)) {
+    throw new Error(`Feature Flags enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseFeatureFlagsPage.includes('import "./feature-flags.css"')) {
+  throw new Error("Feature Flags must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseSecurityPage = read("apps/admin/app/admin/dashboard/security/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseSecurityPage.includes(marker)) {
+    throw new Error(`Security enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseSecurityPage.includes('import "./security.css"')) {
+  throw new Error("Security must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseDevicesPage = read("apps/admin/app/admin/dashboard/security/devices/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseDevicesPage.includes(marker)) {
+    throw new Error(`Device Management enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseDevicesPage.includes('import "./devices.css"')) {
+  throw new Error("Device Management must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseCredentialsPage = read("apps/admin/app/admin/dashboard/credentials/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminStatusBadge"]) {
+  if (!enterpriseCredentialsPage.includes(marker)) {
+    throw new Error(`Credentials Vault enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
