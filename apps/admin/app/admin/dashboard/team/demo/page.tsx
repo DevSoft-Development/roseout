@@ -3,6 +3,12 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { formatFullAddress } from "@/lib/address-utils";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -55,27 +61,14 @@ export default async function DemoAdminPage() {
   );
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-300">
-              Team Tools
-            </p>
-            <h1 className="mt-2 text-3xl font-black">Demo / Training</h1>
-          </div>
-          <Link
-            href="/admin/dashboard/settings/demo-center?mode=training"
-            className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white"
-          >
-            Open Unified Demo Center
-          </Link>
-        </div>
-
-        <p className="mt-2 max-w-4xl text-sm font-bold text-white/55">
-          Master demo locations are separate from public locations. Personal
-          sessions use editable private copies and never send real notifications.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Demo & Training"
+        title="Demo / Training"
+        subtitle="Master demo locations are separate from public locations. Personal sessions use editable private copies and never send real notifications."
+        badge={<AdminStatusBadge tone="green">{sessionRows.length} sessions loaded</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/settings/demo-center?mode=training" variant="primary">Open Unified Demo Center</AdminActionButton>}
+      />
 
         <section className="mt-6 grid gap-4 md:grid-cols-2">
           {masterRows.map((master: any) => (
@@ -128,7 +121,6 @@ export default async function DemoAdminPage() {
             </p>
           ) : null}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
