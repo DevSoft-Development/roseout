@@ -5,6 +5,12 @@ import { ADMIN_ROLES } from "@theouthaven/auth/admin-roles";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { WebsiteHostingTabs } from "@/components/admin/WebsiteHostingTabs";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const metadata: Metadata = {
   title: "Website Migrations | Admin",
@@ -90,23 +96,19 @@ export default async function WebsiteMigrationsPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Website Operations</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black sm:text-4xl">Website Migrations</h1>
-              <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
-                Track imported websites from analysis through review, domain setup, publish, cutover, and live health without leaving the hosting control plane.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/admin/dashboard/website-hosting" className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black">Hosting Overview</Link>
-              <Link href="/admin/dashboard/website-hosting/migrations" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black">Refresh</Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Website Operations · Migration"
+        title="Website Migrations"
+        subtitle="Track imported websites from analysis through review, domain setup, publish, cutover, and live health without leaving the hosting control plane."
+        badge={<AdminStatusBadge tone={failed || healthAttention ? "amber" : "green"}>{failed ? `${failed} failed deployments` : healthAttention ? `${healthAttention} health issues` : "Migration queue healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/website-hosting">Hosting Overview</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/website-hosting/migrations" variant="primary">Refresh</AdminActionButton>
+          </>
+        }
+      />
 
         <WebsiteHostingTabs active="migrations" />
 
@@ -162,7 +164,6 @@ export default async function WebsiteMigrationsPage() {
             {!rows.length ? <p className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-white/50">No imported website migrations are currently tracked.</p> : null}
           </div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
