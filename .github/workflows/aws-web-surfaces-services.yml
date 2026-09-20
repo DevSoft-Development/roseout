@@ -73,8 +73,10 @@ permissions:
   id-token: write
 
 concurrency:
-  group: aws-web-surfaces-services-${{ github.event.inputs.environment || 'production' }}
-  cancel-in-progress: false
+  # PRs only validate, so isolate them by PR number. Production/manual deploys
+  # remain serialized by target environment to protect shared AWS resources.
+  group: aws-web-surfaces-services-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event.inputs.environment || 'production') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   AWS_REGION: us-east-1
