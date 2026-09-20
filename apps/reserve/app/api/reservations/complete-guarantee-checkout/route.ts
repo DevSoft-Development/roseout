@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
+import { stripeRequest } from "@/lib/stripe/server";
+
+function reserveSiteUrl() {
+  return String(process.env.NEXT_PUBLIC_RESERVE_SITE_URL || process.env.RESERVE_SITE_URL || "https://reserve.theouthaven.com").replace(/\/$/, "");
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const reservationId = String(searchParams.get("reservation_id") || "").trim();
   const customerToken = String(searchParams.get("customer_token") || "").trim();
   const sessionId = String(searchParams.get("session_id") || "").trim();
-  const siteUrl = getSiteUrl();
+  const siteUrl = reserveSiteUrl();
   const returnUrl = `${siteUrl}/reserve/confirmation/${encodeURIComponent(customerToken)}`;
 
   try {
