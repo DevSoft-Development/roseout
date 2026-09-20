@@ -1,11 +1,20 @@
-import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { ACTIVE_MARKET_STATES, evaluateLocationPublishability } from "@/lib/location-publishability";
 import NonSearchableClient from "./NonSearchableClient";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Non-Searchable Locations" };
 const SELECT = "id,name,state,status,data_status,quality_status,source_quality_status,import_confidence,public_visibility_tier,duplicate_status,is_searchable,is_hidden,is_low_level,has_photos,photo_status,main_image,image_url,images,address,city,latitude,longitude,location_type";
+
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string,string|undefined>> }) {
   await requireAdminRole(["superadmin", "admin"]);
   const supabaseAdmin = getAdminDatabaseClient();
@@ -17,5 +26,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   if (sp.query) q = q.or(`name.ilike.%${sp.query}%,address.ilike.%${sp.query}%`);
   const { data=[] } = await q;
   const rows = (data || []).map((row:any)=>({ ...row, publishability: evaluateLocationPublishability(row, { allowApproval:true }) }));
-  return <main className="min-h-screen bg-[#08050b] p-6 text-white"><div className="mx-auto max-w-7xl space-y-6"><div><Link href="/admin/dashboard/locations" className="text-sm text-rose-200">← Locations</Link><h1 className="mt-3 text-4xl font-black">Non-Searchable Locations</h1><p className="mt-2 text-white/60">Review locations that are not currently public/searchable, understand why, and safely approve eligible rows.</p></div><NonSearchableClient rows={rows} filters={{state:sp.state, locationType:sp.locationType, city:sp.city, query:sp.query}} /></div></main>;
+  const eligible = rows.filter((row:any) => row.publishability?.publishable === true).length;
+
+  return (
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Locations · Data Quality"
+        title="Non-Searchable Locations"
+        subtitle="Review locations that are not currently public or searchable, understand why, and safely approve eligible rows."
+        badge={<AdminStatusBadge tone={rows.length ? "amber" : "green"}>{rows.length ? `${rows.length} in current review set` : "Queue clear"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/locations">Locations Directory</AdminActionButton>}
+      />
+      <AdminKpiGrid>
+        <AdminKpiCard label="Review set" value={rows.length} helper="Current filtered rows" />
+        <AdminKpiCard label="Eligible to approve" value={eligible} helper="Passes publishability rules" />
+      </AdminKpiGrid>
+      <NonSearchableClient rows={rows} filters={{state:sp.state, locationType:sp.locationType, city:sp.city, query:sp.query}} />
+    </AdminPageShell>
+  );
 }
