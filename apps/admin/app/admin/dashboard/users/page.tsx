@@ -4,6 +4,14 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { listAdminUsersRead } from "@/lib/admin/admin-users-read";
 import BetaAccessSelect from "./BetaAccessSelect";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -87,35 +95,26 @@ export default async function UsersPage({
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Customer Operations</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black sm:text-4xl">Users</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                Manage user accounts, roles, access, beta status, and activity.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin/dashboard/users/new" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black">Add user</Link>
-              {filterCount ? <Link href="/admin/dashboard/users" className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black">Reset filters</Link> : null}
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Customer Operations"
+        title="Users"
+        subtitle="Manage customer accounts, roles, access, beta status, support activity, and booking engagement."
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/users/new" variant="primary">Add user</AdminActionButton>
+            {filterCount ? <AdminActionButton href="/admin/dashboard/users">Reset filters</AdminActionButton> : null}
+          </>
+        }
+      />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {metrics.map(([label, value, helper]) => (
-            <article key={String(label)} className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[.16em] text-white/40">{label}</p>
-              <p className="mt-2 text-3xl font-black">{value}</p>
-              <p className="mt-1 text-xs text-white/45">{helper}</p>
-            </article>
-          ))}
-        </section>
+      <AdminKpiGrid>
+        {metrics.slice(0, 4).map(([label, value, helper]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={value as number} helper={String(helper)} />
+        ))}
+      </AdminKpiGrid>
 
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+      <AdminSectionCard className="p-5">
           <form className="space-y-4">
             <div>
               <h2 className="text-lg font-black">Filter users</h2>
@@ -149,9 +148,9 @@ export default async function UsersPage({
               <button type="submit" className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-black">Apply filters</button>
             </div>
           </form>
-        </section>
+      </AdminSectionCard>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
+      <AdminSectionCard>
           <div className="border-b border-white/10 p-5">
             <h2 className="text-xl font-black">User directory</h2>
             <p className="mt-1 text-sm text-white/45">Showing {result.users.length} of {result.count} users.</p>
@@ -229,8 +228,7 @@ export default async function UsersPage({
           ) : (
             <p className="p-8 text-center text-sm text-white/45">No users match these filters.</p>
           )}
-        </section>
-      </div>
-    </main>
+      </AdminSectionCard>
+    </AdminPageShell>
   );
 }

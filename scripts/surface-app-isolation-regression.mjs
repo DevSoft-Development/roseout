@@ -3209,10 +3209,10 @@ if (
   throw new Error("Business CRM impersonation must preserve isolated superadmin-only API behavior.");
 }
 if (
-  !businessesPage.includes("/admin/dashboard/businesses/followups") ||
-  !businessesPage.includes("/admin/dashboard/businesses/communication-center")
+  !businessViewPage.includes("/admin/dashboard/businesses/followups") ||
+  !businessViewPage.includes("/admin/dashboard/businesses/communication-center")
 ) {
-  throw new Error("Business overview tabs must point at the isolated legacy redirect routes.");
+  throw new Error("Business workspace tabs must preserve the isolated legacy redirect routes.");
 }
 
 const careersJobEditPage = read("apps/admin/app/admin/dashboard/careers/jobs/[id]/page.tsx");
@@ -5680,5 +5680,33 @@ const enterpriseCredentialsPage = read("apps/admin/app/admin/dashboard/credentia
 for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminStatusBadge"]) {
   if (!enterpriseCredentialsPage.includes(marker)) {
     throw new Error(`Credentials Vault enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+
+const enterpriseReviewsPage = read("apps/admin/app/admin/dashboard/reviews/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminDataTableShell"]) {
+  if (!enterpriseReviewsPage.includes(marker)) {
+    throw new Error(`Reviews enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseReviewsPage.includes('import "./reviews.css"')) {
+  throw new Error("Reviews must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseUsersPage = read("apps/admin/app/admin/dashboard/users/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseUsersPage.includes(marker)) {
+    throw new Error(`Users enterprise directory must preserve shared design marker: ${marker}`);
+  }
+}
+
+const enterpriseBusinessesPage = read("apps/admin/app/admin/dashboard/businesses/page.tsx");
+const enterpriseBusinessViewPage = read("apps/admin/app/admin/dashboard/businesses/view/page.tsx");
+if (!enterpriseBusinessesPage.includes("BusinessViewPage") || enterpriseBusinessesPage.includes("Owners")) {
+  throw new Error("Businesses landing route must delegate to the single enterprise Business View workspace.");
+}
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseBusinessViewPage.includes(marker)) {
+    throw new Error(`Business View enterprise workspace must preserve shared design marker: ${marker}`);
   }
 }
