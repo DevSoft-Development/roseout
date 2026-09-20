@@ -419,7 +419,7 @@ export default async function DashboardPage({
   const supabase = adminSupabase();
   const authSupabase = await createAuthClient();
   const { data: { user } } = await authSupabase.auth.getUser();
-  if (!user?.id) redirect("/login?next=/locations/dashboard");
+  if (!user?.id) redirect("/business/login?next=/locations/dashboard");
 
   let locations: LocationItem[] = [];
   let impersonationLabel = "";
