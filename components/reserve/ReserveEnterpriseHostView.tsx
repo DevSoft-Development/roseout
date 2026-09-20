@@ -379,13 +379,14 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
   const uniqueResources = Array.from(
     new Map(
       resources.map((resource: any) => {
-        const semanticKey = [
+        const identity = [
           normalizedType(resource),
           resourceName(resource).toLowerCase(),
           resourceCapacity(resource),
-          resourceLayoutValue(resource, "x"),
-          resourceLayoutValue(resource, "y"),
-        ].join(":");
+        ];
+        const semanticKey = isBarResource(resource)
+          ? identity.join(":")
+          : [...identity, resourceLayoutValue(resource, "x"), resourceLayoutValue(resource, "y")].join(":");
         return [semanticKey, resource];
       }),
     ).values(),
