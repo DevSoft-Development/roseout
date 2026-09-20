@@ -154,6 +154,8 @@ if (
 const demoHandoff = read("packages/auth/admin-demo-handoff.ts");
 const adminDemoCenter = read("apps/admin/app/admin/dashboard/settings/demo-center/page.tsx");
 const businessDemoHandoff = read("apps/business/app/api/internal/admin-demo-handoff/route.ts");
+const businessDashboardLayout = read("apps/business/app/locations/dashboard/layout.tsx");
+const businessDashboardTemplate = read("apps/business/app/locations/dashboard/template.tsx");
 const reserveDemoHandoff = read("apps/reserve/app/api/internal/admin-demo-handoff/route.ts");
 const internalDemoAccess = read("lib/demo/internal-demo-access.ts");
 for (const required of [
@@ -199,6 +201,16 @@ if (
   !internalDemoAccess.includes("ADMIN_DEMO_HANDOFF_COOKIE")
 ) {
   throw new Error("Business/Reserve internal demo access must accept the signed Admin handoff cookie.");
+}
+
+for (const [label, source] of [["layout", businessDashboardLayout], ["template", businessDashboardTemplate]]) {
+  if (
+    !source.includes("verifyAdminDemoHandoff") ||
+    !source.includes("ADMIN_DEMO_HANDOFF_COOKIE") ||
+    !source.includes("/business/login?next=/locations/dashboard")
+  ) {
+    throw new Error(`Business dashboard ${label} must allow signed Admin demo handoff before owner-session enforcement and use the canonical Business login fallback.`);
+  }
 }
 
 const adminSession = read("packages/auth/admin-session.ts");
