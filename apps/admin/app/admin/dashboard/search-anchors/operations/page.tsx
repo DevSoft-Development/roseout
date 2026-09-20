@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import SearchAnchorOperationsControls from "./SearchAnchorOperationsControls";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -75,20 +81,20 @@ export default async function SearchAnchorOperationsPage({
   ];
 
   return (
-    <main className="min-h-screen bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">Search anchors</p>
-            <h1 className="mt-2 text-3xl font-bold">Anchor Health & Automation</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">See what needs work, process safe batches, resolve failures, and review recent automation. Historical job events are kept separate from location totals.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold">Create missing anchors</Link>
-            <Link href="/admin/dashboard/search-anchors/curated-review" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold">Review curated places</Link>
-            <Link href="/admin/dashboard/search-anchors" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold">Anchor directory</Link>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search Anchors · Automation"
+        title="Anchor Health & Automation"
+        subtitle="See what needs work, process safe batches, resolve failures, and review recent automation. Historical job events stay separate from location totals."
+        badge={<AdminStatusBadge tone={failedUnique ? "amber" : "green"}>{failedUnique ? `${failedUnique} locations need attention` : "Automation queue healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/search-anchors/sync-preview" variant="primary">Create Missing Anchors</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/search-anchors/curated-review">Review Curated Places</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/search-anchors">Anchor Directory</AdminActionButton>
+          </>
+        }
+      />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {cards.map(([label, value, help]) => (
@@ -155,7 +161,6 @@ export default async function SearchAnchorOperationsPage({
             {!recentRuns.data?.length && <p className="text-sm text-zinc-500">No tracked automation runs found.</p>}
           </div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
