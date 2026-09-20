@@ -114,6 +114,7 @@ export default function PlanScreen() {
   const [resolvingIntent, setResolvingIntent] = useState(Boolean(incomingPrompt) && !hasPassedArea);
   const [requestingLocation, setRequestingLocation] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationRequired, setLocationRequired] = useState(false);
   const [activePicker, setActivePicker] = useState<ActivePicker>(null);
   const [showExactTiming, setShowExactTiming] = useState(false);
   const [showCustomPreference, setShowCustomPreference] = useState(false);
@@ -227,6 +228,7 @@ export default function PlanScreen() {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
       }));
+      setLocationRequired(false);
     } catch {
       setError("We couldn’t get your current location. Enter a neighborhood, city, or ZIP instead.");
     } finally {
@@ -248,9 +250,11 @@ export default function PlanScreen() {
     const hasTypedOrDetectedArea = (summary.areaSource === "search" || summary.areaSource === "manual") && Boolean(summary.area.trim()) && summary.area !== "Near me";
     const hasDeviceLocation = summary.areaSource === "device" && summary.latitude !== null && summary.longitude !== null;
     if (!hasTypedOrDetectedArea && !hasDeviceLocation) {
-      setError("Add an area or use your current location so we know where to plan.");
+      setError(null);
+      setLocationRequired(true);
       return;
     }
+    setLocationRequired(false);
 
     router.push({
       pathname: "/(tabs)/results",
@@ -328,13 +332,16 @@ export default function PlanScreen() {
               <View style={{ flex: 1 }}>
                 <SearchField
                   value={draft.areaSource === "default" || usingDeviceLocation ? "" : draft.area}
-                  onChangeText={(value) => setDraft((current) => ({
-                    ...current,
-                    area: value,
-                    areaSource: value.trim() ? "manual" : "default",
-                    latitude: null,
-                    longitude: null,
-                  }))}
+                  onChangeText={(value) => {
+                    setLocationRequired(false);
+                    setDraft((current) => ({
+                      ...current,
+                      area: value,
+                      areaSource: value.trim() ? "manual" : "default",
+                      latitude: null,
+                      longitude: null,
+                    }));
+                  }}
                   placeholder="Neighborhood, city, or ZIP"
                 />
               </View>
@@ -344,6 +351,12 @@ export default function PlanScreen() {
             </View>
           )}
           {resolvingIntent ? <AppText variant="caption" muted style={{ marginTop: 8 }}>Reading the location from your plan...</AppText> : null}
+          {locationRequired ? (
+            <View accessibilityRole="alert" style={{ marginTop: 10, borderWidth: 1, borderColor: theme.colors.accentBorder, backgroundColor: theme.colors.accentSoft, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 }}>
+              <AppText variant="bodyStrong">Choose a location to continue</AppText>
+              <AppText variant="caption" muted style={{ marginTop: 3 }}>Use your current location or enter a neighborhood, city, or ZIP.</AppText>
+            </View>
+          ) : null}
         </Card>
 
         <Card elevated>
