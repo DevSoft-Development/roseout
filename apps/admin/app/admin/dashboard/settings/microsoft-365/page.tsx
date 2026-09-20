@@ -134,7 +134,7 @@ export default async function Microsoft365SettingsPage({
           <div className="m365-actions">
             {!connected ? (
               connectionError || intentionallyDisconnected ? (
-                <a href="/api/admin/integrations/microsoft-365/connect?auto=1&next=/admin/dashboard/settings/microsoft-365">
+                <a href="/api/admin/integrations/microsoft-365/connect?consent=1&next=/admin/dashboard/settings/microsoft-365">
                   Reauthorize Microsoft 365
                 </a>
               ) : null
@@ -146,7 +146,7 @@ export default async function Microsoft365SettingsPage({
                 >
                   <button type="submit">Sync now</button>
                 </form>
-                <a href="/api/admin/integrations/microsoft-365/connect?next=/admin/dashboard/settings/microsoft-365">
+                <a href="/api/admin/integrations/microsoft-365/connect?consent=1&next=/admin/dashboard/settings/microsoft-365">
                   Reauthorize
                 </a>
                 <form
