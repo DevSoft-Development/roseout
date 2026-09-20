@@ -132,6 +132,22 @@ jobs:
             esac
           }
 
+          require_same_host_location_prefix() {
+            local host="$1"
+            local path="$2"
+            local expected_path="$3"
+            local location
+            location="$(request_location "$host" "$path")"
+            echo "$host $path -> ${location:-<no location>}"
+            case "$location" in
+              "$expected_path"*|"https://$host$expected_path"*) ;;
+              *)
+                echo "Expected $host$path to redirect to $expected_path on the same host, got ${location:-<none>}." >&2
+                exit 1
+                ;;
+            esac
+          }
+
           for surface in admin business; do
             host="${surface}.theouthaven.com"
             body="$(curl --fail --silent --show-error --max-time 20 \
@@ -149,7 +165,7 @@ jobs:
           require_allowed 'business.theouthaven.com' '/business/login'
           require_allowed 'business.theouthaven.com' '/locations/dashboard'
           require_denied 'business.theouthaven.com' '/admin/login'
-          require_location_prefix 'business.theouthaven.com' '/' 'https://business.theouthaven.com/business/login'
-          require_location_prefix 'business.theouthaven.com' '/auth/callback' 'https://business.theouthaven.com/business/login'
+          require_same_host_location_prefix 'business.theouthaven.com' '/' '/business/login'
+          require_same_host_location_prefix 'business.theouthaven.com' '/auth/callback' '/business/login'
 
           echo 'Admin and Business HTTPS runtime, route isolation, and auth callback host boundaries passed. No DNS/public routing changes were made.'
