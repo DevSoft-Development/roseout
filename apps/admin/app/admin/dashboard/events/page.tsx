@@ -1,7 +1,14 @@
-import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { createNativeEventAction, updateEventLifecycleAction } from "./actions";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -72,22 +79,27 @@ export default async function EventsAdminPage({ searchParams }: { searchParams: 
   const canManage = ["superadmin", "admin", "editor"].includes(admin.role);
 
   return (
-    <main className="min-h-screen bg-[#080706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1700px] space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[.28em] text-rose-300">Marketplace</p>
-            <h1 className="mt-2 text-4xl font-black">Events</h1>
-            <p className="mt-2 max-w-3xl text-sm font-bold text-white/55">Manage events created by TheOutHaven, locations, and verified organizers. Provider imports are intentionally not the primary operating model.</p>
-          </div>
-          <div className="flex gap-2"><Link href={`${consumerOrigin}/events`} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black text-white/80">Public events</Link><Link href={`${consumerOrigin}/organizers/dashboard`} className="rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-2 text-sm font-black text-rose-100">Organizer dashboard</Link></div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketplace · Events"
+        title="Events"
+        subtitle="Manage events created by TheOutHaven, locations, and verified organizers. Provider imports are intentionally not the primary operating model."
+        badge={<AdminStatusBadge tone={(upcomingResult.count || 0) ? "green" : "muted"}>{upcomingResult.count || 0} active or upcoming</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href={`${consumerOrigin}/events`}>Public Events</AdminActionButton>
+            <AdminActionButton href={`${consumerOrigin}/organizers/dashboard`} variant="primary">Organizer Dashboard</AdminActionButton>
+          </>
+        }
+      />
 
-        {notice ? <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">{notice}</div> : null}
+      {notice ? <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-100">{notice}</div> : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[["First-party events", totalResult.count || 0], ["Active / upcoming", upcomingResult.count || 0], ["Public", publicResult.count || 0], ["Filtered", eventsResult.count || 0]].map(([label, value]) => <article key={String(label)} className="rounded-2xl border border-white/10 bg-white/[.04] p-4"><p className="text-xs font-black uppercase tracking-widest text-white/40">{label}</p><p className="mt-2 text-3xl font-black">{value}</p></article>)}
-        </section>
+      <AdminKpiGrid>
+        {[["First-party events", totalResult.count || 0], ["Active / upcoming", upcomingResult.count || 0], ["Public", publicResult.count || 0], ["Filtered", eventsResult.count || 0]].map(([label, value]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={Number(value)} helper="Event operations" />
+        ))}
+      </AdminKpiGrid>
 
         {canManage ? (
           <details className="rounded-3xl border border-rose-400/20 bg-rose-500/[.05] p-5">
@@ -127,7 +139,6 @@ export default async function EventsAdminPage({ searchParams }: { searchParams: 
           })}
           {!events.length ? <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-white/40">No first-party events match these filters.</div> : null}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
