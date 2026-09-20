@@ -3,6 +3,14 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { MlRecalculationActions } from "@/components/admin/ml/MlRecalculationActions";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = { title: "Machine Learning – Admin" };
 export const dynamic = "force-dynamic";
@@ -88,34 +96,21 @@ export default async function MlRankingPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Admin Tools / Search</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Machine Learning</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                Monitor learned ranking, intent scoring, pair scoring, review intelligence, and ML data readiness.
-              </p>
-            </div>
-            <Link href="/admin/dashboard/search-health" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-black text-white/80">
-              Search Health
-            </Link>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search Intelligence"
+        title="Machine Learning"
+        subtitle="Monitor learned ranking, intent scoring, pair compatibility, review intelligence, recalculation workflows, and ML data readiness."
+        actions={<AdminActionButton href="/admin/dashboard/search-health">Search Health</AdminActionButton>}
+      />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {cards.map(([label, value, helper]) => (
-            <article key={String(label)} className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[.16em] text-white/40">{label}</p>
-              <p className="mt-2 text-3xl font-black">{value}</p>
-              <p className="mt-1 text-xs text-white/45">{helper}</p>
-            </article>
-          ))}
-        </section>
+      <AdminKpiGrid>
+        {cards.map(([label, value, helper]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={value as number} helper={String(helper)} />
+        ))}
+      </AdminKpiGrid>
 
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+      <AdminSectionCard className="p-5">
           <h2 className="text-xl font-black">Recalculation actions</h2>
           <p className="mt-2 text-sm text-white/60">Run protected recalculation workflows without leaving the dashboard.</p>
           <div className="mt-4"><MlRecalculationActions /></div>
@@ -124,9 +119,9 @@ export default async function MlRankingPage() {
               Run all advanced ML
             </Link>
           </div>
-        </section>
+      </AdminSectionCard>
 
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+      <AdminSectionCard className="p-5">
           <h2 className="text-xl font-black">Data readiness</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <p>Searches with result IDs: <b>{readiness.searchMlResults}</b></p>
@@ -134,48 +129,47 @@ export default async function MlRankingPage() {
             <p>Analytics with location IDs: <b>{readiness.analyticsLocationIds}</b></p>
             <p>Outings with pair IDs: <b>{readiness.outingsPairIds}</b></p>
           </div>
-        </section>
+      </AdminSectionCard>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
+      <AdminSectionCard>
           <div className="border-b border-white/10 px-5 py-4"><h2 className="text-xl font-black">Top ML-scored locations</h2></div>
           {p1Top.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
             <thead className="bg-white/[.03] text-left text-[10px] uppercase tracking-[.16em] text-white/40"><tr><th className="p-3">Location</th><th className="p-3">Type</th><th className="p-3">Market</th><th className="p-3">Impressions</th><th className="p-3">Clicks</th><th className="p-3">Saves</th><th className="p-3">Completed</th><th className="p-3">Score</th><th className="p-3">Updated</th></tr></thead>
             <tbody>{p1Top.map((row:any)=><tr key={row.location_id} className="border-t border-white/10"><td className="p-3 font-black">{row.locations?.name || row.locations?.restaurant_name || row.locations?.activity_name || row.location_id}</td><td className="p-3 text-white/65">{row.locations?.location_type || "—"}</td><td className="p-3 text-white/65">{row.locations?.market || "—"}</td><td className="p-3">{row.impressions_30d}</td><td className="p-3">{row.clicks_30d}</td><td className="p-3">{row.saves_30d}</td><td className="p-3">{row.completed_outings_30d}</td><td className="p-3 font-black">{number(row.ml_score)}</td><td className="p-3 text-white/55">{date(row.updated_at)}</td></tr>)}</tbody>
           </table></div> : <p className="p-6 text-sm text-white/50">No ML-scored location rows yet.</p>}
-        </section>
+        </AdminSectionCard>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
+        <AdminSectionCard>
           <div className="border-b border-white/10 px-5 py-4"><h2 className="text-xl font-black">Top intent scores</h2></div>
           {topIntent.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
             <thead className="bg-white/[.03] text-left text-[10px] uppercase tracking-[.16em] text-white/40"><tr><th className="p-3">Location</th><th className="p-3">Intent</th><th className="p-3">Market</th><th className="p-3">Confidence</th><th className="p-3">Score</th></tr></thead>
             <tbody>{topIntent.map((row:any)=><tr key={row.id} className="border-t border-white/10"><td className="p-3 font-black">{row.locations?.name || row.locations?.restaurant_name || row.locations?.activity_name || row.location_id}</td><td className="p-3">{row.intent_bucket}</td><td className="p-3">{row.market || "—"}</td><td className="p-3">{number(row.confidence_score)}</td><td className="p-3 font-black">{number(row.intent_score)}</td></tr>)}</tbody>
           </table></div> : <p className="p-6 text-sm text-white/50">No location intent rows yet.</p>}
-        </section>
+        </AdminSectionCard>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
+        <AdminSectionCard>
           <div className="border-b border-white/10 px-5 py-4"><h2 className="text-xl font-black">Top pair scores</h2></div>
           {topPair.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
             <thead className="bg-white/[.03] text-left text-[10px] uppercase tracking-[.16em] text-white/40"><tr><th className="p-3">Restaurant</th><th className="p-3">Activity</th><th className="p-3">Intent</th><th className="p-3">Market</th><th className="p-3">Miles</th><th className="p-3">Score</th></tr></thead>
             <tbody>{topPair.map((row:any)=><tr key={row.id} className="border-t border-white/10"><td className="p-3 font-black">{row.restaurant?.name || row.restaurant?.restaurant_name || row.restaurant_location_id}</td><td className="p-3 font-black">{row.activity?.name || row.activity?.activity_name || row.activity_location_id}</td><td className="p-3">{row.intent_bucket}</td><td className="p-3">{row.market || "—"}</td><td className="p-3">{row.pair_distance_miles ?? "—"}</td><td className="p-3 font-black">{number(row.pair_score)}</td></tr>)}</tbody>
           </table></div> : <p className="p-6 text-sm text-white/50">No pair score rows yet.</p>}
-        </section>
+        </AdminSectionCard>
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#120d0b]">
+        <AdminSectionCard>
           <div className="border-b border-white/10 px-5 py-4"><h2 className="text-xl font-black">Review intelligence</h2></div>
           {topReviewRows.length ? <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-sm">
             <thead className="bg-white/[.03] text-left text-[10px] uppercase tracking-[.16em] text-white/40"><tr><th className="p-3">Location</th><th className="p-3">Approved</th><th className="p-3">Verified</th><th className="p-3">Quality</th><th className="p-3">Confidence</th><th className="p-3">Best for</th><th className="p-3">Last review</th></tr></thead>
             <tbody>{topReviewRows.map((row:any)=><tr key={row.location_id} className="border-t border-white/10"><td className="p-3 font-black">{row.locations?.name || row.locations?.restaurant_name || row.locations?.activity_name || row.location_id}</td><td className="p-3">{row.approved_review_count}</td><td className="p-3">{row.verified_review_count}</td><td className="p-3">{number(row.overall_review_quality_score)}</td><td className="p-3">{number(row.review_confidence_score)}</td><td className="p-3 text-white/65">{(row.best_for_terms || []).slice(0,3).join(", ") || row.review_summary || "—"}</td><td className="p-3 text-white/55">{date(row.last_review_at)}</td></tr>)}</tbody>
           </table></div> : <p className="p-6 text-sm text-white/50">No review intelligence rows yet.</p>}
-        </section>
+        </AdminSectionCard>
 
-        <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+        <AdminSectionCard className="p-5">
           <h2 className="text-xl font-black">Advanced ML runs</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {advancedRuns.map((run:any)=><article key={run.id} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="font-black capitalize">{String(run.run_type || "ML run").replaceAll("_"," ")}</p><p className="mt-1 text-sm text-white/55">{run.status || "unknown"} · {run.records_updated || 0} records · {date(run.completed_at || run.started_at)}</p></article>)}
             {!advancedRuns.length ? <p className="text-sm text-white/50">No advanced ML runs yet.</p> : null}
           </div>
-        </section>
-      </div>
-    </main>
+        </AdminSectionCard>
+    </AdminPageShell>
   );
 }
