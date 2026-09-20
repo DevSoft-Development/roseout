@@ -1,6 +1,6 @@
 {
   "operation": "cutover",
   "confirmation": "CUTOVER_RESERVE",
-  "reason": "Cut reserve.theouthaven.com over to the verified dedicated Reserve AWS ALB after successful origin health validation.",
-  "retry": 1
+  "reason": "Final E2E Reserve isolation cutover after dedicated AWS origin validation and consumer private-API cleanup.",
+  "retry": 2
 }
