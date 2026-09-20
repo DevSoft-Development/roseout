@@ -10,6 +10,11 @@ vi.mock("next/headers", () => ({
 
 type MockUser = { id: string; email?: string | null } | null;
 let currentUser: MockUser = null;
+let demoViewer: any = null;
+
+vi.mock("@/lib/demo/internal-demo-access", () => ({
+  getInternalDemoViewer: vi.fn(async () => demoViewer),
+}));
 
 vi.mock("@/lib/supabase-server", () => ({
   createClient: vi.fn(async () => ({
@@ -29,6 +34,7 @@ function resetTables(seed: Record<string, Row[]> = {}) {
   Object.assign(tables, seed);
   authUsers.clear();
   currentUser = null;
+  demoViewer = null;
 }
 
 function compareValue(actual: any, expected: any) {
@@ -317,6 +323,47 @@ describe("Reserve location permissions", () => {
     expect(access.permissions.viewAnalytics).toBe(true);
     expect(access.permissions.manageReservations).toBe(false);
     expect(access.permissions.manageTeam).toBe(false);
+  });
+
+  it("allows a signed Admin demo handoff for the matching hidden demo location", async () => {
+    resetTables({
+      locations: [location({ is_demo: true, is_hidden: true })],
+    });
+    currentUser = null;
+    demoViewer = {
+      user: { id: "admin-1", email: null },
+      role: "admin",
+      demoHandoff: { locationId: "loc-1", type: "restaurant", expiresAt: 9999999999 },
+    };
+
+    const { requireReservePermission } = await getReserveModule();
+    const result = await requireReservePermission("loc-1", "manageReservations");
+
+    expect(result.error).toBeUndefined();
+    expect(result.access.allowed).toBe(true);
+    expect(result.access.source).toBe("demo_handoff");
+    expect(result.access.permissions.manageReservations).toBe(true);
+  });
+
+  it("does not let a signed Admin demo handoff cross into another location", async () => {
+    resetTables({
+      locations: [
+        location({ id: "loc-1", is_demo: true, is_hidden: true }),
+        location({ id: "loc-2", is_demo: true, is_hidden: true }),
+      ],
+    });
+    currentUser = null;
+    demoViewer = {
+      user: { id: "admin-1", email: null },
+      role: "admin",
+      demoHandoff: { locationId: "loc-1", type: "restaurant", expiresAt: 9999999999 },
+    };
+
+    const { requireReservePermission } = await getReserveModule();
+    const result = await requireReservePermission("loc-2", "viewDashboard");
+
+    expect(result.error).toBeInstanceOf(Response);
+    expect(result.error.status).toBe(401);
   });
 
   it("returns 401 from requireReservePermission for unauthenticated users", async () => {
