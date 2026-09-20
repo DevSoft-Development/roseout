@@ -26,7 +26,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   if (sp.query) q = q.or(`name.ilike.%${sp.query}%,address.ilike.%${sp.query}%`);
   const { data=[] } = await q;
   const rows = (data || []).map((row:any)=>({ ...row, publishability: evaluateLocationPublishability(row, { allowApproval:true }) }));
-  const eligible = rows.filter((row:any) => row.publishability?.publishable === true).length;
+  const eligible = rows.filter((row:any) => row.publishability?.isReadyToApprove === true).length;
 
   return (
     <AdminPageShell>
