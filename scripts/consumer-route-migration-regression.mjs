@@ -15,6 +15,7 @@ const excludedPrefixes = [
   "api/admin/",
   "api/business/",
   "api/reserve/",
+  "api/v1/reserve/",
   "api/locations/",
   "auth/admin/",
 ];
