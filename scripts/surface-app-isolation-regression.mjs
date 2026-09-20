@@ -80,6 +80,13 @@ if (
 }
 
 const adminSecurityContext = read("apps/admin/app/api/security-context/route.ts");
+const surfacePostcssConfigs = {
+  admin: read("apps/admin/postcss.config.mjs"),
+  business: read("apps/business/postcss.config.mjs"),
+  reserve: read("apps/reserve/postcss.config.mjs"),
+  consumer: read("apps/consumer/postcss.config.mjs"),
+};
+
 for (const [surface, config] of Object.entries(surfacePostcssConfigs)) {
   if (!config.includes("@tailwindcss/postcss")) {
     throw new Error(`${surface} isolated surface must keep a local Tailwind PostCSS config so utility classes compile independently.`);
@@ -345,13 +352,6 @@ const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts
 const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
-const surfacePostcssConfigs = {
-  admin: read("apps/admin/postcss.config.mjs"),
-  business: read("apps/business/postcss.config.mjs"),
-  reserve: read("apps/reserve/postcss.config.mjs"),
-  consumer: read("apps/consumer/postcss.config.mjs"),
-};
-
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
 const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
 const adminWorkerOperationsPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
