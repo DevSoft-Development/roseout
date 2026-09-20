@@ -5962,3 +5962,21 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseCuratedSearchAnchorsPage = read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx");
+const enterpriseSearchAnchorVerificationPage = read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx");
+const enterpriseKnowledgeBasePage = read("apps/admin/app/admin/dashboard/knowledge-base/page.tsx");
+const enterpriseNonSearchableLocationsPage = read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx");
+for (const [label, source] of [
+  ["Search Anchors Curated Review", enterpriseCuratedSearchAnchorsPage],
+  ["Search Anchors Verification", enterpriseSearchAnchorVerificationPage],
+  ["Knowledge Base", enterpriseKnowledgeBasePage],
+  ["Non-Searchable Locations", enterpriseNonSearchableLocationsPage],
+]) {
+  for (const shellMarker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(shellMarker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${shellMarker}`);
+    }
+  }
+}
+
