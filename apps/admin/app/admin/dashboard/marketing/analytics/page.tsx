@@ -1,7 +1,18 @@
 import Link from "next/link";
+import { Activity, ArrowUpRight, MousePointerClick, UsersRound } from "lucide-react";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminEmptyState,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -78,16 +89,99 @@ export default async function MarketingAnalyticsPage() {
   const completedOutings = attribution.filter((row) => row.event_type === "completed_outing").length;
 
   return (
-    <main className="space-y-6 p-4 sm:p-6">
-      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Marketing</p><h1 className="text-3xl font-semibold">Analytics</h1><p className="mt-1 text-sm text-neutral-600">Follower growth, content performance, social-to-site traffic, registrations, completed outings, and what to repeat.</p></div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-        {[ [followers, "Followers"], [followers7 >= 0 ? `+${followers7}` : followers7, "7d follower growth"], [totals.views, "Views"], [totals.reach, "Reach"], [totals.shares, "Shares"], [totals.saves, "Saves"], [siteVisits, "Social → site"], [signups, "Signups"] ].map(([value, label]) => <div key={String(label)} className="rounded-xl border bg-white p-4"><div className="text-xl font-semibold">{typeof value === "number" ? value.toLocaleString() : value}</div><div className="mt-1 text-xs font-semibold uppercase text-neutral-500">{label}</div></div>)}
-      </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <section className="rounded-2xl border bg-white p-5 lg:col-span-2"><div className="flex items-center justify-between"><h2 className="font-semibold">Top content</h2><span className="text-xs text-neutral-500">Content Score 0–100</span></div><div className="mt-4 divide-y">{ranked.length ? ranked.slice(0, 15).map((item) => <Link key={item.post.id} href={item.content?.id ? `/admin/dashboard/marketing/content/${item.content.id}` : "/admin/dashboard/marketing/content"} className="grid gap-2 py-3 hover:bg-neutral-50 sm:grid-cols-[1fr_auto_auto]"><div><div className="font-medium">{item.content?.title || `${item.post.platform} post`}</div><div className="text-xs capitalize text-neutral-500">{item.post.platform} · {Number(item.metric.views || 0).toLocaleString()} views · {Number(item.metric.shares || 0)} shares · {Number(item.metric.saves || 0)} saves</div></div><div className="text-xs text-neutral-500">{item.funnel.signups} signups · {item.funnel.completed} outings</div><div className="text-lg font-semibold">{item.score}</div></Link>) : <div className="py-8 text-center text-sm text-neutral-500">Post metrics will populate after connected social accounts publish and sync.</div>}</div></section>
-        <section className="rounded-2xl border bg-white p-5"><h2 className="font-semibold">Conversion pulse</h2><dl className="mt-4 space-y-4"><div><dt className="text-sm text-neutral-500">Social / campaign visits</dt><dd className="text-2xl font-semibold">{siteVisits.toLocaleString()}</dd></div><div><dt className="text-sm text-neutral-500">Registrations</dt><dd className="text-2xl font-semibold">{signups.toLocaleString()}</dd></div><div><dt className="text-sm text-neutral-500">Completed outings</dt><dd className="text-2xl font-semibold">{completedOutings.toLocaleString()}</dd></div></dl></section>
-      </div>
-      <section className="rounded-2xl border bg-white p-5"><h2 className="font-semibold">Best themes / neighborhoods / formats</h2><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{themes.length ? themes.map((theme) => <div key={theme.name} className="rounded-xl bg-neutral-50 p-4"><div className="font-semibold">{theme.name}</div><div className="mt-1 text-xs text-neutral-500">Avg score {theme.avg} · {theme.count} posts</div></div>) : <div className="text-sm text-neutral-500">More published content is needed before patterns can be ranked.</div>}</div></section>
-    </main>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Intelligence"
+        title="Marketing Analytics"
+        subtitle="Track audience growth, content performance, social-to-site traffic, registrations, completed outings, and the themes worth repeating."
+        badge={<AdminStatusBadge tone={signups || completedOutings ? "green" : "muted"}>{completedOutings ? `${completedOutings} completed outings` : "Attribution monitoring active"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/marketing"><ArrowUpRight className="h-4 w-4" />Marketing Center</AdminActionButton>}
+      />
+
+      <AdminKpiGrid>
+        <AdminKpiCard label="Followers" value={followers} helper={`${followers7 >= 0 ? "+" : ""}${followers7} in 7 days`} icon={UsersRound} />
+        <AdminKpiCard label="Views" value={totals.views} helper={`${totals.reach.toLocaleString()} reach`} icon={Activity} />
+        <AdminKpiCard label="Social → site" value={siteVisits} helper={`${signups} registrations`} icon={MousePointerClick} />
+        <AdminKpiCard label="Completed outings" value={completedOutings} helper="Attributed conversions" icon={ArrowUpRight} />
+      </AdminKpiGrid>
+
+      <section className="grid gap-5 xl:grid-cols-[1.7fr_.8fr]">
+        <AdminSectionCard>
+          <div className="flex flex-col gap-2 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Content performance</p>
+              <h2 className="mt-1 text-xl font-black text-white">Top content</h2>
+              <p className="mt-1 text-sm text-white/50">Ranked by weighted engagement plus attributed signups and completed outings.</p>
+            </div>
+            <AdminStatusBadge tone="muted">Content Score · 0–100</AdminStatusBadge>
+          </div>
+          {ranked.length ? (
+            <div className="divide-y divide-white/10">
+              {ranked.slice(0, 15).map((item) => (
+                <Link
+                  key={item.post.id}
+                  href={item.content?.id ? `/admin/dashboard/marketing/content/${item.content.id}` : "/admin/dashboard/marketing/content"}
+                  className="grid gap-3 px-5 py-4 transition hover:bg-white/[0.025] sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-black text-white">{item.content?.title || `${item.post.platform} post`}</p>
+                    <p className="mt-1 text-xs capitalize text-white/45">
+                      {item.post.platform} · {Number(item.metric.views || 0).toLocaleString()} views · {Number(item.metric.shares || 0)} shares · {Number(item.metric.saves || 0)} saves
+                    </p>
+                  </div>
+                  <p className="text-xs font-semibold text-white/45">{item.funnel.signups} signups · {item.funnel.completed} outings</p>
+                  <span className="min-w-12 text-right text-2xl font-black text-rose-100">{item.score}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5"><AdminEmptyState title="No synced post metrics yet" body="Performance data will populate after connected social accounts publish and metric syncs complete." /></div>
+          )}
+        </AdminSectionCard>
+
+        <AdminSectionCard>
+          <div className="border-b border-white/10 px-5 py-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Conversion pulse</p>
+            <h2 className="mt-1 text-xl font-black text-white">Marketing funnel</h2>
+          </div>
+          <dl className="divide-y divide-white/10 px-5">
+            {[
+              ["Social / campaign visits", siteVisits],
+              ["Registrations", signups],
+              ["Completed outings", completedOutings],
+              ["Shares", totals.shares],
+              ["Saves", totals.saves],
+              ["Clicks", totals.clicks],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex items-center justify-between gap-4 py-4">
+                <dt className="text-sm text-white/45">{label}</dt>
+                <dd className="text-xl font-black text-white">{Number(value).toLocaleString()}</dd>
+              </div>
+            ))}
+          </dl>
+        </AdminSectionCard>
+      </section>
+
+      <AdminSectionCard>
+        <div className="border-b border-white/10 px-5 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Pattern intelligence</p>
+          <h2 className="mt-1 text-xl font-black text-white">Best themes, neighborhoods, and formats</h2>
+          <p className="mt-1 text-sm text-white/50">Average content score across repeated creative themes.</p>
+        </div>
+        {themes.length ? (
+          <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
+            {themes.map((theme) => (
+              <article key={theme.name} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="font-black text-white">{theme.name}</p>
+                <p className="mt-2 text-2xl font-black text-rose-100">{theme.avg}</p>
+                <p className="mt-1 text-xs text-white/45">Average score · {theme.count} posts</p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="p-5"><AdminEmptyState title="Not enough published content yet" body="More published and synced marketing content is needed before repeatable patterns can be ranked." /></div>
+        )}
+      </AdminSectionCard>
+    </AdminPageShell>
   );
 }
