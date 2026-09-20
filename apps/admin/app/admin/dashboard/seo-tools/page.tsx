@@ -7,6 +7,13 @@ import {
   formatRelativeTime,
 } from "@/lib/admin/formatters";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = { title: "SEO Tools – Admin" };
 
@@ -64,43 +71,34 @@ export default async function Page() {
     issues.filter((issue) => issue.severity === severity);
 
   return (
-    <main className="min-h-screen bg-[#090706] p-6 text-white">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
-          <h1 className="text-3xl font-black">SEO Tools</h1>
-          <p className="text-sm text-white/70">
-            Last audit: {formatDate(latest?.created_at)} ({formatRelativeTime(latest?.created_at)})
-          </p>
-          <div className="mt-4 flex gap-3">
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Growth · Search Visibility"
+        title="SEO Tools"
+        subtitle={`Last audit: ${formatDate(latest?.created_at)} (${formatRelativeTime(latest?.created_at)})`}
+        badge={<AdminStatusBadge tone={group("critical").length ? "red" : group("warning").length ? "amber" : "green"}>{group("critical").length ? `${group("critical").length} critical issues` : group("warning").length ? `${group("warning").length} warnings` : "SEO audit healthy"}</AdminStatusBadge>}
+        actions={
+          <>
             <form action="/api/admin/seo/setup" method="post">
-              <button className="rounded-full border border-white/20 px-4 py-2">
-                Run SEO setup
-              </button>
+              <button className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 hover:border-rose-200/30 hover:text-white">Run SEO setup</button>
             </form>
             <form action="/api/admin/seo/audit" method="post">
-              <button className="rounded-full bg-white px-4 py-2 font-black text-black">
-                Run SEO audit
-              </button>
+              <button className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500">Run SEO audit</button>
             </form>
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            ["Critical", group("critical").length],
-            ["Warning", group("warning").length],
-            ["Improvement", group("improvement").length],
-            ["Passed", group("passed").length],
-          ].map(([label, value]) => (
-            <div
-              key={String(label)}
-              className="rounded-2xl border border-white/10 bg-white/5 p-4"
-            >
-              <p>{label}</p>
-              <p className="text-2xl font-black">{formatNumber(Number(value))}</p>
-            </div>
-          ))}
-        </div>
+      <AdminKpiGrid>
+        {[
+          ["Critical", group("critical").length],
+          ["Warning", group("warning").length],
+          ["Improvement", group("improvement").length],
+          ["Passed", group("passed").length],
+        ].map(([label, value]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={formatNumber(Number(value))} helper="Latest SEO audit" />
+        ))}
+      </AdminKpiGrid>
 
         <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
           {runsResult.error || issuesResult.error ? (
@@ -131,7 +129,6 @@ export default async function Page() {
             </div>
           )}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
