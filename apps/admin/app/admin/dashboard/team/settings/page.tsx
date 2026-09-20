@@ -1,4 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -6,16 +12,18 @@ export default async function TeamSettingsPage() {
   await requireAdminRole(["superadmin", "admin", "manager"]);
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-4xl rounded-3xl border border-white/10 bg-[#111] p-6">
-        <h1 className="text-3xl font-black">Team Tools Settings</h1>
-        <p className="mt-3 text-sm font-bold leading-6 text-white/55">
-          Workspace behavior is controlled by team member profile permissions,
-          allowed work types, do-not-contact fields, automation configuration,
-          and manager review routes. Use Team Members to update per-user
-          settings.
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Configuration"
+        title="Team Tools Settings"
+        subtitle="Workspace behavior is controlled by team profile permissions, allowed work types, do-not-contact fields, automation configuration, and manager review routes."
+        badge={<AdminStatusBadge tone="green">Team policy controls</AdminStatusBadge>}
+      />
+      <AdminSectionCard className="p-6">
+        <p className="max-w-4xl text-sm font-bold leading-6 text-white/55">
+          Use Team Members to update per-user settings and access. Manager review routes and automation behavior remain controlled by the existing Team Tools workflows.
         </p>
-      </div>
-    </main>
+      </AdminSectionCard>
+    </AdminPageShell>
   );
 }
