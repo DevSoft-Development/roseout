@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_ROLES } from "@theouthaven/auth/admin-roles";
+import { signAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
 import { getDemoCenterOverview, tableExists } from "@/lib/demo/demo-center";
 import { getLocationName } from "@/lib/locationName";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
@@ -48,7 +49,12 @@ function demoType(loc: any) {
   return value === "activity" || value === "activities" ? "activity" : "restaurant";
 }
 
-function withDemoContext(path: string, locationId?: string, type = "restaurant") {
+function withDemoContext(
+  path: string,
+  locationId?: string,
+  type = "restaurant",
+  handoffToken?: string,
+) {
   if (!locationId) return undefined;
   const params = new URLSearchParams({
     adminLocationId: locationId,
@@ -57,17 +63,27 @@ function withDemoContext(path: string, locationId?: string, type = "restaurant")
     demo: "1",
     fromDemoCenter: "1",
   });
+  const destination = `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
   const businessOrigin = String(
     process.env.NEXT_PUBLIC_BUSINESS_SITE_URL || "https://business.theouthaven.com",
   ).replace(/\/$/, "");
+  const reserveOrigin = String(
+    process.env.NEXT_PUBLIC_RESERVE_SITE_URL || "https://reserve.theouthaven.com",
+  ).replace(/\/$/, "");
+
   const usesBusinessSurface =
     path.startsWith("/locations/dashboard") ||
     path.startsWith("/locations/restaurants/") ||
     path.startsWith("/locations/activities/") ||
-    path.startsWith("/business/") ||
-    path.startsWith("/reserve/");
-  const origin = usesBusinessSurface ? businessOrigin : "";
-  return `${origin}${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+    path.startsWith("/business/");
+
+  if (usesBusinessSurface && handoffToken) {
+    return `${businessOrigin}/api/internal/admin-demo-handoff?token=${encodeURIComponent(handoffToken)}&next=${encodeURIComponent(destination)}`;
+  }
+  if (path.startsWith("/reserve/") && handoffToken) {
+    return `${reserveOrigin}/api/internal/admin-demo-handoff?token=${encodeURIComponent(handoffToken)}&next=${encodeURIComponent(destination)}`;
+  }
+  return destination;
 }
 
 function Submit({
@@ -159,14 +175,22 @@ function ToolLaunchCard({ tool }: { tool: ToolCard }) {
 }
 
 export default async function DemoCenterPage() {
-  await requireAdminRole(ADMIN_ROLES);
+  const admin = await requireAdminRole(ADMIN_ROLES);
 
   const overview = await getDemoCenterOverview();
   const loc = overview.location;
   const locationId = loc?.id as string | undefined;
   const locationName = getLocationName(loc, "Demo business");
   const locationType = demoType(loc);
-  const demoHref = (path: string) => withDemoContext(path, locationId, locationType);
+  const handoffToken = locationId
+    ? signAdminDemoHandoff({
+        userId: admin.user_id,
+        role: admin.role,
+        locationId,
+        type: locationType,
+      })
+    : undefined;
+  const demoHref = (path: string) => withDemoContext(path, locationId, locationType, handoffToken);
   const publicProfile = locationId
     ? demoHref("/admin/dashboard/settings/demo-center/public-profile")
     : overview.links.find((l) => l.label === "Public Profile")?.href;
