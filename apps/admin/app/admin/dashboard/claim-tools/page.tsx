@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import ClaimToolsClient from "./ClaimToolsClient";
 import {
