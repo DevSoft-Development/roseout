@@ -6,6 +6,12 @@ import { getPlannerFunnelSnapshot } from "@/lib/admin/planner-funnel";
 import type { MarketingReportType } from "@/lib/admin/marketing-report-engine";
 import MarketingReportBuilder from "./MarketingReportBuilder";
 import MarketingReportNavigator from "./MarketingReportNavigator";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 import "./marketing-intelligence.css";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +45,16 @@ export default async function MarketingReportsPage({ searchParams }: { searchPar
   const plannerStarts = planner.funnel[0]?.value || 0;
 
   return (
-    <main className="marketing-intelligence-theme admin-page space-y-6 p-4 sm:p-6">
-      <MarketingReportNavigator autoRun={autoRun} />
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Intelligence"
+        title="Marketing Reports"
+        subtitle="Build, save, schedule, and review acquisition, campaign, content, email, geography, search, QR postcard, and planner-funnel reporting."
+        badge={<AdminStatusBadge tone="green">Report engine online</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/marketing">Marketing Center</AdminActionButton>}
+      />
+      <div className="marketing-intelligence-theme space-y-6">
+        <MarketingReportNavigator autoRun={autoRun} />
 
       <section className="overflow-hidden rounded-[1.7rem] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025))] p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -110,6 +124,7 @@ export default async function MarketingReportsPage({ searchParams }: { searchPar
         schedules={(scheduleResult.data || []) as any}
         adminEmail={admin.email || "admin@theouthaven.com"}
       />
-    </main>
+      </div>
+    </AdminPageShell>
   );
 }
