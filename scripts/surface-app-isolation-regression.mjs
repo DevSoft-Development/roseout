@@ -5849,3 +5849,18 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseLaunchCatalogHealthPage = read("apps/admin/app/admin/dashboard/launch-catalog/page.tsx");
+const enterpriseGooglePlacesBudgetPage = read("apps/admin/app/admin/dashboard/settings/google-places/page.tsx");
+const enterpriseCriticalIncidentsPage = read("apps/admin/app/admin/dashboard/infrastructure/incidents/page.tsx");
+for (const [label, source] of [
+  ["Launch Catalog Health", enterpriseLaunchCatalogHealthPage],
+  ["Google Places Budget", enterpriseGooglePlacesBudgetPage],
+  ["Critical Incidents", enterpriseCriticalIncidentsPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
