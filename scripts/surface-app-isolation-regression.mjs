@@ -296,6 +296,31 @@ const platformErrorsPage = read("apps/admin/app/admin/dashboard/platform-errors/
 if (!platformErrorsPage.includes('@theouthaven/auth/admin-session') || !platformErrorsPage.includes('@/lib/platform-errors')) {
   throw new Error("Platform Errors page must use isolated Admin auth and data loader.");
 }
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminDataTableShell"]) {
+  if (!platformErrorsPage.includes(marker)) {
+    throw new Error(`Platform Errors enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (platformErrorsPage.includes('import "./platform-errors.css"')) {
+  throw new Error("Platform Errors must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseLogsPage = read("apps/admin/app/admin/dashboard/logs/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminDataTableShell"]) {
+  if (!enterpriseLogsPage.includes(marker)) {
+    throw new Error(`Platform Logs enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseLogsPage.includes('import "./logs.css"')) {
+  throw new Error("Platform Logs must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseSearchHealthPage = read("apps/admin/app/admin/dashboard/search-health/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminStatusBadge", "Operations · Search"]) {
+  if (!enterpriseSearchHealthPage.includes(marker)) {
+    throw new Error(`Search Health enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
 if (platformErrorsPage.includes("@/lib/supabase") || platformErrorsPage.includes("@/lib/admin-auth")) {
   throw new Error("Platform Errors page must not import root monolith auth/database modules.");
 }
