@@ -48,4 +48,4 @@ requireText(workflow, "--build-arg \"WEB_SURFACE=reserve\"");
 requireText(workflow, "reserve.theouthaven.com");
 requireText(workflow, "DNS/public cutover is intentionally separate");
 
-console.log("Dedicated Reserve AWS foundation contract passed.");
+console.log("Dedicated Reserve AWS foundation and isolation contract passed.");
