@@ -105,15 +105,15 @@ function TableDrop({ resource, reservations, dragging, onSelect }: { resource: a
       type="button"
       onClick={() => state.reservation && onSelect(state.reservation)}
       title={`${name} · ${capacity} seats · ${state.status}`}
-      className={`relative flex h-[82px] w-[96px] shrink-0 items-center justify-center rounded-xl border transition-all ${statusClass(state.status)} ${
+      className={`relative flex h-[104px] w-full min-w-[112px] items-center justify-center rounded-2xl border transition-all duration-200 ${statusClass(state.status)} ${
         dragging ? canDrop ? "ring-1 ring-emerald-400/45" : "opacity-35" : ""
       } ${isOver && canDrop ? "scale-105 ring-2 ring-emerald-300 shadow-[0_0_28px_rgba(52,211,153,0.22)]" : ""}`}
     >
       {Array.from({ length: Math.min(capacity, 16) }).map((_, index) => (
         <span key={index} aria-hidden="true" className="absolute h-2 w-2 rounded-[2px] border border-current/50 bg-current/30" style={chairStyle(index, Math.min(capacity, 16))} />
       ))}
-      <span className="absolute inset-x-[14px] inset-y-[13px] flex flex-col items-center justify-center rounded-lg border border-current/35 bg-[#050607]/80 px-1">
-        <strong className="max-w-full truncate text-[11px] font-black text-white">{name}</strong>
+      <span className="absolute inset-x-[15px] inset-y-[15px] flex flex-col items-center justify-center rounded-xl border border-current/35 bg-[#050607]/82 px-2 shadow-inner">
+        <strong className="max-w-full truncate text-xs font-black text-white">{name}</strong>
         <span className="mt-0.5 max-w-full truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">
           {state.reservation ? getReservationGuestName(state.reservation).split(" ")[0] : state.status === "Open" ? "Open" : state.status}
         </span>
@@ -190,9 +190,9 @@ function DraggableGuest({ item, kind = "reservation", selected, onClick }: { ite
 
 function ServiceMetric({ label, value, warning }: { label: string; value: string | number; warning?: boolean }) {
   return (
-    <div className={`rounded-xl border px-3 py-2 ${warning ? "border-[#e1062a]/35 bg-[#e1062a]/10" : "border-white/10 bg-white/[0.035]"}`}>
-      <p className="text-[9px] font-black uppercase tracking-[0.12em] text-white/40">{label}</p>
-      <p className={`mt-0.5 text-sm font-black ${warning ? "text-[#ff8aa0]" : "text-white"}`}>{value}</p>
+    <div className={`min-w-[108px] rounded-2xl border px-4 py-3 shadow-[0_14px_35px_rgba(0,0,0,0.18)] ${warning ? "border-[#e1062a]/35 bg-[linear-gradient(145deg,rgba(225,6,42,0.16),rgba(225,6,42,0.05))]" : "border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))]"}`}>
+      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/38">{label}</p>
+      <p className={`mt-1 text-lg font-black tracking-tight ${warning ? "text-[#ff8aa0]" : "text-white"}`}>{value}</p>
     </div>
   );
 }
@@ -319,8 +319,17 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
   const seated = activeReservations.filter((r: any) => ["seated", "occupied"].includes(String(r.status || "").toLowerCase()));
   const seatedCovers = seated.reduce((sum: number, r: any) => sum + Math.max(1, Number(r.party_size || 1)), 0);
   const arrivingCovers = arriving.reduce((sum: number, r: any) => sum + Math.max(1, Number(r.party_size || 1)), 0);
-  const tableResources = resources.filter((r: any) => !isBarResource(r));
-  const barResources = resources.filter((r: any) => isBarResource(r));
+  const uniqueResources = Array.from(
+    new Map(
+      resources.map((resource: any) => {
+        const stableId = clean(resource?.id || resource?.layout_item_id);
+        const fallbackKey = `${normalizedType(resource)}:${resourceName(resource).toLowerCase()}:${resourceCapacity(resource)}`;
+        return [stableId || fallbackKey, resource];
+      }),
+    ).values(),
+  ) as any[];
+  const tableResources = uniqueResources.filter((r: any) => !isBarResource(r));
+  const barResources = uniqueResources.filter((r: any) => isBarResource(r));
 
   async function handleDragEnd(event: DragEndEvent) {
     const activeData = event.active.data.current as any;
@@ -374,31 +383,31 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
   if (!locationId) return <div className="p-8 text-sm font-bold text-white/60">Choose a location to open Host View.</div>;
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragCancel={() => { setDragging(null); setDragKind(null); }} onDragEnd={(event) => void handleDragEnd(event)}>
-      <main className="min-h-[calc(100vh-48px)] bg-[#050607] text-white">
-        <div className="sticky top-12 z-50 border-b border-white/10 bg-[#07090d]/95 px-3 py-2 backdrop-blur-xl sm:px-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      <main className="min-h-[calc(100vh-48px)] bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.09),transparent_31%),linear-gradient(180deg,#080a0e_0%,#050607_48%,#040506_100%)] text-white">
+        <div className="sticky top-12 z-50 border-b border-white/[0.07] bg-[#07090d]/92 px-4 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:px-6">
+          <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={() => setRailOpen((value) => !value)} className="rounded-full border border-white/10 p-2 text-white/65 hover:text-white">{railOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</button>
-              <div><p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Live service</p><p className="truncate text-sm font-black">{date} · Host floor</p></div>
+              <button type="button" onClick={() => setRailOpen((value) => !value)} className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-white/65 transition hover:border-white/20 hover:bg-white/[0.07] hover:text-white">{railOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</button>
+              <div><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.75)]" /><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b86]">Live service command center</p></div><p className="mt-1 truncate text-lg font-black tracking-tight">{date} <span className="text-white/30">·</span> Host floor</p></div>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
               <ServiceMetric label="Seated" value={`${seated.length} · ${seatedCovers}`} />
               <ServiceMetric label="Arriving" value={`${arriving.length} · ${arrivingCovers}`} />
               <ServiceMetric label="Waiting" value={waitlist.length} />
               <ServiceMetric label="Attention" value={snapshot?.attention?.length || 0} warning={Boolean(snapshot?.attention?.length)} />
-              <button type="button" onClick={() => setFloorFocus((value) => !value)} className={`rounded-xl border p-2.5 ${floorFocus ? "border-[#e1062a]/50 bg-[#e1062a]/12 text-[#ff8aa0]" : "border-white/10 bg-white/[0.04] text-white/65"}`} title="Floor focus">{floorFocus ? <Minimize2 size={15} /> : <Expand size={15} />}</button>
-              <button type="button" disabled={loading} onClick={() => void load(false)} className="rounded-xl border border-white/10 bg-white/[0.04] p-2.5 text-white/65 disabled:opacity-40" title="Refresh"><RefreshCw size={15} className={loading ? "animate-spin" : ""} /></button>
+              <button type="button" onClick={() => setFloorFocus((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border transition ${floorFocus ? "border-[#e1062a]/50 bg-[#e1062a]/12 text-[#ff8aa0]" : "border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.07] hover:text-white"}`} title="Floor focus">{floorFocus ? <Minimize2 size={16} /> : <Expand size={16} />}</button>
+              <button type="button" disabled={loading} onClick={() => void load(false)} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-40" title="Refresh"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
               <StaffSwitcher locationId={locationId} staff={staffData.staff || []} session={staffData.session} onChanged={() => void loadStaff()} />
             </div>
           </div>
           {error ? <div className={`mt-2 rounded-xl border px-3 py-2 text-xs font-bold ${offline ? "border-amber-300/30 bg-amber-400/10 text-amber-100" : "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff9bad]"}`}>{error}</div> : null}
         </div>
 
-        <div className={`grid min-h-[calc(100vh-116px)] ${floorFocus || !railOpen ? "grid-cols-1" : "lg:grid-cols-[300px_minmax(0,1fr)]"}`}>
+        <div className={`mx-auto grid min-h-[calc(100vh-124px)] max-w-[1800px] ${floorFocus || !railOpen ? "grid-cols-1" : "lg:grid-cols-[340px_minmax(0,1fr)]"}`}>
           {!floorFocus && railOpen ? (
-            <aside className="border-r border-white/10 bg-[#080a0d] p-3">
-              <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-black/25 p-1">
-                {(["arriving", "waitlist", "seated"] as const).map((mode) => <button key={mode} onClick={() => setRailMode(mode)} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-[0.06em] ${railMode === mode ? "bg-[#e1062a] text-white" : "text-white/45 hover:text-white"}`}>{mode}</button>)}
+            <aside className="border-r border-white/[0.07] bg-[linear-gradient(180deg,rgba(12,14,18,0.96),rgba(8,10,13,0.96))] p-4">
+              <div className="grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-black/25 p-1.5 shadow-inner">
+                {(["arriving", "waitlist", "seated"] as const).map((mode) => <button key={mode} onClick={() => setRailMode(mode)} className={`rounded-xl px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.08em] transition ${railMode === mode ? "bg-[#e1062a] text-white shadow-[0_8px_20px_rgba(225,6,42,0.24)]" : "text-white/45 hover:bg-white/[0.04] hover:text-white"}`}>{mode}</button>)}
               </div>
               <div className="mt-3 max-h-[calc(100vh-185px)] space-y-2 overflow-y-auto pr-1">
                 {railMode === "arriving" ? arriving.map((item: any) => <DraggableGuest key={item.id} item={item} selected={selected?.id === item.id} onClick={() => setSelected(item)} />) : null}
@@ -409,18 +418,18 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
             </aside>
           ) : null}
 
-          <section className="min-w-0 p-3 sm:p-4">
+          <section className="min-w-0 p-4 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Floor plan</p><h1 className="mt-1 text-xl font-black">Drag a guest to a table or bar seat</h1></div>
+              <div><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b86]">Floor plan</p><h1 className="mt-1 text-2xl font-black tracking-tight">Seat the room with confidence</h1><p className="mt-1 text-xs font-semibold text-white/40">Drag a guest to an available table or bar seat. Live availability updates automatically.</p></div>
               <div className="flex items-center gap-2 text-[10px] font-bold text-white/40">{offline ? <><AlertTriangle size={13} /> Offline</> : <><span className="h-2 w-2 rounded-full bg-emerald-400" /> Live</>} {lastSync ? `· ${new Date(lastSync).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}</div>
             </div>
 
             {snapshot?.pacing?.warnings?.length ? <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{snapshot.pacing.warnings.map((warning: any, index: number) => <div key={`${warning.startMinute}-${warning.windowMinutes}-${index}`} className="shrink-0 rounded-xl border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-2 text-[10px] font-black text-[#ff9bad]"><AlertTriangle size={12} className="mr-1 inline" /> {warning.covers} covers / {warning.windowMinutes}m · limit {warning.limit}</div>)}</div> : null}
 
-            {barResources.length ? <div className="mt-4 space-y-3">{barResources.map((bar: any) => <div key={bar.id || resourceName(bar)} className="overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025] p-3"><div className="min-w-max"><div className="rounded-t-[24px] border border-white/15 bg-white/[0.07] px-8 py-3 text-center"><p className="text-xs font-black">{resourceName(bar)}</p><p className="mt-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white/35">Bar · {resourceCapacity(bar)} seats</p></div><div className="flex gap-2 border-x border-b border-white/10 px-3 py-2">{Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}</div></div></div>)}</div> : null}
+            {barResources.length ? <div className="mt-4 space-y-3">{barResources.map((bar: any) => <div key={bar.id || resourceName(bar)} className="overflow-x-auto rounded-[1.6rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.05),rgba(255,255,255,0.018))] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.18)]"><div className="min-w-max"><div className="rounded-t-[24px] border border-white/15 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(255,255,255,0.045))] px-10 py-4 text-center shadow-inner"><p className="text-xs font-black">{resourceName(bar)}</p><p className="mt-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white/35">Bar · {resourceCapacity(bar)} seats</p></div><div className="flex gap-2 border-x border-b border-white/10 px-3 py-2">{Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}</div></div></div>)}</div> : null}
 
-            <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-[#090b0e] p-3 sm:p-4">
-              <div className="flex flex-wrap gap-2.5">
+            <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.045),rgba(255,255,255,0.015))] p-4 shadow-[0_22px_60px_rgba(0,0,0,0.2)] sm:p-5">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
                 {tableResources.map((resource: any) => <TableDrop key={resource.id || resource.layout_item_id || resourceName(resource)} resource={resource} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
                 {!tableResources.length ? <div className="grid min-h-48 w-full place-items-center rounded-xl border border-dashed border-white/10 text-sm font-bold text-white/35">No dining tables configured.</div> : null}
               </div>
@@ -430,7 +439,7 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
           </section>
         </div>
 
-        {selected ? <div className="fixed inset-y-0 right-0 z-[80] w-full max-w-md overflow-y-auto border-l border-white/10 bg-[#090b0f]/98 p-4 shadow-2xl backdrop-blur-xl sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Reservation</p><h2 className="mt-1 text-2xl font-black">{getReservationGuestName(selected)}</h2><p className="mt-1 text-xs font-bold text-white/45">{formatReservationTime(selected.reservation_time)} · Party {selected.party_size || 1}{selected.bookable_item_name ? ` · ${selected.bookable_item_name}` : ""}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-full border border-white/10 p-2 text-white/55"><X size={16} /></button></div>
+        {selected ? <div className="fixed inset-y-0 right-0 z-[80] w-full max-w-md overflow-y-auto border-l border-white/10 bg-[linear-gradient(180deg,rgba(12,14,18,0.99),rgba(7,9,12,0.99))] p-5 shadow-[-28px_0_70px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Reservation</p><h2 className="mt-1 text-2xl font-black">{getReservationGuestName(selected)}</h2><p className="mt-1 text-xs font-bold text-white/45">{formatReservationTime(selected.reservation_time)} · Party {selected.party_size || 1}{selected.bookable_item_name ? ` · ${selected.bookable_item_name}` : ""}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-full border border-white/10 p-2 text-white/55"><X size={16} /></button></div>
           <div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="text-[9px] font-black uppercase tracking-[0.1em] text-white/35">Status</p><p className="mt-1 text-sm font-black capitalize">{String(selected.status || "confirmed").replaceAll("_", " ")}</p></div><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="text-[9px] font-black uppercase tracking-[0.1em] text-white/35">Server</p><p className="mt-1 text-sm font-black">{snapshot?.staff?.find((person: any) => person.id === selected.server_staff_profile_id)?.display_name || "Unassigned"}</p></div></div>
           <div className="mt-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Quick message</p><div className="mt-2 flex flex-wrap gap-2">{["Your table is ready. Please check in with the host.", "We’re running about 10 minutes behind. Thank you for your patience.", "Are you still planning to join us?", "Please check in with the host when you arrive."].map((template) => <button key={template} disabled={offline || messageBusy} onClick={() => void sendMessage(template)} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2 text-[10px] font-black text-white/70 hover:border-[#e1062a]/40">{template.split(".")[0]}</button>)}</div><textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message guest…" className="mt-3 min-h-24 w-full rounded-xl border border-white/15 bg-black/30 p-3 text-sm font-semibold outline-none placeholder:text-white/25 focus:border-[#e1062a]/60" /><button disabled={offline || messageBusy || !message.trim()} onClick={() => void sendMessage()} className="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"><MessageSquare size={14} /> {messageBusy ? "Sending…" : "Send message"}</button></div>
           <ReserveConversationThread reservation={selected} refreshKey={threadRefresh} />
