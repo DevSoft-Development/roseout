@@ -2,6 +2,11 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { addFraudCaseNote, applyFraudAction, triageFraudReport, updateFraudCase } from "./actions";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +42,13 @@ export default async function FraudPage({searchParams}:{searchParams:Promise<Rec
   const canManage=["superadmin","admin","manager"].includes(admin.role);
   const canEnforce=["superadmin","admin"].includes(admin.role);
 
-  return <main className="min-h-screen bg-[#08050b] p-6 text-white"><div className="mx-auto max-w-[1500px] space-y-6">
-    <header><p className="text-xs font-black uppercase tracking-[.24em] text-rose-300">Trust & Safety</p><h1 className="mt-2 text-4xl font-black">Fraud</h1><p className="mt-2 text-white/55">Review fraud cases, human reports, signals, and enforcement history. Enforcement remains restricted to authorized Admin roles.</p></header>
+  return <AdminPageShell>
+    <AdminPageHeader
+      eyebrow="Trust & Safety"
+      title="Fraud"
+      subtitle="Review fraud cases, human reports, signals, and enforcement history. Enforcement remains restricted to authorized Admin roles."
+      badge={<AdminStatusBadge tone={(reports || []).length ? "amber" : "green"}>{(reports || []).length ? `${(reports || []).length} reports awaiting triage` : "Fraud queue clear"}</AdminStatusBadge>}
+    />
     <form className="grid gap-3 rounded-2xl border border-white/10 bg-white/[.04] p-4 md:grid-cols-[1fr_220px_auto]">
       <input name="q" defaultValue={q} placeholder="Search case or subject ID" className="rounded-xl bg-black/30 p-3"/>
       <select name="subject" defaultValue={subject} className="rounded-xl bg-black/30 p-3"><option value="">All subjects</option>{["user","location","claim","organizer","event","experience","reservation","order","payment","payout","review","other"].map(x=><option key={x}>{x}</option>)}</select>
@@ -62,5 +72,5 @@ export default async function FraudPage({searchParams}:{searchParams:Promise<Rec
       </aside>
     </div>
     <section className="rounded-3xl border border-white/10 bg-white/[.03] p-5"><h2 className="text-xl font-black">New human reports</h2><div className="mt-4 grid gap-3">{(reports||[]).map((r:any)=><form key={r.id} action={triageFraudReport} className="rounded-2xl border border-white/10 bg-black/20 p-4"><input type="hidden" name="reportId" value={r.id}/><p className="text-xs font-black uppercase text-rose-200">{pretty(r.subject_type)} · {r.subject_id}</p><p className="mt-1 font-black">{r.reason}</p>{r.details?<p className="mt-1 text-sm text-white/55">{r.details}</p>:null}{canManage?<div className="mt-3 flex gap-2"><button name="reportAction" value="link" className="rounded-lg bg-white px-3 py-2 text-xs font-black text-black">Create/link case</button><button name="reportAction" value="dismiss" className="rounded-lg border border-white/15 px-3 py-2 text-xs font-black">Dismiss</button></div>:null}</form>)}{!(reports||[]).length?<p className="text-sm text-white/45">No new reports.</p>:null}</div></section>
-  </div></main>;
+  </AdminPageShell>;
 }

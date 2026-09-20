@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -159,15 +164,13 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
   const liveExperiences = activeExperiences.filter((experience) => experience.searchable).length;
 
   return (
-    <main className="min-h-screen bg-[#050607] p-6 text-white">
-      <div className="mx-auto max-w-[1600px]">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[.18em] text-[#ff5570]">Marketplace</p>
-          <h1 className="mt-2 text-3xl font-black">Events & Experiences</h1>
-          <p className="mt-1 max-w-3xl text-sm font-semibold text-white/45">
-            See active event and experience activity across TheOutHaven, then open a location workspace or search for any location.
-          </p>
-        </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketplace · Operations"
+        title="Events & Experiences"
+        subtitle="See active event and experience activity across TheOutHaven, then open a location workspace or search for any location."
+        badge={<AdminStatusBadge tone={activeEvents.length || activeExperiences.length ? "green" : "muted"}>{activeEvents.length + activeExperiences.length} active offerings</AdminStatusBadge>}
+      />
 
         <section className="mt-6">
           <div className="mb-3">
@@ -247,7 +250,6 @@ export default async function AdminEventsExperiencesPage({ searchParams }: { sea
             {q ? "No locations match this search." : "No active locations or organizations have events or experiences right now."}
           </div>
         ) : null}
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
