@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 
@@ -6,6 +5,14 @@ import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import MailingBatchActions from "./MailingBatchActions";
 import PostcardTemplatePanel from "./PostcardTemplatePanel";
 import StampsPostagePanel from "./StampsPostagePanel";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -79,41 +86,31 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
   const canManage = ["superadmin", "admin", "manager"].includes(admin.role);
 
   return (
-    <main className="mailing-batch-detail min-h-screen bg-[#080706] px-4 py-6 text-white md:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link href="/admin/dashboard/operations/mailing-batches" className="text-sm font-black text-white/50 hover:text-white">← Mailing batches</Link>
-          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-black uppercase tracking-[0.14em] text-white/60">{String(batch.status).replaceAll("_", " ")}</span>
-        </div>
-
-        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.16),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-300">Claim postcard batch</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{batch.name}</h1>
-              <p className="mt-3 text-sm text-white/50">Created {fmt(batch.created_at)} · Planned mail date {batch.planned_mail_date || "not set"}</p>
-              {batch.notes ? <p className="mt-3 max-w-3xl text-sm leading-6 text-white/60">{batch.notes}</p> : null}
-            </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Operations · Claim Postcards"
+        title={batch.name}
+        subtitle={`Created ${fmt(batch.created_at)} · Planned mail date ${batch.planned_mail_date || "not set"}`}
+        badge={<AdminStatusBadge tone={String(batch.status) === "completed" ? "green" : String(batch.status) === "failed" ? "red" : "blue"}>{String(batch.status).replaceAll("_", " ")}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/operations/mailing-batches">Mailing Batches</AdminActionButton>
             {canManage ? <MailingBatchActions batchId={id} status={String(batch.status)} /> : null}
-          </div>
-        </section>
+          </>
+        }
+      />
+      {batch.notes ? <p className="max-w-4xl text-sm leading-6 text-white/60">{batch.notes}</p> : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          {[
-            ["Cards", total, "Locations in batch"],
-            ["Printed", printed, pct(printed, total)],
-            ["Mailed", mailed, pct(mailed, total)],
-            ["QR scans", scans, pct(scans, mailed)],
-            ["Claim starts", claimStarts, pct(claimStarts, mailed)],
-            ["Claimed", claims, pct(claims, mailed)],
-          ].map(([label, value, detail]) => (
-            <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/40">{label}</p>
-              <p className="mt-2 text-2xl font-black">{value}</p>
-              <p className="mt-1 text-xs text-white/40">{detail}</p>
-            </div>
-          ))}
-        </section>
+      <AdminKpiGrid>
+        {[
+          ["Cards", total, "Locations in batch"],
+          ["Printed", printed, pct(printed, total)],
+          ["Mailed", mailed, pct(mailed, total)],
+          ["QR scans", scans, pct(scans, mailed)],
+        ].map(([label, value, detail]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={Number(value)} helper={String(detail)} />
+        ))}
+      </AdminKpiGrid>
 
         {canManage ? <StampsPostagePanel batchId={id} total={total} /> : null}
         {canManage ? <PostcardTemplatePanel batchId={id} /> : null}
@@ -157,7 +154,6 @@ export default async function MailingBatchDetailPage({ params }: { params: Promi
             </table>
           </div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
