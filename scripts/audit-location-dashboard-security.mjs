@@ -57,13 +57,19 @@ for (const route of reservePortalRoutes) {
 }
 
 const checks = {
-  dashboardLayoutRequiresAuthenticatedUser:
-    layout.includes("auth.getUser()") && layout.includes("/login?next=/locations/dashboard"),
+  dashboardLayoutRequiresAuthenticatedUserOrSignedDemo:
+    layout.includes("auth.getUser()") &&
+    layout.includes("verifyAdminDemoHandoff") &&
+    layout.includes("ADMIN_DEMO_HANDOFF_COOKIE") &&
+    layout.includes("/business/login?next=/locations/dashboard"),
   dashboardUsesCentralOwnerAccess:
     dashboard.includes("getLocationOwnerAccess") && dashboard.includes("hasOwnerAccessToLocation"),
   impersonationCookiesRequireVerifiedAdmin:
     template.includes("getLocationOwnerAccess(user.id)") &&
     template.includes("!access.isAdmin") &&
+    template.includes("verifyAdminDemoHandoff") &&
+    template.includes("ADMIN_DEMO_HANDOFF_COOKIE") &&
+    template.includes("/business/login?next=/locations/dashboard") &&
     adminCookieNames.every((name) => template.includes(name)),
   invalidImpersonationCookiesAreCleared:
     clearInvalid.includes("response.cookies.delete") &&
