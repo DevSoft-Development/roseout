@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
   const silent = request.nextUrl.searchParams.get("silent") === "1";
   const automatic = request.nextUrl.searchParams.get("auto") === "1";
+  const forceConsent = request.nextUrl.searchParams.get("consent") === "1";
   const requestedNext = sanitizeIntendedPath(
     request.nextUrl.searchParams.get("next"),
   );
@@ -61,6 +62,8 @@ export async function GET(request: NextRequest) {
 
   if (silent) {
     url.searchParams.set("prompt", "none");
+  } else if (forceConsent) {
+    url.searchParams.set("prompt", "consent");
   } else if (!automatic) {
     url.searchParams.set("prompt", "select_account");
   }
