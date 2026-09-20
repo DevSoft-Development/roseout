@@ -19,6 +19,12 @@ import SearchHealthIssueQueue from "./SearchHealthIssueQueue";
 import SearchHealthTrendChart from "./SearchHealthTrendChart";
 import SearchQualityReviewPanel from "./SearchQualityReviewPanel";
 import SearchLabClient from "@/app/admin/dashboard/beta/search-lab/SearchLabClient";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = {
   title: "Search Health – Admin",
@@ -222,32 +228,34 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
   const closeIssueParams = preservedParams(resolvedSearchParams, { tab: "diagnostics", issue: null });
 
   return (
-    <main className="min-h-screen bg-[#080706] px-4 py-5 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1700px]">
-        <header className="rounded-3xl border border-white/10 bg-[#100d0c] p-5 shadow-[0_22px_70px_rgba(0,0,0,.22)]">
-          <div className="flex flex-wrap items-start justify-between gap-5">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[.28em] text-rose-300">Search operations</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Search Health</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">Monitor production quality, diagnose why a search failed, and test fixes without digging through separate technical panels.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin/dashboard/ml" className="rounded-xl border border-white/10 bg-white/[.03] px-4 py-2.5 text-sm font-black text-white/70 hover:text-white">ML Dashboard</Link>
-              <Link href={`/admin/dashboard/search-health?${refreshParams.toString()}`} className="rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2.5 text-sm font-black text-rose-100 hover:bg-rose-900/40">Refresh</Link>
-            </div>
-          </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Operations · Search"
+        title="Search Health"
+        subtitle="Monitor production search quality, diagnose failures, review customer searches, and test fixes from one operating console."
+        badge={
+          <AdminStatusBadge tone={searchCoreConfig.killSwitch ? "red" : searchCoreConfig.rolloutPercentage < 100 ? "amber" : "green"}>
+            {searchCoreConfig.killSwitch ? "Kill switch active" : `Search V2 · ${searchCoreConfig.rolloutPercentage}% rollout`}
+          </AdminStatusBadge>
+        }
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/ml">ML Dashboard</AdminActionButton>
+            <AdminActionButton href={`/admin/dashboard/search-health?${refreshParams.toString()}`} variant="primary">Refresh</AdminActionButton>
+          </>
+        }
+      />
 
-          <nav aria-label="Search Health sections" className="mt-5 flex flex-wrap gap-2 border-t border-white/10 pt-4">
-            <TabLink tab="overview" activeTab={activeTab} searchParams={resolvedSearchParams}>Overview</TabLink>
-            <TabLink tab="searches" activeTab={activeTab} searchParams={resolvedSearchParams}>Searches</TabLink>
-            <TabLink tab="diagnostics" activeTab={activeTab} searchParams={resolvedSearchParams}>Diagnostics</TabLink>
-            <TabLink tab="search-lab" activeTab={activeTab} searchParams={resolvedSearchParams}>Search Lab</TabLink>
-            <TabLink tab="quality" activeTab={activeTab} searchParams={resolvedSearchParams}>Quality Review</TabLink>
-            <TabLink tab="settings" activeTab={activeTab} searchParams={resolvedSearchParams}>Settings</TabLink>
-          </nav>
-        </header>
+      <nav aria-label="Search Health sections" className="flex min-w-0 flex-wrap gap-2 rounded-[1.35rem] border border-white/10 bg-[#101012] p-3 shadow-xl shadow-black/20">
+        <TabLink tab="overview" activeTab={activeTab} searchParams={resolvedSearchParams}>Overview</TabLink>
+        <TabLink tab="searches" activeTab={activeTab} searchParams={resolvedSearchParams}>Searches</TabLink>
+        <TabLink tab="diagnostics" activeTab={activeTab} searchParams={resolvedSearchParams}>Diagnostics</TabLink>
+        <TabLink tab="search-lab" activeTab={activeTab} searchParams={resolvedSearchParams}>Search Lab</TabLink>
+        <TabLink tab="quality" activeTab={activeTab} searchParams={resolvedSearchParams}>Quality Review</TabLink>
+        <TabLink tab="settings" activeTab={activeTab} searchParams={resolvedSearchParams}>Settings</TabLink>
+      </nav>
 
-        <div className="mt-5">
+      <div>
           {activeTab === "overview" ? (
             <div className="space-y-5">
               <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Search Core V2 status">
@@ -314,8 +322,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
 
           {activeTab === "quality" ? <section className="space-y-5"><SearchQualityReviewPanel /></section> : null}
           {activeTab === "settings" ? <SearchCoreV2Panel tab="configuration" config={searchCoreConfig} /> : null}
-        </div>
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
