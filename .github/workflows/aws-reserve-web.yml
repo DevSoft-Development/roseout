@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'apps/reserve/**'
+      - 'components/reserve/**'
+      - 'lib/reserve/**'
+      - 'lib/reservations/**'
+      - 'packages/auth/**'
       - 'infra/aws/cloudformation/reserve-web-foundation.yml'
       - 'infra/aws/cloudformation/reserve-web-service.yml'
       - 'infra/aws/web-surfaces/**'
@@ -15,6 +19,10 @@ on:
     branches: [main]
     paths:
       - 'apps/reserve/**'
+      - 'components/reserve/**'
+      - 'lib/reserve/**'
+      - 'lib/reservations/**'
+      - 'packages/auth/**'
       - 'infra/aws/cloudformation/reserve-web-foundation.yml'
       - 'infra/aws/cloudformation/reserve-web-service.yml'
       - 'infra/aws/web-surfaces/**'

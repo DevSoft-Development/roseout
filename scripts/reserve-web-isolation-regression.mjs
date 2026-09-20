@@ -43,6 +43,14 @@ for (const value of [
 requireText(dockerfile, "reserve) npm run build:surface:reserve");
 requireText(health, 'service: "reserve-web"');
 requireText(workflow, "reserve-web-foundation.yml");
+for (const reservePath of [
+  "components/reserve/**",
+  "lib/reserve/**",
+  "lib/reservations/**",
+  "packages/auth/**"
+]) {
+  requireText(workflow, `- '${reservePath}'`, `Reserve AWS workflow must redeploy when shared Reserve dependency changes: ${reservePath}`);
+}
 requireText(workflow, "reserve-web-service.yml");
 requireText(workflow, "--build-arg \"WEB_SURFACE=reserve\"");
 requireText(workflow, "reserve.theouthaven.com");
