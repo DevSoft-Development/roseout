@@ -22,14 +22,15 @@ function safeNext(value: string | null) {
 }
 
 export async function GET(request: NextRequest) {
+  const publicOrigin = String(process.env.NEXT_PUBLIC_BUSINESS_SITE_URL || "https://business.theouthaven.com").replace(/\/$/, "");
   const token = request.nextUrl.searchParams.get("token");
   const payload = verifyAdminDemoHandoff(token);
   if (!payload) {
-    return NextResponse.redirect(new URL("/business/login", request.url), 302);
+    return NextResponse.redirect(new URL("/business/login", publicOrigin), 302);
   }
 
   const destination = safeNext(request.nextUrl.searchParams.get("next"));
-  const response = NextResponse.redirect(new URL(destination, request.url), 302);
+  const response = NextResponse.redirect(new URL(destination, publicOrigin), 302);
   response.cookies.set(ADMIN_DEMO_HANDOFF_COOKIE, token!, {
     httpOnly: true,
     secure: true,
