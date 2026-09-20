@@ -9,6 +9,11 @@ const isolatedRoots = [
   "apps/reserve/app/api/reserve",
   "apps/reserve/app/api/v1/reserve",
   "apps/reserve/app/api/reservations",
+  "apps/reserve/app/reservations",
+  "apps/reserve/app/embed/reservations",
+  "apps/reserve/app/api/widgets/reservations",
+  "apps/reserve/app/api/public/large-group-availability",
+  "apps/reserve/app/api/public/large-group-bookings",
 ];
 
 function walk(dir) {
@@ -39,11 +44,37 @@ const requiredRoutes = [
   "apps/reserve/app/api/reserve/location/route.ts",
   "apps/reserve/app/api/reservations/lock-slot/route.ts",
   "apps/reserve/app/api/internal/reserve/outbox/route.ts",
+  "apps/reserve/app/reservations/page.tsx",
+  "apps/reserve/app/reservations/[id]/page.tsx",
+  "apps/reserve/app/embed/reservations/[locationId]/page.tsx",
+  "apps/reserve/app/api/widgets/reservations/route.ts",
+  "apps/reserve/app/api/public/large-group-availability/route.ts",
+  "apps/reserve/app/api/public/large-group-bookings/route.ts",
 ];
 
 const missing = requiredRoutes.filter((file) => !fs.existsSync(path.join(root, file)));
 if (missing.length) {
   throw new Error(`Reserve isolated route inventory is incomplete:\n${missing.join("\n")}`);
+}
+
+const consumerReserveLeaks = walk(path.join(root, "apps/consumer/app"))
+  .map((file) => path.relative(path.join(root, "apps/consumer/app"), file).split(path.sep).join("/"))
+  .filter((relative) => [
+    "reserve/",
+    "reservations/",
+    "embed/reservations/",
+    "locations/[type]/[locationId]/reserve/",
+    "api/reserve/",
+    "api/v1/reserve/",
+    "api/internal/reserve/",
+    "api/reservations/",
+    "api/widgets/reservations/",
+    "api/public/large-group-availability/",
+    "api/public/large-group-bookings/",
+  ].some((prefix) => relative.startsWith(prefix)));
+
+if (consumerReserveLeaks.length) {
+  throw new Error(`Reserve-owned routes must not exist in the consumer app:\n${consumerReserveLeaks.join("\n")}`);
 }
 
 const legacyUiFiles = walk(path.join(root, "app/reserve"))

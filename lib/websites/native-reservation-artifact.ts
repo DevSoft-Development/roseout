@@ -11,7 +11,7 @@ const IFRAME_PATTERN = /<div class="reservation-frame-shell"><iframe class="rese
 
 function nativeWidgetMarkup(locationId: string) {
   const safeLocationId = encodeURIComponent(locationId);
-  return `<div class="reservation-frame-shell reservation-native-shell"><div data-theouthaven-reservations data-group-mounted="1" data-location-id="${safeLocationId}" data-api-base="https://www.theouthaven.com"></div></div>`;
+  return `<div class="reservation-frame-shell reservation-native-shell"><div data-theouthaven-reservations data-group-mounted="1" data-location-id="${safeLocationId}" data-api-base="https://reserve.theouthaven.com"></div></div>`;
 }
 
 function widgetScripts() {

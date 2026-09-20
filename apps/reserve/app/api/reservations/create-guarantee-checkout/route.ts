@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
+import { stripeRequest } from "@/lib/stripe/server";
+
+function reserveSiteUrl() {
+  return String(process.env.NEXT_PUBLIC_RESERVE_SITE_URL || process.env.RESERVE_SITE_URL || "https://reserve.theouthaven.com").replace(/\/$/, "");
+}
 
 function integrationIdentifier() {
   const suffix = randomBytes(8).toString("hex").slice(0, 8);
@@ -60,7 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = customerToken || String(reservation.customer_token || "");
-    const siteUrl = getSiteUrl();
+    const siteUrl = reserveSiteUrl();
     const returnPath = `/reserve/confirmation/${encodeURIComponent(token)}`;
     const params = new URLSearchParams({
       mode: "setup",

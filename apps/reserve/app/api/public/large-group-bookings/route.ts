@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { checkReservationAvailability, clearExpiredSlotLocks } from "@/lib/reservations/availability";
-import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
+import { stripeRequest } from "@/lib/stripe/server";
+
+function reserveSiteUrl() {
+  return String(process.env.NEXT_PUBLIC_RESERVE_SITE_URL || process.env.RESERVE_SITE_URL || "https://reserve.theouthaven.com").replace(/\/$/, "");
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,7 +127,7 @@ export async function POST(request: NextRequest) {
       if (!location.stripe_connect_account_id || !location.stripe_connect_charges_enabled || !location.stripe_connect_payouts_enabled) {
         throw new Error("This location has not completed TheOutHaven Payments setup for card guarantees.");
       }
-      const siteUrl = getSiteUrl();
+      const siteUrl = reserveSiteUrl();
       const params = new URLSearchParams({
         mode: "setup",
         success_url: `${siteUrl}/api/reservations/complete-guarantee-checkout?reservation_id=${encodeURIComponent(reservation.id)}&customer_token=${encodeURIComponent(customerToken)}&session_id={CHECKOUT_SESSION_ID}`,
@@ -152,7 +156,7 @@ export async function POST(request: NextRequest) {
       if (!location.stripe_connect_account_id || !location.stripe_connect_charges_enabled || !location.stripe_connect_payouts_enabled) {
         throw new Error("This location has not completed TheOutHaven Payments setup for large group deposits.");
       }
-      const siteUrl = getSiteUrl();
+      const siteUrl = reserveSiteUrl();
       const locationName = String(location.name || location.restaurant_name || location.activity_name || "TheOutHaven location");
       const params = new URLSearchParams({
         mode: "payment",

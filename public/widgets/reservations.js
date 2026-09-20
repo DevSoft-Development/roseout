@@ -23,7 +23,7 @@
     if (root.dataset.mounted === "1") return;
     root.dataset.mounted = "1";
     const locationId = root.dataset.locationId;
-    const apiBase = (root.dataset.apiBase || "https://www.theouthaven.com").replace(/\/$/, "");
+    const apiBase = (root.dataset.apiBase || "https://reserve.theouthaven.com").replace(/\/$/, "");
     if (!locationId) return;
 
     const today = iso(new Date());
@@ -269,7 +269,7 @@
     if (root.dataset.groupMounted === "1") return;
     root.dataset.groupMounted = "1";
     const locationId = root.dataset.locationId;
-    const apiBase = (root.dataset.apiBase || "https://www.theouthaven.com").replace(/\/$/, "");
+    const apiBase = (root.dataset.apiBase || "https://reserve.theouthaven.com").replace(/\/$/, "");
     if (!locationId) return;
 
     try {
