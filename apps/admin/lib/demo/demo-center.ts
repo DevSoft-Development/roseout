@@ -878,7 +878,12 @@ export async function seedDemoLayout(locationId: string) {
   }));
 
   const layout = await insertSafe("layout_items", layoutItems);
-  const bookable = await insertSafe("location_bookable_items", layoutItems);
+  // Bar booking inventory is materialized automatically from layout_items so
+  // it exposes individual stools without creating a duplicate Main Bar row.
+  const bookable = await insertSafe(
+    "location_bookable_items",
+    layoutItems.filter((item) => item.item_type !== "bar"),
+  );
   return { layout, bookable };
 }
 export async function seedDemoReservations(locationId: string) {
