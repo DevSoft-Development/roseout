@@ -159,22 +159,22 @@ export default function ReserveHostServiceDock({
 
   return (
     <>
-      <div className="border-b border-white/10 bg-[#080a0d] px-3 py-2 sm:px-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="border-b border-white/[0.07] bg-[linear-gradient(180deg,rgba(10,12,16,0.98),rgba(8,10,13,0.96))] px-4 py-3 shadow-[0_12px_34px_rgba(0,0,0,0.22)] sm:px-6">
+        <div className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={() => setWalkInOpen(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-[#e1062a] px-3.5 py-2 text-[11px] font-black text-white"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(225,6,42,0.24)] transition hover:bg-[#f20a31]"
           >
             <Plus size={13} /> Add walk-in
           </button>
           <button
             type="button"
             onClick={() => setAttentionOpen((value) => !value)}
-            className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-[11px] font-black ${
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-[11px] font-black transition ${
               attention.length || pacing.length
-                ? "border-[#e1062a]/40 bg-[#e1062a]/10 text-[#ff9bad]"
-                : "border-white/10 bg-white/[0.04] text-white/65"
+                ? "border-[#e1062a]/40 bg-[#e1062a]/10 text-[#ff9bad] shadow-[0_8px_20px_rgba(225,6,42,0.08)]"
+                : "border-white/10 bg-white/[0.035] text-white/65 hover:bg-white/[0.065] hover:text-white"
             }`}
           >
             <AlertTriangle size={13} /> Attention {attention.length + pacing.length}
@@ -183,14 +183,14 @@ export default function ReserveHostServiceDock({
             <button
               type="button"
               onClick={() => { setManagerPin(""); setOverrideOpen(true); }}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[11px] font-black text-white/70"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-2.5 text-[11px] font-black text-white/70 transition hover:bg-white/[0.065] hover:text-white"
             >
               <ShieldCheck size={13} /> Request manager approval
             </button>
           ) : null}
           <Link
             href="/locations/dashboard/reservations/operations"
-            className="rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[11px] font-black text-white/60"
+            className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-2.5 text-[11px] font-black text-white/60 transition hover:bg-white/[0.065] hover:text-white"
           >
             Multi-location
           </Link>
@@ -198,15 +198,15 @@ export default function ReserveHostServiceDock({
         </div>
 
         {attentionOpen ? (
-          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mx-auto mt-3 grid max-w-[1800px] gap-2.5 md:grid-cols-2 xl:grid-cols-3">
             {attention.map((item: any) => (
-              <div key={item.key} className="rounded-xl border border-[#e1062a]/25 bg-[#e1062a]/8 px-3 py-2">
+              <div key={item.key} className="rounded-2xl border border-[#e1062a]/25 bg-[linear-gradient(145deg,rgba(225,6,42,0.12),rgba(225,6,42,0.035))] px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.14)]">
                 <p className="text-[10px] font-black uppercase tracking-[0.08em] text-[#ff8aa0]">Host attention</p>
                 <p className="mt-1 text-xs font-bold text-white/80">{item.message}</p>
               </div>
             ))}
             {pacing.map((item: any, index: number) => (
-              <div key={`${item.startMinute}-${item.windowMinutes}-${index}`} className="rounded-xl border border-amber-300/25 bg-amber-300/8 px-3 py-2">
+              <div key={`${item.startMinute}-${item.windowMinutes}-${index}`} className="rounded-2xl border border-amber-300/25 bg-[linear-gradient(145deg,rgba(252,211,77,0.09),rgba(252,211,77,0.025))] px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.14)]">
                 <p className="text-[10px] font-black uppercase tracking-[0.08em] text-amber-200">Pacing</p>
                 <p className="mt-1 text-xs font-bold text-white/80">{item.covers} covers in {item.windowMinutes} minutes exceeds the {item.limit}-cover limit.</p>
               </div>
