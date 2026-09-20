@@ -5727,3 +5727,27 @@ for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "Admi
     throw new Error(`Featured Outings enterprise console must preserve shared design marker: ${marker}`);
   }
 }
+
+const enterpriseMarketingContentPage = read("apps/admin/app/admin/dashboard/marketing/content/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseMarketingContentPage.includes(marker)) {
+    throw new Error(`Marketing Content enterprise pipeline must preserve shared design marker: ${marker}`);
+  }
+}
+
+const enterpriseMarketingSettingsPage = read("apps/admin/app/admin/dashboard/marketing/settings/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseMarketingSettingsPage.includes(marker)) {
+    throw new Error(`Marketing Settings enterprise shell must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseMarketingSettingsPage.includes("bg-[#f8f3ef]")) {
+  throw new Error("Marketing Settings must not regress to the retired light settings panel.");
+}
+
+const enterpriseMarketingReportsPage = read("apps/admin/app/admin/dashboard/marketing/reports/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "MarketingReportNavigator", "MarketingReportBuilder"]) {
+  if (!enterpriseMarketingReportsPage.includes(marker)) {
+    throw new Error(`Marketing Reports enterprise shell must preserve marker: ${marker}`);
+  }
+}
