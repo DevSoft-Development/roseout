@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
 
 import { requireReservePermission } from "@/lib/reserve/locationPermissions";
-import { getSiteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
+function reserveSiteUrl() {
+  return String(process.env.NEXT_PUBLIC_RESERVE_SITE_URL || process.env.RESERVE_SITE_URL || "https://reserve.theouthaven.com").replace(/\/$/, "");
+}
 
 async function qr(value: string) {
   return QRCode.toDataURL(value, {
@@ -43,7 +46,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const site = getSiteUrl();
+  const site = reserveSiteUrl();
 
   const type = String((loc as any).location_type || "restaurants").includes(
     "activ",
