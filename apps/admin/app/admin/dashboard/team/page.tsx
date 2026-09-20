@@ -4,6 +4,12 @@ import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import TeamWorkSessionClient from "@/components/TeamWorkSessionClient";
 import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
+import {
   ensureTeamProfileForCurrentAdmin,
   getActiveSession,
   getAllowedWorkTypesForUser,
@@ -80,15 +86,14 @@ export default async function AdminTeamPage() {
     workspace = null;
   }
 
-  return <main className="px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-    <div className="mx-auto max-w-7xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">Admin Dashboard / Team Tools</p>
-          <h1 className="mt-2 text-4xl font-black">Team Tools</h1>
-        </div>
-        <Link href="/admin/dashboard/crm/work-queue?view=my-queue" className="rounded-full bg-white px-5 py-3 text-sm font-black text-black">Open CRM Work Queue</Link>
-      </div>
+  return <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Operations · Team"
+        title="Team Tools"
+        subtitle="Manage staff workflows, work sessions, site visits, outreach, support activity, review queues, security audits, and payroll operations."
+        badge={<AdminStatusBadge tone={pendingSessions ? "amber" : "green"}>{pendingSessions ? `${pendingSessions} approvals pending` : "Team operations healthy"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/crm/work-queue?view=my-queue" variant="primary">Open CRM Work Queue</AdminActionButton>}
+      />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card label="Active team members" value={members} />
@@ -115,6 +120,5 @@ export default async function AdminTeamPage() {
         </div>
         <TeamWorkSessionClient profile={workspace.profile} allowedWorkTypes={workspace.allowed} activeSession={workspace.active} recentSessions={workspace.recent} />
       </section> : null}
-    </div>
-  </main>;
+  </AdminPageShell>;
 }
