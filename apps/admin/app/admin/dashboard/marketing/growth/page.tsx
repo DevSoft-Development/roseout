@@ -2,6 +2,12 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +53,19 @@ export default async function GrowthPage() {
     return {label,...value,change,state,area};
   }).sort((a,b)=>b.current-a.current || b.change-a.change).slice(0,6);
 
-  return <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-[1500px] space-y-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.25em] text-rose-300">Social Manager</p><h1 className="mt-2 text-4xl font-semibold">Growth</h1><p className="mt-2 text-white/55">See what is growing followers, visits, searches, leads, and customers.</p></div><div className="flex gap-2"><Link href="/admin/dashboard/marketing/social-manager/weekly-plan" className="rounded-full bg-rose-600 px-5 py-3 text-sm font-semibold">Plan This Week</Link><Link href="/admin/dashboard/marketing/social-manager" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold">Back to Social Manager</Link></div></div>
+  return <AdminPageShell>
+    <AdminPageHeader
+      eyebrow="Social Manager · Growth"
+      title="Growth"
+      subtitle="See what is growing followers, visits, searches, leads, and customers."
+      badge={<AdminStatusBadge tone="green">30-day growth intelligence</AdminStatusBadge>}
+      actions={
+        <>
+          <AdminActionButton href="/admin/dashboard/marketing/social-manager/weekly-plan" variant="primary">Plan This Week</AdminActionButton>
+          <AdminActionButton href="/admin/dashboard/marketing/social-manager">Social Manager</AdminActionButton>
+        </>
+      }
+    />
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{cards.map(([label,value])=><div key={String(label)} className="rounded-2xl border border-white/10 bg-white/[0.06] p-5"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/40">{label}</p><p className="mt-2 text-3xl font-semibold">{value}</p></div>)}</section>
     <section className="grid gap-4 lg:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5"><p className="text-xs uppercase tracking-[0.16em] text-white/40">Best theme</p><p className="mt-2 text-2xl font-semibold">{best(themeCounts)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5"><p className="text-xs uppercase tracking-[0.16em] text-white/40">Best area</p><p className="mt-2 text-2xl font-semibold">{best(areaCounts)}</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.05] p-5"><p className="text-xs uppercase tracking-[0.16em] text-white/40">New monthly revenue</p><p className="mt-2 text-2xl font-semibold">${sum("new_mrr").toLocaleString()}</p></div></section>
 
@@ -55,5 +73,5 @@ export default async function GrowthPage() {
 
     <section className="grid gap-5 xl:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[0.05]"><div className="border-b border-white/10 p-5"><h2 className="font-semibold">Growth opportunities</h2><p className="mt-1 text-sm text-white/45">People and topics worth acting on now.</p></div><div className="divide-y divide-white/10">{(opportunities||[]).slice(0,10).map((row:any)=><div key={row.id} className="p-5"><div className="flex justify-between gap-3"><div><p className="font-medium">{row.title}</p><p className="mt-1 text-sm text-white/45">{row.area||row.summary||row.provider}{row.timing?` · ${row.timing}`:""}</p>{row.suggested_reply?<p className="mt-3 rounded-xl bg-black/20 p-3 text-sm text-white/65">Suggested reply: {row.suggested_reply}</p>:null}</div><span className="h-fit rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-200">{row.opportunity_strength === "very_strong" ? "Very strong" : row.opportunity_strength === "good" ? "Good" : "Low"}</span></div></div>)}{!opportunities?.length?<div className="p-8 text-center text-sm text-white/45">No new growth opportunities yet.</div>:null}</div></div>
       <div className="rounded-2xl border border-white/10 bg-white/[0.05]"><div className="border-b border-white/10 p-5"><h2 className="font-semibold">Posts worth repeating</h2><p className="mt-1 text-sm text-white/45">Strong saves, shares, and clicks from recent posts.</p></div><div className="divide-y divide-white/10">{winners.map((row:any)=><div key={row.social_post_id} className="p-5"><p className="font-medium capitalize">{row.provider} post</p><div className="mt-2 grid grid-cols-4 gap-2 text-sm text-white/55"><span>{Number(row.views||0).toLocaleString()} views</span><span>{Number(row.saves||0).toLocaleString()} saves</span><span>{Number(row.shares||0).toLocaleString()} shares</span><span>{Number(row.clicks||0).toLocaleString()} clicks</span></div></div>)}{!winners.length?<div className="p-8 text-center text-sm text-white/45">Post results will appear here as they are collected.</div>:null}</div></div></section>
-  </div></main>;
+  </AdminPageShell>;
 }
