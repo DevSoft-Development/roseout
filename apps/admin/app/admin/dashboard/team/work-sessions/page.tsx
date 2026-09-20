@@ -1,6 +1,11 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { AdminReviewButtons } from "@/components/TeamToolsForms";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -69,13 +74,13 @@ export default async function WorkSessionsPage() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Work Sessions</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Time-based sessions only. Clock-in/out does not show or capture
-          GPS/location.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Time Operations"
+        title="Work Sessions"
+        subtitle="Review time-based work sessions. Clock-in and clock-out do not show or capture GPS/location."
+        badge={<AdminStatusBadge tone="green">{sessionRows.length} sessions loaded</AdminStatusBadge>}
+      />
 
         <div className="mt-6 overflow-x-auto rounded-[2rem] border border-white/10 bg-[#111]">
           <table className="w-full min-w-[900px] text-left text-sm">
@@ -121,7 +126,6 @@ export default async function WorkSessionsPage() {
             </tbody>
           </table>
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
