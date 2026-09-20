@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import MarketingSettingsForm from "@/components/marketing/MarketingSettingsForm";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
-
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -19,22 +25,30 @@ export default async function MarketingSettingsPage() {
   const initialSettings = Object.fromEntries((data || []).map((row) => [row.key, row.value]));
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.28),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-5 shadow-2xl sm:p-7">
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.35em] text-rose-300">Marketing Settings</p>
-          <h1 className="text-4xl font-black tracking-tight sm:text-5xl">Default copy, links, and draft behavior.</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base">Manage the reusable settings the Marketing Center uses for platform captions, landing pages, short links, and sender details.</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/admin/dashboard/marketing" className="rounded-full bg-gradient-to-r from-rose-500 to-rose-700 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30">Back to Marketing Center</Link>
-            <Link href="/admin/dashboard/marketing?status=draft#campaigns" className="rounded-full border border-white/10 bg-white/[0.07] px-6 py-3 text-sm font-black text-white/70">View Drafts</Link>
-          </div>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Configuration"
+        title="Marketing Settings"
+        subtitle="Manage reusable defaults for campaign copy, landing links, short links, draft behavior, and sender configuration."
+        badge={<AdminStatusBadge tone="green">Settings loaded</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/marketing">Marketing Center</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/marketing?status=draft#campaigns">View Drafts</AdminActionButton>
+          </>
+        }
+      />
 
-        <section className="mt-5 rounded-[2rem] border border-white/10 bg-[#f8f3ef] p-5 text-[#1b1210] shadow-2xl">
+      <AdminSectionCard>
+        <div className="border-b border-white/10 px-5 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Reusable defaults</p>
+          <h2 className="mt-1 text-xl font-black text-white">Campaign defaults and sender behavior</h2>
+          <p className="mt-1 text-sm text-white/50">Changes here affect future Marketing Center drafts and reusable campaign settings.</p>
+        </div>
+        <div className="bg-white/[0.02] p-5">
           <MarketingSettingsForm initialSettings={initialSettings} />
-        </section>
-      </div>
-    </main>
+        </div>
+      </AdminSectionCard>
+    </AdminPageShell>
   );
 }
