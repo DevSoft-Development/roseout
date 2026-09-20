@@ -5830,18 +5830,17 @@ for (const [label, source] of [
   }
 }
 
-const enterpriseBetaPage = read("apps/admin/app/admin/dashboard/beta/page.tsx");
-const enterpriseEventsExperiencesPage = read("apps/admin/app/admin/dashboard/events-experiences/page.tsx");
-const enterpriseFraudPage = read("apps/admin/app/admin/dashboard/fraud/page.tsx");
-const enterpriseOwnerAccountsPage = read("apps/admin/app/admin/dashboard/owner-accounts/page.tsx");
-const enterpriseTeamPage = read("apps/admin/app/admin/dashboard/team/page.tsx");
-
+const enterpriseTeamMembersPage = read("apps/admin/app/admin/dashboard/team/members/page.tsx");
+const enterpriseTeamSettingsPage = read("apps/admin/app/admin/dashboard/team/settings/page.tsx");
+const enterpriseTeamPayrollPage = read("apps/admin/app/admin/dashboard/team/payroll/page.tsx");
+const enterpriseTeamAssignmentsPage = read("apps/admin/app/admin/dashboard/team/assignments/page.tsx");
+const enterpriseTeamWorkSessionsPage = read("apps/admin/app/admin/dashboard/team/work-sessions/page.tsx");
 for (const [label, source] of [
-  ["Beta Testing", enterpriseBetaPage],
-  ["Events & Experiences", enterpriseEventsExperiencesPage],
-  ["Fraud", enterpriseFraudPage],
-  ["Owner Accounts", enterpriseOwnerAccountsPage],
-  ["Team Tools", enterpriseTeamPage],
+  ["Team Members", enterpriseTeamMembersPage],
+  ["Team Settings", enterpriseTeamSettingsPage],
+  ["Team Payroll", enterpriseTeamPayrollPage],
+  ["Team Assignments", enterpriseTeamAssignmentsPage],
+  ["Team Work Sessions", enterpriseTeamWorkSessionsPage],
 ]) {
   for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
     if (!source.includes(marker)) {
@@ -5850,13 +5849,21 @@ for (const [label, source] of [
   }
 }
 
-const enterpriseLaunchCatalogHealthPage = read("apps/admin/app/admin/dashboard/launch-catalog/page.tsx");
-const enterpriseGooglePlacesBudgetPage = read("apps/admin/app/admin/dashboard/settings/google-places/page.tsx");
-const enterpriseCriticalIncidentsPage = read("apps/admin/app/admin/dashboard/infrastructure/incidents/page.tsx");
+const enterpriseTeamDemoPage = read("apps/admin/app/admin/dashboard/team/demo/page.tsx");
+const enterpriseTeamDemoReservationsPage = read("apps/admin/app/admin/dashboard/team/demo/[sessionId]/reservations/page.tsx");
+const enterpriseTeamPerformancePage = read("apps/admin/app/admin/dashboard/team/performance/page.tsx");
+const enterpriseTeamProofReviewPage = read("apps/admin/app/admin/dashboard/team/proof-review/page.tsx");
+const enterpriseTeamSiteVisitsPage = read("apps/admin/app/admin/dashboard/team/site-visits/page.tsx");
+const enterpriseTeamSocialOutreachPage = read("apps/admin/app/admin/dashboard/team/social-outreach/page.tsx");
+const enterpriseTeamSupportWorkPage = read("apps/admin/app/admin/dashboard/team/support-work/page.tsx");
 for (const [label, source] of [
-  ["Launch Catalog Health", enterpriseLaunchCatalogHealthPage],
-  ["Google Places Budget", enterpriseGooglePlacesBudgetPage],
-  ["Critical Incidents", enterpriseCriticalIncidentsPage],
+  ["Team Demo", enterpriseTeamDemoPage],
+  ["Team Demo Reservations", enterpriseTeamDemoReservationsPage],
+  ["Team Performance", enterpriseTeamPerformancePage],
+  ["Team Proof Review", enterpriseTeamProofReviewPage],
+  ["Team Site Visits", enterpriseTeamSiteVisitsPage],
+  ["Team Social Outreach", enterpriseTeamSocialOutreachPage],
+  ["Team Support Work", enterpriseTeamSupportWorkPage],
 ]) {
   for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
     if (!source.includes(marker)) {
