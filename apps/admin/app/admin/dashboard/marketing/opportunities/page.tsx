@@ -4,6 +4,12 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { refreshMarketingContentOpportunities } from "@/lib/marketing/opportunities";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +34,14 @@ export default async function MarketingOpportunitiesPage() {
   for (const asset of assetRows || []) assetCounts.set(asset.location_id, (assetCounts.get(asset.location_id) || 0) + 1);
 
   return (
-    <main className="space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Marketing</p><h1 className="text-3xl font-semibold">Content Opportunities</h1><p className="mt-1 max-w-3xl text-sm text-neutral-600">Events, experiences, and offers created by locations flow here as potential @TheOutHaven content. Featuring one creates a separate corporate content item; the location’s original record remains untouched.</p></div>
-        <Link href="/admin/dashboard/marketing/content" className="min-h-11 rounded-xl border px-4 py-2.5 text-sm font-semibold">Content Pipeline</Link>
-      </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Discovery"
+        title="Content Opportunities"
+        subtitle="Events, experiences, and offers created by locations flow here as potential @TheOutHaven content. Featuring one creates a separate corporate content item; the location’s original record remains untouched."
+        badge={<AdminStatusBadge tone={opportunities.length ? "blue" : "muted"}>{opportunities.length} opportunities</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/marketing/content" variant="primary">Content Pipeline</AdminActionButton>}
+      />
 
       <div className="grid gap-4 xl:grid-cols-2">
         {opportunities.length ? opportunities.map((item) => {
@@ -46,6 +55,6 @@ export default async function MarketingOpportunitiesPage() {
           </article>;
         }) : <div className="rounded-2xl border bg-white p-10 text-center text-sm text-neutral-500 xl:col-span-2">No active location marketing opportunities yet.</div>}
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
