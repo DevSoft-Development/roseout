@@ -5871,3 +5871,22 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseSearchAnchorsPage = read("apps/admin/app/admin/dashboard/search-anchors/page.tsx");
+const enterpriseSearchAnchorOperationsPage = read("apps/admin/app/admin/dashboard/search-anchors/operations/page.tsx");
+const enterpriseSearchAnchorAuditPage = read("apps/admin/app/admin/dashboard/search-anchors/audit/page.tsx");
+const enterpriseSearchAnchorUploadPage = read("apps/admin/app/admin/dashboard/search-anchors/upload/page.tsx");
+const enterpriseSearchAnchorSyncPreviewPage = read("apps/admin/app/admin/dashboard/search-anchors/sync-preview/page.tsx");
+for (const [label, source] of [
+  ["Search Anchors", enterpriseSearchAnchorsPage],
+  ["Search Anchor Operations", enterpriseSearchAnchorOperationsPage],
+  ["Search Anchor Audit", enterpriseSearchAnchorAuditPage],
+  ["Search Anchor CSV Upload", enterpriseSearchAnchorUploadPage],
+  ["Search Anchor Dry Run", enterpriseSearchAnchorSyncPreviewPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
