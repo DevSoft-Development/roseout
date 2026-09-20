@@ -11,7 +11,7 @@ const ADMIN_CONTEXT_COOKIES = [
 export async function GET(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const destination = new URL(user ? "/locations/dashboard" : "/login?next=/locations/dashboard", request.url);
+  const destination = new URL(user ? "/locations/dashboard" : "/business/login?next=/locations/dashboard", request.url);
   const response = NextResponse.redirect(destination);
   for (const name of ADMIN_CONTEXT_COOKIES) response.cookies.delete(name);
   return response;
