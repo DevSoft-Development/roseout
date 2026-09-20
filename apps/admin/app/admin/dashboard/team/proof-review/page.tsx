@@ -1,5 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -62,13 +67,13 @@ export default async function ProofReviewPage() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Proof Review</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Proofs are for site visits and social outreach. Support tickets are
-          intentionally excluded.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Review"
+        title="Proof Review"
+        subtitle="Proofs are for site visits and social outreach. Support tickets are intentionally excluded."
+        badge={<AdminStatusBadge tone="green">{proofRows.length} proofs loaded</AdminStatusBadge>}
+      />
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {proofRows.map((proof) => {
@@ -101,7 +106,6 @@ export default async function ProofReviewPage() {
             );
           })}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
