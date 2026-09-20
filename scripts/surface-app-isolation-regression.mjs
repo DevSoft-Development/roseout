@@ -5751,3 +5751,20 @@ for (const marker of ["AdminPageShell", "AdminPageHeader", "MarketingReportNavig
     throw new Error(`Marketing Reports enterprise shell must preserve marker: ${marker}`);
   }
 }
+
+const enterpriseDataQualityPage = read("apps/admin/app/admin/dashboard/data-quality/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminSectionCard"]) {
+  if (!enterpriseDataQualityPage.includes(marker)) {
+    throw new Error(`Data Quality enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseDataQualityPage.includes('import "./data-quality.css"')) {
+  throw new Error("Data Quality must not regress to the retired standalone stylesheet.");
+}
+
+const enterpriseMlPage = read("apps/admin/app/admin/dashboard/ml/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseMlPage.includes(marker)) {
+    throw new Error(`Machine Learning enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
