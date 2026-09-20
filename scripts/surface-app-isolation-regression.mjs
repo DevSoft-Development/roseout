@@ -3209,10 +3209,10 @@ if (
   throw new Error("Business CRM impersonation must preserve isolated superadmin-only API behavior.");
 }
 if (
-  !businessesPage.includes("/admin/dashboard/businesses/followups") ||
-  !businessesPage.includes("/admin/dashboard/businesses/communication-center")
+  !businessViewPage.includes("/admin/dashboard/businesses/followups") ||
+  !businessViewPage.includes("/admin/dashboard/businesses/communication-center")
 ) {
-  throw new Error("Business overview tabs must point at the isolated legacy redirect routes.");
+  throw new Error("Business workspace tabs must preserve the isolated legacy redirect routes.");
 }
 
 const careersJobEditPage = read("apps/admin/app/admin/dashboard/careers/jobs/[id]/page.tsx");
