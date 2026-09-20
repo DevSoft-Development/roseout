@@ -1,26 +1,36 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { MIRROR_DEMO_KEY, insertSafe } from "@/lib/demo/demo-center";
+import { MIRROR_DEMO_KEY, insertSafe, safeUpdateExistingColumns } from "@/lib/demo/demo-center";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 const DEMO_SPACES = [
-  { item_name: "Table 1", item_type: "table", capacity: 4, layout_x: 32, layout_y: 48 },
-  { item_name: "Table 2", item_type: "table", capacity: 4, layout_x: 232, layout_y: 48 },
-  { item_name: "VIP Booth", item_type: "booth", capacity: 6, layout_x: 432, layout_y: 48 },
-  { item_name: "Bar Seats", item_type: "bar_seat", capacity: 8, layout_x: 32, layout_y: 208 },
-  { item_name: "Private Room", item_type: "private_room", capacity: 12, layout_x: 232, layout_y: 208 },
-  { item_name: "Patio Table", item_type: "patio_seat", capacity: 4, layout_x: 432, layout_y: 208 },
-] as const;
+    { item_name: "Main Bar", item_type: "bar", capacity: 10, x_position: 32, y_position: 28, layout_x: 32, layout_y: 28, width: 520, height: 96, layout_width: 520, layout_height: 96, layout_zone: "Bar" },
+    { item_name: "Booth 1", item_type: "booth", capacity: 4, x_position: 32, y_position: 164, layout_x: 32, layout_y: 164, width: 180, height: 112, layout_width: 180, layout_height: 112, layout_zone: "Booths" },
+    { item_name: "Booth 2", item_type: "booth", capacity: 6, x_position: 236, y_position: 164, layout_x: 236, layout_y: 164, width: 190, height: 112, layout_width: 190, layout_height: 112, layout_zone: "Booths" },
+    { item_name: "VIP Booth", item_type: "booth", capacity: 8, x_position: 450, y_position: 164, layout_x: 450, layout_y: 164, width: 220, height: 112, layout_width: 220, layout_height: 112, layout_zone: "Booths" },
+    { item_name: "Table 1", item_type: "table", capacity: 2, x_position: 32, y_position: 324, layout_x: 32, layout_y: 324, width: 118, height: 96, layout_width: 118, layout_height: 96, layout_zone: "Dining Room" },
+    { item_name: "Table 2", item_type: "table", capacity: 2, x_position: 176, y_position: 324, layout_x: 176, layout_y: 324, width: 118, height: 96, layout_width: 118, layout_height: 96, layout_zone: "Dining Room" },
+    { item_name: "Table 3", item_type: "table", capacity: 4, x_position: 320, y_position: 324, layout_x: 320, layout_y: 324, width: 150, height: 106, layout_width: 150, layout_height: 106, layout_zone: "Dining Room" },
+    { item_name: "Table 4", item_type: "table", capacity: 4, x_position: 494, y_position: 324, layout_x: 494, layout_y: 324, width: 150, height: 106, layout_width: 150, layout_height: 106, layout_zone: "Dining Room" },
+    { item_name: "Table 5", item_type: "table", capacity: 6, x_position: 32, y_position: 468, layout_x: 32, layout_y: 468, width: 192, height: 112, layout_width: 192, layout_height: 112, layout_zone: "Dining Room" },
+    { item_name: "Table 6", item_type: "table", capacity: 6, x_position: 250, y_position: 468, layout_x: 250, layout_y: 468, width: 192, height: 112, layout_width: 192, layout_height: 112, layout_zone: "Dining Room" },
+    { item_name: "Table 7", item_type: "table", capacity: 8, x_position: 468, y_position: 468, layout_x: 468, layout_y: 468, width: 220, height: 118, layout_width: 220, layout_height: 118, layout_zone: "Dining Room" },
+    { item_name: "Private Room", item_type: "private_room", capacity: 12, x_position: 704, y_position: 164, layout_x: 704, layout_y: 164, width: 220, height: 210, layout_width: 220, layout_height: 210, layout_zone: "Private" },
+    { item_name: "Patio Table", item_type: "patio_seat", capacity: 4, x_position: 704, y_position: 404, layout_x: 704, layout_y: 404, width: 150, height: 106, layout_width: 150, layout_height: 106, layout_zone: "Patio" },
+  ] as const;
 
 async function normalizeDemoReservationInventory(locationId: string) {
-  const canonicalNames = DEMO_SPACES.map((space) => space.item_name);
-
   for (const table of ["layout_items", "location_bookable_items"] as const) {
+    const spaces =
+      table === "location_bookable_items"
+        ? DEMO_SPACES.filter((space) => space.item_type !== "bar")
+        : DEMO_SPACES;
+    const names = spaces.map((space) => space.item_name);
     const { data: rows, error } = await supabaseAdmin
       .from(table)
       .select("id,item_name,created_at")
       .eq("location_id", locationId)
-      .in("item_name", canonicalNames)
+      .in("item_name", names)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -32,7 +42,7 @@ async function normalizeDemoReservationInventory(locationId: string) {
 
     for (const row of rows || []) {
       const name = String(row.item_name || "");
-      if (!canonicalNames.includes(name as (typeof canonicalNames)[number])) continue;
+      if (!names.includes(name as (typeof names)[number])) continue;
       if (seen.has(name)) duplicateIds.push(String(row.id));
       else seen.add(name);
     }
@@ -47,7 +57,40 @@ async function normalizeDemoReservationInventory(locationId: string) {
       }
     }
 
-    const missing = DEMO_SPACES.filter((space) => !seen.has(space.item_name));
+    const existingByName = new Map((rows || []).map((row) => [String(row.item_name || ""), row]));
+    for (const [index, item] of spaces.entries()) {
+      const existing = existingByName.get(item.item_name);
+      if (!existing?.id) continue;
+      const payload = {
+        location_id: locationId,
+        location_type: "restaurant",
+        source_table: "restaurant",
+        capacity_min: 1,
+        capacity_max: item.capacity,
+        duration_minutes: 90,
+        default_duration_minutes: 90,
+        reservation_duration_minutes: 90,
+        is_active: true,
+        status: "available",
+        rotation: 0,
+        sort_order: index + 1,
+        notes: "TheOutHaven Lounge canonical E2E demo space.",
+        ...item,
+      };
+      const updatePayload = { ...payload } as Record<string, unknown>;
+      delete updatePayload.location_id;
+      const synced = await safeUpdateExistingColumns(
+        table,
+        "id",
+        String(existing.id),
+        updatePayload,
+      );
+      if (!synced.applied.length && synced.errors.length) {
+        throw new Error(`Unable to update ${table} demo row ${item.item_name}.`);
+      }
+    }
+
+    const missing = spaces.filter((space) => !seen.has(space.item_name));
     if (missing.length) {
       const payload = missing.map((item, index) => ({
         location_id: locationId,
@@ -60,8 +103,6 @@ async function normalizeDemoReservationInventory(locationId: string) {
         reservation_duration_minutes: 90,
         is_active: true,
         status: "available",
-        layout_width: 172,
-        layout_height: 118,
         rotation: 0,
         sort_order: index + 1,
         notes: "TheOutHaven Lounge canonical E2E demo space.",

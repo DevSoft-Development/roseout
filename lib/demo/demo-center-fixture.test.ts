@@ -29,6 +29,14 @@ describe("TheOutHaven Lounge universal test fixture", () => {
   it("retains seeded modules for cross-platform testing", () => {
     expect(source).toContain("await seedDemoReservations(locationId)");
     expect(source).toContain("await seedDemoLayout(locationId)");
+    expect(source).toContain('"Main Bar"');
+    expect(source).toContain('item_type: "bar"');
+    expect(source).toContain('capacity: 10');
+    expect(source).toContain('"Booth 1"');
+    expect(source).toContain('"Booth 2"');
+    expect(source).toContain('"Table 7"');
+    expect(source).toContain('capacity: 8');
+    expect(source).toContain('layoutItems.filter((item) => item.item_type !== "bar")');
     expect(source).toContain('"location_offers"');
     expect(source).toContain('"location_vip_signups"');
     expect(source).toContain('"location_analytics_events"');
