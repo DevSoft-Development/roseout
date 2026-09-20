@@ -20,8 +20,6 @@ const DEMO_SPACES = [
   ] as const;
 
 async function normalizeDemoReservationInventory(locationId: string) {
-  const canonicalNames = DEMO_SPACES.map((space) => space.item_name);
-
   for (const table of ["layout_items", "location_bookable_items"] as const) {
     const spaces =
       table === "location_bookable_items"
