@@ -1,6 +1,12 @@
 import "./launch-checklist.css";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = {
   title: "Launch Checklist – Admin",
@@ -22,14 +28,16 @@ export default async function LaunchChecklistPage() {
   await requireAdminRole(["superadmin"]);
 
   return (
-    <section className="launch-checklist-page">
-      <header className="launch-checklist-hero">
-        <p>Production Readiness</p>
-        <h1>Launch Checklist</h1>
-        <span>Track and confirm the critical gates required for launch.</span>
-      </header>
-
-      <section className="launch-checklist-grid">
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Production Readiness"
+        title="Launch Checklist"
+        subtitle="Track and confirm the critical gates required for launch."
+        badge={<AdminStatusBadge tone="amber">Verification in progress</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/production">Production Command Center</AdminActionButton>}
+      />
+      <section className="launch-checklist-page">
+        <section className="launch-checklist-grid">
         {checks.map((item) => (
           <article key={item}>
             <div>
@@ -39,7 +47,8 @@ export default async function LaunchChecklistPage() {
             <span>Pending verification</span>
           </article>
         ))}
+        </section>
       </section>
-    </section>
+    </AdminPageShell>
   );
 }

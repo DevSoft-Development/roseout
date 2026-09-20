@@ -5768,3 +5768,25 @@ for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "Admi
     throw new Error(`Machine Learning enterprise console must preserve shared design marker: ${marker}`);
   }
 }
+
+const enterpriseLaunchChecklistPage = read("apps/admin/app/admin/dashboard/launch-checklist/page.tsx");
+const enterpriseSearchBenchmarkPage = read("apps/admin/app/admin/dashboard/search-benchmark/page.tsx");
+const enterpriseDomainBenefitPage = read("apps/admin/app/admin/dashboard/settings/domain-benefit/page.tsx");
+const enterpriseEmailQaPage = read("apps/admin/app/admin/dashboard/settings/email-qa/page.tsx");
+const enterpriseAppleDevicesPage = read("apps/admin/app/admin/dashboard/security/apple-devices/page.tsx");
+const enterpriseMicrosoft365Page = read("apps/admin/app/admin/dashboard/settings/microsoft-365/page.tsx");
+
+for (const [label, source] of [
+  ["Launch Checklist", enterpriseLaunchChecklistPage],
+  ["Search Benchmark", enterpriseSearchBenchmarkPage],
+  ["Domain Benefit", enterpriseDomainBenefitPage],
+  ["Email QA", enterpriseEmailQaPage],
+  ["Apple Device Enrollment", enterpriseAppleDevicesPage],
+  ["Microsoft 365 Sync", enterpriseMicrosoft365Page],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
