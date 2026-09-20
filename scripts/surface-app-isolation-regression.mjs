@@ -80,6 +80,19 @@ if (
 }
 
 const adminSecurityContext = read("apps/admin/app/api/security-context/route.ts");
+const surfacePostcssConfigs = {
+  admin: read("apps/admin/postcss.config.mjs"),
+  business: read("apps/business/postcss.config.mjs"),
+  reserve: read("apps/reserve/postcss.config.mjs"),
+  consumer: read("apps/consumer/postcss.config.mjs"),
+};
+
+for (const [surface, config] of Object.entries(surfacePostcssConfigs)) {
+  if (!config.includes("@tailwindcss/postcss")) {
+    throw new Error(`${surface} isolated surface must keep a local Tailwind PostCSS config so utility classes compile independently.`);
+  }
+}
+
 for (const marker of [
   "ADMIN_LOGIN_SECURITY_CONTEXT",
   "x-forwarded-for",
