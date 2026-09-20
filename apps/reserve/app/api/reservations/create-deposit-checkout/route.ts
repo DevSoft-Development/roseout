@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { fraudDecisionPreventsSensitiveAction, getFraudDecision } from "@/lib/fraud";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getSiteUrl, stripeRequest } from "@/lib/stripe/server";
+import { stripeRequest } from "@/lib/stripe/server";
+
+function reserveSiteUrl() {
+  return String(process.env.NEXT_PUBLIC_RESERVE_SITE_URL || process.env.RESERVE_SITE_URL || "https://reserve.theouthaven.com").replace(/\/$/, "");
+}
 
 function toCents(value: unknown) {
   const numeric = Number(value || 0);
@@ -60,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     const platformFeeBps = Math.max(0, Math.min(10000, Number(process.env.STRIPE_DEPOSIT_PLATFORM_FEE_BPS || 0)));
     const applicationFee = Math.floor(amount * platformFeeBps / 10000);
-    const siteUrl = getSiteUrl();
+    const siteUrl = reserveSiteUrl();
     const returnPath = `/reserve/confirmation/${encodeURIComponent(customerToken || String(reservation.customer_token || ""))}`;
     const locationName = String(location.name || location.restaurant_name || location.activity_name || "TheOutHaven reservation");
 
