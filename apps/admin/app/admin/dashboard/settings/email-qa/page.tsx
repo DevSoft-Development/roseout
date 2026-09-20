@@ -9,6 +9,12 @@ import {
   validateEmailTemplate,
 } from "@/lib/email/registry";
 import { getSampleDataForTemplate } from "@/lib/email/sample-data";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "@/components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -52,15 +58,15 @@ export default async function EnterpriseEmailQaCenterPage({
   const senders = Array.from(new Set(templates.map((item) => item.senderKey)));
 
   return (
-    <section className="email-qa-page">
-      <header className="email-qa-hero">
-        <small>Admin Settings</small>
-        <h1>Enterprise Email QA Center</h1>
-        <p>
-          Preview and validate TheOutHaven email templates and sender identities
-          from the isolated Admin app.
-        </p>
-      </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Settings · Messaging"
+        title="Enterprise Email QA Center"
+        subtitle="Preview and validate TheOutHaven email templates and sender identities from the isolated Admin app."
+        badge={<AdminStatusBadge tone={selectedHealth?.status === "healthy" ? "green" : "amber"}>{selectedHealth?.status || "Template health unknown"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/settings">Settings</AdminActionButton>}
+      />
+      <section className="email-qa-page">
 
       <form className="email-qa-filters">
         <select name="group" defaultValue={group}>
@@ -158,5 +164,6 @@ export default async function EnterpriseEmailQaCenterPage({
         </main>
       </div>
     </section>
+    </AdminPageShell>
   );
 }
