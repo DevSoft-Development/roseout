@@ -1,6 +1,13 @@
-import Link from "next/link";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import CuratedReviewClient from "./CuratedReviewClient";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -20,28 +27,20 @@ export default async function CuratedAnchorReviewPage() {
   const rejected = anchors.filter((anchor) => anchor.review_status === "rejected").length;
 
   return (
-    <main className="min-h-screen bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">Search anchors / Curated review</p>
-            <h1 className="mt-2 text-3xl font-bold">Approve Curated Places</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">Review CSV-imported anchors before making them active and searchable.</p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/admin/dashboard/search-anchors/upload" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold">Upload another CSV</Link>
-            <Link href="/admin/dashboard/search-anchors?view=curated" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold">Back to Curated Places</Link>
-          </div>
-        </header>
-
-        <section className="grid gap-3 sm:grid-cols-3">
-          <article className="rounded-2xl border border-amber-900 bg-amber-950/20 p-4"><p className="text-xs text-amber-300">Pending review</p><p className="mt-2 text-2xl font-semibold">{pending}</p></article>
-          <article className="rounded-2xl border border-emerald-900 bg-emerald-950/20 p-4"><p className="text-xs text-emerald-300">Approved</p><p className="mt-2 text-2xl font-semibold">{approved}</p></article>
-          <article className="rounded-2xl border border-red-900 bg-red-950/20 p-4"><p className="text-xs text-red-300">Rejected</p><p className="mt-2 text-2xl font-semibold">{rejected}</p></article>
-        </section>
-
-        <CuratedReviewClient anchors={anchors} />
-      </div>
-    </main>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search Anchors · Curated Review"
+        title="Approve Curated Places"
+        subtitle="Review CSV-imported anchors before making them active and searchable."
+        badge={<AdminStatusBadge tone={pending ? "amber" : "green"}>{pending ? `${pending} pending review` : "Review queue clear"}</AdminStatusBadge>}
+        actions={<><AdminActionButton href="/admin/dashboard/search-anchors/upload" variant="primary">Upload CSV</AdminActionButton><AdminActionButton href="/admin/dashboard/search-anchors?view=curated">Curated Places</AdminActionButton></>}
+      />
+      <AdminKpiGrid>
+        <AdminKpiCard label="Pending review" value={pending} helper="Awaiting approval" />
+        <AdminKpiCard label="Approved" value={approved} helper="Ready for search" />
+        <AdminKpiCard label="Rejected" value={rejected} helper="Not approved" />
+      </AdminKpiGrid>
+      <CuratedReviewClient anchors={anchors} />
+    </AdminPageShell>
   );
 }
