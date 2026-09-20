@@ -16,7 +16,7 @@ import {
   AdminPageHeader,
   AdminPageShell,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../../components/admin/AdminDesignSystem";
 import { AppleConfiguratorEnrollmentGuide } from "./AppleConfiguratorEnrollmentGuide";
 import {
   isAppleBusinessApiConfigured,
