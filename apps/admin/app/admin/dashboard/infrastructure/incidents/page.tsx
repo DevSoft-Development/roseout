@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const metadata: Metadata = {
   title: "Critical Incidents | Admin",
@@ -95,24 +101,14 @@ export default async function CriticalIncidentsPage() {
   );
 
   return (
-    <main className="admin-page min-h-screen px-4 pb-14 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-300">
-            System Health
-          </p>
-          <h1 className="mt-2 text-3xl font-black">Critical Incidents</h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/55">
-            A durable history of critical platform incidents and recoveries
-            recorded by the five-minute production monitor.
-          </p>
-          <a
-            href="/admin/dashboard/infrastructure/incidents"
-            className="mt-4 inline-flex rounded-full bg-rose-600 px-4 py-2 text-xs font-black"
-          >
-            Refresh
-          </a>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="System Health · Incidents"
+        title="Critical Incidents"
+        subtitle="A durable history of critical platform incidents and recoveries recorded by the five-minute production monitor."
+        badge={<AdminStatusBadge tone={openNow.length ? "red" : "green"}>{openNow.length ? `${openNow.length} open critical incidents` : "No critical incidents open"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/infrastructure/incidents" variant="primary">Refresh</AdminActionButton>}
+      />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
@@ -249,7 +245,6 @@ export default async function CriticalIncidentsPage() {
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
