@@ -1,12 +1,13 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
-import ReserveEnterpriseHostShell from "@/components/reserve/ReserveEnterpriseHostShell";
 import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
+import { ADMIN_DEMO_HANDOFF_COOKIE } from "@theouthaven/auth/admin-demo-handoff";
+import { signBusinessReserveHandoff } from "@theouthaven/auth/business-reserve-handoff";
 import {
   parseDemoOwnerParams,
   requireDemoOwnerLocation,
@@ -19,17 +20,6 @@ type SearchValue = string | string[] | undefined;
 
 function first(value: SearchValue) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function buildWorkspaceHref(params: Record<string, SearchValue>) {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (key === "host" || value === undefined) continue;
-    if (Array.isArray(value)) value.forEach((item) => query.append(key, item));
-    else query.set(key, value);
-  }
-  const qs = query.toString();
-  return `/locations/dashboard/reservations${qs ? `?${qs}` : ""}`;
 }
 
 function buildSettingsHref(params: Record<string, SearchValue>) {
@@ -57,20 +47,6 @@ function buildSettingsHref(params: Record<string, SearchValue>) {
   return `/locations/dashboard/reservations/settings${qs ? `?${qs}` : ""}`;
 }
 
-function buildReserveSubpageHref(
-  page: "service" | "reports" | "operations",
-  params: Record<string, SearchValue>,
-  locationId: string,
-) {
-  const query = new URLSearchParams();
-  const adminLocationId = first(params.adminLocationId);
-  if (locationId) {
-    query.set(adminLocationId ? "adminLocationId" : "locationId", locationId);
-  }
-  const qs = query.toString();
-  return `/locations/dashboard/reservations/${page}${qs ? `?${qs}` : ""}`;
-}
-
 export default async function LocationWorkspaceReservationsPage({
   searchParams,
 }: {
@@ -89,9 +65,36 @@ export default async function LocationWorkspaceReservationsPage({
   const showOverview = !hostMode && (!requestedTab || requestedTab === "overview");
   const selectedLocationId =
     first(params.adminLocationId) || first(params.locationId) || "";
+  const reserveOrigin = String(
+    process.env.NEXT_PUBLIC_RESERVE_SITE_URL ||
+      process.env.RESERVE_SITE_URL ||
+      "https://reserve.theouthaven.com",
+  ).replace(/\/$/, "");
 
   if (parsedDemo.demo || first(params.fromDemoCenter) === "1") {
     await requireDemoOwnerLocation(params);
+
+    if (hostMode && selectedLocationId) {
+      const query = new URLSearchParams({
+        adminLocationId: selectedLocationId,
+        locationId: selectedLocationId,
+        demo: "1",
+        fromDemoCenter: "1",
+      });
+      const destination = `/reserve/dashboard?${query.toString()}`;
+      const cookieStore = await cookies();
+      const adminDemoToken = cookieStore.get(ADMIN_DEMO_HANDOFF_COOKIE)?.value;
+
+      if (adminDemoToken) {
+        redirect(
+          `${reserveOrigin}/api/internal/admin-demo-handoff?token=${encodeURIComponent(
+            adminDemoToken,
+          )}&next=${encodeURIComponent(destination)}`,
+        );
+      }
+
+      redirect(`${reserveOrigin}${destination}`);
+    }
   } else {
     const supabase = await createClient();
     const {
@@ -120,61 +123,45 @@ export default async function LocationWorkspaceReservationsPage({
     ) {
       redirect("/create");
     }
+
+    if (hostMode) {
+      const handoffLocationId =
+        selectedLocationId ||
+        access.ownedLocationIds[0] ||
+        access.ownedSourceLocationIds[0] ||
+        "";
+
+      if (!handoffLocationId) {
+        redirect("/locations/dashboard");
+      }
+
+      const token = signBusinessReserveHandoff({
+        userId: user.id,
+        email: user.email ?? null,
+        locationId: handoffLocationId,
+      });
+      const query = new URLSearchParams({ locationId: handoffLocationId });
+      const destination = `/reserve/dashboard?${query.toString()}`;
+
+      redirect(
+        `${reserveOrigin}/api/internal/business-reserve-handoff?token=${encodeURIComponent(
+          token,
+        )}&next=${encodeURIComponent(destination)}`,
+      );
+    }
   }
 
   return (
-    <div
-      className={`location-workspace-reserve min-w-0 bg-[#050607] text-white ${
-        hostMode ? "location-host-mode" : ""
-      }`}
-    >
+    <div className="location-workspace-reserve min-w-0 bg-[#050607] text-white">
       <ReservationDateNavRepair />
-      {hostMode ? (
-        <div className="sticky top-0 z-[60] flex min-h-12 items-center justify-between gap-3 border-b border-white/10 bg-[#07090d]/95 px-3 py-2 backdrop-blur-xl sm:px-5">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">
-              Host View
-            </p>
-            <p className="truncate text-sm font-black text-white">
-              Floor-first reservation operations
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href={buildReserveSubpageHref("service", rawParams, selectedLocationId)}
-              className="shrink-0 rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75 transition hover:text-white"
-            >
-              Service controls
-            </Link>
-            <Link
-              href={buildReserveSubpageHref("reports", rawParams, selectedLocationId)}
-              className="shrink-0 rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75 transition hover:text-white"
-            >
-              Reports
-            </Link>
-            <Link
-              href={buildWorkspaceHref(rawParams)}
-              className="shrink-0 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-black text-white transition hover:bg-white/[0.1]"
-            >
-              Exit Host View
-            </Link>
-          </div>
-        </div>
-      ) : null}
-      {!hostMode && !parsedDemo.demo ? (
+      {!parsedDemo.demo ? (
         <div className="px-4 pt-5 sm:px-6 lg:px-8">
           <ReservationCommunicationCenter
             locationId={selectedLocationId || null}
           />
         </div>
       ) : null}
-      {hostMode ? (
-        <ReserveEnterpriseHostShell locationId={selectedLocationId} />
-      ) : showOverview ? (
-        <ReserveOverviewPage />
-      ) : (
-        <ReserveCommandCenterPage />
-      )}
+      {showOverview ? <ReserveOverviewPage /> : <ReserveCommandCenterPage />}
     </div>
   );
 }

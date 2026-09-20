@@ -1,9 +1,14 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveLocationAccessContext } from "@/lib/auth/locationOwnerAccess";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
+import {
+  BUSINESS_RESERVE_HANDOFF_COOKIE,
+  verifyBusinessReserveHandoff,
+} from "@theouthaven/auth/business-reserve-handoff";
 
 export type ReservePermissionKey = "viewDashboard"|"manageReservations"|"manageLayout"|"manageHours"|"manageReminders"|"manageQrCodes"|"editProfile"|"viewAnalytics"|"manageBilling"|"manageTeam";
 export type ReserveRole = "location_admin"|"manager"|"host"|"marketing"|"view_only";
@@ -141,6 +146,20 @@ async function getSignedDemoReserveAccess(locationId: string) {
   };
 }
 
+async function getSignedBusinessReserveAccess(locationId: string) {
+  const cookieStore = await cookies();
+  const handoff = verifyBusinessReserveHandoff(
+    cookieStore.get(BUSINESS_RESERVE_HANDOFF_COOKIE)?.value,
+  );
+  if (!handoff || String(handoff.locationId) !== String(locationId)) return null;
+
+  const user = { id: handoff.userId, email: handoff.email };
+  const access = await getReserveLocationAccess(user, locationId);
+  if (!access.allowed) return null;
+
+  return { user, access };
+}
+
 export async function requireReservePermission(locationId: string, permissionKey: ReservePermissionKey) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -152,6 +171,9 @@ export async function requireReservePermission(locationId: string, permissionKey
     }
     return { access, user } as any;
   }
+
+  const business = await getSignedBusinessReserveAccess(locationId);
+  if (business?.access?.permissions?.[permissionKey]) return business as any;
 
   const demo = await getSignedDemoReserveAccess(locationId);
   if (demo?.access?.permissions?.[permissionKey]) return demo as any;
