@@ -1,6 +1,11 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import BetaAdminClient from "./BetaAdminClient";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Beta Testing – Admin" };
@@ -209,15 +214,13 @@ export default async function Page() {
   ]);
 
   return (
-    <main className="admin-page min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <section className="rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,.18),transparent_30%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6">
-          <p className="text-xs font-black uppercase tracking-[.32em] text-rose-200">Admin Tools</p>
-          <h1 className="mt-3 text-4xl font-black tracking-tight">Beta Testing</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
-            Manage beta applications, testers, weekly tasks, feedback, bugs, custom prompts, reminders, Turnstile protection, and search speed diagnostics.
-          </p>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Product · Beta Operations"
+        title="Beta Testing"
+        subtitle="Manage beta applications, testers, weekly tasks, feedback, bugs, custom prompts, reminders, Turnstile protection, and search speed diagnostics."
+        badge={<AdminStatusBadge tone={turnstile.status.failuresLast24h ? "amber" : "green"}>{turnstile.status.failuresLast24h ? `${turnstile.status.failuresLast24h} Turnstile failures · 24h` : "Beta operations healthy"}</AdminStatusBadge>}
+      />
         <BetaAdminClient
           overview={overview}
           applications={applications}
@@ -232,7 +235,6 @@ export default async function Page() {
           weeklySettings={weeklySettings}
           weeklySessions={weeklySessions}
         />
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
