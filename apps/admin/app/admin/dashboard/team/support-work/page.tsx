@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -71,13 +76,13 @@ export default async function SupportWorkAdmin() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Support Work</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Uses the existing ticket system as source of truth. Support tickets
-          do not require GPS or proof pictures.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Support Operations"
+        title="Support Work"
+        subtitle="Uses the existing ticket system as source of truth. Support tickets do not require GPS or proof pictures."
+        badge={<AdminStatusBadge tone="green">{activityRows.length} activity records loaded</AdminStatusBadge>}
+      />
 
         <div className="mt-6 overflow-x-auto rounded-[2rem] border border-white/10 bg-[#111]">
           <table className="w-full min-w-[900px] text-left text-sm">
@@ -120,7 +125,6 @@ export default async function SupportWorkAdmin() {
             </tbody>
           </table>
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

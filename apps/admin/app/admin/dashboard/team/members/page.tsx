@@ -1,6 +1,11 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { TeamMemberProfileForm } from "@/components/TeamToolsForms";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +41,13 @@ export default async function MembersPage() {
   const userById = new Map(users.map((user) => [user.id, user]));
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Team Members</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Profiles link to existing auth users; no second login is created.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Identity"
+        title="Team Members"
+        subtitle="Profiles link to existing auth users; no second login is created."
+        badge={<AdminStatusBadge tone="green">{profileRows.length} active profiles loaded</AdminStatusBadge>}
+      />
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <section className="rounded-[2rem] border border-white/10 bg-[#111] p-5">
@@ -79,7 +85,6 @@ export default async function MembersPage() {
 
           <TeamMemberProfileForm users={users} />
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

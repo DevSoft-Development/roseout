@@ -1,5 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -60,13 +65,13 @@ export default async function SiteVisitsAdmin() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Site Visit Check-Ins</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          GPS verification appears only for physical site visits. Raw coordinates
-          stay out of the primary UI.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Field Operations"
+        title="Site Visit Check-Ins"
+        subtitle="GPS verification appears only for physical site visits. Raw coordinates stay out of the primary UI."
+        badge={<AdminStatusBadge tone="green">{visitRows.length} visits loaded</AdminStatusBadge>}
+      />
 
         <div className="mt-6 grid gap-4">
           {visitRows.map((visit) => {
@@ -131,7 +136,6 @@ export default async function SiteVisitsAdmin() {
             </p>
           ) : null}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

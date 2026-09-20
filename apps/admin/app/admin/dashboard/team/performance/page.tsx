@@ -1,5 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -130,9 +135,13 @@ export default async function PerformancePage() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Performance</h1>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Performance"
+        title="Performance"
+        subtitle="Review approved time, site visits, outreach, replies, and support activity by team member."
+        badge={<AdminStatusBadge tone="green">{byUser.size} team members measured</AdminStatusBadge>}
+      />
         <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {Array.from(byUser.values()).map((row) => {
             const user = usersById.get(row.id);
@@ -168,7 +177,6 @@ export default async function PerformancePage() {
             );
           })}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
