@@ -38,6 +38,7 @@ const requiredRoutes = [
   "apps/reserve/app/api/reserve/availability/route.ts",
   "apps/reserve/app/api/reserve/location/route.ts",
   "apps/reserve/app/api/reservations/lock-slot/route.ts",
+  "apps/reserve/app/api/internal/reserve/outbox/route.ts",
 ];
 
 const missing = requiredRoutes.filter((file) => !fs.existsSync(path.join(root, file)));
