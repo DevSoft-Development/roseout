@@ -151,6 +151,47 @@ if (
 
 
 
+const demoHandoff = read("packages/auth/admin-demo-handoff.ts");
+const adminDemoCenter = read("apps/admin/app/admin/dashboard/settings/demo-center/page.tsx");
+const businessDemoHandoff = read("apps/business/app/api/internal/admin-demo-handoff/route.ts");
+const reserveDemoHandoff = read("apps/reserve/app/api/internal/admin-demo-handoff/route.ts");
+const internalDemoAccess = read("lib/demo/internal-demo-access.ts");
+for (const required of [
+  "ADMIN_BUSINESS_DEMO_HANDOFF_SECRET",
+  "WORKER_INTERNAL_SECRET",
+  "createHmac",
+  "timingSafeEqual",
+  "ADMIN_DEMO_HANDOFF_COOKIE",
+]) {
+  if (!demoHandoff.includes(required)) {
+    throw new Error(`Admin demo handoff must preserve signed-token marker: ${required}`);
+  }
+}
+if (
+  !adminDemoCenter.includes("signAdminDemoHandoff") ||
+  !adminDemoCenter.includes("business.theouthaven.com") ||
+  !adminDemoCenter.includes("reserve.theouthaven.com") ||
+  !adminDemoCenter.includes("/api/internal/admin-demo-handoff")
+) {
+  throw new Error("Demo Center must use signed Admin handoff links for isolated Business and Reserve surfaces.");
+}
+for (const [label, route] of [["Business", businessDemoHandoff], ["Reserve", reserveDemoHandoff]]) {
+  if (
+    !route.includes("verifyAdminDemoHandoff") ||
+    !route.includes("httpOnly: true") ||
+    !route.includes("sameSite: \"lax\"") ||
+    !route.includes("secure: true")
+  ) {
+    throw new Error(`${label} demo handoff must validate the signed token and set a secure host-only session cookie.`);
+  }
+}
+if (
+  !internalDemoAccess.includes("verifyAdminDemoHandoff") ||
+  !internalDemoAccess.includes("ADMIN_DEMO_HANDOFF_COOKIE")
+) {
+  throw new Error("Business/Reserve internal demo access must accept the signed Admin handoff cookie.");
+}
+
 const adminSession = read("packages/auth/admin-session.ts");
 for (const dependency of [
   "./server-client",
