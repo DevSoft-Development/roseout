@@ -11,6 +11,12 @@ import {
 } from "lucide-react";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 import { AppleConfiguratorEnrollmentGuide } from "./AppleConfiguratorEnrollmentGuide";
 import {
   isAppleBusinessApiConfigured,
@@ -96,22 +102,21 @@ export default async function AppleDeviceEnrollmentPage() {
   const depToken = depSettings[0] || null;
 
   return (
-    <section className="apple-page">
-      <header className="apple-hero">
-        <div>
-          <p>TheOutHaven Admin / System</p>
-          <h1>Apple Device Enrollment</h1>
-          <span>
-            Prepare company iPads and iPhones for zero-touch enrollment through
-            Apple Business Manager and Microsoft Intune.
-          </span>
-        </div>
-        <nav>
-          <a href="/admin/dashboard/security/devices">Managed Devices</a>
-          <a href="/admin/dashboard/settings/microsoft-365">Microsoft 365</a>
-          <a href="/admin/dashboard/security/apple-devices">Refresh</a>
-        </nav>
-      </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="System · Apple Enrollment"
+        title="Apple Device Enrollment"
+        subtitle="Prepare company iPads and iPhones for zero-touch enrollment through Apple Business Manager and Microsoft Intune."
+        badge={<AdminStatusBadge tone={appleError || intuneError ? "amber" : "green"}>{appleError || intuneError ? "Enrollment needs attention" : `${enrolledCount} enrolled`}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/security/devices">Managed Devices</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/settings/microsoft-365">Microsoft 365</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/security/apple-devices" variant="primary"><RefreshCw className="h-4 w-4" />Refresh</AdminActionButton>
+          </>
+        }
+      />
+      <div className="apple-page">
 
       {!appleConfigured ? (
         <section className="apple-alert">
@@ -306,6 +311,7 @@ export default async function AppleDeviceEnrollmentPage() {
           </div>
         )}
       </section>
-    </section>
+      </div>
+    </AdminPageShell>
   );
 }
