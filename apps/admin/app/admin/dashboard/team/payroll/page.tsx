@@ -1,5 +1,10 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -72,13 +77,13 @@ export default async function PayrollAdmin() {
   }
 
   return (
-    <main className="px-4 py-6 text-white">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="text-3xl font-black">Payroll Export</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Approved sessions for profiles with include_in_payroll=true are
-          exported by the Supabase Edge Function.
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Payroll"
+        title="Payroll Export"
+        subtitle="Approved sessions for payroll-enabled profiles are exported by the existing payroll workflow."
+        badge={<AdminStatusBadge tone={sessionRows.length ? "amber" : "green"}>{sessionRows.length ? `${sessionRows.length} sessions pending export` : "Payroll queue clear"}</AdminStatusBadge>}
+      />
 
         <div className="mt-6 rounded-3xl border border-white/10 bg-[#111] p-5">
           <h2 className="text-xl font-black">Pending export preview</h2>
@@ -125,7 +130,6 @@ export default async function PayrollAdmin() {
             </div>
           ))}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
