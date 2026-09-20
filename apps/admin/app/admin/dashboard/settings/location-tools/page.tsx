@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminSectionCard,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 const MIRROR_DEMO_KEY = "real_location_mirror_demo";
 
@@ -74,15 +81,16 @@ export default async function LocationToolsPage() {
     : "/admin/dashboard/settings/demo-center";
 
   return (
-    <main className="min-h-screen bg-[#080407] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,.2),transparent_34%),#0d0d0f] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-200">Operations</p>
-          <h1 className="mt-3 text-4xl font-black">Data Operations</h1>
-          <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">Technical location-data operations in one workspace: imports, enrichment, classification, publishing, photos, markets, search profiles, and maintenance.</p>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Operations · Data"
+        title="Data Operations"
+        subtitle="Technical location-data operations in one workspace: imports, enrichment, classification, publishing, photos, markets, search profiles, and maintenance."
+        badge={<AdminStatusBadge tone="green">Location data workspace</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/locations">Locations</AdminActionButton>}
+      />
 
-        <section className="rounded-[2rem] border border-rose-400/30 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,.16),transparent_36%),#111] p-6">
+      <AdminSectionCard className="border-rose-400/20 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Universal Test Venue</p>
@@ -95,9 +103,9 @@ export default async function LocationToolsPage() {
               <Link href={publicHref} className="rounded-full border border-rose-300/25 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500/20">Public View</Link>
             </div>
           </div>
-        </section>
+      </AdminSectionCard>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {tools.map(([title, body, label, href]) => (
             <Link key={href} href={href} className="rounded-3xl border border-white/10 bg-[#111] p-5 transition hover:bg-white/[0.07]">
               <span className="rounded-full border border-rose-300/20 bg-rose-500/10 px-3 py-1 text-xs font-black uppercase tracking-widest text-rose-100">{label}</span>
@@ -107,11 +115,10 @@ export default async function LocationToolsPage() {
           ))}
         </section>
 
-        <section className="rounded-3xl border border-white/10 bg-[#111] p-5 text-sm font-bold text-white/65">
+      <AdminSectionCard className="p-5 text-sm font-bold text-white/65">
           <p className="text-xs font-black uppercase tracking-widest text-white/35">Related CRM workspace</p>
           <p className="mt-2">Browse and work individual location records in <Link className="text-rose-200 underline" href="/admin/dashboard/crm/locations">CRM Locations</Link>, and review duplicate decisions in <Link className="text-rose-200 underline" href="/admin/dashboard/crm/location-health#duplicates">Location Health</Link>.</p>
-        </section>
-      </div>
-    </main>
+      </AdminSectionCard>
+    </AdminPageShell>
   );
 }

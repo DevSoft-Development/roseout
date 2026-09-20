@@ -5790,3 +5790,20 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseTrustPage = read("apps/admin/app/admin/dashboard/trust/page.tsx");
+const enterpriseGiveawayPage = read("apps/admin/app/admin/dashboard/giveaway/page.tsx");
+const enterpriseClaimToolsPage = read("apps/admin/app/admin/dashboard/claim-tools/page.tsx");
+const enterpriseLocationToolsPage = read("apps/admin/app/admin/dashboard/settings/location-tools/page.tsx");
+for (const [label, source] of [
+  ["Trust", enterpriseTrustPage],
+  ["Giveaway", enterpriseGiveawayPage],
+  ["Claim Tools", enterpriseClaimToolsPage],
+  ["Data Operations", enterpriseLocationToolsPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
