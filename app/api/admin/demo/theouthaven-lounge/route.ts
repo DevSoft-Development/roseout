@@ -5,6 +5,7 @@ import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 const DEMO_SPACES = [
     { item_name: "Main Bar", item_type: "bar", capacity: 10, x_position: 32, y_position: 28, layout_x: 32, layout_y: 28, width: 520, height: 96, layout_width: 520, layout_height: 96, layout_zone: "Bar" },
+    { item_name: "Bar Seats", item_type: "bar_seat", capacity: 8, x_position: 576, y_position: 28, layout_x: 576, layout_y: 28, width: 348, height: 96, layout_width: 348, layout_height: 96, layout_zone: "Bar" },
     { item_name: "Booth 1", item_type: "booth", capacity: 4, x_position: 32, y_position: 164, layout_x: 32, layout_y: 164, width: 180, height: 112, layout_width: 180, layout_height: 112, layout_zone: "Booths" },
     { item_name: "Booth 2", item_type: "booth", capacity: 6, x_position: 236, y_position: 164, layout_x: 236, layout_y: 164, width: 190, height: 112, layout_width: 190, layout_height: 112, layout_zone: "Booths" },
     { item_name: "VIP Booth", item_type: "booth", capacity: 8, x_position: 450, y_position: 164, layout_x: 450, layout_y: 164, width: 220, height: 112, layout_width: 220, layout_height: 112, layout_zone: "Booths" },
