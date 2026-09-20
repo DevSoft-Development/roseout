@@ -31,6 +31,15 @@
       ],
       "@/*": [
         "./*"
+      ],
+      "@theouthaven/auth/*": [
+        "./packages/auth/*"
+      ],
+      "@theouthaven/config/*": [
+        "./packages/config/*"
+      ],
+      "@theouthaven/db/*": [
+        "./packages/db/*"
       ]
     }
   },
