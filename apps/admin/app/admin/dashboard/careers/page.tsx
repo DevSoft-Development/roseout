@@ -2,6 +2,12 @@ import Link from "next/link";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Careers CRM – Admin" };
@@ -132,27 +138,19 @@ export default async function CareersAdminPage() {
     recent.error;
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Careers CRM</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Hiring Command Center</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                Manage TheOutHaven roles, applicants, interviews, offers, internships, marketing hiring, and team conversion.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin/dashboard/careers/jobs/new" className="rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black">
-                Create Job
-              </Link>
-              <Link href="https://theouthaven.com/careers" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-black text-white/80">
-                Public Careers
-              </Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="People · Careers CRM"
+        title="Hiring Command Center"
+        subtitle="Manage TheOutHaven roles, applicants, interviews, offers, internships, marketing hiring, and team conversion."
+        badge={<AdminStatusBadge tone={(needsReview.count || 0) ? "amber" : "green"}>{needsReview.count || 0 ? `${needsReview.count} applications need review` : "Hiring queue healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/careers/jobs/new" variant="primary">Create Job</AdminActionButton>
+            <AdminActionButton href="https://theouthaven.com/careers">Public Careers</AdminActionButton>
+          </>
+        }
+      />
 
         <nav className="flex gap-2 overflow-x-auto pb-2" aria-label="Careers sections">
           {tabs.map((tab) => (
@@ -241,7 +239,6 @@ export default async function CareersAdminPage() {
             </div>
           </section>
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
