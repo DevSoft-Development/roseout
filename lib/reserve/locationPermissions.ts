@@ -113,7 +113,8 @@ export async function getReserveLocationAccess(user: any, locationId: string) {
 
 async function getSignedDemoReserveAccess(locationId: string) {
   const viewer = await getInternalDemoViewer();
-  const handoff = viewer?.demoHandoff;
+  if (!viewer || !("demoHandoff" in viewer)) return null;
+  const handoff = viewer.demoHandoff;
   if (!handoff || String(handoff.locationId) !== String(locationId)) return null;
 
   const { data: location, error } = await supabaseAdmin

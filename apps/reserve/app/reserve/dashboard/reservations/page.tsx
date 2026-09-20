@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 
+type SearchValue = string | string[] | undefined;
 type Props = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, SearchValue>> | Record<string, SearchValue>;
 };
 
-function appendParam(query: URLSearchParams, key: string, value: string | string[] | undefined) {
+function appendParam(query: URLSearchParams, key: string, value: SearchValue) {
   if (Array.isArray(value)) value.forEach((item) => query.append(key, item));
   else if (value) query.set(key, value);
 }
@@ -13,7 +14,6 @@ export default async function ReserveDashboardReservationsRedirect({ searchParam
   const params = searchParams ? await searchParams : {};
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => appendParam(query, key, value));
-  if (!query.has("tab")) query.set("tab", "today");
   const qs = query.toString();
-  redirect(`/locations/dashboard/reservations${qs ? `?${qs}` : ""}`);
+  redirect(`/reserve/dashboard${qs ? `?${qs}` : ""}`);
 }
