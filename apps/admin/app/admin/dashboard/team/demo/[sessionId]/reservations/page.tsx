@@ -5,6 +5,12 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { formatDateTime, labelize } from "@/lib/team-tools";
 import { formatFullAddress } from "@/lib/address-utils";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -20,16 +26,17 @@ export default async function DemoReservationPreview({ params }: Props) {
   if (!session) notFound();
 
   return (
-    <main className="px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <Link href="/admin/dashboard/team/demo" className="text-sm font-black text-rose-200">← Demo / Training</Link>
-        <div className="mt-6 rounded-3xl border border-amber-400/25 bg-amber-500/10 p-4 text-sm font-black text-amber-100">
-          DEMO MODE — Training only. No real booking will be created, no customer SMS/email will be sent, and real inventory is not blocked.
-        </div>
-        <h1 className="mt-6 text-3xl font-black">Demo reservation workspace</h1>
-        <p className="mt-2 text-sm font-bold text-white/55">
-          Session {session.id} · {labelize(session.session_type)} · {labelize(session.status)} · Expires {formatDateTime(session.expires_at)}
-        </p>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Team · Demo Reservations"
+        title="Demo Reservation Workspace"
+        subtitle={`Session ${session.id} · ${labelize(session.session_type)} · ${labelize(session.status)} · Expires ${formatDateTime(session.expires_at)}`}
+        badge={<AdminStatusBadge tone="amber">Training only · no real bookings</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/team/demo">Demo / Training</AdminActionButton>}
+      />
+      <div className="rounded-3xl border border-amber-400/25 bg-amber-500/10 p-4 text-sm font-black text-amber-100">
+        DEMO MODE — Training only. No real booking will be created, no customer SMS/email will be sent, and real inventory is not blocked.
+      </div>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           {(locations || []).map((location: any) => (
             <article key={location.id} className="rounded-3xl border border-white/10 bg-[#111] p-5">
@@ -42,7 +49,6 @@ export default async function DemoReservationPreview({ params }: Props) {
             </article>
           ))}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
