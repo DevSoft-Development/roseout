@@ -2,6 +2,12 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import ImpersonateButton from "@/components/admin/ImpersonateButton";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
@@ -59,17 +65,14 @@ export default async function OwnerAccountsPage({
   const ownerAccounts = (owners || []) as OwnerAccount[];
 
   return (
-    <main className="min-h-screen bg-[#090706] p-6 text-white">
-      <div className="mx-auto max-w-6xl space-y-5">
-        <section className="rounded-[1.75rem] border border-white/10 bg-[linear-gradient(135deg,#160b0b,#090706_55%,#140f0a)] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-300">
-            TheOutHaven Admin
-          </p>
-          <h1 className="mt-2 text-3xl font-black">Owner Accounts</h1>
-          <p className="mt-2 text-sm text-white/60">
-            Review connected location owners and securely start admin-only owner impersonation.
-          </p>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Owners · Identity"
+        title="Owner Accounts"
+        subtitle="Review connected location owners and securely start admin-only owner impersonation."
+        badge={<AdminStatusBadge tone="green">{ownerAccounts.length.toLocaleString()} owners loaded</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/businesses">Businesses</AdminActionButton>}
+      />
 
         <form className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 sm:flex-row">
           <input
@@ -141,7 +144,6 @@ export default async function OwnerAccountsPage({
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
