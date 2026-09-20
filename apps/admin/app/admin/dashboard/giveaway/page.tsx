@@ -6,7 +6,7 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const metadata = { title: "Giveaway Retired | TheOutHaven Admin" };
 
