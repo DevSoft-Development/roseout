@@ -99,14 +99,52 @@ function resourceVisualType(resource: any) {
 function floorItemStyle(resource: any, width: number, height: number): CSSProperties {
   const x = resourceLayoutValue(resource, "x");
   const y = resourceLayoutValue(resource, "y");
-  const w = Math.max(88, resourceLayoutValue(resource, "width"));
-  const h = Math.max(74, resourceLayoutValue(resource, "height"));
+  const sourceWidth = Math.max(1, resourceLayoutValue(resource, "width"));
+  const sourceHeight = Math.max(1, resourceLayoutValue(resource, "height"));
+  const type = resourceVisualType(resource);
+  const capacity = Math.max(1, Number(resourceCapacity(resource) || 1));
+  const centerX = x + sourceWidth / 2;
+  const centerY = y + sourceHeight / 2;
+  let visualWidth = 12;
+  let visualHeight = 16;
+
+  if (isBarResource(resource)) {
+    visualWidth = 46;
+    visualHeight = 16;
+  } else if (type === "booth") {
+    visualWidth = capacity >= 8 ? 19 : 17;
+    visualHeight = 18;
+  } else if (type === "private") {
+    visualWidth = 18;
+    visualHeight = 28;
+  } else if (type === "patio") {
+    visualWidth = 12;
+    visualHeight = 17;
+  } else if (capacity <= 2) {
+    visualWidth = 10;
+    visualHeight = 15;
+  } else if (capacity <= 4) {
+    visualWidth = 12;
+    visualHeight = 16;
+  } else if (capacity <= 6) {
+    visualWidth = 14;
+    visualHeight = 16;
+  } else {
+    visualWidth = 16;
+    visualHeight = 17;
+  }
+
+  const halfWidth = visualWidth / 2;
+  const halfHeight = visualHeight / 2;
+  const left = Math.max(halfWidth + 1, Math.min(99 - halfWidth, (centerX / width) * 100));
+  const top = Math.max(halfHeight + 1, Math.min(99 - halfHeight, (centerY / height) * 100));
+
   return {
-    left: `${Math.max(0, Math.min(100, (x / width) * 100))}%`,
-    top: `${Math.max(0, Math.min(100, (y / height) * 100))}%`,
-    width: `${Math.max(9, Math.min(35, (w / width) * 100))}%`,
-    height: `${Math.max(11, Math.min(34, (h / height) * 100))}%`,
-    transform: `rotate(${Number(resource?.rotation || 0)}deg)`,
+    left: `${left}%`,
+    top: `${top}%`,
+    width: `${visualWidth}%`,
+    height: `${visualHeight}%`,
+    transform: `translate(-50%, -50%) rotate(${Number(resource?.rotation || 0)}deg)`,
   };
 }
 
