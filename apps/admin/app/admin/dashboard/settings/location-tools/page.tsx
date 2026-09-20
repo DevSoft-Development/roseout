@@ -7,7 +7,7 @@ import {
   AdminPageShell,
   AdminSectionCard,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../../components/admin/AdminDesignSystem";
 
 const MIRROR_DEMO_KEY = "real_location_mirror_demo";
 
