@@ -5710,3 +5710,20 @@ for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "Admi
     throw new Error(`Business View enterprise workspace must preserve shared design marker: ${marker}`);
   }
 }
+
+const enterpriseMarketingAnalyticsPage = read("apps/admin/app/admin/dashboard/marketing/analytics/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminSectionCard"]) {
+  if (!enterpriseMarketingAnalyticsPage.includes(marker)) {
+    throw new Error(`Marketing Analytics enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
+if (enterpriseMarketingAnalyticsPage.includes("rounded-xl border bg-white p-4")) {
+  throw new Error("Marketing Analytics must not regress to the retired light standalone card treatment.");
+}
+
+const enterpriseFeaturedOutingsPage = read("apps/admin/app/admin/dashboard/marketing/featured-outings/page.tsx");
+for (const marker of ["AdminPageShell", "AdminPageHeader", "AdminKpiGrid", "AdminDataTableShell"]) {
+  if (!enterpriseFeaturedOutingsPage.includes(marker)) {
+    throw new Error(`Featured Outings enterprise console must preserve shared design marker: ${marker}`);
+  }
+}
