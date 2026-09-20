@@ -22,6 +22,31 @@ function first(value: SearchValue) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function buildSettingsHref(params: Record<string, SearchValue>) {
+  const query = new URLSearchParams();
+  const legacySection = first(params.section) || "";
+  const sectionMap: Record<string, string> = {
+    layout: "layout",
+    hours: "hours",
+    reminders: "reminders",
+    deposits: "policies",
+    booking: "distribution",
+    embed: "distribution",
+    qr: "qr",
+    team: "team",
+  };
+
+  for (const [key, value] of Object.entries(params)) {
+    if (["tab", "section", "host"].includes(key) || value === undefined) continue;
+    if (Array.isArray(value)) value.forEach((item) => query.append(key, item));
+    else query.set(key, value);
+  }
+  if (sectionMap[legacySection]) query.set("section", sectionMap[legacySection]);
+
+  const qs = query.toString();
+  return `/locations/dashboard/reservations/settings${qs ? `?${qs}` : ""}`;
+}
+
 export default async function LocationWorkspaceReservationsPage({
   searchParams,
 }: {
