@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -63,30 +71,26 @@ export default async function SearchAnchorsAdminPage({
   ];
 
   return (
-    <main className="min-h-screen bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">Search / System tools</p>
-            <h1 className="mt-2 text-3xl font-bold">Search Anchors</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">Manage named locations, linked TheOutHaven places, discovery candidates, radius settings, and anchor health.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/dashboard/search-anchors/upload" className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold hover:bg-red-600">CSV Uploader</Link>
-            <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Dry Run & Approval</Link>
-            <a href="/admin/dashboard/search-anchors/audit" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">Run coverage audit</a>
-            <a href="/admin/dashboard/search-anchors?view=linked" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold hover:border-red-700">View linked locations</a>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search · System Tools"
+        title="Search Anchors"
+        subtitle="Manage named locations, linked TheOutHaven places, discovery candidates, radius settings, and anchor health."
+        badge={<AdminStatusBadge tone={(discoveries.count ?? 0) || (pending.count ?? 0) ? "amber" : "green"}>{(discoveries.count ?? 0) || (pending.count ?? 0) ? `${(discoveries.count ?? 0) + (pending.count ?? 0)} items need review` : "Anchor system healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/search-anchors/upload" variant="primary">CSV Uploader</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/search-anchors/sync-preview">Dry Run & Approval</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/search-anchors/audit">Coverage Audit</AdminActionButton>
+          </>
+        }
+      />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {stats.map(([label, value]) => (
-            <article key={String(label)} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">{label}</p>
-              <p className="mt-2 text-2xl font-semibold text-red-100">{value}</p>
-            </article>
-          ))}
-        </section>
+      <AdminKpiGrid>
+        {stats.slice(0,4).map(([label, value]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={value as string | number} helper="Search anchor coverage" />
+        ))}
+      </AdminKpiGrid>
 
         <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Search anchor sections">
           {tabs.map((tab) => {
@@ -155,7 +159,6 @@ export default async function SearchAnchorsAdminPage({
             <p className="text-sm text-zinc-500">Showing {rows.length} of {count ?? rows.length} matching anchors.</p>
           </>
         )}
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
