@@ -140,6 +140,9 @@ export default async function DeviceManagementPage({ searchParams }: { searchPar
               DeviceManagementConfiguration.ReadWrite.All, then try again.
             </p>
           </div>
+          <Link href="/api/admin/integrations/microsoft-365/connect?consent=1&next=/admin/dashboard/security/devices">
+            Grant Intune permissions
+          </Link>
         </section>
       ) : null}
 
