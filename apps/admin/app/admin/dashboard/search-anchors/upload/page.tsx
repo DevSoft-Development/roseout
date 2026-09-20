@@ -1,24 +1,30 @@
 import Link from "next/link";
 import SearchAnchorCsvUploader from "./SearchAnchorCsvUploader";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
 export default function SearchAnchorUploadPage() {
   return (
-    <main className="min-h-screen bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">Search anchors</p>
-            <h1 className="mt-2 text-3xl font-bold">CSV Uploader</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">Validate and import curated anchor CSV files without using the terminal.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/dashboard/search-anchors/curated-review" className="rounded-xl bg-emerald-700 px-4 py-2 text-center text-sm font-semibold hover:bg-emerald-600">Approve curated list</Link>
-            <a href="/templates/search-anchor-import-template.csv" download className="rounded-xl bg-red-700 px-4 py-2 text-center text-sm font-semibold hover:bg-red-600">Download template</a>
-            <Link href="/admin/dashboard/search-anchors" className="rounded-xl border border-zinc-700 px-4 py-2 text-center text-sm font-semibold hover:border-red-700">Back to anchors</Link>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search Anchors · Import"
+        title="CSV Uploader"
+        subtitle="Validate and import curated anchor CSV files without using the terminal."
+        badge={<AdminStatusBadge tone="blue">Curated import workflow</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/search-anchors/curated-review" variant="primary">Approve Curated List</AdminActionButton>
+            <a href="/templates/search-anchor-import-template.csv" download className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80">Download Template</a>
+            <AdminActionButton href="/admin/dashboard/search-anchors">Search Anchors</AdminActionButton>
+          </>
+        }
+      />
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-sm text-zinc-300">
           <h2 className="font-semibold text-white">Required columns</h2>
@@ -33,7 +39,6 @@ export default function SearchAnchorUploadPage() {
         </section>
 
         <SearchAnchorCsvUploader />
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
