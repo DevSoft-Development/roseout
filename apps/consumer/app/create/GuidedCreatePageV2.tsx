@@ -93,6 +93,7 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
   const [typedPlaceholder, setTypedPlaceholder] = useState(typingSearches[0]);
   const [locationSaved, setLocationSaved] = useState(false);
   const [error, setError] = useState("");
+  const [locationRequired, setLocationRequired] = useState(false);
   const selectedPlanType = planTypes.find((item) => item.id === planType) || planTypes[0];
 
   useEffect(() => {
@@ -134,7 +135,7 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
     navigator.geolocation.getCurrentPosition(
       (position) => {
         localStorage.setItem(LOCATION_KEY, JSON.stringify({ latitude: position.coords.latitude, longitude: position.coords.longitude }));
-        setLocationSaved(true); setLocation(""); setLocationSource("device"); setError("");
+        setLocationSaved(true); setLocation(""); setLocationSource("device"); setError(""); setLocationRequired(false);
       },
       () => setError("We could not access your location. Enter a neighborhood, city, or ZIP instead."),
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
@@ -187,7 +188,8 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
   }
 
   function showPicks() {
-    if (!location.trim() && !locationSaved) { setError("Add an area or use your current location so we know where to plan."); return; }
+    if (!location.trim() && !locationSaved) { setError(""); setLocationRequired(true); return; }
+    setLocationRequired(false);
     const locationMode = locationSource === "search" ? "search_query" : locationSaved || locationSource === "device" ? "current_location" : "typed";
     const allMatters = [...preferences, ...customMatters];
     safelyTrack("planner_where_when_completed", { step: 2, plan_type: planType, location_mode: locationMode, when, custom_date: customDate || null, custom_time: customTime || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION });
@@ -242,7 +244,7 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
 
             <div className="mt-4 rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-4">
               <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/65">Where?</p><p className="mt-1 text-xs font-semibold text-white/35">Required</p></div>{locationSource === "search" && location.trim() ? <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[9px] font-black text-emerald-300">From your search</span> : null}</div>
-              {locationSource === "search" && location.trim() ? <div className="mt-3 flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] px-4"><p className="min-w-0 truncate text-base font-black">{location}</p><button type="button" onClick={() => setLocationSource("manual")} className="min-h-10 shrink-0 rounded-full border border-white/10 px-3 text-[10px] font-black text-white/70">Change</button></div> : <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><input value={location} onChange={(event) => { setLocation(event.target.value); setLocationSource("manual"); if (event.target.value) setLocationSaved(false); }} placeholder="Neighborhood, city, or ZIP" className="h-12 min-w-0 rounded-2xl border border-white/10 bg-white/[0.045] px-4 text-base font-semibold outline-none placeholder:text-white/30 focus:border-[#e1062a]/55" /><button type="button" onClick={requestUserLocation} className={`min-h-12 rounded-2xl border px-4 text-[10px] font-black uppercase tracking-[0.08em] ${locationSaved ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.045] text-white/70"}`}>{locationSaved ? "✓ My location" : "Use my location"}</button></div>}
+              {locationSource === "search" && location.trim() ? <div className="mt-3 flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] px-4"><p className="min-w-0 truncate text-base font-black">{location}</p><button type="button" onClick={() => setLocationSource("manual")} className="min-h-10 shrink-0 rounded-full border border-white/10 px-3 text-[10px] font-black text-white/70">Change</button></div> : <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]"><input value={location} onChange={(event) => { setLocation(event.target.value); setLocationSource("manual"); setLocationRequired(false); if (event.target.value) setLocationSaved(false); }} placeholder="Neighborhood, city, or ZIP" className="h-12 min-w-0 rounded-2xl border border-white/10 bg-white/[0.045] px-4 text-base font-semibold outline-none placeholder:text-white/30 focus:border-[#e1062a]/55" /><button type="button" onClick={requestUserLocation} className={`min-h-12 rounded-2xl border px-4 text-[10px] font-black uppercase tracking-[0.08em] ${locationSaved ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.045] text-white/70"}`}>{locationSaved ? "✓ My location" : "Use my location"}</button></div>}
             </div>
 
             <div className="mt-3 rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-4">
@@ -257,6 +259,7 @@ export default function GuidedCreatePageV2({ initialIdea = "", initialPlanType =
               {showCustomPreference || customMatters.length > 0 ? <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 px-3 py-2.5 focus-within:border-[#e1062a]/45"><div className="flex flex-wrap items-center gap-2">{customMatters.map((item) => <button key={item} type="button" onClick={() => setCustomMatters((current) => current.filter((value) => value !== item))} title="Remove" className="min-h-9 rounded-xl border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-2 text-xs font-black text-white">{item} <span className="ml-1 text-white/40">×</span></button>)}<input disabled={customMatters.length >= MAX_CUSTOM_MATTERS} value={matterInput} onChange={(event) => setMatterInput(event.target.value.replace(/^\s+/, ""))} onKeyDown={(event) => { if ((event.key === "Enter" || event.key === ",") && matterInput.trim()) { event.preventDefault(); addCustomMatter(); } }} onBlur={() => matterInput.trim() && addCustomMatter()} placeholder={customMatters.length >= MAX_CUSTOM_MATTERS ? "5 custom preferences added" : "e.g. live music, quiet table, outdoor seating"} className="h-10 min-w-0 flex-1 basis-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/30 disabled:cursor-not-allowed sm:basis-auto" /></div></div> : <button type="button" onClick={() => setShowCustomPreference(true)} className="mt-3 text-xs font-black text-[#ff7188]">+ Add something specific</button>}
             </div>
 
+            {locationRequired ? <div role="alert" className="mt-3 rounded-xl border border-[#e1062a]/35 bg-[#e1062a]/10 px-4 py-3"><p className="text-sm font-black text-white">Choose a location to continue</p><p className="mt-1 text-xs font-semibold text-white/60">Use your current location or enter a neighborhood, city, or ZIP.</p></div> : null}
             {error ? <p className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2.5 text-sm font-bold text-red-100">{error}</p> : null}
             <div className="mt-4 flex items-center justify-between gap-3"><button type="button" onClick={() => { setActiveStep(1); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="min-h-11 rounded-full border border-white/10 px-5 py-3 text-xs font-black text-white/70 sm:hidden">← Back</button><button type="button" onClick={showPicks} className="ml-auto min-h-11 rounded-full bg-[#e1062a] px-7 py-3.5 text-xs font-black uppercase tracking-[0.1em] shadow-lg shadow-red-950/30 transition hover:bg-[#ff1744]">Show My Picks →</button></div>
           </div>
