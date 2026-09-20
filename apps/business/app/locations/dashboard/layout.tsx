@@ -1,7 +1,9 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
+import { ADMIN_DEMO_HANDOFF_COOKIE, verifyAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
 
 export default async function LocationsDashboardLayout({
   children,
@@ -10,7 +12,13 @@ export default async function LocationsDashboardLayout({
 }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/locations/dashboard");
+  const cookieStore = await cookies();
+  const demoHandoff = verifyAdminDemoHandoff(
+    cookieStore.get(ADMIN_DEMO_HANDOFF_COOKIE)?.value,
+  );
+  if (!user && !demoHandoff) {
+    redirect("/business/login?next=/locations/dashboard");
+  }
 
   return (
     <div className="location-dashboard-layout min-h-screen overflow-x-hidden bg-[#050607] md:flex">
