@@ -1,5 +1,13 @@
 import Link from "next/link";
 import { buildSearchAnchorCoverageAudit } from "@/lib/search/anchors/audit";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -37,25 +45,20 @@ export default async function SearchAnchorAuditPage({
   ];
 
   return (
-    <main className="min-h-screen bg-black px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-400">Search anchors / Phase 1</p>
-            <h1 className="mt-2 text-3xl font-bold">Anchor coverage audit</h1>
-            <p className="mt-2 max-w-3xl text-sm text-zinc-400">Read-only coverage report. This page does not create, update, disable, merge, or delete anchors.</p>
-          </div>
-          <Link href="/admin/dashboard/search-anchors" className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-red-700 hover:text-white">Back to Search Anchors</Link>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Search Anchors · Coverage"
+        title="Anchor Coverage Audit"
+        subtitle="Read-only coverage report. This page does not create, update, disable, merge, or delete anchors."
+        badge={<AdminStatusBadge tone={audit.summary.missingLinkedAnchors || audit.summary.conflictingAnchors ? "amber" : "green"}>{audit.summary.missingLinkedAnchors || audit.summary.conflictingAnchors ? "Coverage issues detected" : "Coverage healthy"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/search-anchors">Search Anchors</AdminActionButton>}
+      />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {cards.map(([label, value]) => (
-            <article key={String(label)} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
-              <p className="text-xs uppercase tracking-wide text-zinc-500">{label}</p>
-              <p className="mt-2 text-3xl font-semibold">{value}</p>
-            </article>
-          ))}
-        </section>
+      <AdminKpiGrid>
+        {cards.slice(0,4).map(([label, value]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={value as number} helper="Coverage audit" />
+        ))}
+      </AdminKpiGrid>
 
         <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -111,7 +114,6 @@ export default async function SearchAnchorAuditPage({
             </table>
           </div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
