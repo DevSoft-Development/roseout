@@ -4,6 +4,12 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { CAREERS_VIEW_ROLES } from "@/lib/careers/access";
 import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+import {
   formatCareerDate,
   getCompensationLabel,
   getJobStatusTone,
@@ -72,27 +78,19 @@ export default async function CareersJobsPage() {
   const consumerOrigin = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Careers CRM</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Jobs Manager</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                Create, edit, pause, close, archive, and preview TheOutHaven career roles.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin/dashboard/careers" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-black text-white/80">
-                Overview
-              </Link>
-              <Link href="/admin/dashboard/careers/jobs/new" className="rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black">
-                Create Job
-              </Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Careers CRM · Roles"
+        title="Jobs Manager"
+        subtitle="Create, edit, pause, close, archive, and preview TheOutHaven career roles."
+        badge={<AdminStatusBadge tone={jobsResult.error ? "red" : "green"}>{jobsResult.error ? "Jobs data needs attention" : `${jobs.length} roles loaded`}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/careers">Overview</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/careers/jobs/new" variant="primary">Create Job</AdminActionButton>
+          </>
+        }
+      />
 
         {jobsResult.error ? (
           <section className="rounded-2xl border border-rose-300/25 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">
@@ -159,7 +157,6 @@ export default async function CareersJobsPage() {
             </div>
           </section>
         )}
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
