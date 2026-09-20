@@ -99,14 +99,52 @@ function resourceVisualType(resource: any) {
 function floorItemStyle(resource: any, width: number, height: number): CSSProperties {
   const x = resourceLayoutValue(resource, "x");
   const y = resourceLayoutValue(resource, "y");
-  const w = Math.max(88, resourceLayoutValue(resource, "width"));
-  const h = Math.max(74, resourceLayoutValue(resource, "height"));
+  const sourceWidth = Math.max(1, resourceLayoutValue(resource, "width"));
+  const sourceHeight = Math.max(1, resourceLayoutValue(resource, "height"));
+  const type = resourceVisualType(resource);
+  const capacity = Math.max(1, Number(resourceCapacity(resource) || 1));
+  const centerX = x + sourceWidth / 2;
+  const centerY = y + sourceHeight / 2;
+  let visualWidth = 12;
+  let visualHeight = 16;
+
+  if (isBarResource(resource)) {
+    visualWidth = 46;
+    visualHeight = 16;
+  } else if (type === "booth") {
+    visualWidth = capacity >= 8 ? 19 : 17;
+    visualHeight = 18;
+  } else if (type === "private") {
+    visualWidth = 18;
+    visualHeight = 28;
+  } else if (type === "patio") {
+    visualWidth = 12;
+    visualHeight = 17;
+  } else if (capacity <= 2) {
+    visualWidth = 10;
+    visualHeight = 15;
+  } else if (capacity <= 4) {
+    visualWidth = 12;
+    visualHeight = 16;
+  } else if (capacity <= 6) {
+    visualWidth = 14;
+    visualHeight = 16;
+  } else {
+    visualWidth = 16;
+    visualHeight = 17;
+  }
+
+  const halfWidth = visualWidth / 2;
+  const halfHeight = visualHeight / 2;
+  const left = Math.max(halfWidth + 1, Math.min(99 - halfWidth, (centerX / width) * 100));
+  const top = Math.max(halfHeight + 1, Math.min(99 - halfHeight, (centerY / height) * 100));
+
   return {
-    left: `${Math.max(0, Math.min(100, (x / width) * 100))}%`,
-    top: `${Math.max(0, Math.min(100, (y / height) * 100))}%`,
-    width: `${Math.max(9, Math.min(35, (w / width) * 100))}%`,
-    height: `${Math.max(11, Math.min(34, (h / height) * 100))}%`,
-    transform: `rotate(${Number(resource?.rotation || 0)}deg)`,
+    left: `${left}%`,
+    top: `${top}%`,
+    width: `${visualWidth}%`,
+    height: `${visualHeight}%`,
+    transform: `translate(-50%, -50%) rotate(${Number(resource?.rotation || 0)}deg)`,
   };
 }
 
@@ -541,12 +579,12 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
                 {barResources.map((bar: any) => {
                   const barStyle = floorItemStyle(bar, floorWidth, floorHeight);
                   return (
-                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 min-h-[86px] overflow-visible rounded-[1.4rem] border border-[#e1062a]/30 bg-[linear-gradient(180deg,rgba(225,6,42,0.13),rgba(255,255,255,0.025))] shadow-[0_18px_45px_rgba(0,0,0,0.3)]" style={barStyle}>
-                      <div className="absolute inset-x-3 top-2 rounded-[1rem] border border-white/10 bg-black/35 px-3 py-2 text-center">
-                        <p className="text-[10px] font-black text-white sm:text-xs">{resourceName(bar)}</p>
-                        <p className="mt-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Bar · {resourceCapacity(bar)} seats</p>
+                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 overflow-visible rounded-[1.35rem] border border-[#e1062a]/35 bg-[linear-gradient(180deg,rgba(225,6,42,0.14),rgba(255,255,255,0.03))] shadow-[0_18px_45px_rgba(0,0,0,0.3)]" style={barStyle}>
+                      <div className="absolute inset-x-[4%] bottom-[36%] top-[10%] flex flex-col items-center justify-center rounded-[1rem] border border-white/10 bg-black/35 px-3 text-center">
+                        <p className="text-[11px] font-black text-white sm:text-sm">{resourceName(bar)}</p>
+                        <p className="mt-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/40">Bar · {resourceCapacity(bar)} seats</p>
                       </div>
-                      <div className="absolute -bottom-5 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-full border border-white/10 bg-[#080a0d]/95 px-2 py-1.5 shadow-2xl">
+                      <div className="absolute bottom-[-18px] left-1/2 flex max-w-[94%] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-full border border-white/10 bg-[#080a0d]/95 px-2 py-1.5 shadow-2xl">
                         {Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
                       </div>
                     </div>
