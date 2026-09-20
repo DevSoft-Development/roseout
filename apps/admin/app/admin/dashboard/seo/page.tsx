@@ -1,6 +1,11 @@
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import SeoOperationsClient from "./SeoOperationsClient";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -17,17 +22,19 @@ export default async function SeoOperationsCenterPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.seoTools);
 
   return (
-    <main className="admin-page min-h-screen px-4 pb-14 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-300">Growth Operations</p>
-          <h1 className="mt-2 text-3xl font-black">SEO Operations Center</h1>
-          <p className="mt-2 max-w-3xl text-sm text-white/55">Inspect public pages, validate search-engine readiness, monitor crawl-critical surfaces, manage recrawl workflows, and keep TheOutHaven discoverable from one command center.</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <a href="https://search.google.com/search-console?resource_id=sc-domain%3Atheouthaven.com" target="_blank" rel="noreferrer" className="rounded-full bg-rose-600 px-4 py-2 text-xs font-black">Open Google Search Console</a>
-            <a href="https://theouthaven.com/sitemap.xml" target="_blank" rel="noreferrer" className="rounded-full border border-white/10 px-4 py-2 text-xs font-black">Open Sitemap</a>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Growth · SEO Operations"
+        title="SEO Operations Center"
+        subtitle="Inspect public pages, validate search-engine readiness, monitor crawl-critical surfaces, manage recrawl workflows, and keep TheOutHaven discoverable from one command center."
+        badge={<AdminStatusBadge tone="green">SEO workspace online</AdminStatusBadge>}
+        actions={
+          <>
+            <a href="https://search.google.com/search-console?resource_id=sc-domain%3Atheouthaven.com" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white">Google Search Console</a>
+            <a href="https://theouthaven.com/sitemap.xml" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80">Open Sitemap</a>
+          </>
+        }
+      />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -63,7 +70,6 @@ export default async function SeoOperationsCenterPage() {
           <p className="mt-3 text-sm leading-6 text-white/55">The inspector is restricted to TheOutHaven domains, requires SEO admin access, and reports canonical, robots, metadata, schema, HTTP status, and sitemap inclusion.</p>
         </section>
       </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

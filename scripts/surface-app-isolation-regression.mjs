@@ -5807,3 +5807,25 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseBillingPage = read("apps/admin/app/admin/dashboard/billing/page.tsx");
+const enterpriseCampaignsPage = read("apps/admin/app/admin/dashboard/campaigns/page.tsx");
+const enterpriseRolesPage = read("apps/admin/app/admin/dashboard/roles/page.tsx");
+const enterpriseSeoPage = read("apps/admin/app/admin/dashboard/seo/page.tsx");
+const enterpriseSmsPage = read("apps/admin/app/admin/dashboard/sms/page.tsx");
+const enterprisePlansPage = read("apps/admin/app/admin/dashboard/plans/page.tsx");
+
+for (const [label, source] of [
+  ["Billing", enterpriseBillingPage],
+  ["Campaigns", enterpriseCampaignsPage],
+  ["Roles", enterpriseRolesPage],
+  ["SEO", enterpriseSeoPage],
+  ["SMS", enterpriseSmsPage],
+  ["Plans", enterprisePlansPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}

@@ -3,6 +3,12 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -97,36 +103,19 @@ export default async function SmsOperationsPage() {
     .slice(0, 12);
 
   return (
-    <main className="min-h-screen bg-[#090706] p-6 text-white">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <section className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200/70">
-            Marketing
-          </p>
-          <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-black">SMS Operations</h1>
-              <p className="mt-2 max-w-3xl text-sm text-white/60">
-                Review SMS readiness, templates, recent delivery logs, and
-                compliance before any campaigns are sent.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/admin/dashboard/marketing"
-                className="rounded-full bg-white px-4 py-2 text-sm font-black text-black"
-              >
-                Marketing Center
-              </Link>
-              <Link
-                href="/admin/dashboard/campaigns"
-                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white"
-              >
-                Campaigns
-              </Link>
-            </div>
-          </div>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketing · Messaging"
+        title="SMS Operations"
+        subtitle="Review SMS readiness, templates, recent delivery logs, and compliance before any campaigns are sent."
+        badge={<AdminStatusBadge tone={failedLast7.length ? "amber" : "green"}>{failedLast7.length ? `${failedLast7.length} failures · 7d` : "SMS operations healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/marketing" variant="primary">Marketing Center</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/campaigns">Campaigns</AdminActionButton>
+          </>
+        }
+      />
 
         <section className="grid gap-4 md:grid-cols-4">
           <Metric label="SMS-ready contacts" value={smsReadyContacts.length} />
@@ -218,8 +207,7 @@ export default async function SmsOperationsPage() {
             </div>
           </Panel>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
 

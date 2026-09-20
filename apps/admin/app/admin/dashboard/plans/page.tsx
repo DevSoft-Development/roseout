@@ -4,6 +4,12 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { getBillingPlanLabel, getBillingStatusLabel } from "@/lib/billing/plans";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -184,36 +190,19 @@ export default async function PlansPage() {
   const distribution = groupPlans(locations);
 
   return (
-    <main className="min-h-screen bg-[#090706] p-6 text-white">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <section className="rounded-[2rem] border border-white/10 bg-[#120d0b] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200/70">
-            Owners
-          </p>
-          <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h1 className="text-3xl font-black">Plans</h1>
-              <p className="mt-2 max-w-3xl text-sm text-white/60">
-                Monitor Free, Reserve/Pro, promo, and claimed-plan adoption from
-                live owner and location data.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                className="rounded-full bg-white px-4 py-2 text-sm font-black text-black"
-                href="/admin/dashboard/billing"
-              >
-                Open Billing
-              </Link>
-              <Link
-                className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white"
-                href="/admin/dashboard/businesses"
-              >
-                Businesses
-              </Link>
-            </div>
-          </div>
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Owners · Commercial Operations"
+        title="Plans"
+        subtitle="Monitor Free, Reserve/Pro, promo, and claimed-plan adoption from live owner and location data."
+        badge={<AdminStatusBadge tone={locationsPayload.safeMode ? "amber" : "green"}>{locationsPayload.safeMode ? "Fallback plan signals active" : "Plan data healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/billing" variant="primary">Open Billing</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/businesses">Businesses</AdminActionButton>
+          </>
+        }
+      />
 
         {locationsPayload.safeMode ? (
           <div className="rounded-3xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">
@@ -319,8 +308,7 @@ export default async function PlansPage() {
             <Metric label="Reservations sampled" value={reservations.length} />
           </div>
         </Panel>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
 
