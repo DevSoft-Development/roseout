@@ -5829,3 +5829,22 @@ for (const [label, source] of [
     }
   }
 }
+
+const enterpriseTeamMembersPage = read("apps/admin/app/admin/dashboard/team/members/page.tsx");
+const enterpriseTeamSettingsPage = read("apps/admin/app/admin/dashboard/team/settings/page.tsx");
+const enterpriseTeamPayrollPage = read("apps/admin/app/admin/dashboard/team/payroll/page.tsx");
+const enterpriseTeamAssignmentsPage = read("apps/admin/app/admin/dashboard/team/assignments/page.tsx");
+const enterpriseTeamWorkSessionsPage = read("apps/admin/app/admin/dashboard/team/work-sessions/page.tsx");
+for (const [label, source] of [
+  ["Team Members", enterpriseTeamMembersPage],
+  ["Team Settings", enterpriseTeamSettingsPage],
+  ["Team Payroll", enterpriseTeamPayrollPage],
+  ["Team Assignments", enterpriseTeamAssignmentsPage],
+  ["Team Work Sessions", enterpriseTeamWorkSessionsPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
