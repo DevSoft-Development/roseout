@@ -8,7 +8,7 @@ import {
   AdminPageHeader,
   AdminPageShell,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
