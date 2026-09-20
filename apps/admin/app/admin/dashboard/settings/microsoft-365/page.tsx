@@ -4,6 +4,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "@/components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -84,21 +90,20 @@ export default async function Microsoft365SettingsPage({
   };
 
   return (
-    <section className="m365-page">
-      <header className="m365-hero">
-        <div>
-          <p>TheOutHaven workspace</p>
-          <h1>Microsoft 365 Sync</h1>
-          <span>
-            Connect Outlook mail, Calendar, and Microsoft To Do without turning
-            the CRM into a full mailbox mirror.
-          </span>
-        </div>
-        <nav>
-          <Link href="/admin/dashboard/crm/calendar">Open calendar</Link>
-          <Link href="/admin/dashboard">Dashboard</Link>
-        </nav>
-      </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="System · Microsoft 365"
+        title="Microsoft 365 Sync"
+        subtitle="Connect Outlook mail, Calendar, and Microsoft To Do without turning the CRM into a full mailbox mirror."
+        badge={<AdminStatusBadge tone={connected ? "green" : "amber"}>{connected ? "Microsoft 365 connected" : "Connection required"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/crm/calendar">Open calendar</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/settings">Settings</AdminActionButton>
+          </>
+        }
+      />
+      <section className="m365-page">
 
       <div className="m365-notices">
         {params.connected ? (
@@ -325,5 +330,6 @@ export default async function Microsoft365SettingsPage({
         </button>
       </form>
     </section>
+    </AdminPageShell>
   );
 }
