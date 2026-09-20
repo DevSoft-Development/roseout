@@ -7,6 +7,12 @@ import { getDomainGatewayStatus } from "@/lib/domains/gateway";
 import { WEBSITE_COMPOSITION_PROFILES } from "@/lib/websites/composition-profiles";
 import { WEBSITE_DESIGN_DIRECTIONS } from "@/lib/websites/design-directions";
 import { loadWebsiteProductionVerification } from "@/lib/websites/production-verification";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const metadata: Metadata = {
   title: "Website Verification | Admin",
@@ -64,15 +70,19 @@ export default async function WebsiteVerificationPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Website Operations</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div><h1 className="text-3xl font-black sm:text-4xl">Production Verification</h1><p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Verify publishing, hosting replicas, addresses, domain readiness, OpenSRS lifecycle state, and premium design coverage.</p></div>
-            <div className="flex gap-2"><a href="/admin/dashboard/website-hosting" className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black">Hosting Overview</a><a href="/admin/dashboard/website-hosting/verification" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black">Run verification</a></div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Website Operations · Verification"
+        title="Production Verification"
+        subtitle="Verify publishing, hosting replicas, addresses, domain readiness, OpenSRS lifecycle state, and premium design coverage."
+        badge={<AdminStatusBadge tone={blocked ? "red" : attention ? "amber" : "green"}>{blocked ? `${blocked} blocked` : attention ? `${attention} need attention` : "Hosting verification healthy"}</AdminStatusBadge>}
+        actions={
+          <>
+            <AdminActionButton href="/admin/dashboard/website-hosting">Hosting Overview</AdminActionButton>
+            <AdminActionButton href="/admin/dashboard/website-hosting/verification" variant="primary">Run verification</AdminActionButton>
+          </>
+        }
+      />
 
         <WebsiteHostingTabs active="verification" />
 
@@ -110,7 +120,6 @@ export default async function WebsiteVerificationPage() {
             return <article key={direction.id} className={`rounded-2xl border p-4 ${!profile || duplicate ? "border-rose-300/20 bg-rose-500/10" : "border-white/10 bg-black/20"}`}><div className="flex items-start justify-between gap-2"><div><p className="font-black">{direction.name}</p><p className="mt-1 text-[11px] text-white/35">{direction.id}</p></div><span className={`text-[10px] font-black uppercase ${!profile || duplicate ? "text-rose-200" : "text-emerald-200"}`}>{!profile ? "Missing" : duplicate ? "Duplicate" : "Distinct"}</span></div>{profile ? <div className="mt-3 grid grid-cols-2 gap-1 text-xs text-white/50"><span>Hero: {profile.hero}</span><span>Nav: {profile.nav}</span><span>Images: {profile.imageRatio}</span><span>Radius: {profile.radius}</span><span>Booking: {profile.reservationPlacement}</span><span>Rule: {profile.sectionRule}</span></div> : null}</article>;
           })}</div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
