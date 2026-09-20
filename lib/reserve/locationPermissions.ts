@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveLocationAccessContext } from "@/lib/auth/locationOwnerAccess";
+import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
 
 export type ReservePermissionKey = "viewDashboard"|"manageReservations"|"manageLayout"|"manageHours"|"manageReminders"|"manageQrCodes"|"editProfile"|"viewAnalytics"|"manageBilling"|"manageTeam";
 export type ReserveRole = "location_admin"|"manager"|"host"|"marketing"|"view_only";
@@ -110,11 +111,49 @@ export async function getReserveLocationAccess(user: any, locationId: string) {
   return { allowed:false, role:"view_only", roleLabel:"View only", permissions:{...VIEW}, location };
 }
 
+async function getSignedDemoReserveAccess(locationId: string) {
+  const viewer = await getInternalDemoViewer();
+  const handoff = viewer?.demoHandoff;
+  if (!handoff || String(handoff.locationId) !== String(locationId)) return null;
+
+  const { data: location, error } = await supabaseAdmin
+    .from("locations")
+    .select("*")
+    .eq("id", locationId)
+    .eq("is_demo", true)
+    .eq("is_hidden", true)
+    .maybeSingle();
+
+  if (error || !location) return null;
+
+  return {
+    user: viewer.user,
+    access: {
+      allowed: true,
+      role: "location_admin" as ReserveRole,
+      roleLabel: "Location admin",
+      isAdmin: true,
+      source: "demo_handoff",
+      location,
+      permissions: { ...ALL },
+    },
+  };
+}
+
 export async function requireReservePermission(locationId: string, permissionKey: ReservePermissionKey) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: NextResponse.json({ success:false, error:"Please sign in to continue." }, { status:401 }) } as any;
-  const access = await getReserveLocationAccess(user, locationId);
-  if (!access.allowed || !access.permissions?.[permissionKey]) return { error: NextResponse.json({ success:false, error:"You do not have permission to manage this location." }, { status:403 }), access, user } as any;
-  return { access, user } as any;
+
+  if (user) {
+    const access = await getReserveLocationAccess(user, locationId);
+    if (!access.allowed || !access.permissions?.[permissionKey]) {
+      return { error: NextResponse.json({ success:false, error:"You do not have permission to manage this location." }, { status:403 }), access, user } as any;
+    }
+    return { access, user } as any;
+  }
+
+  const demo = await getSignedDemoReserveAccess(locationId);
+  if (demo?.access?.permissions?.[permissionKey]) return demo as any;
+
+  return { error: NextResponse.json({ success:false, error:"Please sign in to continue." }, { status:401 }) } as any;
 }
