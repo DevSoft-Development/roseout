@@ -192,7 +192,7 @@ export default function SearchAnchorCsvUploader() {
   }
 
   return (
-    <section className="space-y-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+    <section className="space-y-5 rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
       <div
         className={`rounded-2xl border border-dashed p-8 text-center transition ${isDragging ? "border-red-500 bg-red-950/20" : "border-zinc-700 bg-black"}`}
         onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
@@ -200,8 +200,8 @@ export default function SearchAnchorCsvUploader() {
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
       >
-        <p className="font-semibold text-white">Drop an anchor CSV here</p>
-        <p className="mt-2 text-sm text-zinc-500">CSV only · 2 MB maximum · 1,000 data rows maximum</p>
+        <p className="font-semibold text-[var(--admin-shell-text)]">Drop an anchor CSV here</p>
+        <p className="mt-2 text-sm text-[var(--admin-shell-muted)]">CSV only · 2 MB maximum · 1,000 data rows maximum</p>
         <label className="mt-5 inline-flex cursor-pointer rounded-xl bg-red-700 px-5 py-3 text-sm font-semibold text-white hover:bg-red-600">
           Choose CSV
           <input className="sr-only" type="file" accept=".csv,text/csv" onChange={handleChange} />
