@@ -2,18 +2,21 @@ import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { listBusinessCRM } from "@/lib/admin/business-crm";
 import BusinessCommunicationSection from "@/components/admin/business/BusinessCommunicationSection";
+import { AdminPageHeader, AdminPageShell, AdminStatusBadge } from "@/lib/admin-design-system";
 
 export default async function Page() {
   await requireAdminRole(["superadmin", "admin", "ambassador"]);
   const businesses = await listBusinessCRM(60);
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10 text-white">
-      <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-8 shadow-2xl">
-        <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200/70">Admin CRM</p>
-        <h1 className="mt-2 text-3xl font-black">Business Work Queue</h1>
-        <p className="mt-3 text-white/70">Click any business to open the full CRM detail page.</p>
-        <div className="mt-6 space-y-2">
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Admin CRM · Outreach"
+        title="Business Work Queue"
+        subtitle="Review businesses, open the full CRM record, and act on communication and commercial follow-up."
+        badge={<AdminStatusBadge tone={businesses.length ? "blue" : "muted"}>{businesses.length} businesses</AdminStatusBadge>}
+      />
+      <div className="space-y-2">
           {businesses.map((business) => (<div key={business.id}>
             <Link key={business.id} href={`/admin/dashboard/businesses/view?locationId=${business.id}`} className="block rounded-xl border border-white/10 px-4 py-3 hover:bg-white/5">
               <p className="font-semibold">{business.name}</p>
@@ -21,8 +24,7 @@ export default async function Page() {
             </Link>
             <div className="mt-2"><BusinessCommunicationSection business={business} compact /></div>
           </div>))}
-        </div>
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
