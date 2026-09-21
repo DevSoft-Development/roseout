@@ -106,33 +106,33 @@ function floorItemStyle(resource: any, width: number, height: number): CSSProper
   const centerX = x + sourceWidth / 2;
   const centerY = y + sourceHeight / 2;
 
-  let visualWidth = 118;
-  let visualHeight = 118;
+  let visualWidth = 96;
+  let visualHeight = 96;
 
   if (isBarResource(resource)) {
-    visualWidth = 520;
-    visualHeight = 104;
+    visualWidth = 420;
+    visualHeight = 76;
   } else if (type === "booth") {
-    visualWidth = capacity >= 8 ? 190 : capacity >= 6 ? 176 : 164;
-    visualHeight = 116;
+    visualWidth = capacity >= 8 ? 154 : capacity >= 6 ? 144 : 132;
+    visualHeight = 86;
   } else if (type === "private") {
-    visualWidth = 210;
-    visualHeight = 176;
+    visualWidth = 176;
+    visualHeight = 132;
   } else if (type === "patio") {
-    visualWidth = 124;
-    visualHeight = 124;
-  } else if (capacity <= 2) {
     visualWidth = 104;
     visualHeight = 104;
+  } else if (capacity <= 2) {
+    visualWidth = 88;
+    visualHeight = 88;
   } else if (capacity <= 4) {
-    visualWidth = 118;
-    visualHeight = 118;
+    visualWidth = 98;
+    visualHeight = 98;
   } else if (capacity <= 6) {
-    visualWidth = 148;
-    visualHeight = 112;
+    visualWidth = 124;
+    visualHeight = 84;
   } else {
-    visualWidth = 168;
-    visualHeight = 118;
+    visualWidth = 142;
+    visualHeight = 88;
   }
 
   const left = Math.max(4, Math.min(96, (centerX / width) * 100));
@@ -176,14 +176,18 @@ function TableDrop({ resource, reservations, dragging, onSelect, style }: { reso
     return Number.isFinite(elapsed) ? `${elapsed}m` : null;
   })() : null;
   const shape = visualType === "booth"
-    ? "rounded-[28px]"
+    ? "rounded-[24px]"
     : visualType === "private"
-      ? "rounded-[18px]"
+      ? "rounded-[16px]"
       : visualType === "patio"
         ? "rounded-full"
         : capacity <= 4
           ? "rounded-full"
-          : "rounded-[18px]";
+          : "rounded-[16px]";
+  const displayStatus = state.reservation
+    ? getReservationGuestName(state.reservation).split(" ")[0]
+    : state.status === "Open" ? "Open" : state.status;
+
   return (
     <button
       ref={setNodeRef}
@@ -191,27 +195,40 @@ function TableDrop({ resource, reservations, dragging, onSelect, style }: { reso
       style={style}
       onClick={() => state.reservation && onSelect(state.reservation)}
       title={`${name} · ${capacity} seats · ${state.status}`}
-      className={`${style ? "absolute" : "relative"} group flex min-h-[82px] min-w-[96px] items-center justify-center border transition-all duration-200 ${shape} ${statusClass(state.status)} ${
+      className={`${style ? "absolute" : "relative"} group flex items-center justify-center overflow-visible border transition-all duration-200 ${shape} ${statusClass(state.status)} ${
         dragging ? canDrop ? "ring-2 ring-blue-400/65" : "opacity-30 saturate-50" : ""
-      } ${isOver && canDrop ? "z-20 scale-[1.04] border-blue-300 bg-blue-500/20 ring-4 ring-blue-400/45 shadow-[0_0_40px_rgba(59,130,246,0.35)]" : ""}`}
+      } ${isOver && canDrop ? "z-20 scale-[1.05] border-blue-300 bg-blue-500/20 ring-4 ring-blue-400/45 shadow-[0_0_38px_rgba(59,130,246,0.28)]" : ""}`}
     >
       {visualType === "booth" ? (
-        <span aria-hidden="true" className="absolute inset-x-2 top-2 h-[30%] rounded-[20px] border border-current/35 bg-current/10" />
+        <>
+          <span aria-hidden="true" className="absolute inset-x-2 top-2 h-[28%] rounded-[18px] bg-current/14 shadow-inner" />
+          <span aria-hidden="true" className="absolute inset-x-3 bottom-2 h-[16%] rounded-full bg-black/25" />
+        </>
       ) : null}
+
+      {visualType === "private" ? (
+        <>
+          <span className="absolute left-3 top-2 text-[8px] font-black uppercase tracking-[0.16em] text-white/30">Private</span>
+          <span aria-hidden="true" className="absolute inset-2 rounded-[12px] border border-dashed border-current/20" />
+        </>
+      ) : null}
+
       {visualType !== "booth" && visualType !== "private" ? Array.from({ length: Math.min(capacity, 12) }).map((_, index) => (
-        <span key={index} aria-hidden="true" className="absolute h-2.5 w-2.5 rounded-[3px] border border-current/55 bg-[#090b0e]" style={chairStyle(index, Math.min(capacity, 12))} />
+        <span
+          key={index}
+          aria-hidden="true"
+          className="absolute h-2.5 w-2.5 rounded-[3px] border border-current/45 bg-[#080a0d] shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
+          style={chairStyle(index, Math.min(capacity, 12))}
+        />
       )) : null}
-      <span className={`absolute flex flex-col items-center justify-center border border-current/35 bg-[#07090c]/92 px-2 text-center shadow-[0_10px_30px_rgba(0,0,0,0.35)] ${
-        visualType === "booth" ? "inset-x-[12%] bottom-[12%] top-[36%] rounded-xl"
-          : visualType === "private" ? "inset-[10%] rounded-xl"
-          : capacity <= 4 ? "inset-[18%] rounded-full"
-          : "inset-x-[12%] inset-y-[18%] rounded-xl"
-      }`}>
-        <strong className="max-w-full truncate text-xs font-black text-white sm:text-sm">{name}</strong>
-        <span className="mt-1 rounded-full border border-current/30 bg-black/25 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em]">
-          {state.reservation ? getReservationGuestName(state.reservation).split(" ")[0] : state.status === "Open" ? "Open" : state.status}
+
+      <span className="relative z-10 flex max-w-[86%] flex-col items-center justify-center text-center">
+        <strong className="max-w-full truncate text-[11px] font-black tracking-tight text-white sm:text-xs">{name}</strong>
+        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-black/24 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.07em] text-current">
+          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+          {displayStatus}
         </span>
-        <span className="mt-0.5 text-[9px] font-bold text-white/50">{capacity} seats{turn ? ` · ${turn}` : ""}</span>
+        <span className="mt-1 text-[9px] font-bold text-white/48">{capacity} seats{turn ? ` · ${turn}` : ""}</span>
       </span>
     </button>
   );
@@ -578,12 +595,17 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
                 {barResources.map((bar: any) => {
                   const barStyle = floorItemStyle(bar, floorWidth, floorHeight);
                   return (
-                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 overflow-visible rounded-[1.35rem] border border-[#e1062a]/35 bg-[linear-gradient(180deg,rgba(225,6,42,0.14),rgba(255,255,255,0.03))] shadow-[0_18px_45px_rgba(0,0,0,0.3)]" style={barStyle}>
-                      <div className="absolute inset-x-[4%] bottom-[36%] top-[10%] flex flex-col items-center justify-center rounded-[1rem] border border-white/10 bg-black/35 px-3 text-center">
-                        <p className="text-[11px] font-black text-white sm:text-sm">{resourceName(bar)}</p>
-                        <p className="mt-1 text-[8px] font-black uppercase tracking-[0.14em] text-white/40">Bar · {resourceCapacity(bar)} seats</p>
+                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 overflow-visible" style={barStyle}>
+                      <div className="absolute inset-x-0 top-0 h-[48px] rounded-[14px] border border-[#e1062a]/35 bg-[linear-gradient(180deg,rgba(225,6,42,0.14),rgba(255,255,255,0.035))] shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+                        <div className="flex h-full items-center justify-between px-4">
+                          <div>
+                            <p className="text-xs font-black text-white">{resourceName(bar)}</p>
+                            <p className="mt-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Bar · {resourceCapacity(bar)} seats</p>
+                          </div>
+                          <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-emerald-200">Open</span>
+                        </div>
                       </div>
-                      <div className="absolute bottom-[-18px] left-1/2 flex max-w-[94%] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-full border border-white/10 bg-[#080a0d]/95 px-2 py-1.5 shadow-2xl">
+                      <div className="absolute left-1/2 top-[55px] flex -translate-x-1/2 items-center gap-2">
                         {Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
                       </div>
                     </div>
