@@ -89,14 +89,23 @@ export default async function ReservationSettingsPage({
 
     if (!resolvedLocationId) redirect("/locations/dashboard");
 
-    const { data } = await supabaseAdmin
+    const locationSelect =
+      "id,source_id,name,restaurant_name,activity_name,location_type,type,primary_category,is_demo,demo_key";
+    let { data } = await supabaseAdmin
       .from("locations")
-      .select(
-        "id,name,restaurant_name,activity_name,location_type,type,primary_category,is_demo,demo_key",
-      )
+      .select(locationSelect)
       .eq("id", resolvedLocationId)
       .maybeSingle();
+    if (!data) {
+      const bySource = await supabaseAdmin
+        .from("locations")
+        .select(locationSelect)
+        .eq("source_id", resolvedLocationId)
+        .maybeSingle();
+      data = bySource.data;
+    }
     location = data || null;
+    if (location?.id) resolvedLocationId = String(location.id);
   }
 
   const locationType = reservationType(
@@ -121,6 +130,7 @@ export default async function ReservationSettingsPage({
         demo={parsedDemo.demo}
         fromDemoCenter={first(params.fromDemoCenter) === "1"}
         layoutApiPath="/api/business/reservations/layout"
+        layoutRealtimeEnabled={false}
       />
     </main>
   );

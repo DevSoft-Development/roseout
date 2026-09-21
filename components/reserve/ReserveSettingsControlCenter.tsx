@@ -38,6 +38,7 @@ type Props = {
   demo?: boolean;
   fromDemoCenter?: boolean;
   layoutApiPath?: string;
+  layoutRealtimeEnabled?: boolean;
 };
 
 type Message = { tone: "success" | "error"; text: string } | null;
@@ -633,6 +634,7 @@ export default function ReserveSettingsControlCenter({
   demo = false,
   fromDemoCenter = false,
   layoutApiPath,
+  layoutRealtimeEnabled = true,
 }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1036,6 +1038,7 @@ export default function ReserveSettingsControlCenter({
               backHref={settingsHref("layout")}
               onChanged={() => void load()}
               apiPath={layoutApiPath}
+              enableRealtime={layoutRealtimeEnabled}
             />
           </Panel>
         ) : null}
