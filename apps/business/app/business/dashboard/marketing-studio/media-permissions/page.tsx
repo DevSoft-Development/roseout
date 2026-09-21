@@ -1,4 +1,3 @@
-import Link from "next/link";
 import LocationMediaPermissions from "@/components/marketing/LocationMediaPermissions";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
