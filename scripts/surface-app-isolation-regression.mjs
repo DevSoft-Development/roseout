@@ -6005,3 +6005,25 @@ for (const [label, source] of enterpriseCareersSecondaryPages) {
     }
   }
 }
+
+
+const enterpriseSocialClaimPages = [
+  ["Marketing Creators", read("apps/admin/app/admin/dashboard/marketing/creators/page.tsx")],
+  ["Social Accounts", read("apps/admin/app/admin/dashboard/marketing/social-accounts/page.tsx")],
+  ["Social Weekly Plan", read("apps/admin/app/admin/dashboard/marketing/social-manager/weekly-plan/page.tsx")],
+  ["Social Manager Settings", read("apps/admin/app/admin/dashboard/marketing/social-manager/settings/page.tsx")],
+  ["Marketing Today", read("apps/admin/app/admin/dashboard/marketing/today/page.tsx")],
+  ["Discover Merchandising", read("apps/admin/app/admin/dashboard/marketing/discover/page.tsx")],
+  ["Claim QR Maintenance", read("apps/admin/app/admin/dashboard/claim-qrs/maintenance/page.tsx")],
+];
+for (const [label, source] of enterpriseSocialClaimPages) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
+const enterpriseClaimQrPrintPage = read("apps/admin/app/admin/dashboard/claim-qrs/page.tsx");
+if (!enterpriseClaimQrPrintPage.includes("AdminPageHeader")) {
+  throw new Error("Claim QR print page must preserve shared enterprise Admin header while retaining its print-specific outer wrapper.");
+}
