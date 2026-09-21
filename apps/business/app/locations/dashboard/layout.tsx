@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase-server";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
 import BusinessThemeProvider from "./BusinessThemeProvider";
 import { ADMIN_DEMO_HANDOFF_COOKIE, verifyAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
+import { BUSINESS_RESERVE_HANDOFF_COOKIE, verifyBusinessReserveHandoff } from "@theouthaven/auth/business-reserve-handoff";
 
 export default async function LocationsDashboardLayout({
   children,
@@ -17,7 +18,10 @@ export default async function LocationsDashboardLayout({
   const demoHandoff = verifyAdminDemoHandoff(
     cookieStore.get(ADMIN_DEMO_HANDOFF_COOKIE)?.value,
   );
-  if (!user && !demoHandoff) {
+  const reserveReturnHandoff = verifyBusinessReserveHandoff(
+    cookieStore.get(BUSINESS_RESERVE_HANDOFF_COOKIE)?.value,
+  );
+  if (!user && !demoHandoff && !reserveReturnHandoff) {
     redirect("/business/login?next=/locations/dashboard");
   }
 
