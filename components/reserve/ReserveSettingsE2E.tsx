@@ -700,9 +700,11 @@ export function ReserveTeamSettings({ locationId }: { locationId: string }) {
         </Card>
       </div>
 
-      <div className="mt-5">
-        <ReserveLobbyDisplaySettings locationId={locationId} />
-      </div>
+      {canManage ? (
+        <div className="mt-5">
+          <ReserveLobbyDisplaySettings locationId={locationId} />
+        </div>
+      ) : null}
     </div>
   );
 }
