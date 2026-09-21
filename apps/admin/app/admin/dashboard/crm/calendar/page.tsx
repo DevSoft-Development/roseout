@@ -4,6 +4,7 @@ import CalendarEventCreator from "@/components/admin/crm/CalendarEventCreator";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES, CRM_WRITE_ROLES } from "@/lib/crm/permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import { AdminPageHeader, AdminPageShell, AdminStatusBadge } from "@/lib/admin-design-system";
 
 export const dynamic = "force-dynamic";
 
@@ -162,15 +163,14 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
   const lastSync = calendarSync?.last_success_at || connection?.last_refreshed_at;
 
   return (
-    <main className="admin-page px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="admin-kicker text-xs font-black uppercase tracking-[0.24em]">CRM · Microsoft 365</p>
-            <h1 className="mt-2 text-3xl font-black">Calendar</h1>
-            <p className="admin-muted mt-2 max-w-3xl text-sm">Your synced Outlook calendar, shown in Eastern Time alongside CRM matching status.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="CRM · Microsoft 365"
+        title="Calendar"
+        subtitle="Your synced Outlook calendar, shown in Eastern Time alongside CRM matching status."
+        badge={<AdminStatusBadge tone={connected ? "green" : "amber"}>{connected ? "Microsoft 365 connected" : "Connection required"}</AdminStatusBadge>}
+        actions={
+          <>
             {connected && canWrite ? (
               <Link href={`/admin/dashboard/crm/calendar?month=${selected.key}&create_date=${todayKey}#new-event`} className="admin-primary rounded-xl px-4 py-2 text-sm">+ Add event</Link>
             ) : null}
@@ -181,8 +181,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
               </form>
             ) : null}
             <Link href="/admin/dashboard/settings/microsoft-365" className="admin-secondary rounded-xl px-4 py-2 text-sm">Microsoft 365 settings</Link>
-          </div>
-        </header>
+          </>
+        }
+      />
 
         {!connected ? (
           <section className="rounded-2xl border border-rose-300/25 bg-rose-300/[0.07] p-5">
@@ -317,7 +318,6 @@ export default async function CalendarPage({ searchParams }: { searchParams: Sea
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
