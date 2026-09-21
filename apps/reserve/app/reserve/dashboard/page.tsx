@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import ReserveEnterpriseHostShell from "@/components/reserve/ReserveEnterpriseHostShell";
+import { getReserveAuthorizedDevice } from "@/lib/reserve/deviceAuthorization";
+import { getReserveStaffSession } from "@/lib/reserve/staffSession";
+import { resolveReserveBusinessDashboardReturn } from "@/lib/reserve/businessDashboardReturn";
 
 export const metadata: Metadata = {
   title: "Reserve Dashboard | TheOutHaven",
@@ -52,9 +56,20 @@ export default async function ReserveDashboardPage({ searchParams }: Props) {
     );
   }
 
+  const [returnContext, authorizedDevice, staffSession] = await Promise.all([
+    resolveReserveBusinessDashboardReturn(locationId),
+    getReserveAuthorizedDevice(locationId),
+    getReserveStaffSession(locationId),
+  ]);
+
+  if (authorizedDevice && !staffSession && !returnContext.allowed) {
+    redirect(`/staff?locationId=${encodeURIComponent(locationId)}`);
+  }
+
   const query = preserveContext(params);
   query.set(first(params.adminLocationId) ? "adminLocationId" : "locationId", locationId);
   const settingsHref = `/reserve/dashboard/location-layout?${query.toString()}`;
+  const businessReturnHref = `/api/internal/business-dashboard-return?locationId=${encodeURIComponent(locationId)}`;
 
   return (
     <main className="min-h-screen bg-[#050607] text-white">
@@ -70,12 +85,14 @@ export default async function ReserveDashboardPage({ searchParams }: Props) {
           >
             Floor layout
           </Link>
-          <Link
-            href="https://business.theouthaven.com/locations/dashboard"
-            className="rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75"
-          >
-            Location dashboard
-          </Link>
+          {returnContext.allowed ? (
+            <Link
+              href={businessReturnHref}
+              className="rounded-full border border-white/12 bg-white/[0.045] px-3 py-2 text-[11px] font-black text-white/75"
+            >
+              Location dashboard
+            </Link>
+          ) : null}
         </div>
       </div>
       <ReserveEnterpriseHostShell locationId={locationId} />
