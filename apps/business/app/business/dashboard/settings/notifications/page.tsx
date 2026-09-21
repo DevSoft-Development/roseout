@@ -1,4 +1,9 @@
 import NotificationSettingsManager from "@/components/growth-pro/NotificationSettingsManager";
+import {
+  BusinessPageHeader,
+  BusinessPageShell,
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import {
@@ -19,18 +24,19 @@ export default async function Page({
 
   if (!location?.id) {
     return (
-      <main className="min-h-screen bg-[#07090d] p-8 text-white">
-        <div className="mx-auto max-w-4xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-8">
-          <h1 className="text-2xl font-black">No location available</h1>
-          <p className="mt-2 text-sm font-bold text-white/50">
-            Connect or select a business location before managing notification settings.
-          </p>
-        </div>
-      </main>
+      <BusinessPageShell>
+        <BusinessPageHeader
+          eyebrow="Settings"
+          title="Notification Center"
+          subtitle="Connect or select a business location before managing notification settings."
+          badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>}
+        />
+      </BusinessPageShell>
     );
   }
 
   const locationId = String(location.id);
+  const locationName = getLocationName(location, "Selected location");
   const context: Record<string, string> = {
     locationId,
     type: String(location.location_type || "restaurant"),
@@ -45,11 +51,25 @@ export default async function Page({
   }
 
   return (
-    <NotificationSettingsManager
-      locationId={locationId}
-      locationName={getLocationName(location, "Selected location")}
-      context={context}
-      demoMode={demo.demoMode}
-    />
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Settings"
+        title="Notification Center"
+        subtitle={<>Manage recipients, event preferences, unread activity, and delivery history for {locationName}.</>}
+        badge={
+          demo.demoMode ? (
+            <BusinessStatusBadge tone="amber">Demo restrictions active</BusinessStatusBadge>
+          ) : (
+            <BusinessStatusBadge tone="blue">Owner notifications</BusinessStatusBadge>
+          )
+        }
+      />
+      <NotificationSettingsManager
+        locationId={locationId}
+        locationName={locationName}
+        context={context}
+        demoMode={demo.demoMode}
+      />
+    </BusinessPageShell>
   );
 }
