@@ -13,9 +13,9 @@ export default function OrganizationSwitcher({
   const canManageVerification = Boolean(currentOrganization && ["owner", "admin"].includes(currentOrganization.role));
 
   return (
-    <div className="border-b border-white/10 bg-[#080808] px-4 py-3 text-white sm:px-6 lg:px-8">
+    <div className="border-b border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-3 text-[var(--business-text)] sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2">
-        <span className="mr-1 text-xs font-black uppercase tracking-[0.16em] text-white/45">
+        <span className="mr-1 text-xs font-black uppercase tracking-[0.16em] text-[var(--business-muted)]">
           Organization
         </span>
         {organizations.map((organization) => {
@@ -26,8 +26,8 @@ export default function OrganizationSwitcher({
               href={`/business/dashboard?organizationId=${encodeURIComponent(organization.id)}`}
               className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
                 active
-                  ? "border-[#ec0b5b]/40 bg-[#ec0b5b]/15 text-white"
-                  : "border-white/10 bg-white/[0.04] text-white/60 hover:text-white"
+                  ? "border-[#ec0b5b]/40 bg-[#ec0b5b]/15 text-[var(--business-text)]"
+                  : "border-[var(--business-border)] bg-white/[0.04] text-[var(--business-soft)] hover:text-[var(--business-text)]"
               }`}
             >
               {organization.name}
@@ -47,7 +47,7 @@ export default function OrganizationSwitcher({
         ) : null}
         <Link
           href="/business/onboarding?new=1"
-          className={`${currentOrganizationId && canManageVerification ? "" : "ml-auto"} rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-white/55 hover:text-white`}
+          className={`${currentOrganizationId && canManageVerification ? "" : "ml-auto"} rounded-full border border-[var(--business-border)] px-3 py-1.5 text-xs font-bold text-[var(--business-muted)] hover:text-[var(--business-text)]`}
         >
           + New organization
         </Link>
