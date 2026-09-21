@@ -40,7 +40,7 @@ function classifyReason(reason: string): PublicMatchReasonType {
   if (/cuisine|italian|japanese|korean|thai|mexican|seafood|steak|sushi|ramen|food|dish|menu/.test(value)) return "cuisine";
   if (/activity|bowling|karaoke|museum|jazz|music|comedy|arcade|escape|golf|cinema|spa/.test(value)) return "activity";
   if (/borough|city|neighborhood|market|locality|area|geo/.test(value)) return "location";
-  if (/date night|birthday|girls night|occasion|romantic|casual|relaxed/.test(value)) return "occasion";
+  if (/date[-\s]?night|birthday|girls[-\s]?night|occasion|romantic|casual|relaxed/.test(value)) return "occasion";
   if (/price|budget|affordable|cheap|expensive/.test(value)) return "price";
   if (/hour|open|availability|available/.test(value)) return "hours";
   if (/feature|rooftop|outdoor|cocktail|bar|halal|vegan|vegetarian/.test(value)) return "feature";
@@ -53,7 +53,9 @@ function customerLabel(reason: string) {
   if (/date[-\s]?night\s+fit/i.test(reason)) return "Fits your date-night request";
   if (/occasion\s+fit/i.test(reason)) return "Fits the occasion you requested";
   if (/casual|relaxed/i.test(reason)) return "Fits the vibe you requested";
+  if (/cuisine\s+match/i.test(value)) return titlePhrase(value);
   if (/cuisine/i.test(reason)) return titlePhrase(value.replace(/cuisine/i, "cuisine match"));
+  if (/activity\s+match/i.test(value)) return titlePhrase(value);
   if (/activity/i.test(reason)) return titlePhrase(value.replace(/activity/i, "activity match"));
   return titlePhrase(value);
 }
@@ -83,13 +85,14 @@ export function buildLocationMatchReasonDetails(
 
 export function buildPairMatchReasonDetails(input: {
   reasons?: string[] | null;
+  pairingReasons?: string[] | null;
   walkingMinutes?: number | null;
   distanceMiles?: number | null;
 }): PublicMatchReason[] {
-  const output = buildLocationMatchReasonDetails(input.reasons);
+  const output = buildLocationMatchReasonDetails(input.reasons).slice(0, 4);
   const seen = new Set(output.map((item) => item.label.toLowerCase()));
 
-  const walking = Number(input.walkingMinutes);
+  const walking = input.walkingMinutes == null ? NaN : Number(input.walkingMinutes);
   if (Number.isFinite(walking) && walking > 0) {
     const label = `${Math.max(1, Math.round(walking))}-minute walk between stops`;
     if (!seen.has(label.toLowerCase())) {
@@ -102,7 +105,7 @@ export function buildPairMatchReasonDetails(input: {
       seen.add(label.toLowerCase());
     }
   } else {
-    const miles = Number(input.distanceMiles);
+    const miles = input.distanceMiles == null ? NaN : Number(input.distanceMiles);
     if (Number.isFinite(miles) && miles >= 0) {
       const label = `${miles < 0.1 ? "<0.1" : miles.toFixed(1)} miles between stops`;
       if (!seen.has(label.toLowerCase())) {
