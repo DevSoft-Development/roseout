@@ -1,6 +1,7 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
 import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
 import { mobileJson, mobileError } from "../_lib/response";
+import { sponsoredAttribution } from "@/lib/sponsored-placement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +96,7 @@ function matchReasonLabels(value: any) {
 
 function shapePlace(value: any, kind: "restaurant" | "activity") {
   const id = String(value?.id || value?.location_id || value?.source_id || "");
+  const placement = sponsoredAttribution(value);
   return {
     id,
     name: pickName(value),
@@ -114,12 +116,20 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
     address: firstText(value?.formatted_address, value?.full_address, value?.address),
     latitude: numberOrNull(value?.latitude ?? value?.lat),
     longitude: numberOrNull(value?.longitude ?? value?.lng ?? value?.lon),
+    sponsored: placement.sponsored,
+    placementType: placement.placementType,
+    sponsorId: placement.sponsorId,
+    campaignId: placement.campaignId,
   };
 }
 
 function shapePair(value: any, index: number, resultType: "pair" | "same_venue" = "pair") {
   const restaurant = value?.restaurant || value?.restaurant_location || value?.restaurantLocation || (resultType === "same_venue" ? value : null);
   const activity = value?.activity || value?.activity_location || value?.activityLocation || (resultType === "same_venue" ? value : null);
+  const pairPlacement = sponsoredAttribution(value);
+  const restaurantPlacement = sponsoredAttribution(restaurant);
+  const activityPlacement = sponsoredAttribution(activity);
+  const placement = [pairPlacement, restaurantPlacement, activityPlacement].find((item) => item.sponsored) || pairPlacement;
   return {
     id: String(value?.id || value?.pair_id || `${resultType}-${index}`),
     restaurant: restaurant ? shapePlace(restaurant, "restaurant") : null,
@@ -129,6 +139,10 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
     reason: firstText(value?.reason, value?.pairing_reason, value?.whyMatched, value?.why_it_matched),
     matchReasons: matchReasonLabels(value),
     resultType,
+    sponsored: placement.sponsored,
+    placementType: placement.placementType,
+    sponsorId: placement.sponsorId,
+    campaignId: placement.campaignId,
   };
 }
 
