@@ -174,7 +174,6 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
               </form>
             </>
           )}
-        </section>
 
         {error && <div className="no-print mt-5 rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm font-bold text-rose-100">{error.message}</div>}
 
