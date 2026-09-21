@@ -1,7 +1,13 @@
-import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +26,14 @@ export default async function CreatorsPage() {
   ]);
   const creatorById = new Map((creators || []).map((creator: any) => [creator.id, creator]));
 
-  return <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-[1400px] space-y-6">
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.25em] text-rose-300">Social Manager</p><h1 className="mt-2 text-4xl font-semibold">Creators</h1><p className="mt-2 max-w-2xl text-white/55">Turn creator interest into a clear partnership, tracking link, and filming assignment without spreadsheets.</p></div><Link href="/admin/dashboard/marketing/social-manager" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold">Back to Social Manager</Link></div>
+  return <AdminPageShell>
+    <AdminPageHeader
+      eyebrow="Marketing · Creator Partnerships"
+      title="Creators"
+      subtitle="Turn creator interest into structured partnerships, tracking links, and filming assignments without spreadsheets."
+      badge={<AdminStatusBadge tone={(partnerships || []).length ? "green" : "muted"}>{(partnerships || []).length} partnerships</AdminStatusBadge>}
+      actions={<AdminActionButton href="/admin/dashboard/marketing/social-manager" variant="primary">Social Manager</AdminActionButton>}
+    />
 
     <section className="rounded-2xl border border-white/10 bg-white/[0.05] p-5"><h2 className="text-xl font-semibold">Set up a creator partnership</h2><p className="mt-1 text-sm text-white/45">Choose the creator, campaign, and how they’ll be paid. TheOutHaven creates the tracking key automatically.</p><form action="/api/admin/marketing/creators/partnership" method="post" className="mt-5 grid gap-4 lg:grid-cols-3">
       <label className="grid gap-1.5 text-sm"><span className="text-white/60">Creator</span><select name="creator_source_id" required className="rounded-xl border border-white/10 bg-black/30 px-3 py-3"><option value="">Choose creator</option>{(creators||[]).map((creator:any)=><option key={creator.id} value={creator.id}>{creator.display_name} · {creator.platform || "social"}</option>)}</select></label>
@@ -38,5 +50,5 @@ export default async function CreatorsPage() {
 
     <section className="grid gap-5 xl:grid-cols-2"><div className="rounded-2xl border border-white/10 bg-white/[0.05]"><div className="border-b border-white/10 p-5"><h2 className="font-semibold">Partnerships</h2></div><div className="divide-y divide-white/10">{(partnerships||[]).map((item:any)=>{const creator=creatorById.get(item.creator_source_id) as any;return <div key={item.id} className="p-5"><div className="flex justify-between gap-3"><div><p className="font-medium">{creator?.display_name || "Creator"}</p><p className="mt-1 text-sm text-white/45">{item.campaign_name || "Campaign"} · {String(item.status).replaceAll("_"," ")}</p></div><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold capitalize">{String(item.payment_model).replaceAll("_"," ")}</span></div><div className="mt-3 grid grid-cols-2 gap-2 text-sm text-white/55 sm:grid-cols-4"><span>Flat {money(item.flat_fee)}</span><span>Per business {money(item.per_business_fee)}</span><span>Commission {item.commission_percent == null ? "—" : `${item.commission_percent}%`}</span><span>{item.commission_months ? `${item.commission_months} months` : "No term"}</span></div>{item.tracking_key?<p className="mt-3 rounded-xl bg-black/20 p-3 text-xs text-white/50">Tracking key: {item.tracking_key}</p>:null}</div>})}{!partnerships?.length?<div className="p-8 text-center text-sm text-white/45">No creator partnerships yet.</div>:null}</div></div>
       <div className="rounded-2xl border border-white/10 bg-white/[0.05]"><div className="border-b border-white/10 p-5"><h2 className="font-semibold">Filming tasks</h2><p className="mt-1 text-sm text-white/45">Simple instructions for the person creating the video.</p></div><div className="divide-y divide-white/10">{(filmingTasks||[]).map((task:any)=><div key={task.id} className="p-5"><div className="flex justify-between gap-3"><div><p className="font-medium">{task.title}</p><p className="mt-1 text-sm text-white/45">{task.metadata?.video_length || "20–25 seconds"}</p></div><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold capitalize">{task.status.replaceAll("_"," ")}</span></div><ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-white/60">{(task.metadata?.shots || ["Show the entrance","Show the food or main feature","Show the activity","Show the vibe","Record a closing shot"]).map((shot:string)=><li key={shot}>{shot}</li>)}</ol></div>)}{!filmingTasks?.length?<div className="p-8 text-center text-sm text-white/45">No filming tasks yet.</div>:null}</div></div></section>
-  </div></main>;
+  </AdminPageShell>;
 }

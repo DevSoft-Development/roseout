@@ -8,6 +8,12 @@ import { ensureClaimFields } from "@/lib/claimQrServer";
 
 
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
+
 export const metadata: Metadata = {
   title: "Claim QR Codes | TheOutHaven Admin",
   description: "Find, select, and print claim QR codes for TheOutHaven locations.",
@@ -133,18 +139,15 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white print:bg-white print:px-0 print:py-0">
       <style>{`@media print {.no-print{display:none!important}.qr-sheet{box-shadow:none!important;border:0!important}.qr-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #111!important}}`}</style>
       <div className="mx-auto max-w-[1200px] print:max-w-none">
-        <section className="no-print rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.18),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-300">Claim QR Codes</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{selectedLocationId ? `QR code for ${selectedLocationName}` : "Find, select, and print"}</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">{selectedLocationId ? "Use the controls below to print this location's claim QR code." : "Search for locations, narrow the list if needed, choose the QR codes you want, then print. Maintenance tools are kept separate from this everyday workflow."}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={selectedLocationId ? "/admin/dashboard/claim-qrs" : "/admin/dashboard"} className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">{selectedLocationId ? "All QR codes" : "Dashboard"}</Link>
-              {!selectedLocationId && <Link href="/admin/dashboard/claim-qrs/maintenance" className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">QR maintenance</Link>}
-            </div>
-          </div>
+        <div className="no-print">
+          <AdminPageHeader
+            eyebrow="Operations · Claim QR Codes"
+            title={selectedLocationId ? `QR code for ${selectedLocationName}` : "Claim QR Codes"}
+            subtitle={selectedLocationId ? "Print this location's canonical claim QR code." : "Find locations, review claim-code health, select QR codes, and print without mixing repair tools into the everyday workflow."}
+            badge={<AdminStatusBadge tone={(missingQrResult.count || 0) || (missingCodeResult.count || 0) ? "amber" : "green"}>{(missingQrResult.count || 0) + (missingCodeResult.count || 0)} records need repair</AdminStatusBadge>}
+            actions={<><AdminActionButton href={selectedLocationId ? "/admin/dashboard/claim-qrs" : "/admin/dashboard"}>{selectedLocationId ? "All QR Codes" : "Dashboard"}</AdminActionButton>{!selectedLocationId ? <AdminActionButton href="/admin/dashboard/claim-qrs/maintenance" variant="primary">QR Maintenance</AdminActionButton> : null}</>}
+          />
+        </div>
 
           {!selectedLocationId && (
             <>
@@ -171,7 +174,6 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
               </form>
             </>
           )}
-        </section>
 
         {error && <div className="no-print mt-5 rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm font-bold text-rose-100">{error.message}</div>}
 
