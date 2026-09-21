@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
@@ -44,7 +43,6 @@ const trustCards = [
 export default function TrustPage() {
   return (
     <main className="min-h-screen bg-black pb-28 text-white">
-      <TheOutHavenHeader />
       <section className="relative overflow-hidden px-6 pb-14 pt-28">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(225,6,42,0.24),transparent_32%),linear-gradient(180deg,#050505,#000)]" />
         <div className="relative mx-auto max-w-5xl">
