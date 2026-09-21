@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../components/reserve";
 
 :root {
   --background: #050505;
@@ -391,4 +392,105 @@ html { -webkit-text-size-adjust: 100%; }
     flex-wrap: wrap;
     padding-left: 76px;
   }
+}
+
+
+/* TheOutHaven Business dashboard visual contract.
+ * Daytime/nighttime tokens are owned by BusinessThemeProvider so every
+ * Location Dashboard surface can share one enterprise shell.
+ */
+.business-dashboard-theme {
+  --business-bg: #050607;
+  --business-sidebar: #090b0e;
+  --business-panel: #111316;
+  --business-panel-strong: #171a1f;
+  --business-border: rgba(255, 255, 255, 0.10);
+  --business-text: #ffffff;
+  --business-muted: rgba(255, 255, 255, 0.46);
+  --business-soft: rgba(255, 255, 255, 0.66);
+  min-height: 100vh;
+  color: var(--business-text);
+  background: var(--business-bg);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.business-theme-light {
+  --business-bg: #f5f2ef;
+  --business-sidebar: #fffaf7;
+  --business-panel: #ffffff;
+  --business-panel-strong: #f2ece8;
+  --business-border: rgba(60, 38, 32, 0.14);
+  --business-text: #261b18;
+  --business-muted: rgba(38, 27, 24, 0.52);
+  --business-soft: rgba(38, 27, 24, 0.70);
+  color-scheme: light;
+}
+
+.business-theme-dark {
+  color-scheme: dark;
+}
+
+.business-dashboard-theme .business-page-shell,
+.business-dashboard-theme .location-dashboard-layout,
+.business-dashboard-theme .location-dashboard-content {
+  background: var(--business-bg);
+  color: var(--business-text);
+}
+
+.business-dashboard-theme .business-page-shell *,
+.business-dashboard-theme .location-dashboard-content * {
+  min-width: 0;
+}
+
+.business-theme-light .location-dashboard-content [class*="bg-[#050607]"],
+.business-theme-light .location-dashboard-content [class*="bg-[#07090d]"],
+.business-theme-light .location-dashboard-content [class*="bg-[#090b0e]"] {
+  background: var(--business-bg) !important;
+}
+
+.business-theme-light .location-dashboard-content [class*="bg-white/[0.0"],
+.business-theme-light .location-dashboard-content [class*="bg-black/"] {
+  color: var(--business-text);
+}
+
+/* Daytime compatibility for legacy Business pages that still use hard-coded
+ * charcoal cards or dark Tailwind gradients. Keep branded red/green actions
+ * intact while normalizing neutral surfaces to Business theme tokens.
+ */
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-[#0"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-[#1"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-[#2"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-black"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-neutral-9"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-zinc-9"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-slate-9"] {
+  background-color: var(--business-panel) !important;
+}
+
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="from-[#0"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="from-[#1"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="to-[#0"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="to-[#1"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(main, section, article, aside, header, div)[class*="bg-[radial-gradient"] {
+  background-image: none !important;
+  background-color: var(--business-panel) !important;
+}
+
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) [class*="border-white/"] {
+  border-color: var(--business-border) !important;
+}
+
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) [class*="text-white/"] {
+  color: var(--business-muted) !important;
+}
+
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) [class*="text-white"] {
+  color: var(--business-text) !important;
+}
+
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(input, select, textarea)[class*="bg-[#0"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(input, select, textarea)[class*="bg-[#1"],
+.business-theme-light :is(.location-dashboard-content, .business-page-shell) :is(input, select, textarea)[class*="bg-black"] {
+  background-color: var(--business-panel-strong) !important;
+  color: var(--business-text) !important;
 }

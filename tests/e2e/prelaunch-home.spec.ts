@@ -93,6 +93,16 @@ test.describe("public product readiness", () => {
     await expect(footer.getByRole("link", { name: "Contact" }).first()).toBeVisible();
     await expect(footer.getByRole("link", { name: "Terms" })).toBeVisible();
     await expect(footer.getByRole("link", { name: "Privacy" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: "Trust Center" })).toBeVisible();
+  });
+
+  test("Trust Center explains recommendations, sponsorship, privacy, and human support", async ({ page }) => {
+    await page.goto("/trust", { waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "Real places. Clear reasons. Your choice." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "How recommendations work" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sponsored placements" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Personalization and privacy" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Human support" })).toBeVisible();
   });
 
   for (const viewport of [
