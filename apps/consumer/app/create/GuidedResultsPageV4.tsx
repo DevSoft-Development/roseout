@@ -30,6 +30,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   whyMatched?: string | null;
   why_it_matched?: string | null;
   matchReasons?: string[] | null;
+  matchReasonDetails?: Array<{ type: string; label: string }> | null;
   rating?: number | string | null;
   google_rating?: number | string | null;
   average_rating?: number | string | null;
@@ -42,7 +43,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   reservation_url?: string | null;
   booking_url?: string | null;
 };
-type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null };
+type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null; matchReasonDetails?: Array<{ type: string; label: string }> | null };
 type SearchPayload = {
   restaurants?: LocationCard[];
   activities?: LocationCard[];
@@ -113,6 +114,13 @@ function customerWhy(value: PairCard | LocationCard | null | undefined) {
   if (!value) return null;
   return cleanReason(value.whyMatched) || cleanReason(value.why_it_matched) || (Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).find(Boolean) || null : null);
 }
+function structuredSignals(value: PairCard | LocationCard | null | undefined) {
+  if (!value || !Array.isArray(value.matchReasonDetails)) return [];
+  return value.matchReasonDetails
+    .map((reason) => cleanReason(reason?.label))
+    .filter((reason): reason is string => Boolean(reason))
+    .slice(0, 4);
+}
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function shortSignal(value: string) {
   const normalized = value.replace(/[.!]+$/, "").replace(/\s+/g, " ").trim();
@@ -132,6 +140,8 @@ function locationCategory(location: LocationCard) {
   return String(location.cuisine || location.cuisine_type || location.activity_type || location.primary_category || "").trim();
 }
 function locationSignals(location: LocationCard, prompt: string) {
+  const structured = structuredSignals(location);
+  if (structured.length) return structured;
   const signals: string[] = [];
   const category = locationCategory(location);
   const city = String(location.city || "").trim();
@@ -144,6 +154,8 @@ function locationSignals(location: LocationCard, prompt: string) {
   return [...new Set(signals)].slice(0, 3);
 }
 function pairSignals(item: CompletePair, distance: string | null, prompt: string) {
+  const structured = structuredSignals(item.pair);
+  if (structured.length) return distance && PROXIMITY_INTENT.test(prompt) ? [...new Set([...structured, distance])].slice(0, 4) : structured;
   const signals: string[] = [];
   const restaurantCategory = locationCategory(item.restaurant);
   const activityCategory = locationCategory(item.activity);
@@ -246,7 +258,7 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
         <VenueRow location={item.restaurant} label={item.resultType === "same_venue" ? "Dinner + experience" : "Restaurant"} />
         {item.resultType !== "same_venue" ? <VenueRow location={item.activity} label="Activity" /> : null}
       </div>
-      <MatchSignals title="Matched to your plan" signals={signals} />
+      <MatchSignals title="Why this matches" signals={signals} />
       <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.08em] transition hover:bg-[#f20b31]">Choose this outing →</button>
       <details className="mt-2 rounded-xl px-2 py-2 text-sm">
         <summary className="cursor-pointer list-none text-center text-xs font-bold text-white/40 transition hover:text-white/65">View details</summary>
@@ -280,7 +292,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
           {metaFor(location) ? <p className="mt-1.5 text-sm font-semibold text-white/48">{metaFor(location)}</p> : null}
           {(rating || price) ? <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/62">{rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}{rating && price ? <span className="text-white/20">•</span> : null}{price ? <span>{price}</span> : null}</div> : null}
         </div>
-        <MatchSignals title="Matched to your search" signals={signals} />
+        <MatchSignals title="Why this matches" signals={signals} />
         <div className="mt-auto grid gap-2.5 pt-5 sm:grid-cols-2">
           <Link href={profileHref(location, returnToResults)} className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/12 bg-white/[0.025] px-4 text-center text-xs font-black text-white/72 transition hover:border-white/25 hover:bg-white/[0.05] hover:text-white">View {noun}</Link>
           <button type="button" onClick={onUse} className="min-h-12 rounded-full bg-[#e1062a] px-4 text-xs font-black uppercase tracking-[0.07em] text-white transition hover:bg-[#f20b31]">Choose {noun} →</button>
