@@ -4,5 +4,11 @@
   "installCommand": "cd ../.. && npm ci",
   "buildCommand": "cd ../.. && npm run build:surface:consumer",
   "ignoreCommand": "node ../../scripts/vercel-consumer-ignore-build.mjs",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "*": false
+    }
+  }
 }
