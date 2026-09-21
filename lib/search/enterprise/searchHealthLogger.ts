@@ -755,6 +755,7 @@ export function buildSearchHealthDebug(result: any, debug: any) {
     ),
     rejectionReasons,
     suspiciousFlags: buildSuspiciousFlags({}, result, debug, normalizedIntent),
+    trust: normalizeJsonValue(debug?.trust ?? null),
     performance: compactRecord({
       intent_parse_ms: toInteger(
         performance?.intent_parse_ms ?? performance?.intentParseMs,

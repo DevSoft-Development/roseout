@@ -546,6 +546,21 @@ export async function handleGeneratePost(
     const enterpriseRawActivityCandidateCount =
       resolveEnterpriseRawActivityCandidateCount(rawResult);
     const result: any = applyFinalPublicActivityGuard(rawResult, cleanInput);
+    const sponsoredResultCount = [
+      ...(Array.isArray(result?.restaurants) ? result.restaurants : []),
+      ...(Array.isArray(result?.activities) ? result.activities : []),
+      ...(Array.isArray(result?.pairs) ? result.pairs : []),
+    ].filter((item: any) => item?.sponsored === true || item?.isSponsored === true || item?.is_sponsored === true || String(item?.placement_type || "").toLowerCase() === "sponsored").length;
+    result.debug = {
+      ...(result.debug ?? {}),
+      trust: {
+        ...(result.debug?.trust ?? {}),
+        personalizationMode: currentPersonalizationMode,
+        personalizationConsentReason,
+        llmUsed: Boolean(result.debug?.nlp?.llmUsed || Number(result.debug?.performance?.llm_ms ?? 0) > 0),
+        sponsoredResultCount,
+      },
+    };
     const searchTelemetry = resolveSearchTelemetry({
       result,
       debug: result.debug,
