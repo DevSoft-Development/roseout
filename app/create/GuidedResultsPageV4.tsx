@@ -9,9 +9,10 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import GuidedJourneySteps from "@/components/planner/GuidedJourneySteps";
+import { isSponsoredPlacement, sponsoredAttribution } from "@/lib/sponsored-placement";
 
 type PlanType = "outing" | "restaurant" | "activity";
-type PlacementFields = { sponsored?: boolean | null; isSponsored?: boolean | null; is_sponsored?: boolean | null; placement_type?: string | null; sponsor_id?: string | number | null };
+type PlacementFields = { sponsored?: boolean | null; isSponsored?: boolean | null; is_sponsored?: boolean | null; placement_type?: string | null; sponsor_id?: string | number | null; campaign_id?: string | number | null; promotion_campaign_id?: string | number | null };
 type LocationCard = Record<string, unknown> & PlacementFields & {
   id?: string | number | null;
   name?: string | null;
@@ -169,9 +170,8 @@ function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   const miles = numeric(pair.distanceMiles);
   return miles !== null && miles >= 0 ? `${miles.toFixed(1)} ${Math.abs(miles - 1) < 0.05 ? "mile" : "miles"} apart` : null;
 }
-function isSponsored(value: PlacementFields | null | undefined) { return Boolean(value?.sponsored || value?.isSponsored || value?.is_sponsored || String(value?.placement_type || "").toLowerCase() === "sponsored"); }
-function sponsoredPair(item: CompletePair) { return isSponsored(item.placement) || isSponsored(item.restaurant) || isSponsored(item.activity); }
-function sponsorId(item: CompletePair) { const value = item.placement.sponsor_id || item.restaurant.sponsor_id || item.activity.sponsor_id; return value ? String(value) : null; }
+function sponsoredPair(item: CompletePair) { return isSponsoredPlacement(item.placement) || isSponsoredPlacement(item.restaurant) || isSponsoredPlacement(item.activity); }
+function pairAttribution(item: CompletePair) { const candidates = [item.placement, item.restaurant, item.activity]; return candidates.map((value) => sponsoredAttribution(value)).find((value) => value.sponsored) || sponsoredAttribution(null); }
 function completePairs(payload: SearchPayload | null | undefined): CompletePair[] {
   if (!payload) return [];
   const pairs = (payload.pairs || []).filter((pair) => pair.restaurant && pair.activity).map((pair) => ({ restaurant: pair.restaurant!, activity: pair.activity!, pair, resultType: "pair" as const, placement: pair }));
@@ -281,7 +281,8 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
   const image = imageFor(location);
   const rating = ratingFor(location);
   const price = priceFor(location);
-  const best = rank === 1;
+  const sponsored = isSponsoredPlacement(location);
+  const best = rank === 1 && !sponsored;
   const signals = structuredSignals(location).length ? structuredSignals(location) : locationSignals(location, prompt);
   const noun = planType === "restaurant" ? "restaurant" : "activity";
   return (
@@ -289,7 +290,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
       <div className="relative h-64 shrink-0 overflow-hidden bg-white/[0.04] sm:h-72">
         {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-4xl">📍</div>}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-black/10" />
-        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{best ? "Best Match" : `Option ${rank}`}</span>
+        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${sponsored ? "bg-white text-black" : best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{sponsored ? "Sponsored" : best ? "Best Match" : `Option ${rank}`}</span>
       </div>
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <div>
@@ -412,7 +413,7 @@ export default function GuidedResultsPageV4() {
 
       <section className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
         {loading ? <LoadingResults planType={planType} index={loadingIndex} /> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Try again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Adjust my plan</Link></div> : planType === "outing" ? <>
-          <div className="grid gap-5 lg:grid-cols-2">{pairs.map((item, index) => <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} walkingRequested={walkingRequested} returnToResults={returnToResults} prompt={prompt} onUse={() => openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, sponsoredPair(item), sponsorId(item))} />)}</div>
+          <div className="grid gap-5 lg:grid-cols-2">{pairs.map((item, index) => <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} walkingRequested={walkingRequested} returnToResults={returnToResults} prompt={prompt} onUse={() => { const attribution = pairAttribution(item); openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, attribution.sponsored, attribution.sponsorId); }} />)}</div>
           {restaurants.length && activities.length ? (
             <details className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-5 sm:p-6">
               <summary onClick={() => track("planner_build_own_opened", { step: 3, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION })} className="cursor-pointer list-none">
@@ -425,7 +426,7 @@ export default function GuidedResultsPageV4() {
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e1062a]/20 bg-[#e1062a]/[0.05] p-4"><p className="text-sm font-semibold text-white/55">{selectedRestaurant && selectedActivity ? `${nameFor(selectedRestaurant)} + ${nameFor(selectedActivity)}` : "Choose one restaurant and one activity."}</p><button type="button" disabled={!selectedRestaurant || !selectedActivity} onClick={() => { if (selectedRestaurant && selectedActivity) { track("planner_custom_pair_selected", { step: 3, restaurant_id: selectedRestaurant.id || null, activity_id: selectedActivity.id || null, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); openPlan(selectedRestaurant, selectedActivity, null, null, "custom_pair"); } }} className="rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em] disabled:cursor-not-allowed disabled:opacity-35">Choose my outing →</button></div>
             </details>
           ) : null}
-        </> : <div className="grid items-stretch gap-5 md:grid-cols-2">{singles.map((location, index) => <SingleCard key={`${location.id || index}`} location={location} rank={index + 1} planType={planType} returnToResults={returnToResults} prompt={prompt} onUse={() => openPlan(planType === "restaurant" ? location : null, planType === "activity" ? location : null, null, index + 1, planType)} />)}</div>}
+        </> : <div className="grid items-stretch gap-5 md:grid-cols-2">{singles.map((location, index) => <SingleCard key={`${location.id || index}`} location={location} rank={index + 1} planType={planType} returnToResults={returnToResults} prompt={prompt} onUse={() => { const attribution = sponsoredAttribution(location); openPlan(planType === "restaurant" ? location : null, planType === "activity" ? location : null, null, index + 1, planType, attribution.sponsored, attribution.sponsorId); }} />)}</div>}
       </section>
     </main>
   );
