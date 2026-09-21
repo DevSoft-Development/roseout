@@ -6027,3 +6027,17 @@ const enterpriseClaimQrPrintPage = read("apps/admin/app/admin/dashboard/claim-qr
 if (!enterpriseClaimQrPrintPage.includes("AdminPageHeader")) {
   throw new Error("Claim QR print page must preserve shared enterprise Admin header while retaining its print-specific outer wrapper.");
 }
+
+
+const enterpriseAdminOverviewPage = read("apps/admin/app/admin/dashboard/page.tsx");
+const enterpriseBusinessDetailPage = read("apps/admin/app/admin/dashboard/businesses/[id]/page.tsx");
+for (const [label, source] of [
+  ["Admin Overview", enterpriseAdminOverviewPage],
+  ["Business Detail", enterpriseBusinessDetailPage],
+]) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
