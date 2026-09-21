@@ -4,6 +4,10 @@ import type { SearchTrace } from "../observability/searchTrace";
 import type { PublicLocationCard, PublicSearchOutcome, PublicSearchResponseV2 } from "./responseTypes";
 import { resultCounts } from "./resultCounts";
 import { sanitizePublicLocation } from "./sanitizePublicLocation";
+import {
+  buildLocationMatchReasonDetails,
+  buildPairMatchReasonDetails,
+} from "./matchReasonDetails";
 
 function effectiveRetrievalGeoLevel(item: ResolvedSearchResult["restaurants"][number]) {
   const geoMatch = item.candidate.candidate.geoMatch;
@@ -32,7 +36,7 @@ function publicReasons(reasons: string[]) {
 const card = (item: ResolvedSearchResult["restaurants"][number]): PublicLocationCard => {
   const matchReasons = publicReasons(item.reasons);
   const whyMatched = matchReasons.join("; ");
-  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, whyMatched, why_it_matched: whyMatched });
+  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, matchReasonDetails: buildLocationMatchReasonDetails(matchReasons), whyMatched, why_it_matched: whyMatched });
 };
 
 function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"] {
@@ -124,6 +128,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       geoTier: pair.geoTier,
       isFallbackPair: pair.isFallbackPair,
       matchReasons: pairReasons,
+      matchReasonDetails: buildPairMatchReasonDetails({
+        reasons: pairReasons,
+        walkingMinutes: pair.walkingMinutes,
+        distanceMiles: pair.distanceMiles,
+      }),
       whyMatched,
       why_it_matched: whyMatched,
     };
