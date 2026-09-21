@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
 import { outingRouteParams, placeRouteParams } from "@/lib/result-navigation";
 import { outingCustomerReason, placeCustomerReason } from "@/lib/customer-reason";
-import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
+import type { MobileMatchReason, MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 const FALLBACK_IMAGE = "https://theouthaven.com/toh_logo.png";
 
@@ -32,6 +32,27 @@ function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: stri
           {place.distanceMiles != null ? <AppText variant="caption">{place.distanceMiles.toFixed(1)} mi</AppText> : null}
         </View>
       </View>
+    </View>
+  );
+}
+
+function WhyFits({ reasons, fallback }: { reasons?: MobileMatchReason[]; fallback: string }) {
+  const { theme } = useAppTheme();
+  const labels = (reasons || []).map((reason) => reason?.label?.trim()).filter((label): label is string => Boolean(label)).slice(0, 3);
+  return (
+    <View style={[styles.why, { borderTopColor: theme.colors.border }]}>
+      <AppText variant="eyebrow" accent>WHY THIS FITS</AppText>
+      {labels.length ? (
+        <View style={styles.reasonRow}>
+          {labels.map((label) => (
+            <View key={label} style={[styles.reasonChip, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }]}>
+              <AppText variant="caption">{label}</AppText>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{fallback}</AppText>
+      )}
     </View>
   );
 }
@@ -74,10 +95,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
             <PlaceSummary place={outing.activity} label="ACTIVITY" />
           </Pressable>
         ) : null}
-        <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-          <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-          <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
-        </View>
+        <WhyFits reasons={outing.matchReasonDetails} fallback={why} />
         <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this outing →</Button>
       </View>
     </Card>
@@ -93,10 +111,7 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
-      <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-        <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-        <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
-      </View>
+      <WhyFits reasons={place.matchReasonDetails} fallback={why} />
       {onAction ? (
         <View style={{ marginTop: theme.spacing.md }}>
           <Button variant={selected ? "secondary" : "primary"} onPress={onAction}>{selected ? "✓ Selected" : actionLabel || "Select"}</Button>
@@ -119,4 +134,6 @@ const styles = StyleSheet.create({
   connectorLine: { height: 1, flex: 1 },
   distancePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   why: { borderTopWidth: 1, paddingTop: 14 },
+  reasonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 9 },
+  reasonChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
 });
