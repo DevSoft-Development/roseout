@@ -48,8 +48,8 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
   const connectReady = Boolean(selected?.stripe_connect_charges_enabled && selected?.stripe_connect_payouts_enabled);
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(245,183,0,0.18),transparent_32%),#080808] px-5 py-12 sm:px-8">
+    <main className="min-h-screen bg-[var(--business-bg)] text-[var(--business-text)]">
+      <section className="border-b border-[var(--business-border)] bg-[var(--business-panel)] px-5 py-12 sm:px-8">
         <div className="mx-auto max-w-6xl">
           <Link href="/business/dashboard/analytics" className="text-sm font-black text-white/55 hover:text-white">← Business dashboard</Link>
           <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
