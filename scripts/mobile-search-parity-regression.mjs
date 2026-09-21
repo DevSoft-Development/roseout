@@ -32,5 +32,11 @@ if (!resultsSource.includes('effectivePlanType === "outing" ? recommended.length
 if (!typesSource.includes('resolvedPlanType: MobileResolvedPlanType;')) {
   throw new Error("Mobile search response contract must include resolvedPlanType");
 }
+if (!apiSource.includes("matchReasonDetails: matchReasonDetails(value)")) {
+  throw new Error("Mobile search adapter must preserve structured Search V2 explanations");
+}
+if (!typesSource.includes("matchReasonDetails: MobileMatchReason[];")) {
+  throw new Error("Mobile result types must include structured explanation details");
+}
 
 console.log("Mobile/web search parity regression checks passed.");
