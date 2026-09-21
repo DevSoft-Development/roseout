@@ -52,8 +52,8 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
   return (
     <Card elevated style={{ padding: 12 }}>
       <View style={styles.cardTopline}>
-        <View style={[styles.rankBadge, { backgroundColor: rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
-          <AppText variant="eyebrow" style={{ color: rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
+        <View style={[styles.rankBadge, { backgroundColor: outing.sponsored ? theme.colors.surfaceElevated : rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: outing.sponsored ? theme.colors.borderStrong : rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
+          <AppText variant="eyebrow" style={{ color: outing.sponsored ? theme.colors.text : rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{outing.sponsored ? "SPONSORED" : rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
         </View>
         {distance ? <View style={[styles.distancePill, { backgroundColor: theme.colors.surfaceElevated }]}><AppText variant="caption" muted>{distance}</AppText></View> : null}
       </View>
@@ -93,7 +93,7 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
-        <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
+        <PlaceSummary place={place} label={place.sponsored ? "SPONSORED" : place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
       <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
         <AppText variant="eyebrow" accent>WHY THIS MATCHES</AppText>
