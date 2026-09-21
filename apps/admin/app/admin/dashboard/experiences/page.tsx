@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -56,32 +64,19 @@ export default async function AdminExperiencesPage({
   ).replace(/\/$/, "");
 
   return (
-    <main className="min-h-screen bg-[#050607] p-6 text-white">
-      <div className="mx-auto max-w-[1600px]">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[.18em] text-[#ff5570]">
-              Marketplace
-            </p>
-            <h1 className="mt-2 text-3xl font-black">Experiences</h1>
-            <p className="mt-1 text-sm text-white/45">
-              Platform oversight for location and organizer-created bookable
-              experiences.
-            </p>
-          </div>
-          <Link
-            href={`${consumerOrigin}/experiences`}
-            className="rounded-xl border border-white/10 px-4 py-3 text-sm font-black"
-          >
-            View Public Experiences
-          </Link>
-        </div>
-
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <Metric label="Experiences" value={count || 0} />
-          <Metric label="Published" value={published || 0} />
-          <Metric label="Bookings" value={bookings || 0} />
-        </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Marketplace · Experiences"
+        title="Experiences"
+        subtitle="Platform oversight for location and organizer-created bookable experiences."
+        badge={<AdminStatusBadge tone={(published || 0) ? "green" : "muted"}>{published || 0} published</AdminStatusBadge>}
+        actions={<AdminActionButton href={`${consumerOrigin}/experiences`} variant="primary">Public Experiences</AdminActionButton>}
+      />
+      <AdminKpiGrid>
+        <AdminKpiCard label="Experiences" value={count || 0} helper="Current filtered inventory" />
+        <AdminKpiCard label="Published" value={published || 0} helper="Public and searchable" />
+        <AdminKpiCard label="Bookings" value={bookings || 0} helper="Booking records" />
+      </AdminKpiGrid>
 
         <form className="mt-5 flex flex-wrap gap-2">
           <input
@@ -134,8 +129,7 @@ export default async function AdminExperiencesPage({
             </article>
           ))}
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
 
