@@ -150,7 +150,7 @@ export default function ReserveLobbyDisplay() {
 
         <div className={`grid min-h-0 flex-1 ${split ? "grid-cols-2" : "grid-cols-1"}`}>
           <section className="min-h-0 overflow-hidden p-6">
-            <div className="grid h-full min-h-0 grid-cols-2 gap-5">
+            <div className="grid h-full min-h-0 grid-rows-2 gap-5">
               <QueueColumn
                 title="Reservations"
                 empty="No checked-in reservations right now."
