@@ -28,7 +28,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ReserveConversationThread from "@/components/reserve/ReserveConversationThread";
 import {
@@ -64,14 +64,6 @@ function isBarResource(resource: any) {
   return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalizedType(resource));
 }
 
-function statusClass(status: string) {
-  if (status === "Open") return "border-emerald-400/65 bg-emerald-500/12 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.08)]";
-  if (status === "Seated") return "border-rose-400/70 bg-rose-500/16 text-rose-100 shadow-[0_0_24px_rgba(244,63,94,0.12)]";
-  if (["Waiting", "Ready sent", "Due now"].includes(status)) return "border-amber-300/65 bg-amber-400/14 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.1)]";
-  if (["Blocked"].includes(status)) return "border-red-500/60 bg-red-500/10 text-red-200";
-  return "border-white/15 bg-white/[0.045] text-white/80";
-}
-
 function resourceLayoutValue(resource: any, key: "x" | "y" | "width" | "height") {
   const aliases = key === "x"
     ? ["layout_x", "x_position"]
@@ -87,64 +79,12 @@ function resourceLayoutValue(resource: any, key: "x" | "y" | "width" | "height")
   return key === "width" ? 150 : key === "height" ? 100 : 0;
 }
 
-function resourceVisualType(resource: any) {
-  const type = normalizedType(resource);
-  if (type.includes("booth")) return "booth";
-  if (type.includes("private")) return "private";
-  if (type.includes("patio")) return "patio";
-  if (type.includes("table")) return "table";
-  return "table";
-}
-
-function floorItemStyle(resource: any, width: number, height: number): CSSProperties {
-  const x = resourceLayoutValue(resource, "x");
-  const y = resourceLayoutValue(resource, "y");
-  const sourceWidth = Math.max(1, resourceLayoutValue(resource, "width"));
-  const sourceHeight = Math.max(1, resourceLayoutValue(resource, "height"));
-  const type = resourceVisualType(resource);
-  const capacity = Math.max(1, Number(resourceCapacity(resource) || 1));
-  const centerX = x + sourceWidth / 2;
-  const centerY = y + sourceHeight / 2;
-
-  let visualWidth = 96;
-  let visualHeight = 96;
-
-  if (isBarResource(resource)) {
-    visualWidth = 420;
-    visualHeight = 76;
-  } else if (type === "booth") {
-    visualWidth = capacity >= 8 ? 154 : capacity >= 6 ? 144 : 132;
-    visualHeight = 86;
-  } else if (type === "private") {
-    visualWidth = 176;
-    visualHeight = 132;
-  } else if (type === "patio") {
-    visualWidth = 104;
-    visualHeight = 104;
-  } else if (capacity <= 2) {
-    visualWidth = 88;
-    visualHeight = 88;
-  } else if (capacity <= 4) {
-    visualWidth = 98;
-    visualHeight = 98;
-  } else if (capacity <= 6) {
-    visualWidth = 124;
-    visualHeight = 84;
-  } else {
-    visualWidth = 142;
-    visualHeight = 88;
-  }
-
-  const left = Math.max(4, Math.min(96, (centerX / width) * 100));
-  const top = Math.max(5, Math.min(95, (centerY / height) * 100));
-
-  return {
-    left: `${left}%`,
-    top: `${top}%`,
-    width: `${visualWidth}px`,
-    height: `${visualHeight}px`,
-    transform: `translate(-50%, -50%) rotate(${Number(resource?.rotation || 0)}deg)`,
-  };
+function statusClass(status: string) {
+  if (status === "Open") return "border-emerald-400/65 bg-emerald-500/12 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.08)]";
+  if (status === "Seated") return "border-rose-400/70 bg-rose-500/16 text-rose-100 shadow-[0_0_24px_rgba(244,63,94,0.12)]";
+  if (["Waiting", "Ready sent", "Due now"].includes(status)) return "border-amber-300/65 bg-amber-400/14 text-amber-100 shadow-[0_0_20px_rgba(251,191,36,0.1)]";
+  if (["Blocked"].includes(status)) return "border-red-500/60 bg-red-500/10 text-red-200";
+  return "border-white/15 bg-white/[0.045] text-white/80";
 }
 
 function chairStyle(index: number, capacity: number) {
@@ -158,14 +98,13 @@ function chairStyle(index: number, capacity: number) {
   return { left: "1px", top: pct, transform: "translate(-50%, -50%)" };
 }
 
-function TableDrop({ resource, reservations, dragging, onSelect, style }: { resource: any; reservations: any[]; dragging: any; onSelect: (reservation: any) => void; style?: CSSProperties }) {
+function TableDrop({ resource, reservations, dragging, onSelect }: { resource: any; reservations: any[]; dragging: any; onSelect: (reservation: any) => void }) {
   const state = getFloorSnapshotState(resource, reservations);
   const capacity = Math.max(1, Number(resourceCapacity(resource) || 1));
   const name = resourceName(resource);
   const partySize = Math.max(1, Number(dragging?.party_size || 1));
   const validFit = !dragging || capacity >= partySize;
   const canDrop = Boolean(dragging && validFit && (state.available || state.reservation?.id === dragging.id));
-  const visualType = resourceVisualType(resource);
   const { isOver, setNodeRef } = useDroppable({
     id: `resource:${resource.id || resource.layout_item_id || name}`,
     data: { kind: "resource", resource, canDrop },
@@ -175,60 +114,25 @@ function TableDrop({ resource, reservations, dragging, onSelect, style }: { reso
     const elapsed = Math.max(0, Math.floor((Date.now() - new Date(state.reservation.seated_at).getTime()) / 60000));
     return Number.isFinite(elapsed) ? `${elapsed}m` : null;
   })() : null;
-  const shape = visualType === "booth"
-    ? "rounded-[24px]"
-    : visualType === "private"
-      ? "rounded-[16px]"
-      : visualType === "patio"
-        ? "rounded-full"
-        : capacity <= 4
-          ? "rounded-full"
-          : "rounded-[16px]";
-  const displayStatus = state.reservation
-    ? getReservationGuestName(state.reservation).split(" ")[0]
-    : state.status === "Open" ? "Open" : state.status;
-
   return (
     <button
       ref={setNodeRef}
       type="button"
-      style={style}
       onClick={() => state.reservation && onSelect(state.reservation)}
       title={`${name} · ${capacity} seats · ${state.status}`}
-      className={`${style ? "absolute" : "relative"} group flex items-center justify-center overflow-visible border transition-all duration-200 ${shape} ${statusClass(state.status)} ${
-        dragging ? canDrop ? "ring-2 ring-blue-400/65" : "opacity-30 saturate-50" : ""
-      } ${isOver && canDrop ? "z-20 scale-[1.05] border-blue-300 bg-blue-500/20 ring-4 ring-blue-400/45 shadow-[0_0_38px_rgba(59,130,246,0.28)]" : ""}`}
+      className={`relative flex h-[82px] w-[96px] shrink-0 items-center justify-center rounded-xl border transition-all ${statusClass(state.status)} ${
+        dragging ? canDrop ? "ring-1 ring-emerald-400/45" : "opacity-35" : ""
+      } ${isOver && canDrop ? "scale-105 ring-2 ring-emerald-300 shadow-[0_0_28px_rgba(52,211,153,0.22)]" : ""}`}
     >
-      {visualType === "booth" ? (
-        <>
-          <span aria-hidden="true" className="absolute inset-x-2 top-2 h-[28%] rounded-[18px] bg-current/14 shadow-inner" />
-          <span aria-hidden="true" className="absolute inset-x-3 bottom-2 h-[16%] rounded-full bg-black/25" />
-        </>
-      ) : null}
-
-      {visualType === "private" ? (
-        <>
-          <span className="absolute left-3 top-2 text-[8px] font-black uppercase tracking-[0.16em] text-white/30">Private</span>
-          <span aria-hidden="true" className="absolute inset-2 rounded-[12px] border border-dashed border-current/20" />
-        </>
-      ) : null}
-
-      {visualType !== "booth" && visualType !== "private" ? Array.from({ length: Math.min(capacity, 12) }).map((_, index) => (
-        <span
-          key={index}
-          aria-hidden="true"
-          className="absolute h-2.5 w-2.5 rounded-[3px] border border-current/45 bg-[#080a0d] shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
-          style={chairStyle(index, Math.min(capacity, 12))}
-        />
-      )) : null}
-
-      <span className="relative z-10 flex max-w-[86%] flex-col items-center justify-center text-center">
-        <strong className="max-w-full truncate text-[11px] font-black tracking-tight text-white sm:text-xs">{name}</strong>
-        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-black/24 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.07em] text-current">
-          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-          {displayStatus}
+      {Array.from({ length: Math.min(capacity, 16) }).map((_, index) => (
+        <span key={index} aria-hidden="true" className="absolute h-2 w-2 rounded-[2px] border border-current/50 bg-current/30" style={chairStyle(index, Math.min(capacity, 16))} />
+      ))}
+      <span className="absolute inset-x-[14px] inset-y-[13px] flex flex-col items-center justify-center rounded-lg border border-current/35 bg-[#050607]/80 px-1">
+        <strong className="max-w-full truncate text-[11px] font-black text-white">{name}</strong>
+        <span className="mt-0.5 max-w-full truncate text-[8px] font-black uppercase tracking-[0.05em] opacity-80">
+          {state.reservation ? getReservationGuestName(state.reservation).split(" ")[0] : state.status === "Open" ? "Open" : state.status}
         </span>
-        <span className="mt-1 text-[9px] font-bold text-white/48">{capacity} seats{turn ? ` · ${turn}` : ""}</span>
+        {turn ? <span className="text-[8px] font-black text-white/55">{turn}</span> : null}
       </span>
     </button>
   );
@@ -301,9 +205,9 @@ function DraggableGuest({ item, kind = "reservation", selected, onClick }: { ite
 
 function ServiceMetric({ label, value, warning }: { label: string; value: string | number; warning?: boolean }) {
   return (
-    <div className={`min-w-[108px] rounded-2xl border px-4 py-3 shadow-[0_14px_35px_rgba(0,0,0,0.18)] ${warning ? "border-[#e1062a]/35 bg-[linear-gradient(145deg,rgba(225,6,42,0.16),rgba(225,6,42,0.05))]" : "border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))]"}`}>
-      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-white/38">{label}</p>
-      <p className={`mt-1 text-lg font-black tracking-tight ${warning ? "text-[#ff8aa0]" : "text-white"}`}>{value}</p>
+    <div className={`rounded-xl border px-3 py-2 ${warning ? "border-[#e1062a]/35 bg-[#e1062a]/10" : "border-white/10 bg-white/[0.035]"}`}>
+      <p className="text-[9px] font-black uppercase tracking-[0.12em] text-white/40">{label}</p>
+      <p className={`mt-0.5 text-sm font-black ${warning ? "text-[#ff8aa0]" : "text-white"}`}>{value}</p>
     </div>
   );
 }
@@ -447,15 +351,6 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
   ) as any[];
   const tableResources = uniqueResources.filter((r: any) => !isBarResource(r));
   const barResources = uniqueResources.filter((r: any) => isBarResource(r));
-  const floorWidth = Math.max(
-    960,
-    ...uniqueResources.map((resource: any) => resourceLayoutValue(resource, "x") + resourceLayoutValue(resource, "width") + 32),
-  );
-  const floorHeight = Math.max(
-    620,
-    ...uniqueResources.map((resource: any) => resourceLayoutValue(resource, "y") + resourceLayoutValue(resource, "height") + 32),
-  );
-  const queueItems = railMode === "arriving" ? arriving : railMode === "waitlist" ? waitlist : seated;
 
   async function handleDragEnd(event: DragEndEvent) {
     const activeData = event.active.data.current as any;
@@ -509,122 +404,63 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
   if (!locationId) return <div className="p-8 text-sm font-bold text-white/60">Choose a location to open Host View.</div>;
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragCancel={() => { setDragging(null); setDragKind(null); }} onDragEnd={(event) => void handleDragEnd(event)}>
-      <main className="min-h-[calc(100vh-48px)] bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.09),transparent_31%),linear-gradient(180deg,#080a0e_0%,#050607_48%,#040506_100%)] text-white">
-        <div className="sticky top-12 z-50 border-b border-white/[0.07] bg-[#07090d]/92 px-4 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:px-6">
-          <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-4">
+      <main className="min-h-[calc(100vh-48px)] bg-[#050607] text-white">
+        <div className="sticky top-12 z-50 border-b border-white/10 bg-[#07090d]/95 px-3 py-2 backdrop-blur-xl sm:px-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={() => setRailOpen((value) => !value)} className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.035] text-white/65 transition hover:border-white/20 hover:bg-white/[0.07] hover:text-white">{railOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</button>
-              <div><div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.75)]" /><p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b86]">Live service command center</p></div><p className="mt-1 truncate text-lg font-black tracking-tight">{date} <span className="text-white/30">·</span> Host floor</p></div>
+              <button type="button" onClick={() => setRailOpen((value) => !value)} className="rounded-full border border-white/10 p-2 text-white/65 hover:text-white">{railOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}</button>
+              <div><p className="text-[9px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Live service</p><p className="truncate text-sm font-black">{date} · Host floor</p></div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <ServiceMetric label="Seated" value={`${seated.length} · ${seatedCovers}`} />
               <ServiceMetric label="Arriving" value={`${arriving.length} · ${arrivingCovers}`} />
               <ServiceMetric label="Waiting" value={waitlist.length} />
               <ServiceMetric label="Attention" value={snapshot?.attention?.length || 0} warning={Boolean(snapshot?.attention?.length)} />
-              <button type="button" onClick={() => setFloorFocus((value) => !value)} className={`grid h-11 w-11 place-items-center rounded-xl border transition ${floorFocus ? "border-[#e1062a]/50 bg-[#e1062a]/12 text-[#ff8aa0]" : "border-white/10 bg-white/[0.04] text-white/65 hover:bg-white/[0.07] hover:text-white"}`} title="Floor focus">{floorFocus ? <Minimize2 size={16} /> : <Expand size={16} />}</button>
-              <button type="button" disabled={loading} onClick={() => void load(false)} className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/65 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-40" title="Refresh"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+              <button type="button" onClick={() => setFloorFocus((value) => !value)} className={`rounded-xl border p-2.5 ${floorFocus ? "border-[#e1062a]/50 bg-[#e1062a]/12 text-[#ff8aa0]" : "border-white/10 bg-white/[0.04] text-white/65"}`} title="Floor focus">{floorFocus ? <Minimize2 size={15} /> : <Expand size={15} />}</button>
+              <button type="button" disabled={loading} onClick={() => void load(false)} className="rounded-xl border border-white/10 bg-white/[0.04] p-2.5 text-white/65 disabled:opacity-40" title="Refresh"><RefreshCw size={15} className={loading ? "animate-spin" : ""} /></button>
               <StaffSwitcher locationId={locationId} staff={staffData.staff || []} session={staffData.session} onChanged={() => void loadStaff()} />
             </div>
           </div>
           {error ? <div className={`mt-2 rounded-xl border px-3 py-2 text-xs font-bold ${offline ? "border-amber-300/30 bg-amber-400/10 text-amber-100" : "border-[#e1062a]/35 bg-[#e1062a]/10 text-[#ff9bad]"}`}>{error}</div> : null}
         </div>
 
-        <div className="mx-auto max-w-[1800px] space-y-4 px-4 py-4 sm:px-6">
+        <div className={`grid min-h-[calc(100vh-116px)] ${floorFocus || !railOpen ? "grid-cols-1" : "lg:grid-cols-[300px_minmax(0,1fr)]"}`}>
           {!floorFocus && railOpen ? (
-            <section className="overflow-hidden rounded-[1.6rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.055),rgba(255,255,255,0.018))] shadow-[0_20px_55px_rgba(0,0,0,0.22)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3 sm:px-5">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-xl border border-[#e1062a]/30 bg-[#e1062a]/10 text-[#ff6b86]"><UsersRound size={17} /></div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Reservation queue</p>
-                      <span className="text-[10px] font-bold text-white/35">Drag reservations to a table · click for details</span>
-                    </div>
-                    <p className="mt-0.5 text-xs font-semibold text-white/45">{arriving.length} arriving · {waitlist.length} waiting · {seated.length} seated</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-black/25 p-1">
-                  {(["arriving", "waitlist", "seated"] as const).map((mode) => (
-                    <button key={mode} type="button" onClick={() => setRailMode(mode)} className={`rounded-lg px-3 py-2 text-[9px] font-black uppercase tracking-[0.08em] transition ${railMode === mode ? "bg-[#e1062a] text-white shadow-[0_8px_20px_rgba(225,6,42,0.22)]" : "text-white/45 hover:bg-white/[0.05] hover:text-white"}`}>
-                      {mode}
-                    </button>
-                  ))}
-                </div>
+            <aside className="border-r border-white/10 bg-[#080a0d] p-3">
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-black/25 p-1">
+                {(["arriving", "waitlist", "seated"] as const).map((mode) => <button key={mode} onClick={() => setRailMode(mode)} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase tracking-[0.06em] ${railMode === mode ? "bg-[#e1062a] text-white" : "text-white/45 hover:text-white"}`}>{mode}</button>)}
               </div>
-              <div className="flex gap-3 overflow-x-auto p-4 sm:p-5">
-                {queueItems.map((item: any) => (
-                  <div key={item.id} className="w-[260px] shrink-0">
-                    <DraggableGuest item={item} kind={railMode === "waitlist" ? "waitlist" : "reservation"} selected={selected?.id === item.id} onClick={() => railMode !== "waitlist" && setSelected(item)} />
-                  </div>
-                ))}
-                {!queueItems.length ? (
-                  <div className="grid min-h-24 w-full place-items-center rounded-2xl border border-dashed border-white/10 bg-black/15 px-4 text-center">
-                    <div><p className="text-sm font-black text-white/55">Nothing here right now.</p><p className="mt-1 text-xs font-semibold text-white/30">Guests will appear here in real time.</p></div>
-                  </div>
-                ) : null}
+              <div className="mt-3 max-h-[calc(100vh-185px)] space-y-2 overflow-y-auto pr-1">
+                {railMode === "arriving" ? arriving.map((item: any) => <DraggableGuest key={item.id} item={item} selected={selected?.id === item.id} onClick={() => setSelected(item)} />) : null}
+                {railMode === "waitlist" ? waitlist.map((item: any) => <DraggableGuest key={item.id} item={item} kind="waitlist" />) : null}
+                {railMode === "seated" ? seated.map((item: any) => <DraggableGuest key={item.id} item={item} selected={selected?.id === item.id} onClick={() => setSelected(item)} />) : null}
+                {(railMode === "arriving" && !arriving.length) || (railMode === "waitlist" && !waitlist.length) || (railMode === "seated" && !seated.length) ? <div className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs font-bold text-white/35">Nothing here right now.</div> : null}
               </div>
-            </section>
+            </aside>
           ) : null}
 
-          <section className="overflow-hidden rounded-[1.8rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.05),rgba(255,255,255,0.016))] shadow-[0_24px_70px_rgba(0,0,0,0.26)]">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.07] px-4 py-4 sm:px-5">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff6b86]">Floor plan</p>
-                <h1 className="mt-1 text-2xl font-black tracking-tight">Seat the room with confidence</h1>
-                <p className="mt-1 text-xs font-semibold text-white/40">Drag a reservation to any available table or bar seat. Live availability updates automatically.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 text-[10px] font-bold text-white/45"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.65)]" /> Open</div>
-                <div className="flex items-center gap-2 text-[10px] font-bold text-white/45"><span className="h-2.5 w-2.5 rounded-full bg-blue-400 shadow-[0_0_10px_rgba(96,165,250,0.65)]" /> Selected</div>
-                <div className="flex items-center gap-2 text-[10px] font-bold text-white/45"><span className="h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.65)]" /> Arriving / held</div>
-                <div className="flex items-center gap-2 text-[10px] font-bold text-white/45"><span className="h-2.5 w-2.5 rounded-full bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.65)]" /> Occupied</div>
-                <div className="ml-1 flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black text-emerald-200">
-                  {offline ? <><AlertTriangle size={12} /> Offline</> : <><span className="h-2 w-2 rounded-full bg-emerald-400" /> Live</>}
-                  {lastSync ? ` · ${new Date(lastSync).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
-                </div>
+          <section className="min-w-0 p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Floor plan</p><h1 className="mt-1 text-xl font-black">Drag a guest to a table or bar seat</h1></div>
+              <div className="flex items-center gap-2 text-[10px] font-bold text-white/40">{offline ? <><AlertTriangle size={13} /> Offline</> : <><span className="h-2 w-2 rounded-full bg-emerald-400" /> Live</>} {lastSync ? `· ${new Date(lastSync).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}</div>
+            </div>
+
+            {snapshot?.pacing?.warnings?.length ? <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{snapshot.pacing.warnings.map((warning: any, index: number) => <div key={`${warning.startMinute}-${warning.windowMinutes}-${index}`} className="shrink-0 rounded-xl border border-[#e1062a]/30 bg-[#e1062a]/10 px-3 py-2 text-[10px] font-black text-[#ff9bad]"><AlertTriangle size={12} className="mr-1 inline" /> {warning.covers} covers / {warning.windowMinutes}m · limit {warning.limit}</div>)}</div> : null}
+
+            {barResources.length ? <div className="mt-4 space-y-3">{barResources.map((bar: any) => <div key={bar.id || resourceName(bar)} className="overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025] p-3"><div className="min-w-max"><div className="rounded-t-[24px] border border-white/15 bg-white/[0.07] px-8 py-3 text-center"><p className="text-xs font-black">{resourceName(bar)}</p><p className="mt-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white/35">Bar · {resourceCapacity(bar)} seats</p></div><div className="flex gap-2 border-x border-b border-white/10 px-3 py-2">{Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}</div></div></div>)}</div> : null}
+
+            <div className="mt-4 rounded-[1.5rem] border border-white/10 bg-[#090b0e] p-3 sm:p-4">
+              <div className="flex flex-wrap gap-2.5">
+                {tableResources.map((resource: any) => <TableDrop key={resource.id || resource.layout_item_id || resourceName(resource)} resource={resource} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
+                {!tableResources.length ? <div className="grid min-h-48 w-full place-items-center rounded-xl border border-dashed border-white/10 text-sm font-bold text-white/35">No dining tables configured.</div> : null}
               </div>
             </div>
 
-            {snapshot?.pacing?.warnings?.length ? <div className="flex gap-2 overflow-x-auto border-b border-white/[0.06] px-4 py-3 sm:px-5">{snapshot.pacing.warnings.map((warning: any, index: number) => <div key={`${warning.startMinute}-${warning.windowMinutes}-${index}`} className="shrink-0 rounded-xl border border-amber-300/25 bg-amber-300/8 px-3 py-2 text-[10px] font-black text-amber-100"><AlertTriangle size={12} className="mr-1 inline" /> {warning.covers} covers / {warning.windowMinutes}m · limit {warning.limit}</div>)}</div> : null}
-
-            <div className="relative overflow-x-auto bg-[radial-gradient(circle_at_50%_0%,rgba(225,6,42,0.09),transparent_28%),linear-gradient(180deg,#0a0c10_0%,#07090c_100%)] p-3 sm:p-5">
-              <div className="relative mx-auto min-w-[980px] overflow-hidden rounded-[1.4rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.028),rgba(255,255,255,0.01))] shadow-inner" style={{ aspectRatio: `${floorWidth} / ${floorHeight}` }}>
-                <div className="pointer-events-none absolute inset-0 opacity-[0.14]" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.08) 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-[#e1062a]/[0.035] to-transparent" />
-
-                {barResources.map((bar: any) => {
-                  const barStyle = floorItemStyle(bar, floorWidth, floorHeight);
-                  return (
-                    <div key={`bar-${bar.id || resourceName(bar)}`} className="absolute z-10 overflow-visible" style={barStyle}>
-                      <div className="absolute inset-x-0 top-0 h-[48px] rounded-[14px] border border-[#e1062a]/35 bg-[linear-gradient(180deg,rgba(225,6,42,0.14),rgba(255,255,255,0.035))] shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
-                        <div className="flex h-full items-center justify-between px-4">
-                          <div>
-                            <p className="text-xs font-black text-white">{resourceName(bar)}</p>
-                            <p className="mt-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/35">Bar · {resourceCapacity(bar)} seats</p>
-                          </div>
-                          <span className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-emerald-200">Open</span>
-                        </div>
-                      </div>
-                      <div className="absolute left-1/2 top-[55px] flex -translate-x-1/2 items-center gap-2">
-                        {Array.from({ length: Math.max(1, Number(resourceCapacity(bar) || 1)) }).map((_, index) => <BarSeatDrop key={index} parent={bar} seatNumber={index + 1} reservations={reservations} dragging={dragging} onSelect={setSelected} />)}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {tableResources.map((resource: any) => (
-                  <TableDrop key={resource.id || resource.layout_item_id || `${resourceName(resource)}-${resourceLayoutValue(resource, "x")}-${resourceLayoutValue(resource, "y")}`} resource={resource} reservations={reservations} dragging={dragging} onSelect={setSelected} style={floorItemStyle(resource, floorWidth, floorHeight)} />
-                ))}
-
-                {!uniqueResources.length ? <div className="absolute inset-5 grid place-items-center rounded-2xl border border-dashed border-white/10 text-sm font-bold text-white/35">No floor resources configured.</div> : null}
-              </div>
-            </div>
-
-            {!floorFocus && snapshot?.serverRanking?.length ? <div className="flex gap-2 overflow-x-auto border-t border-white/[0.07] px-4 py-3 sm:px-5">{snapshot.serverRanking.map((entry: any) => <div key={entry.staff.id} className="shrink-0 rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2"><p className="text-xs font-black">{entry.staff.display_name}</p><p className="mt-0.5 text-[9px] font-bold text-white/40">{entry.load.currentCovers} covers · {entry.load.tables} tables · +{entry.load.upcomingCovers} soon</p></div>)}</div> : null}
+            {!floorFocus && snapshot?.serverRanking?.length ? <div className="mt-4 overflow-x-auto"><div className="flex min-w-max gap-2">{snapshot.serverRanking.map((entry: any) => <div key={entry.staff.id} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2"><p className="text-xs font-black">{entry.staff.display_name}</p><p className="mt-0.5 text-[9px] font-bold text-white/40">{entry.load.currentCovers} covers · {entry.load.tables} tables · +{entry.load.upcomingCovers} soon</p></div>)}</div></div> : null}
           </section>
         </div>
 
-        {selected ? <div className="fixed inset-y-0 right-0 z-[80] w-full max-w-md overflow-y-auto border-l border-white/10 bg-[linear-gradient(180deg,rgba(12,14,18,0.99),rgba(7,9,12,0.99))] p-5 shadow-[-28px_0_70px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:p-6"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Reservation</p><h2 className="mt-1 text-2xl font-black">{getReservationGuestName(selected)}</h2><p className="mt-1 text-xs font-bold text-white/45">{formatReservationTime(selected.reservation_time)} · Party {selected.party_size || 1}{selected.bookable_item_name ? ` · ${selected.bookable_item_name}` : ""}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-full border border-white/10 p-2 text-white/55"><X size={16} /></button></div>
+        {selected ? <div className="fixed inset-y-0 right-0 z-[80] w-full max-w-md overflow-y-auto border-l border-white/10 bg-[#090b0f]/98 p-4 shadow-2xl backdrop-blur-xl sm:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Reservation</p><h2 className="mt-1 text-2xl font-black">{getReservationGuestName(selected)}</h2><p className="mt-1 text-xs font-bold text-white/45">{formatReservationTime(selected.reservation_time)} · Party {selected.party_size || 1}{selected.bookable_item_name ? ` · ${selected.bookable_item_name}` : ""}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-full border border-white/10 p-2 text-white/55"><X size={16} /></button></div>
           <div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="text-[9px] font-black uppercase tracking-[0.1em] text-white/35">Status</p><p className="mt-1 text-sm font-black capitalize">{String(selected.status || "confirmed").replaceAll("_", " ")}</p></div><div className="rounded-xl border border-white/10 bg-white/[0.035] p-3"><p className="text-[9px] font-black uppercase tracking-[0.1em] text-white/35">Server</p><p className="mt-1 text-sm font-black">{snapshot?.staff?.find((person: any) => person.id === selected.server_staff_profile_id)?.display_name || "Unassigned"}</p></div></div>
           <div className="mt-4"><p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Quick message</p><div className="mt-2 flex flex-wrap gap-2">{["Your table is ready. Please check in with the host.", "We’re running about 10 minutes behind. Thank you for your patience.", "Are you still planning to join us?", "Please check in with the host when you arrive."].map((template) => <button key={template} disabled={offline || messageBusy} onClick={() => void sendMessage(template)} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2 text-[10px] font-black text-white/70 hover:border-[#e1062a]/40">{template.split(".")[0]}</button>)}</div><textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Message guest…" className="mt-3 min-h-24 w-full rounded-xl border border-white/15 bg-black/30 p-3 text-sm font-semibold outline-none placeholder:text-white/25 focus:border-[#e1062a]/60" /><button disabled={offline || messageBusy || !message.trim()} onClick={() => void sendMessage()} className="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2.5 text-xs font-black text-white disabled:opacity-40"><MessageSquare size={14} /> {messageBusy ? "Sending…" : "Send message"}</button></div>
           <ReserveConversationThread reservation={selected} refreshKey={threadRefresh} />
