@@ -86,7 +86,7 @@ requireText(proxy, 'https://business.theouthaven.com${pathname}${search}', 'Prod
 requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Vercel handoff must cover location dashboards.');
 requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Vercel handoff must cover business dashboards.');
 requireText(proxy, '{ status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds || 60) } },', 'Rate-limit responses must keep a complete headers object and valid JSON response syntax.');
-requireText(proxy, 'export const config = { matcher: ["/:path*"] };', 'Surface isolation must cover every application page path, not only Admin/API routes.');
+requireText(proxy, 'export const config = { matcher: ["/((?!api/health/platform-dr$).*)"] };', 'Surface isolation must cover every application path except the public DR health endpoint, which bypasses Proxy to avoid duplicate observability events.');
 const boundaryIndex = proxy.indexOf('const surfaceBoundaryResponse = webSurfaceBoundaryResponse(request);');
 const shortLinkIndex = proxy.indexOf('const shortHostResponse = shortLinkHostResponse(request);');
 if (boundaryIndex < 0 || shortLinkIndex < 0 || boundaryIndex > shortLinkIndex) {
