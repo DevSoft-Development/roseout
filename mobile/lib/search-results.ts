@@ -1,3 +1,5 @@
+export type MobileMatchReason = { type: string; label: string; source: string; confidence: string };
+
 export type MobilePlaceResult = {
   id: string;
   name: string;
@@ -9,6 +11,7 @@ export type MobilePlaceResult = {
   priceLevel: string | null;
   distanceMiles: number | null;
   whyMatched: string | null;
+  matchReasonDetails?: MobileMatchReason[];
   publicUrl: string | null;
   reservationUrl: string | null;
   websiteUrl: string | null;
@@ -25,6 +28,7 @@ export type MobileOutingResult = {
   distanceMiles: number | null;
   walkMinutes: number | null;
   reason: string | null;
+  matchReasonDetails?: MobileMatchReason[];
   resultType?: "pair" | "same_venue";
 };
 
