@@ -64,6 +64,21 @@ function isBarResource(resource: any) {
   return ["bar", "bar_seat", "counter", "counter_seat"].includes(normalizedType(resource));
 }
 
+function resourceLayoutValue(resource: any, key: "x" | "y" | "width" | "height") {
+  const aliases = key === "x"
+    ? ["layout_x", "x_position"]
+    : key === "y"
+      ? ["layout_y", "y_position"]
+      : key === "width"
+        ? ["layout_width", "width"]
+        : ["layout_height", "height"];
+  for (const alias of aliases) {
+    const value = Number(resource?.[alias]);
+    if (Number.isFinite(value)) return value;
+  }
+  return key === "width" ? 150 : key === "height" ? 100 : 0;
+}
+
 function statusClass(status: string) {
   if (status === "Open") return "border-emerald-400/65 bg-emerald-500/12 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.08)]";
   if (status === "Seated") return "border-rose-400/70 bg-rose-500/16 text-rose-100 shadow-[0_0_24px_rgba(244,63,94,0.12)]";
