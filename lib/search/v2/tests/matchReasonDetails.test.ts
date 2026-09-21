@@ -59,4 +59,35 @@ describe("structured customer match explanations", () => {
       },
     ]);
   });
+
+  it("does not fabricate distance when both travel values are unavailable", () => {
+    expect(
+      buildPairMatchReasonDetails({
+        reasons: [],
+        walkingMinutes: null,
+        distanceMiles: null,
+      }),
+    ).toEqual([]);
+  });
+
+  it("reserves room for canonical pairing evidence", () => {
+    const reasons = buildPairMatchReasonDetails({
+      reasons: [
+        "Italian cuisine match",
+        "Fits date night",
+        "rooftop feature match",
+        "Queens locality match",
+        "budget match",
+      ],
+      walkingMinutes: 6,
+      distanceMiles: 0.3,
+    });
+
+    expect(reasons).toHaveLength(5);
+    expect(reasons.at(-1)).toMatchObject({
+      type: "walking",
+      source: "pairing",
+      label: "6-minute walk between stops",
+    });
+  });
 });
