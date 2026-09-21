@@ -84,7 +84,7 @@ export async function pairLobbyDisplay(code: string) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/display",
+    path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
   return data;
