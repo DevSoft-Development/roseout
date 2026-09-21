@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { WebsiteBuilderWorkspace } from "@/components/websites/WebsiteBuilderWorkspace";
 import { WebsiteDomainSelector } from "@/components/websites/WebsiteDomainSelector";
@@ -18,6 +17,12 @@ import { WEBSITE_V3_CONCEPTS, normalizeWebsiteRendererVersion, normalizeWebsiteV
 import { normalizeWebsiteV3Palette } from "@/lib/websites/v3/palettes";
 import { recommendWebsiteV3Concept } from "@/lib/websites/v3/recommendation";
 import { renderWebsiteV3Preview } from "@/lib/websites/v3/render";
+import {
+  BusinessActionButton,
+  BusinessPageHeader,
+  BusinessPageShell,
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -84,18 +89,20 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
     : null;
 
   return (
-    <main className="min-h-screen bg-[#050607] text-white">
+    <BusinessPageShell>
       <style>{`
         .website-builder-brand [class~="text-[#f5b700]"]{color:#ff2142!important}
         .website-builder-brand [class~="bg-[#f5b700]"]{background:#ff2142!important;color:#fff!important}
         .website-builder-brand [class~="bg-[#f5b700]/8"]{background:rgba(255,33,66,.08)!important}
         .website-builder-brand [class~="border-[#f5b700]/25"]{border-color:rgba(255,33,66,.28)!important}
       `}</style>
-      <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div><p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff2142]">Location Dashboard</p><h1 className="mt-1 text-3xl font-black">Website</h1><p className="mt-2 text-sm text-white/55">Design, move, publish, and monitor {locationName}&apos;s website from one place.</p></div>
-          <div className="flex flex-wrap gap-2"><Link href={editHref} className="rounded-full border border-[#ff2142]/30 bg-[#ff2142]/10 px-5 py-3 text-sm font-black text-rose-100">Edit business information</Link><Link href={backHref} className="rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-black hover:bg-white/[0.09]">Back to location dashboard</Link></div>
-        </div>
+      <BusinessPageHeader
+        eyebrow="Location Workspace · Website"
+        title="Website"
+        subtitle={<>Design, move, publish, and monitor {locationName}&apos;s website from one place.</>}
+        badge={<BusinessStatusBadge tone={hydratedWebsite ? "green" : "amber"}>{hydratedWebsite ? "Website connected" : "Setup unavailable"}</BusinessStatusBadge>}
+        actions={<><BusinessActionButton href={editHref} variant="primary">Edit business information</BusinessActionButton><BusinessActionButton href={backHref}>Location Dashboard</BusinessActionButton></>}
+      />
         {demoContext?.demoMode ? <div className="mb-5 rounded-2xl border border-[#ff2142]/25 bg-[#ff2142]/10 px-4 py-3 text-sm font-bold text-rose-100">Internal demo mode — publishing is allowed only for the protected TheOutHaven Lounge demo location.</div> : null}
         {hydratedWebsite ? (
           <div className="website-builder-brand">
@@ -120,7 +127,6 @@ export default async function WebsitePage({ searchParams }: { searchParams?: Pro
             )}
           </div>
         ) : <section className="rounded-3xl border border-red-300/20 bg-red-500/10 p-5 text-sm font-bold text-red-100">Website setup is temporarily unavailable.</section>}
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }

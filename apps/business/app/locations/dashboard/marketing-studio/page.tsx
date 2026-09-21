@@ -1,8 +1,15 @@
-import Link from "next/link";
 import LocationInstagramPublisher from "@/components/marketing/LocationInstagramPublisher";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import {
+  BusinessActionButton,
+  BusinessKpiCard,
+  BusinessKpiGrid,
+  BusinessPageHeader,
+  BusinessPageShell,
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +41,7 @@ export default async function LocationMarketingStudioPage({
   const location = await getCurrentBusinessLocation(requestedLocationId);
 
   if (!location?.id) {
-    return <main className="min-h-screen bg-[#050607] p-6 text-white"><div className="mx-auto max-w-4xl rounded-3xl border border-white/10 bg-white/[0.04] p-8"><h1 className="text-3xl font-black">Marketing Studio</h1><p className="mt-3 text-white/55">Connect or claim a location before publishing social content.</p></div></main>;
+    return <BusinessPageShell><BusinessPageHeader eyebrow="Marketing & Growth" title="Marketing Studio" subtitle="Connect or claim a location before publishing social content." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} /></BusinessPageShell>;
   }
 
   const locationId = String(location.id);
@@ -96,36 +103,21 @@ export default async function LocationMarketingStudioPage({
   const locationName = getLocationName(location, "Your location");
 
   return (
-    <main className="min-h-screen bg-[#050607] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-5">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.24),transparent_34%),linear-gradient(135deg,#170b0d,#070809_62%,#111012)] p-6 shadow-2xl sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff6b86]">Marketing & growth</p>
-              <h1 className="mt-2 text-4xl font-black tracking-tight">Marketing Studio</h1>
-              <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-white/55">Create, approve, publish, schedule, and measure Instagram content for {locationName} from one workspace.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={`/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`} className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-black">Social Accounts</Link>
-              <Link href={`/locations/dashboard/analytics?locationId=${encodeURIComponent(locationId)}`} className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-black">Analytics</Link>
-            </div>
-          </div>
-        </section>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Marketing & Growth"
+        title="Marketing Studio"
+        subtitle={<>Create, approve, publish, schedule, and measure Instagram content for {locationName} from one workspace.</>}
+        badge={<BusinessStatusBadge tone={connected ? "green" : "amber"}>{connected ? (connection?.username ? `@${String(connection.username).replace(/^@/, "")}` : "Instagram connected") : "Instagram not connected"}</BusinessStatusBadge>}
+        actions={<><BusinessActionButton href={`/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`} variant="primary">Social Accounts</BusinessActionButton><BusinessActionButton href={`/locations/dashboard/analytics?locationId=${encodeURIComponent(locationId)}`}>Analytics</BusinessActionButton></>}
+      />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            ["Instagram", connected ? (connection?.username ? `@${String(connection.username).replace(/^@/, "")}` : "Connected") : "Not connected"],
-            ["Followers", metric(accountMetric?.followers)],
-            ["Instagram posts", metric(accountMetric?.posts)],
-            ["Recent reach", metric(aggregate.reach)],
-            ["Recent engagement", metric(aggregate.likes + aggregate.comments)],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.17em] text-white/35">{label}</p>
-              <p className="mt-2 truncate text-lg font-black text-white/85">{value}</p>
-            </div>
-          ))}
-        </section>
+      <BusinessKpiGrid>
+        <BusinessKpiCard label="Followers" value={metric(accountMetric?.followers)} helper="Instagram audience" />
+        <BusinessKpiCard label="Instagram posts" value={metric(accountMetric?.posts)} helper="Account total" />
+        <BusinessKpiCard label="Recent reach" value={metric(aggregate.reach)} helper="Synced performance" />
+        <BusinessKpiCard label="Recent engagement" value={metric(aggregate.likes + aggregate.comments)} helper="Likes + comments" />
+      </BusinessKpiGrid>
 
         <section className="rounded-[2rem] border border-white/10 bg-[#110d0d] p-5 shadow-xl sm:p-7">
           <div className="mb-5">
@@ -153,7 +145,6 @@ export default async function LocationMarketingStudioPage({
             }) : <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm font-semibold text-white/40">No Instagram posts yet. Connect Instagram and publish your first post above.</div>}
           </div>
         </section>
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }
