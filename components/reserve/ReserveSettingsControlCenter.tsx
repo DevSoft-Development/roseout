@@ -37,6 +37,7 @@ type Props = {
   adminLocationId?: string;
   demo?: boolean;
   fromDemoCenter?: boolean;
+  layoutApiPath?: string;
 };
 
 type Message = { tone: "success" | "error"; text: string } | null;
@@ -631,6 +632,7 @@ export default function ReserveSettingsControlCenter({
   adminLocationId = "",
   demo = false,
   fromDemoCenter = false,
+  layoutApiPath,
 }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -1033,6 +1035,7 @@ export default function ReserveSettingsControlCenter({
               initialLocationType={locationType}
               backHref={settingsHref("layout")}
               onChanged={() => void load()}
+              apiPath={layoutApiPath}
             />
           </Panel>
         ) : null}
