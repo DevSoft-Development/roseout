@@ -59,8 +59,29 @@ export default async function LocationsDashboardLayout({
         }
 
         .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-[#0"],
-        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-black"] {
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-[#1"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-[#2"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-black"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-neutral-9"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-zinc-9"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-slate-9"] {
           background-color: var(--business-panel) !important;
+        }
+
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="from-[#0"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="from-[#1"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="to-[#0"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-gradient"][class*="to-[#1"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-[radial-gradient"] {
+          background-image: none !important;
+          background-color: var(--business-panel) !important;
+        }
+
+        .business-theme-light .location-dashboard-content :is(input, select, textarea)[class*="bg-[#0"],
+        .business-theme-light .location-dashboard-content :is(input, select, textarea)[class*="bg-[#1"],
+        .business-theme-light .location-dashboard-content :is(input, select, textarea)[class*="bg-black"] {
+          background-color: var(--business-panel-strong) !important;
+          color: var(--business-text) !important;
         }
 
         .business-theme-light .location-dashboard-content [class*="border-white/"] {
