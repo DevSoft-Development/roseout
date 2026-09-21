@@ -3,6 +3,12 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { moderateEventExperienceAction } from "./actions";
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "@/lib/admin-design-system";
 
 export const dynamic = "force-dynamic";
 
@@ -251,20 +257,14 @@ export default async function EventsExperiencesModerationPage({ searchParams }: 
   const canModerate = canAdmin(admin.role, "fraudEnforce");
 
   return (
-    <main className="min-h-screen bg-[#050607] p-4 text-white sm:p-6">
-      <div className="mx-auto max-w-[1500px]">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[.18em] text-[#ff5570]">Trust & Safety</p>
-            <h1 className="mt-2 text-3xl font-black">Events & Experiences Moderation</h1>
-            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/50">
-              Review events and experiences that TheOutHaven has temporarily held. Open any card to see the full submission, why it was held, and the available decision.
-            </p>
-          </div>
-          <Link href="/admin/dashboard/fraud" className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-black text-white/70 hover:border-white/25 hover:text-white">
-            Open Fraud & Safety
-          </Link>
-        </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Trust & Safety · Moderation"
+        title="Events & Experiences Moderation"
+        subtitle="Review events and experiences TheOutHaven has temporarily held, understand why they were flagged, and take the appropriate moderation action."
+        badge={<AdminStatusBadge tone={urgentCount ? "amber" : "green"}>{urgentCount ? `${urgentCount} need attention` : "Queue stable"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/fraud" variant="primary">Fraud & Safety</AdminActionButton>}
+      />
 
         {notice ? (
           <div className="mt-5 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-bold text-emerald-100">{notice}</div>
@@ -414,7 +414,6 @@ export default async function EventsExperiencesModerationPage({ searchParams }: 
             </div>
           ) : null}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

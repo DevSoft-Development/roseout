@@ -7,6 +7,11 @@ import { getLocationName } from "@/lib/locationName";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import * as actions from "./actions";
 import DemoActionButton from "./DemoActionButton";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "@/lib/admin-design-system";
 
 export const dynamic = "force-dynamic";
 
@@ -285,8 +290,13 @@ export default async function DemoCenterPage() {
   ];
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#050607] px-4 pb-16 pt-24 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1760px] space-y-6">
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Settings · Demo Center"
+        title="Demo Center"
+        subtitle="Control demo data, validate readiness, and launch the business and Reserve experiences with scoped admin handoff."
+        badge={<AdminStatusBadge tone={publicWarning ? "amber" : loc ? "green" : "red"}>{publicWarning ? "Public exposure warning" : loc ? "Demo ready" : "Needs demo location"}</AdminStatusBadge>}
+      />
         <section className={`rounded-[28px] border p-4 shadow-2xl shadow-black/20 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.035]"}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -401,7 +411,6 @@ export default async function DemoCenterPage() {
             ))}
           </div>
         </CommandCard>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
