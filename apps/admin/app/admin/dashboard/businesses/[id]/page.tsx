@@ -2,6 +2,14 @@ import { notFound } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getBusinessCRM, getUpgradeFlags } from "@/lib/admin/business-crm";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -22,22 +30,21 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   const flags = business ? getUpgradeFlags(business) : [];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-white/55">CRM Detail</p>
-          <h1 className="mt-2 text-3xl font-black">{name}</h1>
-          <p className="mt-2 text-sm text-white/65">{[location?.city, location?.state].filter(Boolean).join(", ")} · {location?.category || "Uncategorized"}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {flags.map((flag) => <span key={flag} className="rounded-full border border-rose-200/30 bg-rose-500/10 px-3 py-1 text-xs text-rose-100">{flag}</span>)}
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[["Opportunity Score", business?.opportunity_score ?? 0],["Plan Status", business?.crm_status ?? "Unclaimed"],["Churn Risk", business?.churn_risk_score ?? 0],["Conversion", `${((business?.conversion_rate_30d ?? 0) * 100).toFixed(1)}%`]].map(([label, value]) => (
-            <article key={String(label)} className="rounded-2xl border border-white/10 bg-black/20 p-4"><p className="text-xs uppercase tracking-[0.2em] text-white/55">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></article>
-          ))}
-        </section>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="CRM · Business Detail"
+        title={name}
+        subtitle={`${[location?.city, location?.state].filter(Boolean).join(", ") || "Location"} · ${location?.category || "Uncategorized"}`}
+        badge={<AdminStatusBadge tone={business?.crm_status === "active" ? "green" : "blue"}>{business?.crm_status || "Unclaimed"}</AdminStatusBadge>}
+        actions={<><AdminActionButton href="/admin/dashboard/businesses">Businesses</AdminActionButton><AdminActionButton href="/admin/dashboard/crm" variant="primary">Open CRM</AdminActionButton></>}
+      />
+      {flags.length ? <div className="flex flex-wrap gap-2">{flags.map((flag) => <AdminStatusBadge key={flag} tone="red">{flag}</AdminStatusBadge>)}</div> : null}
+      <AdminKpiGrid>
+        <AdminKpiCard label="Opportunity score" value={business?.opportunity_score ?? 0} helper="CRM opportunity" />
+        <AdminKpiCard label="Plan status" value={business?.crm_status ?? "Unclaimed"} helper="Commercial state" />
+        <AdminKpiCard label="Churn risk" value={business?.churn_risk_score ?? 0} helper="Retention signal" />
+        <AdminKpiCard label="Conversion" value={`${((business?.conversion_rate_30d ?? 0) * 100).toFixed(1)}%`} helper="30-day conversion" />
+      </AdminKpiGrid>
 
         <section className="grid gap-4 lg:grid-cols-2">
           <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
@@ -69,7 +76,6 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             <p className="mt-3 text-sm text-white/70">Outreach, notes, reservation link updates, upgrade opportunities, and featured/promotion states are available via admin APIs for this location id.</p>
           </article>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
