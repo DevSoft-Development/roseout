@@ -113,7 +113,7 @@ Resources:
         FullyQualifiedDomainName: !Ref GatewayHealthHost
         Port: 443
         ResourcePath: !Ref GatewayHealthPath
-        RequestInterval: 10
+        RequestInterval: 30
         FailureThreshold: 2
         MeasureLatency: true
         EnableSNI: true
