@@ -4,6 +4,10 @@ import type { SearchTrace } from "../observability/searchTrace";
 import type { PublicLocationCard, PublicSearchOutcome, PublicSearchResponseV2 } from "./responseTypes";
 import { resultCounts } from "./resultCounts";
 import { sanitizePublicLocation } from "./sanitizePublicLocation";
+import {
+  buildLocationMatchReasonDetails,
+  buildPairMatchReasonDetails,
+} from "./matchReasonDetails";
 
 function effectiveRetrievalGeoLevel(item: ResolvedSearchResult["restaurants"][number]) {
   const geoMatch = item.candidate.candidate.geoMatch;
@@ -32,7 +36,7 @@ function publicReasons(reasons: string[]) {
 const card = (item: ResolvedSearchResult["restaurants"][number]): PublicLocationCard => {
   const matchReasons = publicReasons(item.reasons);
   const whyMatched = matchReasons.join("; ");
-  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, whyMatched, why_it_matched: whyMatched });
+  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, matchReasonDetails: buildLocationMatchReasonDetails(matchReasons), whyMatched, why_it_matched: whyMatched });
 };
 
 function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"] {
@@ -109,11 +113,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const activities = result.activities.map(card);
   const sameVenueResults = result.sameVenueResults.map(card);
   const pairs = result.pairs.map((pair) => {
-    const pairReasons = publicReasons([
+    const pairSearchReasons = publicReasons([
       ...pair.restaurant.reasons.filter((reason) => /matched|qualified|casual|relaxed|dinner/i.test(reason)),
       ...pair.activity.reasons.filter((reason) => /matched|qualified|casual|relaxed/i.test(reason)),
-      ...pair.reasons,
     ]);
+    const pairReasons = publicReasons([...pairSearchReasons, ...pair.reasons]);
     const whyMatched = pairReasons.join("; ");
     return {
       restaurant: card(pair.restaurant),
@@ -124,6 +128,12 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       geoTier: pair.geoTier,
       isFallbackPair: pair.isFallbackPair,
       matchReasons: pairReasons,
+      matchReasonDetails: buildPairMatchReasonDetails({
+        reasons: pairSearchReasons,
+        pairingReasons: pair.reasons,
+        walkingMinutes: pair.walkingMinutes,
+        distanceMiles: pair.distanceMiles,
+      }),
       whyMatched,
       why_it_matched: whyMatched,
     };
