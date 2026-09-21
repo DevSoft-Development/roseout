@@ -8,6 +8,26 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function validateMatchReasonDetails(value: unknown, path: string, errors: string[]) {
+  if (value == null) return;
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array`);
+    return;
+  }
+  const allowedTypes = new Set(["cuisine","activity","location","occasion","price","hours","distance","walking","feature","other"]);
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] must be an object`);
+      continue;
+    }
+    if (!allowedTypes.has(String(item.type ?? ""))) errors.push(`${path}[${index}].type is invalid`);
+    if (typeof item.label !== "string" || !item.label.trim()) errors.push(`${path}[${index}].label must be a non-empty string`);
+    if (!["search_evidence","pairing"].includes(String(item.source ?? ""))) errors.push(`${path}[${index}].source is invalid`);
+    if (!["high","medium"].includes(String(item.confidence ?? ""))) errors.push(`${path}[${index}].confidence is invalid`);
+  }
+}
+
 function validateLocation(value: unknown, path: string, errors: string[]) {
   if (!isRecord(value)) {
     errors.push(`${path} must be an object`);
@@ -15,6 +35,7 @@ function validateLocation(value: unknown, path: string, errors: string[]) {
   }
   if (typeof value.id !== "string" || !value.id.trim()) errors.push(`${path}.id must be a non-empty string`);
   if (value.matchReasons != null && !isStringArray(value.matchReasons)) errors.push(`${path}.matchReasons must be a string array`);
+  validateMatchReasonDetails(value.matchReasonDetails, `${path}.matchReasonDetails`, errors);
 }
 
 export function validatePublicSearchResponse(response: unknown): asserts response is PublicSearchResponseV2 {
@@ -41,6 +62,7 @@ export function validatePublicSearchResponse(response: unknown): asserts respons
     else {
       validateLocation(pair.restaurant, `pairs[${index}].restaurant`, errors);
       validateLocation(pair.activity, `pairs[${index}].activity`, errors);
+      validateMatchReasonDetails(pair.matchReasonDetails, `pairs[${index}].matchReasonDetails`, errors);
     }
   });
 
