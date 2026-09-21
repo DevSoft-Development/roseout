@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import ReserveLobbyDisplaySettings from "@/components/reserve/ReserveLobbyDisplaySettings";
 
 const PERMISSIONS = [
   ["viewDashboard", "View reservations"],
@@ -697,6 +698,10 @@ export function ReserveTeamSettings({ locationId }: { locationId: string }) {
             <p className="mt-3 text-sm reserve-muted">No Reserve devices have been authorized yet.</p>
           )}
         </Card>
+      </div>
+
+      <div className="mt-5">
+        <ReserveLobbyDisplaySettings locationId={locationId} />
       </div>
     </div>
   );
