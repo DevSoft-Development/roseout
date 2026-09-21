@@ -1,6 +1,7 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
 import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
 import { mobileJson, mobileError } from "../_lib/response";
+import { sponsoredAttribution } from "@/lib/sponsored-placement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,6 +87,7 @@ function pickImage(value: any) {
 
 function shapePlace(value: any, kind: "restaurant" | "activity") {
   const id = String(value?.id || value?.location_id || value?.source_id || "");
+  const placement = sponsoredAttribution(value);
   return {
     id,
     name: pickName(value),
@@ -109,12 +111,14 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
     address: firstText(value?.formatted_address, value?.full_address, value?.address),
     latitude: numberOrNull(value?.latitude ?? value?.lat),
     longitude: numberOrNull(value?.longitude ?? value?.lng ?? value?.lon),
+    ...placement,
   };
 }
 
 function shapePair(value: any, index: number, resultType: "pair" | "same_venue" = "pair") {
   const restaurant = value?.restaurant || value?.restaurant_location || value?.restaurantLocation || (resultType === "same_venue" ? value : null);
   const activity = value?.activity || value?.activity_location || value?.activityLocation || (resultType === "same_venue" ? value : null);
+  const placement = sponsoredAttribution(value);
   return {
     id: String(value?.id || value?.pair_id || `${resultType}-${index}`),
     restaurant: restaurant ? shapePlace(restaurant, "restaurant") : null,
@@ -126,6 +130,7 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
       ? value.matchReasonDetails.filter((item: any) => item && typeof item.label === "string").map((item: any) => ({ type: String(item.type || "other"), label: item.label.trim() })).filter((item: any) => item.label).slice(0, 4)
       : [],
     resultType,
+    ...placement,
   };
 }
 

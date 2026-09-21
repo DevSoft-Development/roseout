@@ -9,9 +9,10 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationDetailHref } from "@/lib/locationLinks";
 import { buildGoogleDirectionsUrl } from "@/lib/googleDirections";
 import GuidedJourneySteps from "@/components/planner/GuidedJourneySteps";
+import { isSponsoredPlacement } from "@/lib/sponsored-placement";
 
 type PlanType = "outing" | "restaurant" | "activity";
-type PlacementFields = { sponsored?: boolean | null; isSponsored?: boolean | null; is_sponsored?: boolean | null; placement_type?: string | null; sponsor_id?: string | number | null };
+type PlacementFields = { sponsored?: boolean | null; isSponsored?: boolean | null; is_sponsored?: boolean | null; placement_type?: string | null; sponsor_label?: string | null; sponsor_id?: string | number | null; campaign_id?: string | number | null };
 type LocationCard = Record<string, unknown> & PlacementFields & {
   id?: string | number | null;
   name?: string | null;
@@ -180,7 +181,7 @@ function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   const miles = numeric(pair.distanceMiles);
   return miles !== null && miles >= 0 ? `${miles.toFixed(1)} ${Math.abs(miles - 1) < 0.05 ? "mile" : "miles"} apart` : null;
 }
-function isSponsored(value: PlacementFields | null | undefined) { return Boolean(value?.sponsored || value?.isSponsored || value?.is_sponsored || String(value?.placement_type || "").toLowerCase() === "sponsored"); }
+function isSponsored(value: PlacementFields | null | undefined) { return isSponsoredPlacement(value); }
 function sponsoredPair(item: CompletePair) { return isSponsored(item.placement) || isSponsored(item.restaurant) || isSponsored(item.activity); }
 function sponsorId(item: CompletePair) { const value = item.placement.sponsor_id || item.restaurant.sponsor_id || item.activity.sponsor_id; return value ? String(value) : null; }
 function completePairs(payload: SearchPayload | null | undefined): CompletePair[] {
@@ -276,7 +277,8 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
   const image = imageFor(location);
   const rating = ratingFor(location);
   const price = priceFor(location);
-  const best = rank === 1;
+  const sponsored = isSponsored(location);
+  const best = rank === 1 && !sponsored;
   const signals = locationSignals(location, prompt);
   const noun = planType === "restaurant" ? "restaurant" : "activity";
   return (
@@ -284,7 +286,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
       <div className="relative h-64 shrink-0 overflow-hidden bg-white/[0.04] sm:h-72">
         {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-4xl">📍</div>}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-black/10" />
-        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{best ? "Best Match" : `Option ${rank}`}</span>
+        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${sponsored ? "bg-white text-black" : best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{sponsored ? "Sponsored" : best ? "Best Match" : `Option ${rank}`}</span>
       </div>
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <div>
