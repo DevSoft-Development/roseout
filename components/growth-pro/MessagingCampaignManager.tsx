@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 
 type Props = {
   locationId: string;
@@ -10,11 +13,11 @@ type Props = {
 };
 
 const field =
-  "w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-rose-400/60";
+  "w-full rounded-xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-3 py-2.5 text-sm font-bold text-[var(--business-text)] outline-none transition placeholder:text-[var(--business-muted)] focus:border-rose-400/60";
 const button =
-  "rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/75 hover:bg-white/10";
+  "rounded-xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-3 py-2 text-xs font-black uppercase tracking-wide text-[var(--business-soft)] transition hover:border-[#ff2142]/35 hover:text-[var(--business-text)] disabled:opacity-50";
 const primary =
-  "rounded-xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-4 py-2 text-sm font-black text-white disabled:opacity-50";
+  "rounded-xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-4 py-2 text-sm font-black text-white shadow-lg shadow-black/10 disabled:opacity-50";
 
 function qs(values: Record<string, string>) {
   return new URLSearchParams(values).toString();
@@ -72,64 +75,85 @@ export default function MessagingCampaignManager({
   }
 
   return (
-    <main className="min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-[1500px] space-y-5">
-        <header className="rounded-[2rem] border border-white/10 bg-[#10131a] p-6">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Messaging</p>
-          <h1 className="mt-2 text-3xl font-black">{locationName}</h1>
-          <p className="mt-2 text-sm font-bold text-white/50">
-            Create campaign drafts, review content, and move campaigns through approval states.
-          </p>
-          {demoMode ? (
-            <p className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold text-amber-100">
-              Demo mode is simulation-only: recipient count stays at zero, scheduling/sending is blocked, SMS credits stay at zero, and approval states are safe simulations.
-            </p>
-          ) : null}
-        </header>
-
-        {message ? <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-bold text-white/75">{message}</div> : null}
-
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-          <h2 className="text-xl font-black">New campaign draft</h2>
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            <input className={field} placeholder="Campaign name" value={draft.name} onChange={(e) => setDraft((v) => ({ ...v, name: e.target.value }))} />
-            <select className={field} value={draft.channel} onChange={(e) => setDraft((v) => ({ ...v, channel: e.target.value }))}>
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-            </select>
-            <input className={field} placeholder="Email subject" disabled={draft.channel !== "email"} value={draft.subject} onChange={(e) => setDraft((v) => ({ ...v, subject: e.target.value }))} />
-            <textarea className={`${field} min-h-28 lg:col-span-2`} placeholder="Campaign message" value={draft.body} onChange={(e) => setDraft((v) => ({ ...v, body: e.target.value }))} />
+    <div className="space-y-5">
+      <section className="rounded-[2rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.08)] sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Campaign workspace</p>
+            <h2 className="mt-1 text-xl font-black">{locationName}</h2>
           </div>
-          <button className={`${primary} mt-4`} disabled={busy || !draft.name.trim() || !draft.body.trim()} onClick={createDraft}>Save draft</button>
-        </section>
+          <BusinessStatusBadge tone={demoMode ? "amber" : "blue"}>
+            {demoMode ? "Simulation only" : `${campaigns.length} campaign${campaigns.length === 1 ? "" : "s"}`}
+          </BusinessStatusBadge>
+        </div>
+        {demoMode ? (
+          <p className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold text-amber-200">
+            Demo mode is simulation-only: recipient count stays at zero, scheduling and sending are blocked, SMS credits stay at zero, and approval states are safe simulations.
+          </p>
+        ) : null}
+      </section>
 
-        <section className="grid gap-4 xl:grid-cols-2">
-          {campaigns.map((campaign) => (
-            <article key={campaign.id} className="rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-white/35">{campaign.channel}</p>
-                  <h2 className="mt-1 text-xl font-black">{campaign.name || "Campaign"}</h2>
-                  <p className="mt-1 text-xs text-white/45">Status: {campaign.status || "draft"} · Recipients: {campaign.recipient_count ?? 0}</p>
-                </div>
-                <span className="rounded-full border border-white/10 bg-black/25 px-3 py-1 text-xs font-black text-white/60">{campaign.requires_admin_approval ? "Approval required" : "Standard"}</span>
+      {message ? (
+        <div className="rounded-2xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-4 py-3 text-sm font-bold text-[var(--business-soft)]">
+          {message}
+        </div>
+      ) : null}
+
+      <section className="rounded-[2rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5 sm:p-6">
+        <h2 className="text-xl font-black">New campaign draft</h2>
+        <p className="mt-1 text-sm font-semibold text-[var(--business-muted)]">
+          Draft email or SMS content without changing the existing approval workflow.
+        </p>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <input className={field} placeholder="Campaign name" value={draft.name} onChange={(e) => setDraft((v) => ({ ...v, name: e.target.value }))} />
+          <select className={field} value={draft.channel} onChange={(e) => setDraft((v) => ({ ...v, channel: e.target.value }))}>
+            <option value="email">Email</option>
+            <option value="sms">SMS</option>
+          </select>
+          <input className={field} placeholder="Email subject" disabled={draft.channel !== "email"} value={draft.subject} onChange={(e) => setDraft((v) => ({ ...v, subject: e.target.value }))} />
+          <textarea className={`${field} min-h-28 lg:col-span-2`} placeholder="Campaign message" value={draft.body} onChange={(e) => setDraft((v) => ({ ...v, body: e.target.value }))} />
+        </div>
+        <button className={`${primary} mt-4`} disabled={busy || !draft.name.trim() || !draft.body.trim()} onClick={createDraft}>
+          Save draft
+        </button>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        {campaigns.map((campaign) => (
+          <article key={campaign.id} className="rounded-[2rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--business-muted)]">{campaign.channel}</p>
+                <h2 className="mt-1 text-xl font-black">{campaign.name || "Campaign"}</h2>
+                <p className="mt-1 text-xs font-semibold text-[var(--business-muted)]">
+                  Status: {campaign.status || "draft"} · Recipients: {campaign.recipient_count ?? 0}
+                </p>
               </div>
-              {campaign.subject ? <p className="mt-4 text-sm font-black text-white/80">{campaign.subject}</p> : null}
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/60">{campaign.body_rendered || "No message body"}</p>
-              {campaign.rejected_reason ? <p className="mt-3 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-xs font-bold text-rose-100">{campaign.rejected_reason}</p> : null}
-              <div className="mt-5 flex flex-wrap gap-2">
-                <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "request_approval" })}>Request approval</button>
-                <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "approve" })}>Approve</button>
-                <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "reject", reason: "Needs revision" })}>Reject</button>
-                <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "return_to_draft" })}>Return to draft</button>
-                <button className={button} disabled={busy} onClick={() => call("DELETE", { campaignId: campaign.id })}>Delete</button>
-              </div>
-              {demoMode ? <p className="mt-4 text-xs font-bold text-amber-100/80">This demo campaign cannot schedule, send, or consume SMS credits.</p> : null}
-            </article>
-          ))}
-          {!campaigns.length ? <div className="rounded-[2rem] border border-dashed border-white/15 p-8 text-sm font-bold text-white/40">No campaigns yet.</div> : null}
-        </section>
-      </div>
-    </main>
+              <BusinessStatusBadge tone={campaign.requires_admin_approval ? "amber" : "muted"}>
+                {campaign.requires_admin_approval ? "Approval required" : "Standard"}
+              </BusinessStatusBadge>
+            </div>
+            {campaign.subject ? <p className="mt-4 text-sm font-black text-[var(--business-text)]">{campaign.subject}</p> : null}
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[var(--business-soft)]">{campaign.body_rendered || "No message body"}</p>
+            {campaign.rejected_reason ? (
+              <p className="mt-3 rounded-xl border border-rose-300/20 bg-rose-500/10 p-3 text-xs font-bold text-rose-200">{campaign.rejected_reason}</p>
+            ) : null}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "request_approval" })}>Request approval</button>
+              <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "approve" })}>Approve</button>
+              <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "reject", reason: "Needs revision" })}>Reject</button>
+              <button className={button} disabled={busy} onClick={() => call("PATCH", { campaignId: campaign.id, action: "return_to_draft" })}>Return to draft</button>
+              <button className={button} disabled={busy} onClick={() => call("DELETE", { campaignId: campaign.id })}>Delete</button>
+            </div>
+            {demoMode ? <p className="mt-4 text-xs font-bold text-amber-200">This demo campaign cannot schedule, send, or consume SMS credits.</p> : null}
+          </article>
+        ))}
+        {!campaigns.length ? (
+          <div className="rounded-[2rem] border border-dashed border-[var(--business-border)] bg-[var(--business-panel)] p-8 text-sm font-bold text-[var(--business-muted)]">
+            No campaigns yet.
+          </div>
+        ) : null}
+      </section>
+    </div>
   );
 }
