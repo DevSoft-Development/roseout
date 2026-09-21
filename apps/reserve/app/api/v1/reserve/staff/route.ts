@@ -111,6 +111,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Enter a staff name and valid Reserve role." }, { status: 400 });
     }
     const teamMemberId = clean(body.teamMemberId || body.team_member_id) || null;
+    if (teamMemberId) {
+      const { data: teamMember } = await supabaseAdmin
+        .from("location_team_members")
+        .select("id")
+        .eq("id", teamMemberId)
+        .eq("location_id", canonicalLocationId)
+        .in("invitation_status", ["accepted", "active"])
+        .maybeSingle();
+      if (!teamMember) {
+        return NextResponse.json(
+          { success: false, error: "Choose an active Business team member from this location." },
+          { status: 400 },
+        );
+      }
+    }
     const { data, error } = await supabaseAdmin
       .from("reserve_staff_profiles")
       .insert({
