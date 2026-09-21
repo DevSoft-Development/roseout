@@ -47,13 +47,13 @@ export default async function MarketingOpportunitiesPage() {
         {opportunities.length ? opportunities.map((item) => {
           const location = item.location_id ? byLocation.get(item.location_id) : null;
           const name = location ? (location.name || location.business_name || location.restaurant_name || location.activity_name) : null;
-          return <article key={item.id} className="rounded-2xl border bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-semibold capitalize">{item.source_type}</span><h2 className="mt-3 text-lg font-semibold">{item.title}</h2><p className="mt-1 text-sm text-neutral-500">{name || "Location source"}{location?.city ? ` · ${location.city}${location.state ? `, ${location.state}` : ""}` : ""}</p></div><span className="text-xs font-semibold capitalize text-neutral-500">{item.status}</span></div>
-            {item.description ? <p className="mt-4 line-clamp-3 text-sm text-neutral-700">{item.description}</p> : null}
-            <div className="mt-4 rounded-xl bg-neutral-50 p-3 text-xs text-neutral-600">Approved location media available: <strong>{item.location_id ? assetCounts.get(item.location_id) || 0 : 0}</strong></div>
+          return <article key={item.id} className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><span className="rounded-full bg-[var(--admin-shell-soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--admin-shell-text)]">{item.source_type}</span><h2 className="mt-3 text-lg font-semibold">{item.title}</h2><p className="mt-1 text-sm text-[var(--admin-shell-muted)]">{name || "Location source"}{location?.city ? ` · ${location.city}${location.state ? `, ${location.state}` : ""}` : ""}</p></div><span className="text-xs font-semibold capitalize text-[var(--admin-shell-muted)]">{item.status}</span></div>
+            {item.description ? <p className="mt-4 line-clamp-3 text-sm text-[var(--admin-shell-text)]">{item.description}</p> : null}
+            <div className="mt-4 rounded-xl bg-[var(--admin-shell-soft)] p-3 text-xs text-[var(--admin-shell-muted)]">Approved location media available: <strong>{item.location_id ? assetCounts.get(item.location_id) || 0 : 0}</strong></div>
             <div className="mt-4">{item.featured_content_item_id ? <Link href={`/admin/dashboard/marketing/content/${item.featured_content_item_id}`} className="inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-semibold">Open created content</Link> : <FeatureOpportunityButton opportunityId={item.id} />}</div>
           </article>;
-        }) : <div className="rounded-2xl border bg-white p-10 text-center text-sm text-neutral-500 xl:col-span-2">No active location marketing opportunities yet.</div>}
+        }) : <div className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-10 text-center text-sm text-[var(--admin-shell-muted)] xl:col-span-2">No active location marketing opportunities yet.</div>}
       </div>
     </AdminPageShell>
   );
