@@ -5,6 +5,13 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import LocationEventManager from "@/components/events/LocationEventManager";
 import LocationExperienceManager from "@/components/experiences/LocationExperienceManager";
+import {
+  BusinessKpiCard,
+  BusinessKpiGrid,
+  BusinessPageHeader,
+  BusinessPageShell,
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -21,16 +28,6 @@ function safeTab(value: string | undefined): Tab {
 
 function money(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
-}
-
-function Metric({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <p className="text-xs font-black uppercase tracking-[0.12em] text-white/35">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
-      {detail ? <p className="mt-1 text-xs font-semibold text-white/30">{detail}</p> : null}
-    </div>
-  );
 }
 
 export default async function EventsExperiencesPage({ searchParams }: { searchParams: Params }) {
@@ -121,26 +118,20 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
   }
 
   return (
-    <main className="min-h-screen bg-[#050607] text-white">
-      <div className="sticky top-0 z-30 border-b border-white/10 bg-[#050607]/95 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Events & Experiences</p>
-              <h1 className="mt-1 text-2xl font-black sm:text-3xl">Create, manage, and grow your events and experiences</h1>
-              <p className="mt-1 max-w-3xl text-sm font-semibold text-white/45">See how things are going, create something new, or update what you already offer.</p>
-            </div>
-            <p className="text-sm font-black text-white/60">{location.name}</p>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Events & Experiences"
+        title="Create, manage, and grow your events and experiences"
+        subtitle="See how things are going, create something new, or update what you already offer."
+        badge={<><BusinessStatusBadge tone="blue">{location.name}</BusinessStatusBadge><BusinessStatusBadge tone={publishedTotal ? "green" : "amber"}>{publishedTotal} live</BusinessStatusBadge></>}
+        actions={
+          <div className="flex flex-wrap gap-2">
             {(["overview", "events", "experiences"] as const).map((entry) => (
-              <Link key={entry} href={tabHref(entry)} className={`rounded-full border px-4 py-2 text-xs font-black capitalize transition ${tab === entry ? "border-[#ff2142]/60 bg-[#e1062a]/20 text-white" : "border-white/10 bg-white/[0.03] text-white/45 hover:border-white/20 hover:text-white"}`}>{entry}</Link>
+              <Link key={entry} href={tabHref(entry)} className={`rounded-full border px-4 py-2 text-xs font-black capitalize transition ${tab === entry ? "border-[#ff2142]/60 bg-[#e1062a]/20 text-white" : "border-[var(--business-border)] bg-[var(--business-panel-strong)] text-[var(--business-soft)] hover:border-[#ff2142]/35"}`}>{entry}</Link>
             ))}
           </div>
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+        }
+      />
         {tab === "overview" ? (
           <>
             <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
@@ -149,18 +140,16 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
                 <h2 className="mt-1 text-xl font-black">Your numbers at a glance</h2>
                 <p className="mt-1 text-sm font-semibold text-white/45">A quick look at sales, bookings, attendance, and what is coming up.</p>
               </div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Metric label="Event sales" value={money(eventMetrics.grossSalesCents)} />
-                <Metric label="Event earnings" value={money(eventMetrics.netSalesCents)} detail="After event fees" />
-                <Metric label="Event orders" value={eventMetrics.orders} detail="Paid or confirmed orders" />
-                <Metric label="Tickets sold" value={eventMetrics.tickets} />
-                <Metric label="Experience bookings" value={experienceMetrics.bookings} />
-                <Metric label="Experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} detail="Estimated from current prices" />
-                <Metric label="Guests booked" value={experienceMetrics.guests} />
-                <Metric label="Checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} />
-                <Metric label="Coming up" value={eventMetrics.upcoming + experienceMetrics.upcomingSlots} detail={`${eventMetrics.upcoming} events · ${experienceMetrics.upcomingSlots} experience times`} />
-                <Metric label="Live now" value={publishedTotal} detail={`${eventMetrics.published} events · ${experienceMetrics.published} experiences`} />
-              </div>
+              <BusinessKpiGrid>
+                <BusinessKpiCard label="Event sales" value={money(eventMetrics.grossSalesCents)} helper="Gross sales" />
+                <BusinessKpiCard label="Event earnings" value={money(eventMetrics.netSalesCents)} helper="After event fees" />
+                <BusinessKpiCard label="Event orders" value={eventMetrics.orders} helper="Paid or confirmed" />
+                <BusinessKpiCard label="Tickets sold" value={eventMetrics.tickets} helper="Active tickets" />
+                <BusinessKpiCard label="Experience bookings" value={experienceMetrics.bookings} helper="Current bookings" />
+                <BusinessKpiCard label="Experience value" value={new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(experienceMetrics.estimatedRevenue)} helper="Estimated from prices" />
+                <BusinessKpiCard label="Guests booked" value={experienceMetrics.guests} helper="Experience guests" />
+                <BusinessKpiCard label="Checked in" value={eventMetrics.checkedIn + experienceMetrics.checkedIn} helper="Events + experiences" />
+              </BusinessKpiGrid>
             </section>
 
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px]">
@@ -205,7 +194,6 @@ export default async function EventsExperiencesPage({ searchParams }: { searchPa
 
         {tab === "events" ? <LocationEventManager locationId={locationId} location={location} events={events} metrics={eventMetrics} /> : null}
         {tab === "experiences" ? <LocationExperienceManager locationId={locationId} location={location} experiences={experiences} slots={slotRows} bookings={bookingRows} metrics={experienceMetrics} /> : null}
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }

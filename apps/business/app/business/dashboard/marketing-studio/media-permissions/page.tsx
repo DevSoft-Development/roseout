@@ -1,8 +1,8 @@
-import Link from "next/link";
 import LocationMediaPermissions from "@/components/marketing/LocationMediaPermissions";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { BusinessActionButton, BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ function publicImageUrls(location: Record<string, any>) {
 export default async function MarketingMediaPermissionsPage() {
   const location = await getCurrentBusinessLocation();
   if (!location?.id) {
-    return <main className="min-h-screen bg-[#050607] px-6 py-24 text-white"><div className="mx-auto max-w-4xl rounded-3xl border border-white/10 bg-white/[0.04] p-6"><h1 className="text-2xl font-black">No claimed location found</h1><p className="mt-2 text-white/60">Connect a claimed location before managing Marketing media permissions.</p></div></main>;
+    return <BusinessPageShell><BusinessPageHeader eyebrow="Marketing Studio · Media" title="No claimed location found" subtitle="Connect a claimed location before managing Marketing media permissions." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} /></BusinessPageShell>;
   }
 
   const urls = publicImageUrls(location as Record<string, any>);
@@ -38,14 +38,15 @@ export default async function MarketingMediaPermissionsPage() {
   });
 
   return (
-    <main className="min-h-screen bg-[#050607] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div><p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff6b86]">Marketing Studio · Media</p><h1 className="mt-2 text-3xl font-black">{getLocationName(location, "Your location")}</h1><p className="mt-2 text-sm text-white/55">Control which profile media can be surfaced to TheOutHaven's internal Content Opportunities workflow.</p></div>
-          <Link href="/business/dashboard/marketing-studio" className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-sm font-black">Back to Marketing Studio</Link>
-        </div>
-        <LocationMediaPermissions locationId={location.id} initialAssets={initialAssets} />
-      </div>
-    </main>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Marketing Studio · Media"
+        title={getLocationName(location, "Your location")}
+        subtitle="Control which profile media can be surfaced to TheOutHaven's internal Content Opportunities workflow."
+        badge={<BusinessStatusBadge tone="blue">{initialAssets.length} media assets</BusinessStatusBadge>}
+        actions={<BusinessActionButton href="/business/dashboard/marketing-studio">Marketing Studio</BusinessActionButton>}
+      />
+      <LocationMediaPermissions locationId={location.id} initialAssets={initialAssets} />
+    </BusinessPageShell>
   );
 }
