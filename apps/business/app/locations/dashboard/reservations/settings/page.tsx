@@ -120,6 +120,7 @@ export default async function ReservationSettingsPage({
         adminLocationId={first(params.adminLocationId) || ""}
         demo={parsedDemo.demo}
         fromDemoCenter={first(params.fromDemoCenter) === "1"}
+        layoutApiPath="/api/business/reservations/layout"
       />
     </main>
   );
