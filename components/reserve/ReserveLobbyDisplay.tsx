@@ -195,10 +195,11 @@ export default function ReserveLobbyDisplay() {
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <img
-                        src={promo.mediaUrl}
-                        alt=""
-                        className="h-full w-full object-cover"
+                      <div
+                        role="img"
+                        aria-label="Location promotion"
+                        className="h-full w-full bg-cover bg-center bg-no-repeat"
+                        style={{ backgroundImage: `url("${promo.mediaUrl.replace(/"/g, "%22")}")` }}
                       />
                     )
                   ) : (
