@@ -7,11 +7,11 @@ const source = readFileSync(new URL("../GuidedResultsPageV4.tsx", import.meta.ur
 test("Step 3 makes the strongest recommendation obvious", () => {
   assert.match(source, /Best Match/);
   assert.match(source, /Choose this outing/);
-  assert.match(source, /Matched to your plan/);
+  assert.match(source, /Why this fits/);
 });
 
 test("Step 3 explains matches with concise query-driven signals", () => {
-  assert.match(source, /Matched to your search/);
+  assert.match(source, /Why this fits/);
   assert.match(source, /pairSignals/);
   assert.match(source, /PROXIMITY_INTENT/);
   assert.match(source, /QUALITY_INTENT/);
