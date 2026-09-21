@@ -68,7 +68,7 @@ describe("platform cross-cloud DR contract", () => {
     expect(gateway).toContain('expected_origin');
   });
 
-  it("keeps the AWS standby warm behind CloudFront and fast Route 53 health detection", () => {
+  it("keeps the AWS standby warm behind CloudFront and cost-controlled Route 53 health detection", () => {
     const compute = source("infra/aws/cloudformation/platform-dr-compute.yml");
     const edge = source("infra/aws/cloudformation/platform-dr-edge.yml");
     expect(compute).toContain('AWS::ECS::Cluster');
@@ -77,7 +77,7 @@ describe("platform cross-cloud DR contract", () => {
     expect(compute).toContain('x-toh-edge-secret');
     expect(edge).toContain('AWS::CloudFront::Distribution');
     expect(edge).toContain('AWS::Route53::HealthCheck');
-    expect(edge).toContain('RequestInterval: 10');
+    expect(edge).toContain('RequestInterval: 30');
     expect(edge).toContain('FailureThreshold: 2');
   });
 
