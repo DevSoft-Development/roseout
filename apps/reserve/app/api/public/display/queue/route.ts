@@ -123,6 +123,15 @@ export async function GET() {
       display: {
         label: display.label,
         privacyMode,
+        promo: {
+          enabled: Boolean(display.promo_enabled),
+          mediaType: display.promo_media_type || "image",
+          mediaUrl: display.promo_media_url || null,
+          headline: display.promo_headline || null,
+          body: display.promo_body || null,
+          linkLabel: display.promo_link_label || null,
+          linkUrl: display.promo_link_url || null,
+        },
       },
       location: { name: locationName },
       reservations,
