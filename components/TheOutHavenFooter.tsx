@@ -71,6 +71,7 @@ export default function TheOutHavenFooter() {
             { label: "Get Help", href: "/support" },
             { label: "Knowledge Base", href: "/help" },
             { label: "FAQ", href: "/faq" },
+            { label: "Trust Center", href: "/trust" },
             { label: "Contact", href: "/contact" },
           ]}
         />
