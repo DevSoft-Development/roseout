@@ -58,7 +58,7 @@ function isAllowedBusinessSurfacePath(pathname: string) {
   if (isSharedSurfaceDependency(pathname)) return true;
   if (pathMatches(pathname, "/locations/dashboard")) return true;
   if (pathMatches(pathname, "/business/dashboard")) return true;
-  if (pathname === "/business/login") return true;
+  if (pathname === "/business/login" || pathname === "/login") return true;
   return [
     "/auth/callback",
     "/auth/confirm",
@@ -103,7 +103,7 @@ function vercelPrivateSurfaceRedirect(request: NextRequest) {
     return NextResponse.redirect(`https://reserve.theouthaven.com${pathname}${search}`, 308);
   }
 
-  if (pathMatches(pathname, "/locations/dashboard") || pathMatches(pathname, "/business/dashboard") || pathname === "/business/login") {
+  if (pathMatches(pathname, "/locations/dashboard") || pathMatches(pathname, "/business/dashboard") || pathname === "/business/login" || pathname === "/login") {
     return NextResponse.redirect(`https://business.theouthaven.com${pathname}${search}`, 308);
   }
 

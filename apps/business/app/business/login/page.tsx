@@ -21,10 +21,13 @@ export default function BusinessLoginPage() {
     const queryNext = sanitizeIntendedPath(
       new URL(window.location.href).searchParams.get("next"),
     );
-    const businessClaimNext = queryNext?.startsWith("/business/claim")
-      ? queryNext
-      : null;
-
+    const businessNext =
+      queryNext &&
+      (queryNext.startsWith("/locations/dashboard") ||
+        queryNext.startsWith("/business/dashboard") ||
+        queryNext.startsWith("/business/claim"))
+        ? queryNext
+        : null;
     try {
       const response = await fetch("/api/auth/sign-in", {
         method: "POST",
@@ -34,7 +37,7 @@ export default function BusinessLoginPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-          next: businessClaimNext,
+          next: businessNext,
         }),
       });
 
