@@ -1,7 +1,7 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useBusinessTheme } from "@/app/locations/dashboard/BusinessThemeProvider";
+import { useBusinessTheme } from "../../apps/business/app/locations/dashboard/BusinessThemeProvider";
 
 export default function BusinessThemeToggle() {
   const { theme, toggleTheme } = useBusinessTheme();
