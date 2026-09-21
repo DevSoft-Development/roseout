@@ -47,7 +47,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         ? `${outing.distanceMiles.toFixed(1)} mi apart`
         : null;
   const why = outingCustomerReason(outing);
-  const matchReasons = outing.matchReasons.length ? outing.matchReasons : why ? [why] : [];
+  const matchReasons = Array.isArray(outing.matchReasons) && outing.matchReasons.length ? outing.matchReasons : why ? [why] : [];
 
   return (
     <Card elevated style={{ padding: 12 }}>
@@ -98,7 +98,7 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   const router = useRouter();
   const { theme } = useAppTheme();
   const why = placeCustomerReason(place);
-  const matchReasons = place.matchReasons.length ? place.matchReasons : why ? [why] : [];
+  const matchReasons = Array.isArray(place.matchReasons) && place.matchReasons.length ? place.matchReasons : why ? [why] : [];
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
