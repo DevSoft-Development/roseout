@@ -6,6 +6,15 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import AdminLocationSearch from "@/components/admin/AdminLocationSearch";
 import { readAdminOverview } from "@/lib/admin/admin-overview";
 
+import {
+  AdminActionButton,
+  AdminKpiCard,
+  AdminKpiGrid,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../components/admin/AdminDesignSystem";
+
 export const metadata: Metadata = {
   title: "Admin Dashboard",
   description: "Central admin overview for TheOutHaven.",
@@ -93,31 +102,27 @@ export default async function CentralDashboardPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">TheOutHaven Admin</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black sm:text-4xl">Admin Overview</h1>
-              <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Monitor operations, partners, search health, claims, websites, infrastructure, and growth.</p>
-            </div>
-            <div className="flex flex-wrap gap-2 text-sm font-black">
-              <Link href="/admin/dashboard/website-hosting" className="rounded-xl border border-white/15 px-4 py-2">Website Hosting</Link>
-              <Link href="/admin/dashboard/reports" className="rounded-xl border border-white/15 px-4 py-2">View Reports</Link>
-              <Link href="/admin/dashboard/settings" className="rounded-xl border border-white/15 px-4 py-2">Settings</Link>
-              <Link href="/admin/dashboard" className="rounded-xl bg-white px-4 py-2 text-black">Refresh</Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+        <AdminPageHeader
+          eyebrow="TheOutHaven Admin · Command Center"
+          title="Admin Overview"
+          subtitle="Monitor operations, partners, search health, claims, managed websites, infrastructure, marketplace activity, and growth from one command center."
+          badge={<AdminStatusBadge tone={openTickets ? "amber" : "green"}>{openTickets ? `${format(openTickets)} open support tickets` : "Operations clear"}</AdminStatusBadge>}
+          actions={<><AdminActionButton href="/admin/dashboard/website-hosting">Website Hosting</AdminActionButton><AdminActionButton href="/admin/dashboard/reports">Reports</AdminActionButton><AdminActionButton href="/admin/dashboard/settings">Settings</AdminActionButton><AdminActionButton href="/admin/dashboard" variant="primary">Refresh</AdminActionButton></>}
+        />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {topCards.map(([label,value,helper]) => (
-            <article key={label} className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
+        <AdminKpiGrid>
+          {topCards.slice(0, 4).map(([label,value,helper]) => (
+            <AdminKpiCard key={label} label={label} value={value} helper={helper} />
+          ))}
+        </AdminKpiGrid>
+        <section className="grid gap-3 sm:grid-cols-2">
+          {topCards.slice(4).map(([label,value,helper]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
               <p className="text-[10px] font-black uppercase tracking-[.16em] text-white/40">{label}</p>
-              <p className="mt-2 text-3xl font-black">{value}</p>
+              <p className="mt-2 text-2xl font-black">{value}</p>
               <p className="mt-1 text-xs text-white/45">{helper}</p>
-            </article>
+            </div>
           ))}
         </section>
 
@@ -169,7 +174,6 @@ export default async function CentralDashboardPage() {
             </div>
           </section>
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
