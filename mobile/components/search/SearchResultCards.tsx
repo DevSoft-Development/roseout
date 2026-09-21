@@ -47,6 +47,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         ? `${outing.distanceMiles.toFixed(1)} mi apart`
         : null;
   const why = outingCustomerReason(outing);
+  const matchReasons = outing.matchReasons.length ? outing.matchReasons : why ? [why] : [];
 
   return (
     <Card elevated style={{ padding: 12 }}>
@@ -74,10 +75,19 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
             <PlaceSummary place={outing.activity} label="ACTIVITY" />
           </Pressable>
         ) : null}
-        <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-          <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-          <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
-        </View>
+        {matchReasons.length ? (
+          <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
+            <AppText variant="eyebrow" accent>WHY THIS MATCHES</AppText>
+            <View style={{ gap: 7, marginTop: 8 }}>
+              {matchReasons.slice(0, 5).map((reason) => (
+                <View key={reason} style={styles.reasonRow}>
+                  <AppText style={{ color: theme.colors.success }}>✓</AppText>
+                  <AppText muted style={{ flex: 1, lineHeight: 21 }}>{reason}</AppText>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
         <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this outing →</Button>
       </View>
     </Card>
@@ -88,15 +98,25 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   const router = useRouter();
   const { theme } = useAppTheme();
   const why = placeCustomerReason(place);
+  const matchReasons = place.matchReasons.length ? place.matchReasons : why ? [why] : [];
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
-      <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-        <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-        <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
-      </View>
+      {matchReasons.length ? (
+        <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
+          <AppText variant="eyebrow" accent>WHY THIS MATCHES</AppText>
+          <View style={{ gap: 7, marginTop: 8 }}>
+            {matchReasons.slice(0, 5).map((reason) => (
+              <View key={reason} style={styles.reasonRow}>
+                <AppText style={{ color: theme.colors.success }}>✓</AppText>
+                <AppText muted style={{ flex: 1, lineHeight: 21 }}>{reason}</AppText>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
       {onAction ? (
         <View style={{ marginTop: theme.spacing.md }}>
           <Button variant={selected ? "secondary" : "primary"} onPress={onAction}>{selected ? "✓ Selected" : actionLabel || "Select"}</Button>
@@ -119,4 +139,5 @@ const styles = StyleSheet.create({
   connectorLine: { height: 1, flex: 1 },
   distancePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   why: { borderTopWidth: 1, paddingTop: 14 },
+  reasonRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
 });
