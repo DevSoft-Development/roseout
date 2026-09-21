@@ -161,7 +161,7 @@ export default async function LocationWorkspaceReservationsPage({
           />
         </div>
       ) : null}
-      {showOverview ? <ReserveOverviewPage /> : <ReserveCommandCenterPage />}
+      {showOverview ? <ReserveOverviewPage forcedTheme="dark" /> : <ReserveCommandCenterPage forcedTheme="dark" />}
     </div>
   );
 }
