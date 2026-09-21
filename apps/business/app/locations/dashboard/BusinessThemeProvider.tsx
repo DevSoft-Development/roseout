@@ -137,11 +137,11 @@ export default function BusinessThemeProvider({ children }: { children: ReactNod
             color: var(--business-text) !important;
           }
 
-          .business-theme-dark :is(main,section,article,aside,header,div)[class*="border-black/"] {
+          .business-theme-dark [class*="border-black/"] {
             border-color: var(--business-border) !important;
           }
 
-          .business-theme-dark :is(main,section,article,aside,header,div)[class*="text-black/"] {
+          .business-theme-dark [class*="text-black/"] {
             color: var(--business-muted) !important;
           }
 
