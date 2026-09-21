@@ -72,7 +72,7 @@ export default async function LocationBillingPage({ searchParams }: { searchPara
     : params.retention === "already_used"
       ? "A retention discount has already been used on this subscription."
       : params.cancellation === "scheduled"
-        ? `Partner Pro will end on ${formatDate(location.current_period_end)} and this location will move to Essentials — Free.`
+        ? `Essentials+ will end on ${formatDate(location.current_period_end)} and this location will move to Essentials — Free.`
         : null;
 
   return (
@@ -130,10 +130,10 @@ export default async function LocationBillingPage({ searchParams }: { searchPara
             </> : <>
               <form action="/api/business/billing/change-plan" method="POST"><input type="hidden" name="location_id" value={location.id}/><input type="hidden" name="action" value="change_interval"/><input type="hidden" name="interval" value={currentInterval === "annual" ? "monthly" : "annual"}/><button className="w-full rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white transition hover:bg-white/10">Switch to {currentInterval === "annual" ? "$99 monthly" : "$999 annual"}</button></form>
               {location.stripe_customer_id ? <form action="/api/business/billing/portal" method="POST"><input type="hidden" name="location_id" value={location.id}/><button className="w-full rounded-2xl border border-white/10 px-5 py-4 text-sm font-black transition hover:bg-white/[0.06]">Update payment method</button></form> : null}
-              {location.cancel_at_period_end ? <form action="/api/business/billing/change-plan" method="POST"><input type="hidden" name="location_id" value={location.id}/><input type="hidden" name="action" value="reactivate"/><button className="w-full rounded-2xl border border-emerald-400/25 px-5 py-4 text-sm font-black text-emerald-100 transition hover:bg-emerald-500/10">Keep Partner Pro</button></form> : <Link href="/locations/dashboard/billing/cancel" className="flex items-center justify-center rounded-2xl border border-[#ff2142]/25 px-5 py-4 text-center text-sm font-black text-[#ff9aaa] transition hover:bg-[#e1062a]/10">Review downgrade to Essentials</Link>}
+              {location.cancel_at_period_end ? <form action="/api/business/billing/change-plan" method="POST"><input type="hidden" name="location_id" value={location.id}/><input type="hidden" name="action" value="reactivate"/><button className="w-full rounded-2xl border border-emerald-400/25 px-5 py-4 text-sm font-black text-emerald-100 transition hover:bg-emerald-500/10">Keep Essentials+</button></form> : <Link href="/locations/dashboard/billing/cancel" className="flex items-center justify-center rounded-2xl border border-[#ff2142]/25 px-5 py-4 text-center text-sm font-black text-[#ff9aaa] transition hover:bg-[#e1062a]/10">Review downgrade to Essentials</Link>}
             </>}
           </div>
-          {location.cancel_at_period_end ? <p className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Partner Pro remains active until {formatDate(location.current_period_end)}. After that, this location continues on Essentials — Free. You can reverse the downgrade above before then.</p> : null}
+          {location.cancel_at_period_end ? <p className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Essentials+ remains active until {formatDate(location.current_period_end)}. After that, this location continues on Essentials — Free. You can reverse the downgrade above before then.</p> : null}
         </section>
     </BusinessPageShell>
   );

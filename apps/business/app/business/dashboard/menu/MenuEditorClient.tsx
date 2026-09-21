@@ -32,8 +32,8 @@ type SectionDraft = {
   is_active: boolean;
 };
 
-const input = "w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";
-const denseInput = "w-full rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm font-bold text-white outline-none placeholder:text-white/30 focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";
+const input = "w-full rounded-xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-3 py-2.5 text-sm font-bold text-[var(--business-text)] outline-none placeholder:text-[var(--business-muted)] focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";
+const denseInput = "w-full rounded-xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-3 py-2 text-sm font-bold text-[var(--business-text)] outline-none placeholder:text-[var(--business-muted)] focus:border-[#ff2142]/60 focus:ring-4 focus:ring-[#ff2142]/10";
 const button = "inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-wide text-white/70 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50";
 const redButton = "inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-[#ff1654]/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 const dangerButton = "inline-flex items-center justify-center rounded-xl border border-[#ff2142]/40 bg-[#ff2142]/10 px-3 py-2 text-xs font-black uppercase tracking-wide text-[#ff9bb6] transition hover:bg-[#ff2142]/18 disabled:cursor-not-allowed disabled:opacity-50";
@@ -289,20 +289,20 @@ export default function MenuEditorClient({ initialData, locationId, contextKey =
     await call("PATCH", { action, ...settings }, action === "publish_page" ? "Menu published" : action === "unpublish_page" ? "Menu unpublished" : "Menu settings saved");
   }
 
-  const shellClass = embedded ? "text-white" : "min-h-screen bg-[#07090d] p-4 text-white sm:p-6 lg:p-8";
+  const shellClass = embedded ? "text-[var(--business-text)]" : "min-h-screen bg-[var(--business-bg)] p-4 text-[var(--business-text)] sm:p-6 lg:p-8";
   const wrapClass = embedded ? "space-y-5" : "mx-auto max-w-[1760px] space-y-5";
   const inspectorDisabled = !effectiveCanEdit || busy || uploadingImage;
 
   return <main className={shellClass}>
     <div className={wrapClass}>
-      {!embedded ? <div className="flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-[#10131a] p-5 lg:flex-row lg:items-center lg:justify-between">
+      {!embedded ? <div className="flex flex-col gap-4 rounded-[2rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5 lg:flex-row lg:items-center lg:justify-between">
         <div><p className="text-xs font-black uppercase tracking-widest text-rose-200">Business Menu</p><h1 className="mt-1 text-3xl font-black">Menu Editor</h1><p className="mt-2 text-sm font-bold text-white/45">{data?.location?.name || data?.location?.location_name || "Selected location"}</p></div>
         <MenuActions status={settings.status} previewUrl={data?.previewUrl} returnHref={returnHref} canEdit={effectiveCanEdit} busy={busy} onPublish={() => saveSettings(settings.status === "published" ? "unpublish_page" : "publish_page")} />
       </div> : null}
 
       {notice ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-black text-emerald-100">{notice}</div> : null}
 
-      <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#0c1017] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+      <section className="overflow-hidden rounded-[2rem] border border-[var(--business-border)] bg-[var(--business-panel)] shadow-[0_24px_80px_rgba(0,0,0,.28)]">
         <div className="flex flex-col gap-4 border-b border-white/10 p-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h2 className="text-2xl font-black">Menu Editor</h2>

@@ -48,15 +48,15 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
   const connectReady = Boolean(selected?.stripe_connect_charges_enabled && selected?.stripe_connect_payouts_enabled);
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white">
-      <section className="border-b border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(245,183,0,0.18),transparent_32%),#080808] px-5 py-12 sm:px-8">
+    <main className="min-h-screen bg-[var(--business-bg)] text-[var(--business-text)]">
+      <section className="border-b border-[var(--business-border)] bg-[var(--business-panel)] px-5 py-12 sm:px-8">
         <div className="mx-auto max-w-6xl">
           <Link href="/business/dashboard/analytics" className="text-sm font-black text-white/55 hover:text-white">← Business dashboard</Link>
           <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-[#f5b700]">Billing</p>
               <h1 className="mt-2 text-4xl font-black tracking-[-0.05em] sm:text-6xl">Business Billing</h1>
-              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage Partner Pro monthly or annual billing and your subscription lifecycle from one place.</p>
+              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-white/55">Manage Essentials+ monthly or annual billing and your subscription lifecycle from one place.</p>
             </div>
             <Link href="/business/dashboard/promotions" className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Promotions</Link>
           </div>
@@ -67,7 +67,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
         {ownedLocations.length === 0 ? (
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-8 text-center">
             <h2 className="text-2xl font-black">No business locations found</h2>
-            <p className="mt-2 text-sm font-bold text-white/50">Find or add a location before starting Partner Pro.</p>
+            <p className="mt-2 text-sm font-bold text-white/50">Find or add a location before starting Essentials+.</p>
             <Link href="/business/claim/no-code" className="mt-5 inline-flex rounded-full bg-[#f5b700] px-6 py-3 text-sm font-black text-black">Find or add a business</Link>
           </div>
         ) : (
@@ -101,17 +101,17 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                     <form action="/api/business/billing/checkout" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
                       <input type="hidden" name="interval" value="monthly" />
-                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "monthly" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Partner Pro monthly — $99/mo</button>
+                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "monthly" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Essentials+ monthly — $99/mo</button>
                     </form>
                     <form action="/api/business/billing/checkout" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
                       <input type="hidden" name="interval" value="annual" />
-                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "annual" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Partner Pro annual — $999/yr</button>
+                      <button className={`w-full rounded-full px-5 py-4 text-sm font-black text-black ${preferredInterval === "annual" ? "bg-[#f5b700] hover:bg-amber-300" : "bg-white hover:bg-white/80"}`}>Essentials+ annual — $999/yr</button>
                     </form>
                   </>
                 ) : (
                   <>
-                    <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Partner Pro {isPro ? "active" : getBillingStatusLabel(status).toLowerCase()}</div>
+                    <div className="rounded-full bg-emerald-400/15 px-5 py-4 text-center text-sm font-black text-emerald-200">Essentials+ {isPro ? "active" : getBillingStatusLabel(status).toLowerCase()}</div>
                     <form action="/api/business/billing/change-plan" method="POST">
                       <input type="hidden" name="location_id" value={selected.id} />
                       <input type="hidden" name="action" value="change_interval" />
@@ -134,7 +134,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
                   <form action="/api/business/billing/change-plan" method="POST">
                     <input type="hidden" name="location_id" value={selected.id} />
                     <input type="hidden" name="action" value="reactivate" />
-                    <button className="w-full rounded-full border border-emerald-400/30 px-5 py-4 text-sm font-black text-emerald-100 hover:bg-emerald-500/10">Keep Partner Pro</button>
+                    <button className="w-full rounded-full border border-emerald-400/30 px-5 py-4 text-sm font-black text-emerald-100 hover:bg-emerald-500/10">Keep Essentials+</button>
                   </form>
                 ) : selected?.stripe_subscription_id ? (
                   <form action="/api/business/billing/change-plan" method="POST">
@@ -149,7 +149,7 @@ export default async function BusinessBillingPage({ searchParams }: { searchPara
               {needsPaymentAttention ? <p className="mt-5 rounded-3xl border border-rose-300/30 bg-rose-500/10 p-4 text-sm font-bold text-rose-100">Payment needs attention. Update your payment method to avoid losing paid features. Grace period ends {formatDate(selected?.billing_grace_ends_at)}.</p> : null}
 
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/30 p-5">
-                <h2 className="text-xl font-black">Partner Pro unlocks</h2>
+                <h2 className="text-xl font-black">Essentials+ unlocks</h2>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
                   {["Native reservations", "Business analytics", "Promoted listing readiness", "Deposit-ready bookings", "Concierge visibility", "Marketplace billing foundation"].map((item) => (
                     <div key={item} className="rounded-2xl bg-white/[0.04] px-4 py-3 text-sm font-bold text-white/65">{item}</div>

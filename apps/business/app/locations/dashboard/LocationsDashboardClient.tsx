@@ -358,5 +358,5 @@ function businessTrendText(value: number | null | undefined, previous: number | 
 function currency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value); }
 function cityState(location: Partial<LocationItem>) { return [location.city, location.state].filter(Boolean).join(", "); }
 function isPro(location: LocationItem) { const raw = String(location.subscription_plan || location.plan || "").toLowerCase(); return Boolean(location.is_pro) || raw.includes("pro") || raw.includes("partner"); }
-function planName(location: LocationItem) { return isPro(location) ? "Reserve Pro" : "Essentials"; }
+function planName(location: LocationItem) { return isPro(location) ? "Essentials+" : "Essentials"; }
 function categoryLine(location: LocationItem) { const tags = [getPrimaryCategory(location), ...getLocationTags(location).slice(0, 2)].filter(Boolean); return tags.length ? tags.join(" · ") : location.location_type === "restaurant" ? "Restaurant" : "Activity"; }

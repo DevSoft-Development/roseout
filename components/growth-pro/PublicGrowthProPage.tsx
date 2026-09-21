@@ -92,7 +92,7 @@ export default async function PublicGrowthProPage({
           ← Location profile
         </Link>
         <p className="mt-6 text-xs font-black uppercase tracking-[0.3em] text-rose-200">
-          TheOutHaven Growth Pro
+          TheOutHaven Essentials+
         </p>
         <h1 className="mt-3 text-4xl font-black">
           {form?.title || "Menu, Packages & Pricing"}
