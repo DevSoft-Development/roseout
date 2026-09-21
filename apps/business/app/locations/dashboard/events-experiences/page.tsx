@@ -30,16 +30,6 @@ function money(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
-function Metric({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <p className="text-xs font-black uppercase tracking-[0.12em] text-white/35">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
-      {detail ? <p className="mt-1 text-xs font-semibold text-white/30">{detail}</p> : null}
-    </div>
-  );
-}
-
 export default async function EventsExperiencesPage({ searchParams }: { searchParams: Params }) {
   const params = await searchParams;
   const tab = safeTab(first(params.tab));
