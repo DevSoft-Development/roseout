@@ -4,6 +4,11 @@ import { getLocationName } from "@/lib/locationName";
 import { getBillingPlanLabel, getBillingStatusLabel, hasPaidEntitlement, isBusinessProPlan } from "@/lib/billing/plans";
 import { createClient } from "@/lib/supabase-server";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import {
+  BusinessPageHeader,
+  BusinessPageShell,
+  BusinessStatusBadge,
+} from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -36,15 +41,14 @@ export default async function LocationBillingPage({ searchParams }: { searchPara
 
   if (!location) {
     return (
-      <main className="min-h-screen bg-[#050607] text-white">
-        <div className="mx-auto max-w-6xl px-4 pb-10 pt-6 sm:px-6 sm:pt-8 lg:px-8">
-          <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-6 sm:p-8">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Billing & Payments</p>
-            <h1 className="mt-2 text-2xl font-black sm:text-3xl">No location found</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/45">We could not resolve the selected location for billing. Return to the location overview and reopen Billing & Payments.</p>
-          </section>
-        </div>
-      </main>
+      <BusinessPageShell>
+        <BusinessPageHeader
+          eyebrow="Billing & Payments"
+          title="No location found"
+          subtitle="We could not resolve the selected location for billing. Return to the location overview and reopen Billing & Payments."
+          badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>}
+        />
+      </BusinessPageShell>
     );
   }
 
@@ -72,18 +76,13 @@ export default async function LocationBillingPage({ searchParams }: { searchPara
         : null;
 
   return (
-    <main className="min-h-screen bg-[#050607] text-white">
-      <div className="mx-auto max-w-6xl space-y-5 px-4 pb-10 pt-6 sm:px-6 sm:pt-8 lg:px-8">
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 shadow-2xl shadow-black/20 sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Billing & Payments</p>
-              <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">{getLocationName(location, "Your location")}</h1>
-              <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/45">Manage your TheOutHaven plan and connect Stripe for reservation guarantees, large-group deposits, paid events, experiences, refunds, and payouts.</p>
-            </div>
-            <span className={`w-fit rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.1em] ${isPro ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100" : "border-white/10 bg-white/[0.04] text-white/55"}`}>{getBillingPlanLabel(location.subscription_plan)} · {getBillingStatusLabel(status)}</span>
-          </div>
-        </section>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Billing & Payments"
+        title={getLocationName(location, "Your location")}
+        subtitle="Manage your TheOutHaven plan and connect Stripe for reservation guarantees, large-group deposits, paid events, experiences, refunds, and payouts."
+        badge={<BusinessStatusBadge tone={isPro ? "green" : "blue"}>{getBillingPlanLabel(location.subscription_plan)} · {getBillingStatusLabel(status)}</BusinessStatusBadge>}
+      />
 
         {message ? <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">{message}</div> : null}
         {connectMessage ? <div className={`rounded-2xl border p-4 text-sm font-bold ${params.connect === "ready" ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100" : "border-amber-300/20 bg-amber-500/10 text-amber-100"}`}>{connectMessage}</div> : null}
@@ -136,8 +135,7 @@ export default async function LocationBillingPage({ searchParams }: { searchPara
           </div>
           {location.cancel_at_period_end ? <p className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-4 text-sm font-bold text-amber-100">Partner Pro remains active until {formatDate(location.current_period_end)}. After that, this location continues on Essentials — Free. You can reverse the downgrade above before then.</p> : null}
         </section>
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }
 
