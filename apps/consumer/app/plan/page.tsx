@@ -1213,7 +1213,7 @@ function PlanPageInner() {
               The<span className="text-[#e1062a]">Out</span>Haven
             </p>
             <p className="mt-1 text-sm font-semibold text-white/40">
-              AI outing plans for food, activities, and better nights out.
+              Food, activities, and complete plans for better nights out.
             </p>
           </div>
 
