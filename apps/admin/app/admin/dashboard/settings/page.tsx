@@ -29,6 +29,11 @@ import { getAiTagHelperSettings } from "@/lib/ai-tag-helper-settings";
 import { getEffectiveSearchCoreConfig } from "@/lib/search/searchCoreConfig";
 import { getRankingRolloutSettings } from "@/lib/search/rankingRollout";
 import { getEffectiveSearchProfileRolloutConfig } from "@/lib/search/v2/retrieval/searchProfileRolloutConfig";
+import {
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../components/admin/AdminDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -228,39 +233,14 @@ export default async function AdminSettingsPage() {
   } catch {}
 
   return (
-    <main className="admin-page admin-settings-page px-4 pb-14 pt-6 text-[var(--admin-shell-text)] sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-8">
-        <header className="overflow-hidden rounded-[2rem] border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] shadow-[0_18px_60px_rgba(0,0,0,0.10)]">
-          <div className="grid gap-8 p-6 md:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div className="max-w-4xl">
-              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-[var(--admin-shell-accent)]">
-                <Settings2 size={15} />
-                Administration settings
-              </div>
-              <h1 className="mt-3 text-3xl font-black tracking-[-0.035em] sm:text-4xl">
-                Control center
-              </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--admin-shell-soft)] sm:text-[15px]">
-                Configure platform behavior, operational controls, search systems, and business-wide preferences from one consistent workspace.
-              </p>
-            </div>
-
-            <div className="grid min-w-[240px] gap-2 rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] p-4">
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-xs font-bold text-[var(--admin-shell-muted)]">Environment</span>
-                <span className="inline-flex items-center gap-2 text-xs font-black text-[var(--admin-shell-text)]">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                  Production
-                </span>
-              </div>
-              <div className="h-px bg-[var(--admin-shell-border)]" />
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-xs font-bold text-[var(--admin-shell-muted)]">Runtime</span>
-                <span className="text-xs font-black text-[var(--admin-shell-text)]">AWS Admin</span>
-              </div>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Administration · Settings"
+        title="Control center"
+        subtitle="Configure platform behavior, operational controls, search systems, and business-wide preferences from one consistent workspace."
+        badge={<AdminStatusBadge tone="green">AWS Admin · Production</AdminStatusBadge>}
+      />
+      <div className="admin-settings-page contents">
 
         <section className="space-y-4">
           <div>
@@ -318,6 +298,6 @@ export default async function AdminSettingsPage() {
           </div>
         </section>
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
