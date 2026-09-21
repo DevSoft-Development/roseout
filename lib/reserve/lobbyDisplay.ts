@@ -23,6 +23,13 @@ export async function createLobbyDisplayPairing(input: {
   showReservationTime?: boolean;
   showWaitlistPosition?: boolean;
   readyHoldMinutes?: number;
+  promoEnabled?: boolean;
+  promoMediaType?: "image" | "video";
+  promoMediaUrl?: string | null;
+  promoHeadline?: string | null;
+  promoBody?: string | null;
+  promoLinkLabel?: string | null;
+  promoLinkUrl?: string | null;
 }) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = pairingCode();
@@ -39,9 +46,16 @@ export async function createLobbyDisplayPairing(input: {
         show_reservation_time: input.showReservationTime !== false,
         show_waitlist_position: input.showWaitlistPosition !== false,
         ready_hold_minutes: Math.min(60, Math.max(1, Number(input.readyHoldMinutes || 10))),
+        promo_enabled: Boolean(input.promoEnabled),
+        promo_media_type: input.promoMediaType === "video" ? "video" : "image",
+        promo_media_url: input.promoMediaUrl || null,
+        promo_headline: input.promoHeadline || null,
+        promo_body: input.promoBody || null,
+        promo_link_label: input.promoLinkLabel || null,
+        promo_link_url: input.promoLinkUrl || null,
         created_by_user_id: input.createdByUserId || null,
       })
-      .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,pairing_expires_at,paired_at,last_seen_at,created_at")
+      .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,promo_enabled,promo_media_type,promo_media_url,promo_headline,promo_body,promo_link_label,promo_link_url,pairing_expires_at,paired_at,last_seen_at,created_at")
       .single();
     if (!error && data) return { display: data, code };
     if (error?.code !== "23505") throw error;
@@ -75,7 +89,7 @@ export async function pairLobbyDisplay(code: string) {
     })
     .eq("id", display.id)
     .eq("status", "active")
-    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,paired_at,last_seen_at,created_at")
+    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,promo_enabled,promo_media_type,promo_media_url,promo_headline,promo_body,promo_link_label,promo_link_url,paired_at,last_seen_at,created_at")
     .single();
   if (updateError || !data) return null;
 
@@ -96,7 +110,7 @@ export async function getLobbyDisplaySession() {
   if (!token) return null;
   const { data, error } = await supabaseAdmin
     .from("reserve_lobby_displays")
-    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,paired_at,last_seen_at,created_at")
+    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,promo_enabled,promo_media_type,promo_media_url,promo_headline,promo_body,promo_link_label,promo_link_url,paired_at,last_seen_at,created_at")
     .eq("token_hash", hash(token))
     .eq("status", "active")
     .maybeSingle();
@@ -112,7 +126,7 @@ export async function getLobbyDisplaySession() {
 export async function listLobbyDisplays(locationId: string) {
   const { data, error } = await supabaseAdmin
     .from("reserve_lobby_displays")
-    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,pairing_expires_at,paired_at,last_seen_at,revoked_at,created_at")
+    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,promo_enabled,promo_media_type,promo_media_url,promo_headline,promo_body,promo_link_label,promo_link_url,pairing_expires_at,paired_at,last_seen_at,revoked_at,created_at")
     .eq("location_id", locationId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -127,6 +141,13 @@ export async function updateLobbyDisplay(locationId: string, displayId: string, 
   if (patch.showReservationTime !== undefined) updates.show_reservation_time = Boolean(patch.showReservationTime);
   if (patch.showWaitlistPosition !== undefined) updates.show_waitlist_position = Boolean(patch.showWaitlistPosition);
   if (patch.readyHoldMinutes !== undefined) updates.ready_hold_minutes = Math.min(60, Math.max(1, Number(patch.readyHoldMinutes) || 10));
+  if (patch.promoEnabled !== undefined) updates.promo_enabled = Boolean(patch.promoEnabled);
+  if (patch.promoMediaType === "image" || patch.promoMediaType === "video") updates.promo_media_type = patch.promoMediaType;
+  if (patch.promoMediaUrl !== undefined) updates.promo_media_url = String(patch.promoMediaUrl || "").trim().slice(0, 2000) || null;
+  if (patch.promoHeadline !== undefined) updates.promo_headline = String(patch.promoHeadline || "").trim().slice(0, 120) || null;
+  if (patch.promoBody !== undefined) updates.promo_body = String(patch.promoBody || "").trim().slice(0, 320) || null;
+  if (patch.promoLinkLabel !== undefined) updates.promo_link_label = String(patch.promoLinkLabel || "").trim().slice(0, 80) || null;
+  if (patch.promoLinkUrl !== undefined) updates.promo_link_url = String(patch.promoLinkUrl || "").trim().slice(0, 2000) || null;
 
   const { data, error } = await supabaseAdmin
     .from("reserve_lobby_displays")
@@ -134,7 +155,7 @@ export async function updateLobbyDisplay(locationId: string, displayId: string, 
     .eq("id", displayId)
     .eq("location_id", locationId)
     .eq("status", "active")
-    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,paired_at,last_seen_at,created_at")
+    .select("id,location_id,label,status,privacy_mode,show_estimated_wait,show_reservation_time,show_waitlist_position,ready_hold_minutes,promo_enabled,promo_media_type,promo_media_url,promo_headline,promo_body,promo_link_label,promo_link_url,paired_at,last_seen_at,created_at")
     .single();
   if (error) throw error;
   return data;
