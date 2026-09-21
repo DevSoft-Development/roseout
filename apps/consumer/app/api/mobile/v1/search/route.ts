@@ -44,6 +44,20 @@ function firstText(...values: unknown[]) {
   return null;
 }
 
+function matchReasonDetails(value: any) {
+  return Array.isArray(value?.matchReasonDetails)
+    ? value.matchReasonDetails
+        .filter((item: any) => item && typeof item === "object" && typeof item.label === "string" && item.label.trim())
+        .slice(0, 5)
+        .map((item: any) => ({
+          type: firstText(item.type) || "other",
+          label: item.label.trim(),
+          source: firstText(item.source) || "search_evidence",
+          confidence: firstText(item.confidence) || "high",
+        }))
+    : [];
+}
+
 function list(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
@@ -97,6 +111,7 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
     priceLevel: firstText(value?.price_level, value?.price_range, value?.price),
     distanceMiles: numberOrNull(value?.distance_miles ?? value?.distanceMiles),
     whyMatched: firstText(value?.whyMatched, value?.why_it_matched, Array.isArray(value?.matchReasons) ? value.matchReasons[0] : null),
+    matchReasonDetails: matchReasonDetails(value),
     publicUrl: firstText(value?.public_url, value?.detail_url, value?.profile_href),
     reservationUrl: firstText(value?.reservation_url, value?.booking_url, value?.reservation_link, value?.external_reservation_url),
     websiteUrl: firstText(value?.website, value?.website_url, value?.official_website),
@@ -117,6 +132,7 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
     distanceMiles: resultType === "same_venue" ? 0 : numberOrNull(value?.distance_miles ?? value?.distanceMiles),
     walkMinutes: resultType === "same_venue" ? 0 : numberOrNull(value?.walk_minutes ?? value?.walkingMinutes ?? value?.walkMinutes),
     reason: firstText(value?.reason, value?.pairing_reason, value?.whyMatched, value?.why_it_matched),
+    matchReasonDetails: matchReasonDetails(value),
     resultType,
   };
 }

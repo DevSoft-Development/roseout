@@ -6,9 +6,27 @@ import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
 import { outingRouteParams, placeRouteParams } from "@/lib/result-navigation";
 import { outingCustomerReason, placeCustomerReason } from "@/lib/customer-reason";
-import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
+import type { MobileMatchReason, MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 const FALLBACK_IMAGE = "https://theouthaven.com/toh_logo.png";
+
+function MatchReasonPills({ reasons }: { reasons?: MobileMatchReason[] | null }) {
+  const { theme } = useAppTheme();
+  const visible = (reasons || []).filter((item) => item.label?.trim()).slice(0, 4);
+  if (!visible.length) return null;
+  return (
+    <View style={{ gap: 8 }}>
+      <AppText variant="eyebrow" accent>MATCHED TO YOUR SEARCH</AppText>
+      <View style={styles.reasonPills}>
+        {visible.map((item, index) => (
+          <View key={`${item.type}-${item.label}-${index}`} style={[styles.reasonPill, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }]}>
+            <AppText variant="caption">{item.label}</AppText>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: string }) {
   const { theme } = useAppTheme();
@@ -75,7 +93,8 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
           </Pressable>
         ) : null}
         <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-          <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
+          <MatchReasonPills reasons={outing.matchReasonDetails} />
+          <AppText variant="eyebrow" accent style={{ marginTop: outing.matchReasonDetails?.length ? 12 : 0 }}>WHY YOU’LL LIKE IT</AppText>
           <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
         </View>
         <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this outing →</Button>
@@ -94,7 +113,8 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
       <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-        <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
+        <MatchReasonPills reasons={place.matchReasonDetails} />
+        <AppText variant="eyebrow" accent style={{ marginTop: place.matchReasonDetails?.length ? 12 : 0 }}>WHY YOU’LL LIKE IT</AppText>
         <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
       </View>
       {onAction ? (
@@ -119,4 +139,6 @@ const styles = StyleSheet.create({
   connectorLine: { height: 1, flex: 1 },
   distancePill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   why: { borderTopWidth: 1, paddingTop: 14 },
+  reasonPills: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  reasonPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
 });

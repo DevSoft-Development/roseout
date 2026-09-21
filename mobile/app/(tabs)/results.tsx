@@ -113,6 +113,7 @@ export default function ResultsScreen() {
     distanceMiles: null,
     walkMinutes: null,
     reason: `${selectedRestaurant.name} and ${selectedActivity.name} make a smooth dinner-and-activity pairing for the night you described.`,
+    matchReasonDetails: [],
     resultType: "pair",
   } : null;
 
