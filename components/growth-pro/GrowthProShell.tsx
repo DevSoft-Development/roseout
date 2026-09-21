@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export function GrowthProShell({ title, eyebrow = "TheOutHaven Growth Pro", children, demoMode = false, returnHref }: { title: string; eyebrow?: string; children: React.ReactNode; demoMode?: boolean; locationId?: string; locationType?: string; fromDemoCenter?: boolean; returnHref?: string; navHrefBuilder?: (href: string) => string }) {
+export function GrowthProShell({ title, eyebrow = "TheOutHaven Essentials+", children, demoMode = false, returnHref }: { title: string; eyebrow?: string; children: React.ReactNode; demoMode?: boolean; locationId?: string; locationType?: string; fromDemoCenter?: boolean; returnHref?: string; navHrefBuilder?: (href: string) => string }) {
   return (
     <main className="min-h-screen bg-[var(--business-bg)] px-4 py-8 text-[var(--business-text)] sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
