@@ -61,6 +61,7 @@ export type ReserveLayoutManagerProps = {
   embedded?: boolean;
   onChanged?: () => void;
   apiPath?: string;
+  enableRealtime?: boolean;
 };
 
 type FormState = {
@@ -244,8 +245,9 @@ export default function ReserveLayoutManager({
   embedded = false,
   onChanged,
   apiPath = "/api/reserve/portal/layout",
+  enableRealtime = true,
 }: ReserveLayoutManagerProps) {
-  const supabase = createClient();
+  const supabase = useMemo(() => (enableRealtime ? createClient() : null), [enableRealtime]);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{
     id: string;
@@ -320,9 +322,10 @@ export default function ReserveLayoutManager({
   useEffect(() => {
     loadLayout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, locationType]);
+  }, [locationId, locationType, supabase]);
 
   useEffect(() => {
+    if (!supabase) return;
     const channel = supabase
       .channel("location-layout-live")
       .on(
