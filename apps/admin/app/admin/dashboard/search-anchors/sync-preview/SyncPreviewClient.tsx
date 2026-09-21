@@ -139,18 +139,18 @@ export default function SyncPreviewClient() {
     <div className="space-y-6">
       <section className="rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-950 to-black p-5 shadow-2xl shadow-black/30">
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
-          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Scope
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm normal-case tracking-normal text-white outline-none focus:border-red-600">
+          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-[var(--admin-shell-muted)]">Scope
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className="w-full rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-3 py-3 text-sm normal-case tracking-normal text-[var(--admin-shell-text)] outline-none focus:border-red-600">
               <option value="market">Market</option><option value="all">All locations</option><option value="missing_only">Missing anchors only</option><option value="existing_only">Existing anchors only</option>
             </select>
           </label>
-          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Market
+          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-[var(--admin-shell-muted)]">Market
             <select disabled={mode !== "market"} value={market} onChange={(e) => setMarket(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm normal-case tracking-normal text-white outline-none focus:border-red-600 disabled:opacity-40">
               {markets.map((value) => <option key={value}>{value}</option>)}
             </select>
           </label>
-          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Execution batch size
-            <input type="number" min={1} max={250} value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value))} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm normal-case tracking-normal text-white outline-none focus:border-red-600" />
+          <label className="space-y-2 text-xs font-semibold uppercase tracking-wider text-[var(--admin-shell-muted)]">Execution batch size
+            <input type="number" min={1} max={250} value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value))} className="w-full rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-3 py-3 text-sm normal-case tracking-normal text-[var(--admin-shell-text)] outline-none focus:border-red-600" />
           </label>
           <div className="flex items-end"><button disabled={busy} onClick={runPreview} className="min-w-44 rounded-xl border border-zinc-600 bg-zinc-900 px-5 py-3 font-semibold text-white transition hover:border-red-600 hover:bg-zinc-800 disabled:opacity-50">{busy ? "Working…" : "Run Dry Preview"}</button></div>
         </div>
