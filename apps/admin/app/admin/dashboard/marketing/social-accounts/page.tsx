@@ -5,6 +5,13 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { socialOauthConfigured, type SocialProvider } from "@/lib/marketing/social-oauth";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 
 const providers: Array<{ key: SocialProvider; label: string; short: string; description: string }> = [
@@ -65,8 +72,14 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
     return state(connection) === "connected";
   }).length;
 
-  return <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-[1200px] space-y-6">
-    <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.28),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-semibold uppercase tracking-[0.25em] text-rose-300">Social Manager</p><h1 className="mt-2 text-4xl font-semibold sm:text-5xl">Connect Social Accounts</h1><p className="mt-3 max-w-2xl text-white/60">Choose a network, sign in on that network, approve access, and you’ll come straight back to TheOutHaven. No account IDs or setup codes to copy.</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.07] px-5 py-4"><p className="text-3xl font-semibold">{connectedCount}/{providers.length}</p><p className="mt-1 text-sm text-white/45">accounts connected</p></div></div></section>
+  return <AdminPageShell>
+    <AdminPageHeader
+      eyebrow="Social Manager · Connections"
+      title="Connect Social Accounts"
+      subtitle="Connect approved social networks for publishing, performance reporting, and supported community workflows."
+      badge={<AdminStatusBadge tone={connectedCount === providers.length ? "green" : connectedCount ? "blue" : "amber"}>{connectedCount}/{providers.length} connected</AdminStatusBadge>}
+      actions={<><AdminActionButton href="/admin/dashboard/marketing/social-manager" variant="primary">Social Manager</AdminActionButton><AdminActionButton href="/admin/dashboard/marketing/community">Community</AdminActionButton></>}
+    />
     {params.connected ? <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm font-semibold text-emerald-200">Connected successfully. TheOutHaven will begin using the account features you approved.</div> : null}
     {params.error ? <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-4 text-sm font-semibold text-red-200">We couldn’t finish that connection. {params.error} Try Connect again, or reconnect the account if access changed.</div> : null}
 
@@ -85,6 +98,5 @@ export default async function SocialAccountsPage({ searchParams }: { searchParam
     })}</section>
 
     <section className="rounded-2xl border border-white/10 bg-white/[0.05] p-5"><h2 className="text-lg font-semibold">What happens after you connect?</h2><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-black/20 p-4"><p className="font-semibold">1. Create</p><p className="mt-1 text-sm text-white/50">Plan and approve content in Social Manager.</p></div><div className="rounded-xl bg-black/20 p-4"><p className="font-semibold">2. Publish</p><p className="mt-1 text-sm text-white/50">Post to connected networks without sharing passwords.</p></div><div className="rounded-xl bg-black/20 p-4"><p className="font-semibold">3. Grow</p><p className="mt-1 text-sm text-white/50">See performance, community opportunities, and the actions that lead people into TheOutHaven.</p></div></div></section>
-    <div className="flex gap-3"><Link href="/admin/dashboard/marketing/social-manager" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold">Back to Social Manager</Link><Link href="/admin/dashboard/marketing/community" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold">Open Community</Link></div>
-  </div></main>;
+  </AdminPageShell>;
 }
