@@ -15,6 +15,7 @@ import MenuEditorClient from "../../../business/dashboard/menu/MenuEditorClient"
 import LocationMenuWorkspaceHeader from "./LocationMenuWorkspaceHeader";
 import QuickAddMenuItem from "./QuickAddMenuItem";
 import MenuPageBasics from "./MenuPageBasics";
+import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -177,25 +178,14 @@ export default async function LocationMenuPage({
   }
 
   return (
-    <main className="min-h-screen bg-[#050607] text-white">
-      <div className="sticky top-0 z-30 border-b border-white/10 bg-[#050607]/95 px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff6b86]">Menu & Packages</p>
-            <h1 className="mt-1 text-2xl font-black sm:text-3xl">Build your guest-facing menu step by step</h1>
-            <p className="mt-1 max-w-2xl text-sm font-semibold text-white/45">Set up one page at a time, add what you sell, organize it, preview it, then publish when it feels ready.</p>
-          </div>
-          <LocationMenuWorkspaceHeader
-            locationId={String(canonicalLocationId)}
-            status={pageStatus}
-            previewUrl={data.previewUrl}
-            contextKey={contextKey}
-            contextPayload={contextPayload}
-          />
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Menu & Packages"
+        title="Build your guest-facing menu step by step"
+        subtitle="Set up one page at a time, add what you sell, organize it, preview it, then publish when it feels ready."
+        badge={<><BusinessStatusBadge tone={pageStatus === "published" ? "green" : "amber"}>{pageStatus}</BusinessStatusBadge><BusinessStatusBadge tone="blue">{readiness}% ready</BusinessStatusBadge></>}
+        actions={<LocationMenuWorkspaceHeader locationId={String(canonicalLocationId)} status={pageStatus} previewUrl={data.previewUrl} contextKey={contextKey} contextPayload={contextPayload} />}
+      />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px]">
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#111722] to-[#090c12] p-5 sm:p-6">
             <div className="flex items-start gap-4">
@@ -326,7 +316,6 @@ export default async function LocationMenuPage({
         </section>
 
         <p className="pb-4 text-center text-xs font-semibold text-white/25">Editing {page.title || "this page"} for {locationName}</p>
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }

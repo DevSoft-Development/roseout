@@ -3,6 +3,7 @@ import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { loadInstagramSocialConfig } from "@/lib/marketing/social-provider-config";
+import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,9 @@ export default async function LocationSocialAccountsPage({
 
   if (!location?.id) {
     return (
-      <main className="min-h-screen bg-[#050607] p-4 text-white sm:p-6 lg:p-8">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-white/[0.04] p-8">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">Social Accounts</p>
-          <h1 className="mt-3 text-3xl font-black">No connected location found</h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-white/55">Connect or claim a location before connecting its Instagram account.</p>
-        </div>
-      </main>
+      <BusinessPageShell>
+        <BusinessPageHeader eyebrow="Social Accounts" title="No connected location found" subtitle="Connect or claim a location before connecting its Instagram account." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} />
+      </BusinessPageShell>
     );
   }
 
@@ -60,21 +57,13 @@ export default async function LocationSocialAccountsPage({
   const error = first(params.error);
 
   return (
-    <main className="min-h-screen bg-[#050607] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-5">
-        <section className="overflow-hidden rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.23),transparent_36%),linear-gradient(135deg,#160b0d,#08090b_60%,#121012)] p-6 shadow-2xl sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-[#ff6b86]">Marketing & growth</p>
-              <h1 className="mt-2 text-4xl font-black tracking-tight">Social Accounts</h1>
-              <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55">Connect {locationName}&apos;s Instagram account once, then TheOutHaven can publish approved content and read permitted performance data for this location.</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Location</p>
-              <p className="mt-1 max-w-[280px] truncate text-sm font-black text-white/85">{locationName}</p>
-            </div>
-          </div>
-        </section>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Marketing & Growth"
+        title="Social Accounts"
+        subtitle={<>Connect {locationName}&apos;s Instagram account once, then TheOutHaven can publish approved content and read permitted performance data for this location.</>}
+        badge={<><BusinessStatusBadge tone={connected ? "green" : "amber"}>{connected ? accountName : "Instagram not connected"}</BusinessStatusBadge><BusinessStatusBadge tone={apiConfigured ? "blue" : "amber"}>{apiConfigured ? "Provider ready" : "Provider setup required"}</BusinessStatusBadge></>}
+      />
 
         {success ? (
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">Instagram connected successfully to this location.</div>
@@ -141,7 +130,6 @@ export default async function LocationSocialAccountsPage({
             </div>
           </div>
         </section>
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }
