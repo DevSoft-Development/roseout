@@ -42,7 +42,7 @@ export async function getReserveStaffSession(locationId?: string | null) {
   if (!token) return null;
   let query = supabaseAdmin
     .from("reserve_staff_sessions")
-    .select("*, reserve_staff_profiles(id,display_name,role,is_active,can_quick_switch)")
+    .select("*, reserve_staff_profiles(id,team_member_id,display_name,role,is_active,can_quick_switch)")
     .eq("token_hash", tokenHash(token))
     .is("revoked_at", null)
     .gt("expires_at", new Date().toISOString())
