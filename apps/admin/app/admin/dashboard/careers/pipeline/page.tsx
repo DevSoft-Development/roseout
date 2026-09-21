@@ -5,6 +5,13 @@ import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { CAREERS_VIEW_ROLES } from "@/lib/careers/access";
 import { formatCareerDate, formatCareerStage, getCareerStageTone } from "@/lib/careers/format";
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Hiring Pipeline – Careers CRM" };
 
@@ -92,25 +99,14 @@ export default async function CareersPipelinePage() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1700px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6 shadow-2xl">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Careers CRM</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Hiring Pipeline</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-white/55">
-                One recruiting workspace from application review through interviews, offers, hiring, and employee handoff.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/admin/dashboard/careers/applications" className="rounded-xl border border-white/15 px-3 py-2 text-xs font-black text-white/80">Applications</Link>
-              <Link href="/admin/dashboard/careers/interviews" className="rounded-xl border border-white/15 px-3 py-2 text-xs font-black text-white/80">Interviews</Link>
-              <Link href="/admin/dashboard/careers/offers" className="rounded-xl border border-white/15 px-3 py-2 text-xs font-black text-white/80">Offers</Link>
-              <Link href="/admin/dashboard/careers/jobs/new" className="rounded-xl bg-white px-3 py-2 text-xs font-black text-black">Create Job</Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Careers CRM · Pipeline"
+        title="Hiring Pipeline"
+        subtitle="One recruiting workspace from application review through interviews, offers, hiring, and employee handoff."
+        badge={<AdminStatusBadge tone={active.length ? "blue" : "green"}>{active.length} active candidates</AdminStatusBadge>}
+        actions={<><AdminActionButton href="/admin/dashboard/careers/applications">Applications</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/interviews">Interviews</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/offers">Offers</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/jobs/new" variant="primary">Create Job</AdminActionButton></>}
+      />
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {metrics.map(([label, value]) => (
@@ -165,7 +161,6 @@ export default async function CareersPipelinePage() {
             </div>
           </section>
         </div>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }

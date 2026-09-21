@@ -6,16 +6,15 @@ import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { calculateApplicantDisplayName, formatCareerDate, formatCareerStage, getCareerStageTone, getNextRecommendedAction } from "@/lib/careers/format";
 import HiringWorkflow from "./HiringWorkflow";
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 
-function toneClass(tone:string){
-  if(tone==="green")return"border-emerald-400/25 bg-emerald-400/10 text-emerald-100";
-  if(tone==="amber")return"border-amber-400/25 bg-amber-400/10 text-amber-100";
-  if(tone==="red")return"border-red-400/25 bg-red-400/10 text-red-100";
-  if(tone==="blue")return"border-sky-400/25 bg-sky-400/10 text-sky-100";
-  if(tone==="rose")return"border-rose-400/25 bg-rose-400/10 text-rose-100";
-  return"border-white/10 bg-white/[.04] text-white/70";
-}
 function relation(value:any){return Array.isArray(value)?value[0]||null:value||null}
 function dt(value:any){if(!value)return"—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":d.toLocaleString("en-US");}
 
@@ -47,8 +46,14 @@ export default async function ApplicationDetail({params}:{params:Promise<{id:str
     if(pr.error)throw pr.error;hasProvisioningProfile=Boolean(pr.data);
   }
   const tone=getCareerStageTone(application.stage);
-  return <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8"><div className="mx-auto max-w-[1450px] space-y-5">
-    <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[.24em] text-rose-300">Applicant CRM Profile</p><h1 className="mt-2 text-4xl font-black">{name}</h1><p className="mt-2 text-white/55">{job?.title||"Career application"} · Applied {formatCareerDate(application.submitted_at)} · {getNextRecommendedAction(application.stage)}</p></div><div className="flex flex-wrap gap-2"><span className={`rounded-full border px-3 py-2 text-xs font-black ${toneClass(tone)}`}>{formatCareerStage(application.stage)}</span><Link href="/admin/dashboard/careers/applications" className="rounded-xl border border-white/15 px-4 py-2.5 font-black">Applications</Link><a href={`mailto:${application.email}`} className="rounded-xl bg-white px-4 py-2.5 font-black text-black">Email</a></div></div></header>
+  return <AdminPageShell>
+    <AdminPageHeader
+      eyebrow="Careers CRM · Applicant"
+      title={name}
+      subtitle={`${job?.title || "Career application"} · Applied ${formatCareerDate(application.submitted_at)} · ${getNextRecommendedAction(application.stage)}`}
+      badge={<AdminStatusBadge tone={tone}>{formatCareerStage(application.stage)}</AdminStatusBadge>}
+      actions={<><AdminActionButton href="/admin/dashboard/careers/applications">Applications</AdminActionButton><AdminActionButton href={`mailto:${application.email}`} variant="primary">Email Candidate</AdminActionButton></>}
+    />
     <section className="rounded-3xl border border-emerald-300/15 bg-emerald-500/[.05] p-5"><p className="text-xs font-black uppercase tracking-[.18em] text-emerald-200">Structured human hiring</p><h2 className="mt-1 text-xl font-black">Job-related criteria only</h2><p className="mt-2 text-sm leading-6 text-white/60">Salary history, protected characteristics, medical/accommodation information, consumer credit history, and pre-offer criminal-history information remain outside standard selection scoring. AI assists workflow administration but does not make the employment decision.</p></section>
     <HiringWorkflow applicationId={application.id} candidateName={name} stage={application.stage} latestScorecard={latestScorecard} latestInterview={latestInterview} latestOffer={latestOffer} hasProvisioningProfile={hasProvisioningProfile}/>
     <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
@@ -61,5 +66,5 @@ export default async function ApplicationDetail({params}:{params:Promise<{id:str
         <section className="rounded-3xl border border-white/10 bg-white/[.04] p-5"><h2 className="text-xl font-black">Internal notes</h2><div className="mt-3 space-y-2">{(results[2].data||[]).map((n:any)=><div key={n.id} className="rounded-xl bg-black/25 p-3 text-sm"><p>{n.note}</p><p className="mt-1 text-xs text-white/35">{dt(n.created_at)}</p></div>)}{!(results[2].data||[]).length?<p className="text-sm text-white/45">No notes.</p>:null}</div></section>
       </div>
     </div>
-  </div></main>;
+  </AdminPageShell>;
 }

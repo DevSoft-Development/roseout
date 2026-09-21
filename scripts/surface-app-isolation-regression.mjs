@@ -5985,3 +5985,23 @@ for (const [label, source] of enterpriseKnowledgeBasePages) {
     }
   }
 }
+
+
+const enterpriseCareersSecondaryPages = [
+  ["Careers Pipeline", read("apps/admin/app/admin/dashboard/careers/pipeline/page.tsx")],
+  ["Careers Offers", read("apps/admin/app/admin/dashboard/careers/offers/page.tsx")],
+  ["Careers Internships", read("apps/admin/app/admin/dashboard/careers/internships/page.tsx")],
+  ["Careers Talent Pool", read("apps/admin/app/admin/dashboard/careers/talent-pool/page.tsx")],
+  ["Careers Settings", read("apps/admin/app/admin/dashboard/careers/settings/page.tsx")],
+  ["Careers Interviews", read("apps/admin/app/admin/dashboard/careers/interviews/page.tsx")],
+  ["Careers Marketing Track", read("apps/admin/app/admin/dashboard/careers/marketing/page.tsx")],
+  ["Careers Employee Handoff", read("apps/admin/app/admin/dashboard/careers/team-conversion/page.tsx")],
+  ["Careers Applicant Detail", read("apps/admin/app/admin/dashboard/careers/applications/[id]/page.tsx")],
+];
+for (const [label, source] of enterpriseCareersSecondaryPages) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
