@@ -66,6 +66,35 @@ export default function ReserveLobbyDisplaySettings({ locationId }: { locationId
     }
   }
 
+  async function applySettings(displayId: string) {
+    setBusy("save:" + displayId);
+    setNotice("");
+    try {
+      const response = await fetch("/api/reserve/displays", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationId,
+          displayId,
+          privacyMode,
+          promoEnabled,
+          promoMediaType,
+          promoMediaUrl,
+          promoHeadline,
+          promoBody,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to update lobby display.");
+      setNotice("Lobby display settings updated.");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update lobby display.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function revokeDisplay(displayId: string) {
     setBusy(displayId);
     setNotice("");
@@ -169,7 +198,10 @@ export default function ReserveLobbyDisplaySettings({ locationId }: { locationId
                       </p>
                     </div>
                     {display.status === "active" ? (
-                      <button type="button" onClick={() => void revokeDisplay(display.id)} disabled={busy === display.id} className="rounded-full border border-[#e1062a]/30 px-3 py-2 text-xs font-black text-[#ff8aa0]">Revoke</button>
+                      <div className="flex shrink-0 gap-2">
+                        <button type="button" onClick={() => void applySettings(display.id)} disabled={busy === "save:" + display.id} className="rounded-full border border-white/10 px-3 py-2 text-xs font-black text-white/70">Apply settings</button>
+                        <button type="button" onClick={() => void revokeDisplay(display.id)} disabled={busy === display.id} className="rounded-full border border-[#e1062a]/30 px-3 py-2 text-xs font-black text-[#ff8aa0]">Revoke</button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
