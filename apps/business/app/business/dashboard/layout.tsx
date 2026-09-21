@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
 import BusinessThemeProvider from "../../locations/dashboard/BusinessThemeProvider";
+import BusinessThemeToggle from "@/components/business/BusinessThemeToggle";
 
 export const metadata: Metadata = buildMetadata({
   title: "Business Dashboard",
@@ -9,5 +10,5 @@ export const metadata: Metadata = buildMetadata({
 });
 
 export default function BusinessDashboardLayout({ children }: { children: React.ReactNode }) {
-  return <BusinessThemeProvider>{children}</BusinessThemeProvider>;
+  return <BusinessThemeProvider>{children}<BusinessThemeToggle /></BusinessThemeProvider>;
 }
