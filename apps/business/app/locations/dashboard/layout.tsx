@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
+import BusinessThemeProvider from "./BusinessThemeProvider";
 import { ADMIN_DEMO_HANDOFF_COOKIE, verifyAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
 
 export default async function LocationsDashboardLayout({
@@ -21,12 +22,59 @@ export default async function LocationsDashboardLayout({
   }
 
   return (
-    <div className="location-dashboard-layout min-h-screen overflow-x-hidden bg-[#050607] md:flex">
-      <Suspense fallback={null}>
-        <CanonicalLocationModuleNav />
-      </Suspense>
-      <div className="location-dashboard-content min-w-0 max-w-full flex-1 overflow-x-hidden">{children}</div>
-      <style>{`
+    <BusinessThemeProvider>
+      <div className="location-dashboard-layout min-h-screen overflow-x-hidden bg-[var(--business-bg)] text-[var(--business-text)] md:flex">
+        <Suspense fallback={null}>
+          <CanonicalLocationModuleNav />
+        </Suspense>
+        <div className="location-dashboard-content min-w-0 max-w-full flex-1 overflow-x-hidden">{children}</div>
+        <style>{`
+        .business-dashboard-theme {
+          --business-bg: #050607;
+          --business-panel: #0b0d11;
+          --business-panel-strong: #11141a;
+          --business-border: rgba(255,255,255,.10);
+          --business-text: #ffffff;
+          --business-muted: rgba(255,255,255,.58);
+          --business-muted-strong: rgba(255,255,255,.72);
+          --business-sidebar: #06080b;
+          background: var(--business-bg);
+          color: var(--business-text);
+        }
+
+        .business-theme-light {
+          --business-bg: #f6f3f0;
+          --business-panel: #ffffff;
+          --business-panel-strong: #f1ebe7;
+          --business-border: rgba(60,38,32,.16);
+          --business-text: #211714;
+          --business-muted: rgba(57,41,36,.62);
+          --business-muted-strong: rgba(57,41,36,.78);
+          --business-sidebar: #fffdfb;
+        }
+
+        .business-theme-light .location-dashboard-layout {
+          background: var(--business-bg) !important;
+          color: var(--business-text) !important;
+        }
+
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-[#0"],
+        .business-theme-light .location-dashboard-content :is(main, section, article, aside, header, div)[class*="bg-black"] {
+          background-color: var(--business-panel) !important;
+        }
+
+        .business-theme-light .location-dashboard-content [class*="border-white/"] {
+          border-color: var(--business-border) !important;
+        }
+
+        .business-theme-light .location-dashboard-content [class*="text-white"] {
+          color: var(--business-text) !important;
+        }
+
+        .business-theme-light .location-dashboard-content [class*="text-white/"] {
+          color: var(--business-muted) !important;
+        }
+
         .location-dashboard-layout,
         .location-dashboard-content,
         .location-dashboard-content main {
@@ -124,6 +172,7 @@ export default async function LocationsDashboardLayout({
           }
         }
       `}</style>
-    </div>
+      </div>
+    </BusinessThemeProvider>
   );
 }

@@ -112,7 +112,7 @@ function friendlyError(
   return value instanceof Error ? value.message : fallback;
 }
 
-export default function ReserveCommandCenterPage() {
+export default function ReserveCommandCenterPage({ forcedTheme }: { forcedTheme?: "dark" | "light" } = {}) {
   return (
     <Suspense
       fallback={
@@ -121,12 +121,12 @@ export default function ReserveCommandCenterPage() {
         </main>
       }
     >
-      <ReserveCommandCenterContent />
+      <ReserveCommandCenterContent forcedTheme={forcedTheme} />
     </Suspense>
   );
 }
 
-function ReserveCommandCenterContent() {
+function ReserveCommandCenterContent({ forcedTheme }: { forcedTheme?: "dark" | "light" }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [persistedAdminLocationId, setPersistedAdminLocationId] = useState("");
@@ -861,6 +861,7 @@ function ReserveCommandCenterContent() {
       setupEnabled={setupEnabled}
       userLabel={adminLocationId ? "Admin access" : "Owner access"}
       actingContext={actionContext()}
+      forcedTheme={forcedTheme}
     >
       {assigningReservation ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
