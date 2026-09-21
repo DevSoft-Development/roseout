@@ -11,6 +11,7 @@ import { ensureClaimFields } from "@/lib/claimQrServer";
 import {
   AdminActionButton,
   AdminPageHeader,
+  AdminPageShell,
   AdminStatusBadge,
 } from "../../../../components/admin/AdminDesignSystem";
 
@@ -136,9 +137,9 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
   const selectedLocationName = selectedLocationId ? locations[0]?.name || "selected location" : "";
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-4 text-white print:bg-white print:px-0 print:py-0">
-      <style>{`@media print {.no-print{display:none!important}.qr-sheet{box-shadow:none!important;border:0!important}.qr-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #111!important}}`}</style>
-      <div className="mx-auto max-w-[1200px] print:max-w-none">
+    <AdminPageShell>
+      <style>{`@media print {.admin-page-shell{background:#fff!important;color:#000!important}.admin-page-shell>div{max-width:none!important;padding:0!important}.no-print{display:none!important}.qr-sheet{box-shadow:none!important;border:0!important}.qr-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #111!important}}`}</style>
+      <div className="print:max-w-none">
         <div className="no-print">
           <AdminPageHeader
             eyebrow="Operations · Claim QR Codes"
@@ -201,6 +202,6 @@ export default async function AdminClaimQrPrintPage({ searchParams }: { searchPa
           </div>
         )}
       </div>
-    </main>
+    </AdminPageShell>
   );
 }
