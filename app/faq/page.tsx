@@ -11,6 +11,13 @@ const faqSections = [
     ["What if I do not like the results?", "Try adding more detail, such as the neighborhood, budget, occasion, vibe, cuisine, or activity. For example, “casual sushi dinner and karaoke in Brooklyn” will usually be more helpful than “fun night out.”"],
     ["Are results always perfect?", "Not yet. TheOutHaven is still improving, and feedback helps make the matches better over time."],
   ]},
+  { title: "Trust and recommendations", items: [
+    ["How does TheOutHaven choose recommendations?", "TheOutHaven matches what you ask for with available information such as location, cuisine, activity type, price, hours, distance, and outing context. Recommendations are options for you to review and change."],
+    ["Does TheOutHaven use AI?", "TheOutHaven may use AI and other technology to understand natural-language requests and improve parts of the experience. Business facts and search criteria are handled separately from generated wording, and you remain in control of what you choose."],
+    ["Can businesses pay to appear?", "TheOutHaven may offer paid promotions. When payment affects placement, the result is identified as Sponsored so it can be distinguished from organic recommendations."],
+    ["What do Claimed and Verified mean?", "Claimed means an authorized business representative controls the listing. Verified means TheOutHaven has completed the applicable business-verification process."],
+    ["Where can I learn more about trust and privacy?", "Visit the Trust Center for an overview of recommendations, business information, sponsored placements, reviews, personalization, and support, and the Privacy Policy for details about information practices."],
+  ]},
   { title: "Beta testing", items: [
     ["What is the beta program?", "The beta program lets early users test TheOutHaven before launch and help improve the product by trying weekly tasks and sharing feedback."],
     ["What do beta testers do each week?", "Beta testers complete quick weekly steps, such as searching for an outing, reviewing matches, choosing the best result, and answering feedback questions."],
