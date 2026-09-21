@@ -47,6 +47,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         ? `${outing.distanceMiles.toFixed(1)} mi apart`
         : null;
   const why = outingCustomerReason(outing);
+  const matchReasons = outing.matchReasons?.map((item) => item.label).filter(Boolean).slice(0, 4) || [];
 
   return (
     <Card elevated style={{ padding: 12 }}>
@@ -75,8 +76,8 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
           </Pressable>
         ) : null}
         <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-          <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-          <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
+          <AppText variant="eyebrow" accent>WHY THIS MATCHES</AppText>
+          {matchReasons.length ? <View style={{ marginTop: 7, gap: 5 }}>{matchReasons.map((reason) => <AppText key={reason} muted style={{ lineHeight: 20 }}>✓ {reason}</AppText>)}</View> : <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>}
         </View>
         <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this outing →</Button>
       </View>
@@ -88,14 +89,15 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   const router = useRouter();
   const { theme } = useAppTheme();
   const why = placeCustomerReason(place);
+  const matchReasons = place.matchReasons?.map((item) => item.label).filter(Boolean).slice(0, 4) || [];
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
       <View style={[styles.why, { borderTopColor: theme.colors.border }]}> 
-        <AppText variant="eyebrow" accent>WHY YOU’LL LIKE IT</AppText>
-        <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>
+        <AppText variant="eyebrow" accent>WHY THIS MATCHES</AppText>
+        {matchReasons.length ? <View style={{ marginTop: 7, gap: 5 }}>{matchReasons.map((reason) => <AppText key={reason} muted style={{ lineHeight: 20 }}>✓ {reason}</AppText>)}</View> : <AppText muted style={{ marginTop: 5, lineHeight: 22 }}>{why}</AppText>}
       </View>
       {onAction ? (
         <View style={{ marginTop: theme.spacing.md }}>
