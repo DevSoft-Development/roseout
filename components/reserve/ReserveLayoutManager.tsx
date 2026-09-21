@@ -322,7 +322,7 @@ export default function ReserveLayoutManager({
   useEffect(() => {
     loadLayout();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, locationType, supabase]);
+  }, [locationId, locationType]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -343,7 +343,7 @@ export default function ReserveLayoutManager({
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, locationType]);
+  }, [locationId, locationType, supabase]);
 
   useEffect(() => {
     setForm(defaultForm(selectedItem, nextSpot));
