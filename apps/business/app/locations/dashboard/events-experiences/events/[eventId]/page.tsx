@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import EventOrderRefundButton from "@/components/events/EventOrderRefundButton";
 import { createClient } from "@/lib/supabase-server";
