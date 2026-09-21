@@ -854,3 +854,170 @@ body {
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Admin global day/night theme finalizer.
+ * Keep this block last: it intentionally wins over historical route-level
+ * Tailwind colors so every isolated AWS Admin page follows the shell theme.
+ * Brand/status actions remain opt-in and are not flattened into neutral cards.
+ */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-[radial-gradient("],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-[linear-gradient("],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-gradient-to-"][class*="from-[#0"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-gradient-to-"][class*="from-[#1"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-gradient-to-"][class*="from-[#2"] {
+  background-image: none !important;
+  background-color: var(--admin-shell-card) !important;
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-[#0"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-[#1"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-[#2"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+).bg-black,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-black/"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+):is(.bg-neutral-950,.bg-neutral-900,.bg-neutral-800,.bg-zinc-950,.bg-zinc-900,.bg-zinc-800,.bg-stone-950,.bg-stone-900,.bg-stone-800,.bg-slate-950,.bg-slate-900,.bg-slate-800,.bg-gray-950,.bg-gray-900,.bg-gray-800) {
+  background-color: var(--admin-shell-card) !important;
+  background-image: none !important;
+  color: var(--admin-shell-text) !important;
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  .text-white,.text-neutral-50,.text-neutral-100,.text-neutral-200,
+  .text-zinc-50,.text-zinc-100,.text-zinc-200,
+  .text-stone-50,.text-stone-100,.text-stone-200,
+  .text-slate-50,.text-slate-100,.text-slate-200,
+  .text-gray-50,.text-gray-100,.text-gray-200
+),
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="text-white/"] {
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  .text-neutral-300,.text-neutral-400,.text-zinc-300,.text-zinc-400,
+  .text-stone-300,.text-stone-400,.text-slate-300,.text-slate-400,
+  .text-gray-300,.text-gray-400
+) {
+  color: var(--admin-shell-soft) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  .text-neutral-500,.text-neutral-600,.text-zinc-500,.text-zinc-600,
+  .text-stone-500,.text-stone-600,.text-slate-500,.text-slate-600,
+  .text-gray-500,.text-gray-600
+) {
+  color: var(--admin-shell-muted) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  input, textarea, select
+) {
+  border-color: var(--admin-shell-border-strong) !important;
+  background: #ffffff !important;
+  color: var(--admin-shell-text) !important;
+  color-scheme: light;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(pre, code) {
+  border-color: var(--admin-shell-border) !important;
+  background: #f3f5f8 !important;
+  color: #273142 !important;
+}
+
+/* Nighttime normalization for older pages built with light/neutral Tailwind cards. */
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+):is(.bg-white,.bg-neutral-50,.bg-neutral-100,.bg-zinc-50,.bg-zinc-100,.bg-stone-50,.bg-stone-100,.bg-slate-50,.bg-slate-100,.bg-gray-50,.bg-gray-100),
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  main, section, article, aside, header, div, form, fieldset, dl
+)[class*="bg-white/"] {
+  background-color: var(--admin-shell-card) !important;
+  background-image: none !important;
+  color: var(--admin-shell-text) !important;
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  .text-black,.text-neutral-950,.text-neutral-900,.text-neutral-800,.text-neutral-700,
+  .text-zinc-950,.text-zinc-900,.text-zinc-800,.text-zinc-700,
+  .text-stone-950,.text-stone-900,.text-stone-800,.text-stone-700,
+  .text-slate-950,.text-slate-900,.text-slate-800,.text-slate-700,
+  .text-gray-950,.text-gray-900,.text-gray-800,.text-gray-700
+) {
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  .text-neutral-500,.text-neutral-600,.text-zinc-500,.text-zinc-600,
+  .text-stone-500,.text-stone-600,.text-slate-500,.text-slate-600,
+  .text-gray-500,.text-gray-600
+) {
+  color: var(--admin-shell-muted) !important;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  input, textarea, select
+) {
+  border-color: var(--admin-shell-border-strong) !important;
+  background: #0b0b0d !important;
+  color: var(--admin-shell-text) !important;
+  color-scheme: dark;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(pre, code) {
+  border-color: var(--admin-shell-border) !important;
+  background: #0b0b0d !important;
+  color: var(--admin-shell-soft) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface table,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface table {
+  color: var(--admin-shell-soft) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface th,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface th {
+  color: var(--admin-shell-muted) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface td,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface th,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface td,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface th {
+  border-color: var(--admin-shell-border) !important;
+}
+
+/* Preserve inverse text on branded CTA fills after neutral text normalization. */
+.admin-shell .admin-enterprise-surface :is(
+  a[class*="bg-[#e1062a]"],button[class*="bg-[#e1062a]"],
+  a[class*="bg-[#ec0b5b]"],button[class*="bg-[#ec0b5b]"],
+  a[class*="bg-rose-5"],button[class*="bg-rose-5"],
+  a[class*="bg-rose-6"],button[class*="bg-rose-6"],
+  a[class*="bg-red-5"],button[class*="bg-red-5"],
+  a[class*="bg-red-6"],button[class*="bg-red-6"]
+) {
+  color: #ffffff !important;
+}
