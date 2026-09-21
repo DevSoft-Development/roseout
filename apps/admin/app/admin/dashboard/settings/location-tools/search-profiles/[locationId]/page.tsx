@@ -3,6 +3,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AdminActionButton, AdminPageHeader, AdminPageShell, AdminStatusBadge } from "@/lib/admin-design-system";
 
 export const dynamic = "force-dynamic";
 
@@ -35,13 +36,14 @@ export default async function SearchProfileReviewPage({ params }: { params: Prom
   const name = location.name ?? location.restaurant_name ?? location.activity_name ?? "Unnamed location";
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 text-white">
-      <div>
-        <Link href="/admin/dashboard/settings/location-tools/search-profiles" className="text-sm text-rose-200">← Back to Search Profiles</Link>
-        <h1 className="mt-3 text-3xl font-black">Review search profile</h1>
-        <p className="mt-1 text-white/55">{name} · {location.location_type ?? "Unknown type"}</p>
-        <p className="text-sm text-white/40">{[location.address, location.city, location.state].filter(Boolean).join(", ")}</p>
-      </div>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Settings · Search Profiles"
+        title="Review search profile"
+        subtitle={`${name} · ${location.location_type ?? "Unknown type"} · ${[location.address, location.city, location.state].filter(Boolean).join(", ")}`}
+        badge={<AdminStatusBadge tone={profile.needs_review ? "amber" : profile.verified_at ? "green" : "blue"}>{profile.needs_review ? "Needs review" : profile.verified_at ? "Verified" : "Generated"}</AdminStatusBadge>}
+        actions={<AdminActionButton href="/admin/dashboard/settings/location-tools/search-profiles">Search Profiles</AdminActionButton>}
+      />
 
       <section className="grid gap-4 md:grid-cols-3">
         <Card label="Status" value={profile.needs_review ? "Needs review" : profile.verified_at ? "Verified" : "Generated"} />
@@ -72,7 +74,7 @@ export default async function SearchProfileReviewPage({ params }: { params: Prom
         <p className="mb-4 text-sm text-white/55">Set the correct domain and add or remove canonical terms and features. Applying rebuilds the profile with manual overrides, records the reviewer, and clears the review flag.</p>
         <SearchProfileReviewForm locationId={locationId} primaryDomain={profile.primary_domain ?? "activity"} />
       </section>
-    </main>
+    </AdminPageShell>
   );
 }
 
