@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (!subscriptionId || !MANAGEABLE_STATUSES.has(status)) {
-    return NextResponse.json({ error: "Start Partner Pro through checkout before changing this subscription." }, { status: 409 });
+    return NextResponse.json({ error: "Start Essentials+ through checkout before changing this subscription." }, { status: 409 });
   }
 
   if (action === "reactivate") {
