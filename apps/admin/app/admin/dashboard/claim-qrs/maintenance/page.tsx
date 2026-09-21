@@ -5,6 +5,13 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import RepairClaimQrButton from "../RepairClaimQrButton";
 import { syncClaimFieldsToLocations } from "@/lib/claimQrServer";
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const metadata: Metadata = {
   title: "Claim QR Maintenance | TheOutHaven Admin",
   description: "Administrative repair tools for claim QR codes.",
@@ -25,22 +32,14 @@ export default async function ClaimQrMaintenancePage({ searchParams }: { searchP
   }
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white">
-      <div className="mx-auto max-w-4xl">
-        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.18),transparent_34%),linear-gradient(135deg,#170b0b,#090706_58%,#14100c)] p-6 shadow-2xl">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.32em] text-rose-300">Admin maintenance</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight">Claim QR Maintenance</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">
-                These tools repair historical or inconsistent claim QR records. They are separated from the normal QR printing workflow because they can update many location records at once.
-              </p>
-            </div>
-            <Link href="/admin/dashboard/claim-qrs" className="shrink-0 rounded-full border border-white/10 bg-white/[0.07] px-4 py-2.5 text-sm font-black text-white/70 hover:bg-white/10 hover:text-white">
-              Back to QR codes
-            </Link>
-          </div>
-        </section>
+    <AdminPageShell>
+        <AdminPageHeader
+          eyebrow="Operations · Claim QR Maintenance"
+          title="Claim QR Maintenance"
+          subtitle="Repair historical or inconsistent claim QR records without mixing high-impact maintenance into the normal printing workflow."
+          badge={<AdminStatusBadge tone={ranFullRepair ? "green" : "amber"}>{ranFullRepair ? "Full repair completed" : "Maintenance controls"}</AdminStatusBadge>}
+          actions={<AdminActionButton href="/admin/dashboard/claim-qrs" variant="primary">Claim QR Codes</AdminActionButton>}
+        />
 
         <section className="mt-6 rounded-[2rem] border border-amber-300/20 bg-amber-300/[0.06] p-6">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Use with care</p>
@@ -70,7 +69,6 @@ export default async function ClaimQrMaintenancePage({ searchParams }: { searchP
             </Link>
           </div>
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
