@@ -343,7 +343,7 @@ export default function ReserveEnterpriseHostView({ initialLocationId = "" }: { 
           resourceCapacity(resource),
         ];
         const semanticKey = isBarResource(resource)
-          ? identity.join(":")
+          ? ["bar", resourceName(resource).toLowerCase(), resourceCapacity(resource)].join(":")
           : [...identity, resourceLayoutValue(resource, "x"), resourceLayoutValue(resource, "y")].join(":");
         return [semanticKey, resource];
       }),
