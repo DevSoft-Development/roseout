@@ -113,11 +113,11 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
   const activities = result.activities.map(card);
   const sameVenueResults = result.sameVenueResults.map(card);
   const pairs = result.pairs.map((pair) => {
-    const pairReasons = publicReasons([
+    const pairSearchReasons = publicReasons([
       ...pair.restaurant.reasons.filter((reason) => /matched|qualified|casual|relaxed|dinner/i.test(reason)),
       ...pair.activity.reasons.filter((reason) => /matched|qualified|casual|relaxed/i.test(reason)),
-      ...pair.reasons,
     ]);
+    const pairReasons = publicReasons([...pairSearchReasons, ...pair.reasons]);
     const whyMatched = pairReasons.join("; ");
     return {
       restaurant: card(pair.restaurant),
@@ -129,7 +129,8 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       isFallbackPair: pair.isFallbackPair,
       matchReasons: pairReasons,
       matchReasonDetails: buildPairMatchReasonDetails({
-        reasons: pairReasons,
+        reasons: pairSearchReasons,
+        pairingReasons: pair.reasons,
         walkingMinutes: pair.walkingMinutes,
         distanceMiles: pair.distanceMiles,
       }),
