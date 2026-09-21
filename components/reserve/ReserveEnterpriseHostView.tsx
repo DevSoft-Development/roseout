@@ -105,45 +105,44 @@ function floorItemStyle(resource: any, width: number, height: number): CSSProper
   const capacity = Math.max(1, Number(resourceCapacity(resource) || 1));
   const centerX = x + sourceWidth / 2;
   const centerY = y + sourceHeight / 2;
-  let visualWidth = 12;
-  let visualHeight = 16;
+
+  let visualWidth = 118;
+  let visualHeight = 118;
 
   if (isBarResource(resource)) {
-    visualWidth = 46;
-    visualHeight = 16;
+    visualWidth = 520;
+    visualHeight = 104;
   } else if (type === "booth") {
-    visualWidth = capacity >= 8 ? 19 : 17;
-    visualHeight = 18;
+    visualWidth = capacity >= 8 ? 190 : capacity >= 6 ? 176 : 164;
+    visualHeight = 116;
   } else if (type === "private") {
-    visualWidth = 18;
-    visualHeight = 28;
+    visualWidth = 210;
+    visualHeight = 176;
   } else if (type === "patio") {
-    visualWidth = 12;
-    visualHeight = 17;
+    visualWidth = 124;
+    visualHeight = 124;
   } else if (capacity <= 2) {
-    visualWidth = 10;
-    visualHeight = 15;
+    visualWidth = 104;
+    visualHeight = 104;
   } else if (capacity <= 4) {
-    visualWidth = 12;
-    visualHeight = 16;
+    visualWidth = 118;
+    visualHeight = 118;
   } else if (capacity <= 6) {
-    visualWidth = 14;
-    visualHeight = 16;
+    visualWidth = 148;
+    visualHeight = 112;
   } else {
-    visualWidth = 16;
-    visualHeight = 17;
+    visualWidth = 168;
+    visualHeight = 118;
   }
 
-  const halfWidth = visualWidth / 2;
-  const halfHeight = visualHeight / 2;
-  const left = Math.max(halfWidth + 1, Math.min(99 - halfWidth, (centerX / width) * 100));
-  const top = Math.max(halfHeight + 1, Math.min(99 - halfHeight, (centerY / height) * 100));
+  const left = Math.max(4, Math.min(96, (centerX / width) * 100));
+  const top = Math.max(5, Math.min(95, (centerY / height) * 100));
 
   return {
     left: `${left}%`,
     top: `${top}%`,
-    width: `${visualWidth}%`,
-    height: `${visualHeight}%`,
+    width: `${visualWidth}px`,
+    height: `${visualHeight}px`,
     transform: `translate(-50%, -50%) rotate(${Number(resource?.rotation || 0)}deg)`,
   };
 }
@@ -208,11 +207,11 @@ function TableDrop({ resource, reservations, dragging, onSelect, style }: { reso
           : capacity <= 4 ? "inset-[18%] rounded-full"
           : "inset-x-[12%] inset-y-[18%] rounded-xl"
       }`}>
-        <strong className="max-w-full truncate text-[11px] font-black text-white sm:text-xs">{name}</strong>
-        <span className="mt-1 rounded-full border border-current/30 bg-black/25 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.08em]">
+        <strong className="max-w-full truncate text-xs font-black text-white sm:text-sm">{name}</strong>
+        <span className="mt-1 rounded-full border border-current/30 bg-black/25 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em]">
           {state.reservation ? getReservationGuestName(state.reservation).split(" ")[0] : state.status === "Open" ? "Open" : state.status}
         </span>
-        <span className="mt-0.5 text-[8px] font-bold text-white/45">{capacity} seats{turn ? ` · ${turn}` : ""}</span>
+        <span className="mt-0.5 text-[9px] font-bold text-white/50">{capacity} seats{turn ? ` · ${turn}` : ""}</span>
       </span>
     </button>
   );
