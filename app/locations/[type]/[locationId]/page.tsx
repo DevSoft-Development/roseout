@@ -43,6 +43,7 @@ import {
 import { newYorkTodayISO } from "@/lib/reservations/reservationDate";
 import { createClient } from "@/lib/supabase-browser";
 import { trackActivity } from "@/lib/trackActivity";
+import { reviewVerificationExplanation, reviewVerificationLabel } from "@/lib/reviews/verification";
 
 type LocationRecord = Record<string, unknown> & {
   id?: string | null;
@@ -87,6 +88,10 @@ type ReviewRecord = Record<string, unknown> & {
   customer_name?: string | null;
   rating?: number | string | null;
   review_text?: string | null;
+  verified_visit?: boolean | null;
+  is_verified_visit?: boolean | null;
+  verification_source?: string | null;
+  verified_at?: string | null;
 };
 
 type MenuSection = Record<string, unknown> & {
@@ -328,7 +333,7 @@ export default function LocationDetailPage() {
     setReviewsLoading(true);
     supabase
       .from("location_reviews")
-      .select("*")
+      .select("id,customer_name,rating,review_text,verified_visit,is_verified_visit,verification_source,verified_at,created_at")
       .eq("location_id", location.id)
       .eq("status", "approved")
       .eq("verified_visit", true)
@@ -700,7 +705,7 @@ export default function LocationDetailPage() {
                         <p className="font-black text-white">{String(review.customer_name || "TheOutHaven guest")}</p>
                         <span className="inline-flex items-center gap-1 text-sm font-black"><Star size={14} className="fill-[#e1062a] text-[#e1062a]" /> {numeric(review.rating)?.toFixed(1) || "5.0"}</span>
                       </div>
-                      <p className="mt-2 text-[10px] font-black uppercase tracking-[0.15em] text-emerald-300">Verified visit</p>
+                      {reviewVerificationLabel(review) ? <p className="mt-2 text-[10px] font-black uppercase tracking-[0.15em] text-emerald-300" title={reviewVerificationExplanation(review) || undefined}>{reviewVerificationLabel(review)}</p> : null}
                       {review.review_text ? <p className="mt-3 line-clamp-5 text-sm font-semibold leading-6 text-white/55">{String(review.review_text)}</p> : null}
                     </article>
                   ))}
