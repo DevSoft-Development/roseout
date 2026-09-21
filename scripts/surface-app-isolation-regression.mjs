@@ -6030,7 +6030,6 @@ if (!enterpriseClaimQrPrintPage.includes("AdminPageHeader")) {
 
 
 const enterpriseSecondaryAdminPages = [
-  ["Admin Overview", read("apps/admin/app/admin/dashboard/page.tsx")],
   ["Business Detail", read("apps/admin/app/admin/dashboard/businesses/[id]/page.tsx")],
   ["Experiences", read("apps/admin/app/admin/dashboard/experiences/page.tsx")],
   ["Ticket Orders", read("apps/admin/app/admin/dashboard/ticket-orders/page.tsx")],
