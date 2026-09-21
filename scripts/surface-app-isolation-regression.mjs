@@ -495,6 +495,19 @@ if (
   throw new Error("Enterprise Admin shell must preserve global light mode and consistent desktop content spacing.");
 }
 for (const marker of [
+  "Admin global day/night theme finalizer.",
+  '.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface',
+  '[class*="bg-[radial-gradient("]',
+  '.bg-neutral-50',
+  '.text-neutral-950',
+  'color-scheme: light',
+  'color-scheme: dark',
+]) {
+  if (!adminShellCss.includes(marker)) {
+    throw new Error(`Enterprise Admin day/night normalization must preserve marker: ${marker}`);
+  }
+}
+for (const marker of [
   "--admin-shell-accent: #e1062a",
   ".admin-shell-nav-group",
   ".admin-shell-desktop-topbar",
