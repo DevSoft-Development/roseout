@@ -7,6 +7,7 @@ import LocationProfileEditor from "./LocationProfileEditor";
 import LocationDiscoveryEditor from "./LocationDiscoveryEditor";
 import OwnerPhotoSetupPanel from "./OwnerPhotoSetupPanel";
 import WebsiteReadyLocationPanel from "./WebsiteReadyLocationPanel";
+import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +28,14 @@ export default async function LocationProfilePage({
 
   if (!location?.id) {
     return (
-      <main className="min-h-screen bg-[#050607] p-6 text-white">
-        <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-white/[0.04] p-8">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">Business Profile</p>
-          <h1 className="mt-3 text-3xl font-black">No connected location found</h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-white/55">Connect or claim a location before editing its customer-facing profile.</p>
-        </div>
-      </main>
+      <BusinessPageShell>
+        <BusinessPageHeader
+          eyebrow="Business Profile"
+          title="No connected location found"
+          subtitle="Connect or claim a location before editing its customer-facing profile."
+          badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>}
+        />
+      </BusinessPageShell>
     );
   }
 
@@ -43,13 +45,17 @@ export default async function LocationProfilePage({
   const claimSetup = String(rawParams.setup || "").toLowerCase() === "photos" || String(rawParams.claimed || "") === "1";
 
   return (
-    <div className="min-h-screen bg-[#050607]">
-      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
-        <OwnerPhotoSetupPanel locationId={locationId} locationType={locationType} claimSetup={claimSetup} />
-      </div>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Location Workspace · Profile"
+        title="Business Profile"
+        subtitle="Manage the customer-facing information, photos, discovery signals, and website-ready content for this location."
+        badge={<BusinessStatusBadge tone={demo.demoMode ? "blue" : "green"}>{demo.demoMode ? "Demo mode" : "Live location"}</BusinessStatusBadge>}
+      />
+      <OwnerPhotoSetupPanel locationId={locationId} locationType={locationType} claimSetup={claimSetup} />
       <LocationProfileEditor locationId={locationId} locationType={locationType} demoMode={demo.demoMode} />
       <WebsiteReadyLocationPanel locationId={locationId} locationType={locationType} />
       <LocationDiscoveryEditor locationId={locationId} locationType={locationType} demoMode={demo.demoMode} />
-    </div>
+    </BusinessPageShell>
   );
 }

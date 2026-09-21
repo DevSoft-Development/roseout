@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 import { createLocationSupportTicketAction, replyToLocationSupportTicketAction } from "./actions";
+import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
 
@@ -29,12 +30,12 @@ export default async function LocationSupportPage({
   const { data: { user } } = await supabase.auth.getUser();
   const currentLocation = await getCurrentBusinessLocation();
   if (!user?.id || !currentLocation?.id) {
-    return <main className="min-h-screen bg-[#07090d] p-8 text-white"><div className="rounded-3xl border border-white/10 bg-white/[.04] p-6">No connected location account was found.</div></main>;
+    return <BusinessPageShell><BusinessPageHeader eyebrow="Location Support" title="No connected location account was found" subtitle="Connect a location account before opening support." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} /></BusinessPageShell>;
   }
 
   const access = await requireOwnerOrAdminAccessToLocation(user.id, String(currentLocation.id));
   if (!access) {
-    return <main className="min-h-screen bg-[#07090d] p-8 text-white"><div className="rounded-3xl border border-white/10 bg-white/[.04] p-6">You do not have access to this location.</div></main>;
+    return <BusinessPageShell><BusinessPageHeader eyebrow="Location Support" title="Access unavailable" subtitle="You do not have access to this location." badge={<BusinessStatusBadge tone="red">Access required</BusinessStatusBadge>} /></BusinessPageShell>;
   }
   const location = access.location;
 
@@ -66,13 +67,13 @@ export default async function LocationSupportPage({
     : { data: [] } as any;
 
   return (
-    <main className="min-h-screen bg-[#07090d] p-4 text-white md:p-8">
-      <div className="mx-auto max-w-7xl space-y-5">
-        <header className="rounded-[2rem] border border-white/10 bg-white/[.04] p-6">
-          <p className="text-xs font-black uppercase tracking-[.24em] text-[#ff6b86]">Location Support</p>
-          <h1 className="mt-2 text-3xl font-black">Get help with your TheOutHaven location</h1>
-          <p className="mt-2 text-sm font-bold text-white/50">Billing, reservations, website/domain, account access, marketing, analytics, listing information, and technical issues all route into the same support system used by TheOutHaven staff.</p>
-        </header>
+    <BusinessPageShell>
+      <BusinessPageHeader
+        eyebrow="Location Support"
+        title="Get help with your TheOutHaven location"
+        subtitle="Billing, reservations, website/domain, account access, marketing, analytics, listing information, and technical issues all route into the same support system used by TheOutHaven staff."
+        badge={<BusinessStatusBadge tone={(tickets || []).some((ticket: any) => ticket.status !== "closed") ? "amber" : "green"}>{(tickets || []).filter((ticket: any) => ticket.status !== "closed").length} open tickets</BusinessStatusBadge>}
+      />
 
         <section className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
           <div className="space-y-5">
@@ -130,7 +131,6 @@ export default async function LocationSupportPage({
             )}
           </div>
         </section>
-      </div>
-    </main>
+    </BusinessPageShell>
   );
 }
