@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "rm -rf .next && npm run build",
+  "ignoreCommand": "node scripts/vercel-consumer-ignore-build.mjs",
   "crons": []
 }
