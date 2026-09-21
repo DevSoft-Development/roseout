@@ -10,7 +10,13 @@ import type { LocationVisibilityFields } from "@/lib/locationVisibility";
 import {
   getLocationOwnerAccess,
   hasOwnerAccessToLocation,
+  hasLocationPermission,
+  resolveLocationAccessContext,
 } from "@/lib/auth/locationOwnerAccess";
+import {
+  BUSINESS_RESERVE_HANDOFF_COOKIE,
+  verifyBusinessReserveHandoff,
+} from "@theouthaven/auth/business-reserve-handoff";
 import {
   parseDemoOwnerParams,
   requireDemoOwnerLocation,
@@ -411,6 +417,9 @@ export default async function DashboardPage({
   }
 
   const cookieStore = await cookies();
+  const reserveReturnHandoff = verifyBusinessReserveHandoff(
+    cookieStore.get(BUSINESS_RESERVE_HANDOFF_COOKIE)?.value,
+  );
   const impersonatedLocationId = cookieStore.get("theouthaven_impersonate_location_id")?.value;
   const impersonatedUserId = cookieStore.get("theouthaven_impersonate_user_id")?.value;
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
@@ -419,6 +428,33 @@ export default async function DashboardPage({
   const supabase = adminSupabase();
   const authSupabase = await createAuthClient();
   const { data: { user } } = await authSupabase.auth.getUser();
+
+  if (!user?.id && reserveReturnHandoff) {
+    const returnAccess = await resolveLocationAccessContext({
+      userId: reserveReturnHandoff.userId,
+      userEmail: reserveReturnHandoff.email,
+      locationId: reserveReturnHandoff.locationId,
+    });
+    if (
+      !returnAccess.location ||
+      !hasLocationPermission(returnAccess, "location.view")
+    ) {
+      redirect("/business/login?next=/locations/dashboard");
+    }
+
+    const returnedLocation = toDashboardLocation(
+      returnAccess.location as Record<string, any>,
+    );
+    const summaries = await buildDashboardSummaries(supabase, [returnedLocation]);
+    return (
+      <LocationsDashboardClient
+        locations={[returnedLocation]}
+        impersonationLabel=""
+        summaries={summaries}
+      />
+    );
+  }
+
   if (!user?.id) redirect("/business/login?next=/locations/dashboard");
 
   let locations: LocationItem[] = [];

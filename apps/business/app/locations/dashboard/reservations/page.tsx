@@ -140,7 +140,7 @@ export default async function LocationWorkspaceReservationsPage({
         locationId: handoffLocationId,
       });
       const query = new URLSearchParams({ locationId: handoffLocationId });
-      const destination = `/reserve/dashboard?${query.toString()}`;
+      const destination = `/staff?${query.toString()}`;
 
       redirect(
         `${reserveOrigin}/api/internal/business-reserve-handoff?token=${encodeURIComponent(

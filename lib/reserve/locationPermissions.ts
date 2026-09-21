@@ -5,21 +5,23 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveLocationAccessContext } from "@/lib/auth/locationOwnerAccess";
 import { getInternalDemoViewer } from "@/lib/demo/internal-demo-access";
+import { getReserveAuthorizedDevice } from "@/lib/reserve/deviceAuthorization";
+import { getReserveStaffSession } from "@/lib/reserve/staffSession";
 import {
   BUSINESS_RESERVE_HANDOFF_COOKIE,
   verifyBusinessReserveHandoff,
 } from "@theouthaven/auth/business-reserve-handoff";
 
 export type ReservePermissionKey = "viewDashboard"|"manageReservations"|"manageLayout"|"manageHours"|"manageReminders"|"manageQrCodes"|"editProfile"|"viewAnalytics"|"manageBilling"|"manageTeam";
-export type ReserveRole = "location_admin"|"manager"|"host"|"marketing"|"view_only";
+export type ReserveRole = "location_admin"|"manager"|"host"|"lead_host"|"server"|"bartender"|"marketing"|"view_only";
 
 const ALL: Record<ReservePermissionKey, boolean> = { viewDashboard:true, manageReservations:true, manageLayout:true, manageHours:true, manageReminders:true, manageQrCodes:true, editProfile:true, viewAnalytics:true, manageBilling:true, manageTeam:true };
 const VIEW: Record<ReservePermissionKey, boolean> = { viewDashboard:true, manageReservations:false, manageLayout:false, manageHours:false, manageReminders:false, manageQrCodes:false, editProfile:false, viewAnalytics:true, manageBilling:false, manageTeam:false };
 
 export function getDefaultPermissionsForRole(role: string): Record<ReservePermissionKey, boolean> {
   if (role === "location_admin") return { ...ALL };
-  if (role === "manager") return { ...VIEW, manageReservations:true, manageLayout:true, manageHours:true, manageReminders:true, manageQrCodes:true };
-  if (role === "host") return { ...VIEW, manageReservations:true };
+  if (role === "manager") return { ...VIEW, manageReservations:true, manageLayout:true, manageHours:true, manageReminders:true, manageQrCodes:true, manageTeam:true };
+  if (role === "host" || role === "lead_host") return { ...VIEW, manageReservations:true };
   if (role === "marketing") return { ...VIEW, manageQrCodes:true, editProfile:true };
   return { ...VIEW };
 }
@@ -36,7 +38,7 @@ export function getReserveCanonicalLocationId(access: any, fallback: string) {
 }
 
 function roleLabel(role: string) {
-  return String(role || "view_only").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return String(role || "view_only").replace(/_/g, " ").replace(/w/g, (c) => c.toUpperCase());
 }
 
 function coerceReservePermissions(role: string, overrides: unknown): Record<ReservePermissionKey, boolean> {
@@ -160,6 +162,43 @@ async function getSignedBusinessReserveAccess(locationId: string) {
   return { user, access };
 }
 
+async function getAuthorizedDeviceReserveAccess(locationId: string) {
+  const device = await getReserveAuthorizedDevice(locationId);
+  if (!device) return null;
+
+  const session = await getReserveStaffSession(locationId);
+  if (!session?.reserve_staff_profiles) {
+    return {
+      user: null,
+      device,
+      staffSession: null,
+      access: {
+        allowed: true,
+        role: "view_only" as ReserveRole,
+        roleLabel: "Authorized device",
+        source: "authorized_device",
+        location: { id: locationId },
+        permissions: { ...VIEW },
+      },
+    };
+  }
+
+  const role = String(session.reserve_staff_profiles.role || "view_only") as ReserveRole;
+  return {
+    user: null,
+    device,
+    staffSession: session,
+    access: {
+      allowed: true,
+      role,
+      roleLabel: roleLabel(role),
+      source: "authorized_device_staff",
+      location: { id: locationId },
+      permissions: getDefaultPermissionsForRole(role),
+    },
+  };
+}
+
 export async function requireReservePermission(locationId: string, permissionKey: ReservePermissionKey) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -177,6 +216,9 @@ export async function requireReservePermission(locationId: string, permissionKey
 
   const demo = await getSignedDemoReserveAccess(locationId);
   if (demo?.access?.permissions?.[permissionKey]) return demo as any;
+
+  const device = await getAuthorizedDeviceReserveAccess(locationId);
+  if (device?.access?.permissions?.[permissionKey]) return device as any;
 
   return { error: NextResponse.json({ success:false, error:"Please sign in to continue." }, { status:401 }) } as any;
 }
