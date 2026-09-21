@@ -175,12 +175,20 @@ export default function BusinessLoginPage() {
                 </a>
               </div>
 
-              <p className="mt-7 text-center text-xs leading-5 text-white/35">
-                Looking for outing ideas instead?{" "}
-                <a href="https://theouthaven.com/login" className="font-semibold text-white/55 hover:text-white">
-                  Consumer sign in
-                </a>
-              </p>
+              <div className="mt-7 space-y-2 text-center text-xs leading-5 text-white/35">
+                <p>
+                  Looking for outing ideas instead?{" "}
+                  <a href="https://theouthaven.com/login" className="font-semibold text-white/55 hover:text-white">
+                    Consumer sign in
+                  </a>
+                </p>
+                <p>
+                  TheOutHaven staff?{" "}
+                  <a href="https://admin.theouthaven.com/admin/login" className="font-semibold text-white/55 hover:text-white">
+                    Admin login
+                  </a>
+                </p>
+              </div>
             </div>
           </div>
         </section>
