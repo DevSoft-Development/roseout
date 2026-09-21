@@ -240,6 +240,7 @@ export default async function AdminSettingsPage() {
         subtitle="Configure platform behavior, operational controls, search systems, and business-wide preferences from one consistent workspace."
         badge={<AdminStatusBadge tone="green">AWS Admin · Production</AdminStatusBadge>}
       />
+      <div className="admin-settings-page contents">
 
         <section className="space-y-4">
           <div>
@@ -296,6 +297,7 @@ export default async function AdminSettingsPage() {
             <div><SearchLimitsClient initial={{ ...DEFAULT_SEARCH_LIMITS, ...(data?.value || {}) }} /></div>
           </div>
         </section>
+      </div>
     </AdminPageShell>
   );
 }
