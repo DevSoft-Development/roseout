@@ -48,11 +48,20 @@ async function requireOwner(locationId: string) {
   if (!user?.id) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
 
   const access = await getLocationOwnerAccess(user.id, user.email ?? null);
-  const { data: location } = await supabaseAdmin
+  const locationSelect = "id,source_id,source_table,name,restaurant_name,activity_name";
+  let { data: location } = await supabaseAdmin
     .from("locations")
-    .select("id,source_id,source_table,name,restaurant_name,activity_name")
+    .select(locationSelect)
     .eq("id", locationId)
     .maybeSingle();
+  if (!location) {
+    const bySource = await supabaseAdmin
+      .from("locations")
+      .select(locationSelect)
+      .eq("source_id", locationId)
+      .maybeSingle();
+    location = bySource.data;
+  }
 
   if (!location) return { error: NextResponse.json({ error: "Location not found." }, { status: 404 }) };
   if (!access.isAdmin && !hasOwnerAccessToLocation(access, location as Record<string, any>)) {
@@ -91,11 +100,12 @@ export async function GET(request: Request) {
     const auth = await requireOwner(locationId);
     if (auth.error) return auth.error;
 
-    const items = await loadItems(locationId);
+    const canonicalLocationId = String(auth.location.id);
+    const items = await loadItems(canonicalLocationId);
     return NextResponse.json({
       items,
       locations: [{
-        id: auth.location.id,
+        id: canonicalLocationId,
         type: normalizeType(searchParams.get("type")),
         name: auth.location.name || auth.location.restaurant_name || auth.location.activity_name || "Location",
       }],
@@ -113,15 +123,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Missing location id." }, { status: 400 });
     }
 
+    let canonicalLocationId = locationId;
     if (locationId) {
       const auth = await requireOwner(locationId);
       if (auth.error) return auth.error;
+      canonicalLocationId = String(auth.location.id);
     }
 
     const action = clean(body.action);
     if (action === "create_layout_item") {
       const payload = {
-        location_id: locationId,
+        location_id: canonicalLocationId,
         source_table: normalizeType(body.location_type),
         item_type: clean(body.item_type) || "table",
         item_name: clean(body.item_name) || "New Reservation Space",
@@ -166,6 +178,25 @@ export async function PATCH(request: Request) {
     if (["move_layout_item","update_layout_item","update_item_status"].includes(action)) {
       const id = clean(body.id);
       if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
+
+      const { data: existingNeutral } = await supabaseAdmin
+        .from("layout_items")
+        .select("location_id")
+        .eq("id", id)
+        .maybeSingle();
+      const existingLegacy = existingNeutral
+        ? null
+        : await supabaseAdmin
+            .from("location_bookable_items")
+            .select("location_id")
+            .eq("id", id)
+            .maybeSingle();
+      const itemLocationId = existingNeutral?.location_id || existingLegacy?.data?.location_id;
+      if (!itemLocationId) {
+        return NextResponse.json({ error: "Reservation space not found." }, { status: 404 });
+      }
+      const itemAuth = await requireOwner(String(itemLocationId));
+      if (itemAuth.error) return itemAuth.error;
 
       const neutralPayload = {
         item_type: clean(body.item_type) || "table",
