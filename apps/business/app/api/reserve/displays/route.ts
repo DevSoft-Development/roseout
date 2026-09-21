@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (!locationId) {
     return NextResponse.json({ success: false, error: "Missing location ID." }, { status: 400 });
   }
-  const auth = await requireReservePermission(locationId, "manageReservations");
+  const auth = await requireReservePermission(locationId, "manageTeam");
   if (auth.error) return auth.error;
   const canonicalLocationId = getReserveCanonicalLocationId(auth.access, locationId);
   return NextResponse.json({
