@@ -31,7 +31,7 @@ export default function VerificationWorkspace({ organization, initialTrust, user
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] px-4 py-10 text-white sm:px-6">
+    <main className="min-h-screen bg-[var(--business-bg)] px-4 py-10 text-[var(--business-text)] sm:px-6">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
