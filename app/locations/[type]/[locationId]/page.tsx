@@ -33,6 +33,7 @@ import { getLocationName } from "@/lib/locationName";
 import { getLocationScore } from "@/lib/locationScore";
 import { isPublicSearchVisible } from "@/lib/locationVisibility";
 import { getPhotoList, getPrimaryPhoto } from "@/lib/publicLocationPhotos";
+import { getPublicVerificationState } from "@/lib/public-trust";
 import {
   getExternalReservationProvider,
   getExternalReservationUrl,
@@ -409,6 +410,7 @@ export default function LocationDetailPage() {
   const reviewCount = reviewCountFor(location, reviews.length);
   const hours = formatOperatingHoursForDisplay(getOperatingHours(location));
   const plannerContext = plannerContextFromReturnHref(returnHref);
+  const trustState = getPublicVerificationState(location || {});
 
   const externalReservationUrl = getExternalReservationUrl(location || {});
   const externalReservationProvider = getExternalReservationProvider(location || {});
@@ -527,6 +529,25 @@ export default function LocationDetailPage() {
                     {area ? <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-bold text-white/65">{area}</span> : null}
                   </div>
                   <h1 className="text-4xl font-black tracking-[-0.04em] sm:text-5xl lg:text-6xl">{name}</h1>
+                  {(trustState.verified || trustState.claimed || trustState.freshnessLabel) ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Business trust information">
+                      {trustState.verified ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-black text-emerald-200">
+                          <Check size={13} /> Verified business
+                        </span>
+                      ) : null}
+                      {trustState.claimed ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-black text-white/70">
+                          Owner claimed
+                        </span>
+                      ) : null}
+                      {trustState.freshnessLabel ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.025] px-3 py-1.5 text-[11px] font-bold text-white/50">
+                          <Clock3 size={13} /> {trustState.freshnessLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-bold text-white/68 sm:text-base">
                     {reviewScore ? (
                       <span className="inline-flex items-center gap-1.5 text-white">
