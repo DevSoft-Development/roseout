@@ -133,11 +133,3 @@ export default async function AdminExperiencesPage({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
-      <p className="text-xs text-white/40">{label}</p>
-      <p className="mt-1 text-3xl font-black">{value}</p>
-    </div>
-  );
-}
