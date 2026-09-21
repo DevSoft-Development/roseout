@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import ReserveCommandCenterPage from "@/components/reserve/ReserveCommandCenterPage";
-import ReserveOverviewPage from "@/components/reserve/ReserveOverviewPage";
 import ReservationDateNavRepair from "@/components/reserve/ReservationDateNavRepair";
 import ReservationCommunicationCenter from "@/components/locations/ReservationCommunicationCenter";
+import BusinessReserveWorkspace from "../BusinessReserveWorkspace";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
 import { ADMIN_DEMO_HANDOFF_COOKIE } from "@theouthaven/auth/admin-demo-handoff";
@@ -161,7 +160,7 @@ export default async function LocationWorkspaceReservationsPage({
           />
         </div>
       ) : null}
-      {showOverview ? <ReserveOverviewPage forcedTheme="dark" /> : <ReserveCommandCenterPage forcedTheme="dark" />}
+      <BusinessReserveWorkspace overview={showOverview} />
     </div>
   );
 }
