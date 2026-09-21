@@ -43,14 +43,14 @@ export default function SearchAnchorOperationsControls({
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+    <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
       <div className="grid gap-6 xl:grid-cols-3">
         <div>
           <h2 className="text-lg font-semibold">Process waiting locations</h2>
-          <p className="mt-1 text-sm text-zinc-400">Create missing anchors and refresh changed anchors in a safe bounded batch.</p>
+          <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">Create missing anchors and refresh changed anchors in a safe bounded batch.</p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <label className="text-sm text-zinc-400" htmlFor="anchor-batch-size">Locations per batch</label>
-            <select id="anchor-batch-size" value={batchSize} onChange={(event) => setBatchSize(Number(event.target.value))} disabled={Boolean(busy)} className="rounded-xl border border-zinc-700 bg-black px-3 py-2 text-sm">
+            <label className="text-sm text-[var(--admin-shell-muted)]" htmlFor="anchor-batch-size">Locations per batch</label>
+            <select id="anchor-batch-size" value={batchSize} onChange={(event) => setBatchSize(Number(event.target.value))} disabled={Boolean(busy)} className="rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-3 py-2 text-sm text-[var(--admin-shell-text)]">
               {[25, 50, 100, 250].map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
             <button disabled={Boolean(busy)} onClick={() => act("run_now")} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40">
@@ -61,7 +61,7 @@ export default function SearchAnchorOperationsControls({
 
         <div>
           <h2 className="text-lg font-semibold">Resolve failed work</h2>
-          <p className="mt-1 text-sm text-zinc-400">Retry locations after the underlying data or configuration issue has been corrected.</p>
+          <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">Retry locations after the underlying data or configuration issue has been corrected.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <button disabled={!failedCount || Boolean(busy)} onClick={() => act("retry_failed")} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40">{busy === "retry_failed" ? "Retrying…" : "Retry failed (" + failedCount + ")"}</button>
             <button disabled={!deadLetterCount || Boolean(busy)} onClick={() => act("requeue_dead_letter")} className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40">{busy === "requeue_dead_letter" ? "Returning…" : "Return stopped items (" + deadLetterCount + ")"}</button>
@@ -70,7 +70,7 @@ export default function SearchAnchorOperationsControls({
 
         <div>
           <h2 className="text-lg font-semibold">History retention</h2>
-          <p className="mt-1 text-sm text-zinc-400">Keep active and failed work. Remove completed and cancelled event history older than 90 days.</p>
+          <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">Keep active and failed work. Remove completed and cancelled event history older than 90 days.</p>
           <button disabled={Boolean(busy)} onClick={() => act("cleanup_history")} className="mt-4 rounded-xl border border-zinc-700 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40">
             {busy === "cleanup_history" ? "Cleaning…" : "Clean old history"}
           </button>

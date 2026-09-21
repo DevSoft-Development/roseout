@@ -179,8 +179,8 @@ export default function MarketingReportBuilder({
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={runReport} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-neutral-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Play className="h-4 w-4" />Run report</button>
-            <button onClick={saveReport} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold text-neutral-800"><Save className="h-4 w-4" />Save</button>
-            <button onClick={sendNow} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold text-neutral-800"><Send className="h-4 w-4" />Email me now</button>
+            <button onClick={saveReport} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-[var(--admin-shell-border)] px-4 py-2.5 text-sm font-semibold text-[var(--admin-shell-text)]"><Save className="h-4 w-4" />Save</button>
+            <button onClick={sendNow} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-[var(--admin-shell-border)] px-4 py-2.5 text-sm font-semibold text-[var(--admin-shell-text)]"><Send className="h-4 w-4" />Email me now</button>
             <button onClick={() => setScheduleOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700"><CalendarClock className="h-4 w-4" />Schedule email</button>
           </div>
         </div>

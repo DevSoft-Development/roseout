@@ -121,11 +121,11 @@ function Badge({ children, status = "Ready" }: { children: React.ReactNode; stat
 
 function CommandCard({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <section className="rounded-[28px] border border-white/10 bg-gradient-to-br from-[#101721] to-[#0a0d13] p-5 shadow-2xl shadow-black/20">
+    <section className="rounded-[28px] border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] p-5 shadow-lg">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          {eyebrow ? <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-white/35">{eyebrow}</p> : null}
-          <h2 className="text-xl font-black tracking-tight text-white">{title}</h2>
+          {eyebrow ? <p className="mb-1 text-xs font-black uppercase tracking-[0.18em] text-[var(--admin-shell-muted)]">{eyebrow}</p> : null}
+          <h2 className="text-xl font-black tracking-tight text-[var(--admin-shell-text)]">{title}</h2>
         </div>
         {action}
       </div>
@@ -136,7 +136,7 @@ function CommandCard({ title, eyebrow, children, action }: { title: string; eyeb
 
 function LaunchLink({ href, children, primary = false }: { href?: string; children: React.ReactNode; primary?: boolean }) {
   if (!href) {
-    return <span className="inline-flex rounded-2xl border border-dashed border-white/10 px-4 py-2.5 text-xs font-black text-white/40">Refresh demo data to unlock</span>;
+    return <span className="inline-flex rounded-2xl border border-dashed border-[var(--admin-shell-border)] px-4 py-2.5 text-xs font-black text-[var(--admin-shell-muted)]">Refresh demo data to unlock</span>;
   }
   return (
     <Link
@@ -144,7 +144,7 @@ function LaunchLink({ href, children, primary = false }: { href?: string; childr
       className={
         primary
           ? "inline-flex rounded-2xl bg-gradient-to-r from-[#e1062a] to-[#ff2142] px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-[#ff1654]/25 hover:brightness-110"
-          : "inline-flex rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-black text-white/75 hover:border-[#ff2142]/45 hover:bg-[#e1062a]/10 hover:text-white"
+          : "inline-flex rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-soft)] px-4 py-2.5 text-sm font-black text-[var(--admin-shell-text)] hover:border-[#ff2142]/45 hover:bg-[#e1062a]/10"
       }
     >
       {children}
@@ -154,21 +154,21 @@ function LaunchLink({ href, children, primary = false }: { href?: string; childr
 
 function StatCard({ label, value, note }: { label: string; value: React.ReactNode; note?: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
-      {note ? <p className="mt-1 text-xs font-semibold text-white/35">{note}</p> : null}
+    <div className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--admin-shell-muted)]">{label}</p>
+      <p className="mt-2 text-2xl font-black text-[var(--admin-shell-text)]">{value}</p>
+      {note ? <p className="mt-1 text-xs font-semibold text-[var(--admin-shell-muted)]">{note}</p> : null}
     </div>
   );
 }
 
 function ToolLaunchCard({ tool }: { tool: ToolCard }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+    <div className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-black text-white">{tool.title}</h3>
-          <p className="mt-1 text-sm font-semibold leading-5 text-white/45">{tool.description}</p>
+          <h3 className="font-black text-[var(--admin-shell-text)]">{tool.title}</h3>
+          <p className="mt-1 text-sm font-semibold leading-5 text-[var(--admin-shell-muted)]">{tool.description}</p>
         </div>
         <Badge status={tool.status}>{tool.status}</Badge>
       </div>
@@ -297,11 +297,11 @@ export default async function DemoCenterPage() {
         subtitle="Control demo data, validate readiness, and launch the business and Reserve experiences with scoped admin handoff."
         badge={<AdminStatusBadge tone={publicWarning ? "amber" : loc ? "green" : "red"}>{publicWarning ? "Public exposure warning" : loc ? "Demo ready" : "Needs demo location"}</AdminStatusBadge>}
       />
-        <section className={`rounded-[28px] border p-4 shadow-2xl shadow-black/20 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-white/10 bg-white/[0.035]"}`}>
+        <section className={`rounded-[28px] border p-4 shadow-2xl shadow-black/20 ${publicWarning ? "border-amber-300/40 bg-amber-500/10" : "border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]"}`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Demo Center</p>
-              <p className="mt-1 text-sm font-bold text-white/70">
+              <p className="mt-1 text-sm font-bold text-[var(--admin-shell-muted)]">
                 Admin launcher for the demo location. This page controls demo data and sends you into the new Location Dashboard.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -318,18 +318,18 @@ export default async function DemoCenterPage() {
           </div>
         </section>
 
-        <header className="rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(225,6,42,0.26),transparent_34%),linear-gradient(135deg,rgba(17,23,34,0.98),rgba(8,10,15,0.98))] p-6 shadow-2xl shadow-black/30 sm:p-8">
+        <header className="rounded-[32px] border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] p-6 shadow-lg sm:p-8">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.3em] text-rose-200">TheOutHaven Demo Location</p>
-              <h1 className="mt-3 max-w-5xl text-4xl font-black tracking-[-0.05em] text-white sm:text-6xl">Launch the location dashboard experience</h1>
-              <p className="mt-4 max-w-3xl text-sm font-bold leading-6 text-white/62">
+              <h1 className="mt-3 max-w-5xl text-4xl font-black tracking-[-0.05em] text-[var(--admin-shell-text)] sm:text-6xl">Launch the location dashboard experience</h1>
+              <p className="mt-4 max-w-3xl text-sm font-bold leading-6 text-[var(--admin-shell-muted)]">
                 Demo Center now matches the dark/red dashboard system while staying a launcher. The owner-style KPIs and Business Overview live inside the Location Dashboard.
               </p>
-              <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-white/70">
-                <span className="rounded-full bg-white/10 px-3 py-2">{locationName}</span>
-                <span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.primary_category || loc?.category || loc?.location_type, "Category needs setup")}</span>
-                <span className="rounded-full bg-white/10 px-3 py-2">{human(loc?.market || loc?.city, "Market needs setup")}</span>
+              <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-[var(--admin-shell-text)]">
+                <span className="rounded-full bg-[var(--admin-shell-soft)] px-3 py-2">{locationName}</span>
+                <span className="rounded-full bg-[var(--admin-shell-soft)] px-3 py-2">{human(loc?.primary_category || loc?.category || loc?.location_type, "Category needs setup")}</span>
+                <span className="rounded-full bg-[var(--admin-shell-soft)] px-3 py-2">{human(loc?.market || loc?.city, "Market needs setup")}</span>
                 <span className="rounded-full bg-rose-500/15 px-3 py-2 text-rose-100">Demo account</span>
               </div>
             </div>
@@ -361,9 +361,9 @@ export default async function DemoCenterPage() {
             <CommandCard title="Selected demo location" eyebrow="Context">
               <div className="space-y-3">
                 {profileItems.map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/35">{label}</p>
-                    <p className="mt-1 text-sm font-black text-white">{human(value, "Needs setup")}</p>
+                  <div key={label} className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--admin-shell-muted)]">{label}</p>
+                    <p className="mt-1 text-sm font-black text-[var(--admin-shell-text)]">{human(value, "Needs setup")}</p>
                   </div>
                 ))}
               </div>
@@ -374,7 +374,7 @@ export default async function DemoCenterPage() {
             </CommandCard>
 
             <CommandCard title="Demo data controls" eyebrow="Safe actions">
-              <p className="mb-4 text-sm font-semibold leading-6 text-white/55">
+              <p className="mb-4 text-sm font-semibold leading-6 text-[var(--admin-shell-muted)]">
                 Use these controls to rebuild the demo dataset, test email delivery, create a test reservation, or reset the demo back to a clean state.
               </p>
               <div className="flex flex-wrap gap-2">
@@ -401,7 +401,7 @@ export default async function DemoCenterPage() {
               ["Reviews / Feedback", statusFor(feedback?.length), "Private feedback data."],
               ["Analytics", statusFor(analytics?.length), "Tracked demo events."],
             ].map(([label, status, text]) => (
-              <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div key={label} className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4">
                 <div className="flex items-center justify-between gap-2">
                   <b className="text-white">{label}</b>
                   <Badge status={status as string}>{status}</Badge>
