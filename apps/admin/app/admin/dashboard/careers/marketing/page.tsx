@@ -5,6 +5,13 @@ import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { CAREERS_VIEW_ROLES } from "@/lib/careers/access";
 import { formatCareerDate, getCareerStageTone } from "@/lib/careers/format";
 
+import {
+  AdminActionButton,
+  AdminPageHeader,
+  AdminPageShell,
+  AdminStatusBadge,
+} from "../../../../../components/admin/AdminDesignSystem";
+
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Marketing Hiring Track – Careers CRM" };
 
@@ -27,27 +34,14 @@ export default async function CareersMarketingPage() {
   const rows = result.data || [];
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-6 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#120d0b] p-6">
-          <p className="text-xs font-black uppercase tracking-[.26em] text-rose-300">Careers CRM</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black">Marketing Hiring Track</h1>
-              <p className="mt-2 max-w-3xl text-sm text-white/55">
-                Portfolio reviews, content tests, campus ambassador, creator, paid, and educational internship queues.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/admin/dashboard/careers" className="rounded-xl border border-white/15 px-4 py-2 text-sm font-black">
-                Overview
-              </Link>
-              <Link href="/admin/dashboard/careers/jobs/new" className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black">
-                Create Job
-              </Link>
-            </div>
-          </div>
-        </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Careers CRM · Marketing Track"
+        title="Marketing Hiring Track"
+        subtitle="Portfolio reviews, content tests, campus ambassador, creator, paid, and educational internship queues."
+        badge={<AdminStatusBadge tone={rows.length ? "blue" : "muted"}>{rows.length} hiring records</AdminStatusBadge>}
+        actions={<><AdminActionButton href="/admin/dashboard/careers">Careers Overview</AdminActionButton><AdminActionButton href="/admin/dashboard/careers/jobs/new" variant="primary">Create Job</AdminActionButton></>}
+      />
 
         <section className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
           <h2 className="text-xl font-black">Operational workflow</h2>
@@ -116,7 +110,6 @@ export default async function CareersMarketingPage() {
             <p className="p-6 text-sm text-white/50">No marketing hiring records found.</p>
           )}
         </section>
-      </div>
-    </main>
+    </AdminPageShell>
   );
 }
