@@ -236,7 +236,7 @@ export default async function AdminSettingsPage() {
     <AdminPageShell>
       <AdminPageHeader
         eyebrow="Administration · Settings"
-        title="Control Center"
+        title="Control center"
         subtitle="Configure platform behavior, operational controls, search systems, and business-wide preferences from one consistent workspace."
         badge={<><AdminStatusBadge tone="green">Production</AdminStatusBadge><AdminStatusBadge tone="blue">AWS Admin</AdminStatusBadge></>}
       />
