@@ -60,6 +60,7 @@ export type ReserveLayoutManagerProps = {
   initialLocationType?: LocationType;
   embedded?: boolean;
   onChanged?: () => void;
+  apiPath?: string;
 };
 
 type FormState = {
@@ -242,6 +243,7 @@ export default function ReserveLayoutManager({
   initialLocationType,
   embedded = false,
   onChanged,
+  apiPath = "/api/reserve/portal/layout",
 }: ReserveLayoutManagerProps) {
   const supabase = createClient();
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -354,7 +356,7 @@ export default function ReserveLayoutManager({
         params.set("type", locationType);
       }
       const response = await fetch(
-        `/api/reserve/portal/layout?${params.toString()}`,
+        `${apiPath}?${params.toString()}`,
       );
       const data = await response.json();
       if (!response.ok) {
@@ -424,7 +426,7 @@ export default function ReserveLayoutManager({
       setError("");
       setMessage("");
       const action = values.id ? "update_layout_item" : "create_layout_item";
-      const response = await fetch("/api/reserve/portal/layout", {
+      const response = await fetch(apiPath, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -472,7 +474,7 @@ export default function ReserveLayoutManager({
     const item = visibleItems.find((candidate) => candidate.id === id);
     if (!item) return;
     const durationMinutes = itemDuration(item);
-    const response = await fetch("/api/reserve/portal/layout", {
+    const response = await fetch(apiPath, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -513,7 +515,7 @@ export default function ReserveLayoutManager({
     try {
       setSaving(item.id);
       setError("");
-      const response = await fetch("/api/reserve/portal/layout", {
+      const response = await fetch(apiPath, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete_layout_item", id: item.id }),
