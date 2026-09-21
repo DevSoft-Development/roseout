@@ -74,7 +74,7 @@ requireText(proxy, 'pathname === "/admin/login"', 'Admin runtime must allow its 
 requireText(proxy, 'pathMatches(pathname, "/auth/admin/callback")', 'Admin runtime must allow the admin auth callback.');
 requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Business runtime must allow the location dashboard.');
 requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Business runtime must allow the business dashboard.');
-requireText(proxy, 'pathname === "/business/login"', 'Business runtime must allow its dedicated login page.');
+requireText(proxy, 'pathname === "/business/login" || pathname === "/login"', 'Business runtime must allow its dedicated login page and the compatibility login alias.');
 requireText(proxy, 'if (pathname === "/") {', 'Isolated AWS web surface roots must have an explicit landing behavior.');
 requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/business/login";', 'Admin and Business roots must redirect to their dedicated login pages.');
 requireText(proxy, 'return NextResponse.redirect(loginUrl, 302);', 'Web surface root login navigation must use an explicit redirect.');
@@ -95,7 +95,10 @@ if (boundaryIndex < 0 || shortLinkIndex < 0 || boundaryIndex > shortLinkIndex) {
 
 requireText(businessLogin, 'TheOutHaven Business', 'Dedicated Business login must use Business-specific branding.');
 requireText(businessLogin, 'fetch("/api/auth/sign-in"', 'Business login must use the shared secure sign-in backend.');
-requireText(businessLogin, 'queryNext?.startsWith("/business/claim")', 'Business login may only preserve a business claim continuation path.');
+requireText(businessLogin, 'queryNext.startsWith("/locations/dashboard")', 'Business login may preserve only Location Dashboard continuations.');
+requireText(businessLogin, 'queryNext.startsWith("/business/dashboard")', 'Business login may preserve only Business Dashboard continuations.');
+requireText(businessLogin, 'queryNext.startsWith("/business/claim")', 'Business login may preserve Business claim continuations.');
+requireText(businessLogin, 'next: businessNext', 'Business login must send only an allowlisted Business continuation path to the sign-in backend.');
 requireText(businessLogin, 'window.location.replace(data.redirectTo || "/business/dashboard")', 'Business login must honor the role-aware backend destination.');
 requireText(businessLogin, 'https://theouthaven.com/forgot-password', 'Business login must provide password recovery.');
 requireText(businessLogin, 'https://theouthaven.com/business#plans', 'Business login must provide a clear onboarding path for new businesses.');
