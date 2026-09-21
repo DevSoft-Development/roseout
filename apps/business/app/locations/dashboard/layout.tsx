@@ -172,6 +172,7 @@ export default async function LocationsDashboardLayout({
           }
         }
       `}</style>
-    </div>
+      </div>
+    </BusinessThemeProvider>
   );
 }
