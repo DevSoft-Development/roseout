@@ -25,6 +25,7 @@ import {
 import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import LocationImagePlaceholder from "@/components/public-location/LocationImagePlaceholder";
 import SafeLocationImage from "@/components/public-location/SafeLocationImage";
+import LocationTrustSignals from "@/components/public-location/LocationTrustSignals";
 import { clampScore } from "@/lib/clampScore";
 import { buildGoogleMapsSearchUrl, getGoogleMapsUrl } from "@/lib/googleDirections";
 import { getLocationTags, getPrimaryCategory } from "@/lib/locationFields";
@@ -72,6 +73,13 @@ type LocationRecord = Record<string, unknown> & {
   cuisine?: string | null;
   activity_type?: string | null;
   atmosphere?: string | null;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  is_verified?: boolean | null;
+  claim_verification_status?: string | null;
+  last_quality_check_at?: string | null;
+  updated_at?: string | null;
 };
 
 type ReviewRecord = Record<string, unknown> & {
@@ -527,6 +535,7 @@ export default function LocationDetailPage() {
                     {area ? <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-bold text-white/65">{area}</span> : null}
                   </div>
                   <h1 className="text-4xl font-black tracking-[-0.04em] sm:text-5xl lg:text-6xl">{name}</h1>
+                  <LocationTrustSignals location={location} />
                   <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-bold text-white/68 sm:text-base">
                     {reviewScore ? (
                       <span className="inline-flex items-center gap-1.5 text-white">
