@@ -84,7 +84,7 @@ function hostViewHref({
   return `/locations/dashboard/reservations?${query.toString()}`;
 }
 
-export default function ReserveOverviewPage() {
+export default function ReserveOverviewPage({ forcedTheme }: { forcedTheme?: "dark" | "light" } = {}) {
   return (
     <Suspense
       fallback={
@@ -93,12 +93,12 @@ export default function ReserveOverviewPage() {
         </main>
       }
     >
-      <ReserveOverviewContent />
+      <ReserveOverviewContent forcedTheme={forcedTheme} />
     </Suspense>
   );
 }
 
-function ReserveOverviewContent() {
+function ReserveOverviewContent({ forcedTheme }: { forcedTheme?: "dark" | "light" }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const adminLocationId = searchParams.get("adminLocationId") || "";
@@ -265,6 +265,7 @@ function ReserveOverviewContent() {
       onTabChange={switchTab}
       setupEnabled={Boolean(resolvedLocationId && (resources.length || reservations.length))}
       userLabel={adminLocationId ? "Admin access" : "Owner access"}
+      forcedTheme={forcedTheme}
       actingContext={{
         adminLocationId: adminLocationId || undefined,
         type: locationType || undefined,
