@@ -79,8 +79,11 @@ export async function POST(request: NextRequest) {
   const action = clean(body.action);
   const locationId = clean(body.locationId || body.location_id);
   if (!locationId) return NextResponse.json({ success: false, error: "Missing location ID." }, { status: 400 });
-  const auth = await requireReservePermission(locationId, "manageTeam");
+  const auth = await requireReservePermission(locationId, "manageReservations");
   if (auth.error) return auth.error;
+  if (!["location_admin", "manager"].includes(String(auth.access?.role || ""))) {
+    return NextResponse.json({ success: false, error: "Manager access is required to change service staffing." }, { status: 403 });
+  }
   const canonicalLocationId = getReserveCanonicalLocationId(auth.access, locationId);
 
   if (action === "upsert_section") {
