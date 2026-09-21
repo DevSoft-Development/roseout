@@ -74,9 +74,9 @@ export default async function CancelLocationSubscriptionPage({ searchParams }: {
 
   return <div className="space-y-6 text-white">
     <section className="rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] p-6 sm:p-8">
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Partner Pro → {ESSENTIALS_PLAN_NAME}</p>
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Essentials+ → {ESSENTIALS_PLAN_NAME}</p>
       <h1 className="mt-3 text-3xl font-black sm:text-4xl">Review your downgrade before you continue</h1>
-      <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">{locationName} will not be deleted. Partner Pro stays active until {formatDate(periodEnd)}. On that date, the location automatically moves to <span className="text-white">{ESSENTIALS_PLAN_NAME} — Free</span> and your public listing remains live.</p>
+      <p className="mt-3 max-w-3xl text-sm font-bold leading-6 text-white/60">{locationName} will not be deleted. Essentials+ stays active until {formatDate(periodEnd)}. On that date, the location automatically moves to <span className="text-white">{ESSENTIALS_PLAN_NAME} — Free</span> and your public listing remains live.</p>
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -97,14 +97,14 @@ export default async function CancelLocationSubscriptionPage({ searchParams }: {
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
       <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">What changes after downgrade</p>
-      <h2 className="mt-2 text-2xl font-black">Partner Pro features that end or become limited</h2>
+      <h2 className="mt-2 text-2xl font-black">Essentials+ features that end or become limited</h2>
       <p className="mt-2 text-sm font-bold leading-6 text-white/50">This comparison uses the same feature matrix as `/business/plans`, so it stays in sync with your current offering.</p>
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {partnerProDowngradeChanges.map(({ feature, essentials, partnerPro }) => <div key={feature} className="rounded-2xl border border-white/10 bg-black/20 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black">{feature}</p><span className="rounded-full border border-white/10 px-3 py-1 text-[11px] font-black text-white/55">{partnerPro} → {essentials === "—" ? "Not included" : essentials}</span></div>{usageDetail[feature] ? <p className="mt-2 text-sm font-bold leading-6 text-white/50">{usageDetail[feature]}</p> : null}</div>)}
       </div>
     </section>
 
-    {!offerAlreadyUsed ? <section className="rounded-3xl border border-[#f5b700]/30 bg-[#f5b700]/10 p-6"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#ffd85d]">A save offer based on your time with us</p><h2 className="mt-2 text-2xl font-black">{annual ? `${offer.discountPercent}% off your next annual renewal` : offer.label}</h2><p className="mt-2 text-sm font-bold leading-6 text-amber-50/70">You’ve been subscribed for about {tenureMonths} month{tenureMonths === 1 ? "" : "s"}. This offer is automatically calculated from tenure and can be used once for this subscription.</p></section> : <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-sm font-bold text-white/55">A retention discount has already been used on this subscription. You can still keep Partner Pro or continue to Essentials.</section>}
+    {!offerAlreadyUsed ? <section className="rounded-3xl border border-[#f5b700]/30 bg-[#f5b700]/10 p-6"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#ffd85d]">A save offer based on your time with us</p><h2 className="mt-2 text-2xl font-black">{annual ? `${offer.discountPercent}% off your next annual renewal` : offer.label}</h2><p className="mt-2 text-sm font-bold leading-6 text-amber-50/70">You’ve been subscribed for about {tenureMonths} month{tenureMonths === 1 ? "" : "s"}. This offer is automatically calculated from tenure and can be used once for this subscription.</p></section> : <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 text-sm font-bold text-white/55">A retention discount has already been used on this subscription. You can still keep Essentials+ or continue to Essentials.</section>}
 
     <form action="/api/business/billing/cancel-retention" method="POST" className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
       <input type="hidden" name="location_id" value={location.id}/>
@@ -113,11 +113,11 @@ export default async function CancelLocationSubscriptionPage({ searchParams }: {
       <div className="mt-5 grid gap-3 md:grid-cols-2">{reasonOptions.map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold hover:border-white/25"><input type="radio" name="reason_code" value={value} required className="h-4 w-4"/><span>{label}</span></label>)}</div>
       <label className="mt-5 block"><span className="text-sm font-black">Anything else you want us to know?</span><textarea name="reason_text" rows={4} maxLength={2000} placeholder="Tell us what would make TheOutHaven more valuable for your business…" className="mt-2 w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30"/></label>
       <div className="mt-6 grid gap-3 md:grid-cols-3">
-        <Link href="/locations/dashboard/billing" className="flex items-center justify-center rounded-2xl border border-white/10 px-5 py-4 text-sm font-black hover:bg-white/10">Keep Partner Pro</Link>
+        <Link href="/locations/dashboard/billing" className="flex items-center justify-center rounded-2xl border border-white/10 px-5 py-4 text-sm font-black hover:bg-white/10">Keep Essentials+</Link>
         {!offerAlreadyUsed ? <button type="submit" name="decision" value="accept_offer" className="rounded-2xl bg-[#f5b700] px-5 py-4 text-sm font-black text-black hover:bg-amber-300">Accept {annual ? `${offer.discountPercent}% renewal discount` : offer.label}</button> : null}
         <button type="submit" name="decision" value="confirm_cancel" className="rounded-2xl border border-rose-400/40 px-5 py-4 text-sm font-black text-rose-100 hover:bg-rose-500/10">Yes, move to Essentials on {formatDate(periodEnd)}</button>
       </div>
-      <p className="mt-4 text-xs font-bold leading-5 text-white/35">Confirming schedules the Partner Pro subscription to end at the close of the current paid period. Your location then continues on Essentials — Free. Existing location records are not deleted.</p>
+      <p className="mt-4 text-xs font-bold leading-5 text-white/35">Confirming schedules the Essentials+ subscription to end at the close of the current paid period. Your location then continues on Essentials — Free. Existing location records are not deleted.</p>
     </form>
   </div>;
 }
