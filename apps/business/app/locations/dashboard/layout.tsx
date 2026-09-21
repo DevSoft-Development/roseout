@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
 import BusinessThemeProvider from "./BusinessThemeProvider";
-import BusinessThemeProvider from "./BusinessThemeProvider";
 import { ADMIN_DEMO_HANDOFF_COOKIE, verifyAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
 
 export default async function LocationsDashboardLayout({
