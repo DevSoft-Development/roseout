@@ -39,6 +39,13 @@ const faqSections = [
     ["What is TheOutHaven Reserve?", "TheOutHaven Reserve is the business-side reservation and guest management experience being built for restaurants and activity venues."],
     ["Who can I contact about business partnerships?", "Use the Get Help or business contact option on TheOutHaven and include your business name, location, and contact information."],
   ]},
+  { title: "Trust and recommendations", items: [
+    ["Does TheOutHaven use AI?", "TheOutHaven uses technology, including AI in some parts of the service, to understand natural-language requests and improve the experience. Recommendations are based on available business information and the criteria in your search, and you decide which places to view, change, save, or book."],
+    ["How does TheOutHaven choose recommendations?", "TheOutHaven considers the details in your request, such as location, cuisine, activity, timing, distance, budget, and other relevant criteria. When available, result explanations show why a place matched."],
+    ["Can businesses pay to appear?", "TheOutHaven may offer paid placements. When payment influences placement, the result is identified as Sponsored so it is distinguishable from ordinary matching."],
+    ["What do Claimed and Verified mean?", "Claimed means an authorized business representative controls the listing. Verified is shown only when TheOutHaven has completed the applicable verification process."],
+    ["Where can I learn more about trust and privacy?", "Visit the Trust Center for how recommendations, verification, sponsored placements, reviews, personalization, privacy, and support work."],
+  ]},
   { title: "Support and safety", items: [
     ["How do I get help?", "Use the Get Help link in the footer or account dropdown. Share as much detail as possible so the support team can understand the issue."],
     ["How do I report wrong information?", "Use feedback or support to report incorrect hours, photos, addresses, categories, or business details."],
