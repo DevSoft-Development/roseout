@@ -72,6 +72,12 @@ type LocationRecord = Record<string, unknown> & {
   cuisine?: string | null;
   activity_type?: string | null;
   atmosphere?: string | null;
+  is_claimed?: boolean | null;
+  claimed?: boolean | null;
+  claim_status?: string | null;
+  is_verified?: boolean | null;
+  last_quality_check_at?: string | null;
+  updated_at?: string | null;
 };
 
 type ReviewRecord = Record<string, unknown> & {
@@ -233,6 +239,26 @@ function friendlyDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(year, month - 1, day)),
   );
+}
+
+function isClaimedBusiness(location: LocationRecord | null) {
+  if (!location) return false;
+  const status = String(location.claim_status || "").toLowerCase();
+  return Boolean(location.is_claimed || location.claimed || status === "approved" || status === "claimed");
+}
+
+function isVerifiedBusiness(location: LocationRecord | null) {
+  return Boolean(location?.is_verified);
+}
+
+function recentQualityLabel(location: LocationRecord | null) {
+  const value = String(location?.last_quality_check_at || location?.updated_at || "").trim();
+  if (!value) return null;
+  const checkedAt = new Date(value);
+  if (Number.isNaN(checkedAt.getTime())) return null;
+  const ageMs = Date.now() - checkedAt.getTime();
+  if (ageMs < 0 || ageMs > 1000 * 60 * 60 * 24 * 90) return null;
+  return `Checked ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: checkedAt.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined }).format(checkedAt)}`;
 }
 
 export default function LocationDetailPage() {
@@ -409,6 +435,9 @@ export default function LocationDetailPage() {
   const reviewCount = reviewCountFor(location, reviews.length);
   const hours = formatOperatingHoursForDisplay(getOperatingHours(location));
   const plannerContext = plannerContextFromReturnHref(returnHref);
+  const claimedBusiness = isClaimedBusiness(location);
+  const verifiedBusiness = isVerifiedBusiness(location);
+  const recentQualityCheck = recentQualityLabel(location);
 
   const externalReservationUrl = getExternalReservationUrl(location || {});
   const externalReservationProvider = getExternalReservationProvider(location || {});
@@ -525,6 +554,20 @@ export default function LocationDetailPage() {
                       {category || (isActivity ? "Activity" : "Restaurant")}
                     </span>
                     {area ? <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-bold text-white/65">{area}</span> : null}
+                    {verifiedBusiness ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-200">
+                        <Check size={13} /> Verified
+                      </span>
+                    ) : claimedBusiness ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.05] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-white/70">
+                        <Check size={13} /> Owner claimed
+                      </span>
+                    ) : null}
+                    {recentQualityCheck ? (
+                      <span className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">
+                        {recentQualityCheck}
+                      </span>
+                    ) : null}
                   </div>
                   <h1 className="text-4xl font-black tracking-[-0.04em] sm:text-5xl lg:text-6xl">{name}</h1>
                   <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-bold text-white/68 sm:text-base">
@@ -546,6 +589,18 @@ export default function LocationDetailPage() {
                   </div>
                 ) : null}
               </div>
+
+              {(claimedBusiness || verifiedBusiness || recentQualityCheck) ? (
+                <div className="mt-5 rounded-[1.25rem] border border-white/10 bg-white/[0.025] p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="mr-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">Business information</p>
+                    {verifiedBusiness ? <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-100">Verified by TheOutHaven</span> : null}
+                    {claimedBusiness ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/65">Owner claimed</span> : null}
+                    {recentQualityCheck ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-white/55">{recentQualityCheck}</span> : null}
+                    <Link href="/trust" className="ml-auto text-xs font-black text-white/55 underline decoration-white/20 underline-offset-4 hover:text-white">What these mean</Link>
+                  </div>
+                </div>
+              ) : null}
 
               {tags.length ? (
                 <div className="mt-5 flex flex-wrap gap-2">
