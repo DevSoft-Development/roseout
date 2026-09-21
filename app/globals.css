@@ -393,3 +393,62 @@ html { -webkit-text-size-adjust: 100%; }
     padding-left: 76px;
   }
 }
+
+
+/* TheOutHaven Business dashboard visual contract.
+ * Daytime/nighttime tokens are owned by BusinessThemeProvider so every
+ * Location Dashboard surface can share one enterprise shell.
+ */
+.business-dashboard-theme {
+  --business-bg: #050607;
+  --business-sidebar: #090b0e;
+  --business-panel: #111316;
+  --business-panel-strong: #171a1f;
+  --business-border: rgba(255, 255, 255, 0.10);
+  --business-text: #ffffff;
+  --business-muted: rgba(255, 255, 255, 0.46);
+  --business-soft: rgba(255, 255, 255, 0.66);
+  min-height: 100vh;
+  color: var(--business-text);
+  background: var(--business-bg);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.business-theme-light {
+  --business-bg: #f5f2ef;
+  --business-sidebar: #fffaf7;
+  --business-panel: #ffffff;
+  --business-panel-strong: #f2ece8;
+  --business-border: rgba(60, 38, 32, 0.14);
+  --business-text: #261b18;
+  --business-muted: rgba(38, 27, 24, 0.52);
+  --business-soft: rgba(38, 27, 24, 0.70);
+  color-scheme: light;
+}
+
+.business-theme-dark {
+  color-scheme: dark;
+}
+
+.business-dashboard-theme .business-page-shell,
+.business-dashboard-theme .location-dashboard-layout,
+.business-dashboard-theme .location-dashboard-content {
+  background: var(--business-bg);
+  color: var(--business-text);
+}
+
+.business-dashboard-theme .business-page-shell *,
+.business-dashboard-theme .location-dashboard-content * {
+  min-width: 0;
+}
+
+.business-theme-light .location-dashboard-content [class*="bg-[#050607]"],
+.business-theme-light .location-dashboard-content [class*="bg-[#07090d]"],
+.business-theme-light .location-dashboard-content [class*="bg-[#090b0e]"] {
+  background: var(--business-bg) !important;
+}
+
+.business-theme-light .location-dashboard-content [class*="bg-white/[0.0"],
+.business-theme-light .location-dashboard-content [class*="bg-black/"] {
+  color: var(--business-text);
+}
