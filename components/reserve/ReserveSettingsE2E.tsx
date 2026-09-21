@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import ReserveLobbyDisplaySettings from "@/components/reserve/ReserveLobbyDisplaySettings";
 
 const PERMISSIONS = [
   ["viewDashboard", "View reservations"],
@@ -698,6 +699,12 @@ export function ReserveTeamSettings({ locationId }: { locationId: string }) {
           )}
         </Card>
       </div>
+
+      {canManage ? (
+        <div className="mt-5">
+          <ReserveLobbyDisplaySettings locationId={locationId} />
+        </div>
+      ) : null}
     </div>
   );
 }
