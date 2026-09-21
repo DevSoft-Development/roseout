@@ -5,6 +5,7 @@ import { listAccounts } from "@/lib/crm/queries/account-summary";
 import { accountTypes, lifecycleStages } from "@/lib/crm/types";
 import { createAccountAction } from "./actions";
 import VerificationWork from "./VerificationWork";
+import { AdminPageHeader, AdminPageShell, AdminStatusBadge } from "@/lib/admin-design-system";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,13 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const result = await listAccounts({ search: p.q, lifecycle: p.lifecycle, type: p.type, owner: p.owner, health: p.health, page: Number(p.page) || 1 });
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 p-6 text-white">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-widest text-rose-300">Canonical CRM</p>
-        <h1 className="text-3xl font-black">Accounts</h1>
-        <p className="text-white/60">Commercial relationships across one or many locations.</p>
-      </header>
+    <AdminPageShell>
+      <AdminPageHeader
+        eyebrow="Canonical CRM · Accounts"
+        title="Accounts"
+        subtitle="Commercial relationships across one or many locations."
+        badge={<AdminStatusBadge tone={result.count ? "blue" : "muted"}>{result.count} accounts</AdminStatusBadge>}
+      />
 
       <VerificationWork />
 
@@ -62,6 +64,6 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       </section>
 
       <p className="text-sm text-white/50">{result.count} account{result.count === 1 ? "" : "s"} · page {result.page}</p>
-    </main>
+    </AdminPageShell>
   );
 }
