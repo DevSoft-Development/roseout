@@ -12,7 +12,7 @@ import {
   AdminPageHeader,
   AdminPageShell,
   AdminStatusBadge,
-} from "@/components/admin/AdminDesignSystem";
+} from "@/lib/admin-design-system";
 
 export const metadata: Metadata = {
   title: "Admin Dashboard",
