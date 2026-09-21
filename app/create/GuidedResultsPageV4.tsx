@@ -12,6 +12,7 @@ import GuidedJourneySteps from "@/components/planner/GuidedJourneySteps";
 
 type PlanType = "outing" | "restaurant" | "activity";
 type PlacementFields = { sponsored?: boolean | null; isSponsored?: boolean | null; is_sponsored?: boolean | null; placement_type?: string | null; sponsor_id?: string | number | null };
+type MatchReasonDetail = { type?: string | null; label?: string | null; source?: "search_evidence" | "pairing" | string | null; confidence?: string | null };
 type LocationCard = Record<string, unknown> & PlacementFields & {
   id?: string | number | null;
   name?: string | null;
@@ -30,6 +31,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   whyMatched?: string | null;
   why_it_matched?: string | null;
   matchReasons?: string[] | null;
+  matchReasonDetails?: MatchReasonDetail[] | null;
   rating?: number | string | null;
   google_rating?: number | string | null;
   average_rating?: number | string | null;
@@ -42,7 +44,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   reservation_url?: string | null;
   booking_url?: string | null;
 };
-type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null };
+type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null; matchReasonDetails?: MatchReasonDetail[] | null };
 type SearchPayload = {
   restaurants?: LocationCard[];
   activities?: LocationCard[];
@@ -113,6 +115,13 @@ function customerWhy(value: PairCard | LocationCard | null | undefined) {
   if (!value) return null;
   return cleanReason(value.whyMatched) || cleanReason(value.why_it_matched) || (Array.isArray(value.matchReasons) ? value.matchReasons.map(cleanReason).find(Boolean) || null : null);
 }
+function structuredSignals(value: PairCard | LocationCard | null | undefined) {
+  if (!value || !Array.isArray(value.matchReasonDetails)) return [];
+  return value.matchReasonDetails
+    .map((item) => typeof item?.label === "string" ? item.label.trim() : "")
+    .filter((label) => label.length >= 3 && label.length <= 90)
+    .map(shortSignal);
+}
 function titleCase(value: string) { return value.replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function shortSignal(value: string) {
   const normalized = value.replace(/[.!]+$/, "").replace(/\s+/g, " ").trim();
@@ -132,7 +141,7 @@ function locationCategory(location: LocationCard) {
   return String(location.cuisine || location.cuisine_type || location.activity_type || location.primary_category || "").trim();
 }
 function locationSignals(location: LocationCard, prompt: string) {
-  const signals: string[] = [];
+  const signals: string[] = [...structuredSignals(location)];
   const category = locationCategory(location);
   const city = String(location.city || "").trim();
   const reason = customerWhy(location);
@@ -141,10 +150,10 @@ function locationSignals(location: LocationCard, prompt: string) {
   if (reason && overlapsPrompt(prompt, reason)) signals.push(shortSignal(reason));
   if (city && prompt.toLowerCase().includes(city.toLowerCase())) signals.push(city);
   if (QUALITY_INTENT.test(prompt) && rating) signals.push(`★ ${rating.value} rated`);
-  return [...new Set(signals)].slice(0, 3);
+  return [...new Set(signals)].slice(0, 4);
 }
 function pairSignals(item: CompletePair, distance: string | null, prompt: string) {
-  const signals: string[] = [];
+  const signals: string[] = [...structuredSignals(item.pair)];
   const restaurantCategory = locationCategory(item.restaurant);
   const activityCategory = locationCategory(item.activity);
   const pairReason = customerWhy(item.pair);
@@ -159,7 +168,7 @@ function pairSignals(item: CompletePair, distance: string | null, prompt: string
   }
   if (distance && PROXIMITY_INTENT.test(prompt)) signals.push(distance);
   if (item.resultType === "same_venue" && signals.length < 3) signals.push("One venue for both stops");
-  return [...new Set(signals)].slice(0, 3);
+  return [...new Set(signals)].slice(0, 4);
 }
 function distanceFor(pair: PairCard | null, walkingRequested: boolean) {
   if (!pair) return null;
