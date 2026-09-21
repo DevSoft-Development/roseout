@@ -30,6 +30,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   whyMatched?: string | null;
   why_it_matched?: string | null;
   matchReasons?: string[] | null;
+  matchReasonDetails?: Array<{ type?: string | null; label?: string | null; source?: string | null; confidence?: string | null }> | null;
   rating?: number | string | null;
   google_rating?: number | string | null;
   average_rating?: number | string | null;
@@ -42,7 +43,7 @@ type LocationCard = Record<string, unknown> & PlacementFields & {
   reservation_url?: string | null;
   booking_url?: string | null;
 };
-type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null };
+type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?: LocationCard | null; distanceMiles?: number | null; walkingMinutes?: number | null; whyMatched?: string | null; why_it_matched?: string | null; matchReasons?: string[] | null; matchReasonDetails?: Array<{ type?: string | null; label?: string | null; source?: string | null; confidence?: string | null }> | null };
 type SearchPayload = {
   restaurants?: LocationCard[];
   activities?: LocationCard[];
@@ -194,15 +195,31 @@ function outingTimeFrom(payload: SearchPayload): OutingTimeValue {
   return { plannedFor: time?.plannedFor || null, timezone: time?.timezone || "America/New_York", outingDateContext: time?.dateContext || null, outingTimeConfidence: confidence, remindersEnabled: Boolean(time?.shouldSchedulePreOutingReminders), nextMorningFollowupEnabled: Boolean(time?.nextMorningFollowupDate), nextMorningFollowupDate: time?.nextMorningFollowupDate || null, outingDateTimeText: payload.outingDateTimeText || null, outingDateLabel: payload.outingDateLabel || payload.parsedDateText || null, outingTimeLabel: payload.outingTimeLabel || payload.parsedTimeText || null };
 }
 
-function MatchSignals({ title, signals }: { title: string; signals: string[] }) {
+function structuredSignals(value: LocationCard | PairCard | null | undefined) {
+  const details = Array.isArray(value?.matchReasonDetails) ? value.matchReasonDetails : [];
+  return details
+    .map((item) => String(item?.label || "").trim())
+    .filter(Boolean)
+    .filter((label, index, all) => all.findIndex((item) => item.toLowerCase() === label.toLowerCase()) === index)
+    .slice(0, 5);
+}
+
+function MatchSignals({ signals }: { signals: string[] }) {
   if (!signals.length) return null;
   return (
-    <div className="mt-4 border-t border-white/[0.07] pt-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#ff7188]">{title}</p>
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        {signals.map((signal) => <span key={signal} className="rounded-full border border-white/[0.09] bg-white/[0.045] px-3 py-1.5 text-[11px] font-bold text-white/72">{signal}</span>)}
+    <details className="mt-4 border-t border-white/[0.07] pt-4" open>
+      <summary className="cursor-pointer list-none text-[10px] font-black uppercase tracking-[0.15em] text-[#ff7188]">
+        Why this matches
+      </summary>
+      <div className="mt-2.5 grid gap-2">
+        {signals.map((signal) => (
+          <div key={signal} className="flex items-start gap-2 text-[12px] font-semibold leading-5 text-white/72">
+            <span aria-hidden="true" className="mt-[2px] text-emerald-300">✓</span>
+            <span>{signal}</span>
+          </div>
+        ))}
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -234,7 +251,7 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
   const best = rank === 1 && !sponsoredPair(item);
   const sponsored = sponsoredPair(item);
   const distance = distanceFor(item.pair, walkingRequested);
-  const signals = pairSignals(item, distance, prompt);
+  const signals = structuredSignals(item.pair).length ? structuredSignals(item.pair) : pairSignals(item, distance, prompt);
   const route = item.resultType === "pair" ? buildGoogleDirectionsUrl({ origin: item.restaurant, destination: item.activity, travelMode: walkingRequested ? "walking" : "driving" }) : null;
   return (
     <article className={`rounded-[1.6rem] border bg-[#0a0a0a] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/55 ring-1 ring-[#e1062a]/15" : "border-white/[0.09]"}`}>
@@ -246,7 +263,7 @@ function PairCardView({ item, rank, walkingRequested, returnToResults, prompt, o
         <VenueRow location={item.restaurant} label={item.resultType === "same_venue" ? "Dinner + experience" : "Restaurant"} />
         {item.resultType !== "same_venue" ? <VenueRow location={item.activity} label="Activity" /> : null}
       </div>
-      <MatchSignals title="Matched to your plan" signals={signals} />
+      <MatchSignals signals={signals} />
       <button type="button" onClick={onUse} className="mt-4 w-full rounded-full bg-[#e1062a] px-5 py-3.5 text-xs font-black uppercase tracking-[0.08em] transition hover:bg-[#f20b31]">Choose this outing →</button>
       <details className="mt-2 rounded-xl px-2 py-2 text-sm">
         <summary className="cursor-pointer list-none text-center text-xs font-bold text-white/40 transition hover:text-white/65">View details</summary>
@@ -265,7 +282,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
   const rating = ratingFor(location);
   const price = priceFor(location);
   const best = rank === 1;
-  const signals = locationSignals(location, prompt);
+  const signals = structuredSignals(location).length ? structuredSignals(location) : locationSignals(location, prompt);
   const noun = planType === "restaurant" ? "restaurant" : "activity";
   return (
     <article className={`group flex h-full flex-col overflow-hidden rounded-[1.45rem] border bg-[#0b0b0c] shadow-[0_18px_50px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-white/20 ${best ? "border-[#e1062a]/35 ring-1 ring-[#e1062a]/5" : "border-white/[0.10]"}`}>
@@ -280,7 +297,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
           {metaFor(location) ? <p className="mt-1.5 text-sm font-semibold text-white/48">{metaFor(location)}</p> : null}
           {(rating || price) ? <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/62">{rating ? <span>★ {rating.value}{rating.reviews ? ` (${rating.reviews.toLocaleString()})` : ""}</span> : null}{rating && price ? <span className="text-white/20">•</span> : null}{price ? <span>{price}</span> : null}</div> : null}
         </div>
-        <MatchSignals title="Matched to your search" signals={signals} />
+        <MatchSignals signals={signals} />
         <div className="mt-auto grid gap-2.5 pt-5 sm:grid-cols-2">
           <Link href={profileHref(location, returnToResults)} className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/12 bg-white/[0.025] px-4 text-center text-xs font-black text-white/72 transition hover:border-white/25 hover:bg-white/[0.05] hover:text-white">View {noun}</Link>
           <button type="button" onClick={onUse} className="min-h-12 rounded-full bg-[#e1062a] px-4 text-xs font-black uppercase tracking-[0.07em] text-white transition hover:bg-[#f20b31]">Choose {noun} →</button>
