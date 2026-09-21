@@ -238,7 +238,7 @@ function LabelRow({ queryId, candidate, current, disabled, onSave }: any) {
           <select
             value={grade}
             onChange={(event) => setGrade(Number(event.target.value))}
-            className="rounded-lg border border-white/10 bg-neutral-900 px-3 py-2 text-sm text-white"
+            className="rounded-lg border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-3 py-2 text-sm text-[var(--admin-shell-text)]"
           >
             <option value={0}>0 — Irrelevant</option>
             <option value={1}>1 — Partial</option>
