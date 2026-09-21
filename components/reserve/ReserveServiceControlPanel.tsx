@@ -10,11 +10,12 @@ function clean(value: unknown) {
 export default function ReserveServiceControlPanel({ locationId }: { locationId: string }) {
   const [service, setService] = useState<any>({ settings: {}, sections: [], shifts: [] });
   const [staff, setStaff] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [newSection, setNewSection] = useState("");
-  const [newStaff, setNewStaff] = useState({ displayName: "", role: "server", pin: "" });
+  const [newStaff, setNewStaff] = useState({ displayName: "", role: "server", pin: "", teamMemberId: "" });
   const date = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()), []);
 
   const load = useCallback(async () => {
@@ -22,14 +23,20 @@ export default function ReserveServiceControlPanel({ locationId }: { locationId:
     setLoading(true);
     setNotice("");
     try {
-      const [serviceResponse, staffResponse] = await Promise.all([
+      const [serviceResponse, staffResponse, teamResponse] = await Promise.all([
         fetch(`/api/v1/reserve/service?locationId=${encodeURIComponent(locationId)}&date=${encodeURIComponent(date)}`, { cache: "no-store" }),
         fetch(`/api/v1/reserve/staff?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+        fetch(`/api/reserve/portal/team?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
       ]);
-      const [serviceData, staffData] = await Promise.all([serviceResponse.json(), staffResponse.json()]);
+      const [serviceData, staffData, teamData] = await Promise.all([
+        serviceResponse.json(),
+        staffResponse.json(),
+        teamResponse.json().catch(() => ({})),
+      ]);
       if (!serviceResponse.ok) throw new Error(serviceData.error || "Unable to load service controls.");
       setService({ settings: serviceData.settings || {}, sections: serviceData.sections || [], shifts: serviceData.shifts || [] });
       setStaff(staffData.staff || []);
+      setTeamMembers(teamResponse.ok ? teamData.members || [] : []);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to load service controls.");
     } finally {
@@ -83,10 +90,10 @@ export default function ReserveServiceControlPanel({ locationId }: { locationId:
     if (!newStaff.displayName.trim() || !/^\d{4,6}$/.test(newStaff.pin)) return;
     setBusy("staff"); setNotice("");
     try {
-      const response = await fetch("/api/v1/reserve/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_profile", locationId, displayName: newStaff.displayName.trim(), role: newStaff.role, pin: newStaff.pin }) });
+      const response = await fetch("/api/v1/reserve/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_profile", locationId, displayName: newStaff.displayName.trim(), role: newStaff.role, pin: newStaff.pin, teamMemberId: newStaff.teamMemberId || null }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to create staff profile.");
-      setNewStaff({ displayName: "", role: "server", pin: "" }); await load();
+      setNewStaff({ displayName: "", role: "server", pin: "", teamMemberId: "" }); await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to create staff profile."); }
     finally { setBusy(""); }
   }
@@ -155,7 +162,20 @@ export default function ReserveServiceControlPanel({ locationId }: { locationId:
               return <div key={person.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4"><div className="flex items-center justify-between gap-3"><div><p className="font-black">{person.display_name}</p><p className="text-[10px] font-black uppercase tracking-[0.08em] text-white/35">{String(person.role).replaceAll("_", " ")}</p></div><button type="button" onClick={() => void resetPin(person)} className="rounded-full border border-white/10 px-3 py-2 text-[10px] font-black">Reset PIN</button></div><div className="mt-3 grid grid-cols-2 gap-2"><select value={shift?.status || "unavailable"} onChange={(e) => void saveShift(person, { status: e.target.value })} className="rounded-xl border border-white/10 bg-[#111318] px-3 py-2 text-xs"><option value="active">Active</option><option value="scheduled">Scheduled</option><option value="break">Break</option><option value="cut">Cut</option><option value="clocked_out">Clocked out</option><option value="unavailable">Unavailable</option></select><select value={shift?.section_id || ""} onChange={(e) => void saveShift(person, { sectionId: e.target.value || null })} className="rounded-xl border border-white/10 bg-[#111318] px-3 py-2 text-xs"><option value="">No fixed section</option>{service.sections.map((section: any) => <option key={section.id} value={section.id}>{section.name}</option>)}</select><input type="number" min="0" placeholder="Max tables" defaultValue={shift?.max_tables ?? ""} onBlur={(e) => void saveShift(person, { maxTables: e.target.value ? Number(e.target.value) : null })} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs" /><input type="number" min="0" placeholder="Max covers" defaultValue={shift?.max_covers ?? ""} onBlur={(e) => void saveShift(person, { maxCovers: e.target.value ? Number(e.target.value) : null })} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs" /></div>{busy === `shift:${person.id}` || busy === `pin:${person.id}` ? <p className="mt-2 text-[10px] font-bold text-white/40">Updating…</p> : null}</div>;
             })}
           </div>
-          <div className="mt-5 rounded-xl border border-dashed border-white/12 p-4"><p className="text-xs font-black uppercase tracking-[0.1em] text-white/40">Add service staff</p><div className="mt-3 grid gap-2 sm:grid-cols-[1fr_160px_150px_auto]"><input value={newStaff.displayName} onChange={(e) => setNewStaff((current) => ({ ...current, displayName: e.target.value }))} placeholder="Display name" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm" /><select value={newStaff.role} onChange={(e) => setNewStaff((current) => ({ ...current, role: e.target.value }))} className="rounded-xl border border-white/10 bg-[#111318] px-3 py-2.5 text-sm"><option value="server">Server</option><option value="bartender">Bartender</option><option value="host">Host</option><option value="lead_host">Lead host</option><option value="manager">Manager</option></select><input value={newStaff.pin} onChange={(e) => setNewStaff((current) => ({ ...current, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))} inputMode="numeric" placeholder="4–6 digit PIN" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm" /><button type="button" onClick={() => void createStaff()} disabled={busy === "staff" || !newStaff.displayName.trim() || !/^\d{4,6}$/.test(newStaff.pin)} className="rounded-xl bg-[#e1062a] px-4 py-2.5 text-xs font-black disabled:opacity-40">Add</button></div></div>
+          <div className="mt-5 rounded-xl border border-dashed border-white/12 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.1em] text-white/40">Add service staff</p>
+            <p className="mt-1 text-xs text-white/35">Link to a Business team member only when this person should also inherit their existing Location Dashboard permission.</p>
+            <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_180px_190px_150px_auto]">
+              <input value={newStaff.displayName} onChange={(e) => setNewStaff((current) => ({ ...current, displayName: e.target.value }))} placeholder="Display name" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm" />
+              <select value={newStaff.role} onChange={(e) => setNewStaff((current) => ({ ...current, role: e.target.value }))} className="rounded-xl border border-white/10 bg-[#111318] px-3 py-2.5 text-sm"><option value="server">Server</option><option value="bartender">Bartender</option><option value="host">Host</option><option value="lead_host">Lead host</option><option value="manager">Manager</option></select>
+              <select value={newStaff.teamMemberId} onChange={(e) => setNewStaff((current) => ({ ...current, teamMemberId: e.target.value }))} className="rounded-xl border border-white/10 bg-[#111318] px-3 py-2.5 text-sm">
+                <option value="">Reserve-only staff</option>
+                {teamMembers.filter((member) => ["accepted", "active"].includes(String(member.invitation_status))).map((member) => <option key={member.id} value={member.id}>{member.name || member.email}</option>)}
+              </select>
+              <input value={newStaff.pin} onChange={(e) => setNewStaff((current) => ({ ...current, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))} inputMode="numeric" placeholder="4–6 digit PIN" className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm" />
+              <button type="button" onClick={() => void createStaff()} disabled={busy === "staff" || !newStaff.displayName.trim() || !/^\d{4,6}$/.test(newStaff.pin)} className="rounded-xl bg-[#e1062a] px-4 py-2.5 text-xs font-black disabled:opacity-40">Add</button>
+            </div>
+          </div>
         </section>
       </div>
     </main>
