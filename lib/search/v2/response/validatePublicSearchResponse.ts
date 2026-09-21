@@ -8,6 +8,12 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isMatchReasonArray(value: unknown) {
+  return Array.isArray(value) && value.every((item) =>
+    isRecord(item) && typeof item.type === "string" && typeof item.label === "string" && Boolean(item.label.trim()),
+  );
+}
+
 function validateLocation(value: unknown, path: string, errors: string[]) {
   if (!isRecord(value)) {
     errors.push(`${path} must be an object`);
@@ -15,6 +21,7 @@ function validateLocation(value: unknown, path: string, errors: string[]) {
   }
   if (typeof value.id !== "string" || !value.id.trim()) errors.push(`${path}.id must be a non-empty string`);
   if (value.matchReasons != null && !isStringArray(value.matchReasons)) errors.push(`${path}.matchReasons must be a string array`);
+  if (value.matchReasonDetails != null && !isMatchReasonArray(value.matchReasonDetails)) errors.push(`${path}.matchReasonDetails must be a typed reason array`);
 }
 
 export function validatePublicSearchResponse(response: unknown): asserts response is PublicSearchResponseV2 {
@@ -41,6 +48,7 @@ export function validatePublicSearchResponse(response: unknown): asserts respons
     else {
       validateLocation(pair.restaurant, `pairs[${index}].restaurant`, errors);
       validateLocation(pair.activity, `pairs[${index}].activity`, errors);
+      if (pair.matchReasonDetails != null && !isMatchReasonArray(pair.matchReasonDetails)) errors.push(`pairs[${index}].matchReasonDetails must be a typed reason array`);
     }
   });
 

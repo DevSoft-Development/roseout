@@ -1,7 +1,7 @@
 import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { ResolvedSearchResult } from "../fallback/fallbackTypes";
 import type { SearchTrace } from "../observability/searchTrace";
-import type { PublicLocationCard, PublicSearchOutcome, PublicSearchResponseV2 } from "./responseTypes";
+import type { PublicLocationCard, PublicMatchReason, PublicSearchOutcome, PublicSearchResponseV2 } from "./responseTypes";
 import { resultCounts } from "./resultCounts";
 import { sanitizePublicLocation } from "./sanitizePublicLocation";
 
@@ -29,10 +29,29 @@ function publicReasons(reasons: string[]) {
   return reasons.filter(isCustomerFacingReason);
 }
 
+function classifyMatchReason(label: string): PublicMatchReason["type"] {
+  const value = label.toLowerCase();
+  if (/walk|walking/.test(value)) return "walking";
+  if (/mile|distance|nearby|close/.test(value)) return "distance";
+  if (/open|hours|time/.test(value)) return "hours";
+  if (/available|availability|book/.test(value)) return "availability";
+  if (/\$|budget|price|afford/.test(value)) return "price";
+  if (/cuisine|italian|sushi|seafood|steak|ramen|thai|mexican|indian|korean|caribbean|bbq|burger|brunch/.test(value)) return "cuisine";
+  if (/activity|bowling|karaoke|jazz|comedy|museum|arcade|mini golf|escape room|live music|nightclub|spa/.test(value)) return "activity";
+  if (/date night|birthday|girls|family|occasion|romantic|casual|lively|quiet/.test(value)) return "occasion";
+  if (/manhattan|brooklyn|queens|bronx|staten|long island|city|borough|neighborhood|area/.test(value)) return "location";
+  if (/feature|rooftop|outdoor|cocktail|halal|kosher|vegan|vegetarian/.test(value)) return "feature";
+  return "other";
+}
+
+function structuredReasons(reasons: string[]): PublicMatchReason[] {
+  return reasons.map((label) => ({ type: classifyMatchReason(label), label }));
+}
+
 const card = (item: ResolvedSearchResult["restaurants"][number]): PublicLocationCard => {
   const matchReasons = publicReasons(item.reasons);
   const whyMatched = matchReasons.join("; ");
-  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, whyMatched, why_it_matched: whyMatched });
+  return sanitizePublicLocation({ ...item.candidate.candidate.location, retrieval_geo_level: effectiveRetrievalGeoLevel(item), searchRole: item.selectedRole, searchScore: item.scores.total, matchReasons, matchReasonDetails: structuredReasons(matchReasons), whyMatched, why_it_matched: whyMatched });
 };
 
 function primaryDomain(plan: SearchPlan): PublicSearchResponseV2["primaryDomain"] {
@@ -124,6 +143,7 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
       geoTier: pair.geoTier,
       isFallbackPair: pair.isFallbackPair,
       matchReasons: pairReasons,
+      matchReasonDetails: structuredReasons(pairReasons),
       whyMatched,
       why_it_matched: whyMatched,
     };
