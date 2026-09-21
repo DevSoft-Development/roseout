@@ -5962,3 +5962,26 @@ for (const [label, source] of [
     }
   }
 }
+
+
+const enterpriseKnowledgeBasePages = [
+  ["Knowledge Base", read("apps/admin/app/admin/dashboard/knowledge-base/page.tsx")],
+  ["Knowledge Base New", read("apps/admin/app/admin/dashboard/knowledge-base/new/page.tsx")],
+  ["Knowledge Base AI", read("apps/admin/app/admin/dashboard/knowledge-base/ai/page.tsx")],
+  ["Knowledge Base Templates", read("apps/admin/app/admin/dashboard/knowledge-base/templates/page.tsx")],
+  ["Knowledge Base Categories", read("apps/admin/app/admin/dashboard/knowledge-base/categories/page.tsx")],
+  ["Knowledge Base Article", read("apps/admin/app/admin/dashboard/knowledge-base/[slug]/page.tsx")],
+  ["Knowledge Base Edit", read("apps/admin/app/admin/dashboard/knowledge-base/[slug]/edit/page.tsx")],
+  ["Search Anchor Curated Review", read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx")],
+  ["Search Anchor Verification", read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx")],
+  ["Non-Searchable Locations", read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx")],
+  ["Location Detail", read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx")],
+  ["Reserve Layout Boundary", read("apps/admin/app/admin/dashboard/location-layout/create/page.tsx")],
+];
+for (const [label, source] of enterpriseKnowledgeBasePages) {
+  for (const marker of ["AdminPageShell", "AdminPageHeader"]) {
+    if (!source.includes(marker)) {
+      throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
+    }
+  }
+}
