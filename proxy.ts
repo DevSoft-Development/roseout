@@ -189,4 +189,4 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/:path*"] };
+export const config = { matcher: ["/((?!api/health/platform-dr$).*)"] };
