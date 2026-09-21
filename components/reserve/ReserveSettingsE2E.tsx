@@ -444,14 +444,25 @@ export function ReserveHoursSettings({ locationId }: { locationId: string }) {
 
 export function ReserveTeamSettings({ locationId }: { locationId: string }) {
   const [data, setData] = useState<any>();
+  const [devices, setDevices] = useState<any[]>([]);
   const [form, setForm] = useState<any>({ role: "view_only", permissions: {} });
   const [notice, setNotice] = useState("");
 
-  const load = () =>
-    locationId &&
-    fetch(`/api/reserve/portal/team?locationId=${encodeURIComponent(locationId)}`)
-      .then((response) => response.json())
-      .then(setData);
+  const load = async () => {
+    if (!locationId) return;
+    const [teamResponse, devicesResponse] = await Promise.all([
+      fetch(`/api/reserve/portal/team?locationId=${encodeURIComponent(locationId)}`),
+      fetch(`/api/reserve/devices?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+    ]);
+    const teamData = await teamResponse.json();
+    setData(teamData);
+    if (devicesResponse.ok) {
+      const deviceData = await devicesResponse.json();
+      setDevices(deviceData.devices || []);
+    } else {
+      setDevices([]);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -473,6 +484,22 @@ export function ReserveTeamSettings({ locationId }: { locationId: string }) {
     }
     setNotice("Invitation sent.");
     setForm({ role: "view_only", permissions: {} });
+    await load();
+  }
+
+  async function revokeDevice(deviceId: string) {
+    setNotice("");
+    const response = await fetch("/api/reserve/devices", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locationId, deviceId }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setNotice(payload.error || "We could not revoke this device.");
+      return;
+    }
+    setNotice("Reserve device revoked.");
     await load();
   }
 
@@ -608,6 +635,67 @@ export function ReserveTeamSettings({ locationId }: { locationId: string }) {
               You can view team access, but your role cannot change it.
             </p>
           ) : null}
+        </Card>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <Card>
+          <h4 className="font-black">Reserve staff sign in</h4>
+          <p className="mt-1 text-sm leading-6 reserve-muted">
+            Authorize each front-desk device once, then hosts and managers sign in with their individual 4–6 digit PIN.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a
+              href={`https://reserve.theouthaven.com/staff?locationId=${encodeURIComponent(locationId)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="reserve-primary rounded-full px-4 py-2.5 text-sm font-black"
+            >
+              Open staff sign in
+            </a>
+            <Link
+              href={`/locations/dashboard/reservations/service?locationId=${encodeURIComponent(locationId)}`}
+              className="reserve-soft rounded-full px-4 py-2.5 text-sm font-black"
+            >
+              Manage staff PINs & shifts
+            </Link>
+          </div>
+          <p className="mt-3 text-xs leading-5 reserve-muted">
+            Staff-only Reserve access does not grant access to the Location Dashboard. That link appears only for people who also have Location Dashboard permission.
+          </p>
+        </Card>
+
+        <Card>
+          <h4 className="font-black">Authorized Reserve devices</h4>
+          <p className="mt-1 text-sm leading-6 reserve-muted">
+            Revoke a device immediately if an iPad is reassigned, lost, or should no longer access this location.
+          </p>
+          {devices.length ? (
+            <div className="mt-3 space-y-2">
+              {devices.map((device: any) => (
+                <div key={device.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black">{device.label || "Reserve device"}</p>
+                    <p className="mt-1 text-xs reserve-muted">
+                      {device.status === "active" ? "Authorized" : "Revoked"}
+                      {device.last_seen_at ? ` · Last used ${new Date(device.last_seen_at).toLocaleDateString()}` : ""}
+                    </p>
+                  </div>
+                  {device.status === "active" ? (
+                    <button
+                      type="button"
+                      onClick={() => void revokeDevice(device.id)}
+                      className="shrink-0 rounded-full border border-[#e1062a]/30 px-3 py-2 text-xs font-black text-[#ff8aa0]"
+                    >
+                      Revoke
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm reserve-muted">No Reserve devices have been authorized yet.</p>
+          )}
         </Card>
       </div>
     </div>
