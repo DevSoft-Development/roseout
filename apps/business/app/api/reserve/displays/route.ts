@@ -47,6 +47,13 @@ export async function POST(request: NextRequest) {
     showReservationTime: body.showReservationTime !== false,
     showWaitlistPosition: body.showWaitlistPosition !== false,
     readyHoldMinutes: Number(body.readyHoldMinutes || 10),
+    promoEnabled: Boolean(body.promoEnabled),
+    promoMediaType: body.promoMediaType === "video" ? "video" : "image",
+    promoMediaUrl: clean(body.promoMediaUrl) || null,
+    promoHeadline: clean(body.promoHeadline) || null,
+    promoBody: clean(body.promoBody) || null,
+    promoLinkLabel: clean(body.promoLinkLabel) || null,
+    promoLinkUrl: clean(body.promoLinkUrl) || null,
   });
   return NextResponse.json({
     success: true,
