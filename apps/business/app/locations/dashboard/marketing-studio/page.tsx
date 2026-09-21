@@ -1,4 +1,3 @@
-import Link from "next/link";
 import LocationInstagramPublisher from "@/components/marketing/LocationInstagramPublisher";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
