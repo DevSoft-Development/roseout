@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyTurnstileToken } from "@/lib/security/turnstile";
-import { getZipMarketMapping } from "@/lib/zip-market-mapping";
+import { normalizeZip } from "@/lib/geo/geo-area";
 import { createAuthEmailToken } from "@/lib/auth/authEmailTokens";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
@@ -20,11 +20,12 @@ export async function POST(req: NextRequest) {
     const b = await req.json().catch(() => ({}));
     const email = String(b.email || "").trim().toLowerCase();
     const password = String(b.password || "");
-    const fullName = String(b.full_name || b.fullName || "").trim();
-    const zip = String(b.zip_code || b.zipCode || "").trim();
+    const firstName = String(b.first_name || b.firstName || b.full_name || b.fullName || "").trim().split(/\s+/)[0] || "";
+    const birthMonth = Number(b.birth_month || b.birthMonth);
+    const zip = normalizeZip(b.zip_code || b.zipCode);
     const phone = String(b.mobile_number || b.phone || "").trim();
-    const marketingSmsOptIn = Boolean(phone && b.marketing_sms_opt_in === true);
-    const marketingSmsOptInAt = marketingSmsOptIn ? new Date().toISOString() : null;
+    const smsConsent = Boolean(phone && (b.sms_consent === true || b.marketing_sms_opt_in === true));
+    const smsConsentAt = smsConsent ? new Date().toISOString() : null;
     const intendedPath = sanitizeIntendedPath(
       typeof b.next === "string" ? b.next : null,
     );
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
         }
       : null;
 
-    if (!email || !password || !fullName || !zip) {
+    if (!email || !password || !firstName || !zip || !Number.isInteger(birthMonth) || birthMonth < 1 || birthMonth > 12) {
       return NextResponse.json(
         { success: false, error: "Please complete the required account fields." },
         { status: 400 },
@@ -70,14 +71,6 @@ export async function POST(req: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, error: "Please complete the business location details." },
-        { status: 400 },
-      );
-    }
-
-    const derived = getZipMarketMapping(zip);
-    if (!derived) {
-      return NextResponse.json(
-        { success: false, error: "Please enter a valid 5-digit ZIP code." },
         { status: 400 },
       );
     }
@@ -117,7 +110,11 @@ export async function POST(req: NextRequest) {
         email_confirm: false,
         user_metadata: {
           role: "user",
-          full_name: fullName,
+          first_name: firstName,
+          birth_month: birthMonth,
+          home_zip_code: zip,
+          phone_e164: phone || null,
+          sms_consent: smsConsent,
           account_type: accountType,
           business_claim_signup: isBusinessClaimSignup,
           pending_business_claim: pendingBusinessClaim,
@@ -136,7 +133,11 @@ export async function POST(req: NextRequest) {
         user_metadata: {
           ...(user.user_metadata || {}),
           role: user.user_metadata?.role || "user",
-          full_name: fullName,
+          first_name: firstName,
+          birth_month: birthMonth,
+          home_zip_code: zip,
+          phone_e164: phone || null,
+          sms_consent: smsConsent,
           account_type: accountType,
           business_claim_signup:
             Boolean(user.user_metadata?.business_claim_signup) || isBusinessClaimSignup,
@@ -147,32 +148,26 @@ export async function POST(req: NextRequest) {
     }
 
     const userId = user.id;
-    const { error: profileError } = await supabaseAdmin.from("user_profiles").upsert(
+    const { error: profileError } = await supabaseAdmin.from("consumer_profiles").upsert(
       {
         user_id: userId,
-        full_name: fullName,
-        preferred_name: fullName.split(" ")[0] || fullName,
-        mobile_number: phone || null,
-        zip_code: zip,
-        derived_city: derived.city,
-        derived_state: derived.state,
-        derived_market_area: derived.marketArea,
-        transactional_sms_enabled: Boolean(phone),
-        marketing_sms_opt_in: marketingSmsOptIn,
-        marketing_sms_opt_in_at: marketingSmsOptInAt,
-        // Keep legacy fields synchronized to explicit marketing consent only so old
-        // recipient queries cannot turn a phone number into implied promotional consent.
-        sms_opt_in: marketingSmsOptIn,
-        sms_opt_in_at: marketingSmsOptInAt,
-        plan: "registered",
-        weekly_search_limit: 3,
-        preferences: {},
-        email_verified: false,
+        first_name: firstName,
+        phone_e164: phone || null,
+        birth_month: birthMonth,
+        home_zip_code: zip,
+        sms_consent: smsConsent,
+        sms_consent_at: smsConsentAt,
+        sms_consent_source: smsConsent ? "web_account_signup" : null,
+        sms_consent_text: smsConsent
+          ? "I agree to receive SMS messages from TheOutHaven about my account, saved plans, OUTing reminders, reservations, and optional offers."
+          : null,
+        personalization_enabled: true,
+        updated_at: new Date().toISOString(),
       } as any,
       { onConflict: "user_id" },
     );
     if (profileError) {
-      console.error("signup profile failed", profileError);
+      console.error("signup consumer profile failed", profileError);
       throw profileError;
     }
 
@@ -180,8 +175,6 @@ export async function POST(req: NextRequest) {
       {
         id: userId,
         email,
-        full_name: fullName,
-        phone: phone || null,
         role: "user",
       } as any,
       { onConflict: "id" },
@@ -208,7 +201,7 @@ export async function POST(req: NextRequest) {
       : `/auth/verify-email?token=${encodeURIComponent(token)}`;
     const url = buildSiteUrl(verifyPath);
     const claimReturnUrl = isBusinessClaimSignup && intendedPath ? buildSiteUrl(intendedPath) : null;
-    const firstName = fullName.split(/\s+/)[0] || "there";
+    const greetingName = firstName || "there";
 
     await sendRawBrandedEmail({
       to: email,
@@ -221,8 +214,8 @@ export async function POST(req: NextRequest) {
         ? "Your claim code is saved. Verify your email, then return to your location claim."
         : "Verify your email to finish creating your TheOutHaven account.",
       body: isBusinessClaimSignup
-        ? `Hi ${firstName},\n\nPlease verify your email to finish creating your TheOutHaven owner account. Your location claim link is saved, so you do not need to rescan the QR code.\n\nAfter verification, sign in and you will return to your claim page automatically.${claimReturnUrl ? `\n\nClaim page: ${claimReturnUrl}` : ""}\n\nThis verification link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`
-        : `Hi ${firstName},\n\nPlease verify your email to finish creating your TheOutHaven account. This link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`,
+        ? `Hi ${greetingName},\n\nPlease verify your email to finish creating your TheOutHaven owner account. Your location claim link is saved, so you do not need to rescan the QR code.\n\nAfter verification, sign in and you will return to your claim page automatically.${claimReturnUrl ? `\n\nClaim page: ${claimReturnUrl}` : ""}\n\nThis verification link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`
+        : `Hi ${greetingName},\n\nPlease verify your email to finish creating your TheOutHaven account. This link expires ${new Date(expiresAt).toLocaleString()}.\n\nIf you did not create a TheOutHaven account, you can ignore this email.`,
       cta: { label: isBusinessClaimSignup ? "Verify email and continue claim" : "Verify Email", url },
     });
 
