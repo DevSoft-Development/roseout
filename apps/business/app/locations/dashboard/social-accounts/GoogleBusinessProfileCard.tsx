@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { CheckCircle2, ExternalLink, MapPin, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 
 type Candidate = {
@@ -213,6 +214,6 @@ function SourceValue({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0 rounded-xl border border-[var(--business-border)] bg-black/10 p-3"><p className="text-[10px] font-black uppercase tracking-[0.14em] text-[var(--business-muted)]">{label}</p><p className="mt-1 break-words text-xs font-bold text-[var(--business-text)]">{value}</p></div>;
 }
 
-function Info({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+function Info({ icon, title, body }: { icon: ReactNode; title: string; body: string }) {
   return <div className="rounded-2xl border border-[var(--business-border)] bg-[var(--business-panel)] p-4"><div className="flex items-center gap-2 text-[var(--business-text)]">{icon}<p className="text-sm font-black">{title}</p></div><p className="mt-2 text-xs font-semibold leading-5 text-[var(--business-muted)]">{body}</p></div>;
 }
