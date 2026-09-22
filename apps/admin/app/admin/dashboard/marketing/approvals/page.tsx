@@ -11,6 +11,7 @@ import {
   AdminPageShell,
   AdminStatusBadge,
 } from "../../../../../components/admin/AdminDesignSystem";
+import BusinessSmsApprovalQueue from "./BusinessSmsApprovalQueue";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,8 @@ export default async function MarketingApprovalsPage() {
         <AdminKpiCard label="Changes requested" value={count("changes_requested")} helper="Returned for revision" />
         <AdminKpiCard label="Rejected" value={count("rejected")} helper="Not approved" />
       </AdminKpiGrid>
+
+      <BusinessSmsApprovalQueue />
 
       <AdminDataTableShell>
         <div className="border-b border-white/10 px-5 py-4">
