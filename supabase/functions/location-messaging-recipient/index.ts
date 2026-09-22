@@ -98,17 +98,28 @@ async function finalizeCampaign(campaignId: string, locationId: string) {
   if (campaign?.channel === "sms" && sent > 0) {
     const start = new Date(); start.setUTCDate(1);
     const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
+    const periodStart = start.toISOString().slice(0, 10);
+    const periodEnd = end.toISOString().slice(0, 10);
+    const { data: priorLedger } = await db
+      .from("location_sms_credit_ledger")
+      .select("credits_remaining")
+      .eq("location_id", locationId)
+      .eq("billing_period_start", periodStart)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const previousRemaining = Math.max(0, Number(priorLedger?.credits_remaining || 0));
     await db.from("location_sms_credit_ledger").insert({
       location_id: locationId,
-      billing_period_start: start.toISOString().slice(0, 10),
-      billing_period_end: end.toISOString().slice(0, 10),
+      billing_period_start: periodStart,
+      billing_period_end: periodEnd,
       credit_type: "campaign_usage",
       credits_added: 0,
       credits_used: sent,
-      credits_remaining: 0,
+      credits_remaining: Math.max(0, previousRemaining - sent),
       source: "location_messaging_delivery",
       campaign_id: campaignId,
-      metadata: { settled_from_recipient_jobs: true },
+      metadata: { settled_from_recipient_jobs: true, previous_remaining: previousRemaining },
     });
   }
 }
