@@ -29,21 +29,29 @@ async function auth(req:NextRequest){
 
 async function run(body:Record<string, unknown> = {}) {
   const steps:any[]=[];
-  for (const [name,fn] of [
-    ['review_intelligence',recalculateReviewIntelligence],
-    ['business_quality',recalculateBusinessQuality],
-    ['photo_quality',recalculatePhotoQuality],
-    ['booking_likelihood',recalculateBookingLikelihood],
-    ['result_quality',(o:any)=>recalculatePlaceholder('result_quality',o)],
-    ['market_specific',recalculateMarketSpecific],
-    ['time_of_day',(o:any)=>recalculatePlaceholder('time_of_day',o)],
-    ['pair_compatibility',recalculatePairCompatibility],
-    ['personalization',(o:any)=>recalculatePlaceholder('personalization',o)],
-    ['duplicate_detection',(o:any)=>recalculatePlaceholder('duplicate_detection',o)],
-    ['owner_lead_scoring',recalculateOwnerLeads],
-  ] as any[]) {
-    steps.push({name, result: await fn(body)});
-  }
+  const runGroup = async (group: Array<[string, (options:any)=>Promise<any>]>) => {
+    const results = await Promise.all(group.map(async ([name, fn]) => ({ name, result: await fn(body) })));
+    steps.push(...results);
+  };
+
+  // These feature families read the location inventory independently. Running
+  // them concurrently avoids exceeding the isolated Admin gateway timeout.
+  await runGroup([
+    ['review_intelligence', recalculateReviewIntelligence],
+    ['business_quality', recalculateBusinessQuality],
+    ['photo_quality', recalculatePhotoQuality],
+    ['booking_likelihood', recalculateBookingLikelihood],
+    ['result_quality', (o:any)=>recalculatePlaceholder('result_quality',o)],
+    ['time_of_day', (o:any)=>recalculatePlaceholder('time_of_day',o)],
+    ['personalization', (o:any)=>recalculatePlaceholder('personalization',o)],
+    ['duplicate_detection', (o:any)=>recalculatePlaceholder('duplicate_detection',o)],
+    ['owner_lead_scoring', recalculateOwnerLeads],
+  ]);
+  // Pair compatibility consumes the market/review feature tables, so retain
+  // the dependency order for those two stages.
+  await runGroup([['market_specific', recalculateMarketSpecific]]);
+  await runGroup([['pair_compatibility', recalculatePairCompatibility]]);
+
   return NextResponse.json({success:steps.every(step=>step.result?.ok!==false),steps});
 }
 
