@@ -91,16 +91,17 @@ export default function AdminLoginPage() {
   return (
     <main
       data-surface="admin"
-      className="relative min-h-screen overflow-hidden bg-[#050505] px-5 py-8 text-white sm:px-8 lg:px-12"
+      className="relative min-h-screen overflow-hidden bg-[#050505] px-4 py-8 text-white sm:px-6 lg:px-8"
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.18),transparent_30%),radial-gradient(circle_at_85%_80%,rgba(225,6,42,0.08),transparent_28%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.9)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.9)_1px,transparent_1px)] [background-size:44px_44px]" />
 
       <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
         <section className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a]/95 shadow-[0_30px_100px_rgba(0,0,0,.65)] backdrop-blur-xl lg:grid-cols-[1.05fr_.95fr]">
-          <div className="relative flex flex-col justify-between border-b border-white/10 p-7 sm:p-10 lg:min-h-[690px] lg:border-b-0 lg:border-r">
-            <div>
-              <div className="mb-12 flex items-center gap-4">
+          <div className="relative hidden min-h-[690px] flex-col justify-between overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(145deg,#120b0d,#080708)] p-10 lg:flex xl:p-14">
+            <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#e1062a]/10 blur-3xl" />
+            <div className="relative">
+              <div className="mb-8 flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 shadow-[0_0_45px_rgba(225,6,42,.16)]">
                   {/* The isolated Admin app does not ship the consumer public asset bundle. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -121,11 +122,11 @@ export default function AdminLoginPage() {
               </div>
 
               <div className="max-w-xl">
-                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
                   <ShieldCheck className="h-4 w-4" />
                   Secure staff access
                 </div>
-                <h1 className="text-4xl font-black leading-[1.05] tracking-[-0.035em] sm:text-5xl">
+                <h1 className="text-5xl font-black leading-[1.05] tracking-[-0.035em]">
                   The command center behind
                   <span className="block text-[#ff3658]">TheOutHaven.</span>
                 </h1>
@@ -137,15 +138,55 @@ export default function AdminLoginPage() {
               </div>
             </div>
 
+            <div className="mt-12 grid gap-3 xl:grid-cols-3">
+              {[
+                ["Secure", "Microsoft 365 staff identity"],
+                ["Operate", "Platform and location controls"],
+                ["Monitor", "Audit and security activity"],
+              ].map(([title, body]) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-sm font-black">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-white/50">{body}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center p-7 sm:p-10 lg:p-12">
-            <div className="w-full">
+          <div className="flex items-center p-6 sm:p-10 xl:p-14">
+            <div className="mx-auto w-full max-w-md">
+              <div className="mb-8 lg:hidden">
+                <div className="mb-5 flex items-center justify-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/api/brand/theouthaven-logo"
+                      alt="TheOutHaven"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                    />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-base font-black tracking-tight">TheOutHaven</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
+                      Administration
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-center">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
+                    <ShieldCheck className="h-4 w-4" />
+                    Secure staff access
+                  </span>
+                </div>
+              </div>
+
               <div className="mb-8">
                 <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05]">
                   <LockKeyhole className="h-5 w-5 text-[#ff526e]" />
                 </div>
-                <h2 className="text-2xl font-black tracking-tight">Administrator sign in</h2>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff3658]">Admin sign in</p>
+                <h2 className="mt-2 text-3xl font-black tracking-tight">Welcome back</h2>
                 <p className="mt-2 text-sm leading-6 text-white/50">
                   Continue with your authorized Microsoft 365 identity.
                 </p>
@@ -220,6 +261,18 @@ export default function AdminLoginPage() {
                     label="Device"
                     value={securityContext.platform}
                   />
+                </div>
+              </div>
+
+              <div className="mt-7 border-t border-white/10 pt-6 text-center">
+                <p className="text-sm text-white/50">Need a different TheOutHaven portal?</p>
+                <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-semibold">
+                  <a href="https://business.theouthaven.com/business/login" className="text-white/55 transition hover:text-white">
+                    Business login
+                  </a>
+                  <a href="https://theouthaven.com/login" className="text-white/55 transition hover:text-white">
+                    Consumer sign in
+                  </a>
                 </div>
               </div>
 

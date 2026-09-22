@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
 
 const inputClass =
@@ -56,10 +57,13 @@ export default function BusinessLoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#090706] px-4 py-10 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center">
-        <section className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#100b09] shadow-2xl shadow-black/50 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="relative hidden overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.28),transparent_34%),linear-gradient(145deg,#1a100d,#0b0807)] p-10 lg:block xl:p-14">
+    <main className="relative min-h-screen overflow-hidden bg-[#050505] px-4 py-8 text-white sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.18),transparent_30%),radial-gradient(circle_at_85%_80%,rgba(225,6,42,0.08),transparent_28%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.9)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.9)_1px,transparent_1px)] [background-size:44px_44px]" />
+
+      <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
+        <section className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a]/95 shadow-[0_30px_100px_rgba(0,0,0,.65)] backdrop-blur-xl lg:grid-cols-[1.05fr_.95fr]">
+          <div className="relative hidden min-h-[690px] overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(145deg,#120b0d,#080708)] p-10 lg:block xl:p-14">
             <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#e1062a]/10 blur-3xl" />
             <div className="relative flex h-full flex-col justify-between">
               <div>
@@ -80,13 +84,14 @@ export default function BusinessLoginPage() {
                     <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
                   </div>
                 </div>
-                <p className="inline-flex rounded-full border border-[#e1062a]/40 bg-[#e1062a]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-red-100">
-                  TheOutHaven Business
+                <p className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
+                  <ShieldCheck className="h-4 w-4" />
+                  Secure business access
                 </p>
-                <h1 className="mt-8 max-w-xl text-5xl font-semibold leading-[1.05]">
+                <h1 className="mt-5 max-w-xl text-5xl font-black leading-[1.05] tracking-[-0.035em]">
                   Run your business from one place.
                 </h1>
-                <p className="mt-5 max-w-lg text-base leading-7 text-white/65">
+                <p className="mt-5 max-w-lg text-base font-medium leading-7 text-white/55">
                   Manage your location, reservations, events, experiences, customer activity, and business tools from your TheOutHaven dashboard.
                 </p>
               </div>
@@ -98,7 +103,7 @@ export default function BusinessLoginPage() {
                   ["Operate", "Reservations and experiences"],
                 ].map(([title, body]) => (
                   <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-                    <p className="text-sm font-bold">{title}</p>
+                    <p className="text-sm font-black">{title}</p>
                     <p className="mt-1 text-xs leading-5 text-white/50">{body}</p>
                   </div>
                 ))}
@@ -106,9 +111,9 @@ export default function BusinessLoginPage() {
             </div>
           </div>
 
-          <div className="p-6 sm:p-10 xl:p-14">
-            <div className="mx-auto max-w-md">
-              <div className="lg:hidden">
+          <div className="flex items-center p-6 sm:p-10 xl:p-14">
+            <div className="mx-auto w-full max-w-md">
+              <div className="mb-8 lg:hidden">
                 <div className="mb-5 flex items-center justify-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -125,18 +130,26 @@ export default function BusinessLoginPage() {
                     <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
                   </div>
                 </div>
-                <p className="inline-flex rounded-full border border-[#e1062a]/40 bg-[#e1062a]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-red-100">
-                  TheOutHaven Business
-                </p>
+                <div className="flex justify-center">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
+                    <ShieldCheck className="h-4 w-4" />
+                    Secure business access
+                  </span>
+                </div>
               </div>
 
-              <p className="mt-6 text-xs font-bold uppercase tracking-[0.22em] text-[#e1062a] lg:mt-0">
-                Business sign in
-              </p>
-              <h2 className="mt-2 text-3xl font-semibold">Welcome back</h2>
-              <p className="mt-3 text-sm leading-6 text-white/55">
-                Sign in with the account connected to your business or location.
-              </p>
+              <div className="mb-8">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05]">
+                  <LockKeyhole className="h-5 w-5 text-[#ff526e]" />
+                </div>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff3658]">
+                  Business sign in
+                </p>
+                <h2 className="mt-2 text-3xl font-black tracking-tight">Welcome back</h2>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  Sign in with the account connected to your business or location.
+                </p>
+              </div>
 
               {error && (
                 <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-100" role="alert">
@@ -192,9 +205,10 @@ export default function BusinessLoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex min-h-[54px] w-full items-center justify-center rounded-full bg-[#e1062a] px-6 text-sm font-bold text-white shadow-xl shadow-red-950/30 transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
+                  className="group inline-flex min-h-14 w-full items-center justify-between rounded-2xl bg-[#e1062a] px-5 text-sm font-black text-white shadow-[0_12px_35px_rgba(225,6,42,.18)] transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                 >
-                  {loading ? "Signing in…" : "Sign in to Business"}
+                  <span>{loading ? "Signing in…" : "Sign in to Business"}</span>
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </button>
               </form>
 
@@ -202,7 +216,7 @@ export default function BusinessLoginPage() {
                 <p className="text-sm text-white/50">Not on TheOutHaven Business yet?</p>
                 <a
                   href="https://theouthaven.com/business#plans"
-                  className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-full border border-white/15 px-5 text-sm font-bold text-white transition hover:border-[#e1062a]/60 hover:bg-[#e1062a]/10"
+                  className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-white/15 px-5 text-sm font-black text-white transition hover:border-[#e1062a]/60 hover:bg-[#e1062a]/10"
                 >
                   Get started with Business
                 </a>
