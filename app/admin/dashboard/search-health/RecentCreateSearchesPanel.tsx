@@ -125,6 +125,36 @@ function inventoryGapConfirmed(row: SearchEvent) {
   );
 }
 
+function explanationItems(row: SearchEvent) {
+  const metadata = (row as any).metadata ?? {};
+  const debug = (row as any).debug ?? {};
+  const normalizedIntent = metadata.normalizedIntent ?? debug.normalizedIntent ?? {};
+  const geo = normalizedIntent.geo ?? metadata.geo ?? debug.effectiveGeo ?? debug.geo ?? {};
+  const restaurantTerms = Array.from(new Set([
+    ...(Array.isArray(normalizedIntent.restaurantTerms) ? normalizedIntent.restaurantTerms : []),
+    ...(Array.isArray(debug.restaurantTerms) ? debug.restaurantTerms : []),
+  ].map((value) => String(value || "").trim()).filter(Boolean))).slice(0, 4);
+  const activityTerms = Array.from(new Set([
+    ...(Array.isArray(normalizedIntent.activityTerms) ? normalizedIntent.activityTerms : []),
+    ...(Array.isArray(normalizedIntent.activityFeatures) ? normalizedIntent.activityFeatures : []),
+    ...(Array.isArray(debug.activityTerms) ? debug.activityTerms : []),
+  ].map((value) => String(value || "").trim()).filter(Boolean))).slice(0, 4);
+
+  const items: Array<{ label: string; value: string }> = [];
+  const type = normalizedIntent.searchType ?? (row as any).search_type ?? (row as any).primary_domain;
+  if (type) items.push({ label: "Interpreted as", value: String(type).replace(/_/g, " ") });
+  if (restaurantTerms.length) items.push({ label: "Restaurant intent", value: restaurantTerms.join(", ") });
+  if (activityTerms.length) items.push({ label: "Activity intent", value: activityTerms.join(", ") });
+  const place = [geo.neighborhood, geo.borough, geo.city, geo.state].filter(Boolean).map(String).join(", ");
+  if (place) items.push({ label: "Geography", value: place });
+  if ((row as any).pair_count != null) items.push({ label: "Pairs returned", value: String((row as any).pair_count) });
+  const fallback = (row as any).fallback_used ?? metadata.fallbackUsed ?? debug.fallbackUsed;
+  if (fallback === true) items.push({ label: "Fallback", value: "Used" });
+  const pairFailure = (row as any).no_pairs_reason ?? debug.requiredPairingFailureReason ?? debug.pairingDiagnostics?.primaryFailure;
+  if (pairFailure) items.push({ label: "Pairing note", value: String(pairFailure).replace(/_/g, " ") });
+  return items.slice(0, 7);
+}
+
 function displaySearchQuery(row: SearchEvent) {
   const metadata = (row as any).metadata ?? {};
   const explicitUserQuery =
@@ -321,6 +351,7 @@ export default function RecentCreateSearchesPanel({
                   });
                   const healthy = storedStatus.healthy && liveStatus.healthy;
                   const failed = storedStatus.failed;
+                  const explanation = explanationItems(row);
                   const issueLabel =
                     linkedIssue?.event_label ||
                     linkedIssue?.event_type ||
@@ -346,6 +377,20 @@ export default function RecentCreateSearchesPanel({
                         <p className="mt-1 truncate text-xs text-white/35">
                           {row.source || "Unknown source"}
                         </p>
+                        {explanation.length ? (
+                          <details className="mt-3 rounded-lg border border-white/8 bg-white/[0.025] p-2.5">
+                            <summary className="cursor-pointer text-[10px] font-black uppercase tracking-[0.12em] text-rose-200">
+                              Why did this result appear?
+                            </summary>
+                            <div className="mt-2 space-y-1.5">
+                              {explanation.map((item) => (
+                                <p className="text-[11px] leading-4 text-white/45" key={`${item.label}-${item.value}`}>
+                                  <span className="font-black text-white/65">{item.label}:</span> {item.value}
+                                </p>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </td>
                       <td className="px-4 py-4">
                         <Badge tone="border-sky-400/20 bg-sky-500/10 text-sky-200">
