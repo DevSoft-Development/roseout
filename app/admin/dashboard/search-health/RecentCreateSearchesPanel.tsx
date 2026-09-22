@@ -129,7 +129,17 @@ function explanationItems(row: SearchEvent) {
   const metadata = (row as any).metadata ?? {};
   const debug = (row as any).debug ?? {};
   const normalizedIntent = metadata.normalizedIntent ?? debug.normalizedIntent ?? {};
-  const geo = normalizedIntent.geo ?? metadata.geo ?? debug.effectiveGeo ?? debug.geo ?? {};
+  const geo =
+    normalizedIntent.geo ??
+    metadata.geo ??
+    debug.effectiveGeo ??
+    debug.geo ??
+    {
+      neighborhood: (row as any).neighborhood ?? null,
+      borough: (row as any).borough ?? null,
+      city: (row as any).city ?? null,
+      state: (row as any).state ?? null,
+    };
   const restaurantIntent = normalizedIntent.restaurantIntent ?? {};
   const activityIntent = normalizedIntent.activityIntent ?? {};
   const restaurantTerms = Array.from(new Set([
