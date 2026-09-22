@@ -18,7 +18,7 @@ import {
 import { geoTierRank } from "../geo/geoPolicy";
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
-const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
+const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features,location.special_features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 const categoryIdentityText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.primary_category,location.cuisine,location.cuisine_type,location.restaurant_categories,location.cuisines,location.categories].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 
 function normalizedDish(value: unknown) {
@@ -92,9 +92,9 @@ function scoredCandidateEvidence(item: ScoredCandidate) {
   const location = item.candidate.candidate.location as Record<string, unknown>;
   const text = searchableText(location);
   const canonicalTerms = new Set(
-    item.candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
-      ? item.candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
-      : [],
+    item.candidate.candidate.matchedRetrievalTerms
+      .map((term) => normalizedDish(term))
+      .filter(Boolean),
   );
   return { text, canonicalTerms };
 }
@@ -102,7 +102,15 @@ function scoredCandidateEvidence(item: ScoredCandidate) {
 function scoredCandidateMatchesFeatures(item: ScoredCandidate, features: readonly string[]) {
   if (!features.length) return true;
   const { text, canonicalTerms } = scoredCandidateEvidence(item);
-  return features.every((feature) => matchesCanonicalOrRaw(feature.toLowerCase(), text, canonicalTerms));
+  const normalizedText = normalizedDish(text);
+  return features.every((feature) => {
+    const normalizedFeature = normalizedDish(feature);
+    const aliases = [...new Set([
+      normalizedFeature,
+      ...runtimeRetrievalTerms(feature).map((term) => normalizedDish(term)),
+    ].filter(Boolean))];
+    return aliases.some((alias) => matchesCanonicalOrRaw(alias, normalizedText, canonicalTerms));
+  });
 }
 
 function scoredActivityMatchesRequestedCategories(item: ScoredCandidate, categories: readonly string[]) {
