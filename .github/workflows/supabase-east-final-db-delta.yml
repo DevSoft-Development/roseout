@@ -1,0 +1,214 @@
+name: Supabase East final database delta
+
+on:
+  push:
+    branches:
+      - migration/east-final-db-delta
+    paths:
+      - '.github/workflows/supabase-east-final-db-delta.yml'
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  SOURCE_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  EAST_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  delta:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Resolve Supabase service-role keys without logging them
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            FILE="$RUNNER_TEMP/${side}-api-keys.json"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$FILE"
+            KEY="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$FILE")"
+            test -n "$KEY" || { echo "Unable to resolve ${side} service-role key" >&2; exit 1; }
+            echo "::add-mask::$KEY"
+            printf '%s' "$KEY" > "$RUNNER_TEMP/${side}-service-role"
+            chmod 600 "$RUNNER_TEMP/${side}-service-role"
+            rm -f "$FILE"
+          done
+          echo "service_role_keys_resolved=true"
+
+      - name: Confirm source writers are frozen and Virginia workers remain inactive
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+            jq -e 'type == "array"' "$out" >/dev/null
+          }
+          query "$SOURCE_SUPABASE_REF" "select count(*) filter (where active) as active_jobs, count(*) filter (where not active) as paused_jobs from cron.job" "$RUNNER_TEMP/source-cron.json"
+          query "$EAST_SUPABASE_REF" "select count(*) as cron_jobs from cron.job" "$RUNNER_TEMP/east-cron.json"
+          test "$(jq -r '.[0].active_jobs' "$RUNNER_TEMP/source-cron.json")" = "0" || { echo "Oregon cron is not frozen" >&2; exit 1; }
+          test "$(jq -r '.[0].paused_jobs' "$RUNNER_TEMP/source-cron.json")" = "25" || { echo "Unexpected Oregon paused cron count" >&2; exit 1; }
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/east-cron.json")" = "0" || { echo "Virginia cron must remain empty during delta" >&2; exit 1; }
+          echo "source_cron_frozen=true"
+          echo "virginia_cron_inactive=true"
+
+      - name: Copy post-snapshot persistent rows to Virginia
+        run: |
+          set -euo pipefail
+          SOURCE_KEY="$(cat "$RUNNER_TEMP/source-service-role")"
+          EAST_KEY="$(cat "$RUNNER_TEMP/east-service-role")"
+          echo "::add-mask::$SOURCE_KEY"
+          echo "::add-mask::$EAST_KEY"
+
+          copy_delta() {
+            local table="$1" column="$2" cutoff="$3"
+            local rows="$RUNNER_TEMP/${table}.json"
+            local response="$RUNNER_TEMP/${table}-response.json"
+            curl --fail --silent --show-error --get \
+              --header "apikey: $SOURCE_KEY" \
+              --header "Authorization: Bearer $SOURCE_KEY" \
+              --data-urlencode 'select=*' \
+              --data-urlencode "${column}=gt.${cutoff}" \
+              "$SOURCE_SUPABASE_URL/rest/v1/${table}" > "$rows"
+            jq -e 'type == "array"' "$rows" >/dev/null
+
+            # search_tsv is GENERATED ALWAYS on location_search_profiles. It is safe
+            # to read from Oregon but PostgreSQL must regenerate it on Virginia.
+            if [ "$table" = "location_search_profiles" ]; then
+              jq 'map(del(.search_tsv))' "$rows" > "$rows.tmp"
+              mv "$rows.tmp" "$rows"
+            fi
+
+            local count
+            count="$(jq 'length' "$rows")"
+            echo "delta_${table}=$count"
+            if [ "$count" -gt 0 ]; then
+              local code
+              code="$(curl --silent --show-error \
+                --request POST \
+                --header "apikey: $EAST_KEY" \
+                --header "Authorization: Bearer $EAST_KEY" \
+                --header 'Content-Type: application/json' \
+                --header 'Prefer: resolution=merge-duplicates,return=minimal' \
+                --data-binary "@$rows" \
+                --output "$response" \
+                --write-out '%{http_code}' \
+                "$EAST_SUPABASE_URL/rest/v1/${table}")"
+              echo "delta_${table}_http_status=$code"
+              if [[ "$code" != 2* ]]; then
+                if jq -e 'type == "object"' "$response" >/dev/null 2>&1; then
+                  message="$(jq -r '.message // .hint // .details // .code // "Virginia upsert failed"' "$response")"
+                  echo "delta_${table}_error=$message" >&2
+                else
+                  echo "Virginia upsert failed for $table with HTTP $code" >&2
+                fi
+                exit 1
+              fi
+            fi
+            rm -f "$rows" "$response"
+          }
+
+          copy_delta locations updated_at '2026-08-29T18:02:02.610676+00:00'
+          copy_delta location_search_profiles updated_at '2026-08-29T19:35:45.849+00:00'
+          copy_delta location_menu_item_embeddings_hf calculated_at '2026-08-29T06:43:10.368+00:00'
+          copy_delta location_ml_attributes calculated_at '2026-08-29T19:37:11.599+00:00'
+          copy_delta location_photo_embeddings_siglip calculated_at '2026-08-29T19:31:45.679+00:00'
+          copy_delta location_photo_ml_scores calculated_at '2026-08-29T19:31:45.561+00:00'
+          copy_delta location_search_embeddings calculated_at '2026-08-29T07:05:47.120+00:00'
+          copy_delta location_intent_ml_features updated_at '2026-08-29T08:30:50.601+00:00'
+          copy_delta team_location_assignments updated_at '2026-08-29T07:03:46.679447+00:00'
+          copy_delta search_anchors updated_at '2026-08-29T06:41:14.578127+00:00'
+
+          echo "persistent_delta_copy=complete"
+          echo "Ephemeral location_search_profile_refresh_queue rows were intentionally not copied."
+
+      - name: Verify persistent row-count parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SQL="select
+            (select count(*) from public.locations) as locations,
+            (select count(*) from public.location_search_profiles) as location_search_profiles,
+            (select count(*) from public.location_menu_item_embeddings_hf) as location_menu_item_embeddings_hf,
+            (select count(*) from public.location_ml_attributes) as location_ml_attributes,
+            (select count(*) from public.location_photo_embeddings_siglip) as location_photo_embeddings_siglip,
+            (select count(*) from public.location_photo_ml_scores) as location_photo_ml_scores,
+            (select count(*) from public.location_search_embeddings) as location_search_embeddings,
+            (select count(*) from public.location_intent_ml_features) as location_intent_ml_features,
+            (select count(*) from public.team_location_assignments) as team_location_assignments,
+            (select count(*) from public.search_anchors) as search_anchors"
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            jq -n --arg query "$SQL" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-counts.json"
+            jq -e 'type == "array" and length == 1' "$RUNNER_TEMP/${side}-counts.json" >/dev/null
+          done
+          jq -S '.[0]' "$RUNNER_TEMP/source-counts.json" > "$RUNNER_TEMP/source-counts-normalized.json"
+          jq -S '.[0]' "$RUNNER_TEMP/east-counts.json" > "$RUNNER_TEMP/east-counts-normalized.json"
+          if ! cmp -s "$RUNNER_TEMP/source-counts-normalized.json" "$RUNNER_TEMP/east-counts-normalized.json"; then
+            echo "Persistent table count parity failed:" >&2
+            diff -u "$RUNNER_TEMP/source-counts-normalized.json" "$RUNNER_TEMP/east-counts-normalized.json" || true
+            exit 1
+          fi
+          echo "persistent_table_count_parity=true"
+          cat "$RUNNER_TEMP/east-counts-normalized.json"
+
+      - name: Verify high-level database cutover counters
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SQL="select
+            (select count(*) from auth.users) as auth_users,
+            (select count(*) from public.locations) as locations,
+            (select count(*) from storage.objects) as storage_objects,
+            (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where not t.tgisinternal and n.nspname not in ('pg_catalog','information_schema')) as user_trigger_definitions"
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            jq -n --arg query "$SQL" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-high-level.json"
+          done
+          SOURCE_USERS="$(jq -r '.[0].auth_users' "$RUNNER_TEMP/source-high-level.json")"
+          EAST_USERS="$(jq -r '.[0].auth_users' "$RUNNER_TEMP/east-high-level.json")"
+          SOURCE_LOCATIONS="$(jq -r '.[0].locations' "$RUNNER_TEMP/source-high-level.json")"
+          EAST_LOCATIONS="$(jq -r '.[0].locations' "$RUNNER_TEMP/east-high-level.json")"
+          SOURCE_TRIGGERS="$(jq -r '.[0].user_trigger_definitions' "$RUNNER_TEMP/source-high-level.json")"
+          EAST_TRIGGERS="$(jq -r '.[0].user_trigger_definitions' "$RUNNER_TEMP/east-high-level.json")"
+          test "$SOURCE_USERS" = "$EAST_USERS" || { echo "Auth user count mismatch" >&2; exit 1; }
+          test "$SOURCE_LOCATIONS" = "$EAST_LOCATIONS" || { echo "Location count mismatch" >&2; exit 1; }
+          test "$SOURCE_TRIGGERS" = "$EAST_TRIGGERS" || { echo "Trigger definition count mismatch" >&2; exit 1; }
+          echo "auth_user_count_parity=$SOURCE_USERS"
+          echo "location_count_parity=$SOURCE_LOCATIONS"
+          echo "trigger_definition_count_parity=$SOURCE_TRIGGERS"
+          echo "storage_object_source=$(jq -r '.[0].storage_objects' "$RUNNER_TEMP/source-high-level.json")"
+          echo "storage_object_virginia=$(jq -r '.[0].storage_objects' "$RUNNER_TEMP/east-high-level.json")"
+          echo "Storage object parity is completed separately by repair-east-storage-final-delta."
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/source-service-role "$RUNNER_TEMP"/east-service-role "$RUNNER_TEMP"/*.json
