@@ -48,6 +48,7 @@ export type MobileSearchResponse = {
   resolvedPlanType: MobileResolvedPlanType;
   canonicalSearchType: string | null;
   walkingRequested: boolean;
+  walkingMaxMinutes: number | null;
   pairs: MobileOutingResult[];
   sameVenueResults: MobileOutingResult[];
   restaurants: MobilePlaceResult[];
