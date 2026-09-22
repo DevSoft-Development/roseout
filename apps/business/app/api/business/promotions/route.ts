@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
 import { getStripeModeForLocation, stripeRequest } from "@/lib/stripe/server";
+import { normalizePromotionTargeting } from "@/lib/promotions/targeting";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,10 @@ export async function POST(request: Request) {
   const totalBudget = cents(body.total_budget_cents);
   if (placements.length === 0) return NextResponse.json({ error: "Choose Discover, Search, or both." }, { status: 400 });
   if (totalBudget < 2500) return NextResponse.json({ error: "Campaign budget must be at least $25." }, { status: 400 });
+  const targeting = normalizePromotionTargeting(body.targeting, {
+    latitude: auth.access.location.latitude,
+    longitude: auth.access.location.longitude,
+  });
   const startsAt = isoOrNull(body.starts_at);
   const endsAt = isoOrNull(body.ends_at);
   if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) return NextResponse.json({ error: "End date must be after start date." }, { status: 400 });
@@ -80,7 +85,7 @@ export async function POST(request: Request) {
     promotion_type: ["location","outing","event","experience"].includes(body.promotion_type) ? body.promotion_type : "location",
     placements,
     audience_mode: body.audience_mode === "manual" ? "manual" : "auto",
-    targeting: body.targeting && typeof body.targeting === "object" ? body.targeting : {},
+    targeting,
     creative: body.creative && typeof body.creative === "object" ? body.creative : {},
     total_budget_cents: totalBudget,
     daily_budget_cents: cents(body.daily_budget_cents) || null,
@@ -144,7 +149,12 @@ export async function PATCH(request: Request) {
   if ("name" in body) updates.name = text(body.name) || campaign.name;
   if (Array.isArray(body.placements)) updates.placements = body.placements.filter((v: unknown) => v === "discover" || v === "search");
   if ("audience_mode" in body) updates.audience_mode = body.audience_mode === "manual" ? "manual" : "auto";
-  if (body.targeting && typeof body.targeting === "object") updates.targeting = body.targeting;
+  if (body.targeting && typeof body.targeting === "object") {
+    updates.targeting = normalizePromotionTargeting(body.targeting, {
+      latitude: auth.access.location.latitude,
+      longitude: auth.access.location.longitude,
+    });
+  }
   if (body.creative && typeof body.creative === "object") updates.creative = body.creative;
   if ("daily_budget_cents" in body) updates.daily_budget_cents = cents(body.daily_budget_cents) || null;
   if ("starts_at" in body) updates.starts_at = isoOrNull(body.starts_at);
