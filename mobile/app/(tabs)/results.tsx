@@ -101,6 +101,7 @@ export default function ResultsScreen() {
   const effectivePlanType: PlanType = result?.resolvedPlanType || planType;
   const recommended = [...(result?.pairs || []), ...(result?.sameVenueResults || [])].slice(0, 6);
   const showWalking = result?.walkingRequested === true;
+  const walkingMaxMinutes = result?.walkingMaxMinutes ?? null;
   const restaurants = (result?.restaurants || []).slice(0, 6);
   const activities = (result?.activities || []).slice(0, 6);
   const singles = effectivePlanType === "restaurant" ? restaurants : effectivePlanType === "activity" ? activities : [];
@@ -179,7 +180,7 @@ export default function ResultsScreen() {
         ) : effectivePlanType === "outing" ? (
           <>
             <View style={{ gap: theme.spacing.md }}>
-              {recommended.map((outing, index) => <OutingResultCard key={outing.id} outing={outing} rank={index + 1} showWalking={showWalking} />)}
+              {recommended.map((outing, index) => <OutingResultCard key={outing.id} outing={outing} rank={index + 1} showWalking={showWalking} walkingMaxMinutes={walkingMaxMinutes} />)}
             </View>
 
             {canBuild ? (
@@ -226,7 +227,7 @@ export default function ResultsScreen() {
                     <Card style={{ backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accentBorder }}>
                       <AppText muted>{selectedRestaurant && selectedActivity ? `${selectedRestaurant.name} + ${selectedActivity.name}` : "Choose one restaurant and one activity."}</AppText>
                       <View style={{ marginTop: theme.spacing.md }}>
-                        <Button disabled={!customPair} onPress={() => customPair && router.push(outingRouteParams(customPair, showWalking))}>Choose my outing →</Button>
+                        <Button disabled={!customPair} onPress={() => customPair && router.push(outingRouteParams(customPair, showWalking, walkingMaxMinutes))}>Choose my outing →</Button>
                       </View>
                     </Card>
                   </View>
