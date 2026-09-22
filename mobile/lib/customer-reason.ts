@@ -75,24 +75,28 @@ export function placeCustomerReason(place: MobilePlaceResult) {
 }
 
 export function outingCustomerReason(outing: MobileOutingResult) {
-  const reason = cleanCustomerReason(outing.reason)
-    || (outing.restaurant ? cleanCustomerReason(outing.restaurant.whyMatched) : null)
-    || (outing.activity ? cleanCustomerReason(outing.activity.whyMatched) : null);
+  const reason = cleanCustomerReason(outing.reason);
   if (reason) return reason;
 
   if (outing.resultType === "same_venue") {
-    return "Dinner and the experience are together in one place, keeping the night simple and seamless.";
+    const venue = outing.restaurant ?? outing.activity;
+    const venueReason = venue ? customerFacingReasons(venue)[0] : null;
+    return venueReason
+      ? `${venueReason} Dinner and the experience are together in one place.`
+      : "Dinner and the experience are together in one place, keeping the night simple and seamless.";
   }
+
+  const restaurantReason = outing.restaurant ? customerFacingReasons(outing.restaurant)[0] : null;
+  const activityReason = outing.activity ? customerFacingReasons(outing.activity)[0] : null;
+
+  if (restaurantReason && activityReason) {
+    return `${restaurantReason} ${activityReason}`;
+  }
+  if (restaurantReason) return restaurantReason;
+  if (activityReason) return activityReason;
 
   const restaurant = outing.restaurant?.name;
   const activity = outing.activity?.name;
-  const distance = outing.walkMinutes != null
-    ? `${Math.round(outing.walkMinutes)} min walk`
-    : outing.distanceMiles != null
-      ? `${outing.distanceMiles.toFixed(1)} ${Math.abs(outing.distanceMiles - 1) < 0.05 ? "mile" : "miles"} apart`
-      : null;
-
-  if (restaurant && activity && distance) return `${restaurant} and ${activity} make an easy pairing, with just ${distance} between them.`;
-  if (restaurant && activity) return `${restaurant} and ${activity} make a smooth dinner-and-activity pairing for the night you described.`;
+  if (restaurant && activity) return `${restaurant} and ${activity} fit the dinner-and-activity plan you described.`;
   return "A strong option for the outing you described.";
 }
