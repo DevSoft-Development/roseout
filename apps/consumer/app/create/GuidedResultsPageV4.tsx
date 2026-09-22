@@ -413,7 +413,7 @@ export default function GuidedResultsPageV4() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050505] pb-16 text-white">
+    <main className="toh-consumer-mobile-type min-h-screen bg-[#050505] pb-16 text-white">
       <GuidedJourneySteps activeStep={3} className="max-w-5xl" />
       <section className="border-b border-white/[0.08] px-4 pb-7 pt-6 sm:px-6 sm:pb-8 sm:pt-8"><div className="mx-auto max-w-6xl"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#e1062a]">Step 3 of 4 · Pick</p><h1 className="mt-2 text-3xl font-black tracking-[-0.045em] sm:text-5xl">{planType === "outing" ? "Your best options, curated." : planType === "restaurant" ? "Your best restaurants, curated." : "Your best activities, curated."}</h1><p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-white/48 sm:text-base">Compare the atmosphere, location and experience at a glance. Your strongest match is always shown first.</p></div><Link href="/create" className="rounded-full border border-white/10 bg-white/[0.025] px-4 py-2.5 text-xs font-black text-white/60 transition hover:border-white/20 hover:text-white">Adjust plan</Link></div></div></section>
 
