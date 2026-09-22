@@ -11,7 +11,8 @@ type Tab = "signin" | "signup";
 type SignupStep = 1 | 2;
 
 type SignupState = {
-  full_name: string;
+  first_name: string;
+  birth_month: string;
   email: string;
   mobile_number: string;
   zip_code: string;
@@ -43,7 +44,8 @@ const secondaryButtonClass =
   "inline-flex items-center justify-center rounded-full border border-white/15 bg-white/[0.03] px-6 py-3 text-sm font-bold text-white transition hover:border-[#e1062a]/55 hover:bg-[#e1062a]/15";
 
 const initialSignupState: SignupState = {
-  full_name: "",
+  first_name: "",
+  birth_month: "",
   email: "",
   mobile_number: "",
   zip_code: "",
@@ -206,12 +208,19 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: signup.full_name,
+          first_name: signup.first_name,
+          birth_month: Number(signup.birth_month),
           email: normalizedSignupEmail,
           password: signup.password,
           zip_code: signup.zip_code,
           mobile_number: signup.mobile_number,
-          marketing_sms_opt_in: mobileProvided ? smsOptIn : false,
+          sms_consent: mobileProvided ? smsOptIn : false,
+          business_name: signup.business_name,
+          business_address: signup.business_address,
+          business_city: signup.business_city,
+          business_state: signup.business_state,
+          business_zip: signup.business_zip,
+          business_type: signup.business_type,
           turnstileToken,
           next: intendedRoute,
         }),
@@ -501,8 +510,8 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Full Name</label>
-                      <input required placeholder="Full name" value={signup.full_name} onChange={(e) => setSignup((s) => ({ ...s, full_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">First Name</label>
+                      <input required autoComplete="given-name" placeholder="First name" value={signup.first_name} onChange={(e) => setSignup((s) => ({ ...s, first_name: e.target.value }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
                     </div>
                     <div className="sm:col-span-2">
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Email</label>
@@ -514,7 +523,14 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     </div>
                     <div>
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">ZIP Code</label>
-                      <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value }))} className={inputClass} />
+                      <input required placeholder="ZIP code" value={signup.zip_code} onChange={(e) => setSignup((s) => ({ ...s, zip_code: e.target.value.replace(/\D/g, "").slice(0, 5) }))} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Birth Month</label>
+                      <select required value={signup.birth_month} onChange={(e) => setSignup((s) => ({ ...s, birth_month: e.target.value }))} className={selectClass}>
+                        <option value="">Select month</option>
+                        {["January","February","March","April","May","June","July","August","September","October","November","December"].map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+                      </select>
                     </div>
                     <div className="space-y-3 sm:col-span-2">
                       <div className="grid gap-3 sm:grid-cols-2">
