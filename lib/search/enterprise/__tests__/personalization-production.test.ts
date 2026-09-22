@@ -74,8 +74,8 @@ describe("production personalization controls", () => {
       },
     };
     const optedOut = await loadUserPreferenceProfile("private-user", { client: client as any });
-    expect(optedOut.signalCount).toBe(0);
-    expect(optedOut.sufficientEvidence).toBe(false);
+    expect(optedOut.evidence).toBe(0);
+    expect(optedOut.weightedEvidence).toBe(0);
     expect(evidenceReads).toBe(0);
   });
 
@@ -84,8 +84,11 @@ describe("production personalization controls", () => {
     await expect(loadUserPreferenceProfile("private-user", { client: { from: () => failingQuery } as any })).rejects.toThrow("database unavailable");
   });
 
-  it("times out profile loading quickly", async () => {
-    const hangingQuery = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, maybeSingle() { return Promise.resolve({ data: { personalization_enabled: true }, error: null }); }, limit() { return new Promise(() => undefined); } };
-    await expect(loadUserPreferenceProfile("private-user", { client: { from: () => hangingQuery } as any, timeoutMs: 5 })).rejects.toThrow("profile_load_timeout");
+  it("times out consent and evidence loading quickly", async () => {
+    const hangingConsent = { select() { return this; }, eq() { return this; }, maybeSingle() { return new Promise(() => undefined); } };
+    await expect(loadUserPreferenceProfile("private-user", { client: { from: () => hangingConsent } as any, timeoutMs: 5 })).rejects.toThrow("profile_load_timeout");
+
+    const hangingEvidence = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, maybeSingle() { return Promise.resolve({ data: { personalization_enabled: true }, error: null }); }, limit() { return new Promise(() => undefined); } };
+    await expect(loadUserPreferenceProfile("private-user", { client: { from: () => hangingEvidence } as any, timeoutMs: 5 })).rejects.toThrow("profile_load_timeout");
   });
 });
