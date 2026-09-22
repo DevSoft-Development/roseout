@@ -28,7 +28,7 @@ export function placeRouteParams(place: MobilePlaceResult) {
   };
 }
 
-export function outingRouteParams(outing: MobileOutingResult) {
+export function outingRouteParams(outing: MobileOutingResult, showWalking = false) {
   return {
     pathname: "/(tabs)/complete" as const,
     params: {
@@ -39,6 +39,7 @@ export function outingRouteParams(outing: MobileOutingResult) {
       walkMinutes: outing.walkMinutes == null ? "" : String(outing.walkMinutes),
       reason: outingCustomerReason(outing),
       resultType: outing.resultType || "pair",
+      showWalking: showWalking ? "1" : "0",
       sponsored: outing.sponsored ? "1" : "0",
       sponsorId: outing.sponsorId || "",
       campaignId: outing.campaignId || "",
