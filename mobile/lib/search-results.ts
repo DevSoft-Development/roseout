@@ -53,4 +53,6 @@ export type MobileSearchResponse = {
   sameVenueResults: MobileOutingResult[];
   restaurants: MobilePlaceResult[];
   activities: MobilePlaceResult[];
+  builderRestaurants?: MobilePlaceResult[];
+  builderActivities?: MobilePlaceResult[];
 };
