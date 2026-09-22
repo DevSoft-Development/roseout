@@ -143,12 +143,35 @@ jobs:
           SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
         run: |
           set -euo pipefail
-          CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/advanced.json" --write-out '%{http_code}' \
-            --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
-            "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all" || true)"
-          echo "Advanced recalculation HTTP $CODE"
-          python -m json.tool "$RUNNER_TEMP/advanced.json" || cat "$RUNNER_TEMP/advanced.json"
-          test "$CODE" = "200" || exit 1
+          stages=(
+            review_intelligence
+            business_quality
+            photo_quality
+            booking_likelihood
+            result_quality
+            time_of_day
+            personalization
+            duplicate_detection
+            owner_lead_scoring
+            market_specific
+            pair_compatibility
+          )
+          for stage in "${stages[@]}"; do
+            output="$RUNNER_TEMP/advanced-$stage.json"
+            CODE="$(curl --silent --show-error --max-time 300 --output "$output" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+              "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=$stage" || true)"
+            echo "Advanced recalculation stage $stage HTTP $CODE"
+            python -m json.tool "$output" || cat "$output"
+            test "$CODE" = "200" || exit 1
+            STAGE="$stage" OUTPUT="$output" python - <<'PY'
+          import json, os
+          with open(os.environ['OUTPUT']) as f:
+              data=json.load(f)
+          assert data.get('success') is True, (os.environ['STAGE'], data)
+          assert data.get('stage') == os.environ['STAGE'], data
+          PY
+          done
 
       - name: Verify and advance SigLIP photo vectors
         env:
