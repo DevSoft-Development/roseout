@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
@@ -25,6 +25,7 @@ type MePayload = {
     homeCity: string | null;
     homeState: string | null;
     smsConsent: boolean;
+    personalizationEnabled: boolean;
   };
 };
 
@@ -37,6 +38,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<MePayload["profile"] | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [savingPersonalization, setSavingPersonalization] = useState(false);
 
   useFocusEffect(useCallback(() => {
     if (!user) { setProfile(null); return; }
@@ -60,6 +62,24 @@ export default function ProfileScreen() {
       Alert.alert("Couldn’t enable reminders", "TheOutHaven couldn’t register this device for push notifications yet.");
     } finally {
       setEnablingPush(false);
+    }
+  };
+
+  const updatePersonalization = async (enabled: boolean) => {
+    if (!user || savingPersonalization) return;
+    const previous = profile?.personalizationEnabled !== false;
+    setProfile((current) => current ? { ...current, personalizationEnabled: enabled } : current);
+    setSavingPersonalization(true);
+    try {
+      await mobileApi("/me", {
+        method: "PATCH",
+        body: JSON.stringify({ personalizationEnabled: enabled }),
+      });
+    } catch {
+      setProfile((current) => current ? { ...current, personalizationEnabled: previous } : current);
+      Alert.alert("Couldn’t update privacy setting", "Your recommendation preference was not changed.");
+    } finally {
+      setSavingPersonalization(false);
     }
   };
 
@@ -125,6 +145,30 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {user ? (
+        <View style={styles.section}>
+          <AppText variant="eyebrow" muted>RECOMMENDATIONS & PRIVACY</AppText>
+          <Card elevated>
+            <View style={styles.preferenceRow}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="bodyStrong">Personalized recommendations</AppText>
+                <AppText variant="caption" muted style={{ marginTop: 5, lineHeight: 19 }}>
+                  Allow prior saves, clicks, reservations, and completed OUTings to improve future suggestions.
+                </AppText>
+              </View>
+              <Switch
+                value={profile?.personalizationEnabled !== false}
+                onValueChange={(value) => void updatePersonalization(value)}
+                disabled={savingPersonalization || !profile}
+              />
+            </View>
+            <AppText variant="caption" muted style={{ marginTop: 12 }}>
+              Turning this off stops prior account activity from being used for search personalization. Search still works normally.
+            </AppText>
+          </Card>
+        </View>
+      ) : null}
+
       <View style={styles.section}>
         <AppText variant="eyebrow" muted>HELP & PRIVACY</AppText>
         <View style={[styles.menu, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}> 
@@ -171,5 +215,6 @@ const styles = StyleSheet.create({
   cardCopy: { marginTop: 8, lineHeight: 21 }, authActions: { marginTop: 18, gap: 10 },
   section: { gap: 10 }, menu: { borderWidth: 1, borderRadius: 22, overflow: "hidden" }, menuRow: { minHeight: 72, paddingHorizontal: 15, paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 12 },
   menuIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" }, chevron: { fontSize: 27, lineHeight: 29 }, divider: { height: StyleSheet.hairlineWidth, marginLeft: 65 },
+  preferenceRow: { flexDirection: "row", alignItems: "center", gap: 16 },
   signOut: { marginTop: 2 }, footer: { textAlign: "center", paddingTop: 4 },
 });
