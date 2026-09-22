@@ -69,10 +69,12 @@ async function auth(req:NextRequest){
 }
 
 function normalizeOptions(input:Record<string,unknown>={}){
-  const options:{dryRun?:boolean;limit?:number;daysBack?:number;locationId?:string;userId?:string}={};
+  const options:{dryRun?:boolean;limit?:number;offset?:number;daysBack?:number;locationId?:string;userId?:string}={};
   if(typeof input.dryRun==='boolean') options.dryRun=input.dryRun;
   const limit=Number(input.limit);
   if(Number.isFinite(limit) && limit>0) options.limit=Math.floor(limit);
+  const offset=Number(input.offset);
+  if(Number.isFinite(offset) && offset>=0) options.offset=Math.floor(offset);
   const daysBack=Number(input.daysBack);
   if(Number.isFinite(daysBack) && daysBack>0) options.daysBack=Math.floor(daysBack);
   if(typeof input.locationId==='string' && input.locationId.trim()) options.locationId=input.locationId.trim();
@@ -117,7 +119,7 @@ function requestedStage(req:NextRequest, body?:Record<string,unknown>){
 
 function queryOptions(req:NextRequest){
   const out:Record<string,unknown>={};
-  for(const key of ['limit','daysBack','locationId','userId']){
+  for(const key of ['limit','offset','daysBack','locationId','userId']){
     const value=req.nextUrl.searchParams.get(key);
     if(value!==null) out[key]=value;
   }
