@@ -2,6 +2,7 @@ import Link from "next/link";
 import UserDashboardShell, { DashboardCard } from "@/components/user/UserDashboardShell";
 import { getCurrentUserDashboardContext } from "@/lib/user-dashboard";
 import AccountClient from "./AccountClient";
+import PrivacyPreferencesClient from "@/components/user/PrivacyPreferencesClient";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,12 @@ export default async function Page() {
             <Link href="/user/dashboard/saved" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Saved</Link>
             <Link href="/support" className="rounded-full border border-white/15 px-4 py-2 text-xs font-black">Support</Link>
           </div>
+        </DashboardCard>
+        <DashboardCard>
+          <p className="text-xs font-black uppercase tracking-[.22em] text-rose-200">Recommendations & Privacy</p>
+          <h2 className="mt-2 text-2xl font-black">You control personalization.</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/45">Turn personalization off entirely, control search-history use, or run your next search without personalization.</p>
+          <PrivacyPreferencesClient />
         </DashboardCard>
       </div>
     </UserDashboardShell>
