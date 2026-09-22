@@ -194,14 +194,27 @@ export async function materializeLocationMessagingCampaign(input: {
     created_by: input.createdBy || null,
   }));
 
-  let queuedJobs: Array<{ id: string; payload: any }> = [];
+  let queuedJobs: Array<{ id: string; payload: any; idempotency_key?: string | null }> = [];
   if (jobs.length) {
-    const { data, error: jobError } = await supabaseAdmin
+    const keys = jobs.map((job) => job.idempotency_key);
+    const { data: existingJobs, error: existingJobError } = await supabaseAdmin
       .from("worker_jobs")
-      .upsert(jobs, { onConflict: "idempotency_key", ignoreDuplicates: true })
-      .select("id,payload");
-    if (jobError) throw jobError;
-    queuedJobs = data || [];
+      .select("id,payload,idempotency_key")
+      .in("idempotency_key", keys);
+    if (existingJobError) throw existingJobError;
+
+    const existingKeys = new Set((existingJobs || []).map((job: any) => String(job.idempotency_key || "")));
+    const missingJobs = jobs.filter((job) => !existingKeys.has(job.idempotency_key));
+    let insertedJobs: Array<{ id: string; payload: any; idempotency_key?: string | null }> = [];
+    if (missingJobs.length) {
+      const { data, error: jobError } = await supabaseAdmin
+        .from("worker_jobs")
+        .insert(missingJobs)
+        .select("id,payload,idempotency_key");
+      if (jobError) throw jobError;
+      insertedJobs = data || [];
+    }
+    queuedJobs = [...(existingJobs || []), ...insertedJobs];
   }
 
   for (const job of queuedJobs) {
