@@ -1,6 +1,7 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { geoContextFromSearchPayload, promotionGeoMatches } from "@/lib/promotions/targeting";
 
 export type PromotionPlacement = "discover" | "search";
 
@@ -99,7 +100,9 @@ function moveSponsoredAfterBest<T extends Record<string, any>>(items: T[]) {
 }
 
 export async function applySearchPromotions<T extends Record<string, any>>(payload: T): Promise<T> {
-  const campaigns = await getDeliverablePromotionCampaigns("search");
+  const searchGeo = geoContextFromSearchPayload(payload);
+  const campaigns = (await getDeliverablePromotionCampaigns("search"))
+    .filter((campaign) => promotionGeoMatches(campaign.targeting as any, searchGeo));
   if (!campaigns.length) return payload;
   const root: any = payload?.searchV2 && typeof payload.searchV2 === "object" ? payload.searchV2 : payload;
   if (!root || typeof root !== "object") return payload;
