@@ -106,38 +106,46 @@ export default function HomePage() {
       </section>
 
       <section className="relative overflow-hidden border-y border-white/10 px-5 py-20 sm:px-6 lg:px-8 lg:py-24">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(225,6,42,.14),transparent_30%)]" />
-        <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[.82fr_1.18fr] lg:items-center">
-          <div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_10%,rgba(225,6,42,.14),transparent_34%)]" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="mx-auto max-w-4xl text-center">
             <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">See it in action</p>
             <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
               Search the way you actually think about going out.
             </h2>
-            <p className="mt-5 max-w-xl text-lg leading-8 text-white/58">
+            <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/58">
               You don&apos;t need to start with a category or know the exact place. Start with the night you want.
             </p>
-            <div className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[.035] p-5 sm:p-6">
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">Try searching</p>
-              <p className="mt-3 text-2xl font-black leading-snug text-white sm:text-3xl">
-                “Dinner and live music somewhere nice for date night.”
-              </p>
-            </div>
           </div>
 
-          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0b] shadow-2xl shadow-black/50">
-            <div className="border-b border-white/10 px-6 py-5 sm:px-8">
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff8a9b]">Your outing</p>
-              <p className="mt-2 text-lg font-black">A date night that keeps moving</p>
-            </div>
-            <div className="grid gap-0 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
-              <DemoStop label="Dinner" title="Italian" detail="Romantic • Manhattan" />
-              <div className="flex items-center justify-center border-y border-white/10 px-5 py-4 sm:border-x sm:border-y-0">
-                <div className="text-center">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-white/30">Next stop</p>
-                  <p className="mt-1 text-sm font-black text-[#ff8a9b]">8 min walk</p>
-                </div>
+          <div className="mt-10 grid gap-5 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex h-full flex-col rounded-[2rem] border border-white/10 bg-white/[.035] p-6 sm:p-8">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/35">Try searching</p>
+                <p className="mt-4 max-w-xl text-2xl font-black leading-snug text-white sm:text-3xl">
+                  “Dinner and live music somewhere nice for date night.”
+                </p>
               </div>
-              <DemoStop label="Activity" title="Live music" detail="Jazz • Nearby" />
+              <p className="mt-auto pt-8 text-sm font-semibold leading-6 text-white/42">
+                Say what you want in one sentence. TheOutHaven turns it into a complete outing instead of making you search one stop at a time.
+              </p>
+            </div>
+
+            <div className="flex h-full flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[#0b0b0b] shadow-2xl shadow-black/50">
+              <div className="border-b border-white/10 px-6 py-5 sm:px-8">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#ff8a9b]">Your outing</p>
+                <p className="mt-2 text-lg font-black">A date night that keeps moving</p>
+              </div>
+              <div className="grid flex-1 gap-0 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
+                <DemoStop label="Dinner" title="Italian" detail="Romantic • Manhattan" />
+                <div className="flex items-center justify-center border-y border-white/10 px-5 py-4 sm:border-x sm:border-y-0">
+                  <div className="text-center">
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-white/30">Next stop</p>
+                    <p className="mt-1 text-sm font-black text-[#ff8a9b]">8 min walk</p>
+                  </div>
+                </div>
+                <DemoStop label="Activity" title="Live music" detail="Jazz • Nearby" />
+              </div>
             </div>
           </div>
         </div>
