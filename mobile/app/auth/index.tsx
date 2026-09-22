@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NeighborhoodPicker, type NeighborhoodOption } from "@/components/auth/NeighborhoodPicker";
 import { TurnstileVerificationModal } from "@/components/auth/TurnstileVerificationModal";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
@@ -48,7 +47,7 @@ export default function AuthScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [birthMonth, setBirthMonth] = useState<number | null>(null);
-  const [homeNeighborhood, setHomeNeighborhood] = useState<NeighborhoodOption | null>(null);
+  const [homeZipCode, setHomeZipCode] = useState("");
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,8 +74,8 @@ export default function AuthScreen() {
       && passwordsMatch
       && phone.replace(/\D/g, "").length === 10
       && birthMonth !== null
-      && homeNeighborhood !== null;
-  }, [birthMonth, email, firstName, homeNeighborhood, mode, password, passwordsMatch, phone, strength.strong]);
+      && /^\d{5}$/.test(homeZipCode);
+  }, [birthMonth, email, firstName, homeZipCode, mode, password, passwordsMatch, phone, strength.strong]);
 
   function startVerification() {
     if (!valid || busy || verifying) return;
@@ -101,7 +100,7 @@ export default function AuthScreen() {
           password,
           phone: `+1${phone.replace(/\D/g, "")}`,
           birthMonth: birthMonth || 0,
-          homeNeighborhood: homeNeighborhood!,
+          homeZipCode,
           smsConsent,
           captchaToken,
         });
@@ -180,8 +179,8 @@ export default function AuthScreen() {
               </Pressable>
             </Field>
 
-            <Field label="Home neighborhood" hint="Start typing, then choose a neighborhood from TheOutHaven. We never ask for your street address.">
-              <NeighborhoodPicker value={homeNeighborhood} onChange={setHomeNeighborhood} />
+            <Field label="ZIP code" hint="We use your ZIP to personalize nearby recommendations. We never ask for your street address.">
+              <TextInput keyboardType="number-pad" autoComplete="postal-code" placeholder="11530" placeholderTextColor={theme.colors.textMuted} value={homeZipCode} onChangeText={(value) => setHomeZipCode(value.replace(/\\D/g, "").slice(0, 5))} style={[styles.input, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, color: theme.colors.text }]} />
             </Field>
 
             <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: smsConsent }} onPress={() => setSmsConsent((value) => !value)} style={[styles.consent, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
