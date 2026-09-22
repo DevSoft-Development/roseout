@@ -56,6 +56,13 @@ if (!tsconfig.includes('"@/*": [\n        "../../*"\n      ]') && !tsconfig.incl
 
 for (const required of [
   "apps/business/app/locations/dashboard/page.tsx",
+  "apps/business/app/business/page.tsx",
+  "apps/business/app/business/claim/page.tsx",
+  "apps/business/app/business/claim/no-code/page.tsx",
+  "apps/business/app/business/claim/scan/page.tsx",
+  "apps/business/app/business/plans/page.tsx",
+  "apps/business/app/business/onboarding/page.tsx",
+  "apps/business/app/business/onboarding/BusinessOrganizationForm.tsx",
   "apps/business/app/business/dashboard/page.tsx",
   "apps/business/app/business/login/page.tsx",
   "apps/business/app/api/business/organizations/route.ts",
