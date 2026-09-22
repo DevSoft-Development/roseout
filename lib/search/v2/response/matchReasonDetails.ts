@@ -93,7 +93,7 @@ export function buildPairMatchReasonDetails(input: {
   const seen = new Set(output.map((item) => item.label.toLowerCase()));
 
   const walking = input.walkingMinutes == null ? NaN : Number(input.walkingMinutes);
-  if (Number.isFinite(walking) && walking > 0) {
+  if (Number.isFinite(walking) && walking > 0 && walking <= 60) {
     const label = `${Math.max(1, Math.round(walking))}-minute walk between stops`;
     if (!seen.has(label.toLowerCase())) {
       output.push({
