@@ -8,8 +8,7 @@ alter table public.location_messaging_recipients
   add column if not exists updated_at timestamptz not null default now();
 
 create unique index if not exists location_messaging_recipients_campaign_vip_channel_uidx
-  on public.location_messaging_recipients(campaign_id, vip_signup_id, channel)
-  where campaign_id is not null and vip_signup_id is not null and channel is not null;
+  on public.location_messaging_recipients(campaign_id, vip_signup_id, channel);
 
 create index if not exists location_messaging_recipients_campaign_status_idx
   on public.location_messaging_recipients(campaign_id, status, created_at);
