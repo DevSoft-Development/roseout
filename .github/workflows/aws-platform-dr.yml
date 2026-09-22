@@ -352,17 +352,21 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
+          APP_ENV_SECRET_ARN: ${{ steps.compute.outputs.app_env_secret }}
         run: |
           set -euo pipefail
           test -n "${VERCEL_TOKEN:-}" || { echo "VERCEL_TOKEN is required for the production standby sync." >&2; exit 1; }
-          curl --fail --silent --show-error \
-            --header "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" \
-            > "$RUNNER_TEMP/vercel-production-env.json"
 
-          VERCEL_ENV_JSON="$RUNNER_TEMP/vercel-production-env.json" \
-          ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
-          python3 - <<'PY'
+          CODE="$(curl --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --output "$RUNNER_TEMP/vercel-production-env.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_TEAM_ID}&decrypt=true" || true)"
+
+          if [ "$CODE" = "200" ]; then
+            VERCEL_ENV_JSON="$RUNNER_TEMP/vercel-production-env.json" \
+            ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
+            python3 - <<'PY'
           import json, os
           from collections import defaultdict
           from pathlib import Path
@@ -398,6 +402,32 @@ jobs:
                   handle.write(f'{key}={json.dumps(resolved[key])}\\n')
           print(f'vercel_production_environment_keys={len(resolved)}')
           PY
+          else
+            echo "::warning::Vercel environment decrypt returned HTTP $CODE; reusing the last synchronized AWS DR environment."
+            aws secretsmanager get-secret-value \
+              --region "$COMPUTE_REGION" \
+              --secret-id "$APP_ENV_SECRET_ARN" \
+              --query SecretString \
+              --output text > "$RUNNER_TEMP/platform-dr-existing-env.json"
+            EXISTING_ENV_JSON="$RUNNER_TEMP/platform-dr-existing-env.json" \
+            ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
+            python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          source = Path(os.environ['EXISTING_ENV_JSON'])
+          output = Path(os.environ['ENV_FILE'])
+          values = json.loads(source.read_text())
+          if not isinstance(values, dict) or not values:
+              raise SystemExit('No previously synchronized AWS DR environment is available.')
+          with output.open('w') as handle:
+              for key in sorted(values):
+                  value = values[key]
+                  if value is not None:
+                      handle.write(f'{key}={json.dumps(str(value))}\\n')
+          print(f'aws_dr_fallback_environment_keys={len(values)}')
+          PY
+          fi
           python -m pip install --disable-pip-version-check python-dotenv
           GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
           echo "::add-mask::$GATEWAY_SECRET"
