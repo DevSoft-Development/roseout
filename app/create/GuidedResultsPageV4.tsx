@@ -368,8 +368,13 @@ export default function GuidedResultsPageV4() {
     if (!prompt) { setLoading(false); setError("Your planner request is missing. Start a new plan and we’ll rebuild it."); return; }
     const controller = new AbortController();
     const coordinates = readCoordinates();
+    const disablePersonalization =
+      sessionStorage.getItem("theouthaven_search_without_personalization") === "1";
+    if (disablePersonalization) {
+      sessionStorage.removeItem("theouthaven_search_without_personalization");
+    }
     setLoading(true); setError("");
-    fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ input: prompt, selectedSearchLane: laneFor(planType), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", useCurrentLocation: Boolean(coordinates), userLatitude: coordinates?.latitude, userLongitude: coordinates?.longitude, guidedFlow: FLOW_VERSION }) })
+    fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ input: prompt, selectedSearchLane: laneFor(planType), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", useCurrentLocation: Boolean(coordinates), userLatitude: coordinates?.latitude, userLongitude: coordinates?.longitude, guidedFlow: FLOW_VERSION, disablePersonalization }) })
       .then(async (response) => { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.message || data.error || "We couldn’t build your picks right now."); return data as SearchPayload; })
       .then((data) => { if (controller.signal.aborted) return; setPayload(data); const next = data.searchV2 || data; track("planner_results_viewed", { step: 3, plan_type: planType, pair_count: completePairs(next).length, restaurant_count: next.restaurants?.length || 0, activity_count: next.activities?.length || 0, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); track("planner_pick_screen_viewed", { step: 3, plan_type: planType, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION }); })
       .catch((err: unknown) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "We couldn’t build your picks right now."); })

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { BrandHeader } from "@/components/brand/BrandHeader";
@@ -37,10 +37,16 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<MePayload["profile"] | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
+  const [personalizationEnabled, setPersonalizationEnabled] = useState(true);
+  const [searchHistoryEnabled, setSearchHistoryEnabled] = useState(true);
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   useFocusEffect(useCallback(() => {
     if (!user) { setProfile(null); return; }
     void mobileApi<MePayload>("/me").then((result) => setProfile(result.profile)).catch(() => undefined);
+    void mobileApi<{ ok: true; preferences: { personalizationEnabled: boolean; searchHistoryPersonalizationEnabled: boolean } }>("/privacy-preferences")
+      .then((result) => { setPersonalizationEnabled(result.preferences.personalizationEnabled); setSearchHistoryEnabled(result.preferences.searchHistoryPersonalizationEnabled); })
+      .catch(() => undefined);
   }, [user?.id]));
 
   const enableReminders = async () => {
@@ -61,6 +67,23 @@ export default function ProfileScreen() {
     } finally {
       setEnablingPush(false);
     }
+  };
+
+  const updatePrivacy = async (next: { personalizationEnabled?: boolean; searchHistoryPersonalizationEnabled?: boolean }) => {
+    if (privacySaving) return;
+    const previousPersonalization = personalizationEnabled;
+    const previousHistory = searchHistoryEnabled;
+    if (typeof next.personalizationEnabled === "boolean") setPersonalizationEnabled(next.personalizationEnabled);
+    if (typeof next.searchHistoryPersonalizationEnabled === "boolean") setSearchHistoryEnabled(next.searchHistoryPersonalizationEnabled);
+    setPrivacySaving(true);
+    try {
+      const result = await mobileApi<{ ok: true; preferences: { personalizationEnabled: boolean; searchHistoryPersonalizationEnabled: boolean } }>("/privacy-preferences", { method: "PATCH", body: JSON.stringify(next) });
+      setPersonalizationEnabled(result.preferences.personalizationEnabled);
+      setSearchHistoryEnabled(result.preferences.searchHistoryPersonalizationEnabled);
+    } catch {
+      setPersonalizationEnabled(previousPersonalization); setSearchHistoryEnabled(previousHistory);
+      Alert.alert("Couldn’t save privacy setting", "Your previous setting is still in place.");
+    } finally { setPrivacySaving(false); }
   };
 
   const displayEmail = user?.email || profile?.email || "TheOutHaven member";
@@ -125,6 +148,15 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {user ? <View style={styles.section}>
+        <AppText variant="eyebrow" muted>RECOMMENDATIONS & PRIVACY</AppText>
+        <View style={[styles.menu, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
+          <ToggleRow title="Personalized recommendations" subtitle="Use your TheOutHaven activity to improve suggestions" value={personalizationEnabled} disabled={privacySaving} onValueChange={(value) => void updatePrivacy({ personalizationEnabled: value })} />
+          <Divider />
+          <ToggleRow title="Use search history" subtitle="Let previous searches help future suggestions" value={searchHistoryEnabled} disabled={privacySaving || !personalizationEnabled} onValueChange={(value) => void updatePrivacy({ searchHistoryPersonalizationEnabled: value })} />
+        </View>
+      </View> : null}
+
       <View style={styles.section}>
         <AppText variant="eyebrow" muted>HELP & PRIVACY</AppText>
         <View style={[styles.menu, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}> 
@@ -156,6 +188,10 @@ function MenuRow({ title, subtitle, icon, onPress, disabled = false }: { title: 
       <AppText muted style={styles.chevron}>›</AppText>
     </Pressable>
   );
+}
+
+function ToggleRow({ title, subtitle, value, disabled, onValueChange }: { title: string; subtitle: string; value: boolean; disabled?: boolean; onValueChange: (value: boolean) => void }) {
+  return <View style={[styles.menuRow, { opacity: disabled ? 0.5 : 1 }]}><View style={{ flex: 1 }}><AppText variant="bodyStrong">{title}</AppText><AppText variant="caption" muted style={{ marginTop: 3 }}>{subtitle}</AppText></View><Switch value={value} disabled={disabled} onValueChange={onValueChange} /></View>;
 }
 
 function Divider() {
