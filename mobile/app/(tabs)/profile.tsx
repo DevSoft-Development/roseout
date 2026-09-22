@@ -20,10 +20,13 @@ type MePayload = {
     email: string | null;
     phone: string | null;
     birthMonth: number | null;
+    homeZipCode: string | null;
     homeNeighborhood: string | null;
     homeBorough: string | null;
     homeCity: string | null;
+    homeCounty: string | null;
     homeState: string | null;
+    homeMarket: string | null;
     smsConsent: boolean;
     personalizationEnabled: boolean;
   };
@@ -86,14 +89,13 @@ export default function ProfileScreen() {
   const displayEmail = user?.email || profile?.email || "TheOutHaven member";
   const displayName = profile?.firstName || displayEmail;
   const initials = displayName.slice(0, 1).toUpperCase();
-  const neighborhoodLabel = profile?.homeNeighborhood
-    ? [
-        profile.homeNeighborhood,
-        profile.homeBorough,
-        profile.homeCity && profile.homeCity !== profile.homeBorough ? profile.homeCity : null,
-        profile.homeState,
-      ].filter(Boolean).join(", ")
-    : "Not set";
+  const homeAreaLabel = [
+    profile?.homeNeighborhood,
+    profile?.homeBorough,
+    profile?.homeCity && profile?.homeCity !== profile?.homeBorough ? profile.homeCity : null,
+    profile?.homeCounty,
+    profile?.homeMarket,
+  ].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(" · ") || "Not resolved";
 
   return (
     <SafeAreaView edges={["top"]} style={[styles.page, { backgroundColor: theme.colors.background }]}>
@@ -118,7 +120,8 @@ export default function ProfileScreen() {
             </View>
           </View>
           <View style={[styles.profileMeta, { borderTopColor: theme.colors.border }]}>
-            <Meta label="Home neighborhood" value={neighborhoodLabel} accent={Boolean(profile?.homeNeighborhood)} wide />
+            <Meta label="ZIP code" value={profile?.homeZipCode || "Not set"} accent={Boolean(profile?.homeZipCode)} />
+            <Meta label="Home area" value={homeAreaLabel} accent={Boolean(profile?.homeZipCode)} wide />
             <Meta label="Birth month" value={profile?.birthMonth ? MONTHS[profile.birthMonth - 1] : "Not set"} />
             <Meta label="SMS updates" value={profile?.smsConsent ? "On" : "Off"} accent={Boolean(profile?.smsConsent)} />
           </View>
