@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectNoHardError } from "./helpers";
 
-const businessBaseUrl = process.env.BUSINESS_BASE_URL || "https://business.theouthaven.com";
+const businessBaseUrl = process.env.BUSINESS_BASE_URL || "";
 
 test.describe("business surface smoke test", () => {
   test("/business loads without hard errors", async ({ page }) => {
