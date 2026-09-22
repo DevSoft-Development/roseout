@@ -355,7 +355,7 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     all: scored,
     restaurants: requestedCategoryTerms.length
       ? categoryQualifiedRestaurants
-      : requestedRestaurantTerms.length
+      : requestedRestaurantTerms.length && explicitRestaurantMatches.length
         ? explicitRestaurantMatches
         : dinnerRequested
           ? dinnerSuitableRestaurants
