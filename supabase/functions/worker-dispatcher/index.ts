@@ -84,6 +84,7 @@ const EDGE_FUNCTION_BY_JOB_TYPE: Record<string, string> = {
   "search.anchor.reconcile": "search-anchor-reconciliation",
   "search.qa.batch": "admin-search-health-digest",
   "reservation.cleanup": "reservation-status-cleanup",
+  "location.messaging.recipient": "location-messaging-recipient",
 };
 
 const supabase = createClient(
@@ -701,6 +702,22 @@ function normalizeWorkerPayload(
     payload,
     normalized,
     "location_id",
+    100,
+    jobType,
+  );
+
+  copyOptionalString(
+    payload,
+    normalized,
+    "campaign_id",
+    100,
+    jobType,
+  );
+
+  copyOptionalString(
+    payload,
+    normalized,
+    "recipient_id",
     100,
     jobType,
   );
