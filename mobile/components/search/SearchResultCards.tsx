@@ -37,13 +37,13 @@ function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: stri
   );
 }
 
-export function OutingResultCard({ outing, rank = 1, onChoose, showWalking = false }: { outing: MobileOutingResult; rank?: number; onChoose?: () => void; showWalking?: boolean }) {
+export function OutingResultCard({ outing, rank = 1, onChoose, showWalking = false, walkingMaxMinutes = null }: { outing: MobileOutingResult; rank?: number; onChoose?: () => void; showWalking?: boolean; walkingMaxMinutes?: number | null }) {
   const { theme } = useAppTheme();
   const router = useRouter();
   const walkMinutes = outing.walkMinutes != null ? Math.round(outing.walkMinutes) : null;
   const distance = outing.resultType === "same_venue"
     ? "Same venue"
-    : showWalking && walkMinutes != null && walkMinutes > 0 && walkMinutes <= 60
+    : showWalking && walkMinutes != null && walkMinutes > 0 && (walkingMaxMinutes == null || walkMinutes <= walkingMaxMinutes)
       ? `${walkMinutes} min walk`
       : outing.distanceMiles != null
         ? `${outing.distanceMiles.toFixed(2)} miles away`
@@ -97,7 +97,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose, showWalking = fal
             </View>
           </View>
         ) : null}
-        <Button onPress={onChoose || (() => router.push(outingRouteParams(outing, showWalking)))}>Choose this outing →</Button>
+        <Button onPress={onChoose || (() => router.push(outingRouteParams(outing, showWalking, walkingMaxMinutes)))}>Choose this outing →</Button>
       </View>
     </Card>
   );
