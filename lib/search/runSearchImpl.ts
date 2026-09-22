@@ -28,6 +28,8 @@ import { anchorRadiusPolicy } from "@/lib/search/anchors/radius";
 import { buildUnresolvedAnchorFallbackQuery } from "@/lib/search/anchors/unresolvedFallback";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
+import { extractZipFromText, postalGeoRadiusMiles } from "@/lib/geo/geo-area";
+import { resolvePostalArea } from "@/lib/geo/server";
 import { adaptV2ResponseToCurrentPublicContract } from "@/lib/search/v2/response/compatibilityAdapter";
 import {
   assignSearchCoreVersion,
@@ -286,6 +288,18 @@ export async function runOutingSearch(
     input.body?.selected_market_id ??
     null;
   const displayLimit = Math.max(1, input.displayLimit ?? 12);
+  const explicitZip = extractZipFromText(query);
+  const resolvedZipArea = explicitZip ? await resolvePostalArea(explicitZip, input.supabase ?? supabaseAdmin) : null;
+  const zipUserLocation = resolvedZipArea?.zipCode && resolvedZipArea.latitude != null && resolvedZipArea.longitude != null
+    ? {
+        latitude: resolvedZipArea.latitude,
+        longitude: resolvedZipArea.longitude,
+        radiusMiles: postalGeoRadiusMiles(resolvedZipArea),
+        state: resolvedZipArea.state,
+        label: resolvedZipArea.zipCode,
+      }
+    : null;
+  const effectiveUserLocation = zipUserLocation ?? input.userLocation ?? null;
   const normalizedAnchor = normalizeAnchoredQuery(query);
   const anchoredStartedAt = Date.now();
   const supabase = input.supabase ?? supabaseAdmin;
@@ -306,15 +320,30 @@ export async function runOutingSearch(
       query,
       requestId: input.body?.requestId,
       userLocation:
-        input.userLocation?.latitude != null &&
-        input.userLocation.longitude != null
+        effectiveUserLocation?.latitude != null &&
+        effectiveUserLocation.longitude != null
           ? {
-              latitude: input.userLocation.latitude,
-              longitude: input.userLocation.longitude,
-              radiusMiles: input.userLocation.radiusMiles ?? undefined,
+              latitude: effectiveUserLocation.latitude,
+              longitude: effectiveUserLocation.longitude,
+              radiusMiles: effectiveUserLocation.radiusMiles ?? undefined,
             }
           : null,
-      market: selectedMarketId,
+      resolvedGeo: resolvedZipArea?.zipCode
+        ? {
+            zipCode: resolvedZipArea.zipCode,
+            neighborhood: resolvedZipArea.neighborhood,
+            borough: resolvedZipArea.borough,
+            city: resolvedZipArea.city,
+            county: resolvedZipArea.county,
+            state: resolvedZipArea.state,
+            market: resolvedZipArea.market,
+            latitude: resolvedZipArea.latitude,
+            longitude: resolvedZipArea.longitude,
+            radiusMiles: postalGeoRadiusMiles(resolvedZipArea),
+            source: "zip" as const,
+          }
+        : null,
+      market: resolvedZipArea?.market ?? selectedMarketId,
       plannedFor:
         typeof input.body?.plannedFor === "string"
           ? input.body.plannedFor
@@ -356,9 +385,24 @@ export async function runOutingSearch(
   ) =>
     runEnterpriseSearch(searchQuery, {
       ...input,
-      body: searchBody,
-      userLocation,
-      selectedMarketId,
+      body: {
+        ...searchBody,
+        ...(resolvedZipArea?.zipCode
+          ? {
+              zip_code: resolvedZipArea.zipCode,
+              postal_code: resolvedZipArea.zipCode,
+              city: resolvedZipArea.city,
+              county: resolvedZipArea.county,
+              state: resolvedZipArea.state,
+              borough: resolvedZipArea.borough,
+              neighborhood: resolvedZipArea.neighborhood,
+              market: resolvedZipArea.market,
+              geoSource: "zip",
+            }
+          : {}),
+      },
+      userLocation: zipUserLocation ?? userLocation,
+      selectedMarketId: resolvedZipArea?.market ?? selectedMarketId,
       source: input.source ?? "public_outing_search",
       route: input.route ?? null,
       userId: input.userId ?? null,

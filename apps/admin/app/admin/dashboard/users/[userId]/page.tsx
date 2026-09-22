@@ -10,7 +10,7 @@ import {
 } from "@/components/admin/AdminDesignSystem";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminUserDetail } from "@/lib/admin/admin-user-detail";
-import { DeleteUser, PasswordReset, ProfileForm } from "../UserActions";
+import { AccountAccessForm, DeleteUser, PasswordReset, ProfileForm } from "../UserActions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function Page({ params }: { params: Promise<{ userId: strin
   return <AdminPageShell>
     <AdminPageHeader
       eyebrow="User Management"
-      title={profile.full_name || profile.preferred_name || profile.email || "Customer"}
+      title={profile.first_name || profile.email || "Customer"}
       subtitle={profile.email}
       badge={<div className="flex gap-2">
         <AdminStatusBadge>{profile.role}</AdminStatusBadge>
@@ -49,8 +49,29 @@ export default async function Page({ params }: { params: Promise<{ userId: strin
     </AdminKpiGrid>
 
     <div className="grid gap-5 xl:grid-cols-2">
-      <Card title="Overview"><Info rows={[["Name", profile.full_name || profile.preferred_name], ["Email", profile.email], ["Phone", profile.phone || profile.mobile_number], ["ZIP/main area", profile.zip_code || profile.derived_market_area], ["Plan", profile.plan], ["Last seen", formatAdminDate(profile.last_seen_at || profile.last_login_at)]]} /></Card>
-      {profile.hasAccount ? <Card title="Profile"><ProfileForm userId={userId} profile={profile} /></Card> : <Card title="Profile"><p className="text-sm text-white/55">This beta tester does not have an account profile yet, so profile editing is unavailable until an account is created.</p></Card>}
+      <Card title="Consumer overview"><Info rows={[
+        ["First name", profile.first_name],
+        ["Email", profile.email],
+        ["Mobile", profile.phone_e164 || profile.phone],
+        ["Birth month", profile.birth_month],
+        ["ZIP", profile.home_zip_code],
+        ["Plan", profile.plan],
+      ]} /></Card>
+      {profile.hasAccount ? <Card title="Consumer Profile"><ProfileForm userId={userId} profile={profile} /></Card> : <Card title="Consumer Profile"><p className="text-sm text-white/55">This beta tester does not have an account profile yet, so profile editing is unavailable until an account is created.</p></Card>}
+      {profile.hasAccount ? <Card title="Derived Home Geography"><Info rows={[
+        ["Neighborhood", profile.home_neighborhood],
+        ["Borough", profile.home_borough],
+        ["City", profile.home_city],
+        ["County", profile.home_county],
+        ["State", profile.home_state],
+        ["Market", profile.home_market],
+        ["Geo source", profile.home_geo_source],
+      ]} /></Card> : null}
+      {profile.hasAccount ? <Card title="Account & Access"><AccountAccessForm userId={userId} profile={profile} /><div className="mt-4"><Info rows={[
+        ["Email verified", profile.email_confirmed_at ? "Yes" : "No"],
+        ["Account status", profile.account_status],
+        ["Created", formatAdminDate(profile.created_at)],
+      ]} /></div></Card> : null}
       <Rows title="Saved Outings" rows={detail.saved} fields={["title", "created_at", "restaurant_name", "activity_name"]} />
       <Rows title="Booked Outings / Reservations" rows={[...detail.booked, ...detail.reservations]} fields={["title", "status", "outing_date", "restaurant_name", "activity_name"]} />
       <Card title="Beta Activity"><Info rows={[["Status", detail.beta?.status || "Not beta"], ["Tester type", detail.beta?.tester_type], ["Weekly completed", detail.beta?.weekly_completed_tests], ["Approved", formatAdminDate(detail.beta?.approved_at)]]} /></Card>

@@ -4,8 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { USER_ROLE_OPTIONS } from "@/lib/users/roles";
 
-const ageOptions = ["Under 21", "21–24", "25–34", "35–44", "45–54", "55–64", "65+", "Prefer not to say"];
-const planOptions = [{ value: "free", label: "Free" }, { value: "unlimited", label: "TheOutHaven Plus / Unlimited" }, { value: "comped", label: "Comped" }, { value: "admin", label: "Admin" }];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const planOptions = [
+  { value: "free", label: "Free" },
+  { value: "unlimited", label: "TheOutHaven Plus / Unlimited" },
+  { value: "comped", label: "Comped" },
+  { value: "admin", label: "Admin" },
+];
 
 function Field({ label, helper, children }: { label: string; helper?: string; children: React.ReactNode }) {
   return <label className="grid gap-1 text-sm font-bold text-white/80"><span>{label}</span>{children}{helper ? <span className="text-xs font-medium text-white/45">{helper}</span> : null}</label>;
@@ -13,19 +18,56 @@ function Field({ label, helper, children }: { label: string; helper?: string; ch
 
 export function ProfileForm({ userId, profile }: { userId: string; profile: any }) {
   const [message, setMessage] = useState("");
-  const [confirmSuper, setConfirmSuper] = useState(false);
   const [form, setForm] = useState({
-    full_name: profile.full_name || "",
-    preferred_name: profile.preferred_name || "",
-    phone: profile.phone || profile.mobile_number || "",
-    zip_code: profile.zip_code || profile.derived_market_area || "",
-    age_range: profile.age_range || "",
-    birthday: profile.birthday_month && profile.birthday_day ? `${String(profile.birthday_month).padStart(2, "0")}-${String(profile.birthday_day).padStart(2, "0")}` : "",
-    sms_opt_in: !!profile.sms_opt_in,
-    birthday_opt_in: !!profile.birthday_opt_in,
-    role: profile.role || "user",
-    plan: profile.plan || "free",
+    first_name: profile.first_name || "",
+    phone_e164: profile.phone_e164 || profile.phone || "",
+    birth_month: Number(profile.birth_month || 0) || "",
+    home_zip_code: profile.home_zip_code || profile.zip_code || "",
+    sms_consent: !!profile.sms_consent,
+    personalization_enabled: profile.personalization_enabled !== false,
   });
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    const response = await fetch(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setMessage(response.ok ? "Consumer profile saved." : payload.error || "Could not save profile.");
+  }
+
+  return <form id="consumer-profile" onSubmit={save} className="grid gap-4 md:grid-cols-2">
+    <Field label="First name">
+      <input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.first_name} onChange={event => setForm({ ...form, first_name: event.target.value })} />
+    </Field>
+    <Field label="Mobile number">
+      <input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.phone_e164} onChange={event => setForm({ ...form, phone_e164: event.target.value })} />
+    </Field>
+    <Field label="Birth month">
+      <select aria-label="Birth month" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.birth_month} onChange={event => setForm({ ...form, birth_month: Number(event.target.value) })}>
+        <option value="">Select birth month</option>
+        {MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
+      </select>
+    </Field>
+    <Field label="ZIP code" helper="Neighborhood, city, county, state, and market are derived automatically.">
+      <input inputMode="numeric" maxLength={5} className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.home_zip_code} onChange={event => setForm({ ...form, home_zip_code: event.target.value.replace(/\D/g, "").slice(0, 5) })} />
+    </Field>
+    <label className="text-sm text-white/70"><input type="checkbox" checked={form.sms_consent} onChange={event => setForm({ ...form, sms_consent: event.target.checked })} /> SMS consent</label>
+    <label className="text-sm text-white/70"><input type="checkbox" checked={form.personalization_enabled} onChange={event => setForm({ ...form, personalization_enabled: event.target.checked })} /> Personalized recommendations</label>
+    <div className="md:col-span-2">
+      <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Save consumer profile</button>
+      {message ? <p className="mt-2 text-sm text-emerald-100">{message}</p> : null}
+    </div>
+  </form>;
+}
+
+export function AccountAccessForm({ userId, profile }: { userId: string; profile: any }) {
+  const [message, setMessage] = useState("");
+  const [confirmSuper, setConfirmSuper] = useState(false);
+  const [form, setForm] = useState({ role: profile.role || "user", plan: profile.plan || "free" });
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -34,25 +76,31 @@ export function ProfileForm({ userId, profile }: { userId: string; profile: any 
       setMessage("Confirm the superadmin role change before saving.");
       return;
     }
-    const response = await fetch(`/api/admin/users/${userId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const response = await fetch(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
     const payload = await response.json().catch(() => ({}));
-    setMessage(response.ok ? "Profile saved." : payload.error || "Could not save profile.");
+    setMessage(response.ok ? "Account access saved." : payload.error || "Could not save account access.");
   }
 
-  return <form id="profile" onSubmit={save} className="grid gap-4 md:grid-cols-2">
-    <Field label="Full name"><input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.full_name} onChange={event => setForm({ ...form, full_name: event.target.value })} /></Field>
-    <Field label="Preferred name"><input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.preferred_name} onChange={event => setForm({ ...form, preferred_name: event.target.value })} /></Field>
-    <Field label="Phone"><input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} /></Field>
-    <Field label="ZIP / main area"><input className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.zip_code} onChange={event => setForm({ ...form, zip_code: event.target.value })} /></Field>
-    <Field label="Age range"><select aria-label="Age range" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.age_range} onChange={event => setForm({ ...form, age_range: event.target.value })}><option value="">Select age range</option>{ageOptions.map(option => <option key={option}>{option}</option>)}</select></Field>
-    <Field label="Birthday" helper="Month and day only. No birth year needed."><input placeholder="MM-DD" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white" value={form.birthday} onChange={event => setForm({ ...form, birthday: event.target.value })} /></Field>
-    <Field label="User role" helper="Superadmin-only. Role changes are audit logged."><select aria-label="User role" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.role} onChange={event => setForm({ ...form, role: event.target.value })}><option value="">Select user role</option>{USER_ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-    <Field label="Plan" helper="Updates the active customer subscription."><select aria-label="Plan" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.plan} onChange={event => setForm({ ...form, plan: event.target.value })}><option value="">Select plan</option>{planOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+  return <form onSubmit={save} className="grid gap-4 md:grid-cols-2">
+    <Field label="User role" helper="Role changes are audit logged.">
+      <select aria-label="User role" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.role} onChange={event => setForm({ ...form, role: event.target.value })}>
+        {USER_ROLE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </Field>
+    <Field label="Plan" helper="Updates the active customer subscription.">
+      <select aria-label="Plan" className="rounded-2xl border border-white/10 bg-[#120809] px-4 py-3 text-white" value={form.plan} onChange={event => setForm({ ...form, plan: event.target.value })}>
+        {planOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </Field>
     {form.role === "superadmin" ? <label className="md:col-span-2 flex gap-2 text-sm text-amber-100"><input type="checkbox" checked={confirmSuper} onChange={event => setConfirmSuper(event.target.checked)} /> I confirm this account should have superadmin access.</label> : null}
-    <label className="text-sm text-white/70"><input type="checkbox" checked={form.sms_opt_in} onChange={event => setForm({ ...form, sms_opt_in: event.target.checked })} /> SMS opt-in</label>
-    <label className="text-sm text-white/70"><input type="checkbox" checked={form.birthday_opt_in} onChange={event => setForm({ ...form, birthday_opt_in: event.target.checked })} /> Birthday opt-in</label>
-    <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Save profile, role, and plan</button>
-    {message ? <p className="text-sm text-emerald-100">{message}</p> : null}
+    <div className="md:col-span-2">
+      <button className="rounded-full border border-white/15 bg-white/[.07] px-5 py-3 text-sm font-black text-white">Save account access</button>
+      {message ? <p className="mt-2 text-sm text-emerald-100">{message}</p> : null}
+    </div>
   </form>;
 }
 

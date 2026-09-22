@@ -2926,12 +2926,12 @@ if (
   !usersReadRuntime.includes("@theouthaven/auth/admin-session") ||
   !usersReadRuntime.includes("@theouthaven/db/admin-client") ||
   !usersReadRuntime.includes("@/lib/aws/admin-users-core-api") ||
-  !usersReadRuntime.includes('from("user_profiles")') ||
+  !usersReadRuntime.includes('from("consumer_profiles")') ||
   !usersReadRuntime.includes('from("beta_testers")') ||
   !usersReadRuntime.includes('from("support_tickets")') ||
   !usersCoreApi.includes("/v1/admin/users/list/read")
 ) {
-  throw new Error("Users read path must preserve shared DB fallback and AWS Core API reads.");
+  throw new Error("Users read path must preserve canonical consumer profile shared DB fallback and AWS Core API reads.");
 }
 if (
   !usersBetaControl.includes("/api/admin/users/") ||

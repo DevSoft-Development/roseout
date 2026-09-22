@@ -377,20 +377,24 @@ export async function buildSearchPlan({
         ? "activity_only"
         : "restaurant_only";
   const place = p.place;
+  const resolvedGeo = input.resolvedGeo ?? null;
   const current = input.userLocation;
   const geoRecord = place
     ? normalizeGeoTerm(place[0] ?? place[1]) ?? normalizeGeoTerm(place[1])
     : null;
-  const useDefaultMarketCoordinates = !anchored && !place && !current;
+  const useDefaultMarketCoordinates = !anchored && !resolvedGeo && !place && !current;
   const latitude =
+    resolvedGeo?.latitude ??
     current?.latitude ??
     geoRecord?.latitude ??
     (useDefaultMarketCoordinates ? DEFAULT_MARKET_CENTER.latitude : null);
   const longitude =
+    resolvedGeo?.longitude ??
     current?.longitude ??
     geoRecord?.longitude ??
     (useDefaultMarketCoordinates ? DEFAULT_MARKET_CENTER.longitude : null);
   const radiusMiles =
+    resolvedGeo?.radiusMiles ??
     current?.radiusMiles ??
     geoRecord?.defaultRadiusMiles ??
     (place ? 8 : DEFAULT_MARKET_CENTER.radiusMiles);
@@ -399,15 +403,18 @@ export async function buildSearchPlan({
   );
   const resolvedCity = p.genericAnchor
     ? null
-    : coordinateFirstLocality
-      ? null
-      : geoRecord?.city ??
-        (geoRecord?.type === "city" ? geoRecord.name : place?.[1] ?? null);
+    : resolvedGeo?.city ??
+      (coordinateFirstLocality
+        ? null
+        : geoRecord?.city ??
+        (geoRecord?.type === "city" ? geoRecord.name : place?.[1] ?? null));
   const resolvedBorough = p.genericAnchor
     ? null
-    : geoRecord?.borough ??
+    : resolvedGeo?.borough ??
+      geoRecord?.borough ??
       (geoRecord?.type === "borough" ? geoRecord.name : place?.[2] ?? null);
   const resolvedCounty =
+    resolvedGeo?.county ??
     geoRecord?.county ??
     (geoRecord?.type === "county" ? geoRecord.name : place?.[4] ?? null);
   const hardRestaurantFeatures = [
@@ -448,9 +455,9 @@ export async function buildSearchPlan({
       borough: resolvedBorough,
       city: resolvedCity,
       county: resolvedCounty,
-      state: geoRecord?.state ?? "NY",
-      requestedMarket: place?.[3] ?? input.market ?? null,
-      resolvedMarket: place?.[3] ?? input.market ?? null,
+      state: resolvedGeo?.state ?? geoRecord?.state ?? "NY",
+      requestedMarket: resolvedGeo?.market ?? place?.[3] ?? input.market ?? null,
+      resolvedMarket: resolvedGeo?.market ?? place?.[3] ?? input.market ?? null,
     },
   });
   const restaurantFoods = [
@@ -504,17 +511,20 @@ export async function buildSearchPlan({
     geo: {
       source: anchored
         ? "anchor"
-        : place
-          ? "explicit"
-          : current
-            ? "current_location"
-            : "default_market",
-      market: place?.[3] ?? input.market ?? null,
+        : resolvedGeo?.source === "zip"
+          ? "zip"
+          : place
+            ? "explicit"
+            : current
+              ? "current_location"
+              : "default_market",
+      zipCode: resolvedGeo?.zipCode ?? null,
+      market: resolvedGeo?.market ?? place?.[3] ?? input.market ?? null,
       city: resolvedCity,
       borough: resolvedBorough,
-      neighborhood: geoRecord?.type === "neighborhood" ? geoRecord.name : null,
+      neighborhood: resolvedGeo?.neighborhood ?? (geoRecord?.type === "neighborhood" ? geoRecord.name : null),
       county: resolvedCounty,
-      state: geoRecord?.state ?? "NY",
+      state: resolvedGeo?.state ?? geoRecord?.state ?? "NY",
       latitude,
       longitude,
       radiusMiles,
@@ -568,7 +578,7 @@ export async function buildSearchPlan({
       mode: broadOccasionRequest ? 0.98 : 0.95,
       restaurant: restaurantRequired || anchored ? 0.95 : 0.9,
       activity: activityRequired ? 0.95 : 0.9,
-      geo: place || current || useDefaultMarketCoordinates ? 0.95 : 0.7,
+      geo: resolvedGeo || place || current || useDefaultMarketCoordinates ? 0.95 : 0.7,
     },
     parser: {
       source: "deterministic",
@@ -579,9 +589,11 @@ export async function buildSearchPlan({
           : null,
         anchored
           ? `${p.genericAnchor ? "generic" : "named"} anchor extracted: ${p.anchorName}`
-          : geoRecord
-            ? `canonical centroid resolved for ${geoRecord.name}`
-            : "explicit taxonomy, mode, sequence, geography, and travel signals resolved",
+          : resolvedGeo?.zipCode
+            ? `canonical ZIP geography resolved for ${resolvedGeo.zipCode}`
+            : geoRecord
+              ? `canonical centroid resolved for ${geoRecord.name}`
+              : "explicit taxonomy, mode, sequence, geography, and travel signals resolved",
       ].filter((reason): reason is string => Boolean(reason)),
     },
   };

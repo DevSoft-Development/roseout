@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type DashboardUserContext = Awaited<ReturnType<typeof getCurrentUserDashboardContext>>;
 
-const PROFILE_SELECT = "preferred_name,city,birthday_month,mobile_number,sms_opt_in,preferences,age_range";
+const PROFILE_SELECT = "first_name,phone_e164,birth_month,home_zip_code,home_neighborhood,home_borough,home_city,home_county,home_state,home_market,sms_consent,personalization_enabled";
 const OUTING_SELECT = "id,status,contact_method,plan_title,source_query,restaurant_location_id,activity_location_id,saved_at,reservation_clicked_at,call_clicked_at,completed_at,external_booking_started_at,external_booking_confirmed_at,external_reservation_url,metadata,created_at,updated_at";
 
 async function maybeSingle(table: string, select: string, col: string, value?: string | null) {
@@ -104,7 +104,7 @@ export async function requireUserForDashboard(next = "/user/dashboard", loginPat
 }
 
 export async function getUserProfileForDashboard(userId: string) {
-  const profile = await maybeSingle("user_profiles", PROFILE_SELECT, "user_id", userId);
+  const profile = await maybeSingle("consumer_profiles", PROFILE_SELECT, "user_id", userId);
   return { profile, merged: profile || {} };
 }
 

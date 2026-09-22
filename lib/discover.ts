@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { loadDiscoverPromotionItems } from "@/lib/promotions/engine";
+import type { PromotionGeoContext } from "@/lib/promotions/targeting";
 
 export type DiscoverItem = {
   id: string;
@@ -30,7 +31,7 @@ export type DiscoverSection = {
   items: DiscoverItem[];
 };
 
-export async function loadDiscoverSections(): Promise<DiscoverSection[]> {
+export async function loadDiscoverSections(geo?: PromotionGeoContext | null): Promise<DiscoverSection[]> {
   const now = new Date().toISOString();
   const [{ data: sections, error: sectionError }, { data: items, error: itemError }, promotionItems] = await Promise.all([
     supabaseAdmin
@@ -45,7 +46,7 @@ export async function loadDiscoverSections(): Promise<DiscoverSection[]> {
       .or(`starts_at.is.null,starts_at.lte.${now}`)
       .or(`ends_at.is.null,ends_at.gte.${now}`)
       .order("sort_order", { ascending: true }),
-    loadDiscoverPromotionItems(),
+    loadDiscoverPromotionItems(geo),
   ]);
 
   if (sectionError || itemError) {

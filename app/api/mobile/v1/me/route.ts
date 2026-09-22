@@ -20,10 +20,13 @@ export async function GET(req: NextRequest) {
         email: null,
         phone: null,
         birthMonth: null,
+        homeZipCode: null,
         homeNeighborhood: null,
         homeBorough: null,
         homeCity: null,
+        homeCounty: null,
         homeState: null,
+        homeMarket: null,
         smsConsent: false,
         personalizationEnabled: false,
       },
@@ -33,7 +36,7 @@ export async function GET(req: NextRequest) {
   const admin = getSupabaseAdminClient();
   const { data } = await admin
     .from("consumer_profiles")
-    .select("first_name,phone_e164,birth_month,home_neighborhood,home_borough,home_city,home_state,sms_consent,personalization_enabled")
+    .select("first_name,phone_e164,birth_month,home_zip_code,home_neighborhood,home_borough,home_city,home_county,home_state,home_market,sms_consent,personalization_enabled")
     .eq("user_id", identity.userId)
     .maybeSingle();
 
@@ -47,10 +50,13 @@ export async function GET(req: NextRequest) {
       email: identity.email,
       phone: data?.phone_e164 ?? null,
       birthMonth: data?.birth_month ?? null,
+      homeZipCode: data?.home_zip_code ?? null,
       homeNeighborhood: data?.home_neighborhood ?? null,
       homeBorough: data?.home_borough ?? null,
       homeCity: data?.home_city ?? null,
+      homeCounty: data?.home_county ?? null,
       homeState: data?.home_state ?? null,
+      homeMarket: data?.home_market ?? null,
       smsConsent: Boolean(data?.sms_consent),
       personalizationEnabled: data?.personalization_enabled !== false,
     },

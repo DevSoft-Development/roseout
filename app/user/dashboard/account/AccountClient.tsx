@@ -9,69 +9,79 @@ const MONTHS = [
 
 export default function AccountClient({ profile }: { profile: any }) {
   const [form, setForm] = useState({
-    preferred_name: profile?.preferred_name || "",
-    city: profile?.city || "",
-    birthday_month: profile?.birthday_month ? String(profile.birthday_month) : "",
-    phone: profile?.mobile_number || "",
-    sms_opt_in: Boolean(profile?.sms_opt_in),
+    first_name: profile?.first_name || "",
+    home_zip_code: profile?.home_zip_code || "",
+    birth_month: profile?.birth_month ? String(profile.birth_month) : "",
+    phone_e164: profile?.phone_e164 || "",
+    sms_consent: Boolean(profile?.sms_consent),
   });
   const [message, setMessage] = useState("");
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setMessage("");
-    if (!form.preferred_name.trim()) return setMessage("First name is required.");
-    if (!form.city.trim()) return setMessage("City is required.");
-    if (!form.birthday_month) return setMessage("Birth month is required.");
+    if (!form.first_name.trim()) return setMessage("First name is required.");
+    if (!/^\d{5}$/.test(form.home_zip_code)) return setMessage("A valid 5-digit ZIP code is required.");
+    if (!form.birth_month) return setMessage("Birth month is required.");
 
     const response = await fetch("/api/user/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        preferred_name: form.preferred_name,
-        city: form.city,
-        birthday_month: Number(form.birthday_month),
-        phone: form.phone,
-        sms_opt_in: form.sms_opt_in,
+        first_name: form.first_name,
+        home_zip_code: form.home_zip_code,
+        birth_month: Number(form.birth_month),
+        phone_e164: form.phone_e164,
+        sms_consent: form.sms_consent,
       }),
     });
     const data = await response.json().catch(() => ({}));
     setMessage(response.ok && data.success ? "Account saved." : data.error || "Could not save account.");
   }
 
+  const homeArea = [
+    profile?.home_neighborhood,
+    profile?.home_borough,
+    profile?.home_city,
+    profile?.home_county,
+    profile?.home_market,
+  ].filter(Boolean).filter((value, index, all) => all.indexOf(value) === index).join(" · ");
+
   return (
     <form onSubmit={save} className="grid gap-4">
       <label className="grid gap-2 text-sm font-bold text-white/70">
         First name <span className="text-rose-200">Required</span>
-        <input required autoComplete="given-name" className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" value={form.preferred_name} onChange={(e) => setForm({ ...form, preferred_name: e.target.value })} />
+        <input required autoComplete="given-name" className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
       </label>
 
       <label className="grid gap-2 text-sm font-bold text-white/70">
-        City <span className="text-rose-200">Required</span>
-        <input required autoComplete="address-level2" className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" placeholder="New York" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+        ZIP code <span className="text-rose-200">Required</span>
+        <input required inputMode="numeric" autoComplete="postal-code" maxLength={5} className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" placeholder="11530" value={form.home_zip_code} onChange={(e) => setForm({ ...form, home_zip_code: e.target.value.replace(/\D/g, "").slice(0, 5) })} />
+        <span className="text-xs font-semibold text-white/40">We use your ZIP to personalize nearby recommendations. We do not ask for your home address.</span>
       </label>
+
+      {homeArea ? <div className="rounded-2xl border border-white/10 bg-white/[.03] p-4 text-sm text-white/65"><b className="text-white">Home area:</b> {homeArea}</div> : null}
 
       <label className="grid gap-2 text-sm font-bold text-white/70">
         Birth month <span className="text-rose-200">Required</span>
-        <select required className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" value={form.birthday_month} onChange={(e) => setForm({ ...form, birthday_month: e.target.value })}>
+        <select required className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" value={form.birth_month} onChange={(e) => setForm({ ...form, birth_month: e.target.value })}>
           <option value="">Select month</option>
           {MONTHS.map((month, index) => <option key={month} value={index + 1}>{month}</option>)}
         </select>
-        <span className="text-xs font-semibold text-white/40">Used for birthday-month experiences and offers. We do not collect your birth day or full date of birth.</span>
+        <span className="text-xs font-semibold text-white/40">We only collect the month, not your birth day or year.</span>
       </label>
 
       <label className="grid gap-2 text-sm font-bold text-white/70">
-        Phone number <span className="text-white/35">Optional</span>
-        <input inputMode="tel" autoComplete="tel" className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" placeholder="(516) 555-0123" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        Mobile number <span className="text-white/35">Optional</span>
+        <input inputMode="tel" autoComplete="tel" className="min-h-12 rounded-2xl border border-white/10 bg-black/30 px-4 text-white" placeholder="(516) 555-0123" value={form.phone_e164} onChange={(e) => setForm({ ...form, phone_e164: e.target.value })} />
       </label>
 
       <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-4 text-sm font-semibold text-white/65">
-        <input type="checkbox" className="mt-1" checked={form.sms_opt_in} onChange={(e) => setForm({ ...form, sms_opt_in: e.target.checked })} />
-        Send me reservation reminders and outing updates by text. Message/data rates may apply.
+        <input type="checkbox" className="mt-1" checked={form.sms_consent} onChange={(e) => setForm({ ...form, sms_consent: e.target.checked })} />
+        Send me reservation reminders, OUTing updates, and optional offers by text. Message/data rates may apply.
       </label>
 
-      <p className="text-xs font-semibold leading-5 text-white/40">Your sign-in email is kept with your account authentication and is not used as a public profile field.</p>
-
+      <p className="text-xs font-semibold leading-5 text-white/40">Your sign-in email stays with authentication and is not a public profile field.</p>
       <button className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black">Save Account</button>
       {message ? <p className="text-sm text-emerald-100">{message}</p> : null}
     </form>
