@@ -27,6 +27,21 @@ function payloadValue(row: any, ...keys: string[]) {
   return undefined;
 }
 
+
+export async function personalizationAllowedForUser(
+  userId: string,
+  client: QueryClient = supabaseAdmin as unknown as QueryClient,
+): Promise<boolean> {
+  const result = await client
+    .from("consumer_profiles")
+    .select("personalization_enabled")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (result.error) throw result.error;
+  return result.data?.personalization_enabled !== false;
+}
+
 function preferenceFields(row: any) {
   return {
     cuisine: payloadValue(row, "cuisine", "cuisine_type", "restaurant_cuisine"),
@@ -88,13 +103,18 @@ export async function loadUserPreferenceProfile(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const events = await Promise.race([
-      queryPreferenceEvidence(userId, options.client),
+    const profile = await Promise.race([
+      (async () => {
+        const allowed = await personalizationAllowedForUser(userId, options.client);
+        if (!allowed) return buildUserPreferenceProfile(userId, [], options.now);
+        const events = await queryPreferenceEvidence(userId, options.client);
+        return buildUserPreferenceProfile(userId, events, options.now);
+      })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error("profile_load_timeout")), timeoutMs);
       }),
     ]);
-    return buildUserPreferenceProfile(userId, events, options.now);
+    return profile;
   } finally {
     if (timer) clearTimeout(timer);
   }

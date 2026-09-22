@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
         homeCity: null,
         homeState: null,
         smsConsent: false,
+        personalizationEnabled: false,
       },
     });
   }
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
   const admin = getSupabaseAdminClient();
   const { data } = await admin
     .from("consumer_profiles")
-    .select("first_name,phone_e164,birth_month,home_neighborhood,home_borough,home_city,home_state,sms_consent")
+    .select("first_name,phone_e164,birth_month,home_neighborhood,home_borough,home_city,home_state,sms_consent,personalization_enabled")
     .eq("user_id", identity.userId)
     .maybeSingle();
 
@@ -51,6 +52,57 @@ export async function GET(req: NextRequest) {
       homeCity: data?.home_city ?? null,
       homeState: data?.home_state ?? null,
       smsConsent: Boolean(data?.sms_consent),
+      personalizationEnabled: data?.personalization_enabled !== false,
     },
+  });
+}
+
+
+export async function PATCH(req: NextRequest) {
+  const identity = await resolveMobileIdentity(req);
+  if (!identity || identity.kind !== "user") {
+    return mobileError("mobile_user_required", "Sign in to change recommendation privacy settings.", 401);
+  }
+
+  let body: { personalizationEnabled?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return mobileError("invalid_json", "Privacy preference request was not valid JSON.", 400);
+  }
+
+  if (typeof body.personalizationEnabled !== "boolean") {
+    return mobileError("invalid_personalization_preference", "personalizationEnabled must be boolean.", 400);
+  }
+
+  const updatedAt = new Date().toISOString();
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin
+    .from("consumer_profiles")
+    .upsert({
+      user_id: identity.userId,
+      personalization_enabled: body.personalizationEnabled,
+      personalization_updated_at: updatedAt,
+      updated_at: updatedAt,
+    }, { onConflict: "user_id" });
+
+  if (error) {
+    return mobileError("privacy_preference_update_failed", "Could not update recommendation privacy settings.", 500);
+  }
+
+  if (!body.personalizationEnabled) {
+    const { error: vectorError } = await admin
+      .from("user_search_preference_vectors")
+      .delete()
+      .eq("user_id", identity.userId);
+    if (vectorError) {
+      return mobileError("privacy_preference_cleanup_failed", "Could not fully disable personalization.", 500);
+    }
+  }
+
+  return mobileJson({
+    ok: true,
+    personalizationEnabled: body.personalizationEnabled,
+    updatedAt,
   });
 }

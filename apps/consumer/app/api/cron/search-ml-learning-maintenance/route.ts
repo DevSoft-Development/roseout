@@ -280,6 +280,17 @@ async function backfillPersonalization(version: string, model: string) {
   if (error) throw error;
   let updated = 0;
   for (const user of users ?? []) {
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("consumer_profiles")
+      .select("personalization_enabled")
+      .eq("user_id", user.user_id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    if (profile?.personalization_enabled === false) {
+      await supabaseAdmin.from("user_search_preference_vectors").delete().eq("user_id", user.user_id);
+      continue;
+    }
+
     const { data: signals, error: signalError } = await supabaseAdmin.from("search_ml_learning_events")
       .select("location_id,restaurant_location_id,activity_location_id,signal_value,event_type")
       .eq("user_id", user.user_id)
