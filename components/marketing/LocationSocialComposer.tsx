@@ -13,6 +13,8 @@ type Connection = {
   metadata?: Record<string, unknown> | null;
 };
 
+type PublishResult = { provider: Provider; status: string };
+
 type DemandOpportunity = {
   query: string;
   searches30d: number;
@@ -72,8 +74,9 @@ export default function LocationSocialComposer({
 
   const selectedMedia = customMediaUrl.trim() || mediaUrl;
   const tiktokConnection = connections.find((item) => item.provider === "tiktok");
-  const tiktokPrivacyOptions = Array.isArray(tiktokConnection?.metadata?.privacy_level_options)
-    ? tiktokConnection?.metadata?.privacy_level_options.map(String)
+  const rawTikTokPrivacyOptions = tiktokConnection?.metadata?.privacy_level_options;
+  const tiktokPrivacyOptions = Array.isArray(rawTikTokPrivacyOptions)
+    ? rawTikTokPrivacyOptions.map(String)
     : [];
 
   function toggleProvider(provider: Provider) {
@@ -149,8 +152,10 @@ export default function LocationSocialComposer({
       } else if (json.status === "processing") {
         setMessage("Publishing started. Provider processing and queued work will continue through the social worker.");
       } else {
-        const failed = Array.isArray(json.results) ? json.results.filter((item: any) => item.status === "failed") : [];
-        setMessage(failed.length ? `Some channels need attention: ${failed.map((item: any) => providerLabels[item.provider as Provider] || item.provider).join(", ")}.` : "Social post created.");
+        const failed = Array.isArray(json.results)
+          ? (json.results as PublishResult[]).filter((item) => item.status === "failed")
+          : [];
+        setMessage(failed.length ? `Some channels need attention: ${failed.map((item) => providerLabels[item.provider] || item.provider).join(", ")}.` : "Social post created.");
       }
       router.refresh();
     } catch (error) {
