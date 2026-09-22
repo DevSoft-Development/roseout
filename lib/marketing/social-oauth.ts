@@ -80,6 +80,8 @@ export function socialAuthorizeUrl(provider: SocialProvider, state: string, redi
     url.searchParams.set("state", state);
     url.searchParams.set("scope", scopes.join(","));
     url.searchParams.set("response_type", "code");
+    const configurationId = process.env.META_LOGIN_CONFIGURATION_ID;
+    if (configurationId) url.searchParams.set("config_id", configurationId);
     return url.toString();
   }
 
