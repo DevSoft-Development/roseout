@@ -39,23 +39,24 @@ async function listTickets(userId: string, email?: string | null) {
 
 export async function getAdminUserDetail(userId: string) {
   const db = getAdminDatabaseClient();
-  const { data: profile } = await db.from("user_profiles").select("*").eq("id", userId).maybeSingle();
+  const { data: consumerProfile } = await db.from("consumer_profiles").select("*").eq("user_id", userId).maybeSingle();
+  const { data: legacyAccount } = await db.from("user_profiles").select("user_id,account_status,deleted_at,disabled_at,created_at").eq("user_id", userId).maybeSingle();
   const auth = uuidRe.test(userId)
     ? await safe(async () => (await db.auth.admin.getUserById(userId)).data.user, null as any)
     : null;
 
   let beta = await safe(async () => {
-    const email = profile?.email || auth?.email;
+    const email = auth?.email || auth?.email;
     const clause = `user_id.eq.${userId}${email ? `,email.eq.${email}` : ""}`;
     return (await db.from("beta_testers").select("*").or(clause).maybeSingle()).data;
   }, null as any);
 
-  if (!profile && !auth && !beta) {
+  if (!consumerProfile && !auth && !beta) {
     beta = await safe(async () => (await db.from("beta_testers").select("*").eq("id", userId).maybeSingle()).data, null as any);
   }
 
   const id = profile?.id || auth?.id || beta?.user_id || null;
-  const email = profile?.email || auth?.email || beta?.email || null;
+  const email = auth?.email || auth?.email || beta?.email || null;
 
   const [admin, saved, booked, reservations, tickets, usage, subscription, betaAssignments, betaFeedback, betaBugReports] = await Promise.all([
     safe(async () => id ? (await db.from("admin_users").select("role").eq("user_id", id).maybeSingle()).data : null, null as any),
@@ -73,18 +74,18 @@ export async function getAdminUserDetail(userId: string) {
   const hasAccount = Boolean(id);
   return {
     profile: {
-      ...(profile || {}),
+      ...(consumerProfile || {}),
       id: id || beta?.id || userId,
       email,
-      full_name: profile?.full_name || beta?.name || auth?.user_metadata?.full_name,
-      phone: profile?.phone || beta?.phone,
-      role: admin?.role || profile?.role || "user",
-      plan: subscription?.plan_key || profile?.plan || (hasAccount ? "free" : "Pending"),
+      first_name: consumerProfile?.first_name || auth?.user_metadata?.first_name || beta?.name || null,
+      phone: consumerProfile?.phone_e164 || beta?.phone || null,
+      role: admin?.role || "user",
+      plan: subscription?.plan_key || (hasAccount ? "free" : "Pending"),
       email_confirmed_at: auth?.email_confirmed_at,
-      created_at: profile?.created_at || auth?.created_at || beta?.created_at,
+      created_at: consumerProfile?.created_at || auth?.created_at || beta?.created_at,
       account_status:
-        profile?.account_status ||
-        (profile?.deleted_at || profile?.disabled_at || admin?.role === "disabled"
+        legacyAccount?.account_status ||
+        (legacyAccount?.deleted_at || legacyAccount?.disabled_at || admin?.role === "disabled"
           ? "disabled"
           : hasAccount
             ? (auth?.email_confirmed_at ? "active" : "email_unverified")
@@ -106,37 +107,27 @@ export async function getAdminUserDetail(userId: string) {
 
 export async function updateAdminUserProfile(userId: string, input: any, actor?: any, request?: Request) {
   const db = getAdminDatabaseClient();
-  const before = (await db.from("user_profiles").select("*").eq("id", userId).maybeSingle()).data || {};
-  const row: any = { updated_at: new Date().toISOString() };
+  const before = (await db.from("consumer_profiles").select("*").eq("user_id", userId).maybeSingle()).data || {};
+  const row: any = { user_id: userId, updated_at: new Date().toISOString() };
 
-  for (const key of ["full_name", "preferred_name", "phone", "mobile_number", "zip_code", "sms_opt_in", "birthday_opt_in"]) {
-    if (key in input) row[key] = typeof input[key] === "string" ? input[key].trim() || null : input[key];
+  if ("first_name" in input) row.first_name = String(input.first_name || "").trim() || null;
+  if ("phone_e164" in input) row.phone_e164 = String(input.phone_e164 || "").trim() || null;
+  if ("birth_month" in input) {
+    const month = Number(input.birth_month);
+    if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error("Birth month must be between 1 and 12");
+    row.birth_month = month;
   }
-
-  if ("age_range" in input) {
-    if (input.age_range && !(AGE_RANGE_OPTIONS as readonly string[]).includes(input.age_range)) throw new Error("Invalid age range");
-    row.age_range = input.age_range || null;
+  if ("home_zip_code" in input) {
+    const zip = String(input.home_zip_code || "").replace(/\D/g, "").slice(0, 5);
+    if (zip && !/^\d{5}$/.test(zip)) throw new Error("ZIP code must be 5 digits");
+    row.home_zip_code = zip || null;
   }
+  if ("sms_consent" in input) row.sms_consent = input.sms_consent === true;
+  if ("personalization_enabled" in input) row.personalization_enabled = input.personalization_enabled !== false;
 
-  if ("birthday" in input) {
-    const match = String(input.birthday || "").trim().match(/^(\d{1,2})[-/](\d{1,2})$/);
-    if (input.birthday && !match) throw new Error("Birthday must use MM-DD format");
-    if (match) {
-      const month = Number(match[1]);
-      const day = Number(match[2]);
-      const date = new Date(2024, month - 1, day);
-      if (date.getMonth() !== month - 1 || date.getDate() !== day) throw new Error("Invalid birthday");
-      row.birthday_month = month;
-      row.birthday_day = day;
-    } else {
-      row.birthday_month = null;
-      row.birthday_day = null;
-    }
-  }
-
-  const { data, error } = await db.from("user_profiles").upsert({ id: userId, ...row }, { onConflict: "id" }).select("*").single();
+  const { data, error } = await db.from("consumer_profiles").upsert(row, { onConflict: "user_id" }).select("*").single();
   if (error) throw error;
-  await logAdminAuditEvent({ actor, targetUserId: userId, targetEmail: data.email || before.email, action: "user_updated", entityType: "user_profile", summary: "User profile updated", beforeData: before, afterData: data, request });
+  await logAdminAuditEvent({ actor, targetUserId: userId, targetEmail: null, action: "user_updated", entityType: "consumer_profile", summary: "Canonical consumer profile updated", beforeData: before, afterData: data, request });
   return data;
 }
 
