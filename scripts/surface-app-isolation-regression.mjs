@@ -36,6 +36,9 @@ for (const surface of surfaces) {
   if (!Array.isArray(rootAlias) || rootAlias[0] !== expectedRootAlias) {
     throw new Error(`${surface} must preserve its expected migration-time @/* boundary.`);
   }
+  if (surface === "admin" && rootAlias[1] !== "../../*") {
+    throw new Error("Admin must preserve its root-library fallback while legacy Admin APIs finish migrating.");
+  }
   for (const packageName of sharedPackages) {
     if (!tsconfig.includes(`"@theouthaven/${packageName}/*"`)) {
       throw new Error(`${surface} must expose the @theouthaven/${packageName} shared package alias.`);
