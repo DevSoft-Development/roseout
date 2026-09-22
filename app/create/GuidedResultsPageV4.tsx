@@ -48,6 +48,9 @@ type PairCard = PlacementFields & { restaurant?: LocationCard | null; activity?:
 type SearchPayload = {
   restaurants?: LocationCard[];
   activities?: LocationCard[];
+  builder?: { enabled?: boolean; restaurants?: LocationCard[]; activities?: LocationCard[] } | null;
+  builder_restaurants?: LocationCard[];
+  builder_activities?: LocationCard[];
   sameVenueResults?: LocationCard[];
   same_venue_results?: LocationCard[];
   pairs?: PairCard[];
@@ -382,16 +385,19 @@ export default function GuidedResultsPageV4() {
   const pairs = useMemo(() => allPairs.slice(0, 6), [allPairs]);
   const rawRestaurants = useMemo(() => result?.restaurants || [], [result]);
   const rawActivities = useMemo(() => result?.activities || [], [result]);
+  const builderRestaurants = useMemo(() => result?.builder?.restaurants || result?.builder_restaurants || result?.searchV2?.builder?.restaurants || [], [result]);
+  const builderActivities = useMemo(() => result?.builder?.activities || result?.builder_activities || result?.searchV2?.builder?.activities || [], [result]);
   const restaurants = useMemo(() => {
-    const unique = uniqueLocations([...rawRestaurants, ...allPairs.map((item) => item.restaurant)]);
+    const unique = uniqueLocations([...builderRestaurants, ...rawRestaurants, ...allPairs.map((item) => item.restaurant)]);
     return planType === "outing" ? unique.slice(0, 12) : unique;
-  }, [rawRestaurants, allPairs, planType]);
+  }, [builderRestaurants, rawRestaurants, allPairs, planType]);
   const activities = useMemo(() => {
-    const unique = uniqueLocations([...rawActivities, ...allPairs.map((item) => item.activity)]);
+    const unique = uniqueLocations([...builderActivities, ...rawActivities, ...allPairs.map((item) => item.activity)]);
     return planType === "outing" ? unique.slice(0, 12) : unique;
-  }, [rawActivities, allPairs, planType]);
+  }, [builderActivities, rawActivities, allPairs, planType]);
   const singles = planType === "restaurant" ? restaurants : activities;
-  const hasResults = planType === "outing" ? pairs.length > 0 : singles.length > 0;
+  const canBuildOuting = planType === "outing" && restaurants.length > 0 && activities.length > 0;
+  const hasResults = planType === "outing" ? pairs.length > 0 || canBuildOuting : singles.length > 0;
 
   function openPlan(restaurant: LocationCard | null, activity: LocationCard | null, pair: PairCard | null, rank: number | null, resultType: string, sponsored = false, sponsor: string | null = null) {
     const outingTime = outingTimeFrom(result || {});
@@ -413,8 +419,9 @@ export default function GuidedResultsPageV4() {
 
       <section className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
         {loading ? <LoadingResults planType={planType} index={loadingIndex} /> : error ? <div className="rounded-[1.4rem] border border-red-400/20 bg-red-500/10 p-6"><h2 className="text-xl font-black">We couldn’t load your picks.</h2><p className="mt-2 text-sm font-semibold text-red-100/70">{error}</p><button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-5 rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Try again</button></div> : !hasResults ? <div className="rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-6 text-center"><h2 className="text-2xl font-black">No strong picks yet.</h2><p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-white/45">Adjust the area or preferences and we’ll try again.</p><Link href="/create" className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase">Adjust my plan</Link></div> : planType === "outing" ? <>
+          {pairs.length === 0 && canBuildOuting ? <div className="mb-5 rounded-[1.4rem] border border-white/10 bg-white/[0.035] p-5"><h2 className="text-xl font-black">Pick your own pair</h2><p className="mt-2 text-sm font-semibold text-white/50">We found matching restaurants and activities, but no automatic pairing was strong enough. Choose the combination you prefer below.</p></div> : null}
           <div className="grid gap-5 lg:grid-cols-2">{pairs.map((item, index) => <PairCardView key={`${item.restaurant.id}-${item.activity.id}-${index}`} item={item} rank={index + 1} walkingRequested={walkingRequested} returnToResults={returnToResults} prompt={prompt} onUse={() => { const attribution = pairAttribution(item); openPlan(item.restaurant, item.activity, item.pair, index + 1, item.resultType, attribution.sponsored, attribution.sponsorId); }} />)}</div>
-          {restaurants.length && activities.length ? (
+          {canBuildOuting ? (
             <details className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[0.025] p-5 sm:p-6">
               <summary onClick={() => track("planner_build_own_opened", { step: 3, flow_version: FLOW_VERSION, journey_version: JOURNEY_VERSION })} className="cursor-pointer list-none">
                 <div className="flex items-center justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Want more control?</p><h2 className="mt-1 text-2xl font-black">Build your own outing</h2><p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/45">Mix and match from a broader set of restaurants and activities that fit your search. Recommended-pair locations stay available, plus additional choices from the search.</p></div><span className="text-2xl text-white/30">+</span></div>
