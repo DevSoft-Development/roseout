@@ -5,9 +5,10 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
 describe("consumer personalization privacy contract", () => {
-  it("stores a user-controlled personalization preference", () => {
+  it("stores a user-controlled personalization preference and excludes opt-outs from vector backfills", () => {
     const migration = read("supabase/migrations/20260921234500_add_consumer_personalization_preferences.sql");
     expect(migration).toContain("personalization_enabled boolean not null default true");
+    expect(migration).toContain("coalesce(cp.personalization_enabled,true)=true");
   });
 
   it("gates both historical and active V2 personalization on consent", () => {
@@ -26,5 +27,8 @@ describe("consumer personalization privacy contract", () => {
     expect(web).toContain("/api/user/privacy-preferences");
     expect(mobile).toContain("Personalized recommendations");
     expect(mobile).toContain('method: "PATCH"');
+    const api = read("app/api/user/privacy-preferences/route.ts");
+    expect(api).toContain('from("user_search_preference_vectors")');
+    expect(api).toContain(".delete()");
   });
 });
