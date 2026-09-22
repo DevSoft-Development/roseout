@@ -1,4 +1,5 @@
 import { detectDomainNegation } from "./domainNegation";
+import { normalizeConnectorSymbols } from "./naturalLanguageNormalization";
 
 export type ExplicitDomainSignals = Readonly<{
   restaurant: boolean;
@@ -32,7 +33,7 @@ function evidenceFor(query: string, patterns: ReadonlyArray<readonly [string, Re
 }
 
 export function detectExplicitDomainSignals(query: string): ExplicitDomainSignals {
-  const normalized = String(query ?? "").trim();
+  const normalized = normalizeConnectorSymbols(String(query ?? "")).trim();
   const negation = detectDomainNegation(normalized);
   const restaurantEvidence = negation.restaurant ? [] : evidenceFor(normalized, RESTAURANT_PATTERNS);
   const activityEvidence = negation.activity ? [] : evidenceFor(normalized, ACTIVITY_PATTERNS);

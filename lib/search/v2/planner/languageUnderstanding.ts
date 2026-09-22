@@ -1,9 +1,10 @@
 import type { SearchPlan, VenueRelationshipType } from "./searchPlanTypes";
 import { findTaxonomyMatches } from "../taxonomy";
 import { rewriteSpecificTaxonomyPhrases } from "./taxonomySpecificity";
+import { normalizeConnectorSymbols } from "./naturalLanguageNormalization";
 
 const uniq = (items: string[]) => [...new Set(items.filter(Boolean))];
-const q = (value: string) => value.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+const q = (value: string) => normalizeConnectorSymbols(value).toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
 const TAXONOMY_NEGATION_PREFIX = String.raw`(?:no|not|without|anything\s+but|except|is(?:n't|\s+not)|are(?:n't|\s+not)|was(?:n't|\s+not)|were(?:n't|\s+not))`;
 
 export function detectVenueRelationship(query: string) {

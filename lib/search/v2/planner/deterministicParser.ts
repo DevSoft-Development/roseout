@@ -2,6 +2,7 @@ import { activities, cuisines, features, foods, matchTaxonomy } from "../taxonom
 import { detectDomainNegation } from "./domainNegation";
 import { extractNegativeConstraints } from "./languageUnderstanding";
 import { isKnownLocalPlace, resolveExplicitLocalPlace } from "./localPlaceResolver";
+import { normalizeConnectorSymbols } from "./naturalLanguageNormalization";
 import type { AnchorEntityType, SearchPlannerInput } from "./searchPlanTypes";
 
 const EXPLICIT_ACTIVITY_PATTERN = /\b(bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|dancing|dance club|nightclub|scenic walk|waterfront walk|pottery|axe throwing)\b/;
@@ -15,7 +16,7 @@ const SAME_VENUE_ALTERNATIVE_PATTERN = /\b(?:same (?:venue|place)|one (?:venue|p
 const SEQUENCE_CONNECTOR_PATTERN = /\b(followed by|and then|then|afterward|afterwards|after|before)\b/g;
 const TRAILING_ACTIVITY_LANE_PATTERN = /\b(?:and|then|plus)\s+(bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|dancing|dance club|nightclub|scenic walk|waterfront walk|pottery|axe throwing)\b/gi;
 
-function normalizeQuery(value: string) { return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
+function normalizeQuery(value: string) { return normalizeConnectorSymbols(value).toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function hasExplicitActivityEvidence(query: string) {
   return matchTaxonomy(query, activities).length > 0 || EXPLICIT_ACTIVITY_PATTERN.test(query) || INTERACTIVE_ACTIVITY_PATTERN.test(query);
@@ -133,6 +134,7 @@ export function deterministicParse(input: SearchPlannerInput) {
     /\bwatch(?:ing)?\b.{0,60}\b(?:game|match|knicks|nets|yankees|mets|giants|jets|rangers|islanders|liberty)\b/.test(q)
   );
   const genericActivitySignal = /\b(activity|activities|things to do|something fun|fun activity|show|somewhere close by|outing)\b/.test(activityEvidenceQuery)
+    || /\b(?:and|then)\s+fun\b/.test(activityEvidenceQuery)
     || (!sportsWatchRestaurantContext && /\bgames?\b/.test(activityEvidenceQuery))
     || occasionActivitySignal
     || INTERACTIVE_ACTIVITY_PATTERN.test(activityEvidenceQuery);
