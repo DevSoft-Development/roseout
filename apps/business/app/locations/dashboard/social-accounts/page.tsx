@@ -3,6 +3,8 @@ import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { loadInstagramSocialConfig } from "@/lib/marketing/social-provider-config";
+import { googleBusinessConfigured } from "@/lib/google/google-business-profile";
+import GoogleBusinessProfileCard from "./GoogleBusinessProfileCard";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +33,7 @@ export default async function LocationSocialAccountsPage({
   }
 
   const locationId = String(location.id);
-  const [{ data: connection }, instagramConfig] = await Promise.all([
+  const [{ data: connection }, { data: googleBusinessConnection }, instagramConfig] = await Promise.all([
     supabaseAdmin
       .from("marketing_social_connections")
       .select("id,provider_account_id,display_name,username,status,granted_scopes,token_expires_at,connected_at,last_refreshed_at,last_error,updated_at")
@@ -42,10 +44,17 @@ export default async function LocationSocialAccountsPage({
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabaseAdmin
+      .from("google_business_profile_connections")
+      .select("id,google_account_display_name,google_location_name,google_location_title,status,token_expires_at,connected_at,last_sync_at,last_error,health_score,mismatch_count,mismatches,candidate_locations")
+      .eq("location_id", locationId)
+      .neq("status", "disconnected")
+      .maybeSingle(),
     loadInstagramSocialConfig(),
   ]);
 
   const apiConfigured = Boolean(instagramConfig.appId && instagramConfig.appSecret && instagramConfig.graphVersion);
+  const googleConfigured = googleBusinessConfigured();
   const connected = connection?.status === "connected" || connection?.status === "degraded" || connection?.status === "reauthorization_required";
   const accountName = connection?.username
     ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}`
@@ -54,23 +63,42 @@ export default async function LocationSocialAccountsPage({
   const returnPath = `/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`;
   const connectHref = `/api/locations/social/instagram?locationId=${encodeURIComponent(locationId)}&returnTo=${encodeURIComponent(returnPath)}`;
   const success = first(params.connected) === "instagram";
+  const googleResult = first(params.googleBusiness);
   const error = first(params.error);
 
   return (
     <BusinessPageShell>
       <BusinessPageHeader
         eyebrow="Marketing & Growth"
-        title="Social Accounts"
-        subtitle={<>Connect {locationName}&apos;s Instagram account once, then TheOutHaven can publish approved content and read permitted performance data for this location.</>}
+        title="Connected Accounts"
+        subtitle={<>Connect {locationName} to the external channels TheOutHaven uses for local visibility, approved publishing, and performance data.</>}
         badge={<><BusinessStatusBadge tone={connected ? "green" : "amber"}>{connected ? accountName : "Instagram not connected"}</BusinessStatusBadge><BusinessStatusBadge tone={apiConfigured ? "blue" : "amber"}>{apiConfigured ? "Provider ready" : "Provider setup required"}</BusinessStatusBadge></>}
       />
 
         {success ? (
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">Instagram connected successfully to this location.</div>
         ) : null}
+        {googleResult === "connected" ? (
+          <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">Google Business Profile connected and mapped successfully.</div>
+        ) : googleResult === "mapping_required" ? (
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-100">Google authorization succeeded. Choose the matching Google location below to finish setup.</div>
+        ) : null}
         {error ? (
           <div role="alert" className="rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">{error}</div>
         ) : null}
+
+        <GoogleBusinessProfileCard
+          locationId={locationId}
+          locationName={locationName}
+          configured={googleConfigured}
+          connection={googleBusinessConnection ? {
+            ...googleBusinessConnection,
+            health_score: Number(googleBusinessConnection.health_score || 0),
+            mismatch_count: Number(googleBusinessConnection.mismatch_count || 0),
+            mismatches: Array.isArray(googleBusinessConnection.mismatches) ? googleBusinessConnection.mismatches : [],
+            candidate_locations: Array.isArray(googleBusinessConnection.candidate_locations) ? googleBusinessConnection.candidate_locations : [],
+          } : null}
+        />
 
         <section className="rounded-[2rem] border border-white/10 bg-[#110d0d] p-5 shadow-xl sm:p-7">
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
