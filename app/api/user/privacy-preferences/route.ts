@@ -59,5 +59,15 @@ export async function PATCH(request: Request) {
 
   if (error) return Response.json({ error: "Could not update privacy preferences." }, { status: 500 });
 
+  if (!enabled) {
+    const { error: vectorError } = await supabaseAdmin
+      .from("user_search_preference_vectors")
+      .delete()
+      .eq("user_id", user.id);
+    if (vectorError) {
+      return Response.json({ error: "Could not fully disable personalization." }, { status: 500 });
+    }
+  }
+
   return Response.json({ personalizationEnabled: enabled, updatedAt });
 }
