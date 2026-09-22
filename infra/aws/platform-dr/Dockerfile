@@ -7,7 +7,8 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    PLATFORM_RUNTIME_PROVIDER=aws-dr
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN --mount=type=secret,id=platform_env,target=/app/.env.production.local,required=true npm run build
