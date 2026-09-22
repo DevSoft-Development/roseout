@@ -50,6 +50,7 @@ import {
   type UserPreferenceProfile,
 } from "@/lib/search/enterprise/personalization";
 import { loadUserPreferenceProfile as defaultLoadUserPreferenceProfile } from "@/lib/search/enterprise/personalizationProfileLoader";
+import { getPersonalizationPreferences } from "@/lib/privacy/personalization-preferences";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -327,7 +328,33 @@ export async function handleGeneratePost(
     const searchIdentity = await measure("identityMs", () =>
       withStageDeadline("identity", getIdentity(request)),
     );
-    const currentPersonalizationMode = personalizationMode();
+    const globalPersonalizationMode = personalizationMode();
+    const oneTimePersonalizationOff =
+      body?.disablePersonalization === true ||
+      body?.disable_personalization === true;
+    let personalizationAllowed = !oneTimePersonalizationOff;
+    let personalizationConsentReason = oneTimePersonalizationOff
+      ? "one_time_opt_out"
+      : "default";
+
+    if (personalizationAllowed && searchIdentity.user?.id) {
+      try {
+        const preferences = await getPersonalizationPreferences(
+          searchIdentity.user.id,
+        );
+        personalizationAllowed = preferences.personalizationEnabled;
+        personalizationConsentReason = preferences.personalizationEnabled
+          ? "user_enabled"
+          : "user_disabled";
+      } catch {
+        personalizationAllowed = false;
+        personalizationConsentReason = "preference_lookup_failed";
+      }
+    }
+
+    const currentPersonalizationMode = personalizationAllowed
+      ? globalPersonalizationMode
+      : "disabled";
     let personalizationProfile: UserPreferenceProfile | undefined;
     let personalizationFailureReason: string | undefined;
     if (currentPersonalizationMode !== "disabled" && searchIdentity.user?.id) {
@@ -508,6 +535,7 @@ export async function handleGeneratePost(
         personalizationProfile,
         personalizationMode: currentPersonalizationMode,
         personalizationFailureReason,
+        personalizationConsentReason,
         betaAssignmentId:
           typeof betaAssignmentId === "string" ? betaAssignmentId : null,
         betaTesterId: typeof betaTesterId === "string" ? betaTesterId : null,
