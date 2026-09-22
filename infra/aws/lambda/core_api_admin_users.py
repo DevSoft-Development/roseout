@@ -114,7 +114,17 @@ def merge_user_records(profiles, app_users, beta_rows, beta_apps, launch_rows, a
         merged[final_key] = item
 
     for item in profiles:
-        put({**item, "hasAccount": True, "badges": ["Account User"]})
+        put({
+            **item,
+            "id": item.get("user_id"),
+            "first_name": item.get("first_name"),
+            "full_name": item.get("first_name"),
+            "phone": item.get("phone_e164"),
+            "zip_code": item.get("home_zip_code"),
+            "home_zip_code": item.get("home_zip_code"),
+            "hasAccount": True,
+            "badges": ["Account User"],
+        })
     for item in app_users:
         put({**item, "id": item.get("id") or item.get("user_id"), "full_name": item.get("full_name") or item.get("name"), "hasAccount": True, "badges": ["Account User"]})
     for item in auth_rows:
@@ -122,7 +132,8 @@ def merge_user_records(profiles, app_users, beta_rows, beta_apps, launch_rows, a
         put({
             "id": item.get("id"),
             "email": item.get("email"),
-            "full_name": metadata.get("full_name") or metadata.get("name"),
+            "first_name": metadata.get("first_name"),
+            "full_name": metadata.get("first_name") or metadata.get("full_name") or metadata.get("name"),
             "created_at": item.get("created_at"),
             "email_confirmed_at": item.get("email_confirmed_at"),
             "last_sign_in_at": item.get("last_sign_in_at"),
@@ -233,7 +244,7 @@ def decorate_user(item, admins_by_id, subscriptions_by_id, saved, booked, ticket
 def matches_filters(user, filters):
     query = email_key(filters.get("q"))
     if query:
-        fields = [user.get("full_name"), user.get("preferred_name"), user.get("email"), user.get("phone"), user.get("mobile_number"), user.get("zip_code"), user.get("social_handle")]
+        fields = [user.get("first_name"), user.get("full_name"), user.get("email"), user.get("phone"), user.get("home_zip_code"), user.get("zip_code"), user.get("home_neighborhood"), user.get("home_city"), user.get("home_market"), user.get("social_handle")]
         if not any(query in core.text(value).lower() for value in fields):
             return False
     beta = core.text(filters.get("beta"))
@@ -271,7 +282,8 @@ def read_admin_users_list(payload):
     per = 25
 
     jobs = {
-        "profiles": ("user_profiles", [("order", "created_at.desc")]),
+        "profiles": ("consumer_profiles", [("order", "created_at.desc")]),
+        "legacy_accounts": ("user_profiles", [("order", "created_at.desc")]),
         "app_users": ("users", [("order", "created_at.desc")]),
         "beta_rows": ("beta_testers", [("order", "created_at.desc")]),
         "beta_apps": ("beta_applications", [("order", "created_at.desc")]),
@@ -284,6 +296,15 @@ def read_admin_users_list(payload):
         auth_rows = safe(auth_future.result, [])
 
     merged, auth_by_id = merge_user_records(source["profiles"], source["app_users"], source["beta_rows"], source["beta_apps"], source["launch_rows"], auth_rows)
+    for legacy in source.get("legacy_accounts", []):
+        user_id = core.text(legacy.get("user_id"))
+        key = f"user:{user_id}" if user_id else None
+        if key and key in merged:
+            merged[key].update({
+                "account_status": legacy.get("account_status"),
+                "deleted_at": legacy.get("deleted_at"),
+                "disabled_at": legacy.get("disabled_at"),
+            })
     values = list(merged.values())
     ids = sorted({core.text(item.get("id")) for item in values if core.text(item.get("id"))})
     emails = sorted({email_key(item.get("email")) for item in values if email_key(item.get("email"))})
@@ -339,13 +360,15 @@ def read_admin_user_detail(payload):
         raise ValueError("userId_required")
     core.load_secret(core.SUPABASE_SERVICE_ROLE_SECRET_ID)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        profile_f = pool.submit(core.supabase_get, "user_profiles", "*", [("id", f"eq.{requested_id}")])
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        profile_f = pool.submit(core.supabase_get, "consumer_profiles", "*", [("user_id", f"eq.{requested_id}")])
+        legacy_f = pool.submit(core.supabase_get, "user_profiles", "user_id,account_status,deleted_at,disabled_at,created_at", [("user_id", f"eq.{requested_id}")])
         auth_f = pool.submit(auth_user_by_id, requested_id) if core.valid_uuid(requested_id) else None
         profile = safe(profile_f.result, None)
+        legacy_account = safe(legacy_f.result, None)
         auth = safe(auth_f.result, None) if auth_f else None
 
-    email = (profile or {}).get("email") or (auth or {}).get("email")
+    email = (auth or {}).get("email")
     beta_filters = [f"user_id.eq.{requested_id}"]
     if email:
         beta_filters.append(f"email.eq.{str(email).replace(',', '')}")
@@ -353,8 +376,8 @@ def read_admin_user_detail(payload):
     if not profile and not auth and not beta:
         beta = safe(lambda: core.supabase_get("beta_testers", "*", [("id", f"eq.{requested_id}")]), None)
 
-    resolved_id = core.text((profile or {}).get("id") or (auth or {}).get("id") or (beta or {}).get("user_id"))
-    resolved_email = (profile or {}).get("email") or (auth or {}).get("email") or (beta or {}).get("email")
+    resolved_id = core.text((profile or {}).get("user_id") or (auth or {}).get("id") or (beta or {}).get("user_id"))
+    resolved_email = (auth or {}).get("email") or (beta or {}).get("email")
     beta_id = core.text((beta or {}).get("id"))
 
     def admin_role():
@@ -385,16 +408,18 @@ def read_admin_user_detail(payload):
     base_profile.update({
         "id": resolved_id or (beta or {}).get("id") or requested_id,
         "email": resolved_email,
-        "full_name": (profile or {}).get("full_name") or (beta or {}).get("name") or metadata.get("full_name"),
-        "phone": (profile or {}).get("phone") or (beta or {}).get("phone"),
-        "role": admin.get("role") or (profile or {}).get("role") or "user",
-        "plan": (result.get("subscription") or {}).get("plan_key") or (profile or {}).get("plan") or ("free" if has_account else "Pending"),
+        "first_name": (profile or {}).get("first_name") or metadata.get("first_name") or (beta or {}).get("name"),
+        "full_name": (profile or {}).get("first_name") or metadata.get("first_name") or (beta or {}).get("name"),
+        "phone": (profile or {}).get("phone_e164") or (beta or {}).get("phone"),
+        "zip_code": (profile or {}).get("home_zip_code"),
+        "role": admin.get("role") or "user",
+        "plan": (result.get("subscription") or {}).get("plan_key") or ("free" if has_account else "Pending"),
         "email_confirmed_at": (auth or {}).get("email_confirmed_at"),
         "created_at": (profile or {}).get("created_at") or (auth or {}).get("created_at") or (beta or {}).get("created_at"),
         "hasAccount": has_account,
     })
-    disabled = bool((profile or {}).get("deleted_at") or (profile or {}).get("disabled_at") or admin.get("role") == "disabled")
-    base_profile["account_status"] = (profile or {}).get("account_status") or ("disabled" if disabled else ("active" if (auth or {}).get("email_confirmed_at") else "email_unverified") if has_account else "pending_account")
+    disabled = bool((legacy_account or {}).get("deleted_at") or (legacy_account or {}).get("disabled_at") or admin.get("role") == "disabled")
+    base_profile["account_status"] = (legacy_account or {}).get("account_status") or ("disabled" if disabled else ("active" if (auth or {}).get("email_confirmed_at") else "email_unverified") if has_account else "pending_account")
 
     return {
         "success": True,
