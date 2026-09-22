@@ -59,6 +59,8 @@ export type ActivityIntent = {
 
 export type GeoIntent = {
   raw?: string | null;
+  zipCode?: string | null;
+  geoSource?: string | null;
   neighborhood?: string | null;
   city?: string | null;
   borough?: string | null;
