@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { currentSearchUserId } from "../../searchUserContext";
 import { resolveSearchMlRuntimeConfig } from "../../huggingFaceEmbedding";
+import { personalizationAllowedForUser } from "../../enterprise/personalizationProfileLoader";
 import type { SearchTrace } from "../observability/searchTrace";
 import type { ScoredCandidate } from "./scoringTypes";
 
@@ -35,6 +36,15 @@ export async function applyHfPersonalization({ userId, supabase, scored, trace }
   const ids = [...new Set(scored.all.map(locationId).filter(Boolean))];
   if (!ids.length) return scored;
   try {
+    const allowed = await personalizationAllowedForUser(resolvedUserId, supabase);
+    if (!allowed) {
+      trace.decisions.push({
+        stage: "hf_personalization",
+        decision: "personalization_opted_out",
+        reason: JSON.stringify({ authenticated: true }),
+      });
+      return scored;
+    }
     const { data, error } = await supabase.rpc("get_user_location_preference_similarity", {
       p_user_id: resolvedUserId,
       p_location_ids: ids,
