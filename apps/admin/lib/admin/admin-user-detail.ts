@@ -4,7 +4,6 @@ import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { logAdminAuditEvent } from "@/lib/admin-audit-log";
 import { USER_ROLES, type UserRole } from "@/lib/users/roles";
 
-const AGE_RANGE_OPTIONS = ["Under 21", "21–24", "25–34", "35–44", "45–54", "55–64", "65+", "Prefer not to say"] as const;
 const PLAN_OPTIONS = ["free", "unlimited", "comped", "admin"] as const;
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -46,7 +45,7 @@ export async function getAdminUserDetail(userId: string) {
     : null;
 
   let beta = await safe(async () => {
-    const email = auth?.email || auth?.email;
+    const email = auth?.email;
     const clause = `user_id.eq.${userId}${email ? `,email.eq.${email}` : ""}`;
     return (await db.from("beta_testers").select("*").or(clause).maybeSingle()).data;
   }, null as any);
@@ -55,8 +54,8 @@ export async function getAdminUserDetail(userId: string) {
     beta = await safe(async () => (await db.from("beta_testers").select("*").eq("id", userId).maybeSingle()).data, null as any);
   }
 
-  const id = profile?.id || auth?.id || beta?.user_id || null;
-  const email = auth?.email || auth?.email || beta?.email || null;
+  const id = consumerProfile?.user_id || auth?.id || beta?.user_id || null;
+  const email = auth?.email || beta?.email || null;
 
   const [admin, saved, booked, reservations, tickets, usage, subscription, betaAssignments, betaFeedback, betaBugReports] = await Promise.all([
     safe(async () => id ? (await db.from("admin_users").select("role").eq("user_id", id).maybeSingle()).data : null, null as any),
@@ -166,7 +165,7 @@ export async function disableAdminUser(userId: string, reason: string, actor: an
   const before = await getAdminUserDetail(userId);
   const db = getAdminDatabaseClient();
   const now = new Date().toISOString();
-  const { error } = await db.from("user_profiles").upsert({ id: userId, account_status: "disabled", disabled_at: now, disabled_by: actor.user_id, deleted_at: now, deleted_by: actor.user_id, updated_at: now }, { onConflict: "id" });
+  const { error } = await db.from("user_profiles").upsert({ user_id: userId, account_status: "disabled", disabled_at: now, disabled_by: actor.user_id, deleted_at: now, deleted_by: actor.user_id, updated_at: now }, { onConflict: "user_id" });
   if (error) throw error;
   await updateUserRole(userId, "disabled", actor, request);
   await logAdminAuditEvent({ actor, targetUserId: userId, targetEmail: before.profile.email, action: "user_deleted_or_disabled", entityType: "user", summary: `User disabled${reason ? `: ${reason}` : ""}`, beforeData: before.profile, afterData: { account_status: "disabled", reason }, request });
