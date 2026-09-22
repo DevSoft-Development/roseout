@@ -36,6 +36,12 @@ const GENERIC_QUERY_PHRASES = [
   "something fun",
   "full night out experience",
   "full night-out experience",
+  "sit down restaurant",
+  "sit down restaurants",
+  "sit-down restaurant",
+  "sit-down restaurants",
+  "suitable for a night out",
+  "night out",
 ];
 
 const GENERIC_QUERY_TOKENS = new Set([
@@ -110,6 +116,9 @@ const GENERIC_QUERY_TOKENS = new Set([
   "serves",
   "serving",
   "show",
+  "sit",
+  "down",
+  "out",
   "something",
   "somewhere",
   "spot",
