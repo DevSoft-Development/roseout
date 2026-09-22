@@ -74,7 +74,7 @@ if (
   !adminLogin.includes("/api/security-context") ||
   !adminLogin.includes("Security notice") ||
   !adminLogin.includes("Logging active") ||
-  !adminLogin.includes("https://theouthaven.com/toh_logo.png")
+  !adminLogin.includes("/api/brand/theouthaven-logo")
 ) {
   throw new Error("Admin login must preserve branded security context and monitoring notice.");
 }

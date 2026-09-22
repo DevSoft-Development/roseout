@@ -105,7 +105,7 @@ export default function AdminLoginPage() {
                   {/* The isolated Admin app does not ship the consumer public asset bundle. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src="https://theouthaven.com/toh_logo.png"
+                    src="/api/brand/theouthaven-logo"
                     alt="TheOutHaven"
                     width={36}
                     height={36}
