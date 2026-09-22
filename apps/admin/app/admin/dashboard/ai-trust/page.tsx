@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Activity, AlertTriangle, Bot, MessageSquareText, Search, ShieldCheck } from "lucide-react";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import {
   AdminActionButton,
   AdminKpiCard,
@@ -15,6 +15,8 @@ import { createAiTrustIncident } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "AI & Trust | TheOutHaven Admin" };
+
+const supabaseAdmin = getAdminDatabaseClient();
 
 async function safeCount(table: string, configure?: (query: any) => any) {
   try {
