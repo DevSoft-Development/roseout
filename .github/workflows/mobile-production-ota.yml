@@ -111,6 +111,26 @@ jobs:
           --platform android
           --message "Production OTA Android ${{ github.sha }}"
 
+      - name: Publish preview OTA update to iOS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+        run: >-
+          npx --yes eas-cli@latest update
+          --channel preview
+          --platform ios
+          --message "Preview OTA iOS ${{ github.sha }}"
+
+      - name: Publish preview OTA update to Android
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          CI: '1'
+        run: >-
+          npx --yes eas-cli@latest update
+          --channel preview
+          --platform android
+          --message "Preview OTA Android ${{ github.sha }}"
+
       - name: Record release
         run: |
-          echo "Published ${{ github.sha }} to the production EAS Update channel for iOS and Android." >> "$GITHUB_STEP_SUMMARY"
+          echo "Published ${{ github.sha }} to the production and preview EAS Update channels for iOS and Android." >> "$GITHUB_STEP_SUMMARY"
