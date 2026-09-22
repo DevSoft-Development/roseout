@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     }
   }
   const demandLead = verifiedDemand
-    ? `People near ${area} are actively searching TheOutHaven for “${verifiedDemand.query}.”\n\n`
+    ? `Planning “${verifiedDemand.query}”? `
     : "";
   const copy = `${contentType} for ${name}\n\n${demandLead}Looking for a ${category} in ${area}? Plan your next visit to ${name} and check out the latest profile details, hours, menu, offers, and QR-friendly updates on TheOutHaven.\n\nGoal: ${goal}.`;
   const isDemo =
