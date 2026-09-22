@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 
 function displayName(ctx: any) {
-  return ctx.profile?.preferred_name || "there";
+  return ctx.profile?.first_name || "there";
 }
 
 function outingHref(item: any) {
@@ -46,8 +46,8 @@ export default async function Page() {
   const saved = ctx.savedOutings || [];
   const upcoming = ctx.bookedOutings || [];
   const completed = ctx.completedOutings || [];
-  const profile = ctx.profile as { preferred_name?: string | null; city?: string | null; birthday_month?: number | null };
-  const profileIncomplete = !profile?.preferred_name || !profile?.city || !profile?.birthday_month;
+  const profile = ctx.profile as { first_name?: string | null; home_zip_code?: string | null; birth_month?: number | null };
+  const profileIncomplete = !profile?.first_name || !profile?.home_zip_code || !profile?.birth_month;
   const { data: supportTickets } = await supabaseAdmin.from("support_tickets")
     .select("id,ticket_number,subject,category,status,updated_at,created_at")
     .eq("user_id", ctx.user.id)
@@ -85,7 +85,7 @@ export default async function Page() {
         <DashboardCard>
           <p className="text-xs font-black uppercase tracking-[.24em] text-rose-200">Profile</p>
           <h2 className="mt-2 text-2xl font-black">{profileIncomplete ? "Complete your profile" : "Profile ready"}</h2>
-          <p className="mt-2 text-sm text-white/60">We keep your consumer profile minimal: first name, city, birth month, and optional phone.</p>
+          <p className="mt-2 text-sm text-white/60">We keep your consumer profile minimal: first name, ZIP code, birth month, and optional mobile number.</p>
           <div className="mt-4 flex flex-wrap gap-2"><Link href="/user/dashboard/account" className="inline-flex rounded-full bg-white px-4 py-2 text-xs font-black text-black">Open Account</Link><Link href="/user/dashboard/privacy" className="inline-flex rounded-full border border-white/15 px-4 py-2 text-xs font-black">Recommendations & Privacy</Link></div>
         </DashboardCard>
 
