@@ -28,7 +28,13 @@ describe("consumer personalization privacy contract", () => {
     expect(mobile).toContain("Personalized recommendations");
     expect(mobile).toContain('method: "PATCH"');
     const api = read("app/api/user/privacy-preferences/route.ts");
+    const mobileApi = read("app/api/mobile/v1/me/route.ts");
+    const worker = read("app/api/cron/search-ml-learning-maintenance/route.ts");
     expect(api).toContain('from("user_search_preference_vectors")');
     expect(api).toContain(".delete()");
+    expect(mobileApi).toContain('from("user_search_preference_vectors")');
+    expect(mobileApi).toContain(".delete()");
+    expect(worker).toContain('select("personalization_enabled")');
+    expect(worker).toContain("personalization_enabled === false");
   });
 });
