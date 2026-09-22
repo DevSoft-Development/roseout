@@ -13,11 +13,19 @@ export default function LocationInstagramPublisher({
   connected,
   username,
   mediaOptions,
+  demandOpportunities,
 }: {
   locationId: string;
   connected: boolean;
   username: string | null;
   mediaOptions: string[];
+  demandOpportunities?: Array<{
+    query: string;
+    searches30d: number;
+    searches7d: number;
+    trendPercent: number | null;
+    noResultSearches: number;
+  }>;
 }) {
   const router = useRouter();
   const [caption, setCaption] = useState("");
@@ -28,6 +36,7 @@ export default function LocationInstagramPublisher({
   const [busy, setBusy] = useState<"generate" | "publish" | "sync" | null>(null);
   const [message, setMessage] = useState("");
   const [permalink, setPermalink] = useState<string | null>(null);
+  const [demandQuery, setDemandQuery] = useState("");
 
   const selectedMedia = useMemo(() => customMediaUrl.trim() || mediaUrl, [customMediaUrl, mediaUrl]);
 
@@ -43,6 +52,7 @@ export default function LocationInstagramPublisher({
           contentType: "Instagram caption",
           goal: "engagement and visits",
           tone: "brand",
+          demandQuery: demandQuery || undefined,
         }),
       });
       const json = await response.json().catch(() => ({}));
@@ -124,6 +134,27 @@ export default function LocationInstagramPublisher({
           <a href={`/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`} className="min-h-11 rounded-xl bg-white px-4 py-3 text-sm font-black text-black">Connect Instagram</a>
         )}
       </div>
+
+      {demandOpportunities?.length ? (
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff6b86]">Build from live demand</p>
+              <p className="mt-1 text-xs font-semibold text-white/40">Use a real Search V2 query people are making near this location as the creative angle.</p>
+            </div>
+            {demandQuery ? <button type="button" onClick={() => setDemandQuery("")} className="text-xs font-black text-white/45 underline">Clear</button> : null}
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {demandOpportunities.slice(0, 6).map((item) => (
+              <button key={item.query} type="button" onClick={() => setDemandQuery(item.query)} className={`rounded-xl border p-3 text-left transition ${demandQuery === item.query ? "border-[#ff2142]/70 bg-[#ff2142]/10" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05]"}`}>
+                <p className="line-clamp-2 text-sm font-black text-white/80">{item.query}</p>
+                <p className="mt-1 text-[11px] font-semibold text-white/35">{item.searches7d} searches in 7d · {item.searches30d} in 30d{item.trendPercent == null ? "" : ` · ${item.trendPercent >= 0 ? "+" : ""}${item.trendPercent}%`}</p>
+              </button>
+            ))}
+          </div>
+          {demandQuery ? <p className="mt-3 text-xs font-bold text-emerald-200">Selected demand angle: “{demandQuery}”</p> : null}
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
