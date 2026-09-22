@@ -92,6 +92,17 @@ function pairPreference(intent: SearchIntent): PairingPreference {
     }
   );
 }
+function matchesRequestedBorough(
+  location: EnterpriseLocation,
+  intent: SearchIntent,
+) {
+  const requestedBorough = intent.geo.borough;
+  if (!requestedBorough) return false;
+  if (sameText(location.borough, requestedBorough)) return true;
+  if (location.borough) return false;
+  return scoreGeoMatch(location, intent.geo) >= 95;
+}
+
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) {
   if (distanceMiles == null) return 0;
   if (distanceMiles <= 0.25) return 50;
@@ -316,6 +327,34 @@ export function createSearchPairs(
       if (String(restaurant.id) === String(activity.id)) {
         continue;
       }
+      const boroughWideDefault =
+        pref.distanceMode === "any" &&
+        pref.maxPairDistanceMiles == null &&
+        pref.maxPairWalkingMinutes == null &&
+        pref.requireWalkablePair !== true &&
+        Boolean(intent.geo.borough);
+      const restaurantMatchesRequestedBorough =
+        !boroughWideDefault || matchesRequestedBorough(restaurant, intent);
+      const activityMatchesRequestedBorough =
+        !boroughWideDefault || matchesRequestedBorough(activity, intent);
+
+      if (
+        boroughWideDefault &&
+        (!restaurantMatchesRequestedBorough ||
+          !activityMatchesRequestedBorough)
+      ) {
+        debug.pairsRejectedForDistance += 1;
+        debug.pairCandidatesRejectedByDistance += 1;
+        debug.invalidPairsSuppressed += 1;
+        debug.rejectedPairs.push({
+          restaurantId: restaurant.id,
+          activityId: activity.id,
+          reason: "outside_requested_borough",
+          pairDistanceMiles: getPairDistanceMiles(restaurant, activity),
+        });
+        continue;
+      }
+
       const walkability = isWalkablePair(restaurant, activity, pref);
       const pairDistanceMiles = walkability.pairDistanceMiles;
       const pairWalkingMinutes =
@@ -326,7 +365,7 @@ export function createSearchPairs(
       const missingCoordinates = walkability.warnings.includes(
         "missing_coordinates",
       );
-      if (missingCoordinates) {
+      if (missingCoordinates && !boroughWideDefault) {
         debug.pairsRejectedForMissingCoordinates += 1;
         debug.invalidPairsSuppressed += 1;
         debug.rejectedPairs.push({
@@ -337,7 +376,7 @@ export function createSearchPairs(
         });
         continue;
       }
-      if (!walkability.isWalkable) {
+      if (!boroughWideDefault && !walkability.isWalkable) {
         debug.pairsRejectedForDistance += 1;
         debug.pairCandidatesRejectedByDistance += 1;
         debug.invalidPairsSuppressed += 1;
