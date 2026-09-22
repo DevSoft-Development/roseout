@@ -161,7 +161,6 @@ export default function LocationProfileEditor({
       city: form.city,
       state: form.state,
       zip_code: form.zip_code,
-      neighborhood: form.neighborhood,
       category: form.category,
       price_range: form.price_range,
       main_image: form.main_image || form.image_url || null,
@@ -181,9 +180,26 @@ export default function LocationProfileEditor({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "We could not save your profile.");
+      const effectiveId = String(result.canonicalId || canonicalId || locationId);
       if (result.canonicalId) setCanonicalId(String(result.canonicalId));
-      setSavedSnapshot(JSON.stringify(form));
-      setMessage("Your business profile was saved successfully.");
+      const refreshed = await fetch(`/api/locations/edit-context?type=${locationType}&id=${encodeURIComponent(effectiveId)}`, { cache: "no-store" })
+        .then((response) => response.json())
+        .catch(() => null);
+      if (refreshed?.location) {
+        const data = refreshed.location;
+        const next = {
+          ...form,
+          city: data.city || "",
+          state: data.state || "",
+          zip_code: data.zip_code || data.postal_code || form.zip_code,
+          neighborhood: data.neighborhood || "",
+        };
+        setForm(next);
+        setSavedSnapshot(JSON.stringify(next));
+      } else {
+        setSavedSnapshot(JSON.stringify(form));
+      }
+      setMessage("Your business profile was saved successfully. ZIP geography was refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "We could not save your profile.");
     } finally {
@@ -237,7 +253,7 @@ export default function LocationProfileEditor({
 
         <Section icon={<Phone size={20} />} title="Contact information" description="Make it easy for guests to call or visit your website."><div className="grid gap-4 md:grid-cols-2"><Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} placeholder="(555) 555-5555" /><Field label="Website" value={form.website} onChange={(value) => update("website", value)} placeholder="https://yourwebsite.com" /></div></Section>
 
-        <Section icon={<MapPin size={20} />} title="Location" description="This address is used for directions and local discovery."><Field label="Street address" value={form.address} onChange={(value) => update("address", value)} placeholder="123 Main Street" /><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Field label="City" value={form.city} onChange={(value) => update("city", value)} placeholder="City" /><Field label="State" value={form.state} onChange={(value) => update("state", value)} placeholder="NY" /><Field label="ZIP code" value={form.zip_code} onChange={(value) => update("zip_code", value)} placeholder="10001" /><Field label="Neighborhood" value={form.neighborhood} onChange={(value) => update("neighborhood", value)} placeholder="Optional" /></div></Section>
+        <Section icon={<MapPin size={20} />} title="Location" description="ZIP code is the canonical local geography. Neighborhood, borough, county, and market are derived automatically."><Field label="Street address" value={form.address} onChange={(value) => update("address", value)} placeholder="123 Main Street" /><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Field label="City" value={form.city} onChange={(value) => update("city", value)} placeholder="City" /><Field label="State" value={form.state} onChange={(value) => update("state", value)} placeholder="NY" /><Field label="ZIP code" value={form.zip_code} onChange={(value) => update("zip_code", value.replace(/\\D/g, "").slice(0, 5))} placeholder="10001" /><div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3"><p className="text-xs font-black uppercase tracking-[0.14em] text-white/45">Derived neighborhood</p><p className="mt-2 text-sm font-black text-white/80">{form.neighborhood || "Resolved automatically after save"}</p><p className="mt-1 text-xs font-semibold text-white/35">Managed from ZIP geography and not edited separately.</p></div></div></Section>
 
         <Section icon={<ImageIcon size={20} />} title="Main photo" description="Choose the image guests should see first on your profile."><div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start"><div className="overflow-hidden rounded-3xl border border-white/10 bg-black/25">{image ? <Image src={image} alt={form.name || "Business profile"} width={720} height={480} className="h-44 w-full object-cover" unoptimized /> : <div className="grid h-44 place-items-center text-white/25"><ImageIcon size={42} /></div>}</div><div><Field label="Image URL" value={image} onChange={(value) => { update("main_image", value); update("image_url", value); }} placeholder="https://..." /><p className="mt-2 text-xs font-semibold leading-5 text-white/35">This uses the profile photo already stored for your location. For multiple photos and advanced media controls, use the full location editor.</p><Link href={`${advancedHref}#photos`} className="mt-3 inline-flex rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-white/65 hover:bg-white/[0.06]">Open photo manager</Link></div></div></Section>
 

@@ -30,12 +30,24 @@ type Draft = {
   zipCodes: string;
   excludeZipCodes: string;
   radiusMiles: string;
+  territoryIds: string;
   total_budget_cents: number;
   daily_budget_cents: number | null;
   starts_at: string;
   ends_at: string;
   headline: string;
   description: string;
+};
+
+type TargetingOptions = {
+  markets: string[];
+  states: string[];
+  counties: string[];
+  cities: string[];
+  boroughs: string[];
+  neighborhoods: string[];
+  zipCodes: string[];
+  territories: Array<{ id: string; name: string; scopes: Array<{ type: string; value: string }> }>;
 };
 
 type DraftSetter = Dispatch<SetStateAction<Draft>>;
@@ -56,6 +68,16 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [targetingOptions, setTargetingOptions] = useState<TargetingOptions>({
+    markets: [],
+    states: [],
+    counties: [],
+    cities: [],
+    boroughs: [],
+    neighborhoods: [],
+    zipCodes: [],
+    territories: [],
+  });
   const [draft, setDraft] = useState<Draft>({
     promotion_type: "location",
     placements: ["discover", "search"],
@@ -70,6 +92,7 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
     zipCodes: "",
     excludeZipCodes: "",
     radiusMiles: "",
+    territoryIds: "",
     total_budget_cents: 25000,
     daily_budget_cents: null,
     starts_at: "",
@@ -83,13 +106,20 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
       setLoading(false);
       return;
     }
-    const res = await fetch(`/api/business/promotions?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" });
+    const [res, targetingRes] = await Promise.all([
+      fetch(`/api/business/promotions?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+      fetch(`/api/business/promotions/targeting-options?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+    ]);
     const data = await res.json().catch(() => ({}));
+    const targetingData = await targetingRes.json().catch(() => ({}));
     if (res.ok) {
       setCampaigns(data.campaigns || []);
       setLocationName(data.location?.name || "Your location");
     } else {
       setMessage(data.error || "Could not load promotions.");
+    }
+    if (targetingRes.ok && targetingData.options) {
+      setTargetingOptions(targetingData.options);
     }
     setLoading(false);
   }, [locationId]);
@@ -155,6 +185,7 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
               zipCodes: list(draft.zipCodes),
               excludeZipCodes: list(draft.excludeZipCodes),
               radiusMiles: draft.radiusMiles ? Number(draft.radiusMiles) : null,
+              territoryIds: list(draft.territoryIds),
             }
           : { optimized_by_theouthaven: true },
         total_budget_cents: draft.total_budget_cents,
@@ -221,7 +252,7 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
           <div className="mt-7 min-h-[330px]">
             {step === 1 ? <StepPromote draft={draft} setDraft={setDraft} /> : null}
             {step === 2 ? <StepPlacement draft={draft} togglePlacement={togglePlacement} /> : null}
-            {step === 3 ? <StepAudience draft={draft} setDraft={setDraft} /> : null}
+            {step === 3 ? <StepAudience draft={draft} setDraft={setDraft} options={targetingOptions} /> : null}
             {step === 4 ? <StepBudget draft={draft} setDraft={setDraft} /> : null}
             {step === 5 ? <StepPreview draft={draft} setDraft={setDraft} locationName={locationName} /> : null}
           </div>
@@ -244,7 +275,7 @@ function list(value: string) {
 function GeoField({ label, value, placeholder, onChange }: { label: string; value: string; placeholder: string; onChange: (value: string) => void }) {
   return <label className="grid gap-2 text-sm font-bold"><span>{label}</span><input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="min-h-12 rounded-xl border border-white/10 bg-black/30 px-4 text-sm outline-none focus:border-[#e1062a]/60" /></label>;
 }
-function StepAudience({ draft, setDraft }: { draft: Draft; setDraft: DraftSetter }) {
+function StepAudience({ draft, setDraft, options }: { draft: Draft; setDraft: DraftSetter; options: TargetingOptions }) {
   return <div>
     <h2 className="text-3xl font-black">Who should see it?</h2>
     <p className="mt-2 text-white/45">Use automatic targeting or choose markets, counties, cities, boroughs, neighborhoods, ZIP codes, or a radius around your location. Sponsored Search still requires relevance to the customer’s request.</p>
@@ -263,12 +294,14 @@ function StepAudience({ draft, setDraft }: { draft: Draft; setDraft: DraftSetter
         <GeoField label="ZIP codes" value={draft.zipCodes} placeholder="11530, 11550, 11552" onChange={(value) => setDraft((current) => ({ ...current, zipCodes: value }))} />
         <GeoField label="Exclude ZIP codes" value={draft.excludeZipCodes} placeholder="11001, 11021" onChange={(value) => setDraft((current) => ({ ...current, excludeZipCodes: value }))} />
         <GeoField label="Radius from my location (miles)" value={draft.radiusMiles} placeholder="5" onChange={(value) => setDraft((current) => ({ ...current, radiusMiles: value.replace(/[^0-9.]/g, "") }))} />
+        <label className="grid gap-2 text-sm font-bold"><span>CRM territories</span><select value="" onChange={(e) => { const id = e.target.value; if (!id) return; setDraft((current) => ({ ...current, territoryIds: list([current.territoryIds, id].filter(Boolean).join("," )).join(", ") })); }} className="min-h-12 rounded-xl border border-white/10 bg-black/30 px-4 text-sm outline-none focus:border-[#e1062a]/60"><option value="">Add a territory…</option>{options.territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select>{draft.territoryIds ? <p className="text-xs font-semibold text-white/45">Selected: {draft.territoryIds.split(",").map((id) => options.territories.find((territory) => territory.id === id.trim())?.name || id.trim()).join(", ")}</p> : null}</label>
       </div>
       <label className="grid gap-2 text-sm font-bold">
         <span>Audience / occasion guidance <span className="text-white/35">Optional</span></span>
         <textarea value={draft.audience} onChange={(e) => setDraft((current) => ({ ...current, audience: e.target.value }))} placeholder="Example: Date nights, rooftop dinner, brunch, girls’ night" className="min-h-24 w-full rounded-2xl border border-white/10 bg-black/30 p-4 text-sm outline-none focus:border-[#e1062a]/60" />
       </label>
-      <p className="text-xs leading-5 text-white/40">Separate multiple areas with commas. Multiple included geographic dimensions are additive; exclusions always win.</p>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><p className="text-xs font-black uppercase tracking-[0.14em] text-white/45">Canonical geography available</p><p className="mt-2 text-xs leading-5 text-white/45">{options.markets.length} markets · {options.boroughs.length} boroughs · {options.neighborhoods.length} neighborhoods · {options.zipCodes.length} ZIP codes · {options.territories.length} CRM territories</p></div>
+      <p className="text-xs leading-5 text-white/40">Separate multiple areas with commas. Multiple included geographic dimensions are additive; exclusions always win. Values are normalized server-side against the shared campaign targeting model.</p>
     </div> : null}
   </div>;
 }
