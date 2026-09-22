@@ -100,7 +100,11 @@ function matchesRequestedBorough(
   if (!requestedBorough) return false;
   if (sameText(location.borough, requestedBorough)) return true;
   if (location.borough) return false;
-  return scoreGeoMatch(location, intent.geo) >= 95;
+  // Some legacy/search fixtures do not have a borough column populated.
+  // Treat a strong city/geo-family match as compatible when there is no
+  // explicit contradictory borough value; populated borough values remain
+  // authoritative above.
+  return scoreGeoMatch(location, intent.geo) >= 80;
 }
 
 function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) {
