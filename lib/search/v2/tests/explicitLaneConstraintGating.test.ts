@@ -11,6 +11,7 @@ function candidate(args: {
   features?: string[];
   activityCategories?: string[];
   matchedTerms?: string[];
+  specialFeatures?: string[];
 }): RoleQualifiedCandidate {
   return {
     candidate: {
@@ -20,6 +21,7 @@ function candidate(args: {
         location_type: args.locationType,
         features: args.features ?? [],
         activity_categories: args.activityCategories ?? [],
+        special_features: args.specialFeatures ?? [],
         rating: 4.5,
         review_count: 250,
         latitude: 40.73,
@@ -53,6 +55,31 @@ describe("explicit lane constraint gating", () => {
     expect(plan.activity.categories).toContain("hookah");
     expect(plan.activity.features).not.toContain("rooftop");
     expect(plan.pairing.sequence).toBe("restaurant_first");
+  });
+
+  it("matches feature aliases and preserves legacy deterministic feature evidence", async () => {
+    const plan = await buildSearchPlan({
+      input: {
+        query: "Brunch with outdoor seating in Queens",
+        selectedLane: "auto",
+      },
+    });
+
+    const scored = await scoreCandidates({
+      plan,
+      candidates: [
+        candidate({
+          id: "restaurant-outdoor",
+          name: "Garden Brunch",
+          role: "restaurant",
+          locationType: "restaurant",
+          specialFeatures: ["outdoor seating"],
+          matchedTerms: ["outdoor seating"],
+        }),
+      ],
+    });
+
+    expect(scored.restaurants.map((item) => item.candidate.candidate.location.name)).toEqual(["Garden Brunch"]);
   });
 
   it("does not let generic restaurants or unrelated activities survive explicit lane constraints", async () => {
