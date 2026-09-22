@@ -386,7 +386,6 @@ jobs:
           print(f'aws_runtime_fallback_environment_keys={len(values)}')
           PY
           fi
-          python -m pip install --disable-pip-version-check python-dotenv
           GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
           echo "::add-mask::$GATEWAY_SECRET"
           ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
@@ -396,8 +395,21 @@ jobs:
           GATEWAY_SECRET="$GATEWAY_SECRET" \
           python - <<'PY'
           import json, os, re
-          from dotenv import dotenv_values
-          values = {k: v for k, v in dotenv_values(os.environ['ENV_FILE']).items() if v is not None}
+          values = {}
+          with open(os.environ['ENV_FILE']) as handle:
+              for line_number, raw in enumerate(handle, 1):
+                  line = raw.rstrip('\n')
+                  if not line:
+                      continue
+                  if '=' not in line:
+                      raise SystemExit(f'Malformed environment line {line_number}: missing equals separator.')
+                  key, encoded_value = line.split('=', 1)
+                  try:
+                      value = json.loads(encoded_value)
+                  except json.JSONDecodeError as exc:
+                      raise SystemExit(f'Malformed JSON value for environment key {key!r} on line {line_number}: {exc}')
+                  if value is not None:
+                      values[key] = str(value)
           values['AWS_PLATFORM_DR_GATEWAY_URL'] = os.environ['GATEWAY_URL']
           values['AWS_PLATFORM_DR_GATEWAY_SECRET'] = os.environ['GATEWAY_SECRET']
           required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
