@@ -36,7 +36,7 @@ type Connection = {
   candidate_locations: Candidate[];
 };
 
-function pretty(value: unknown) {
+function pretty(value: unknown): string {
   if (value == null || value === "") return "Not set";
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(pretty).join(", ");
