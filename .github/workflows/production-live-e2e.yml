@@ -23,7 +23,9 @@ jobs:
     env:
       CI: true
       NEXT_TELEMETRY_DISABLED: 1
-      PLAYWRIGHT_BASE_URL: https://www.theouthaven.com
+      PLAYWRIGHT_BASE_URL: https://theouthaven.com
+      BUSINESS_BASE_URL: https://business.theouthaven.com
+      ADMIN_BASE_URL: https://admin.theouthaven.com
     steps:
       - name: Check out deployed revision
         uses: actions/checkout@v4
