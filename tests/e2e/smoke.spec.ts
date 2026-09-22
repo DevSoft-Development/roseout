@@ -5,8 +5,6 @@ const publicRoutes = [
   "/",
   "/explore",
   "/create",
-  "/business",
-  "/business/claim",
   "/signup",
   "/plan",
 ];
@@ -20,7 +18,7 @@ test.describe("public route smoke tests", () => {
 
   test("/pricing loads the current business plans destination without hard errors", async ({ page }) => {
     await page.goto("/pricing", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/business\/plans(?:[?#].*)?$/);
+    await expect(page).toHaveURL(/https:\/\/business\.theouthaven\.com\/business\/plans(?:[?#].*)?$/);
     await expectNoHardError(page);
   });
 });
