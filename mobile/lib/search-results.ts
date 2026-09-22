@@ -17,6 +17,9 @@ export type MobilePlaceResult = {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  sponsored?: boolean;
+  sponsorId?: string | null;
+  placementType?: string | null;
 };
 
 export type MobileOutingResult = {
@@ -27,6 +30,9 @@ export type MobileOutingResult = {
   walkMinutes: number | null;
   reason: string | null;
   matchReasons?: string[];
+  sponsored?: boolean;
+  sponsorId?: string | null;
+  placementType?: string | null;
   resultType?: "pair" | "same_venue";
 };
 
