@@ -324,6 +324,13 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
         roles: ["superadmin", "admin", "ambassador", "experience_team", "viewer"],
       },
       {
+        label: "AI & Trust",
+        href: "/admin/dashboard/ai-trust",
+        icon: ShieldAlert,
+        migrated: true,
+        roles: ["superadmin", "admin", "manager", "viewer"],
+      },
+      {
         label: "Fraud",
         href: "/admin/dashboard/fraud",
         icon: ShieldAlert,
