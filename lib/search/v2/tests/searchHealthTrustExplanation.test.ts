@@ -18,6 +18,11 @@ describe("Search Health trust explanation surface", () => {
       expect(source).toContain("Activity intent");
       expect(source).toContain("Geography");
       expect(source).toContain("Pairing note");
+      expect(source).toContain("restaurantIntent.cuisineTerms");
+      expect(source).toContain("activityIntent.activityTerms");
+      expect(source).toContain("metadata.normalizedIntent?.fallbackUsed");
+      expect(source).toContain("metadata.fallback_used");
+      expect(source).toContain("visibleResultCount <= 0 && pairCount <= 0");
     }
   });
 
