@@ -1,7 +1,7 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { geoContextFromSearchPayload, promotionGeoMatches } from "@/lib/promotions/targeting";
+import { geoContextFromSearchPayload, promotionGeoMatches, type PromotionGeoContext } from "@/lib/promotions/targeting";
 
 export type PromotionPlacement = "discover" | "search";
 
@@ -131,8 +131,9 @@ export async function applySearchPromotions<T extends Record<string, any>>(paylo
   return root as T;
 }
 
-export async function loadDiscoverPromotionItems() {
-  const campaigns = await getDeliverablePromotionCampaigns("discover");
+export async function loadDiscoverPromotionItems(geo?: PromotionGeoContext | null) {
+  const campaigns = (await getDeliverablePromotionCampaigns("discover"))
+    .filter((campaign) => promotionGeoMatches(campaign.targeting as any, geo ?? null));
   if (!campaigns.length) return [];
   const ids = [...new Set(campaigns.map((campaign) => campaign.location_id))];
   const { data: locations } = await supabaseAdmin
