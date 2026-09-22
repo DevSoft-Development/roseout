@@ -5,8 +5,6 @@ const publicRoutes = [
   "/",
   "/explore",
   "/create",
-  "/business",
-  "/business/claim",
   "/signup",
   "/plan",
 ];
@@ -20,7 +18,12 @@ test.describe("public route smoke tests", () => {
 
   test("/pricing loads the current business plans destination without hard errors", async ({ page }) => {
     await page.goto("/pricing", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/business\/plans(?:[?#].*)?$/);
-    await expectNoHardError(page);
+    await expect(page).toHaveURL(/https:\/\/business\.theouthaven\.com\/business\/plans(?:[?#].*)?$/);
+
+    // In PR CI the isolated Business deployment for this revision does not exist yet,
+    // so only the post-deploy live workflow can validate the destination content.
+    if (process.env.BUSINESS_BASE_URL) {
+      await expectNoHardError(page);
+    }
   });
 });
