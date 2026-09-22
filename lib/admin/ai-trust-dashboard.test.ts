@@ -13,6 +13,8 @@ describe("Admin AI & Trust operations", () => {
     expect(page).toContain("Verified-visit reviews");
     expect(page).toContain("Sponsored disclosure");
     expect(page).toContain("Trust incident ledger");
+    expect(page).toContain('admin.role === "superadmin" || admin.role === "admin"');
+    expect(page).toContain("Incident status unavailable");
     expect(page).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
     expect(page).not.toContain("OPENAI_API_KEY}");
   });
