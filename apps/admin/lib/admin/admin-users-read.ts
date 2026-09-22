@@ -20,12 +20,15 @@ function filterDecorated(user: any, filters: Record<string, string | undefined>)
   if (
     query &&
     ![
+      user.first_name,
       user.full_name,
-      user.preferred_name,
       user.email,
       user.phone,
-      user.mobile_number,
+      user.home_zip_code,
       user.zip_code,
+      user.home_neighborhood,
+      user.home_city,
+      user.home_market,
       user.social_handle,
     ].some((value) => String(value || "").toLowerCase().includes(query))
   ) return false;
@@ -76,7 +79,7 @@ async function listAdminUsersFallback(filters: Record<string, string | undefined
   const per = 25;
 
   const [profiles, appUsers, betaRows, betaApps, launchRows, authUsers] = await Promise.all([
-    safe(async () => (await db.from("user_profiles").select("*").order("created_at", { ascending: false }).limit(1000)).data || [], [] as any[]),
+    safe(async () => (await db.from("consumer_profiles").select("*").order("created_at", { ascending: false }).limit(1000)).data || [], [] as any[]),
     safe(async () => (await db.from("users").select("*").order("created_at", { ascending: false }).limit(1000)).data || [], [] as any[]),
     safe(async () => (await db.from("beta_testers").select("*").order("created_at", { ascending: false }).limit(1000)).data || [], [] as any[]),
     safe(async () => (await db.from("beta_applications").select("*").order("created_at", { ascending: false }).limit(1000)).data || [], [] as any[]),
@@ -113,12 +116,22 @@ async function listAdminUsersFallback(filters: Record<string, string | undefined
     merged.set(next.id ? `user:${next.id}` : `email:${emailKey(next.email)}`, next);
   }
 
-  profiles.forEach((row: any) => put({ ...row, hasAccount: true, badges: ["Account User"] }));
+  profiles.forEach((row: any) => put({
+    ...row,
+    id: row.user_id,
+    first_name: row.first_name,
+    full_name: row.first_name,
+    phone: row.phone_e164,
+    zip_code: row.home_zip_code,
+    hasAccount: true,
+    badges: ["Account User"],
+  }));
   appUsers.forEach((row: any) => put({ ...row, id: row.id || row.user_id, full_name: row.full_name || row.name, hasAccount: true, badges: ["Account User"] }));
   authUsers.forEach((row: any) => put({
     id: row.id,
     email: row.email,
-    full_name: row.user_metadata?.full_name || row.user_metadata?.name,
+    first_name: row.user_metadata?.first_name,
+    full_name: row.user_metadata?.first_name || row.user_metadata?.full_name || row.user_metadata?.name,
     created_at: row.created_at,
     email_confirmed_at: row.email_confirmed_at,
     hasAccount: true,
