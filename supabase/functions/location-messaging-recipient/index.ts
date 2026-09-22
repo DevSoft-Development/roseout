@@ -208,12 +208,16 @@ Deno.serve(async (request) => {
     return json({ success: true, sent: true, provider, provider_message_id: providerMessageId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const nextAttempt = Number(recipient.attempt_count || 0) + 1;
+    const terminal = nextAttempt >= 5;
+    const failedAt = terminal ? new Date().toISOString() : null;
     await db.from("location_messaging_recipients").update({
-      status: "failed",
-      failed_at: new Date().toISOString(),
+      status: terminal ? "failed" : "retrying",
+      failed_at: failedAt,
       failure_reason: message.slice(0, 500),
       updated_at: new Date().toISOString(),
     }).eq("id", recipient.id);
+    if (terminal) await finalizeCampaign(campaign.id, campaign.location_id);
     throw error;
   }
 });
