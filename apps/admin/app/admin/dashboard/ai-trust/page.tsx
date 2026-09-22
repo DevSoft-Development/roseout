@@ -29,7 +29,8 @@ async function safeCount(table: string, configure?: (query: any) => any) {
 }
 
 export default async function AiTrustPage() {
-  await requireAdminRole(["superadmin", "admin", "manager", "viewer"]);
+  const admin = await requireAdminRole(["superadmin", "admin", "manager", "viewer"]);
+  const canRecordIncidents = admin.role === "superadmin" || admin.role === "admin";
   const supabaseAdmin = getAdminDatabaseClient();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const [searches24h, healthIssues24h, verifiedReviews, openIncidents, recentIncidents] = await Promise.all([
@@ -50,7 +51,11 @@ export default async function AiTrustPage() {
         eyebrow="Trust · AI Operations"
         title="AI & Trust"
         subtitle="Operational visibility for recommendation health, personalization, sponsored disclosure, verified visits, providers, and trust incidents."
-        badge={<AdminStatusBadge tone={openIncidents ? "amber" : "green"}>{openIncidents ? `${openIncidents} open incidents` : "Trust operations clear"}</AdminStatusBadge>}
+        badge={
+          openIncidents === null
+            ? <AdminStatusBadge tone="muted">Incident status unavailable</AdminStatusBadge>
+            : <AdminStatusBadge tone={openIncidents > 0 ? "amber" : "green"}>{openIncidents > 0 ? `${openIncidents} open incidents` : "Trust operations clear"}</AdminStatusBadge>
+        }
         actions={<>
           <AdminActionButton href="/admin/dashboard/search-health">Search Health</AdminActionButton>
           <AdminActionButton href="/admin/dashboard/reviews">Reviews</AdminActionButton>
@@ -83,24 +88,30 @@ export default async function AiTrustPage() {
         <AdminSectionCard className="p-5">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Record an incident</p>
           <h2 className="mt-1 text-xl font-black">Trust incident ledger</h2>
-          <form action={createAiTrustIncident} className="mt-5 grid gap-3 sm:grid-cols-2">
-            <select name="incidentType" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-bold text-white">
-              <option value="incorrect_explanation">Incorrect explanation</option>
-              <option value="business_fact_error">Business fact error</option>
-              <option value="sponsored_disclosure">Sponsored disclosure</option>
-              <option value="personalization">Personalization</option>
-              <option value="generated_copy">Generated copy</option>
-              <option value="provider_outage">Provider outage</option>
-              <option value="other">Other</option>
-            </select>
-            <select name="severity" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-bold text-white">
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
-            </select>
-            <input name="surface" placeholder="Surface, e.g. consumer search" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm text-white placeholder:text-white/30" />
-            <input name="requestId" placeholder="Request ID (optional)" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm text-white placeholder:text-white/30" />
-            <textarea required name="summary" placeholder="What happened?" className="min-h-28 rounded-xl border border-white/10 bg-[#0b0b0d] p-3 text-sm text-white placeholder:text-white/30 sm:col-span-2" />
-            <button className="min-h-11 rounded-xl bg-[#e1062a] px-4 text-sm font-black text-white sm:col-span-2" type="submit">Record incident</button>
-          </form>
+          {canRecordIncidents ? (
+            <form action={createAiTrustIncident} className="mt-5 grid gap-3 sm:grid-cols-2">
+              <select name="incidentType" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-bold text-white">
+                <option value="incorrect_explanation">Incorrect explanation</option>
+                <option value="business_fact_error">Business fact error</option>
+                <option value="sponsored_disclosure">Sponsored disclosure</option>
+                <option value="personalization">Personalization</option>
+                <option value="generated_copy">Generated copy</option>
+                <option value="provider_outage">Provider outage</option>
+                <option value="other">Other</option>
+              </select>
+              <select name="severity" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm font-bold text-white">
+                <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+              </select>
+              <input name="surface" placeholder="Surface, e.g. consumer search" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm text-white placeholder:text-white/30" />
+              <input name="requestId" placeholder="Request ID (optional)" className="min-h-11 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm text-white placeholder:text-white/30" />
+              <textarea required name="summary" placeholder="What happened?" className="min-h-28 rounded-xl border border-white/10 bg-[#0b0b0d] p-3 text-sm text-white placeholder:text-white/30 sm:col-span-2" />
+              <button className="min-h-11 rounded-xl bg-[#e1062a] px-4 text-sm font-black text-white sm:col-span-2" type="submit">Record incident</button>
+            </form>
+          ) : (
+            <p className="mt-5 rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm text-white/55">
+              This view is read-only for your role. An admin or superadmin can record trust incidents.
+            </p>
+          )}
         </AdminSectionCard>
       </div>
 
