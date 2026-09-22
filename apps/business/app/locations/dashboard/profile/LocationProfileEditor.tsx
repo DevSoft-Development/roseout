@@ -181,9 +181,26 @@ export default function LocationProfileEditor({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "We could not save your profile.");
+      const effectiveId = String(result.canonicalId || canonicalId || locationId);
       if (result.canonicalId) setCanonicalId(String(result.canonicalId));
-      setSavedSnapshot(JSON.stringify(form));
-      setMessage("Your business profile was saved successfully.");
+      const refreshed = await fetch(`/api/locations/edit-context?type=${locationType}&id=${encodeURIComponent(effectiveId)}`, { cache: "no-store" })
+        .then((response) => response.json())
+        .catch(() => null);
+      if (refreshed?.location) {
+        const data = refreshed.location;
+        const next = {
+          ...form,
+          city: data.city || "",
+          state: data.state || "",
+          zip_code: data.zip_code || data.postal_code || form.zip_code,
+          neighborhood: data.neighborhood || "",
+        };
+        setForm(next);
+        setSavedSnapshot(JSON.stringify(next));
+      } else {
+        setSavedSnapshot(JSON.stringify(form));
+      }
+      setMessage("Your business profile was saved successfully. ZIP geography was refreshed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "We could not save your profile.");
     } finally {
