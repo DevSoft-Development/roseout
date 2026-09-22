@@ -4,6 +4,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireLocationPermission } from "@/lib/auth/locationOwnerAccess";
 import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
+import {
+  materializeLocationMessagingCampaign,
+  resolveLocationMessagingAudience,
+} from "@/lib/marketing/location-messaging";
 
 function toBoolean(value: unknown) {
   return value === true || value === "1" || value === "true";
@@ -198,22 +202,97 @@ export async function PATCH(request: Request) {
     if (body.channel && ["email", "sms"].includes(String(body.channel).toLowerCase())) {
       updates.channel = String(body.channel).toLowerCase();
       updates.requires_admin_approval = String(body.channel).toLowerCase() === "sms";
+      updates.approved_by = null;
+      updates.approved_at = null;
+    }
+    if (body.audienceFilter && typeof body.audienceFilter === "object") {
+      updates.audience_filter = body.audienceFilter;
     }
   } else if (action === "request_approval") {
+    if (existing.channel !== "sms") {
+      return NextResponse.json({ message: "Email campaigns do not require platform approval." }, { status: 409 });
+    }
     updates.status = "pending_approval";
     updates.requires_admin_approval = true;
-  } else if (action === "approve") {
-    updates.status = "approved";
-    updates.approved_by = access.user!.id;
-    updates.approved_at = new Date().toISOString();
-    updates.rejected_by = null;
-    updates.rejected_at = null;
-    updates.rejected_reason = null;
-  } else if (action === "reject") {
-    updates.status = "rejected";
-    updates.rejected_by = access.user!.id;
-    updates.rejected_at = new Date().toISOString();
-    updates.rejected_reason = String(body.reason || "Rejected in campaign review").slice(0, 500);
+  } else if (action === "estimate_audience") {
+    if (access.isDemo) {
+      return NextResponse.json({ success: true, recipient_count: 0, demo: true });
+    }
+    const channel = String(existing.channel || "email").toLowerCase() === "sms" ? "sms" : "email";
+    const audience = await resolveLocationMessagingAudience({
+      locationId: access.locationId!,
+      channel,
+      filter: (body.audienceFilter || existing.audience_filter || {}) as any,
+    });
+    return NextResponse.json({ success: true, recipient_count: audience.length, demo: false });
+  } else if (action === "send_now" || action === "schedule") {
+    if (access.isDemo) {
+      return NextResponse.json({ message: "Demo campaigns cannot schedule or send." }, { status: 409 });
+    }
+    if (existing.status === "sent" || existing.status === "sending") {
+      return NextResponse.json({ message: "This campaign is already sending or sent." }, { status: 409 });
+    }
+    if (existing.channel === "sms" && existing.requires_admin_approval && !existing.approved_at) {
+      return NextResponse.json({ message: "SMS campaigns require platform approval before scheduling or sending." }, { status: 409 });
+    }
+    const scheduledFor = action === "schedule" ? String(body.scheduledFor || body.scheduled_for || "").trim() : "";
+    if (action === "schedule" && (!scheduledFor || Number.isNaN(new Date(scheduledFor).getTime()) || new Date(scheduledFor).getTime() <= Date.now())) {
+      return NextResponse.json({ message: "Choose a future date and time to schedule this campaign." }, { status: 400 });
+    }
+    const audienceFilter = body.audienceFilter && typeof body.audienceFilter === "object"
+      ? body.audienceFilter
+      : existing.audience_filter || {};
+    if (body.audienceFilter && typeof body.audienceFilter === "object") {
+      const { error: audienceUpdateError } = await supabaseAdmin
+        .from("location_messaging_campaigns")
+        .update({ audience_filter: audienceFilter, updated_at: new Date().toISOString() })
+        .eq("id", campaignId)
+        .eq("location_id", access.locationId!);
+      if (audienceUpdateError) return NextResponse.json({ message: "Campaign audience could not be saved." }, { status: 500 });
+      existing.audience_filter = audienceFilter;
+    }
+    try {
+      const launch = await materializeLocationMessagingCampaign({
+        campaign: existing,
+        runAfter: action === "schedule" ? new Date(scheduledFor).toISOString() : new Date().toISOString(),
+        createdBy: access.user!.id,
+      });
+      return NextResponse.json({
+        success: true,
+        campaignId,
+        status: action === "schedule" ? "scheduled" : "sending",
+        recipient_count: launch.recipientCount,
+        queued_jobs: launch.queuedJobCount,
+        scheduled_for: launch.scheduledFor,
+      });
+    } catch (launchError) {
+      return NextResponse.json({
+        message: launchError instanceof Error ? launchError.message : "Campaign could not be launched.",
+      }, { status: 400 });
+    }
+  } else if (action === "cancel") {
+    if (["sent", "cancelled"].includes(String(existing.status))) {
+      return NextResponse.json({ message: "This campaign cannot be cancelled." }, { status: 409 });
+    }
+    updates.status = "cancelled";
+    updates.metadata = { ...(existing.metadata || {}), cancelled_at: new Date().toISOString(), cancelled_by: access.user!.id };
+  } else if (action === "approve" || action === "reject") {
+    if (!access.isDemo) {
+      return NextResponse.json({ message: "Production SMS approval is performed by authorized TheOutHaven staff." }, { status: 403 });
+    }
+    if (action === "approve") {
+      updates.status = "approved";
+      updates.approved_by = access.user!.id;
+      updates.approved_at = new Date().toISOString();
+      updates.rejected_by = null;
+      updates.rejected_at = null;
+      updates.rejected_reason = null;
+    } else {
+      updates.status = "rejected";
+      updates.rejected_by = access.user!.id;
+      updates.rejected_at = new Date().toISOString();
+      updates.rejected_reason = String(body.reason || "Rejected in campaign review").slice(0, 500);
+    }
   } else if (action === "return_to_draft") {
     updates.status = "draft";
     updates.approved_by = null;
