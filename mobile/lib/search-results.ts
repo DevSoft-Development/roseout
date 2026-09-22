@@ -47,6 +47,7 @@ export type MobileSearchResponse = {
   renderMode: string;
   resolvedPlanType: MobileResolvedPlanType;
   canonicalSearchType: string | null;
+  walkingRequested: boolean;
   pairs: MobileOutingResult[];
   sameVenueResults: MobileOutingResult[];
   restaurants: MobilePlaceResult[];
