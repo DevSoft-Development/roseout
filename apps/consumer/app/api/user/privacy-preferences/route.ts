@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await requireUser(request);
+  const user = await requireUser();
   if (!user) return Response.json({ error: "Authentication required." }, { status: 401 });
 
   let body: unknown;
