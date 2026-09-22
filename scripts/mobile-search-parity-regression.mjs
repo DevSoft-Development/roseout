@@ -26,8 +26,8 @@ if (!apiSource.includes("resolvedPlanType") || !apiSource.includes("canonicalSea
 if (!resultsSource.includes("const effectivePlanType: PlanType = result?.resolvedPlanType || planType;")) {
   throw new Error("Native results must render from the canonical resolved result type");
 }
-if (!resultsSource.includes('effectivePlanType === "outing" ? recommended.length > 0 : singles.length > 0')) {
-  throw new Error("Native no-results state must use the canonical resolved result type");
+if (!resultsSource.includes('effectivePlanType === "outing" ? recommended.length > 0 || canBuild : singles.length > 0')) {
+  throw new Error("Native no-results state must use the canonical resolved result type and preserve pick-your-own-pair fallback");
 }
 if (!typesSource.includes('resolvedPlanType: MobileResolvedPlanType;')) {
   throw new Error("Mobile search response contract must include resolvedPlanType");
