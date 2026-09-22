@@ -1,6 +1,6 @@
 import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
-const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested|search v2|retrieval|candidate|domain|filter|confidence|weight|boost|penalty/i;
+const INTERNAL_REASON = /qualified\s+as|general[_\s-]?activity|nearby options? outside|outside the requested|fallback|candidate pool|search radius|classification|domain qualification|geo relaxation|eligibility|ranking|score|parser|taxonomy|intent|provider|source table|requested locality|matched requested|search v2|retrieval|candidate|domain|filter|confidence|weight|boost|penalty|neutralized|verified dinner evidence|deterministic ranking|query-driven ranking adjustment|canonical profile evidence|distance unavailable/i;
 
 export function cleanCustomerReason(value: unknown) {
   if (typeof value !== "string") return null;
@@ -16,14 +16,62 @@ export function cleanCustomerReason(value: unknown) {
   return reason.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 
+function ratingCopy(place: MobilePlaceResult) {
+  if (place.rating == null) return null;
+  const reviews = Number(place.reviewCount ?? 0);
+  if (place.rating >= 4.6 && reviews >= 500) {
+    return `Highly rated at ${place.rating.toFixed(1)} with ${Math.round(reviews).toLocaleString()} reviews.`;
+  }
+  if (place.rating >= 4.4 && reviews >= 100) {
+    return `Well rated at ${place.rating.toFixed(1)} with strong guest feedback.`;
+  }
+  return null;
+}
+
+function categoryCopy(place: MobilePlaceResult) {
+  const category = place.category?.trim().toLowerCase();
+  if (!category) return null;
+  if (place.kind === "restaurant") {
+    if (/steak/.test(category)) return "A steakhouse that fits a full dinner out.";
+    if (/sushi|japanese/.test(category)) return "A strong sushi/Japanese dinner option for the outing you described.";
+    if (/italian/.test(category)) return "An Italian dinner option that fits the meal you asked for.";
+    if (/seafood/.test(category)) return "A seafood-focused dinner pick that matches your plan.";
+    return `A ${category} restaurant that fits the meal you asked for.`;
+  }
+  if (/nightlife|bar|lounge/.test(category)) return "A lively after-dinner option for keeping the night going.";
+  if (/comedy/.test(category)) return "A comedy option that adds an easy second stop to the night.";
+  if (/bowling/.test(category)) return "A casual, social activity that works well after dinner.";
+  if (/museum|gallery/.test(category)) return "A relaxed cultural stop that fits the outing you described.";
+  return `A ${category} option that fits the experience you asked for.`;
+}
+
+export function customerFacingReasons(place: MobilePlaceResult) {
+  const cleaned = [
+    ...(Array.isArray(place.matchReasons) ? place.matchReasons : []),
+    place.whyMatched,
+  ]
+    .map(cleanCustomerReason)
+    .filter((reason): reason is string => Boolean(reason));
+
+  const unique = [...new Set(cleaned)];
+  const category = categoryCopy(place);
+  const rating = ratingCopy(place);
+
+  if (category && !unique.includes(category)) unique.push(category);
+  if (rating && !unique.includes(rating)) unique.push(rating);
+
+  if (!unique.length) {
+    unique.push(
+      place.kind === "restaurant"
+        ? "A dining option that fits the kind of meal you described."
+        : "An activity that fits the kind of outing you described.",
+    );
+  }
+  return unique.slice(0, 3);
+}
+
 export function placeCustomerReason(place: MobilePlaceResult) {
-  const reason = cleanCustomerReason(place.whyMatched);
-  if (reason) return reason;
-  const category = place.category?.trim();
-  if (category) return `A ${category.toLowerCase()} pick that lines up well with the experience you asked for.`;
-  return place.kind === "restaurant"
-    ? "A polished dining option that fits the kind of meal you described."
-    : "A strong experience for the kind of outing you described.";
+  return customerFacingReasons(place)[0] ?? null;
 }
 
 export function outingCustomerReason(outing: MobileOutingResult) {
