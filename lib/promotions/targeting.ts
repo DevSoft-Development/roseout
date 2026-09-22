@@ -48,14 +48,13 @@ function cleanText(value: unknown) {
   return String(value ?? "").trim();
 }
 function normalized(value: unknown) {
-  return cleanText(value).toLowerCase().replace(/s+/g, " ");
+  return cleanText(value).toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 function stringArray(value: unknown, zip = false) {
   const source = Array.isArray(value)
     ? value
     : typeof value === "string"
-      ? value.split(/[,
-]/)
+      ? value.split(/[,\n]/)
       : [];
   return [...new Set(source.map((item) => zip ? normalizeZip(item) : cleanText(item)).filter(Boolean) as string[])].slice(0, 250);
 }
