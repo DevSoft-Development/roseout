@@ -79,7 +79,11 @@ export function normalizeNoisySearchLanguage(query: string) {
 export function inferNoisyLanguageSignals(query: string) {
   const normalizedQuery = normalizeNoisySearchLanguage(query);
   const cuisines = CUISINE_ALIASES.filter(([, pattern]) => pattern.test(normalizedQuery)).map(([id]) => id);
-  const activityCategories = ACTIVITY_ALIASES.filter(([, pattern]) => pattern.test(normalizedQuery)).map(([id]) => id);
+  const explicitRooftopSecondStop = /\b(?:then|after|afterward|afterwards|followed by|and)\b[^.?!]{0,60}\brooftop(?: lounge| bar| drinks?)?\b/i.test(normalizedQuery)
+    || /\brooftop(?: lounge| bar| drinks?)\b/i.test(normalizedQuery);
+  const activityCategories = ACTIVITY_ALIASES
+    .filter(([id, pattern]) => pattern.test(normalizedQuery) && (id !== "rooftop" || !restaurantSignal || explicitRooftopSecondStop))
+    .map(([id]) => id);
   const placeName = PLACE_ALIASES.find(([, pattern]) => pattern.test(normalizedQuery))?.[0] ?? null;
   const geo = placeName ? normalizeGeoTerm(placeName) : null;
   const restaurantSignal = cuisines.length > 0 || /\b(?:restaurant|dinner|brunch|lunch|breakfast|food|eat|eats|dining|takeout|fast casual|quick bite|deli)\b/i.test(normalizedQuery);
