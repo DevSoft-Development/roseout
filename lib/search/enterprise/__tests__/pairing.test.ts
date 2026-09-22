@@ -148,4 +148,72 @@ describe("enterprise pairing regressions", () => {
       Number(pairs[1].pairWalkingMinutes)
     );
   });
+  it("keeps requested-borough pairs when borough metadata is only present in searchable text", () => {
+    const intent = deterministicIntentFromQuery(
+      "Plan dinner and a comedy show in Queens."
+    );
+
+    const restaurant = location({
+      id: "r1",
+      name: "Queens Dinner",
+      borough: null,
+      neighborhood: "Astoria",
+      address: "31-00 Broadway, Queens, NY",
+      search_document: "sit-down restaurant Astoria Queens dinner",
+      latitude: 40.764,
+      longitude: -73.923,
+    });
+
+    const activity = location({
+      id: "a1",
+      name: "Queens Comedy",
+      domain: "activity",
+      location_type: "activity",
+      activity_type: "comedy",
+      borough: "Queens",
+      neighborhood: "Long Island City",
+      latitude: 40.745,
+      longitude: -73.949,
+    });
+
+    const pairs = createSearchPairs([restaurant], [activity], intent);
+
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].restaurant.id).toBe("r1");
+    expect(pairs[0].activity.id).toBe("a1");
+  });
+
+  it("rejects a default pair outside the explicitly requested borough", () => {
+    const intent = deterministicIntentFromQuery(
+      "Plan dinner and a comedy show in Queens."
+    );
+
+    const restaurant = location({
+      id: "r1",
+      name: "Manhattan Dinner",
+      borough: "Manhattan",
+      neighborhood: "Midtown",
+      latitude: 40.758,
+      longitude: -73.9855,
+    });
+
+    const activity = location({
+      id: "a1",
+      name: "Queens Comedy",
+      domain: "activity",
+      location_type: "activity",
+      activity_type: "comedy",
+      borough: "Queens",
+      neighborhood: "Long Island City",
+      latitude: 40.745,
+      longitude: -73.949,
+    });
+
+    const debug = createPairingDebug();
+    const pairs = createSearchPairs([restaurant], [activity], intent, debug);
+
+    expect(pairs).toHaveLength(0);
+    expect(debug.rejectedPairs.some((row) => row.reason === "outside_requested_borough")).toBe(true);
+  });
+
 });

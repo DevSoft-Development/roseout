@@ -31,6 +31,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-search-ml-production
   PRODUCTION_ORIGIN: https://www.theouthaven.com
+  ADMIN_ORIGIN: https://admin.theouthaven.com
 
 jobs:
   complete:
@@ -123,7 +124,7 @@ jobs:
           CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/ml-rank-v1.json" --write-out '%{http_code}' \
             --request POST \
             --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
-            "$PRODUCTION_ORIGIN/api/admin/ml/recalculate-location-scores" || true)"
+            "$ADMIN_ORIGIN/api/admin/ml/recalculate-location-scores" || true)"
           echo "ml_rank_v1 recalculation HTTP $CODE"
           python - <<'PY'
           import json, os
@@ -144,7 +145,7 @@ jobs:
           set -euo pipefail
           CODE="$(curl --silent --show-error --max-time 300 --output "$RUNNER_TEMP/advanced.json" --write-out '%{http_code}' \
             --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
-            "$PRODUCTION_ORIGIN/api/admin/ml/recalculate-advanced-all" || true)"
+            "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all" || true)"
           echo "Advanced recalculation HTTP $CODE"
           python -m json.tool "$RUNNER_TEMP/advanced.json" || cat "$RUNNER_TEMP/advanced.json"
           test "$CODE" = "200" || exit 1
