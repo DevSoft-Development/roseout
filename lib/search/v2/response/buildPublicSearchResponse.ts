@@ -23,7 +23,7 @@ function isCustomerFacingReason(reason: string) {
   const value = reason.trim();
   if (!value) return false;
   return !(
-    /qualified as|deterministic ranking|bounded .*ranking|bounded advanced ml|canonical profile|scoring|candidate pool|fallback|missing explicit|weak .*intent|penalized|evidence unavailable|distance unavailable|matched requested|matched dish-specific evidence|exact menu phrase|multi[-\s]?dish|menu coverage|partial .*coverage|verified .*coverage|dish coverage|ranking|boost|adjustment|business quality|behavioral result quality|review intelligence|booking likelihood|learned location fit|negative feedback|duplicate risk|hf reranker|hf semantic relevance|hf menu semantic relevance|model version|confidence score|search score|intent match|role confidence|geo fit/i.test(value) ||
+    /qualified as|deterministic ranking|bounded .*ranking|bounded advanced ml|canonical profile|scoring|candidate pool|fallback|missing explicit|weak .*intent|penalized|evidence unavailable|distance unavailable|matched requested|matched dish-specific evidence|exact menu phrase|multi[-\s]?dish|menu coverage|partial .*coverage|verified .*coverage|verified dinner evidence|dish coverage|ranking|boost|adjustment|neutralized|business quality|behavioral result quality|review intelligence|booking likelihood|learned location fit|negative feedback|duplicate risk|hf reranker|hf semantic relevance|hf menu semantic relevance|model version|confidence score|search score|intent match|role confidence|geo fit/i.test(value) ||
     /^\d+(?:\.\d+)?\s+miles?\s+away$/i.test(value) ||
     /[+-]\d+(?:\.\d+)?\b/.test(value)
   );
@@ -133,6 +133,9 @@ export function buildPublicSearchResponse({ plan, result, trace }: { plan: Searc
         pairingReasons: pair.reasons,
         walkingMinutes: pair.walkingMinutes,
         distanceMiles: pair.distanceMiles,
+        includeTravelReason: hasExplicitPairTravelConstraint(plan),
+        walkingRequested: plan.travel.mode === "walking",
+        maxWalkingMinutes: plan.pairing.maxWalkingMinutes,
       }),
       whyMatched,
       why_it_matched: whyMatched,

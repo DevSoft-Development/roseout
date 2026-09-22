@@ -37,19 +37,23 @@ function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: stri
   );
 }
 
-export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: MobileOutingResult; rank?: number; onChoose?: () => void }) {
+export function OutingResultCard({ outing, rank = 1, onChoose, showWalking = false, walkingMaxMinutes = null }: { outing: MobileOutingResult; rank?: number; onChoose?: () => void; showWalking?: boolean; walkingMaxMinutes?: number | null }) {
   const { theme } = useAppTheme();
   const router = useRouter();
+  const walkMinutes = outing.walkMinutes != null ? Math.round(outing.walkMinutes) : null;
   const distance = outing.resultType === "same_venue"
     ? "Same venue"
-    : outing.walkMinutes != null
-      ? `${Math.round(outing.walkMinutes)} min walk`
+    : showWalking && walkMinutes != null && walkMinutes > 0 && (walkingMaxMinutes == null || walkMinutes <= walkingMaxMinutes)
+      ? `${walkMinutes} min walk`
       : outing.distanceMiles != null
-        ? `${outing.distanceMiles.toFixed(1)} mi apart`
+        ? `${outing.distanceMiles.toFixed(2)} miles away`
         : null;
   const why = outingCustomerReason(outing);
   const pairReasons = Array.isArray(outing.matchReasons)
-    ? outing.matchReasons.map(cleanCustomerReason).filter((reason): reason is string => Boolean(reason))
+    ? outing.matchReasons
+        .map(cleanCustomerReason)
+        .filter((reason): reason is string => Boolean(reason))
+        .filter((reason) => !/\bwalk(?:ing)?\b|\bmiles? between stops\b|\bdistance\b/i.test(reason))
     : [];
   const matchReasons = pairReasons.length ? pairReasons : why ? [why] : [];
   const sponsored = outing.sponsored === true || outing.placementType === "sponsored";
@@ -93,7 +97,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
             </View>
           </View>
         ) : null}
-        <Button onPress={onChoose || (() => router.push(outingRouteParams(outing)))}>Choose this outing →</Button>
+        <Button onPress={onChoose || (() => router.push(outingRouteParams(outing, showWalking, walkingMaxMinutes)))}>Choose this outing →</Button>
       </View>
     </Card>
   );

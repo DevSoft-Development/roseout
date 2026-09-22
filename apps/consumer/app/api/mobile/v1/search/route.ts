@@ -146,6 +146,20 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
   };
 }
 
+function walkingWasRequested(body: MobileSearchBody, payload: any, source: any) {
+  const searchPlan = source?.searchPlan || payload?.searchPlan || source?.normalizedIntent || payload?.normalizedIntent;
+  const planPairing = searchPlan?.pairing;
+  if (planPairing?.requireWalkable === true || planPairing?.maxWalkingMinutes != null) return true;
+
+  const explicitText = [
+    text(body.query),
+    ...list(body.preferences),
+    ...list(body.customMatters),
+  ].join(" ").toLowerCase();
+
+  return /\bwalking distance\b|\bwalkable\b|\bshort walk\b|\bminutes? walk\b|\bwalk(?:ing)?\s+(?:from|to|between)\b/.test(explicitText);
+}
+
 function canonicalSearchType(payload: any, source: any) {
   return firstText(
     source?.searchType,
@@ -269,6 +283,11 @@ export async function POST(request: Request) {
     sameVenueCount: sameVenueResults.length,
   });
 
+  const walkingRequested = walkingWasRequested(body, payload, source);
+  const walkingMaxMinutes = walkingRequested
+    ? numberOrNull(source?.searchPlan?.pairing?.maxWalkingMinutes ?? payload?.searchPlan?.pairing?.maxWalkingMinutes)
+    : null;
+
   return mobileJson({
     ok: true,
     requestId: payload?.request_id || payload?.requestId || null,
@@ -276,6 +295,8 @@ export async function POST(request: Request) {
     renderMode,
     resolvedPlanType,
     canonicalSearchType: canonicalType,
+    walkingRequested,
+    walkingMaxMinutes,
     pairs,
     sameVenueResults,
     restaurants,

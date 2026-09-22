@@ -59,13 +59,16 @@ export default function CompleteOutingScreen() {
   const distanceMiles = value(params.distanceMiles);
   const reason = value(params.reason);
   const resultType = value(params.resultType) || "pair";
+  const showWalking = value(params.showWalking) === "1";
+  const walkingMaxMinutes = value(params.walkingMaxMinutes) ? Number(value(params.walkingMaxMinutes)) : null;
+  const parsedWalkMinutes = walkMinutes ? Math.round(Number(walkMinutes)) : null;
 
   const travelLabel = resultType === "same_venue"
     ? "Everything at one venue"
-    : walkMinutes
-      ? `${Math.round(Number(walkMinutes))} min walk between stops`
+    : showWalking && parsedWalkMinutes != null && Number.isFinite(parsedWalkMinutes) && parsedWalkMinutes > 0 && (walkingMaxMinutes == null || parsedWalkMinutes <= walkingMaxMinutes)
+      ? `${parsedWalkMinutes} min walk between stops`
       : distanceMiles
-        ? `${Number(distanceMiles).toFixed(1)} mi between stops`
+        ? `${Number(distanceMiles).toFixed(2)} miles away`
         : "Nearby stops";
 
   const save = () => requireAuth(async () => {

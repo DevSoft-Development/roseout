@@ -88,33 +88,44 @@ export function buildPairMatchReasonDetails(input: {
   pairingReasons?: string[] | null;
   walkingMinutes?: number | null;
   distanceMiles?: number | null;
+  includeTravelReason?: boolean;
+  walkingRequested?: boolean;
+  maxWalkingMinutes?: number | null;
 }): PublicMatchReason[] {
   const output = buildLocationMatchReasonDetails(input.reasons).slice(0, 4);
   const seen = new Set(output.map((item) => item.label.toLowerCase()));
 
-  const walking = input.walkingMinutes == null ? NaN : Number(input.walkingMinutes);
-  if (Number.isFinite(walking) && walking > 0) {
-    const label = `${Math.max(1, Math.round(walking))}-minute walk between stops`;
-    if (!seen.has(label.toLowerCase())) {
-      output.push({
-        type: "walking",
-        label,
-        source: "pairing",
-        confidence: "high",
-      });
-      seen.add(label.toLowerCase());
-    }
-  } else {
-    const miles = input.distanceMiles == null ? NaN : Number(input.distanceMiles);
-    if (Number.isFinite(miles) && miles >= 0) {
-      const label = `${miles < 0.1 ? "<0.1" : miles.toFixed(1)} miles between stops`;
+  if (input.includeTravelReason) {
+    const walking = input.walkingMinutes == null ? NaN : Number(input.walkingMinutes);
+    const walkingAllowed =
+      input.walkingRequested === true &&
+      Number.isFinite(walking) &&
+      walking > 0 &&
+      (input.maxWalkingMinutes == null || walking <= input.maxWalkingMinutes);
+
+    if (walkingAllowed) {
+      const label = `${Math.max(1, Math.round(walking))}-minute walk between stops`;
       if (!seen.has(label.toLowerCase())) {
         output.push({
-          type: "distance",
+          type: "walking",
           label,
           source: "pairing",
           confidence: "high",
         });
+        seen.add(label.toLowerCase());
+      }
+    } else {
+      const miles = input.distanceMiles == null ? NaN : Number(input.distanceMiles);
+      if (Number.isFinite(miles) && miles >= 0) {
+        const label = `${miles < 0.01 ? "<0.01" : miles.toFixed(2)} miles between stops`;
+        if (!seen.has(label.toLowerCase())) {
+          output.push({
+            type: "distance",
+            label,
+            source: "pairing",
+            confidence: "high",
+          });
+        }
       }
     }
   }

@@ -126,10 +126,16 @@ function resolveTravelPolicy(
     : walking || driving || /\b(near|nearby|close to|around|short drive)\b/.test(q)
       ? "soft"
       : "none";
+  const shortWalk = /\bshort walk\b|\bquick walk\b|\bbrief walk\b/.test(q);
+  const longWalk = /\blong walk\b|\blonger walk\b|\bdon'?t mind (?:a )?long walk\b|\bfine with (?:a )?long walk\b|\bhappy to walk\b/.test(q);
   const maxWalkingMinutes = hasWalkMinutes
     ? Number(explicitWalkMinutes)
-    : walking && !/\bshort walk\b/.test(q)
-      ? 30
+    : walking
+      ? shortWalk
+        ? 15
+        : longWalk
+          ? 60
+          : 30
       : null;
   const maxDrivingMinutes = hasDriveMinutes
     ? Number(explicitDriveMinutes)
