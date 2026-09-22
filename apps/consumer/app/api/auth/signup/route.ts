@@ -134,6 +134,10 @@ export async function POST(req: NextRequest) {
           ...(user.user_metadata || {}),
           role: user.user_metadata?.role || "user",
           first_name: firstName,
+          birth_month: birthMonth,
+          home_zip_code: zip,
+          phone_e164: phone || null,
+          sms_consent: smsConsent,
           account_type: accountType,
           business_claim_signup:
             Boolean(user.user_metadata?.business_claim_signup) || isBusinessClaimSignup,
