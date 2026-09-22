@@ -74,8 +74,8 @@ describe("production personalization controls", () => {
       },
     };
     const optedOut = await loadUserPreferenceProfile("private-user", { client: client as any });
-    expect(optedOut.signalCount).toBe(0);
-    expect(optedOut.sufficientEvidence).toBe(false);
+    expect(optedOut.evidence).toBe(0);
+    expect(optedOut.weightedEvidence).toBe(0);
     expect(evidenceReads).toBe(0);
   });
 
