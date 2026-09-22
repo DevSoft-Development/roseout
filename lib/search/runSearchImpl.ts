@@ -64,6 +64,7 @@ export type RunOutingSearchInput = {
   personalizationProfile?: UserPreferenceProfile;
   personalizationMode?: PersonalizationMode;
   personalizationFailureReason?: string;
+  personalizationConsentReason?: string;
   /** Set only by an authenticated admin route; public request bodies are never trusted. */
   searchCoreOverride?: SearchCoreOverride;
   authorizedSearchCoreOverride?: boolean;
