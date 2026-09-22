@@ -281,7 +281,8 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
   const image = imageFor(location);
   const rating = ratingFor(location);
   const price = priceFor(location);
-  const best = rank === 1;
+  const sponsored = isSponsored(location);
+  const best = rank === 1 && !sponsored;
   const signals = structuredSignals(location).length ? structuredSignals(location) : locationSignals(location, prompt);
   const noun = planType === "restaurant" ? "restaurant" : "activity";
   return (
@@ -289,7 +290,7 @@ function SingleCard({ location, rank, planType, returnToResults, prompt, onUse }
       <div className="relative h-64 shrink-0 overflow-hidden bg-white/[0.04] sm:h-72">
         {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /> : <div className="grid h-full place-items-center text-4xl">📍</div>}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-black/10" />
-        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{best ? "Best Match" : `Option ${rank}`}</span>
+        <span className={`absolute left-4 top-4 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] backdrop-blur ${sponsored ? "bg-white text-black" : best ? "bg-[#e1062a] text-white" : "border border-white/15 bg-black/65 text-white/75"}`}>{sponsored ? "Sponsored" : best ? "Best Match" : `Option ${rank}`}</span>
       </div>
       <div className="flex flex-1 flex-col p-5 sm:p-6">
         <div>
@@ -317,7 +318,7 @@ function BuilderChoice({ location, selected, label, onSelect }: { location: Loca
         <div className="relative w-36 shrink-0 bg-white/[0.04] sm:w-44">
           {image ? <img src={image} alt={nameFor(location)} className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" /> : <div className="grid h-full place-items-center text-3xl">📍</div>}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/25" />
-          <span className="absolute left-2.5 top-2.5 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/85">{label}</span>
+          <span className="absolute left-2.5 top-2.5 rounded-full border border-white/15 bg-black/70 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white/85">{isSponsored(location) ? "Sponsored" : label}</span>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-between gap-4 p-4 sm:p-5">
           <div className="min-w-0">
