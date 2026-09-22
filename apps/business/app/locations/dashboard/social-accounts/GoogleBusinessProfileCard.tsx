@@ -154,7 +154,7 @@ export default function GoogleBusinessProfileCard({
         </div>
       ) : null}
 
-      {connected && mismatches.length ? (
+      {connected && connection?.last_sync_at && mismatches.length ? (
         <div className="mt-6">
           <div className="flex items-center justify-between gap-3">
             <div><h3 className="text-lg font-black text-[var(--business-text)]">Data differences</h3><p className="mt-1 text-sm font-semibold text-[var(--business-muted)]">Choose the source of truth one field at a time. TheOutHaven never overwrites Google automatically.</p></div>
@@ -179,10 +179,15 @@ export default function GoogleBusinessProfileCard({
             ))}
           </div>
         </div>
-      ) : connected ? (
+      ) : connected && connection?.last_sync_at ? (
         <div className="mt-6 flex items-center gap-3 rounded-2xl border border-emerald-300/15 bg-emerald-500/[0.06] px-4 py-4">
           <CheckCircle2 className="h-5 w-5 text-emerald-200" />
           <div><p className="text-sm font-black text-emerald-100">Google and TheOutHaven are aligned</p><p className="mt-1 text-xs font-semibold text-emerald-100/60">No tracked profile differences were found on the last sync.</p></div>
+        </div>
+      ) : connected ? (
+        <div className="mt-6 flex items-center gap-3 rounded-2xl border border-blue-300/15 bg-blue-500/[0.06] px-4 py-4">
+          <RefreshCw className="h-5 w-5 text-blue-200" />
+          <div><p className="text-sm font-black text-blue-100">Run the first profile health check</p><p className="mt-1 text-xs font-semibold text-blue-100/60">The Google location is mapped. Refresh health to compare business name, phone, website, address, and hours.</p></div>
         </div>
       ) : null}
 
@@ -196,6 +201,7 @@ export default function GoogleBusinessProfileCard({
           <span className="inline-flex min-h-12 items-center rounded-xl border border-amber-300/20 bg-amber-500/10 px-5 text-sm font-black text-amber-100">Google OAuth credentials must be configured by TheOutHaven</span>
         )}
         {connected ? <button disabled={Boolean(busy)} onClick={() => post("/api/locations/google-business-profile/sync", { action: "refresh" }, "refresh")} className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[var(--business-border)] px-5 text-sm font-black text-[var(--business-text)] disabled:opacity-40"><RefreshCw className={`h-4 w-4 ${busy === "refresh" ? "animate-spin" : ""}`} />Refresh health</button> : null}
+        {connection ? <button disabled={Boolean(busy)} onClick={() => { if (window.confirm("Disconnect Google Business Profile from this location?")) void post("/api/locations/google-business-profile/sync", { action: "disconnect" }, "disconnect"); }} className="min-h-12 rounded-xl border border-rose-300/20 px-4 text-sm font-black text-rose-200 disabled:opacity-40">{busy === "disconnect" ? "Disconnecting…" : "Disconnect"}</button> : null}
       </div>
 
       <div className="mt-6 grid gap-3 md:grid-cols-2">
