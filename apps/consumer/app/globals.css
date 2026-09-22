@@ -494,3 +494,29 @@ html { -webkit-text-size-adjust: 100%; }
   background-color: var(--business-panel-strong) !important;
   color: var(--business-text) !important;
 }
+
+/* Compact consumer typography on phone-sized web screens. Keeps hierarchy while reducing vertical pressure. */
+@media (max-width: 640px) {
+  .toh-consumer-mobile-type h1 {
+    font-size: 2.125rem !important;
+    line-height: 1.08 !important;
+    letter-spacing: -0.045em !important;
+  }
+
+  .toh-consumer-mobile-type h2 {
+    font-size: 1.75rem !important;
+    line-height: 1.16 !important;
+    letter-spacing: -0.035em !important;
+  }
+
+  .toh-consumer-mobile-type h3 {
+    font-size: 1.125rem !important;
+    line-height: 1.3 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  .toh-consumer-mobile-type .toh-mobile-body-copy {
+    font-size: 1rem !important;
+    line-height: 1.5rem !important;
+  }
+}
