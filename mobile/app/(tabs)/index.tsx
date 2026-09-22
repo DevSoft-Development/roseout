@@ -8,11 +8,11 @@ import { mobileApi } from "@/lib/api";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
 const TYPEWRITER_PROMPTS = [
-  "Dinner and something fun in Brooklyn tonight",
-  "Sushi and karaoke near me",
-  "Rooftop drinks and an activity in Manhattan",
-  "Date night within walking distance",
-  "Brunch and something to do afterward",
+  "Dinner + fun in Brooklyn",
+  "Sushi + karaoke nearby",
+  "Rooftop drinks nearby",
+  "Date night, short walk",
+  "Brunch + something fun",
 ];
 
 const QUICK_IDEAS = ["Date night", "Girls night", "Dinner + activity", "Birthday", "Tonight", "Near me"] as const;
@@ -167,11 +167,14 @@ export default function HomeScreen() {
                   }}
                   style={({ pressed }) => [
                     styles.clearButton,
-                    { backgroundColor: theme.colors.surface },
+                    {
+                      borderColor: theme.colors.borderStrong,
+                      backgroundColor: theme.colors.surfaceElevated,
+                    },
                     pressed && { opacity: 0.68 },
                   ]}
                 >
-                  <AppText variant="bodyStrong" muted>×</AppText>
+                  <AppText style={[styles.clearIcon, { color: theme.colors.text }]}>×</AppText>
                 </Pressable>
               ) : null}
             </View>
@@ -283,7 +286,8 @@ const styles = StyleSheet.create({
   searchRow: { minHeight: 58, borderRadius: 18, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9 },
   spark: { color: "#ff8a9b", fontSize: 18 },
   searchInput: { flex: 1, minHeight: 56, fontSize: 16, fontWeight: "700" },
-  clearButton: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  clearButton: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  clearIcon: { fontSize: 20, lineHeight: 22, fontWeight: "700", textAlign: "center" },
   searchHint: { marginTop: 12, textAlign: "center", fontSize: 13 },
   quickIdeas: { marginTop: 14, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 },
   quickIdea: { minHeight: 38, borderWidth: 1, borderRadius: 19, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" },
