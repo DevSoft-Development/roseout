@@ -104,10 +104,21 @@ jobs:
           jq -n --arg org "$VERCEL_TEAM_ID" --arg project "$VERCEL_PROJECT_ID" '{orgId:$org,projectId:$project}' > .vercel/project.json
           ENV_FILE="$RUNNER_TEMP/vercel-production.env"
           MAIL_JSON="$RUNNER_TEMP/mail-env.json"
-          npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null
-          chmod 600 "$ENV_FILE"
+          SOURCE="vercel"
+          if npx --yes vercel@59.3.0 env pull "$ENV_FILE" --environment=production --yes --token "$VERCEL_TOKEN" >/dev/null 2>&1; then
+            chmod 600 "$ENV_FILE"
+          else
+            SOURCE="aws"
+            echo "::warning::Vercel project environment is unavailable; using the existing AWS production runtime secret as mail authority."
+            aws secretsmanager get-secret-value \
+              --region "$BACKGROUND_APP_ENV_SECRET_REGION" \
+              --secret-id "$BACKGROUND_APP_ENV_SECRET" \
+              --query SecretString \
+              --output text > "$RUNNER_TEMP/aws-mail-source.json"
+            chmod 600 "$RUNNER_TEMP/aws-mail-source.json"
+          fi
 
-          ENV_FILE="$ENV_FILE" MAIL_JSON="$MAIL_JSON" python <<'PY'
+          ENV_FILE="$ENV_FILE" MAIL_JSON="$MAIL_JSON" AWS_SOURCE="$RUNNER_TEMP/aws-mail-source.json" SOURCE="$SOURCE" python <<'PY'
           import json
           import os
           from pathlib import Path
@@ -126,32 +137,39 @@ jobs:
               'THEOUTHAVEN_ADMIN_EMAIL',
           }
           values = {}
-          for raw_line in Path(os.environ['ENV_FILE']).read_text(encoding='utf-8').splitlines():
-              line = raw_line.strip()
-              if not line or line.startswith('#') or '=' not in line:
-                  continue
-              key, raw = line.split('=', 1)
-              key = key.strip()
-              if key not in allowed:
-                  continue
-              raw = raw.strip()
-              try:
-                  value = json.loads(raw) if raw.startswith('"') else raw.strip("'")
-              except json.JSONDecodeError:
-                  value = raw.strip('"').strip("'")
-              if isinstance(value, str) and value:
-                  values[key] = value
+          if os.environ['SOURCE'] == 'vercel':
+              for raw_line in Path(os.environ['ENV_FILE']).read_text(encoding='utf-8').splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith('#') or '=' not in line:
+                      continue
+                  key, raw = line.split('=', 1)
+                  key = key.strip()
+                  if key not in allowed:
+                      continue
+                  raw = raw.strip()
+                  try:
+                      value = json.loads(raw) if raw.startswith('"') else raw.strip("'")
+                  except json.JSONDecodeError:
+                      value = raw.strip('"').strip("'")
+                  if isinstance(value, str) and value:
+                      values[key] = value
+          else:
+              source = json.loads(Path(os.environ['AWS_SOURCE']).read_text(encoding='utf-8'))
+              if not isinstance(source, dict):
+                  raise SystemExit('AWS runtime mail authority is not a JSON object.')
+              values = {key: value for key, value in source.items() if key in allowed and isinstance(value, str) and value}
           if not values.get('RESEND_API_KEY'):
-              raise SystemExit('Production Vercel environment is missing RESEND_API_KEY.')
+              raise SystemExit('Production mail authority is missing RESEND_API_KEY.')
           if not any(values.get(key) for key in ('ADMIN_EMAIL', 'SUPERADMIN_EMAIL', 'THEOUTHAVEN_ADMIN_EMAIL')):
-              raise SystemExit('Production Vercel environment is missing an admin mail recipient fallback.')
+              raise SystemExit('Production mail authority is missing an admin mail recipient fallback.')
           Path(os.environ['MAIL_JSON']).write_text(json.dumps(values, separators=(',', ':')), encoding='utf-8')
+          print('mail_authority=' + os.environ['SOURCE'])
           PY
           chmod 600 "$MAIL_JSON"
           while IFS= read -r value; do
             [ -z "$value" ] || echo "::add-mask::$value"
           done < <(jq -r '.[]' "$MAIL_JSON")
-          rm -f "$ENV_FILE"
+          rm -f "$ENV_FILE" "$RUNNER_TEMP/aws-mail-source.json"
 
       - name: Synchronize mail configuration into AWS runtime secrets
         id: sync_mail

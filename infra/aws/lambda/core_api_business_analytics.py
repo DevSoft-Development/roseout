@@ -350,6 +350,16 @@ def build_conversion_breakdown(rows):
     return sorted(values, key=lambda row: -safe_number(row.get("completed_outings")))
 
 
+def safe_rows(table, filters=None, limit=1000):
+    try:
+        rows, meta = core.supabase_rows(table, "*", filters or [], limit=limit)
+        return rows or [], meta, None
+    except Exception as exc:
+        # Analytics is an observational surface. A missing/temporarily unavailable
+        # source must not make the entire Core API unhealthy.
+        return [], {}, f"{table}:{type(exc).__name__}"
+
+
 def read_business_analytics(payload):
     range_name = core.text(payload.get("range") or "30d")
     if range_name not in VALID_RANGES:
@@ -361,12 +371,13 @@ def read_business_analytics(payload):
     outing_filters = [("created_at", f"gte.{start}")]
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        locations_future = pool.submit(core.supabase_rows, "locations", "*", [], limit=1000)
-        events_future = pool.submit(core.supabase_rows, "analytics_events", "*", event_filters, limit=1000)
-        outings_future = pool.submit(core.supabase_rows, "outings", "*", outing_filters, limit=1000)
-        locations, _ = locations_future.result()
-        events, _ = events_future.result()
-        outings, _ = outings_future.result()
+        locations_future = pool.submit(safe_rows, "locations", [], 1000)
+        events_future = pool.submit(safe_rows, "analytics_events", event_filters, 1000)
+        outings_future = pool.submit(safe_rows, "outings", outing_filters, 1000)
+        locations, _, locations_error = locations_future.result()
+        events, _, events_error = events_future.result()
+        outings, _, outings_error = outings_future.result()
+    source_errors = [error for error in (locations_error, events_error, outings_error) if error]
 
     working = locations
     if query:
@@ -435,4 +446,6 @@ def read_business_analytics(payload):
             "result_count": len(working),
             "total_count": len(locations),
         },
+        "degraded": bool(source_errors),
+        "source_errors": source_errors,
     }

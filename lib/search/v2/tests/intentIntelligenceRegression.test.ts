@@ -65,6 +65,32 @@ describe("Search V2 production intent intelligence", () => {
     expect(result.activity.required).toBe(true);
     expect(result.activity.categories).toContain("comedy");
     expect(result.geo.borough).toBe("Queens");
+    expect(result.restaurant.foods).toEqual([]);
+  });
+
+  it("keeps rooftop dinner restaurant-only when rooftop modifies the restaurant", async () => {
+    const result = await plan("rooftop dinner in Brooklyn");
+    expect(result.mode).toBe("restaurant_only");
+    expect(result.restaurant.required).toBe(true);
+    expect(result.restaurant.features).toContain("rooftop");
+    expect(result.activity.required).toBe(false);
+    expect(result.activity.categories).not.toContain("rooftop");
+  });
+
+  it("keeps seafood rooftop restaurant restaurant-only", async () => {
+    const result = await plan("seafood rooftop restaurant in Queens");
+    expect(result.mode).toBe("restaurant_only");
+    expect(result.restaurant.cuisines).toContain("seafood");
+    expect(result.restaurant.features).toContain("rooftop");
+    expect(result.activity.required).toBe(false);
+    expect(result.activity.categories).not.toContain("rooftop");
+  });
+
+  it("still treats explicit rooftop drinks after dinner as a second stop", async () => {
+    const result = await plan("dinner in Manhattan then rooftop drinks");
+    expect(result.mode).toBe("paired_outing");
+    expect(result.restaurant.required).toBe(true);
+    expect(result.activity.required).toBe(true);
   });
 
   it("does not invent same-venue intent for girls night", async () => {
