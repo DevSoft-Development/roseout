@@ -27,7 +27,7 @@ export default async function LocationSocialAccountsPage({
   if (!location?.id) {
     return (
       <BusinessPageShell>
-        <BusinessPageHeader eyebrow="Social Accounts" title="No connected location found" subtitle="Connect or claim a location before connecting its Instagram account." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} />
+        <BusinessPageHeader eyebrow="Social Accounts" title="No connected location found" subtitle="Connect or claim a location before connecting external business accounts." badge={<BusinessStatusBadge tone="amber">Location required</BusinessStatusBadge>} />
       </BusinessPageShell>
     );
   }
