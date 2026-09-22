@@ -59,13 +59,33 @@ describe("production personalization controls", () => {
     expect(rerankLocations(conflicting, explicit, { mode: "enabled", personalization: "enabled", profile }).results[0].id).toBe("intent");
   });
 
+  it("returns an empty preference profile when the consumer opts out", async () => {
+    let evidenceReads = 0;
+    const preferenceQuery = {
+      select() { return this; },
+      eq() { return this; },
+      maybeSingle() { return Promise.resolve({ data: { personalization_enabled: false }, error: null }); },
+    };
+    const client = {
+      from(table: string) {
+        if (table === "consumer_profiles") return preferenceQuery;
+        evidenceReads += 1;
+        throw new Error("evidence should not be read after opt-out");
+      },
+    };
+    const optedOut = await loadUserPreferenceProfile("private-user", { client: client as any });
+    expect(optedOut.evidence).toBe(0);
+    expect(optedOut.weightedEvidence).toBe(0);
+    expect(evidenceReads).toBe(0);
+  });
+
   it("fails open on profile query errors", async () => {
-    const failingQuery = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, limit() { return Promise.resolve({ data: null, error: new Error("database unavailable") }); } };
+    const failingQuery = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, maybeSingle() { return Promise.resolve({ data: { personalization_enabled: true }, error: null }); }, limit() { return Promise.resolve({ data: null, error: new Error("database unavailable") }); } };
     await expect(loadUserPreferenceProfile("private-user", { client: { from: () => failingQuery } as any })).rejects.toThrow("database unavailable");
   });
 
   it("times out profile loading quickly", async () => {
-    const hangingQuery = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, limit() { return new Promise(() => undefined); } };
+    const hangingQuery = { select() { return this; }, eq() { return this; }, in() { return this; }, order() { return this; }, maybeSingle() { return Promise.resolve({ data: { personalization_enabled: true }, error: null }); }, limit() { return new Promise(() => undefined); } };
     await expect(loadUserPreferenceProfile("private-user", { client: { from: () => hangingQuery } as any, timeoutMs: 5 })).rejects.toThrow("profile_load_timeout");
   });
 });

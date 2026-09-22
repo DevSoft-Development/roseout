@@ -86,7 +86,7 @@ export default async function Page() {
           <p className="text-xs font-black uppercase tracking-[.24em] text-rose-200">Profile</p>
           <h2 className="mt-2 text-2xl font-black">{profileIncomplete ? "Complete your profile" : "Profile ready"}</h2>
           <p className="mt-2 text-sm text-white/60">We keep your consumer profile minimal: first name, city, birth month, and optional phone.</p>
-          <Link href="/user/dashboard/account" className="mt-4 inline-flex rounded-full bg-white px-4 py-2 text-xs font-black text-black">Open Account</Link>
+          <div className="mt-4 flex flex-wrap gap-2"><Link href="/user/dashboard/account" className="inline-flex rounded-full bg-white px-4 py-2 text-xs font-black text-black">Open Account</Link><Link href="/user/dashboard/privacy" className="inline-flex rounded-full border border-white/15 px-4 py-2 text-xs font-black">Recommendations & Privacy</Link></div>
         </DashboardCard>
 
         <DashboardCard className="lg:col-span-2">
