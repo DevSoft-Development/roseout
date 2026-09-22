@@ -1,5 +1,6 @@
 import { handleGeneratePost } from "@/lib/search/public-api/controller";
 import { buildGuidedSearchPrompt } from "@/lib/search/guided/buildGuidedSearchPrompt";
+import { applySearchPromotions } from "@/lib/promotions/engine";
 import { mobileJson, mobileError } from "../_lib/response";
 
 export const runtime = "nodejs";
@@ -114,6 +115,9 @@ function shapePlace(value: any, kind: "restaurant" | "activity") {
     address: firstText(value?.formatted_address, value?.full_address, value?.address),
     latitude: numberOrNull(value?.latitude ?? value?.lat),
     longitude: numberOrNull(value?.longitude ?? value?.lng ?? value?.lon),
+    sponsored: Boolean(value?.sponsored || value?.isSponsored || value?.is_sponsored || String(value?.placement_type || "").toLowerCase() === "sponsored"),
+    sponsorId: firstText(value?.sponsor_id, value?.promotion_campaign_id),
+    placementType: firstText(value?.placement_type),
   };
 }
 
@@ -128,6 +132,9 @@ function shapePair(value: any, index: number, resultType: "pair" | "same_venue" 
     walkMinutes: resultType === "same_venue" ? 0 : numberOrNull(value?.walk_minutes ?? value?.walkingMinutes ?? value?.walkMinutes),
     reason: firstText(value?.reason, value?.pairing_reason, value?.whyMatched, value?.why_it_matched),
     matchReasons: matchReasonLabels(value),
+    sponsored: Boolean(value?.sponsored || value?.isSponsored || value?.is_sponsored || String(value?.placement_type || "").toLowerCase() === "sponsored"),
+    sponsorId: firstText(value?.sponsor_id, value?.promotion_campaign_id),
+    placementType: firstText(value?.placement_type),
     resultType,
   };
 }
@@ -225,6 +232,7 @@ export async function POST(request: Request) {
     return mobileError(String(code), String(messageText), canonicalResponse.status);
   }
 
+  payload = await applySearchPromotions(payload);
   const source = payload?.searchV2 || payload;
   const restaurantsRaw = Array.isArray(source?.restaurants) ? source.restaurants : Array.isArray(payload?.restaurants) ? payload.restaurants : [];
   const activitiesRaw = Array.isArray(source?.activities) ? source.activities : Array.isArray(payload?.activities) ? payload.activities : [];
