@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -103,12 +102,13 @@ export default function AdminLoginPage() {
             <div>
               <div className="mb-12 flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 shadow-[0_0_45px_rgba(225,6,42,.16)]">
-                  <Image
-                    src="/theouthaven-icon.png"
+                  {/* The isolated Admin app does not ship the consumer public asset bundle. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="https://theouthaven.com/toh_logo.png"
                     alt="TheOutHaven"
                     width={36}
                     height={36}
-                    priority
                     className="h-9 w-9 object-contain"
                   />
                 </div>
