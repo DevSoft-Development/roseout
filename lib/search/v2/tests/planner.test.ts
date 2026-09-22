@@ -78,6 +78,29 @@ describe("Search Core V2 planner", () => {
     expect(plan.fallback.allowBroaderGeo).toBe(false);
   });
 
+  it("uses a shorter cap when the user asks for a short walk", async () => {
+    const plan = await buildSearchPlan({ input: { query: "Dinner and comedy in Queens, keep it a short walk" } });
+    expect(plan.travel.mode).toBe("walking");
+    expect(plan.pairing.requireWalkable).toBe(true);
+    expect(plan.pairing.maxWalkingMinutes).toBe(15);
+    expect(plan.pairing.maxDistanceMiles).toBe(0.75);
+  });
+
+  it("only allows a long walking window when the user explicitly asks for one", async () => {
+    const plan = await buildSearchPlan({ input: { query: "Dinner and live music in Manhattan, I am fine with a long walk" } });
+    expect(plan.travel.mode).toBe("walking");
+    expect(plan.pairing.requireWalkable).toBe(true);
+    expect(plan.pairing.maxWalkingMinutes).toBe(60);
+    expect(plan.pairing.maxDistanceMiles).toBe(3);
+  });
+
+  it("honors an explicit numeric walking limit", async () => {
+    const plan = await buildSearchPlan({ input: { query: "Dinner and jazz within a 45 minute walk" } });
+    expect(plan.travel.mode).toBe("walking");
+    expect(plan.pairing.maxWalkingMinutes).toBe(45);
+    expect(plan.pairing.maxDistanceMiles).toBe(2.25);
+  });
+
   it("keeps plain near as a soft distance preference", async () => {
     const plan = await buildSearchPlan({ input: { query: "Chicken lunch near Gaming City in Astoria" } });
     expect(plan.mode).toBe("anchored_nearby");
