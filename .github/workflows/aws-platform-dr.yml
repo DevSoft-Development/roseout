@@ -63,6 +63,8 @@ env:
   GATEWAY_SECRET_NAME: /theouthaven/production/platform-dr/gateway-hmac
   EDGE_SECRET_NAME: /theouthaven/production/platform-dr/edge-origin
   APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+  AUTHORITATIVE_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
+  AUTHORITATIVE_RUNTIME_SECRET_REGION: us-east-1
   CERT_PARAMETER: /theouthaven/production/platform-dr/acm-certificate-arn
 
 jobs:
@@ -403,29 +405,43 @@ jobs:
           print(f'vercel_production_environment_keys={len(resolved)}')
           PY
           else
-            echo "::warning::Vercel environment decrypt returned HTTP $CODE; reusing the last synchronized AWS DR environment."
+            echo "::warning::Vercel environment decrypt returned HTTP $CODE; rebuilding the DR environment from AWS runtime authority."
             aws secretsmanager get-secret-value \
               --region "$COMPUTE_REGION" \
               --secret-id "$APP_ENV_SECRET_ARN" \
               --query SecretString \
               --output text > "$RUNNER_TEMP/platform-dr-existing-env.json"
+            aws secretsmanager get-secret-value \
+              --region "$AUTHORITATIVE_RUNTIME_SECRET_REGION" \
+              --secret-id "$AUTHORITATIVE_RUNTIME_SECRET" \
+              --query SecretString \
+              --output text > "$RUNNER_TEMP/platform-dr-authoritative-env.json"
             EXISTING_ENV_JSON="$RUNNER_TEMP/platform-dr-existing-env.json" \
+            AUTHORITATIVE_ENV_JSON="$RUNNER_TEMP/platform-dr-authoritative-env.json" \
             ENV_FILE="$RUNNER_TEMP/vercel-production.env" \
             python3 - <<'PY'
           import json, os
           from pathlib import Path
 
-          source = Path(os.environ['EXISTING_ENV_JSON'])
           output = Path(os.environ['ENV_FILE'])
-          values = json.loads(source.read_text())
-          if not isinstance(values, dict) or not values:
-              raise SystemExit('No previously synchronized AWS DR environment is available.')
+          existing = json.loads(Path(os.environ['EXISTING_ENV_JSON']).read_text())
+          authoritative = json.loads(Path(os.environ['AUTHORITATIVE_ENV_JSON']).read_text())
+          if not isinstance(existing, dict):
+              existing = {}
+          if not isinstance(authoritative, dict) or not authoritative:
+              raise SystemExit('AWS runtime authority is unavailable for DR environment recovery.')
+          values = dict(existing)
+          values.update({key: value for key, value in authoritative.items() if value is not None and value != ''})
+          required = ['NEXT_PUBLIC_SUPABASE_URL','NEXT_PUBLIC_SUPABASE_ANON_KEY','SUPABASE_SERVICE_ROLE_KEY']
+          missing = [key for key in required if not values.get(key)]
+          if missing:
+              raise SystemExit('AWS runtime authority is missing required DR values: ' + ', '.join(missing))
           with output.open('w') as handle:
               for key in sorted(values):
                   value = values[key]
                   if value is not None:
                       handle.write(f'{key}={json.dumps(str(value))}\\n')
-          print(f'aws_dr_fallback_environment_keys={len(values)}')
+          print(f'aws_runtime_fallback_environment_keys={len(values)}')
           PY
           fi
           python -m pip install --disable-pip-version-check python-dotenv
