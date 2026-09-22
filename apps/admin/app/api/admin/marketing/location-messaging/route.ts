@@ -39,7 +39,8 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   const { adminUser, error } = await requireAdminApiRole(ADMIN_PAGE_ACCESS.campaignsSend);
-  if (error || !adminUser) return error;
+  if (error) return error;
+  if (!adminUser) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || body.campaign_id || "").trim();
   const action = String(body.action || "").trim();
