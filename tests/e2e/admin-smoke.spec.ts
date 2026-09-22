@@ -1,7 +1,7 @@
 import { test } from "@playwright/test";
 import { expectNoHardError } from "./helpers";
 
-const adminBaseUrl = process.env.ADMIN_BASE_URL || "https://admin.theouthaven.com";
+const adminBaseUrl = process.env.ADMIN_BASE_URL || "";
 
 test.describe("admin route smoke test", () => {
   test("/admin/dashboard does not show a hard public crash", async ({ page }) => {
