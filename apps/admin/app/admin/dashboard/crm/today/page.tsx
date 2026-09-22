@@ -85,33 +85,33 @@ function TaskList({
   href: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0e0e11]">
+    <section className="overflow-hidden rounded-3xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 p-5">
         <div>
-          <h2 className="text-xl font-black text-white">{title}</h2>
-          <p className="mt-1 text-sm text-zinc-500">{description}</p>
+          <h2 className="text-xl font-black text-[var(--admin-shell-text)]">{title}</h2>
+          <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">{description}</p>
         </div>
-        <Link href={href} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">
+        <Link href={href} className="rounded-xl border border-[var(--admin-shell-border)] px-3 py-2 text-sm font-black text-[var(--admin-shell-text)] hover:bg-[var(--admin-shell-soft)]">
           View all
         </Link>
       </div>
       {tasks.length ? (
         <div className="divide-y divide-white/[0.07]">
           {tasks.slice(0, 6).map((task: any) => (
-            <Link key={task.id} href={`/admin/dashboard/crm/work-queue/${task.id}`} className="grid gap-2 p-4 transition hover:bg-white/[0.04] sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Link key={task.id} href={`/admin/dashboard/crm/work-queue/${task.id}`} className="grid gap-2 p-4 transition hover:bg-[var(--admin-shell-soft)] sm:grid-cols-[minmax(0,1fr)_auto]">
               <div className="min-w-0">
-                <p className="truncate text-sm font-black text-white">{task.title}</p>
-                <p className="mt-1 truncate text-xs text-zinc-500">{task.crm_accounts?.name || task.locations?.name || "CRM record"}</p>
+                <p className="truncate text-sm font-black text-[var(--admin-shell-text)]">{task.title}</p>
+                <p className="mt-1 truncate text-xs text-[var(--admin-shell-muted)]">{task.crm_accounts?.name || task.locations?.name || "CRM record"}</p>
               </div>
               <div className="text-left sm:text-right">
-                <p className="text-xs font-bold capitalize text-zinc-400">{String(task.priority || "normal").replaceAll("_", " ")}</p>
-                <p className="mt-1 text-xs text-zinc-600">{task.due_at ? new Date(task.due_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No due time"}</p>
+                <p className="text-xs font-bold capitalize text-[var(--admin-shell-muted)]">{String(task.priority || "normal").replaceAll("_", " ")}</p>
+                <p className="mt-1 text-xs text-[var(--admin-shell-muted)]">{task.due_at ? new Date(task.due_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No due time"}</p>
               </div>
             </Link>
           ))}
         </div>
       ) : (
-        <p className="p-5 text-sm text-zinc-500">Nothing in this section right now.</p>
+        <p className="p-5 text-sm text-[var(--admin-shell-muted)]">Nothing in this section right now.</p>
       )}
     </section>
   );
@@ -146,16 +146,16 @@ export default async function CrmTodayPage() {
 
   return (
     <CrmWorkspaceShell>
-      <main className="space-y-5 text-white">
+      <main className="space-y-5 text-[var(--admin-shell-text)]">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">TheOutHaven CRM</p>
             <h1 className="mt-1 text-3xl font-black">Today</h1>
-            <p className="mt-1 text-white/55">Start here. Priority GTM opportunities, messages, calendar events, and work that need attention now.</p>
+            <p className="mt-1 text-[var(--admin-shell-muted)]">Start here. Priority GTM opportunities, messages, calendar events, and work that need attention now.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/admin/dashboard/crm/gtm" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">Revenue intelligence</Link>
-            <Link href="/admin/dashboard/crm/locations" className="rounded-xl border border-white/10 px-4 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">Find a location</Link>
+            <Link href="/admin/dashboard/crm/gtm" className="rounded-xl border border-[var(--admin-shell-border)] px-4 py-2 text-sm font-black text-[var(--admin-shell-text)] hover:bg-[var(--admin-shell-soft)]">Revenue intelligence</Link>
+            <Link href="/admin/dashboard/crm/locations" className="rounded-xl border border-[var(--admin-shell-border)] px-4 py-2 text-sm font-black text-[var(--admin-shell-text)] hover:bg-[var(--admin-shell-soft)]">Find a location</Link>
             <Link href="/admin/dashboard/crm/tasks?create=task" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white hover:bg-rose-500">Create task</Link>
           </div>
         </header>
@@ -167,25 +167,25 @@ export default async function CrmTodayPage() {
             ["Follow-ups", followUps.count, "/admin/dashboard/crm/my-work?view=follow-ups"],
             ["Needs attention", attention.count, "/admin/dashboard/crm/my-work?view=escalations"],
           ].map(([label, value, href]) => (
-            <Link key={String(label)} href={String(href)} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition hover:border-rose-300/30 hover:bg-white/[0.06]">
-              <b className="text-2xl text-white">{value}</b>
-              <small className="mt-1 block font-bold text-white/50">{label}</small>
+            <Link key={String(label)} href={String(href)} className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4 transition hover:border-rose-300/30 hover:bg-[var(--admin-shell-soft)]">
+              <b className="text-2xl text-[var(--admin-shell-text)]">{value}</b>
+              <small className="mt-1 block font-bold text-[var(--admin-shell-muted)]">{label}</small>
             </Link>
           ))}
         </section>
 
         <GtmPriorityPanel rows={gtmPriority} />
 
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0e0e11]">
+        <section className="overflow-hidden rounded-3xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 p-5">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl font-black text-white">Today’s calendar</h2>
+                <h2 className="text-xl font-black text-[var(--admin-shell-text)]">Today’s calendar</h2>
                 {todayCalendarEvents.length ? <span className="rounded-full bg-rose-500/15 px-2.5 py-1 text-xs font-black text-rose-200">{todayCalendarEvents.length}</span> : null}
               </div>
-              <p className="mt-1 text-sm text-zinc-500">Synced Outlook events for today, shown in Eastern Time.</p>
+              <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">Synced Outlook events for today, shown in Eastern Time.</p>
             </div>
-            <Link href="/admin/dashboard/crm/calendar" className="rounded-xl border border-white/10 px-3 py-2 text-sm font-black text-white/80 hover:bg-white/[0.05]">
+            <Link href="/admin/dashboard/crm/calendar" className="rounded-xl border border-[var(--admin-shell-border)] px-3 py-2 text-sm font-black text-[var(--admin-shell-text)] hover:bg-[var(--admin-shell-soft)]">
               Open calendar
             </Link>
           </div>
@@ -199,10 +199,10 @@ export default async function CrmTodayPage() {
                   <p className="text-sm font-black text-rose-200">{formatCalendarEventTime(event)}</p>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-black text-white">{event.subject || "Untitled event"}</p>
+                      <p className="truncate text-sm font-black text-[var(--admin-shell-text)]">{event.subject || "Untitled event"}</p>
                       {calendarEventIsCrmLinked(event) ? <span className="rounded-full border border-emerald-300/20 bg-emerald-300/[0.08] px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-100">CRM linked</span> : null}
                     </div>
-                    {event.location_name ? <p className="mt-1 truncate text-xs text-zinc-500">{event.location_name}</p> : null}
+                    {event.location_name ? <p className="mt-1 truncate text-xs text-[var(--admin-shell-muted)]">{event.location_name}</p> : null}
                   </div>
                   {event.web_link ? (
                     <a href={event.web_link} target="_blank" rel="noopener noreferrer" className="text-xs font-black text-rose-300 hover:text-rose-200">Open in Outlook ↗</a>
@@ -210,13 +210,13 @@ export default async function CrmTodayPage() {
                 </article>
               ))}
               {todayCalendarEvents.length > 6 ? (
-                <Link href="/admin/dashboard/crm/calendar" className="block p-4 text-center text-sm font-black text-rose-300 hover:bg-white/[0.04]">
+                <Link href="/admin/dashboard/crm/calendar" className="block p-4 text-center text-sm font-black text-rose-300 hover:bg-[var(--admin-shell-soft)]">
                   +{todayCalendarEvents.length - 6} more event{todayCalendarEvents.length - 6 === 1 ? "" : "s"}
                 </Link>
               ) : null}
             </div>
           ) : (
-            <p className="p-5 text-sm text-zinc-500">No synced Outlook events are scheduled for today.</p>
+            <p className="p-5 text-sm text-[var(--admin-shell-muted)]">No synced Outlook events are scheduled for today.</p>
           )}
         </section>
 
