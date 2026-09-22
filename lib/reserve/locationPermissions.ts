@@ -20,7 +20,7 @@ const VIEW: Record<ReservePermissionKey, boolean> = { viewDashboard:true, manage
 
 export function getDefaultPermissionsForRole(role: string): Record<ReservePermissionKey, boolean> {
   if (role === "location_admin") return { ...ALL };
-  if (role === "manager") return { ...VIEW, manageReservations:true, manageLayout:true, manageHours:true, manageReminders:true, manageQrCodes:true, manageTeam:true };
+  if (role === "manager") return { ...VIEW, manageReservations:true, manageLayout:true, manageHours:true, manageReminders:true, manageQrCodes:true };
   if (role === "host" || role === "lead_host") return { ...VIEW, manageReservations:true };
   if (role === "marketing") return { ...VIEW, manageQrCodes:true, editProfile:true };
   return { ...VIEW };
