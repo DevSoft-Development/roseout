@@ -171,14 +171,27 @@ export async function getLocationSearchV2DemandInsights(location: DemandLocation
   const now = new Date();
   const cutoff30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
+  let searchQuery = supabaseAdmin
+    .from("search_events")
+    .select("raw_query,normalized_query,primary_domain,city,borough,neighborhood,zip_code,county,resolved_market,result_count,wants_pairing,needs_restaurant,needs_activity,no_results_reason,created_at")
+    .eq("search_core_version", "v2")
+    .gte("created_at", cutoff30);
+
+  const zip = clean(location.zip_code || location.postal_code);
+  const neighborhood = clean(location.neighborhood);
+  const borough = clean(location.borough);
+  const county = clean(location.county);
+  const city = clean(location.city);
+  const market = clean(location.market);
+  if (zip) searchQuery = searchQuery.eq("zip_code", zip);
+  else if (neighborhood) searchQuery = searchQuery.ilike("neighborhood", neighborhood);
+  else if (borough) searchQuery = searchQuery.ilike("borough", borough);
+  else if (county) searchQuery = searchQuery.ilike("county", county);
+  else if (city) searchQuery = searchQuery.ilike("city", city);
+  else if (market) searchQuery = searchQuery.ilike("resolved_market", market);
+
   const [{ data: searchRows, error: searchError }, { data: mlRow, error: mlError }] = await Promise.all([
-    supabaseAdmin
-      .from("search_events")
-      .select("raw_query,normalized_query,primary_domain,city,borough,neighborhood,zip_code,county,resolved_market,result_count,wants_pairing,needs_restaurant,needs_activity,no_results_reason,created_at")
-      .eq("search_core_version", "v2")
-      .gte("created_at", cutoff30)
-      .order("created_at", { ascending: false })
-      .limit(5000),
+    searchQuery.order("created_at", { ascending: false }).limit(5000),
     supabaseAdmin
       .from("location_ml_features")
       .select("impressions_7d,impressions_30d,clicks_7d,clicks_30d,ctr_30d,reservation_clicks_30d,website_clicks_30d,call_clicks_30d,saves_30d,completed_outings_30d,conversion_rate_30d,ml_score")
