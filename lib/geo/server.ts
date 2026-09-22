@@ -57,3 +57,29 @@ export async function resolvePostalArea(
   }
   return data ? geoAreaFromPostalRow(data) : emptyGeoArea(zipCode);
 }
+
+export async function getConsumerHomeGeo(
+  userId: string | null | undefined,
+  client: any = supabaseAdmin,
+): Promise<GeoArea | null> {
+  if (!userId) return null;
+  const { data, error } = await client
+    .from("consumer_profiles")
+    .select("home_zip_code,home_neighborhood,home_borough,home_city,home_county,home_state,home_market,home_latitude,home_longitude,home_geo_source,home_geo_confidence")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    zipCode: normalizeZip(data.home_zip_code),
+    neighborhood: data.home_neighborhood ?? null,
+    borough: data.home_borough ?? null,
+    city: data.home_city ?? null,
+    county: data.home_county ?? null,
+    state: data.home_state ?? null,
+    market: data.home_market ?? null,
+    latitude: numberOrNull(data.home_latitude),
+    longitude: numberOrNull(data.home_longitude),
+    source: data.home_geo_source ?? "consumer_profile",
+    confidence: numberOrNull(data.home_geo_confidence),
+  };
+}
