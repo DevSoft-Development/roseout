@@ -33,7 +33,7 @@ export async function createAiTrustIncident(formData: FormData) {
     summary,
     surface,
     request_id: requestId,
-    created_by_user_id: admin.user.id,
+    created_by_user_id: admin.user_id,
   });
   if (error) throw new Error(error.message);
   revalidatePath("/admin/dashboard/ai-trust");
