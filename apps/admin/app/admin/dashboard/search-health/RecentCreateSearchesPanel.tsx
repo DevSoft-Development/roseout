@@ -11,6 +11,7 @@ import {
 import { classifyLiveSearchHealth } from "@/lib/search/quality/liveSearchHealth";
 
 import SearchHealthRowActions from "./SearchHealthRowActions";
+import SearchTrustExplanation from "@/components/admin/search-health/SearchTrustExplanation";
 
 const cards = [
   ["total", "Total Searches", "border-white/10 bg-white/[0.035]", "text-white"],
@@ -426,6 +427,7 @@ export default function RecentCreateSearchesPanel({
                             </Link>
                           </div>
                           <SearchHealthRowActions row={row} />
+                          <SearchTrustExplanation row={row as any} />
                         </div>
                       </td>
                     </tr>
