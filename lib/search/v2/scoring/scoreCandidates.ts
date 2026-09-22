@@ -2,6 +2,7 @@ import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { RoleQualifiedCandidate } from "../roles/roleTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { activityRetrievalTerms, canonicalTaxonomy } from "../taxonomy";
+import { runtimeRetrievalTerms } from "../taxonomy/runtimeTaxonomy";
 import { applyMlBoost } from "./applyMlBoost";
 import {
   explicitlyRequestsQuickDateConcept,
@@ -18,7 +19,7 @@ import {
 import { geoTierRank } from "../geo/geoPolicy";
 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
-const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
+const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features,location.special_features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 const categoryIdentityText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.primary_category,location.cuisine,location.cuisine_type,location.restaurant_categories,location.cuisines,location.categories].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 
 function normalizedDish(value: unknown) {
@@ -86,6 +87,40 @@ function scoredCandidateMatchesCategoryTerms(item: ScoredCandidate, terms: reado
   if (!terms.length) return true;
   const identity = categoryIdentityText(item.candidate.candidate.location as Record<string, unknown>);
   return terms.every((term) => matchesCanonicalOrRaw(term, identity, new Set<string>()));
+}
+
+function scoredCandidateEvidence(item: ScoredCandidate) {
+  const location = item.candidate.candidate.location as Record<string, unknown>;
+  const text = searchableText(location);
+  const canonicalTerms = new Set(
+    item.candidate.candidate.matchedRetrievalTerms
+      .map((term) => normalizedDish(term))
+      .filter(Boolean),
+  );
+  return { text, canonicalTerms };
+}
+
+function scoredCandidateMatchesFeatures(item: ScoredCandidate, features: readonly string[]) {
+  if (!features.length) return true;
+  const { text, canonicalTerms } = scoredCandidateEvidence(item);
+  const normalizedText = normalizedDish(text);
+  return features.every((feature) => {
+    const normalizedFeature = normalizedDish(feature);
+    const aliases = [...new Set([
+      normalizedFeature,
+      ...runtimeRetrievalTerms(feature).map((term) => normalizedDish(term)),
+    ].filter(Boolean))];
+    return aliases.some((alias) => matchesCanonicalOrRaw(alias, normalizedText, canonicalTerms));
+  });
+}
+
+function scoredActivityMatchesRequestedCategories(item: ScoredCandidate, categories: readonly string[]) {
+  if (!categories.length) return true;
+  const { text, canonicalTerms } = scoredCandidateEvidence(item);
+  return categories.some((category) => {
+    const terms = activityRetrievalTerms(category).map((term) => term.toLowerCase());
+    return terms.some((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
+  });
 }
 
 function isCanonicalEventCandidate(item: ScoredCandidate) {
@@ -191,7 +226,11 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const rating = Number(l.rating ?? 0);
     const quality = clamp(Number(l.quality_score ?? l.theouthaven_score ?? rating * 20));
     const popularity = clamp(Number(l.popularity_score ?? Math.log1p(Number(l.review_count ?? 0)) * 12));
-    const requestedFeatures = [...plan.restaurant.features, ...plan.activity.features];
+    const requestedFeatures = isRestaurant
+      ? plan.restaurant.features
+      : isActivity
+        ? plan.activity.features
+        : [];
     const directFeatureMatches = requestedFeatures.filter((featureName) => matchesCanonicalOrRaw(featureName.toLowerCase(), text, canonicalTerms)).length;
     const feature = requestedFeatures.length ? clamp((directFeatureMatches + (casualRequested && isRestaurant && casualRestaurant ? 1 : 0)) * 50) : 100;
     const audience = 100;
@@ -279,21 +318,57 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
       location.returned_inventory_type = location.inventory_type ?? location.location_type ?? "activity";
     }
   }
-  const explicitRestaurantMatches = dateNightEligibleRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
+  const featureQualifiedRestaurants = plan.restaurant.features.length
+    ? dateNightEligibleRestaurants.filter((item) => scoredCandidateMatchesFeatures(item, plan.restaurant.features))
+    : dateNightEligibleRestaurants;
+  const explicitRestaurantMatches = featureQualifiedRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
   const categoryQualifiedRestaurants = requestedCategoryTerms.length
-    ? dateNightEligibleRestaurants.filter((item) => scoredCandidateMatchesCategoryTerms(item, requestedCategoryTerms))
+    ? featureQualifiedRestaurants.filter((item) => scoredCandidateMatchesCategoryTerms(item, requestedCategoryTerms))
     : [];
-  const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
-  const dinnerSuitableRestaurants = dateNightEligibleRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+  const dinnerSuitableRestaurants = featureQualifiedRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+
+  const categoryQualifiedActivities = plan.activity.categories.length
+    ? eventAwareActivities.filter((item) => scoredActivityMatchesRequestedCategories(item, plan.activity.categories))
+    : eventAwareActivities;
+  const featureQualifiedActivities = plan.activity.features.length
+    ? categoryQualifiedActivities.filter((item) => scoredCandidateMatchesFeatures(item, plan.activity.features))
+    : categoryQualifiedActivities;
+  const relaxedActivityMatches = featureQualifiedActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
+
+  if (trace && plan.restaurant.features.length) {
+    trace.decisions.push({
+      stage: "restaurant_feature_eligibility",
+      decision: "explicit_restaurant_features_required",
+      reason: JSON.stringify({
+        requestedFeatures: plan.restaurant.features,
+        candidateCountBefore: dateNightEligibleRestaurants.length,
+        candidateCountAfter: featureQualifiedRestaurants.length,
+      }),
+    });
+  }
+  if (trace && (plan.activity.categories.length || plan.activity.features.length)) {
+    trace.decisions.push({
+      stage: "activity_constraint_eligibility",
+      decision: "explicit_activity_constraints_required",
+      reason: JSON.stringify({
+        requestedCategories: plan.activity.categories,
+        requestedFeatures: plan.activity.features,
+        candidateCountBefore: eventAwareActivities.length,
+        candidateCountAfterCategoryGate: categoryQualifiedActivities.length,
+        candidateCountAfterFeatureGate: featureQualifiedActivities.length,
+      }),
+    });
+  }
+
   return {
     all: scored,
     restaurants: requestedCategoryTerms.length
       ? categoryQualifiedRestaurants
       : requestedRestaurantTerms.length && explicitRestaurantMatches.length
         ? explicitRestaurantMatches
-        : dinnerRequested && dinnerSuitableRestaurants.length
+        : dinnerRequested
           ? dinnerSuitableRestaurants
-          : dateNightEligibleRestaurants,
-    activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
+          : featureQualifiedRestaurants,
+    activities: relaxedRequested ? relaxedActivityMatches : featureQualifiedActivities,
   };
 }

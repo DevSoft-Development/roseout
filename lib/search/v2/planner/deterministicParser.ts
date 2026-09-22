@@ -13,6 +13,7 @@ const TRANSIT_PATTERN = /\b(?:station|subway|train station|lirr|terminal|transit
 const SAME_VENUE_PATTERN = /\b(same (venue|place)|one (venue|place)|under one roof)\b/;
 const SAME_VENUE_ALTERNATIVE_PATTERN = /\b(?:same (?:venue|place)|one (?:venue|place)|under one roof)\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b[\s\S]{0,120}\b(?:nearby|close|paired|pair|another (?:venue|place)|separate (?:venue|place))\b|\b(?:either|preferably)\b[\s\S]{0,80}\b(?:same (?:venue|place)|one (?:venue|place))\b[\s\S]{0,120}\b(?:or|otherwise|alternatively|but)\b/;
 const SEQUENCE_CONNECTOR_PATTERN = /\b(followed by|and then|then|afterward|afterwards|after|before)\b/g;
+const TRAILING_ACTIVITY_LANE_PATTERN = /\b(?:and|then|plus)\s+(bowling|billiards|pool hall|karaoke|arcade|museum|art gallery|gallery|escape room|escape game|theater|theatre|comedy|mini golf|live music|jazz|music venue|concert|live band|hookah|shisha|lounge|dancing|dance club|nightclub|scenic walk|waterfront walk|pottery|axe throwing)\b/gi;
 
 function normalizeQuery(value: string) { return value.toLowerCase().replace(/[!?.,]+/g, " ").replace(/\s+/g, " ").trim(); }
 function escapeRegExp(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
@@ -32,6 +33,25 @@ function splitOutingClauses(query: string) {
   // global modifiers; if the activity was already named before the connector,
   // preserve the full query for both domain parsers.
   if (!activityClause || (!hasExplicitActivityEvidence(activityClause) && hasExplicitActivityEvidence(restaurantClause))) {
+    const trailingActivityMatches = [...restaurantClause.matchAll(TRAILING_ACTIVITY_LANE_PATTERN)];
+    const trailingActivity = trailingActivityMatches.at(-1);
+    if (trailingActivity?.index != null) {
+      const connectorText = trailingActivity[0];
+      const activityName = trailingActivity[1];
+      const activityOffset = connectorText.toLowerCase().lastIndexOf(activityName.toLowerCase());
+      const activityStart = trailingActivity.index + Math.max(0, activityOffset);
+      const laneStart = trailingActivity.index;
+      const laneRestaurantClause = restaurantClause.slice(0, laneStart).trim();
+      const laneActivityClause = query.slice(activityStart).trim();
+      if (laneRestaurantClause && laneActivityClause) {
+        return {
+          restaurantClause: laneRestaurantClause,
+          activityClause: laneActivityClause,
+          separated: true,
+          preserveFullActivityEvidence: false,
+        };
+      }
+    }
     return { restaurantClause: query, activityClause: query, separated: false, preserveFullActivityEvidence: true };
   }
   return { restaurantClause, activityClause, separated: true, preserveFullActivityEvidence: false };
