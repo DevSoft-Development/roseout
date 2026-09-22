@@ -88,6 +88,32 @@ function scoredCandidateMatchesCategoryTerms(item: ScoredCandidate, terms: reado
   return terms.every((term) => matchesCanonicalOrRaw(term, identity, new Set<string>()));
 }
 
+function scoredCandidateEvidence(item: ScoredCandidate) {
+  const location = item.candidate.candidate.location as Record<string, unknown>;
+  const text = searchableText(location);
+  const canonicalTerms = new Set(
+    item.candidate.candidate.retrievalSources.includes("enterprise_search_profile_locations")
+      ? item.candidate.candidate.matchedRetrievalTerms.map((term) => term.toLowerCase())
+      : [],
+  );
+  return { text, canonicalTerms };
+}
+
+function scoredCandidateMatchesFeatures(item: ScoredCandidate, features: readonly string[]) {
+  if (!features.length) return true;
+  const { text, canonicalTerms } = scoredCandidateEvidence(item);
+  return features.every((feature) => matchesCanonicalOrRaw(feature.toLowerCase(), text, canonicalTerms));
+}
+
+function scoredActivityMatchesRequestedCategories(item: ScoredCandidate, categories: readonly string[]) {
+  if (!categories.length) return true;
+  const { text, canonicalTerms } = scoredCandidateEvidence(item);
+  return categories.some((category) => {
+    const terms = activityRetrievalTerms(category).map((term) => term.toLowerCase());
+    return terms.some((term) => matchesCanonicalOrRaw(term, text, canonicalTerms));
+  });
+}
+
 function isCanonicalEventCandidate(item: ScoredCandidate) {
   return isCanonicalEventInventory(item.candidate.candidate.location as Record<string, unknown>);
 }
@@ -191,7 +217,11 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const rating = Number(l.rating ?? 0);
     const quality = clamp(Number(l.quality_score ?? l.theouthaven_score ?? rating * 20));
     const popularity = clamp(Number(l.popularity_score ?? Math.log1p(Number(l.review_count ?? 0)) * 12));
-    const requestedFeatures = [...plan.restaurant.features, ...plan.activity.features];
+    const requestedFeatures = isRestaurant
+      ? plan.restaurant.features
+      : isActivity
+        ? plan.activity.features
+        : [];
     const directFeatureMatches = requestedFeatures.filter((featureName) => matchesCanonicalOrRaw(featureName.toLowerCase(), text, canonicalTerms)).length;
     const feature = requestedFeatures.length ? clamp((directFeatureMatches + (casualRequested && isRestaurant && casualRestaurant ? 1 : 0)) * 50) : 100;
     const audience = 100;
@@ -279,21 +309,57 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
       location.returned_inventory_type = location.inventory_type ?? location.location_type ?? "activity";
     }
   }
-  const explicitRestaurantMatches = dateNightEligibleRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
+  const featureQualifiedRestaurants = plan.restaurant.features.length
+    ? dateNightEligibleRestaurants.filter((item) => scoredCandidateMatchesFeatures(item, plan.restaurant.features))
+    : dateNightEligibleRestaurants;
+  const explicitRestaurantMatches = featureQualifiedRestaurants.filter((item) => !requestedRestaurantTerms.length || item.scores.penalties < 35);
   const categoryQualifiedRestaurants = requestedCategoryTerms.length
-    ? dateNightEligibleRestaurants.filter((item) => scoredCandidateMatchesCategoryTerms(item, requestedCategoryTerms))
+    ? featureQualifiedRestaurants.filter((item) => scoredCandidateMatchesCategoryTerms(item, requestedCategoryTerms))
     : [];
-  const relaxedActivityMatches = eventAwareActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
-  const dinnerSuitableRestaurants = dateNightEligibleRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+  const dinnerSuitableRestaurants = featureQualifiedRestaurants.filter((item) => !dinnerRequested || item.scores.penalties < 32);
+
+  const categoryQualifiedActivities = plan.activity.categories.length
+    ? eventAwareActivities.filter((item) => scoredActivityMatchesRequestedCategories(item, plan.activity.categories))
+    : eventAwareActivities;
+  const featureQualifiedActivities = plan.activity.features.length
+    ? categoryQualifiedActivities.filter((item) => scoredCandidateMatchesFeatures(item, plan.activity.features))
+    : categoryQualifiedActivities;
+  const relaxedActivityMatches = featureQualifiedActivities.filter((item) => !relaxedRequested || item.scores.penalties < 55);
+
+  if (trace && plan.restaurant.features.length) {
+    trace.decisions.push({
+      stage: "restaurant_feature_eligibility",
+      decision: "explicit_restaurant_features_required",
+      reason: JSON.stringify({
+        requestedFeatures: plan.restaurant.features,
+        candidateCountBefore: dateNightEligibleRestaurants.length,
+        candidateCountAfter: featureQualifiedRestaurants.length,
+      }),
+    });
+  }
+  if (trace && (plan.activity.categories.length || plan.activity.features.length)) {
+    trace.decisions.push({
+      stage: "activity_constraint_eligibility",
+      decision: "explicit_activity_constraints_required",
+      reason: JSON.stringify({
+        requestedCategories: plan.activity.categories,
+        requestedFeatures: plan.activity.features,
+        candidateCountBefore: eventAwareActivities.length,
+        candidateCountAfterCategoryGate: categoryQualifiedActivities.length,
+        candidateCountAfterFeatureGate: featureQualifiedActivities.length,
+      }),
+    });
+  }
+
   return {
     all: scored,
     restaurants: requestedCategoryTerms.length
       ? categoryQualifiedRestaurants
-      : requestedRestaurantTerms.length && explicitRestaurantMatches.length
+      : requestedRestaurantTerms.length
         ? explicitRestaurantMatches
-        : dinnerRequested && dinnerSuitableRestaurants.length
+        : dinnerRequested
           ? dinnerSuitableRestaurants
-          : dateNightEligibleRestaurants,
-    activities: relaxedRequested && relaxedActivityMatches.length ? relaxedActivityMatches : eventAwareActivities,
+          : featureQualifiedRestaurants,
+    activities: relaxedRequested ? relaxedActivityMatches : featureQualifiedActivities,
   };
 }
