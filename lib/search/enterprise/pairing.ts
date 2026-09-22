@@ -280,9 +280,11 @@ export function createSearchPairs(
   const pref = pairPreference(intent);
   debug.pairDistanceMode = pref.distanceMode;
   debug.maxAllowedPairDistanceMiles =
-    pref.maxPairDistanceMiles ?? DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES;
+    pref.maxPairDistanceMiles ??
+    (pref.distanceMode === "any" ? null : DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES);
   debug.maxAllowedPairWalkingMinutes = pref.maxPairWalkingMinutes;
-  debug.pairDistanceGuardApplied = true;
+  debug.pairDistanceGuardApplied =
+    pref.distanceMode !== "any" || pref.maxPairDistanceMiles != null;
 
   const explicitActivityConstraint = resolveExplicitActivityConstraint(
     intent.rawQuery || "",
@@ -342,7 +344,12 @@ export function createSearchPairs(
         const reason =
           pref.maxPairWalkingMinutes != null
             ? "walking_route_exceeds_requested_minutes"
-            : "pair_distance_exceeds_default_max";
+            : pref.distanceMode === "any" &&
+                pref.maxPairDistanceMiles == null &&
+                restaurant.borough &&
+                activity.borough
+              ? "cross_borough_pair"
+              : "pair_distance_exceeds_default_max";
         debug.rejectedPairs.push({
           restaurantId: restaurant.id,
           activityId: activity.id,

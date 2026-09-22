@@ -256,11 +256,30 @@ export function isWalkablePair(
       pairWalkingMinutes,
     };
   }
+
+  if (finitePositive(pref.maxPairDistanceMiles)) {
+    return {
+      isWalkable: pairDistanceMiles <= (pref.maxPairDistanceMiles as number),
+      warnings,
+      pairDistanceMiles,
+      pairWalkingMinutes,
+    };
+  }
+
+  const restaurantBorough = String(restaurant.borough ?? "").trim();
+  const activityBorough = String(activity.borough ?? "").trim();
+  if (restaurantBorough && activityBorough) {
+    return {
+      isWalkable: sameText(restaurantBorough, activityBorough),
+      warnings,
+      pairDistanceMiles,
+      pairWalkingMinutes,
+    };
+  }
+
   return {
     isWalkable:
-      pairDistanceMiles <=
-      (pref.maxPairDistanceMiles ??
-        DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES),
+      pairDistanceMiles <= DEFAULT_MIXED_OUTING_MAX_PAIR_DISTANCE_MILES,
     warnings,
     pairDistanceMiles,
     pairWalkingMinutes,
