@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { personalizationAllowedForUser } from "../../enterprise/personalizationProfileLoader";
 import { currentSearchUserId } from "../../searchUserContext";
 import { resolveSearchMlRuntimeConfig } from "../../huggingFaceEmbedding";
 import type { SearchTrace } from "../observability/searchTrace";
@@ -32,6 +33,29 @@ export async function applyHfPersonalization({ userId, supabase, scored, trace }
   const config = await resolveSearchMlRuntimeConfig();
   const resolvedUserId = userId ?? currentSearchUserId();
   if (!resolvedUserId || config.personalizationMode === "disabled") return scored;
+
+  try {
+    const allowed = await Promise.race([
+      personalizationAllowedForUser(resolvedUserId, supabase),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+    ]);
+    if (!allowed) {
+      trace.decisions.push({
+        stage: "hf_personalization",
+        decision: "personalization_skipped",
+        reason: "consumer_opt_out_or_consent_unavailable",
+      });
+      return scored;
+    }
+  } catch {
+    trace.decisions.push({
+      stage: "hf_personalization",
+      decision: "personalization_skipped",
+      reason: "consent_check_failed",
+    });
+    return scored;
+  }
+
   const ids = [...new Set(scored.all.map(locationId).filter(Boolean))];
   if (!ids.length) return scored;
   try {
