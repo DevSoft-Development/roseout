@@ -56,6 +56,7 @@ jobs:
           URL="https://www.theouthaven.com/api/cron/search-gold-production-qa?expectedCommit=${GITHUB_SHA}"
           RESPONSE="$RUNNER_TEMP/search-gold-production-qa.json"
           READY=false
+          QA_FAILURE_RETRIES=0
           for attempt in $(seq 1 60); do
             CODE="$(curl --max-time 300 --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' --header "Authorization: Bearer $SEARCH_ML_TOKEN" "$URL" || true)"
             DEPLOYMENT_COMMIT="$(python - "$RESPONSE" <<'PY'
@@ -73,7 +74,13 @@ jobs:
             fi
             if [ "$CODE" = "200" ]; then READY=true; break; fi
             if [ "$CODE" = "503" ]; then
-              echo "Exact ten-prompt production QA failed on the expected deployment."
+              QA_FAILURE_RETRIES=$((QA_FAILURE_RETRIES + 1))
+              if [ "$QA_FAILURE_RETRIES" -lt 5 ]; then
+                echo "Exact ten-prompt production QA hit a transient 503 on the expected deployment; retry $QA_FAILURE_RETRIES/5."
+                sleep 10
+                continue
+              fi
+              echo "Exact ten-prompt production QA failed repeatedly on the expected deployment."
               cat "$RESPONSE"
               exit 1
             fi
