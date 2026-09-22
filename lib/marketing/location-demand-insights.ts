@@ -213,6 +213,7 @@ export async function getLocationSearchV2DemandInsights(location: DemandLocation
 
   const opportunities = aggregate(relevantRows, nowMs);
   const demandOpportunities = [...opportunities]
+    .filter((row) => row.searches30d >= 3)
     .sort((a, b) => {
       const aScore = a.searches30d * 3 + a.searches7d * 2 + Math.max(0, a.trendPercent || 0) / 10;
       const bScore = b.searches30d * 3 + b.searches7d * 2 + Math.max(0, b.trendPercent || 0) / 10;
@@ -220,7 +221,7 @@ export async function getLocationSearchV2DemandInsights(location: DemandLocation
     })
     .slice(0, 8);
   const demandGaps = [...opportunities]
-    .filter((row) => row.noResultSearches > 0)
+    .filter((row) => row.searches30d >= 3 && row.noResultSearches >= 2)
     .sort((a, b) => b.noResultSearches - a.noResultSearches || b.searches30d - a.searches30d)
     .slice(0, 5);
 
