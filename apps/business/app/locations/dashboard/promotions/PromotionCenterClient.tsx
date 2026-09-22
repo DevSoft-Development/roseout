@@ -30,12 +30,24 @@ type Draft = {
   zipCodes: string;
   excludeZipCodes: string;
   radiusMiles: string;
+  territoryIds: string;
   total_budget_cents: number;
   daily_budget_cents: number | null;
   starts_at: string;
   ends_at: string;
   headline: string;
   description: string;
+};
+
+type TargetingOptions = {
+  markets: string[];
+  states: string[];
+  counties: string[];
+  cities: string[];
+  boroughs: string[];
+  neighborhoods: string[];
+  zipCodes: string[];
+  territories: Array<{ id: string; name: string; scopes: Array<{ type: string; value: string }> }>;
 };
 
 type DraftSetter = Dispatch<SetStateAction<Draft>>;
@@ -55,7 +67,17 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
   const [locationName, setLocationName] = useState("Your location");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");\n  const [targetingOptions, setTargetingOptions] = useState<TargetingOptions>({ markets: [], states: [], counties: [], cities: [], boroughs: [], neighborhoods: [], zipCodes: [], territories: [] });
+  const [message, setMessage] = useState("");
+  const [targetingOptions, setTargetingOptions] = useState<TargetingOptions>({
+    markets: [],
+    states: [],
+    counties: [],
+    cities: [],
+    boroughs: [],
+    neighborhoods: [],
+    zipCodes: [],
+    territories: [],
+  });
   const [draft, setDraft] = useState<Draft>({
     promotion_type: "location",
     placements: ["discover", "search"],
@@ -70,6 +92,7 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
     zipCodes: "",
     excludeZipCodes: "",
     radiusMiles: "",
+    territoryIds: "",
     total_budget_cents: 25000,
     daily_budget_cents: null,
     starts_at: "",
@@ -161,7 +184,8 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
               neighborhoods: list(draft.neighborhoods),
               zipCodes: list(draft.zipCodes),
               excludeZipCodes: list(draft.excludeZipCodes),
-              radiusMiles: draft.radiusMiles ? Number(draft.radiusMiles) : null,\n              territoryIds: list(draft.territoryIds),
+              radiusMiles: draft.radiusMiles ? Number(draft.radiusMiles) : null,
+              territoryIds: list(draft.territoryIds),
             }
           : { optimized_by_theouthaven: true },
         total_budget_cents: draft.total_budget_cents,
