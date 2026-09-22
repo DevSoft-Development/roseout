@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, AlertTriangle, Bot, MessageSquareText, Search, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, MessageSquareText, Search } from "lucide-react";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import {
