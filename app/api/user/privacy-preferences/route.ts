@@ -1,16 +1,17 @@
-import { getCurrentSearchIdentity } from "@/lib/search-usage-limits";
+import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function requireUser(request: Request) {
-  const identity = await getCurrentSearchIdentity(request);
-  return identity.user?.id ? identity.user : null;
+async function requireUser() {
+  const session = await createClient();
+  const { data: { user } } = await session.auth.getUser();
+  return user ?? null;
 }
 
 export async function GET(request: Request) {
-  const user = await requireUser(request);
+  const user = await requireUser();
   if (!user) return Response.json({ error: "Authentication required." }, { status: 401 });
 
   const { data, error } = await supabaseAdmin
