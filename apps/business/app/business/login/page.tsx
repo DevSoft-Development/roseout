@@ -68,7 +68,7 @@ export default function BusinessLoginPage() {
                     {/* The isolated Business app does not ship the consumer public asset bundle. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="https://theouthaven.com/toh_logo.png"
+                      src="/api/brand/theouthaven-logo"
                       alt="TheOutHaven"
                       width={36}
                       height={36}
@@ -113,7 +113,7 @@ export default function BusinessLoginPage() {
                   <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="https://theouthaven.com/toh_logo.png"
+                      src="/api/brand/theouthaven-logo"
                       alt="TheOutHaven"
                       width={32}
                       height={32}
