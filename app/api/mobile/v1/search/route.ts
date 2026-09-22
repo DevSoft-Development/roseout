@@ -257,6 +257,20 @@ export async function POST(request: Request) {
   const restaurantsRaw = Array.isArray(source?.restaurants) ? source.restaurants : Array.isArray(payload?.restaurants) ? payload.restaurants : [];
   const activitiesRaw = Array.isArray(source?.activities) ? source.activities : Array.isArray(payload?.activities) ? payload.activities : [];
   const pairsRaw = Array.isArray(source?.pairs) ? source.pairs : Array.isArray(payload?.pairs) ? payload.pairs : [];
+  const builderRestaurantsRaw = Array.isArray(source?.builder?.restaurants)
+    ? source.builder.restaurants
+    : Array.isArray(payload?.builder?.restaurants)
+      ? payload.builder.restaurants
+      : Array.isArray(payload?.builder_restaurants)
+        ? payload.builder_restaurants
+        : [];
+  const builderActivitiesRaw = Array.isArray(source?.builder?.activities)
+    ? source.builder.activities
+    : Array.isArray(payload?.builder?.activities)
+      ? payload.builder.activities
+      : Array.isArray(payload?.builder_activities)
+        ? payload.builder_activities
+        : [];
   const sameVenueRaw = Array.isArray(source?.sameVenueResults)
     ? source.sameVenueResults
     : Array.isArray(source?.same_venue_results)
@@ -269,6 +283,8 @@ export async function POST(request: Request) {
 
   const restaurants = restaurantsRaw.map((item: any) => shapePlace(item, "restaurant"));
   const activities = activitiesRaw.map((item: any) => shapePlace(item, "activity"));
+  const builderRestaurants = builderRestaurantsRaw.map((item: any) => shapePlace(item, "restaurant"));
+  const builderActivities = builderActivitiesRaw.map((item: any) => shapePlace(item, "activity"));
   const pairs = pairsRaw.map((item: any, index: number) => shapePair(item, index));
   const sameVenueResults = sameVenueRaw.map((item: any, index: number) => shapePair(item, index, "same_venue"));
   const renderMode = String(payload?.render_mode || payload?.renderMode || source?.render_mode || source?.renderMode || (pairs.length || sameVenueResults.length ? "outings" : "places"));
@@ -301,5 +317,7 @@ export async function POST(request: Request) {
     sameVenueResults,
     restaurants,
     activities,
+    builderRestaurants,
+    builderActivities,
   });
 }
