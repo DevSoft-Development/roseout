@@ -343,7 +343,7 @@ jobs:
 
           with output.open('w') as handle:
               for key in sorted(resolved):
-                  handle.write(f'{key}={json.dumps(resolved[key])}\\n')
+                  handle.write(f'{key}={json.dumps(resolved[key])}\n')
           print(f'vercel_production_environment_keys={len(resolved)}')
           PY
           else
@@ -382,7 +382,7 @@ jobs:
               for key in sorted(values):
                   value = values[key]
                   if value is not None:
-                      handle.write(f'{key}={json.dumps(str(value))}\\n')
+                      handle.write(f'{key}={json.dumps(str(value))}\n')
           print(f'aws_runtime_fallback_environment_keys={len(values)}')
           PY
           fi
