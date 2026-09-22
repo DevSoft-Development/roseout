@@ -104,9 +104,11 @@ export default function ResultsScreen() {
   const walkingMaxMinutes = result?.walkingMaxMinutes ?? null;
   const restaurants = (result?.restaurants || []).slice(0, 6);
   const activities = (result?.activities || []).slice(0, 6);
+  const builderRestaurants = (result?.builderRestaurants?.length ? result.builderRestaurants : restaurants).slice(0, 6);
+  const builderActivities = (result?.builderActivities?.length ? result.builderActivities : activities).slice(0, 6);
   const singles = effectivePlanType === "restaurant" ? restaurants : effectivePlanType === "activity" ? activities : [];
-  const hasResults = effectivePlanType === "outing" ? recommended.length > 0 : singles.length > 0;
-  const canBuild = effectivePlanType === "outing" && restaurants.length > 0 && activities.length > 0;
+  const canBuild = effectivePlanType === "outing" && builderRestaurants.length > 0 && builderActivities.length > 0;
+  const hasResults = effectivePlanType === "outing" ? recommended.length > 0 || canBuild : singles.length > 0;
 
   const customPair: MobileOutingResult | null = selectedRestaurant && selectedActivity ? {
     id: `custom-${selectedRestaurant.id}-${selectedActivity.id}`,
@@ -183,13 +185,20 @@ export default function ResultsScreen() {
               {recommended.map((outing, index) => <OutingResultCard key={outing.id} outing={outing} rank={index + 1} showWalking={showWalking} walkingMaxMinutes={walkingMaxMinutes} />)}
             </View>
 
+            {recommended.length === 0 && canBuild ? (
+              <Card elevated>
+                <AppText variant="h2">Pick your own pair</AppText>
+                <AppText muted style={{ marginTop: 8 }}>We found matching restaurants and activities, but no automatic pairing was strong enough. Choose the combination you prefer below.</AppText>
+              </Card>
+            ) : null}
+
             {canBuild ? (
               <Card elevated>
                 <Pressable onPress={() => setShowBuilder((current) => !current)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
                     <View style={{ flex: 1 }}>
                       <AppText variant="eyebrow" muted>WANT MORE CONTROL?</AppText>
-                      <AppText variant="h2" style={{ marginTop: 5 }}>Build your own outing</AppText>
+                      <AppText variant="h2" style={{ marginTop: 5 }}>Pick your own pair</AppText>
                       <AppText muted style={{ marginTop: 5 }}>Choose one restaurant and one activity from these same results.</AppText>
                     </View>
                     <AppText variant="h2" muted>{showBuilder ? "−" : "+"}</AppText>
@@ -200,7 +209,7 @@ export default function ResultsScreen() {
                   <View style={{ gap: theme.spacing.lg, marginTop: theme.spacing.lg }}>
                     <View style={{ gap: theme.spacing.sm }}>
                       <AppText variant="eyebrow" accent>RESTAURANT</AppText>
-                      {restaurants.map((place) => (
+                      {builderRestaurants.map((place) => (
                         <PlaceResultCard
                           key={`restaurant-${place.id}`}
                           place={place}
@@ -213,7 +222,7 @@ export default function ResultsScreen() {
 
                     <View style={{ gap: theme.spacing.sm }}>
                       <AppText variant="eyebrow" accent>ACTIVITY</AppText>
-                      {activities.map((place) => (
+                      {builderActivities.map((place) => (
                         <PlaceResultCard
                           key={`activity-${place.id}`}
                           place={place}
