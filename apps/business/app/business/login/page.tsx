@@ -63,6 +63,23 @@ export default function BusinessLoginPage() {
             <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#e1062a]/10 blur-3xl" />
             <div className="relative flex h-full flex-col justify-between">
               <div>
+                <div className="mb-8 flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 shadow-[0_0_45px_rgba(225,6,42,.16)]">
+                    {/* The isolated Business app does not ship the consumer public asset bundle. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="https://theouthaven.com/toh_logo.png"
+                      alt="TheOutHaven"
+                      width={36}
+                      height={36}
+                      className="h-9 w-9 object-contain"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-lg font-black tracking-tight">TheOutHaven</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
+                  </div>
+                </div>
                 <p className="inline-flex rounded-full border border-[#e1062a]/40 bg-[#e1062a]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-red-100">
                   TheOutHaven Business
                 </p>
@@ -92,6 +109,22 @@ export default function BusinessLoginPage() {
           <div className="p-6 sm:p-10 xl:p-14">
             <div className="mx-auto max-w-md">
               <div className="lg:hidden">
+                <div className="mb-5 flex items-center justify-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="https://theouthaven.com/toh_logo.png"
+                      alt="TheOutHaven"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                    />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-base font-black tracking-tight">TheOutHaven</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
+                  </div>
+                </div>
                 <p className="inline-flex rounded-full border border-[#e1062a]/40 bg-[#e1062a]/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-red-100">
                   TheOutHaven Business
                 </p>
