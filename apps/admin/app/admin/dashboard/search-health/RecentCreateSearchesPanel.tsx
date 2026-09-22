@@ -126,6 +126,10 @@ function inventoryGapConfirmed(row: SearchEvent) {
 }
 
 function explanationItems(row: SearchEvent) {
+  const visibleResultCount = Number((row as any).result_count ?? 0);
+  const pairCount = Number((row as any).pair_count ?? 0);
+  if (visibleResultCount <= 0 && pairCount <= 0) return [];
+
   const metadata = (row as any).metadata ?? {};
   const debug = (row as any).debug ?? {};
   const normalizedIntent = metadata.normalizedIntent ?? debug.normalizedIntent ?? {};
