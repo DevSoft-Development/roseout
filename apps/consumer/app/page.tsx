@@ -36,7 +36,7 @@ const areas = [
 
 export default function HomePage() {
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-[#050505] text-white">
+    <main className="toh-consumer-mobile-type min-h-dvh overflow-x-hidden bg-[#050505] text-white">
       <RecoveryRedirect />
       <TheOutHavenHeader />
 
@@ -53,7 +53,7 @@ export default function HomePage() {
             Plan better <span className="text-[#e1062a]">OUTings.</span>
           </h1>
 
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl sm:leading-9">
+          <p className="toh-mobile-body-copy mt-6 max-w-2xl text-lg leading-8 text-white/62 sm:text-xl sm:leading-9">
             Tell us what you&apos;re in the mood for. We&apos;ll find the places and put the outing together.
           </p>
 
@@ -80,7 +80,7 @@ export default function HomePage() {
             <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
               One search. Your whole outing.
             </h2>
-            <p className="mt-5 text-lg leading-8 text-black/58">
+            <p className="toh-mobile-body-copy mt-5 text-lg leading-8 text-black/58">
               Most searches give you places. TheOutHaven helps put the night together.
             </p>
           </div>
@@ -113,7 +113,7 @@ export default function HomePage() {
             <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
               Search the way you actually think about going out.
             </h2>
-            <p className="mt-5 max-w-xl text-lg leading-8 text-white/58">
+            <p className="toh-mobile-body-copy mt-5 max-w-xl text-lg leading-8 text-white/58">
               You don&apos;t need to start with a category or know the exact place. Start with the night you want.
             </p>
             <div className="mt-8 rounded-[1.5rem] border border-white/10 bg-white/[.035] p-5 sm:p-6">
@@ -231,7 +231,7 @@ export default function HomePage() {
         <div className="relative mx-auto max-w-4xl text-center">
           <p className="text-xs font-black uppercase tracking-[0.28em] text-[#ff8a9b]">Ready?</p>
           <h2 className="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">So, what are we doing?</h2>
-          <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/58">
+          <p className="toh-mobile-body-copy mx-auto mt-5 max-w-2xl text-lg leading-8 text-white/58">
             Start with the whole night. We&apos;ll help you find what fits.
           </p>
           <Link
