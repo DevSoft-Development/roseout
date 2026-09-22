@@ -115,7 +115,7 @@ export default function MessagingCampaignManager({
       campaignId,
       action,
       audienceFilter: audienceFilter(),
-      ...(action === "schedule" ? { scheduledFor } : {}),
+      ...(action === "schedule" ? { scheduledFor: new Date(scheduledFor).toISOString() } : {}),
     });
     if (ok) {
       setScheduledFor("");
