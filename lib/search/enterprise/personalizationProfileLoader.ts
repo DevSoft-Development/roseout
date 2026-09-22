@@ -103,19 +103,18 @@ export async function loadUserPreferenceProfile(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const allowed = await personalizationAllowedForUser(
-      userId,
-      options.client,
-    );
-    if (!allowed) return buildUserPreferenceProfile(userId, [], options.now);
-
-    const events = await Promise.race([
-      queryPreferenceEvidence(userId, options.client),
+    const profile = await Promise.race([
+      (async () => {
+        const allowed = await personalizationAllowedForUser(userId, options.client);
+        if (!allowed) return buildUserPreferenceProfile(userId, [], options.now);
+        const events = await queryPreferenceEvidence(userId, options.client);
+        return buildUserPreferenceProfile(userId, events, options.now);
+      })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error("profile_load_timeout")), timeoutMs);
       }),
     ]);
-    return buildUserPreferenceProfile(userId, events, options.now);
+    return profile;
   } finally {
     if (timer) clearTimeout(timer);
   }
