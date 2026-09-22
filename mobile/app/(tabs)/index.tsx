@@ -155,6 +155,25 @@ export default function HomeScreen() {
                 accessibilityLabel="Describe the outing you want"
                 style={[styles.searchInput, { color: theme.colors.text }]}
               />
+              {query ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={10}
+                  onPress={() => {
+                    setQuery("");
+                    setTypedPlaceholder("");
+                    requestAnimationFrame(() => searchRef.current?.focus());
+                  }}
+                  style={({ pressed }) => [
+                    styles.clearButton,
+                    { backgroundColor: theme.colors.surface },
+                    pressed && { opacity: 0.68 },
+                  ]}
+                >
+                  <AppText variant="bodyStrong" muted>×</AppText>
+                </Pressable>
+              ) : null}
             </View>
             <Button onPress={() => void openPlanner()} disabled={!query.trim() || openingPlanner}>
               {openingPlanner ? "Understanding…" : "Find My Outing"}
@@ -264,6 +283,7 @@ const styles = StyleSheet.create({
   searchRow: { minHeight: 58, borderRadius: 18, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 9 },
   spark: { color: "#ff8a9b", fontSize: 18 },
   searchInput: { flex: 1, minHeight: 56, fontSize: 16, fontWeight: "700" },
+  clearButton: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   searchHint: { marginTop: 12, textAlign: "center", fontSize: 13 },
   quickIdeas: { marginTop: 14, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 },
   quickIdea: { minHeight: 38, borderWidth: 1, borderRadius: 19, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" },
