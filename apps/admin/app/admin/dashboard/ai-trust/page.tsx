@@ -16,9 +16,8 @@ import { createAiTrustIncident } from "./actions";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "AI & Trust | TheOutHaven Admin" };
 
-const supabaseAdmin = getAdminDatabaseClient();
-
 async function safeCount(table: string, configure?: (query: any) => any) {
+  const supabaseAdmin = getAdminDatabaseClient();
   try {
     let query: any = supabaseAdmin.from(table).select("id", { count: "exact", head: true });
     if (configure) query = configure(query);
@@ -31,6 +30,7 @@ async function safeCount(table: string, configure?: (query: any) => any) {
 
 export default async function AiTrustPage() {
   await requireAdminRole(["superadmin", "admin", "manager", "viewer"]);
+  const supabaseAdmin = getAdminDatabaseClient();
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const [searches24h, healthIssues24h, verifiedReviews, openIncidents, recentIncidents] = await Promise.all([
     safeCount("search_events", (query) => query.gte("created_at", since)),
