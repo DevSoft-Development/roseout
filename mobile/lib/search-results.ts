@@ -17,6 +17,10 @@ export type MobilePlaceResult = {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  sponsored?: boolean;
+  placementType?: "organic" | "sponsored" | string;
+  sponsorId?: string | null;
+  campaignId?: string | null;
 };
 
 export type MobileOutingResult = {
@@ -28,6 +32,10 @@ export type MobileOutingResult = {
   reason: string | null;
   matchReasons?: string[];
   resultType?: "pair" | "same_venue";
+  sponsored?: boolean;
+  placementType?: "organic" | "sponsored" | string;
+  sponsorId?: string | null;
+  campaignId?: string | null;
 };
 
 export type MobileResolvedPlanType = "outing" | "restaurant" | "activity";

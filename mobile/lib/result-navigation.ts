@@ -21,6 +21,9 @@ export function placeRouteParams(place: MobilePlaceResult) {
       address: place.address || "",
       latitude: place.latitude == null ? "" : String(place.latitude),
       longitude: place.longitude == null ? "" : String(place.longitude),
+      sponsored: place.sponsored ? "1" : "0",
+      sponsorId: place.sponsorId || "",
+      campaignId: place.campaignId || "",
     },
   };
 }
@@ -36,6 +39,9 @@ export function outingRouteParams(outing: MobileOutingResult) {
       walkMinutes: outing.walkMinutes == null ? "" : String(outing.walkMinutes),
       reason: outingCustomerReason(outing),
       resultType: outing.resultType || "pair",
+      sponsored: outing.sponsored ? "1" : "0",
+      sponsorId: outing.sponsorId || "",
+      campaignId: outing.campaignId || "",
     },
   };
 }

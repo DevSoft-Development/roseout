@@ -19,6 +19,7 @@ function PlaceSummary({ place, label }: { place: MobilePlaceResult; label?: stri
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             {label ? <AppText variant="eyebrow" accent>{label}</AppText> : null}
+            {place.sponsored ? <AppText variant="caption" muted style={{ marginTop: 3 }}>Sponsored</AppText> : null}
             <AppText variant="h3" numberOfLines={2} style={{ marginTop: label ? 4 : 0 }}>{place.name}</AppText>
             {place.category ? <AppText variant="caption" muted numberOfLines={1} style={{ marginTop: 3 }}>{place.category}</AppText> : null}
           </View>
@@ -48,12 +49,13 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         : null;
   const why = outingCustomerReason(outing);
   const matchReasons = Array.isArray(outing.matchReasons) && outing.matchReasons.length ? outing.matchReasons : why ? [why] : [];
+  const sponsored = outing.sponsored === true || outing.placementType === "sponsored";
 
   return (
     <Card elevated style={{ padding: 12 }}>
       <View style={styles.cardTopline}>
-        <View style={[styles.rankBadge, { backgroundColor: rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
-          <AppText variant="eyebrow" style={{ color: rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
+        <View style={[styles.rankBadge, { backgroundColor: sponsored ? theme.colors.surfaceElevated : rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: sponsored ? theme.colors.borderStrong : rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
+          <AppText variant="eyebrow" style={{ color: sponsored ? theme.colors.text : rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{sponsored ? "SPONSORED" : rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
         </View>
         {distance ? <View style={[styles.distancePill, { backgroundColor: theme.colors.surfaceElevated }]}><AppText variant="caption" muted>{distance}</AppText></View> : null}
       </View>
