@@ -1,4 +1,11 @@
 const OPEN_ACTIVITY_DESCRIPTOR = String.raw`(?:fun|interesting|different|active|creative|entertaining|social|new|unique)`;
+
+export function normalizeConnectorSymbols(query: string) {
+  const value = String(query ?? "");
+  return value
+    .replace(/\b([a-z][a-z0-9'’-]*)\s*\+\s*fun\b/gi, "$1 and something fun")
+    .replace(/([a-z])\s*\+\s*(?=[a-z])/gi, "$1 and ");
+}
 const OPEN_SOMEWHERE_ACTIVITY = String.raw`(?:somewhere|someplace)\s+${OPEN_ACTIVITY_DESCRIPTOR}(?:\s+(?:and|or)\s+${OPEN_ACTIVITY_DESCRIPTOR})*(?:\s+to\s+(?:go|hang\s+out))?`;
 
 const OPEN_ENDED_ACTIVITY_PATTERNS = [
@@ -67,7 +74,8 @@ function annotateBeverageServiceLane(query: string) {
  * system without special-casing a QA prompt.
  */
 export function normalizeNaturalLanguageForPlanner(query: string) {
-  const sequenced = normalizePostposedSequence(query);
+  const connectorNormalized = normalizeConnectorSymbols(query);
+  const sequenced = normalizePostposedSequence(connectorNormalized);
   const activityAnnotated = annotateOpenEndedActivity(sequenced);
   return annotateBeverageServiceLane(activityAnnotated);
 }
