@@ -60,8 +60,8 @@ export function socialOauthConfigured(provider: SocialProvider) {
   return Boolean(process.env.GOOGLE_SOCIAL_CLIENT_ID && process.env.GOOGLE_SOCIAL_CLIENT_SECRET);
 }
 
-export function socialAuthorizeUrl(provider: SocialProvider, state: string) {
-  const redirectUri = socialOauthRedirectUri(provider);
+export function socialAuthorizeUrl(provider: SocialProvider, state: string, redirectUriOverride?: string) {
+  const redirectUri = redirectUriOverride || socialOauthRedirectUri(provider);
   if (provider === "instagram" || provider === "facebook") {
     const appId = process.env.META_APP_ID;
     const version = process.env.META_GRAPH_VERSION;
@@ -138,19 +138,28 @@ async function upsertConnection(input: {
   scopes: string[];
   userId: string;
   metadata?: Record<string, unknown>;
+  scope?: "platform" | "location";
+  locationId?: string | null;
 }) {
   const now = new Date().toISOString();
-  const { data: existing } = await supabaseAdmin
+  const scope = input.scope || "platform";
+  let existingQuery = supabaseAdmin
     .from("marketing_social_connections")
     .select("id")
-    .eq("scope", "platform")
+    .eq("scope", scope)
     .eq("provider", input.provider)
-    .eq("provider_account_id", input.providerAccountId)
-    .maybeSingle();
+    .eq("provider_account_id", input.providerAccountId);
+  if (scope === "location") {
+    if (!input.locationId) throw new Error("Location-scoped social OAuth requires locationId.");
+    existingQuery = existingQuery.eq("location_id", input.locationId);
+  }
+  const { data: existing } = await existingQuery.maybeSingle();
 
   let connectionId = existing?.id as string | undefined;
   const row = {
-    scope: "platform",
+    scope,
+    location_id: scope === "location" ? input.locationId : null,
+    organization_id: null,
     provider: input.provider,
     provider_account_id: input.providerAccountId,
     provider_business_id: input.providerBusinessId || null,
@@ -188,8 +197,15 @@ async function upsertConnection(input: {
   return connectionId;
 }
 
-export async function completeSocialOauth(provider: SocialProvider, code: string, userId: string) {
-  const redirectUri = socialOauthRedirectUri(provider);
+export async function completeSocialOauth(
+  provider: SocialProvider,
+  code: string,
+  userId: string,
+  options?: { redirectUri?: string; scope?: "platform" | "location"; locationId?: string | null },
+) {
+  const redirectUri = options?.redirectUri || socialOauthRedirectUri(provider);
+  const connectionScope = options?.scope || "platform";
+  const connectionLocationId = options?.locationId || null;
 
   if (provider === "instagram" || provider === "facebook") {
     const appId = process.env.META_APP_ID!;
@@ -222,6 +238,8 @@ export async function completeSocialOauth(provider: SocialProvider, code: string
       scopes,
       userId,
       metadata: { page_id: page.id },
+      scope: connectionScope,
+      locationId: connectionLocationId,
     });
   }
 
@@ -262,6 +280,8 @@ export async function completeSocialOauth(provider: SocialProvider, code: string
         max_video_post_duration_sec: creatorData.max_video_post_duration_sec || null,
         creator_info_checked_at: new Date().toISOString(),
       },
+      scope: connectionScope,
+      locationId: connectionLocationId,
     });
   }
 
@@ -278,5 +298,5 @@ export async function completeSocialOauth(provider: SocialProvider, code: string
   if (!channel?.id) throw new Error("No YouTube channel was found for the authorized Google account.");
   const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
   const scopes = token.scope ? token.scope.split(" ").filter(Boolean) : envList("YOUTUBE_SOCIAL_SCOPES", []);
-  return upsertConnection({ provider, providerAccountId: channel.id, displayName: channel.snippet?.title || "YouTube", username: channel.snippet?.customUrl || null, accessToken: token.access_token, refreshToken: token.refresh_token || null, tokenType: token.token_type || "Bearer", expiresAt, scopes, userId, metadata: { channel_id: channel.id } });
+  return upsertConnection({ provider, providerAccountId: channel.id, displayName: channel.snippet?.title || "YouTube", username: channel.snippet?.customUrl || null, accessToken: token.access_token, refreshToken: token.refresh_token || null, tokenType: token.token_type || "Bearer", expiresAt, scopes, userId, metadata: { channel_id: channel.id }, scope: connectionScope, locationId: connectionLocationId });
 }
