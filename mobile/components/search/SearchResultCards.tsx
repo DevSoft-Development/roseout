@@ -52,8 +52,8 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
   return (
     <Card elevated style={{ padding: 12 }}>
       <View style={styles.cardTopline}>
-        <View style={[styles.rankBadge, { backgroundColor: rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
-          <AppText variant="eyebrow" style={{ color: rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
+        <View style={[styles.rankBadge, { backgroundColor: outing.sponsored ? theme.colors.surfaceElevated : rank === 1 ? theme.colors.accent : theme.colors.surface, borderColor: outing.sponsored ? theme.colors.borderStrong : rank === 1 ? theme.colors.accent : theme.colors.borderStrong }]}>
+          <AppText variant="eyebrow" style={{ color: outing.sponsored ? theme.colors.text : rank === 1 ? theme.colors.onAccent : theme.colors.text }}>{outing.sponsored ? "SPONSORED" : rank === 1 ? "BEST MATCH" : `OPTION ${rank}`}</AppText>
         </View>
         {distance ? <View style={[styles.distancePill, { backgroundColor: theme.colors.surfaceElevated }]}><AppText variant="caption" muted>{distance}</AppText></View> : null}
       </View>
@@ -101,6 +101,11 @@ export function PlaceResultCard({ place, actionLabel, onAction, selected = false
   const matchReasons = Array.isArray(place.matchReasons) && place.matchReasons.length ? place.matchReasons : why ? [why] : [];
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
+      {place.sponsored ? (
+        <View style={{ marginBottom: 8 }}>
+          <AppText variant="eyebrow">SPONSORED</AppText>
+        </View>
+      ) : null}
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
         <PlaceSummary place={place} label={place.kind === "restaurant" ? "RESTAURANT" : "ACTIVITY"} />
       </Pressable>
