@@ -161,7 +161,6 @@ export default function LocationProfileEditor({
       city: form.city,
       state: form.state,
       zip_code: form.zip_code,
-      neighborhood: form.neighborhood,
       category: form.category,
       price_range: form.price_range,
       main_image: form.main_image || form.image_url || null,
