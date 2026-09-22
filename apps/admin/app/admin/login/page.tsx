@@ -99,7 +99,8 @@ export default function AdminLoginPage() {
       <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center">
         <section className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-[#0a0a0a]/95 shadow-[0_30px_100px_rgba(0,0,0,.65)] backdrop-blur-xl lg:grid-cols-[1.05fr_.95fr]">
           <div className="relative hidden min-h-[690px] flex-col justify-between overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(145deg,#120b0d,#080708)] p-10 lg:flex xl:p-14">
-            <div>
+            <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#e1062a]/10 blur-3xl" />
+            <div className="relative">
               <div className="mb-8 flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 shadow-[0_0_45px_rgba(225,6,42,.16)]">
                   {/* The isolated Admin app does not ship the consumer public asset bundle. */}
