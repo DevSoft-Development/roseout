@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
 import { outingRouteParams, placeRouteParams } from "@/lib/result-navigation";
-import { customerFacingReasons, outingCustomerReason, placeCustomerReason } from "@/lib/customer-reason";
+import { cleanCustomerReason, customerFacingReasons, outingCustomerReason } from "@/lib/customer-reason";
 import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 const FALLBACK_IMAGE = "https://theouthaven.com/toh_logo.png";
@@ -49,7 +49,7 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         : null;
   const why = outingCustomerReason(outing);
   const pairReasons = Array.isArray(outing.matchReasons)
-    ? outing.matchReasons.map((reason) => reason?.trim()).filter(Boolean)
+    ? outing.matchReasons.map(cleanCustomerReason).filter((reason): reason is string => Boolean(reason))
     : [];
   const matchReasons = pairReasons.length ? pairReasons : why ? [why] : [];
   const sponsored = outing.sponsored === true || outing.placementType === "sponsored";
@@ -102,7 +102,6 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
 export function PlaceResultCard({ place, actionLabel, onAction, selected = false }: { place: MobilePlaceResult; actionLabel?: string; onAction?: () => void; selected?: boolean }) {
   const router = useRouter();
   const { theme } = useAppTheme();
-  const why = placeCustomerReason(place);
   const matchReasons = customerFacingReasons(place);
 
   return (
