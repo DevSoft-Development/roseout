@@ -2,6 +2,7 @@ import type { SearchPlan } from "../planner/searchPlanTypes";
 import type { RoleQualifiedCandidate } from "../roles/roleTypes";
 import type { SearchTrace } from "../observability/searchTrace";
 import { activityRetrievalTerms, canonicalTaxonomy } from "../taxonomy";
+import { runtimeRetrievalTerms } from "../taxonomy/runtimeTaxonomy";
 import { applyMlBoost } from "./applyMlBoost";
 import {
   explicitlyRequestsQuickDateConcept,
