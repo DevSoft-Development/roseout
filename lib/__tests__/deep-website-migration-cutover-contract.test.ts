@@ -14,16 +14,20 @@ describe("deep website migration and cutover contract", () => {
     expect(source).toContain('redirect: "manual"');
   });
 
-  it("captures migration fidelity signals and redirect planning", () => {
+  it("captures migration fidelity signals and prefers real external reservation providers", () => {
     const crawler = read("lib/websites/import-crawler.ts");
     const route = read("app/api/business/website/import/route.ts");
+    const selector = read("lib/websites/reservation-link-selection.ts");
     expect(crawler).toContain("reservation_links");
     expect(crawler).toContain("social_links");
     expect(crawler).toContain("schema_types");
     expect(crawler).toContain("redirect_map");
     expect(route).toContain("migration_manifest");
     expect(route).toContain("form_count");
-    expect(route).toContain("manifest.reservation_links[0]");
+    expect(route).toContain("selectBestReservationLink");
+    expect(selector).toContain('label: "Resy"');
+    expect(selector).toContain('label: "OpenTable"');
+    expect(selector).toContain("candidate.external || candidate.provider");
   });
 
   it("checks custom-domain cutover readiness without a second hosting path", () => {
