@@ -28,10 +28,10 @@ assert("dashboard layout auth boundary", dashboardLayout.includes("requireUserFo
 
 assert("profile authenticates server-side", profileRoute.includes("auth.getUser()") && profileRoute.includes("supabaseAdmin"), "profile writes must authenticate the session before service-role access");
 assert("profile owns row by authenticated id", profileRoute.includes("user_id: user.id") && profileRoute.includes('onConflict: "user_id"'), "profile writes must derive user_id exclusively from auth.getUser()");
-assert("profile minimizes PII", !profileRoute.includes("full_name") && !profileRoute.includes("birthday_day") && !profileRoute.includes('.select("*")'), "normal profile writes must not collect full name/birth day or return every column");
-assert("profile required fields", profileRoute.includes("First name is required") && profileRoute.includes("City is required") && profileRoute.includes("Birth month must be between 1 and 12"), "first name, city, and birth month must remain the minimal required profile fields");
+assert("profile minimizes PII", !profileRoute.includes("full_name") && !profileRoute.includes("birthday_day") && !profileRoute.includes('.select("*")') && profileRoute.includes('.from("consumer_profiles")'), "normal profile writes must use consumer_profiles and must not collect full name/birth day or return every column");
+assert("profile required fields", profileRoute.includes("First name is required") && profileRoute.includes("valid 5-digit ZIP code is required") && profileRoute.includes("Birth month must be between 1 and 12"), "first name, ZIP, and birth month must remain the minimal required profile fields");
 
-assert("dashboard profile select minimized", dashboardLib.includes('PROFILE_SELECT = "preferred_name,city,birthday_month,mobile_number,sms_opt_in,preferences,age_range"'), "dashboard profile reads must use the approved minimal field list");
+assert("dashboard profile select minimized", dashboardLib.includes('PROFILE_SELECT = "first_name,phone_e164,birth_month,home_zip_code,home_neighborhood,home_borough,home_city,home_county,home_state,home_market,sms_consent,personalization_enabled"'), "dashboard profile reads must use the canonical consumer profile field list");
 assert("dashboard outing select excludes guest PII", !dashboardLib.match(/OUTING_SELECT[^\n]*(guest_email|guest_phone|guest_name|phone_number|confirm_token|plan_access_token)/), "dashboard outing list must not pull guest contact data or access tokens");
 
 assert("canonical outing detail owner-scoped", outingDetail.includes('.from("outings")') && outingDetail.includes('.eq("user_id", user.id)') && !outingDetail.includes('.from("user_outings")'), "outing detail must read canonical outings and scope by authenticated user");
