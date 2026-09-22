@@ -164,7 +164,7 @@ for each row execute function public.apply_consumer_profile_home_geo();
 update public.consumer_profiles cp
 set home_zip_code = public.normalize_zip5(up.zip_code)
 from public.user_profiles up
-where up.id = cp.user_id
+where up.user_id = cp.user_id
   and cp.home_zip_code is null
   and public.normalize_zip5(up.zip_code) is not null;
 
