@@ -83,13 +83,20 @@ export default function PromotionCenterClient({ locationId, funded, campaignId }
       setLoading(false);
       return;
     }
-    const res = await fetch(`/api/business/promotions?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" });
+    const [res, targetingRes] = await Promise.all([
+      fetch(`/api/business/promotions?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+      fetch(`/api/business/promotions/targeting-options?locationId=${encodeURIComponent(locationId)}`, { cache: "no-store" }),
+    ]);
     const data = await res.json().catch(() => ({}));
+    const targetingData = await targetingRes.json().catch(() => ({}));
     if (res.ok) {
       setCampaigns(data.campaigns || []);
       setLocationName(data.location?.name || "Your location");
     } else {
       setMessage(data.error || "Could not load promotions.");
+    }
+    if (targetingRes.ok && targetingData.options) {
+      setTargetingOptions(targetingData.options);
     }
     setLoading(false);
   }, [locationId]);
