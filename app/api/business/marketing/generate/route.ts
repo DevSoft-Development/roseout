@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireLocationPermission } from "@/lib/auth/locationOwnerAccess";
 import { demoMetadata, MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
+import { getLocationSearchV2DemandInsights } from "@/lib/marketing/location-demand-insights";
 
 function toBoolean(value: unknown) {
   return value === true || value === "1" || value === "true";
@@ -84,7 +85,34 @@ export async function POST(request: Request) {
       body.category ||
       "night-out spot",
   );
-  const copy = `${contentType} for ${name}\n\nLooking for a ${category} in ${area}? Plan your next visit to ${name} and check out the latest profile details, hours, menu, offers, and QR-friendly updates on TheOutHaven.\n\nGoal: ${goal}.`;
+  const requestedDemandQuery = String(body.demandQuery || "").trim().slice(0, 240);
+  let verifiedDemand: { query: string; searches30d: number; searches7d: number; trendPercent: number | null } | null = null;
+  if (requestedDemandQuery && ctx.access.canonicalLocationId) {
+    const insights = await getLocationSearchV2DemandInsights({
+      id: String(ctx.access.canonicalLocationId),
+      city: loc.city || null,
+      state: loc.state || null,
+      borough: loc.borough || null,
+      neighborhood: loc.neighborhood || null,
+      zip_code: loc.zip_code || loc.postal_code || null,
+      postal_code: loc.postal_code || loc.zip_code || null,
+      county: loc.county || null,
+      market: loc.market || null,
+    }).catch(() => null);
+    const matched = insights?.demandOpportunities.find((item) => item.query.toLowerCase() === requestedDemandQuery.toLowerCase());
+    if (matched) {
+      verifiedDemand = {
+        query: matched.query,
+        searches30d: matched.searches30d,
+        searches7d: matched.searches7d,
+        trendPercent: matched.trendPercent,
+      };
+    }
+  }
+  const demandLead = verifiedDemand
+    ? `Planning “${verifiedDemand.query}”? `
+    : "";
+  const copy = `${contentType} for ${name}\n\n${demandLead}Looking for a ${category} in ${area}? Plan your next visit to ${name} and check out the latest profile details, hours, menu, offers, and QR-friendly updates on TheOutHaven.\n\nGoal: ${goal}.`;
   const isDemo =
     loc.demo_key === MIRROR_DEMO_KEY ||
     (toBoolean(body.demo) && toBoolean(body.fromDemoCenter));
@@ -106,6 +134,7 @@ export async function POST(request: Request) {
         area,
         category,
         heroImageUrl: body.heroImageUrl || null,
+        searchV2Demand: verifiedDemand,
       },
       generated_content: {
         headline: `Bring more guests to ${name}`,
@@ -113,8 +142,8 @@ export async function POST(request: Request) {
       },
       status: "draft",
       metadata: isDemo
-        ? { ...demoMetadata, generated_from: "production_marketing_api" }
-        : { generated_from: "production_marketing_api" },
+        ? { ...demoMetadata, generated_from: "production_marketing_api", demand_source: verifiedDemand ? "search_v2" : "static_profile" }
+        : { generated_from: "production_marketing_api", demand_source: verifiedDemand ? "search_v2" : "static_profile" },
     })
     .select("id")
     .maybeSingle();
@@ -133,5 +162,6 @@ export async function POST(request: Request) {
     generationId: generation?.id || null,
     persisted: !generationError && Boolean(generation?.id),
     demo: isDemo,
+    demand: verifiedDemand,
   });
 }
