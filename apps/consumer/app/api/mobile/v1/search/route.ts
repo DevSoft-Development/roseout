@@ -284,6 +284,9 @@ export async function POST(request: Request) {
   });
 
   const walkingRequested = walkingWasRequested(body, payload, source);
+  const walkingMaxMinutes = walkingRequested
+    ? numberOrNull(source?.searchPlan?.pairing?.maxWalkingMinutes ?? payload?.searchPlan?.pairing?.maxWalkingMinutes)
+    : null;
 
   return mobileJson({
     ok: true,
@@ -293,6 +296,7 @@ export async function POST(request: Request) {
     resolvedPlanType,
     canonicalSearchType: canonicalType,
     walkingRequested,
+    walkingMaxMinutes,
     pairs,
     sameVenueResults,
     restaurants,
