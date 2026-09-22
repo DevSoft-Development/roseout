@@ -66,6 +66,29 @@ describe("system-wide language contracts", () => {
     expect(negatives.vibes).toEqual(expect.arrayContaining(["loud", "party"]));
   });
 
+  it("treats plus as an and-connector across shorthand mixed outing language", () => {
+    const normalized = normalizeNaturalLanguageForPlanner(
+      "Dinner + fun in Brooklyn",
+    );
+
+    expect(normalized).toMatch(/dinner and something fun activity in brooklyn/i);
+    const parsed = deterministicParse({ query: normalized } as any);
+    expect(parsed.restaurantSignal).toBe(true);
+    expect(parsed.activitySignal).toBe(true);
+  });
+
+  it("treats plus as a connector between explicit restaurant and activity requests", () => {
+    const normalized = normalizeNaturalLanguageForPlanner(
+      "Sushi + karaoke nearby",
+    );
+
+    expect(normalized).toMatch(/sushi and karaoke nearby/i);
+    const parsed = deterministicParse({ query: normalized } as any);
+    expect(parsed.restaurantSignal).toBe(true);
+    expect(parsed.activitySignal).toBe(true);
+    expect(parsed.activityCategories).toContain("karaoke");
+  });
+
   it("normalizes open-ended postposed activity language into a real second stop", () => {
     const normalized = normalizeNaturalLanguageForPlanner(
       "Dinner in Queens and something interesting to do afterward",
