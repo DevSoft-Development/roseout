@@ -7,11 +7,11 @@ import { calculateOwnerLeadScore, assignLeadPriority, formatRecommendedPitch } f
 import { calculateDistanceFit, calculatePairCompatibilityScore, pairConfidence } from './pairCompatibility';
 import { calculateMarketFit } from './marketSpecific';
 
-export type RecalcOptions={dryRun?:boolean;limit?:number;daysBack?:number;locationId?:string;userId?:string;};
+export type RecalcOptions={dryRun?:boolean;limit?:number;offset?:number;daysBack?:number;locationId?:string;userId?:string;};
 const clamp=(n:number,min=0,max=100)=>Math.max(min,Math.min(max,Number.isFinite(n)?n:0));
 async function runLog(type:string){ const {data}=await supabaseAdmin.from('advanced_ml_score_runs').insert({run_type:type,status:'running'}).select('id').maybeSingle(); return data?.id; }
 async function finish(id:string|undefined, patch:any){ if(id) await supabaseAdmin.from('advanced_ml_score_runs').update({completed_at:new Date().toISOString(),...patch}).eq('id',id); }
-async function locs(o:RecalcOptions){ let q=supabaseAdmin.from('locations').select('*').limit(o.limit||200); if(o.locationId) q=q.eq('id',o.locationId); const {data,error}=await q; if(error) throw error; return data||[]; }
+async function locs(o:RecalcOptions){ const limit=Math.max(1,Math.min(500,o.limit||200)); const offset=Math.max(0,Math.floor(o.offset||0)); let q=supabaseAdmin.from('locations').select('*').order('id',{ascending:true}).range(offset,offset+limit-1); if(o.locationId) q=q.eq('id',o.locationId); const {data,error}=await q; if(error) throw error; return data||[]; }
 
 export async function recalculateReviewIntelligence(o:RecalcOptions={}){
   const id=await runLog('review_intelligence'); let updated=0;
