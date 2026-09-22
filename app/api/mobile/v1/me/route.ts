@@ -90,6 +90,16 @@ export async function PATCH(req: NextRequest) {
     return mobileError("privacy_preference_update_failed", "Could not update recommendation privacy settings.", 500);
   }
 
+  if (!body.personalizationEnabled) {
+    const { error: vectorError } = await admin
+      .from("user_search_preference_vectors")
+      .delete()
+      .eq("user_id", identity.userId);
+    if (vectorError) {
+      return mobileError("privacy_preference_cleanup_failed", "Could not fully disable personalization.", 500);
+    }
+  }
+
   return mobileJson({
     ok: true,
     personalizationEnabled: body.personalizationEnabled,
