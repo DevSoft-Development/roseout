@@ -10,10 +10,13 @@ describe("consumer personalization privacy contract", () => {
     expect(migration).toContain("personalization_enabled boolean not null default true");
   });
 
-  it("gates historical evidence before personalization is built", () => {
+  it("gates both historical and active V2 personalization on consent", () => {
     const loader = read("lib/search/enterprise/personalizationProfileLoader.ts");
+    const v2 = read("lib/search/v2/scoring/applyHfPersonalization.ts");
     expect(loader).toContain("personalizationAllowedForUser");
     expect(loader).toContain("if (!allowed) return buildUserPreferenceProfile");
+    expect(v2).toContain("personalizationAllowedForUser");
+    expect(v2).toContain("personalization_opted_out");
   });
 
   it("exposes controls on web and mobile", () => {
