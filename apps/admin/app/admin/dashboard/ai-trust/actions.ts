@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 
 const allowedSeverities = new Set(["low", "medium", "high", "critical"]);
 const allowedTypes = new Set([
@@ -16,6 +16,7 @@ const allowedTypes = new Set([
 ]);
 
 export async function createAiTrustIncident(formData: FormData) {
+  const supabaseAdmin = getAdminDatabaseClient();
   const admin = await requireAdminRole(["superadmin", "admin"]);
   const incidentType = String(formData.get("incidentType") || "other");
   const severity = String(formData.get("severity") || "low");
