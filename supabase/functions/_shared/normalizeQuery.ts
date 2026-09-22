@@ -4,6 +4,9 @@ const IMPORTANT_PHRASES = ["walking distance"];
 export function normalizeSearchQuery(query: string): string {
   let normalized = String(query ?? "").toLowerCase().trim();
   normalized = normalized.replace(/[“”‘’]/g, (char) => SMART_QUOTES[char] ?? char);
+  normalized = normalized
+    .replace(/\b([a-z][a-z0-9'’-]*)\s*\+\s*fun\b/gi, "$1 and something fun")
+    .replace(/([a-z])\s*\+\s*(?=[a-z])/gi, "$1 and ");
   for (const phrase of IMPORTANT_PHRASES) normalized = normalized.replace(new RegExp(phrase.replace(/ /g, "\\s+"), "gi"), phrase.replace(/ /g, "__KEEP__"));
   normalized = normalized.replace(/[^a-z0-9\s_'-]/g, " ").replace(/[_]{2}keep[_]{2}/gi, " ");
   normalized = normalized.replace(/\s+/g, " ").trim();
