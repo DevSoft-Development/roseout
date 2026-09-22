@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useAppTheme } from "@/providers/ThemeProvider";
 import { outingRouteParams, placeRouteParams } from "@/lib/result-navigation";
-import { outingCustomerReason, placeCustomerReason } from "@/lib/customer-reason";
+import { cleanCustomerReason, customerFacingReasons, outingCustomerReason } from "@/lib/customer-reason";
 import type { MobileOutingResult, MobilePlaceResult } from "@/lib/search-results";
 
 const FALLBACK_IMAGE = "https://theouthaven.com/toh_logo.png";
@@ -48,7 +48,10 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
         ? `${outing.distanceMiles.toFixed(1)} mi apart`
         : null;
   const why = outingCustomerReason(outing);
-  const matchReasons = Array.isArray(outing.matchReasons) && outing.matchReasons.length ? outing.matchReasons : why ? [why] : [];
+  const pairReasons = Array.isArray(outing.matchReasons)
+    ? outing.matchReasons.map(cleanCustomerReason).filter((reason): reason is string => Boolean(reason))
+    : [];
+  const matchReasons = pairReasons.length ? pairReasons : why ? [why] : [];
   const sponsored = outing.sponsored === true || outing.placementType === "sponsored";
 
   return (
@@ -99,8 +102,8 @@ export function OutingResultCard({ outing, rank = 1, onChoose }: { outing: Mobil
 export function PlaceResultCard({ place, actionLabel, onAction, selected = false }: { place: MobilePlaceResult; actionLabel?: string; onAction?: () => void; selected?: boolean }) {
   const router = useRouter();
   const { theme } = useAppTheme();
-  const why = placeCustomerReason(place);
-  const matchReasons = Array.isArray(place.matchReasons) && place.matchReasons.length ? place.matchReasons : why ? [why] : [];
+  const matchReasons = customerFacingReasons(place);
+
   return (
     <Card elevated style={{ padding: 12, borderColor: selected ? theme.colors.accent : theme.colors.borderStrong }}>
       <Pressable onPress={() => router.push(placeRouteParams(place))} style={({ pressed }) => ({ opacity: pressed ? 0.86 : 1 })}>
