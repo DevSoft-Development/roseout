@@ -96,7 +96,7 @@ export default async function SearchAnchorsAdminPage({
           {tabs.map((tab) => {
             const activeTab = tab.label === "All Anchors" ? view === "all" : tab.href.includes(`view=${view}`);
             return (
-              <Link key={tab.label} href={tab.href} className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm transition ${activeTab ? "border-red-600 bg-red-950 text-white" : "border-zinc-800 bg-zinc-950 text-zinc-300 hover:border-red-800 hover:text-white"}`}>
+              <Link key={tab.label} href={tab.href} className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm transition ${activeTab ? "border-red-600 bg-red-950 text-white" : "border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] text-[var(--admin-shell-text)] hover:border-red-800"}`}>
                 {tab.label}
               </Link>
             );
@@ -104,14 +104,14 @@ export default async function SearchAnchorsAdminPage({
         </nav>
 
         {view === "discoveries" ? (
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+          <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-6">
             <h2 className="text-lg font-semibold">Pending discoveries</h2>
-            <p className="mt-2 text-sm text-zinc-400">There are {discoveries.count ?? 0} unresolved named-place candidates. The full review workflow is planned after the read-only coverage audit.</p>
+            <p className="mt-2 text-sm text-[var(--admin-shell-muted)]">There are {discoveries.count ?? 0} unresolved named-place candidates. The full review workflow is planned after the read-only coverage audit.</p>
           </section>
         ) : view === "analytics" ? (
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+          <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-6">
             <h2 className="text-lg font-semibold">Anchor analytics</h2>
-            <p className="mt-2 text-sm text-zinc-400">Current loaded anchors account for {anchorSearches.toLocaleString()} searches with a {anchorSearches ? Math.round(((anchorSearches - noResults) / anchorSearches) * 100) : 0}% result success rate.</p>
+            <p className="mt-2 text-sm text-[var(--admin-shell-muted)]">Current loaded anchors account for {anchorSearches.toLocaleString()} searches with a {anchorSearches ? Math.round(((anchorSearches - noResults) / anchorSearches) * 100) : 0}% result success rate.</p>
           </section>
         ) : (
           <>
@@ -120,7 +120,7 @@ export default async function SearchAnchorsAdminPage({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-300">Production rollout</p>
                   <h2 className="mt-1 text-lg font-semibold">Dry Run & Approval</h2>
-                  <p className="mt-1 max-w-3xl text-sm text-zinc-300">Preview every proposed anchor change, review warnings, approve the plan, and execute bounded production batches.</p>
+                  <p className="mt-1 max-w-3xl text-sm text-[var(--admin-shell-muted)]">Preview every proposed anchor change, review warnings, approve the plan, and execute bounded production batches.</p>
                 </div>
                 <Link href="/admin/dashboard/search-anchors/sync-preview" className="rounded-xl bg-red-700 px-5 py-3 text-center text-sm font-semibold hover:bg-red-600">Open Dry Run & Approval</Link>
               </div>
@@ -128,35 +128,35 @@ export default async function SearchAnchorsAdminPage({
 
             <form className="flex flex-col gap-3 sm:flex-row">
               {view !== "all" && <input type="hidden" name="view" value={view} />}
-              <input name="q" defaultValue={q} placeholder="Search anchor name" className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-white outline-none focus:border-red-700" />
+              <input name="q" defaultValue={q} placeholder="Search anchor name" className="min-w-0 flex-1 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-4 py-3 text-[var(--admin-shell-text)] outline-none focus:border-red-700" />
               <button className="rounded-xl bg-red-700 px-5 py-3 font-semibold hover:bg-red-600">Search</button>
-              {(q || view !== "all") && <Link href="/admin/dashboard/search-anchors" className="rounded-xl border border-zinc-700 px-5 py-3 text-center font-semibold text-zinc-300">Reset</Link>}
+              {(q || view !== "all") && <Link href="/admin/dashboard/search-anchors" className="rounded-xl border border-[var(--admin-shell-border)] px-5 py-3 text-center font-semibold text-[var(--admin-shell-text)]">Reset</Link>}
             </form>
 
-            <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950">
+            <section className="overflow-hidden rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]">
               <div className="overflow-x-auto">
                 <table className="min-w-[900px] w-full text-left text-sm">
-                  <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
+                  <thead className="bg-[var(--admin-shell-soft)] text-xs uppercase text-[var(--admin-shell-muted)]">
                     <tr>{["Anchor", "Area", "Connection", "Radius", "Performance", "Health", "Status"].map((heading) => <th key={heading} className="whitespace-nowrap px-4 py-3">{heading}</th>)}</tr>
                   </thead>
                   <tbody>
                     {rows.map((anchor: any) => (
-                      <tr key={anchor.id} className="border-t border-zinc-900 align-top hover:bg-zinc-900/40">
-                        <td className="px-4 py-4"><p className="font-medium text-white">{anchor.canonical_name}</p><p className="mt-1 text-xs text-zinc-500">{anchor.anchor_type} · {(anchor.aliases ?? []).length} aliases</p></td>
-                        <td className="px-4 py-4 text-zinc-300"><p>{anchor.market ?? "Unassigned"}</p><p className="mt-1 text-xs text-zinc-500">{anchor.borough ?? anchor.county ?? anchor.city ?? "—"}</p></td>
+                      <tr key={anchor.id} className="border-t border-[var(--admin-shell-border)] align-top hover:bg-[var(--admin-shell-soft)]">
+                        <td className="px-4 py-4"><p className="font-medium text-[var(--admin-shell-text)]">{anchor.canonical_name}</p><p className="mt-1 text-xs text-[var(--admin-shell-muted)]">{anchor.anchor_type} · {(anchor.aliases ?? []).length} aliases</p></td>
+                        <td className="px-4 py-4 text-[var(--admin-shell-text)]"><p>{anchor.market ?? "Unassigned"}</p><p className="mt-1 text-xs text-[var(--admin-shell-muted)]">{anchor.borough ?? anchor.county ?? anchor.city ?? "—"}</p></td>
                         <td className="px-4 py-4"><span className="rounded-full border border-zinc-700 px-2 py-1 text-xs">{anchor.linked_location_id ? "Linked location" : anchor.source_type}</span></td>
-                        <td className="px-4 py-4 text-zinc-300">{anchor.default_radius_miles} mi<p className="mt-1 text-xs text-zinc-500">Max {anchor.max_radius_miles} mi</p></td>
-                        <td className="px-4 py-4 text-zinc-300">{Number(anchor.usage_count ?? 0).toLocaleString()} searches<p className="mt-1 text-xs text-zinc-500">{pct(Number(anchor.successful_search_count), Number(anchor.usage_count))} success</p></td>
-                        <td className="px-4 py-4"><span className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-300">{anchor.sync_status ?? "current"}</span><p className="mt-2 text-xs text-zinc-500">{anchor.last_synced_at ? new Date(anchor.last_synced_at).toLocaleDateString() : "Never synced"}</p></td>
+                        <td className="px-4 py-4 text-[var(--admin-shell-text)]">{anchor.default_radius_miles} mi<p className="mt-1 text-xs text-[var(--admin-shell-muted)]">Max {anchor.max_radius_miles} mi</p></td>
+                        <td className="px-4 py-4 text-[var(--admin-shell-text)]">{Number(anchor.usage_count ?? 0).toLocaleString()} searches<p className="mt-1 text-xs text-[var(--admin-shell-muted)]">{pct(Number(anchor.successful_search_count), Number(anchor.usage_count))} success</p></td>
+                        <td className="px-4 py-4"><span className="rounded-full border border-[var(--admin-shell-border)] px-2 py-1 text-xs text-[var(--admin-shell-text)]">{anchor.sync_status ?? "current"}</span><p className="mt-2 text-xs text-zinc-500">{anchor.last_synced_at ? new Date(anchor.last_synced_at).toLocaleDateString() : "Never synced"}</p></td>
                         <td className="px-4 py-4"><p className={anchor.is_active ? "text-emerald-300" : "text-zinc-500"}>{anchor.is_active ? "Active" : "Disabled"}</p><p className="mt-1 text-xs capitalize text-zinc-500">{String(anchor.review_status ?? "unknown").replaceAll("_", " ")}</p></td>
                       </tr>
                     ))}
-                    {!rows.length && <tr><td colSpan={7} className="px-6 py-12 text-center text-zinc-500">No anchors match this view.</td></tr>}
+                    {!rows.length && <tr><td colSpan={7} className="px-6 py-12 text-center text-[var(--admin-shell-muted)]">No anchors match this view.</td></tr>}
                   </tbody>
                 </table>
               </div>
             </section>
-            <p className="text-sm text-zinc-500">Showing {rows.length} of {count ?? rows.length} matching anchors.</p>
+            <p className="text-sm text-[var(--admin-shell-muted)]">Showing {rows.length} of {count ?? rows.length} matching anchors.</p>
           </>
         )}
     </AdminPageShell>

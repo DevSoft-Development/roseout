@@ -60,17 +60,17 @@ export default async function SearchAnchorAuditPage({
         ))}
       </AdminKpiGrid>
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+        <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Coverage by market</h2>
-              <p className="text-sm text-zinc-400">Eligible means searchable with valid coordinates.</p>
+              <p className="text-sm text-[var(--admin-shell-muted)]">Eligible means searchable with valid coordinates.</p>
             </div>
-            <p className="text-xs text-zinc-500">Generated {new Date(audit.generatedAt).toLocaleString()}</p>
+            <p className="text-xs text-[var(--admin-shell-muted)]">Generated {new Date(audit.generatedAt).toLocaleString()}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500">
+              <thead className="border-b border-[var(--admin-shell-border)] text-xs uppercase text-[var(--admin-shell-muted)]">
                 <tr>{["Market", "Total", "Searchable", "Eligible", "Linked", "Missing"].map((heading) => <th key={heading} className="whitespace-nowrap px-3 py-3">{heading}</th>)}</tr>
               </thead>
               <tbody>
@@ -85,11 +85,11 @@ export default async function SearchAnchorAuditPage({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+        <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Audit issues</h2>
-              <p className="text-sm text-zinc-400">Showing {issues.length} issue records{market ? ` in ${market}` : ""}{type ? ` for ${issueLabels[type] ?? type}` : ""}.</p>
+              <p className="text-sm text-[var(--admin-shell-muted)]">Showing {issues.length} issue records{market ? ` in ${market}` : ""}{type ? ` for ${issueLabels[type] ?? type}` : ""}.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link href="/admin/dashboard/search-anchors/audit" className="rounded-lg border border-zinc-700 px-3 py-2 text-xs">All</Link>
@@ -98,16 +98,16 @@ export default async function SearchAnchorAuditPage({
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-[900px] w-full text-left text-sm">
-              <thead className="border-b border-zinc-800 text-xs uppercase text-zinc-500"><tr>{["Severity", "Issue", "Name", "Market", "Reason", "Record"].map((heading) => <th key={heading} className="px-3 py-3">{heading}</th>)}</tr></thead>
+              <thead className="border-b border-[var(--admin-shell-border)] text-xs uppercase text-[var(--admin-shell-muted)]"><tr>{["Severity", "Issue", "Name", "Market", "Reason", "Record"].map((heading) => <th key={heading} className="px-3 py-3">{heading}</th>)}</tr></thead>
               <tbody>
                 {issues.slice(0, 500).map((issue, index) => (
                   <tr key={`${issue.type}-${issue.anchorId ?? issue.locationId ?? index}`} className="border-b border-zinc-900 align-top last:border-0">
                     <td className="px-3 py-3"><span className="rounded-full border border-zinc-700 px-2 py-1 text-xs capitalize">{issue.severity}</span></td>
                     <td className="px-3 py-3">{issueLabels[issue.type] ?? issue.type}</td>
                     <td className="px-3 py-3 font-medium">{issue.name}</td>
-                    <td className="px-3 py-3 text-zinc-400">{issue.market ?? "Unassigned"}</td>
-                    <td className="max-w-md px-3 py-3 text-zinc-300">{issue.reason}</td>
-                    <td className="px-3 py-3 text-xs text-zinc-500">{issue.locationId ? `Location ${issue.locationId}` : issue.anchorId ? `Anchor ${issue.anchorId}` : "—"}</td>
+                    <td className="px-3 py-3 text-[var(--admin-shell-muted)]">{issue.market ?? "Unassigned"}</td>
+                    <td className="max-w-md px-3 py-3 text-[var(--admin-shell-text)]">{issue.reason}</td>
+                    <td className="px-3 py-3 text-xs text-[var(--admin-shell-muted)]">{issue.locationId ? `Location ${issue.locationId}` : issue.anchorId ? `Anchor ${issue.anchorId}` : "—"}</td>
                   </tr>
                 ))}
               </tbody>

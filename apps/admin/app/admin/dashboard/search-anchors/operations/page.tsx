@@ -98,28 +98,28 @@ export default async function SearchAnchorOperationsPage({
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {cards.map(([label, value, help]) => (
-            <article key={String(label)} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">{label}</p>
+            <article key={String(label)} className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4">
+              <p className="text-xs text-[var(--admin-shell-muted)]">{label}</p>
               <p className="mt-2 text-3xl font-semibold">{Number(value).toLocaleString()}</p>
-              <p className="mt-2 text-xs text-zinc-600">{help}</p>
+              <p className="mt-2 text-xs text-[var(--admin-shell-muted)]">{help}</p>
             </article>
           ))}
         </section>
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+        <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
           <h2 className="text-lg font-semibold">Inventory overview</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs text-zinc-500">Total locations</p><p className="mt-2 text-2xl font-semibold">{Number(locationCount.count ?? 0).toLocaleString()}</p></div>
-            <div className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs text-zinc-500">Total anchors</p><p className="mt-2 text-2xl font-semibold">{Number(anchorCount.count ?? 0).toLocaleString()}</p></div>
-            <div className="rounded-xl border border-zinc-800 bg-black p-4"><p className="text-xs text-zinc-500">Locations processed historically</p><p className="mt-2 text-2xl font-semibold">{completedUnique.toLocaleString()}</p><p className="mt-1 text-xs text-zinc-600">Across {completedRows.length.toLocaleString()} completed job events</p></div>
+            <div className="rounded-xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4"><p className="text-xs text-[var(--admin-shell-muted)]">Total locations</p><p className="mt-2 text-2xl font-semibold">{Number(locationCount.count ?? 0).toLocaleString()}</p></div>
+            <div className="rounded-xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4"><p className="text-xs text-[var(--admin-shell-muted)]">Total anchors</p><p className="mt-2 text-2xl font-semibold">{Number(anchorCount.count ?? 0).toLocaleString()}</p></div>
+            <div className="rounded-xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-4"><p className="text-xs text-[var(--admin-shell-muted)]">Locations processed historically</p><p className="mt-2 text-2xl font-semibold">{completedUnique.toLocaleString()}</p><p className="mt-1 text-xs text-zinc-600">Across {completedRows.length.toLocaleString()} completed job events</p></div>
           </div>
         </section>
 
         <SearchAnchorOperationsControls failedCount={activeRows.filter((row: any) => row.status === "failed").length} deadLetterCount={activeRows.filter((row: any) => row.status === "dead_letter").length} />
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+        <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="text-lg font-semibold">Work queue</h2><p className="mt-1 text-sm text-zinc-500">Only active or problem work appears here by default.</p></div>
+            <div><h2 className="text-lg font-semibold">Work queue</h2><p className="mt-1 text-sm text-[var(--admin-shell-muted)]">Only active or problem work appears here by default.</p></div>
             <div className="flex gap-2 text-sm">
               <Link href="/admin/dashboard/search-anchors/operations" className="rounded-lg border border-zinc-700 px-3 py-2">Active work</Link>
               <Link href="/admin/dashboard/search-anchors/operations?status=completed" className="rounded-lg border border-zinc-700 px-3 py-2">Activity history</Link>
@@ -128,36 +128,36 @@ export default async function SearchAnchorOperationsPage({
 
           <form className="mt-4 flex flex-col gap-3 sm:flex-row">
             <input type="hidden" name="status" value={status} />
-            <input name="q" defaultValue={q} placeholder="Search location ID or error" className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-black px-4 py-3 outline-none focus:border-red-700" />
+            <input name="q" defaultValue={q} placeholder="Search location ID or error" className="min-w-0 flex-1 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-soft)] px-4 py-3 text-[var(--admin-shell-text)] outline-none focus:border-red-700" />
             <button className="rounded-xl bg-red-700 px-5 py-3 font-semibold">Search</button>
           </form>
 
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-[1000px] w-full text-left text-sm">
-              <thead className="bg-zinc-900 text-xs uppercase text-zinc-400"><tr>{["Location", "Why it is here", "Work status", "Attempts", "Last error", "Updated"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
+              <thead className="bg-[var(--admin-shell-soft)] text-xs uppercase text-[var(--admin-shell-muted)]"><tr>{["Location", "Why it is here", "Work status", "Attempts", "Last error", "Updated"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr></thead>
               <tbody>
                 {visibleRows.map((row: any) => {
                   const location = locationsById.get(row.location_id);
                   return <tr key={row.id} className="border-t border-zinc-900 align-top">
                     <td className="px-4 py-4"><p className="font-medium">{location?.name ?? row.location_id}</p><p className="mt-1 text-xs text-zinc-500">{location ? [location.city, location.state].filter(Boolean).join(", ") : row.location_id}</p></td>
-                    <td className="px-4 py-4 text-zinc-300">{friendlyReason(row.reason_code)}</td>
+                    <td className="px-4 py-4 text-[var(--admin-shell-text)]">{friendlyReason(row.reason_code)}</td>
                     <td className="px-4 py-4 capitalize">{row.status === "pending" ? "Waiting" : row.status === "processing" ? "In progress" : String(row.status).replaceAll("_", " ")}</td>
                     <td className="px-4 py-4">{row.attempts} / {row.max_attempts}</td>
                     <td className="max-w-md px-4 py-4 text-zinc-300"><p className="line-clamp-3">{row.last_error ?? "—"}</p></td>
-                    <td className="px-4 py-4 text-zinc-400">{new Date(row.updated_at).toLocaleString()}</td>
+                    <td className="px-4 py-4 text-[var(--admin-shell-muted)]">{new Date(row.updated_at).toLocaleString()}</td>
                   </tr>;
                 })}
-                {!visibleRows.length && <tr><td colSpan={6} className="px-6 py-12 text-center text-zinc-500">No matching work items.</td></tr>}
+                {!visibleRows.length && <tr><td colSpan={6} className="px-6 py-12 text-center text-[var(--admin-shell-muted)]">No matching work items.</td></tr>}
               </tbody>
             </table>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+        <section className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
           <h2 className="text-lg font-semibold">Recent automation</h2>
-          <p className="mt-1 text-sm text-zinc-500">The scheduled reconciliation runs automatically each day. Manual processing uses the same protected workflow.</p>
+          <p className="mt-1 text-sm text-[var(--admin-shell-muted)]">The scheduled reconciliation runs automatically each day. Manual processing uses the same protected workflow.</p>
           <div className="mt-4 space-y-3">
-            {(recentRuns.data ?? []).map((run: any) => <article key={run.id} className="rounded-xl border border-zinc-800 p-4 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium capitalize">{run.status}</span><span className="text-zinc-500">{new Date(run.started_at).toLocaleString()}</span></div><p className="mt-2 text-zinc-400">Duration: {run.duration_ms ?? "—"} ms</p>{run.error_message && <p className="mt-2 text-red-300">{run.error_message}</p>}</article>)}
+            {(recentRuns.data ?? []).map((run: any) => <article key={run.id} className="rounded-xl border border-[var(--admin-shell-border)] p-4 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-medium capitalize">{run.status}</span><span className="text-[var(--admin-shell-muted)]">{new Date(run.started_at).toLocaleString()}</span></div><p className="mt-2 text-[var(--admin-shell-muted)]">Duration: {run.duration_ms ?? "—"} ms</p>{run.error_message && <p className="mt-2 text-red-300">{run.error_message}</p>}</article>)}
             {!recentRuns.data?.length && <p className="text-sm text-zinc-500">No tracked automation runs found.</p>}
           </div>
         </section>
