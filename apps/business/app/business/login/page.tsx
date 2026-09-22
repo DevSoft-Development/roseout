@@ -113,7 +113,7 @@ export default function BusinessLoginPage() {
 
           <div className="flex items-center p-6 sm:p-10 xl:p-14">
             <div className="mx-auto w-full max-w-md">
-              <div className="lg:hidden">
+              <div className="mb-8 lg:hidden">
                 <div className="mb-5 flex items-center justify-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
