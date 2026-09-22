@@ -33,6 +33,9 @@ describe("structured customer match explanations", () => {
       reasons: ["live music activity match"],
       walkingMinutes: 8.4,
       distanceMiles: 0.4,
+      includeTravelReason: true,
+      walkingRequested: true,
+      maxWalkingMinutes: 30,
     });
 
     expect(reasons).toContainEqual({
@@ -48,12 +51,50 @@ describe("structured customer match explanations", () => {
       reasons: [],
       walkingMinutes: null,
       distanceMiles: 0.44,
+      includeTravelReason: true,
     });
 
     expect(reasons).toEqual([
       {
         type: "distance",
-        label: "0.4 miles between stops",
+        label: "0.44 miles between stops",
+        source: "pairing",
+        confidence: "high",
+      },
+    ]);
+  });
+
+  it("does not add travel to a generic match explanation", () => {
+    expect(
+      buildPairMatchReasonDetails({
+        reasons: ["live music activity match"],
+        walkingMinutes: 11,
+        distanceMiles: 0.55,
+      }),
+    ).toEqual([
+      {
+        type: "activity",
+        label: "Live music activity match",
+        source: "search_evidence",
+        confidence: "high",
+      },
+    ]);
+  });
+
+  it("uses miles instead of a walk estimate beyond the requested walking limit", () => {
+    const reasons = buildPairMatchReasonDetails({
+      reasons: [],
+      walkingMinutes: 42,
+      distanceMiles: 2.1,
+      includeTravelReason: true,
+      walkingRequested: true,
+      maxWalkingMinutes: 30,
+    });
+
+    expect(reasons).toEqual([
+      {
+        type: "distance",
+        label: "2.10 miles between stops",
         source: "pairing",
         confidence: "high",
       },
@@ -66,6 +107,7 @@ describe("structured customer match explanations", () => {
         reasons: [],
         walkingMinutes: null,
         distanceMiles: null,
+        includeTravelReason: true,
       }),
     ).toEqual([]);
   });
@@ -81,6 +123,9 @@ describe("structured customer match explanations", () => {
       ],
       walkingMinutes: 6,
       distanceMiles: 0.3,
+      includeTravelReason: true,
+      walkingRequested: true,
+      maxWalkingMinutes: 30,
     });
 
     expect(reasons).toHaveLength(5);
