@@ -130,14 +130,23 @@ function explanationItems(row: SearchEvent) {
   const debug = (row as any).debug ?? {};
   const normalizedIntent = metadata.normalizedIntent ?? debug.normalizedIntent ?? {};
   const geo = normalizedIntent.geo ?? metadata.geo ?? debug.effectiveGeo ?? debug.geo ?? {};
+  const restaurantIntent = normalizedIntent.restaurantIntent ?? {};
+  const activityIntent = normalizedIntent.activityIntent ?? {};
   const restaurantTerms = Array.from(new Set([
+    ...(Array.isArray(restaurantIntent.cuisineTerms) ? restaurantIntent.cuisineTerms : []),
+    ...(Array.isArray(restaurantIntent.mealTerms) ? restaurantIntent.mealTerms : []),
+    ...(Array.isArray(restaurantIntent.foodTerms) ? restaurantIntent.foodTerms : []),
+    ...(Array.isArray(restaurantIntent.categoryTerms) ? restaurantIntent.categoryTerms : []),
+    ...(Array.isArray(restaurantIntent.vibeTerms) ? restaurantIntent.vibeTerms : []),
+    ...(Array.isArray(restaurantIntent.featureTerms) ? restaurantIntent.featureTerms : []),
     ...(Array.isArray(normalizedIntent.restaurantTerms) ? normalizedIntent.restaurantTerms : []),
-    ...(Array.isArray(debug.restaurantTerms) ? debug.restaurantTerms : []),
   ].map((value) => String(value || "").trim()).filter(Boolean))).slice(0, 4);
   const activityTerms = Array.from(new Set([
+    ...(Array.isArray(activityIntent.activityTerms) ? activityIntent.activityTerms : []),
+    ...(Array.isArray(activityIntent.categoryTerms) ? activityIntent.categoryTerms : []),
+    ...(Array.isArray(activityIntent.vibeTerms) ? activityIntent.vibeTerms : []),
+    ...(Array.isArray(activityIntent.featureTerms) ? activityIntent.featureTerms : []),
     ...(Array.isArray(normalizedIntent.activityTerms) ? normalizedIntent.activityTerms : []),
-    ...(Array.isArray(normalizedIntent.activityFeatures) ? normalizedIntent.activityFeatures : []),
-    ...(Array.isArray(debug.activityTerms) ? debug.activityTerms : []),
   ].map((value) => String(value || "").trim()).filter(Boolean))).slice(0, 4);
 
   const items: Array<{ label: string; value: string }> = [];
@@ -148,7 +157,12 @@ function explanationItems(row: SearchEvent) {
   const place = [geo.neighborhood, geo.borough, geo.city, geo.state].filter(Boolean).map(String).join(", ");
   if (place) items.push({ label: "Geography", value: place });
   if ((row as any).pair_count != null) items.push({ label: "Pairs returned", value: String((row as any).pair_count) });
-  const fallback = (row as any).fallback_used ?? metadata.fallbackUsed ?? debug.fallbackUsed;
+  const fallback =
+    metadata.normalizedIntent?.fallbackUsed ??
+    metadata.fallback_used ??
+    (row as any).fallback_used ??
+    metadata.fallbackUsed ??
+    debug.fallbackUsed;
   if (fallback === true) items.push({ label: "Fallback", value: "Used" });
   const pairFailure = (row as any).no_pairs_reason ?? debug.requiredPairingFailureReason ?? debug.pairingDiagnostics?.primaryFailure;
   if (pairFailure) items.push({ label: "Pairing note", value: String(pairFailure).replace(/_/g, " ") });
