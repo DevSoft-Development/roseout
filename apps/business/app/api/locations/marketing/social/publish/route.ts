@@ -110,9 +110,16 @@ export async function POST(request: Request) {
     .order("connected_at", { ascending: false });
   if (connectionError) return NextResponse.json({ error: connectionError.message }, { status: 500 });
 
-  const connectionByProvider = new Map<string, any>();
+  type ConnectedAccount = {
+    id: string;
+    provider: string;
+    display_name?: string | null;
+    username?: string | null;
+    metadata?: Record<string, unknown> | null;
+  };
+  const connectionByProvider = new Map<string, ConnectedAccount>();
   for (const connection of connections || []) {
-    if (!connectionByProvider.has(String(connection.provider))) connectionByProvider.set(String(connection.provider), connection);
+    if (!connectionByProvider.has(String(connection.provider))) connectionByProvider.set(String(connection.provider), connection as ConnectedAccount);
   }
   const missing = platforms.filter((provider) => !connectionByProvider.has(provider));
   if (missing.length) {
