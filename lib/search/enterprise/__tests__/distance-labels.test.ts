@@ -107,4 +107,87 @@ describe("enterprise walking distance rules", () => {
     expect(isWalkablePair(restaurant, activityAtMiles("a5", 10.01), preference).isWalkable).toBe(false);
   });
 
+  it("allows same-borough default pairs beyond the old 3-mile cap", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    };
+    const restaurant = loc({
+      id: "r1",
+      borough: "Queens",
+      latitude: 40.758,
+      longitude: -73.92,
+    });
+    const activity = loc({
+      id: "a1",
+      borough: "Queens",
+      latitude: 40.69,
+      longitude: -73.80,
+    });
+
+    const result = isWalkablePair(restaurant, activity, preference);
+
+    expect(result.pairDistanceMiles).not.toBeNull();
+    expect(result.pairDistanceMiles!).toBeGreaterThan(3);
+    expect(result.isWalkable).toBe(true);
+  });
+
+  it("rejects cross-borough default pairs even when geographically close", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    };
+    const restaurant = loc({
+      id: "r1",
+      borough: "Manhattan",
+      latitude: 40.7527,
+      longitude: -73.9772,
+    });
+    const activity = loc({
+      id: "a1",
+      borough: "Queens",
+      latitude: 40.7506,
+      longitude: -73.9402,
+    });
+
+    expect(isWalkablePair(restaurant, activity, preference).isWalkable).toBe(false);
+  });
+
+  it("keeps the 3-mile fallback when borough metadata is unavailable", () => {
+    const preference: PairingPreference = {
+      requiresPairing: true,
+      distanceMode: "any",
+      maxPairDistanceMiles: null,
+      maxPairWalkingMinutes: null,
+      requireWalkablePair: false,
+    };
+    const restaurant = loc({
+      id: "r1",
+      borough: null,
+      latitude: 40,
+      longitude: -74,
+    });
+    const nearActivity = loc({
+      id: "a1",
+      borough: null,
+      latitude: 40,
+      longitude: -74 + 2 / 53,
+    });
+    const farActivity = loc({
+      id: "a2",
+      borough: null,
+      latitude: 40,
+      longitude: -74 + 4 / 53,
+    });
+
+    expect(isWalkablePair(restaurant, nearActivity, preference).isWalkable).toBe(true);
+    expect(isWalkablePair(restaurant, farActivity, preference).isWalkable).toBe(false);
+  });
+
 });
