@@ -91,14 +91,17 @@ function mergeUnique(base: readonly string[], additions: unknown) {
   return [...out];
 }
 
-function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[], allowActivityCategories: boolean): SearchPlan {
-  let next: any = plan;
-  const restaurantContentIsOpen =
-    plan.restaurant.required &&
+export function allowsRememberedRestaurantContent(plan: SearchPlan) {
+  return plan.restaurant.required &&
     plan.restaurant.cuisines.length === 0 &&
     plan.restaurant.foods.length === 0 &&
     plan.restaurant.features.length === 0 &&
     plan.restaurant.mealPeriods.length === 0;
+}
+
+function applySafeMemory(plan: SearchPlan, memoryPlan: any, additions: string[], allowActivityCategories: boolean): SearchPlan {
+  let next: any = plan;
+  const restaurantContentIsOpen = allowsRememberedRestaurantContent(plan);
   if (restaurantContentIsOpen && Array.isArray(memoryPlan?.restaurant?.cuisines) && memoryPlan.restaurant.cuisines.length) {
     next = { ...next, restaurant: { ...next.restaurant, cuisines: mergeUnique(next.restaurant.cuisines, memoryPlan.restaurant.cuisines) } };
     additions.push("restaurant.cuisines");
