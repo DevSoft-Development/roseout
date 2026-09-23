@@ -24,7 +24,7 @@ const clean = (formData: FormData, key: string) =>
 async function createLocation(formData: FormData) {
   "use server";
 
-  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  const admin = await requireAdminRole(["superadmin", "admin", "editor", "marketing_specialist", "marketing_manager"]);
   const name = String(formData.get("name") || "").trim();
   if (!name) throw new Error("Location name is required.");
 
@@ -123,7 +123,7 @@ function Field({
 }
 
 export default async function NewCrmLocationPage() {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crmEdit);
+  await requireAdminRole(["superadmin", "admin", "editor", "marketing_specialist", "marketing_manager"]);
 
   return (
     <AdminPageShell>
