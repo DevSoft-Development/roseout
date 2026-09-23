@@ -202,7 +202,7 @@ export default function AuthScreen() {
           />
 
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
-          <Button disabled={!valid || busy || !captchaToken} onPress={() => void submit()}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : !captchaToken ? "Waiting for security check…" : mode === "signin" ? "Sign in" : "Create account"}</Button>
+          <Button disabled={!valid || busy || !captchaToken} onPress={() => void submit()}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : mode === "signin" ? "Sign in" : "Create account"}</Button>
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
