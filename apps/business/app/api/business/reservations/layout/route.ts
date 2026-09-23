@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createAuthClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationOwnerAccess, hasOwnerAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -94,11 +95,18 @@ async function loadItems(locationId: string) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const locationId = clean(searchParams.get("locationId"));
+    const adminLocationId = clean(searchParams.get("adminLocationId"));
+    const locationId = clean(searchParams.get("locationId") || adminLocationId);
     if (!locationId) return NextResponse.json({ error: "Missing locationId." }, { status: 400 });
 
-    const auth = await requireOwner(locationId);
-    if (auth.error) return auth.error;
+    const demoAccess = await getInternalDemoLocationAccess({
+      locationId,
+      adminLocationId,
+      demo: searchParams.get("demo"),
+      fromDemoCenter: searchParams.get("fromDemoCenter"),
+    });
+    const auth = demoAccess ? { location: demoAccess.location } : await requireOwner(locationId);
+    if ("error" in auth && auth.error) return auth.error;
 
     const canonicalLocationId = String(auth.location.id);
     const items = await loadItems(canonicalLocationId);
