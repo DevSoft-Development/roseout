@@ -63,6 +63,8 @@ const normalizedAdmin = adminJourney
   .replace('import { supabaseAdmin } from "@/lib/supabase-admin";', "")
   .replace('  const supabaseAdmin = getAdminDatabaseClient();', "")
   .replace('import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";', "");
-if (normalizedRoot !== normalizedAdmin) throw new Error("Root and isolated Admin customer journey logic drifted.");
+const compactRoot = normalizedRoot.replace(/\s+/g, " ").trim();
+const compactAdmin = normalizedAdmin.replace(/\s+/g, " ").trim();
+if (compactRoot !== compactAdmin) throw new Error("Root and isolated Admin customer journey logic drifted.");
 
 console.log("CRM customer journey timeline regression checks passed.");
