@@ -12,6 +12,7 @@ on:
       - 'app/api/cron/search-hf-production-qa/**'
       - 'app/api/generate/**'
       - 'lib/search/**'
+      - 'lib/ml/advanced/recalculate.ts'
       - 'infra/aws/search-ml-service/**'
       - '.github/workflows/hf-advanced-capability-gate.yml'
       - '.github/workflows/search-ml-production-completion.yml'

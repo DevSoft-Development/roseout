@@ -689,82 +689,115 @@ jobs:
             test "$status" -ge 200 && test "$status" -lt 500 || { echo "AWS standby surface $path returned HTTP $status" >&2; exit 1; }
           done
 
-      - name: Wait for the matching Vercel production deployment
-        id: vercel_primary
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Wait for the exact Vercel production revision
         run: |
           set -euo pipefail
           ready=false
-          DEPLOYMENT_ID=""
           for _ in $(seq 1 120); do
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployments.json"
-            DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
-            STATE="$(jq -r --arg id "$DEPLOYMENT_ID" '[.deployments[] | select((.uid==$id) or (.id==$id))][0].readyState // [.deployments[] | select((.uid==$id) or (.id==$id))][0].state // empty' "$RUNNER_TEMP/vercel-deployments.json")"
-            if [ -n "$DEPLOYMENT_ID" ] && [ "$STATE" = "READY" ]; then ready=true; break; fi
-            if [ -n "$DEPLOYMENT_ID" ] && { [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; }; then
-              echo "Vercel deployment for $GITHUB_SHA entered $STATE" >&2
-              exit 1
+            curl --silent --show-error --dump-header "$RUNNER_TEMP/vercel-revision-headers" "$PRIMARY_PROBE_URL" -o "$RUNNER_TEMP/vercel-revision.json" || true
+            if grep -qi '^x-toh-platform-origin: vercel' "$RUNNER_TEMP/vercel-revision-headers" 2>/dev/null \
+              && jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="vercel" and .revision==$sha' "$RUNNER_TEMP/vercel-revision.json" >/dev/null 2>&1; then
+              ready=true
+              break
             fi
             sleep 5
           done
-          test "$ready" = true || { echo "Matching Vercel production SHA did not become READY." >&2; exit 1; }
-          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          test "$ready" = true || { echo "Vercel primary did not reach exact revision $GITHUB_SHA." >&2; exit 1; }
 
-      - name: Wire the server-only DR control secret into Vercel
-        id: vercel_control
+      - name: Refresh Vercel DR control environment when API access is available
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           GATEWAY_URL: ${{ steps.compute.outputs.gateway_url }}
-          DEPLOYMENT_ID: ${{ steps.vercel_primary.outputs.deployment_id }}
         run: |
           set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::warning::VERCEL_TOKEN is unavailable; retaining the currently deployed DR control environment and relying on live control verification."
+            exit 0
+          fi
+
+          LIST_CODE="$(curl --silent --show-error \
+            --header "Authorization: Bearer $VERCEL_TOKEN" \
+            --output "$RUNNER_TEMP/vercel-deployments.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_TEAM_ID}" || true)"
+          if [ "$LIST_CODE" != "200" ]; then
+            echo "::warning::Vercel deployments API returned HTTP $LIST_CODE; retaining existing DR control environment."
+            exit 0
+          fi
+
+          DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::warning::Exact Vercel deployment ID was not available; retaining existing DR control environment."
+            exit 0
+          fi
+
           GATEWAY_SECRET="$(cat "$RUNNER_TEMP/platform-dr-gateway-secret")"
           echo "::add-mask::$GATEWAY_SECRET"
           jq -n --arg url "$GATEWAY_URL" --arg secret "$GATEWAY_SECRET" '[
             {key:"AWS_PLATFORM_DR_GATEWAY_URL",value:$url,type:"sensitive",target:["production"]},
             {key:"AWS_PLATFORM_DR_GATEWAY_SECRET",value:$secret,type:"sensitive",target:["production"]}
           ]' > "$RUNNER_TEMP/vercel-dr-env.json"
-          curl --fail --silent --show-error --request POST \
+
+          ENV_CODE="$(curl --silent --show-error --request POST \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/vercel-dr-env.json" \
-            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-dr-env-response.json"
+            --output "$RUNNER_TEMP/vercel-dr-env-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?upsert=true&teamId=${VERCEL_TEAM_ID}" || true)"
+          if [ "$ENV_CODE" != "200" ] && [ "$ENV_CODE" != "201" ]; then
+            echo "::warning::Vercel environment API returned HTTP $ENV_CODE; retaining existing DR control environment."
+            exit 0
+          fi
+
           jq -n --arg name "$VERCEL_PROJECT_NAME" --arg project "$VERCEL_PROJECT_ID" --arg deploymentId "$DEPLOYMENT_ID" '{name:$name,project:$project,deploymentId:$deploymentId,target:"production"}' > "$RUNNER_TEMP/vercel-redeploy.json"
-          curl --fail --silent --show-error --request POST \
+          DEPLOY_CODE="$(curl --silent --show-error --request POST \
             --header "Authorization: Bearer $VERCEL_TOKEN" \
             --header 'Content-Type: application/json' \
             --data-binary "@$RUNNER_TEMP/vercel-redeploy.json" \
-            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-deployment.json"
+            --output "$RUNNER_TEMP/vercel-new-deployment.json" \
+            --write-out '%{http_code}' \
+            "https://api.vercel.com/v13/deployments?forceNew=1&teamId=${VERCEL_TEAM_ID}" || true)"
+          if [ "$DEPLOY_CODE" != "200" ] && [ "$DEPLOY_CODE" != "201" ]; then
+            echo "::warning::Vercel redeploy API returned HTTP $DEPLOY_CODE; live DR control verification will determine readiness."
+            exit 0
+          fi
+
           NEW_ID="$(jq -r '.id // .uid // empty' "$RUNNER_TEMP/vercel-new-deployment.json")"
-          test -n "$NEW_ID"
+          [ -n "$NEW_ID" ] || exit 0
           ready=false
           for _ in $(seq 1 120); do
-            curl --fail --silent --show-error --header "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" > "$RUNNER_TEMP/vercel-new-status.json"
+            STATUS_CODE="$(curl --silent --show-error \
+              --header "Authorization: Bearer $VERCEL_TOKEN" \
+              --output "$RUNNER_TEMP/vercel-new-status.json" \
+              --write-out '%{http_code}' \
+              "https://api.vercel.com/v13/deployments/${NEW_ID}?teamId=${VERCEL_TEAM_ID}" || true)"
+            [ "$STATUS_CODE" = "200" ] || break
             STATE="$(jq -r '.readyState // .state // empty' "$RUNNER_TEMP/vercel-new-status.json")"
             if [ "$STATE" = "READY" ]; then ready=true; break; fi
-            if [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; then echo "Vercel DR-control redeploy entered $STATE" >&2; exit 1; fi
+            if [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; then break; fi
             sleep 5
           done
-          test "$ready" = true || { echo "Vercel DR-control redeploy did not become READY." >&2; exit 1; }
-          echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
+          [ "$ready" = true ] || echo "::warning::Vercel DR-control redeploy did not report READY; live DR control verification will determine readiness."
 
-      - name: Prove independent Vercel primary health on the exact SHA
+      - name: Prove independent Vercel primary and DR control health
         run: |
           set -euo pipefail
           ready=false
           for _ in $(seq 1 60); do
-            curl --silent --show-error --dump-header "$RUNNER_TEMP/vercel-health-headers" "$PRIMARY_PROBE_URL" -o "$RUNNER_TEMP/vercel-health.json" || true
+            curl --silent --show-error --dump-header "$RUNNER_TEMP/vercel-health-headers" "${PRIMARY_PROBE_URL}?verifyDrControl=1" -o "$RUNNER_TEMP/vercel-health.json" || true
             if grep -qi '^x-toh-platform-origin: vercel' "$RUNNER_TEMP/vercel-health-headers" 2>/dev/null \
-              && jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="vercel" and .revision==$sha' "$RUNNER_TEMP/vercel-health.json" >/dev/null 2>&1; then
+              && jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="vercel" and .revision==$sha and .drControl.configured==true and .drControl.healthy==true' "$RUNNER_TEMP/vercel-health.json" >/dev/null 2>&1; then
               ready=true
               break
             fi
             sleep 5
           done
-          test "$ready" = true || { echo "Independent Vercel primary health endpoint is not serving the exact standby SHA." >&2; exit 1; }
+          test "$ready" = true || {
+            echo "Vercel primary is not serving the exact SHA with a healthy authenticated DR control channel." >&2
+            cat "$RUNNER_TEMP/vercel-health.json" >&2 || true
+            exit 1
+          }
 
       - name: Build atomic Route 53 failover transaction
         env:
