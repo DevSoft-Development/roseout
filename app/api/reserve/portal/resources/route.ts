@@ -119,9 +119,11 @@ export async function GET(request: NextRequest) {
     demo: searchParams.get("demo"),
     fromDemoCenter: searchParams.get("fromDemoCenter"),
   });
+  let adminUser: any = null;
   if (!demoAccess) {
     const auth = await requireAdminLocationApiRead();
     if (auth.error) return auth.error;
+    adminUser = auth.adminUser;
   }
   const locationId =
     clean(searchParams.get("adminLocationId")) ||
@@ -186,14 +188,16 @@ export async function GET(request: NextRequest) {
     );
   resources = byResourceKey(resources);
 
-  await logAdminLocationAction({
-    adminUser: auth.adminUser,
-    locationId,
-    actionType: "admin_location_resources_view",
-    targetType: "layout_items",
-    metadata: { date, count: resources.length },
-    request,
-  });
+  if (adminUser) {
+    await logAdminLocationAction({
+      adminUser,
+      locationId,
+      actionType: "admin_location_resources_view",
+      targetType: "layout_items",
+      metadata: { date, count: resources.length },
+      request,
+    });
+  }
   return NextResponse.json({ success: true, resources });
 }
 
