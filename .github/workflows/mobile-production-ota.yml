@@ -129,6 +129,7 @@ jobs:
         run: >-
           npx --yes eas-cli@latest update
           --channel production
+          --environment production
           --platform ios
           --message "Production OTA iOS ${{ github.sha }}"
 
@@ -140,6 +141,7 @@ jobs:
         run: >-
           npx --yes eas-cli@latest update
           --channel production
+          --environment production
           --platform android
           --message "Production OTA Android ${{ github.sha }}"
 
@@ -151,6 +153,7 @@ jobs:
         run: >-
           npx --yes eas-cli@latest update
           --channel preview
+          --environment preview
           --platform ios
           --message "Preview OTA iOS ${{ github.sha }}"
 
@@ -162,6 +165,7 @@ jobs:
         run: >-
           npx --yes eas-cli@latest update
           --channel preview
+          --environment preview
           --platform android
           --message "Preview OTA Android ${{ github.sha }}"
 
