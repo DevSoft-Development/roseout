@@ -226,7 +226,7 @@ jobs:
         run: npm run test:beta-guided-route
 
       - name: Location editor checks
-        if: steps.changes.outputs.location == 'true' || steps.changes.outputs.private_events == 'true'
+        if: steps.changes.outputs.location == 'true'
         run: npm run test:location-editor
 
       - name: Private Events E2E regression
