@@ -6016,7 +6016,7 @@ const enterpriseKnowledgeBasePages = [
   ["Search Anchor Curated Review", read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx")],
   ["Search Anchor Verification", read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx")],
   ["Non-Searchable Locations", read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx")],
-  ["Location Detail", read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx")],
+  ["Location CRM Detail", read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx")],
   ["Reserve Layout Boundary", read("apps/admin/app/admin/dashboard/location-layout/create/page.tsx")],
 ];
 for (const [label, source] of enterpriseKnowledgeBasePages) {
