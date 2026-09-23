@@ -54,6 +54,11 @@ export async function GET(request: NextRequest) {
       if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === "function") {
         window.ReactNativeWebView.postMessage(JSON.stringify(payload));
       }
+      if (payload && payload.type === "turnstile-success" && payload.token) {
+        window.location.hash =
+          "verified=" + encodeURIComponent(payload.token) +
+          "&action=" + encodeURIComponent(payload.action || ACTION);
+      }
     }
 
     function fail(message) {
@@ -76,11 +81,16 @@ export async function GET(request: NextRequest) {
         callback: function (token) {
           send({ type: "turnstile-success", action: ACTION, token: token });
         },
+        retry: "auto",
+        "retry-interval": 1200,
         "error-callback": function () {
           fail("Security verification did not complete. Please try again.");
         },
         "expired-callback": function () {
-          fail("Security verification expired. Please try again.");
+          if (window.turnstile) window.turnstile.reset();
+        },
+        "timeout-callback": function () {
+          if (window.turnstile) window.turnstile.reset();
         }
       });
     };
