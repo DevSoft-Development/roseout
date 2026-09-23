@@ -29,7 +29,7 @@
       "icon": "./assets/app-icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#070303"
       },
       "intentFilters": [
         {
@@ -72,6 +72,7 @@
       "eas": {
         "projectId": "243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
       }
-    }
+    },
+    "backgroundColor": "#070303"
   }
 }
