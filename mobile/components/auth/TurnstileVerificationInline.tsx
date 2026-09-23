@@ -69,7 +69,6 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
         <>
           <View style={styles.labelRow}>
             <AppText variant="bodyStrong">Security check</AppText>
-            <AppText variant="caption" muted>Complete the quick verification below.</AppText>
           </View>
           <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
             <WebView
@@ -117,10 +116,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   labelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    minHeight: 22,
+    justifyContent: "center",
   },
   webWrap: {
     height: 76,
