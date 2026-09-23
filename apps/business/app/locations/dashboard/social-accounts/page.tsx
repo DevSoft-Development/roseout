@@ -5,6 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { loadInstagramSocialConfig } from "@/lib/marketing/social-provider-config";
 import { googleBusinessConfigured } from "@/lib/google/google-business-profile";
 import GoogleBusinessProfileCard from "./GoogleBusinessProfileCard";
+import LocationSocialChannelCard from "./LocationSocialChannelCard";
+import { locationSocialConfigured } from "@/lib/marketing/location-social-oauth";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +35,7 @@ export default async function LocationSocialAccountsPage({
   }
 
   const locationId = String(location.id);
-  const [{ data: connection }, { data: googleBusinessConnection }, instagramConfig] = await Promise.all([
+  const [{ data: connection }, { data: otherSocialConnections }, { data: googleBusinessConnection }, instagramConfig] = await Promise.all([
     supabaseAdmin
       .from("marketing_social_connections")
       .select("id,provider_account_id,display_name,username,status,granted_scopes,token_expires_at,connected_at,last_refreshed_at,last_error,updated_at")
@@ -45,6 +47,14 @@ export default async function LocationSocialAccountsPage({
       .limit(1)
       .maybeSingle(),
     supabaseAdmin
+      .from("marketing_social_connections")
+      .select("id,provider,display_name,username,status,token_expires_at,connected_at,last_error,updated_at")
+      .eq("scope", "location")
+      .eq("location_id", locationId)
+      .in("provider", ["facebook", "tiktok", "youtube"])
+      .neq("status", "disconnected")
+      .order("updated_at", { ascending: false }),
+    supabaseAdmin
       .from("google_business_profile_connections")
       .select("id,google_account_display_name,google_location_name,google_location_title,status,token_expires_at,connected_at,last_sync_at,last_error,health_score,mismatch_count,mismatches,candidate_locations")
       .eq("location_id", locationId)
@@ -55,6 +65,10 @@ export default async function LocationSocialAccountsPage({
 
   const apiConfigured = Boolean(instagramConfig.appId && instagramConfig.appSecret && instagramConfig.graphVersion);
   const googleConfigured = googleBusinessConfigured();
+  const socialByProvider = new Map((otherSocialConnections || []).map((row: any) => [String(row.provider), row]));
+  const facebookConfigured = locationSocialConfigured("facebook");
+  const tiktokConfigured = locationSocialConfigured("tiktok");
+  const youtubeConfigured = locationSocialConfigured("youtube");
   const connected = connection?.status === "connected" || connection?.status === "degraded" || connection?.status === "reauthorization_required";
   const accountName = connection?.username
     ? `${String(connection.username).startsWith("@") ? "" : "@"}${connection.username}`
@@ -62,7 +76,8 @@ export default async function LocationSocialAccountsPage({
   const locationName = getLocationName(location, "This location");
   const returnPath = `/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`;
   const connectHref = `/api/locations/social/instagram?locationId=${encodeURIComponent(locationId)}&returnTo=${encodeURIComponent(returnPath)}`;
-  const success = first(params.connected) === "instagram";
+  const connectedProvider = first(params.connected);
+  const success = connectedProvider === "instagram";
   const googleResult = first(params.googleBusiness);
   const error = first(params.error);
 
@@ -77,6 +92,9 @@ export default async function LocationSocialAccountsPage({
 
         {success ? (
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">Instagram connected successfully to this location.</div>
+        ) : null}
+        {["facebook", "tiktok", "youtube"].includes(connectedProvider) ? (
+          <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">{connectedProvider === "facebook" ? "Facebook" : connectedProvider === "tiktok" ? "TikTok" : "YouTube"} connected successfully to this location.</div>
         ) : null}
         {googleResult === "connected" ? (
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">Google Business Profile connected and mapped successfully.</div>
@@ -158,6 +176,12 @@ export default async function LocationSocialAccountsPage({
             </div>
           </div>
         </section>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <LocationSocialChannelCard provider="facebook" locationId={locationId} configured={facebookConfigured} connection={socialByProvider.get("facebook") || null} />
+          <LocationSocialChannelCard provider="tiktok" locationId={locationId} configured={tiktokConfigured} connection={socialByProvider.get("tiktok") || null} />
+          <LocationSocialChannelCard provider="youtube" locationId={locationId} configured={youtubeConfigured} connection={socialByProvider.get("youtube") || null} />
+        </div>
     </BusinessPageShell>
   );
 }
