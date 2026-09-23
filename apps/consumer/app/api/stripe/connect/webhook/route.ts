@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
-import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";\nimport { failLeadCheckoutPayment, refundLeadCheckoutPayment, settleLeadCheckoutPayment } from "@/lib/leads/commercial";
+import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
+import { failLeadCheckoutPayment, refundLeadCheckoutPayment, settleLeadCheckoutPayment } from "@/lib/leads/commercial";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
