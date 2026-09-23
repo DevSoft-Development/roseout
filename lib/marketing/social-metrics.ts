@@ -2,12 +2,11 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import {
-  instagramAccessToken,
   instagramAccountMetrics,
   instagramPostMetrics,
   type InstagramConnectionRef,
 } from "./instagram-business-api";
-import { loadSocialConnectionSecrets } from "./social-secrets";
+import { socialAccessToken } from "./social-token-access";
 import type { SocialProvider } from "./social-oauth";
 
 type Metrics = {
@@ -86,9 +85,7 @@ async function accountMetrics(connection: MetricConnection, accessToken: string)
 }
 
 async function accessTokenForMetrics(connection: MetricConnection) {
-  if (connection.provider === "instagram") return instagramAccessToken(connection);
-  const secrets = await loadSocialConnectionSecrets(connection.id);
-  return secrets.accessToken;
+  return socialAccessToken(connection);
 }
 
 export async function ingestSocialMetrics(connectionId?: string) {
