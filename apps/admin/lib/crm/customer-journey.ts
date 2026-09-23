@@ -67,7 +67,8 @@ function event(input: CustomerJourneyEvent): CustomerJourneyEvent {
   return input;
 }
 
-export async function loadCustomerJourneyTimeline(locationId: string, limit = 250): Promise<CustomerJourneyTimeline> {\n  const supabaseAdmin = getAdminDatabaseClient();
+export async function loadCustomerJourneyTimeline(locationId: string, limit = 250): Promise<CustomerJourneyTimeline> {
+  const supabaseAdmin = getAdminDatabaseClient();
   const bounded = Math.max(50, Math.min(500, limit));
   const [
     reservationsResult,
