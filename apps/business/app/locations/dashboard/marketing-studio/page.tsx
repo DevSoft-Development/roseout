@@ -15,6 +15,15 @@ import {
 export const dynamic = "force-dynamic";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type SocialConnectionRow = {
+  id: string;
+  provider: string;
+  display_name: string | null;
+  username: string | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  updated_at: string;
+};
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || "" : value || "";
@@ -65,9 +74,9 @@ export default async function LocationMarketingStudioPage({
     .in("provider", ["instagram", "facebook", "tiktok", "youtube"])
     .neq("status", "disconnected")
     .order("updated_at", { ascending: false });
-  const socialByProvider = new Map<string, (typeof socialConnections extends Array<infer T> ? T : never)>();
+  const socialByProvider = new Map<string, SocialConnectionRow>();
   for (const row of socialConnections || []) {
-    if (!socialByProvider.has(String(row.provider))) socialByProvider.set(String(row.provider), row);
+    if (!socialByProvider.has(String(row.provider))) socialByProvider.set(String(row.provider), row as SocialConnectionRow);
   }
   const connectedChannelCount = ["instagram", "facebook", "tiktok", "youtube"].filter((provider) => socialByProvider.get(provider)?.status === "connected").length;
 
