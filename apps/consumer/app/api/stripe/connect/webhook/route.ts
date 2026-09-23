@@ -4,6 +4,7 @@ import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
 import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
+import { failLocationLeadPayment, settleLocationLeadPayment } from "@/lib/leads/private-events";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
@@ -321,6 +322,20 @@ export async function POST(request: NextRequest) {
           await fulfillPaidExperienceBooking(bookingId, paymentIntentId);
           break;
         }
+        if (type === "location_lead_payment" && object.payment_status === "paid") {
+          const leadId = String(object.metadata.lead_id || "").trim();
+          const paymentKind = object.metadata.payment_kind === "balance" ? "balance" : "deposit";
+          if (!leadId) throw new Error("Paid event lead checkout is missing lead metadata");
+          const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : null;
+          await settleLocationLeadPayment({
+            leadId,
+            kind: paymentKind,
+            checkoutSessionId: object.id || null,
+            paymentIntentId,
+            amountCents: Number(object.amount_total || 0),
+          });
+          break;
+        }
         if (type === "reservation_deposit" && object.payment_status === "paid") {
           const reservationId = String(object.metadata.reservation_id || "").trim();
           if (!reservationId) throw new Error("Paid reservation deposit is missing reservation metadata");
@@ -345,6 +360,10 @@ export async function POST(request: NextRequest) {
         } else if (type === "experience_booking") {
           const bookingId = String(object.metadata.booking_id || "").trim();
           if (bookingId) await supabaseAdmin.from("experience_bookings").update({ payment_status: "failed", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", bookingId).eq("status", "pending_payment");
+        } else if (type === "location_lead_payment") {
+          const leadId = String(object.metadata.lead_id || "").trim();
+          const paymentKind = object.metadata.payment_kind === "balance" ? "balance" : "deposit";
+          if (leadId) await failLocationLeadPayment({ leadId, kind: paymentKind });
         } else if (type === "reservation_deposit") {
           const reservationId = String(object.metadata.reservation_id || "").trim();
           if (reservationId) await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed", updated_at: new Date().toISOString() }).eq("id", reservationId).eq("deposit_status", "pending");
@@ -366,6 +385,10 @@ export async function POST(request: NextRequest) {
             await supabaseAdmin.from("experience_bookings").update({ payment_status: "failed", updated_at: new Date().toISOString() }).eq("id", bookingId);
             await recordConnectRisk({ event, object, owner, subjectType: "payment", subjectId: String(object.id || event.id), signalType: "experience_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { booking_id: bookingId, decline_code: object.last_payment_error?.decline_code || null } });
           }
+        } else if (type === "location_lead_payment") {
+          const leadId = String(object?.metadata?.lead_id || "").trim();
+          const paymentKind = object?.metadata?.payment_kind === "balance" ? "balance" : "deposit";
+          if (leadId) await failLocationLeadPayment({ leadId, kind: paymentKind });
         } else if (type === "reservation_deposit") {
           const reservationId = await resolveReservationId(object);
           if (reservationId) {
