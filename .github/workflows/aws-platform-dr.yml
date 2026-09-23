@@ -739,7 +739,7 @@ jobs:
               --header "Authorization: Bearer $VERCEL_TOKEN" \
               --output "$RUNNER_TEMP/vercel-deployments.json" \
               --write-out '%{http_code}' \
-              "https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_CONTROL_TEAM_ID}" || true)"
+              "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_CONTROL_TEAM_ID}" || true)"
 
             if [ "$CODE" = "200" ]; then
               DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
