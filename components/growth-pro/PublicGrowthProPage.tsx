@@ -68,7 +68,7 @@ export default async function PublicGrowthProPage({
       endpoint: "/api/location-leads",
       action: "event_lead",
       button: "Request event info",
-      title: "Request a private event or group package",
+      title: "Request a private event, group package, or catering",
     },
     feedback: {
       endpoint: "/api/feedback",

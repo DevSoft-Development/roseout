@@ -405,6 +405,93 @@ async function ticketRows(cutoff: string, locationId?: string | null) {
   });
 }
 
+
+async function leadRows(cutoff: string, locationId?: string | null) {
+  let query = supabaseAdmin
+    .from("location_leads")
+    .select("id,location_id,lead_type,status,commercial_stage,customer_email,created_at,updated_at,deposit_paid_cents,deposit_paid_at,balance_paid_cents,balance_paid_at,currency,attribution_search_id,attribution_session_id,attribution_anonymous_id,attribution_promotion_campaign_id,attribution_channel_class,attribution_context")
+    .gte("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(5000);
+  if (locationId) query = query.eq("location_id", locationId);
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const now = new Date().toISOString();
+  const rows: AttributionRow[] = [];
+  for (const lead of data || []) {
+    const context = asObject(lead.attribution_context);
+    const channelClass = (["organic","sponsored","owned","unknown"].includes(String(lead.attribution_channel_class))
+      ? lead.attribution_channel_class
+      : lead.attribution_promotion_campaign_id
+        ? "sponsored"
+        : lead.attribution_search_id
+          ? "organic"
+          : "unknown") as ChannelClass;
+    const common = {
+      location_id: lead.location_id,
+      search_id: lead.attribution_search_id || null,
+      promotion_campaign_id: lead.attribution_promotion_campaign_id || null,
+      anonymous_id: lead.attribution_anonymous_id || null,
+      session_id: lead.attribution_session_id || null,
+      source: stringValue(context.source) || "public_event_lead",
+      medium: stringValue(context.medium),
+      campaign: stringValue(context.campaign),
+      channel_class: channelClass,
+      attribution_model: lead.attribution_promotion_campaign_id ? "captured_sponsored_touch" : lead.attribution_search_id ? "captured_search_touch" : "lead_source",
+      conversion_id: lead.id,
+      currency: String(lead.currency || "usd").toLowerCase(),
+      metadata: {
+        lead_type: lead.lead_type,
+        lead_status: lead.status,
+        commercial_stage: lead.commercial_stage,
+        attribution_context: context,
+      },
+      updated_at: now,
+    };
+
+    rows.push({
+      ...common,
+      dedupe_key: `location_lead:${lead.id}:created`,
+      event_type: lead.lead_type === "catering" ? "catering_lead_created" : "private_event_lead_created",
+      touchpoint_type: "lead",
+      is_conversion: false,
+      revenue_cents: 0,
+      revenue_kind: "none",
+      occurred_at: lead.created_at,
+    });
+
+    const depositRevenue = Math.max(0, Number(lead.deposit_paid_cents || 0));
+    if (depositRevenue > 0 && lead.deposit_paid_at) {
+      rows.push({
+        ...common,
+        dedupe_key: `location_lead:${lead.id}:deposit_paid`,
+        event_type: lead.lead_type === "catering" ? "catering_deposit_paid" : "private_event_deposit_paid",
+        touchpoint_type: "payment",
+        is_conversion: true,
+        revenue_cents: depositRevenue,
+        revenue_kind: "confirmed",
+        occurred_at: lead.deposit_paid_at,
+      });
+    }
+
+    const balanceRevenue = Math.max(0, Number(lead.balance_paid_cents || 0));
+    if (balanceRevenue > 0 && lead.balance_paid_at) {
+      rows.push({
+        ...common,
+        dedupe_key: `location_lead:${lead.id}:balance_paid`,
+        event_type: lead.lead_type === "catering" ? "catering_balance_paid" : "private_event_balance_paid",
+        touchpoint_type: "payment",
+        is_conversion: true,
+        revenue_cents: balanceRevenue,
+        revenue_kind: "confirmed",
+        occurred_at: lead.balance_paid_at,
+      });
+    }
+  }
+  return rows;
+}
+
 export async function syncCanonicalAttribution(input?: {
   locationId?: string | null;
   lookbackHours?: number;
@@ -419,6 +506,7 @@ export async function syncCanonicalAttribution(input?: {
     visitRows(cutoff, locationId),
     experienceRows(cutoff, locationId),
     ticketRows(cutoff, locationId),
+    leadRows(cutoff, locationId),
   ]);
   const counts: number[] = [];
   for (const rows of sources) counts.push(await upsertRows(rows));
@@ -431,6 +519,7 @@ export async function syncCanonicalAttribution(input?: {
     visits: counts[3],
     experienceBookings: counts[4],
     ticketOrders: counts[5],
+    eventLeads: counts[6],
     total: counts.reduce((sum, value) => sum + value, 0),
   };
 }

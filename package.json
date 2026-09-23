@@ -66,7 +66,8 @@
     "test:surface-app-isolation": "node scripts/surface-app-isolation-regression.mjs",
     "test:consumer-surface-migration": "node scripts/consumer-route-migration-regression.mjs",
     "test:reserve-surface-migration": "node scripts/reserve-route-migration-regression.mjs",
-    "test:business-surface-migration": "node scripts/business-route-migration-regression.mjs"
+    "test:business-surface-migration": "node scripts/business-route-migration-regression.mjs",
+    "test:private-events": "node scripts/private-events-catering-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
