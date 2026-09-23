@@ -19,6 +19,7 @@ CREDENTIAL_VAULT_PREFIX = os.environ.get("CREDENTIAL_VAULT_PREFIX", "/theouthave
 MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
+CREDENTIAL_SCHEMA_VERSION = 2
 MAX_CREDENTIAL_BYTES = 48 * 1024
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_./@+-]{8,200}$")
 PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
@@ -438,7 +439,7 @@ def handler(event, context):
         method = str(http.get("method") or "GET").upper()
         path = str(event.get("rawPath") or "/")
         if method == "GET" and path == "/v1/status":
-            return _response(200, {"ok": True, "authenticated": True, "environment": ENVIRONMENT})
+            return _response(200, {"ok": True, "authenticated": True, "environment": ENVIRONMENT, "credentialSchemaVersion": CREDENTIAL_SCHEMA_VERSION})
         credential_response = _credential_route(event, method, path, body)
         if credential_response is not None:
             return credential_response

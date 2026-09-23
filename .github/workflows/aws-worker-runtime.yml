@@ -384,7 +384,7 @@ jobs:
             -H "x-toh-timestamp: $TIMESTAMP" \
             -H "x-toh-signature: $SIGNATURE" \
             "${JOB_URL%/}/v1/status")"
-          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true' >/dev/null
+          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 2' >/dev/null
 
       - name: Worker deployment summary
         env:
