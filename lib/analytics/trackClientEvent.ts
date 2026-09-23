@@ -173,6 +173,35 @@ function activePromotionContext(): ActivePromotionContext | null {
   }
 }
 
+export function getActiveAttributionContext() {
+  if (typeof window === "undefined") {
+    return {
+      search_id: null,
+      session_id: null,
+      anonymous_id: null,
+      promotion_campaign_id: null,
+      channel_class: "unknown" as const,
+      source: null,
+      medium: null,
+      campaign: null,
+    };
+  }
+  const identity = getAnalyticsIdentity();
+  const search = getActiveSearchContext();
+  const promotion = activePromotionContext();
+  const social = activeSocialContext();
+  return {
+    search_id: search.search_id,
+    session_id: identity.session_id,
+    anonymous_id: identity.anonymous_id,
+    promotion_campaign_id: promotion?.campaign_id || null,
+    channel_class: promotion ? "sponsored" as const : social ? "owned" as const : search.search_id ? "organic" as const : "unknown" as const,
+    source: social?.source || search.source || null,
+    medium: social?.medium || null,
+    campaign: social?.campaign || null,
+  };
+}
+
 function getDeviceHints() {
   if (typeof navigator === "undefined") return {};
   const ua = navigator.userAgent || "";
