@@ -14,11 +14,7 @@ function normalizeType(value: unknown) {
   return String(value || "").toLowerCase().includes("activ") ? "activity" : "restaurant";
 }
 
-function isMissingTable(error: any) {
-  return error?.code === "42P01" || String(error?.message || "").toLowerCase().includes("does not exist");
-}
-
-function normalizeItem(item: any, source: "layout_items" | "location_bookable_items") {
+function normalizeItem(item: any) {
   return {
     id: item.id,
     location_id: item.location_id,
@@ -39,7 +35,7 @@ function normalizeItem(item: any, source: "layout_items" | "location_bookable_it
     default_duration_minutes: Number(item.default_duration_minutes || item.duration_minutes || item.reservation_duration_minutes || 90),
     reservation_duration_minutes: Number(item.reservation_duration_minutes || item.duration_minutes || item.default_duration_minutes || 90),
     notes: item.notes || null,
-    resource_source: source,
+    resource_source: "layout_items",
   };
 }
 
@@ -72,24 +68,25 @@ async function requireOwner(locationId: string) {
 }
 
 async function loadItems(locationId: string) {
-  const [neutral, legacy] = await Promise.all([
-    supabaseAdmin.from("layout_items").select("*").eq("location_id", locationId),
-    supabaseAdmin.from("location_bookable_items").select("*").eq("location_id", locationId),
-  ]);
+  const result = await supabaseAdmin
+    .from("layout_items")
+    .select("*")
+    .eq("location_id", locationId)
+    .neq("is_active", false)
+    .order("sort_order", { ascending: true })
+    .order("y_position", { ascending: true })
+    .order("x_position", { ascending: true });
 
-  if (neutral.error && !isMissingTable(neutral.error)) throw new Error(neutral.error.message);
-  if (legacy.error && !isMissingTable(legacy.error)) throw new Error(legacy.error.message);
+  if (result.error) throw new Error(result.error.message);
 
-  const merged = new Map<string, any>();
-  for (const item of legacy.data || []) {
-    const normalized = normalizeItem(item, "location_bookable_items");
-    merged.set(`${normalized.item_name.toLowerCase()}|${normalized.item_type}|${normalized.capacity_max}`, normalized);
-  }
-  for (const item of neutral.data || []) {
-    const normalized = normalizeItem(item, "layout_items");
-    merged.set(`${normalized.item_name.toLowerCase()}|${normalized.item_type}|${normalized.capacity_max}`, normalized);
-  }
-  return Array.from(merged.values()).sort((a,b) => a.sort_order - b.sort_order || a.layout_y - b.layout_y || a.layout_x - b.layout_x);
+  return (result.data || [])
+    .map((item) => normalizeItem(item))
+    .sort(
+      (a, b) =>
+        a.sort_order - b.sort_order ||
+        a.layout_y - b.layout_y ||
+        a.layout_x - b.layout_x,
+    );
 }
 
 export async function GET(request: Request) {
@@ -161,25 +158,32 @@ export async function PATCH(request: Request) {
       };
       const result = await supabaseAdmin.from("layout_items").insert(payload).select("*").single();
       if (result.error) throw new Error(result.error.message);
-      return NextResponse.json({ success: true, item: normalizeItem(result.data, "layout_items") });
+      return NextResponse.json({ success: true, item: normalizeItem(result.data) });
     }
 
     if (action === "delete_layout_item") {
       const id = clean(body.id);
       if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
-      const { data: existing } = await supabaseAdmin.from("layout_items").select("location_id").eq("id", id).maybeSingle();
-      const legacy = existing ? null : await supabaseAdmin.from("location_bookable_items").select("location_id").eq("id", id).maybeSingle();
-      const ownerLocationId = existing?.location_id || legacy?.data?.location_id;
-      if (!ownerLocationId) return NextResponse.json({ error: "Reservation space not found." }, { status: 404 });
-      const auth = await requireOwner(ownerLocationId);
-      if (auth.error) return auth.error;
-      if (existing) {
-        const result = await supabaseAdmin.from("layout_items").delete().eq("id", id);
-        if (result.error) throw new Error(result.error.message);
-      } else {
-        const result = await supabaseAdmin.from("location_bookable_items").update({ is_active: false }).eq("id", id);
-        if (result.error) throw new Error(result.error.message);
+
+      const { data: existing, error: lookupError } = await supabaseAdmin
+        .from("layout_items")
+        .select("location_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (lookupError) throw new Error(lookupError.message);
+      if (!existing?.location_id) {
+        return NextResponse.json({ error: "Reservation space not found." }, { status: 404 });
       }
+
+      const auth = await requireOwner(String(existing.location_id));
+      if (auth.error) return auth.error;
+
+      const result = await supabaseAdmin
+        .from("layout_items")
+        .delete()
+        .eq("id", id);
+      if (result.error) throw new Error(result.error.message);
+
       return NextResponse.json({ success: true });
     }
 
@@ -187,26 +191,20 @@ export async function PATCH(request: Request) {
       const id = clean(body.id);
       if (!id) return NextResponse.json({ error: "Missing layout item id." }, { status: 400 });
 
-      const { data: existingNeutral } = await supabaseAdmin
+      const { data: existing, error: lookupError } = await supabaseAdmin
         .from("layout_items")
         .select("location_id")
         .eq("id", id)
         .maybeSingle();
-      const existingLegacy = existingNeutral
-        ? null
-        : await supabaseAdmin
-            .from("location_bookable_items")
-            .select("location_id")
-            .eq("id", id)
-            .maybeSingle();
-      const itemLocationId = existingNeutral?.location_id || existingLegacy?.data?.location_id;
-      if (!itemLocationId) {
+      if (lookupError) throw new Error(lookupError.message);
+      if (!existing?.location_id) {
         return NextResponse.json({ error: "Reservation space not found." }, { status: 404 });
       }
-      const itemAuth = await requireOwner(String(itemLocationId));
+
+      const itemAuth = await requireOwner(String(existing.location_id));
       if (itemAuth.error) return itemAuth.error;
 
-      const neutralPayload = {
+      const payload = {
         item_type: clean(body.item_type) || "table",
         item_name: clean(body.item_name) || "Reservation Space",
         capacity: Math.max(1, Number(body.capacity || 2)),
@@ -223,25 +221,16 @@ export async function PATCH(request: Request) {
         reservation_duration_minutes: Number(body.reservation_duration_minutes || body.duration_minutes || 90),
         notes: clean(body.notes) || null,
       };
-      const neutral = await supabaseAdmin.from("layout_items").update(neutralPayload).eq("id", id).select("*").maybeSingle();
-      if (!neutral.error && neutral.data) {
-        return NextResponse.json({ success: true, item: normalizeItem(neutral.data, "layout_items") });
-      }
 
-      const legacyPayload = {
-        item_type: neutralPayload.item_type,
-        item_name: neutralPayload.item_name,
-        capacity_min: neutralPayload.capacity,
-        capacity_max: neutralPayload.capacity,
-        layout_x: neutralPayload.x_position,
-        layout_y: neutralPayload.y_position,
-        layout_width: neutralPayload.width,
-        layout_height: neutralPayload.height,
-        is_active: neutralPayload.is_active,
-      };
-      const legacy = await supabaseAdmin.from("location_bookable_items").update(legacyPayload).eq("id", id).select("*").single();
-      if (legacy.error) throw new Error(legacy.error.message);
-      return NextResponse.json({ success: true, item: normalizeItem(legacy.data, "location_bookable_items") });
+      const result = await supabaseAdmin
+        .from("layout_items")
+        .update(payload)
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (result.error) throw new Error(result.error.message);
+
+      return NextResponse.json({ success: true, item: normalizeItem(result.data) });
     }
 
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });

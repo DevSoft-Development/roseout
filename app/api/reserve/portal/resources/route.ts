@@ -13,10 +13,7 @@ function clean(value: unknown) {
 
 export function normalizeResource(
   resource: any,
-  source:
-    | "layout_items"
-    | "location_bookable_items"
-    | "reserve_live_layout_status" = "layout_items",
+  source: "layout_items" = "layout_items",
 ) {
   const id =
     resource.id ||
@@ -29,10 +26,7 @@ export function normalizeResource(
     id,
     layout_item_id:
       source === "layout_items" ? id : resource.layout_item_id || null,
-    bookable_item_id:
-      source === "location_bookable_items"
-        ? id
-        : resource.bookable_item_id || null,
+    bookable_item_id: resource.bookable_item_id || null,
     resource_id: id,
     resource_source:
       resource.resource_source ||
@@ -136,57 +130,25 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
 
-  let resources: any[] = [];
-  const [rpc, fallback, legacy] = await Promise.all([
-    supabaseAdmin.rpc("reserve_live_layout_status", {
-      p_location_id: locationId,
-      p_reservation_date: date,
-    }),
-    supabaseAdmin
-      .from("layout_items")
-      .select("*")
-      .eq("location_id", locationId)
-      .neq("is_active", false)
-      .order("sort_order", { ascending: true }),
-    supabaseAdmin
-      .from("location_bookable_items")
-      .select("*")
-      .eq("location_id", locationId)
-      .neq("is_active", false)
-      .order("layout_zone", { ascending: true })
-      .order("layout_y", { ascending: true })
-      .order("layout_x", { ascending: true }),
-  ]);
+  const layout = await supabaseAdmin
+    .from("layout_items")
+    .select("*")
+    .eq("location_id", locationId)
+    .neq("is_active", false)
+    .order("sort_order", { ascending: true });
 
-  if (!rpc.error)
-    resources.push(
-      ...(rpc.data || []).map((resource: any) =>
-        normalizeResource(resource, "reserve_live_layout_status"),
-      ),
-    );
-  if (!fallback.error)
-    resources.push(
-      ...(fallback.data || []).map((resource: any) =>
-        normalizeResource(resource, "layout_items"),
-      ),
-    );
-  else if (!isMissingTable(fallback.error))
+  if (layout.error) {
     return NextResponse.json(
-      { success: false, error: fallback.error.message },
+      { success: false, error: layout.error.message },
       { status: 500 },
     );
-  if (!legacy.error)
-    resources.push(
-      ...(legacy.data || []).map((resource: any) =>
-        normalizeResource(resource, "location_bookable_items"),
-      ),
-    );
-  else if (!isMissingTable(legacy.error))
-    return NextResponse.json(
-      { success: false, error: legacy.error.message },
-      { status: 500 },
-    );
-  resources = byResourceKey(resources);
+  }
+
+  const resources = byResourceKey(
+    (layout.data || []).map((resource: any) =>
+      normalizeResource(resource, "layout_items"),
+    ),
+  );
 
   if (adminUser) {
     await logAdminLocationAction({
