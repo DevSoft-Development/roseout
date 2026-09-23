@@ -9,8 +9,8 @@ import {
   resolveMarketingApprover,
   taskActorForUser,
 } from "./content-operations";
-import { instagramAccessToken, publishInstagramBusinessMedia } from "./instagram-business-api";
-import { loadSocialConnectionSecrets, storeSocialConnectionSecrets } from "./social-secrets";
+import { publishInstagramBusinessMedia } from "./instagram-business-api";
+import { socialAccessToken } from "./social-token-access";
 import type { SocialProvider } from "./social-oauth";
 
 type SocialPostRow = {
@@ -126,37 +126,8 @@ async function publishFacebook(post: SocialPostRow, connection: SocialConnection
   return { providerPostId: id, permalink: id ? `https://www.facebook.com/${id.replace("_", "/posts/")}` : null, response: published };
 }
 
-async function refreshTikTok(connection: SocialConnectionRow, refreshToken: string) {
-  const body = new URLSearchParams({
-    client_key: process.env.TIKTOK_CLIENT_KEY || "",
-    client_secret: process.env.TIKTOK_CLIENT_SECRET || "",
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-  });
-  const token = await providerFetch<{ access_token: string; refresh_token?: string; expires_in?: number; token_type?: string; scope?: string }>("https://open.tiktokapis.com/v2/oauth/token/", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
-  const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
-  await storeSocialConnectionSecrets({ connectionId: connection.id, accessToken: token.access_token, refreshToken: token.refresh_token || refreshToken, tokenType: token.token_type || "Bearer", scopes: token.scope ? token.scope.split(",").map((item) => item.trim()).filter(Boolean) : [], expiresAt });
-  await supabaseAdmin.from("marketing_social_connections").update({ token_expires_at: expiresAt, last_refreshed_at: new Date().toISOString(), status: "connected", last_error: null, updated_at: new Date().toISOString() }).eq("id", connection.id);
-  return token.access_token;
-}
-
-async function refreshGoogle(connection: SocialConnectionRow, refreshToken: string) {
-  const body = new URLSearchParams({ client_id: process.env.GOOGLE_SOCIAL_CLIENT_ID || "", client_secret: process.env.GOOGLE_SOCIAL_CLIENT_SECRET || "", grant_type: "refresh_token", refresh_token: refreshToken });
-  const token = await providerFetch<{ access_token: string; expires_in?: number; token_type?: string; scope?: string }>("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
-  const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
-  await storeSocialConnectionSecrets({ connectionId: connection.id, accessToken: token.access_token, refreshToken, tokenType: token.token_type || "Bearer", scopes: token.scope ? token.scope.split(" ").filter(Boolean) : [], expiresAt });
-  await supabaseAdmin.from("marketing_social_connections").update({ token_expires_at: expiresAt, last_refreshed_at: new Date().toISOString(), status: "connected", last_error: null, updated_at: new Date().toISOString() }).eq("id", connection.id);
-  return token.access_token;
-}
-
 async function accessTokenForConnection(connection: SocialConnectionRow) {
-  if (connection.provider === "instagram") return instagramAccessToken(connection);
-  const secrets = await loadSocialConnectionSecrets(connection.id);
-  const expiresAt = secrets.expiresAt ? new Date(secrets.expiresAt).getTime() : null;
-  if (!expiresAt || expiresAt > Date.now() + 5 * 60 * 1000) return secrets.accessToken;
-  if (connection.provider === "tiktok" && secrets.refreshToken) return refreshTikTok(connection, secrets.refreshToken);
-  if (connection.provider === "youtube" && secrets.refreshToken) return refreshGoogle(connection, secrets.refreshToken);
-  throw new Error("Social OAuth token expired. Reconnect this account.");
+  return socialAccessToken(connection);
 }
 
 async function loadTikTokCreatorInfo(connection: SocialConnectionRow, accessToken: string) {
