@@ -105,7 +105,7 @@ async function upsertRows(rows: AttributionRow[]) {
 async function analyticsRows(cutoff: string, locationId?: string | null) {
   let query = supabaseAdmin
     .from("analytics_events")
-    .select("id,canonical_event_name,event_name,event_type,user_id,anonymous_id,session_id,location_id,search_id,search_event_id,result_impression_id,source,medium,campaign,metadata,created_at")
+    .select("id,canonical_event_name,event_name,event_type,user_id,anonymous_id,session_id,location_id,search_id,search_event_id,result_impression_id,source,metadata,created_at")
     .gte("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(5000);
@@ -132,8 +132,8 @@ async function analyticsRows(cutoff: string, locationId?: string | null) {
       anonymous_id: stringValue(row.anonymous_id),
       session_id: stringValue(row.session_id),
       source: stringValue(row.source) || stringValue(metadata.utm_source),
-      medium: stringValue(row.medium) || stringValue(metadata.utm_medium),
-      campaign: stringValue(row.campaign) || stringValue(metadata.utm_campaign),
+      medium: stringValue(metadata.utm_medium),
+      campaign: stringValue(metadata.utm_campaign),
       channel_class: channelClass,
       attribution_model: "observed_touch",
       touchpoint_type: touchpointForEvent(eventName),
