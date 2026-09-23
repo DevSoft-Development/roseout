@@ -6016,7 +6016,6 @@ const enterpriseKnowledgeBasePages = [
   ["Search Anchor Curated Review", read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx")],
   ["Search Anchor Verification", read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx")],
   ["Non-Searchable Locations", read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx")],
-  ["Location CRM Detail", read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx")],
   ["Reserve Layout Boundary", read("apps/admin/app/admin/dashboard/location-layout/create/page.tsx")],
 ];
 for (const [label, source] of enterpriseKnowledgeBasePages) {
@@ -6024,6 +6023,13 @@ for (const [label, source] of enterpriseKnowledgeBasePages) {
     if (!source.includes(marker)) {
       throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
     }
+  }
+}
+
+const enterpriseLocationCrmDetail = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+for (const marker of ["AdminPageShell", "Location Workspace", "CrmHeroActions", "LocationWorkspaceNavigation"]) {
+  if (!enterpriseLocationCrmDetail.includes(marker)) {
+    throw new Error(`Location CRM Detail must preserve enterprise CRM record shell marker: ${marker}`);
   }
 }
 
