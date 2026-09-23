@@ -3,6 +3,20 @@ import {
   getReservationProviderName,
 } from "@/lib/reservation-links";
 
+export type ReservationAttributionContext = {
+  search_id?: string | null;
+  session_id?: string | null;
+  anonymous_id?: string | null;
+  result_impression_id?: string | null;
+  promotion_campaign_id?: string | null;
+  promotion_event_id?: string | null;
+  source_event_id?: string | null;
+  channel_class?: "organic" | "sponsored" | "owned" | "unknown" | null;
+  source?: string | null;
+  medium?: string | null;
+  campaign?: string | null;
+};
+
 export type ReservationLocation = Record<string, unknown> & {
   id?: string | number | null;
   detail_location_type?: string | null;
@@ -34,16 +48,37 @@ export function getInternalReservationHref(
     detail_location_type?: string | null;
     location_type?: string | null;
   },
-  fallbackType: "restaurant" | "activity" = "restaurant"
+  fallbackType: "restaurant" | "activity" = "restaurant",
+  attribution?: ReservationAttributionContext | null,
 ) {
   const rawType =
     location?.detail_location_type || location?.location_type || fallbackType;
   const normalizedType =
     rawType === "activities" || rawType === "activity" ? "activity" : "restaurant";
+  if (!location?.id) return null;
 
-  return location?.id
-    ? `https://reserve.theouthaven.com/reserve/location/${encodeURIComponent(location.id)}?type=${normalizedType}`
-    : null;
+  const url = new URL(
+    `https://reserve.theouthaven.com/reserve/location/${encodeURIComponent(location.id)}`,
+  );
+  url.searchParams.set("type", normalizedType);
+  const params: Array<[string, string | null | undefined]> = [
+    ["toh_search_id", attribution?.search_id],
+    ["toh_session_id", attribution?.session_id],
+    ["toh_anonymous_id", attribution?.anonymous_id],
+    ["toh_result_impression_id", attribution?.result_impression_id],
+    ["toh_promotion_campaign_id", attribution?.promotion_campaign_id],
+    ["toh_promotion_event_id", attribution?.promotion_event_id],
+    ["toh_source_event_id", attribution?.source_event_id],
+    ["toh_channel_class", attribution?.channel_class],
+    ["utm_source", attribution?.source],
+    ["utm_medium", attribution?.medium],
+    ["utm_campaign", attribution?.campaign],
+  ];
+  for (const [key, value] of params) {
+    const clean = String(value || "").trim();
+    if (clean) url.searchParams.set(key, clean);
+  }
+  return url.toString();
 }
 
 export function getExternalReservationProvider(location: ReservationLocation | null | undefined) {

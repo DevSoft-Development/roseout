@@ -26,6 +26,7 @@ import {
 } from "@/lib/outings/planned-time-client";
 import { formatDistanceFromRestaurant } from "@/lib/search/enterprise/distance";
 import { formatFullAddress } from "@/lib/address-utils";
+import { getActiveAttributionContext } from "@/lib/analytics/trackClientEvent";
 import type { LocationScoreFields } from "@/lib/locationScore";
 import {
   getExternalReservationUrl,
@@ -1613,7 +1614,11 @@ function PlanActionCard({
   })}?from=/plan`;
 
   const reservationUrl = getExternalReservationUrl(location);
-  const internalReservationHref = getInternalReservationHref(location, type);
+  const [reservationAttribution, setReservationAttribution] = useState<ReturnType<typeof getActiveAttributionContext> | null>(null);
+  useEffect(() => {
+    setReservationAttribution(getActiveAttributionContext());
+  }, []);
+  const internalReservationHref = getInternalReservationHref(location, type, reservationAttribution);
   const locationId = location.id ? String(location.id) : null;
   const phoneHref = location.phone
     ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}`

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { trackClientEvent } from "@/lib/analytics/trackClientEvent";
+import { getActiveAttributionContext, trackClientEvent } from "@/lib/analytics/trackClientEvent";
 import { getLocationImage } from "@/lib/locationImage";
 import { getLocationName } from "@/lib/locationName";
 import { getLocationDetailHref } from "@/lib/locationLinks";
@@ -690,7 +690,11 @@ function PlaceCompletionCard({
   const name = getLocationName(location, type === "restaurant" ? "Restaurant" : "Activity");
   const image = getLocationImage(location as never);
   const externalReservation = getExternalReservationUrl(location as never);
-  const internalReservation = getInternalReservationHref(location, type);
+  const [reservationAttribution, setReservationAttribution] = useState<ReturnType<typeof getActiveAttributionContext> | null>(null);
+  useEffect(() => {
+    setReservationAttribution(getActiveAttributionContext());
+  }, []);
+  const internalReservation = getInternalReservationHref(location, type, reservationAttribution);
   const hasInternalReservation = Boolean((location.reservation_enabled || location.internal_reservations_enabled || location.uses_internal_reservations) && internalReservation);
   const directions = buildGooglePlaceDirectionsUrl({ destination: location, travelMode: "driving" });
   const phone = location.phone ? `tel:${String(location.phone).replace(/[^+\d]/g, "")}` : null;

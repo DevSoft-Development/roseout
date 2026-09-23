@@ -25,6 +25,33 @@ function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function cleanUuid(value: unknown) {
+  const raw = cleanString(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw) ? raw : null;
+}
+
+function reservationAttribution(value: unknown) {
+  const raw = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const channel = cleanString(raw.channel_class).toLowerCase();
+  return {
+    searchId: cleanUuid(raw.search_id),
+    sessionId: cleanString(raw.session_id).slice(0, 160) || null,
+    anonymousId: cleanString(raw.anonymous_id).slice(0, 160) || null,
+    resultImpressionId: cleanString(raw.result_impression_id).slice(0, 200) || null,
+    promotionCampaignId: cleanUuid(raw.promotion_campaign_id),
+    promotionEventId: cleanUuid(raw.promotion_event_id),
+    sourceEventId: cleanUuid(raw.source_event_id),
+    channelClass: ["organic", "sponsored", "owned", "unknown"].includes(channel) ? channel : null,
+    context: {
+      source: cleanString(raw.source).slice(0, 120) || null,
+      medium: cleanString(raw.medium).slice(0, 120) || null,
+      campaign: cleanString(raw.campaign).slice(0, 160) || null,
+    },
+  };
+}
+
 function normalizeType(value: string) {
   const type = value.toLowerCase().trim();
 
@@ -490,6 +517,7 @@ export async function POST(request: NextRequest) {
     const bookableItemId = cleanString(body.bookable_item_id);
     const slotLockId = cleanString(body.slot_lock_id);
     const rescheduleToken = cleanString(body.reschedule_token);
+    const incomingAttribution = reservationAttribution(body.attribution);
 
     if (!locationId) {
       return NextResponse.json({ error: "Missing location." }, { status: 400 });
@@ -744,6 +772,20 @@ export async function POST(request: NextRequest) {
         status,
         source: rescheduledFrom ? "theouthaven_reschedule" : "theouthaven",
         user_id: user?.id || rescheduledFrom?.user_id || null,
+        attribution_search_id: incomingAttribution.searchId || rescheduledFrom?.attribution_search_id || null,
+        attribution_session_id: incomingAttribution.sessionId || rescheduledFrom?.attribution_session_id || null,
+        attribution_anonymous_id: incomingAttribution.anonymousId || rescheduledFrom?.attribution_anonymous_id || null,
+        attribution_result_impression_id: incomingAttribution.resultImpressionId || rescheduledFrom?.attribution_result_impression_id || null,
+        attribution_promotion_campaign_id: incomingAttribution.promotionCampaignId || rescheduledFrom?.attribution_promotion_campaign_id || null,
+        attribution_promotion_event_id: incomingAttribution.promotionEventId || rescheduledFrom?.attribution_promotion_event_id || null,
+        attribution_source_event_id: incomingAttribution.sourceEventId || rescheduledFrom?.attribution_source_event_id || null,
+        attribution_channel_class: incomingAttribution.channelClass || rescheduledFrom?.attribution_channel_class || (incomingAttribution.searchId ? "organic" : "unknown"),
+        attribution_context: {
+          ...(rescheduledFrom?.attribution_context && typeof rescheduledFrom.attribution_context === "object" ? rescheduledFrom.attribution_context : {}),
+          ...incomingAttribution.context,
+          captured_at: new Date().toISOString(),
+          source_surface: "reserve_booking",
+        },
         confirmation_code: confirmationCode,
         locked_until: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
 

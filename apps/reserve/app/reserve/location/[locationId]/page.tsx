@@ -311,6 +311,22 @@ export default function ReserveLocationPage() {
       seatingPreference,
     });
     if (rescheduleToken) query.set("rescheduleToken", rescheduleToken);
+    for (const key of [
+      "toh_search_id",
+      "toh_session_id",
+      "toh_anonymous_id",
+      "toh_result_impression_id",
+      "toh_promotion_campaign_id",
+      "toh_promotion_event_id",
+      "toh_source_event_id",
+      "toh_channel_class",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+    ]) {
+      const value = searchParams.get(key);
+      if (value) query.set(key, value);
+    }
     router.push(`/reserve/location/${encodeURIComponent(locationId)}/booking?${query.toString()}`);
   }
 
