@@ -492,6 +492,37 @@ export async function failLeadCheckoutPayment(leadId: string, kind: LeadPaymentK
   return next;
 }
 
+export async function refundLeadCheckoutPayment(input: {
+  leadId: string;
+  kind: LeadPaymentKind;
+  amountRefundedCents: number;
+}) {
+  const lead = await getLeadById(input.leadId);
+  if (!lead) return null;
+  const currentPaid = input.kind === "deposit" ? cents(lead.deposit_paid_cents) : cents(lead.balance_paid_cents);
+  const nextPaid = Math.max(0, currentPaid - cents(input.amountRefundedCents));
+  const patch = input.kind === "deposit"
+    ? {
+        deposit_paid_cents: nextPaid,
+        deposit_status: nextPaid > 0 ? "partially_refunded" : "refunded",
+      }
+    : {
+        balance_paid_cents: nextPaid,
+        balance_status: nextPaid > 0 ? "partially_refunded" : "refunded",
+      };
+  const next = await updateWithVersion(lead, patch);
+  await recordLeadEvent({
+    leadId: lead.id,
+    locationId: lead.location_id,
+    eventType: `${input.kind}_refunded`,
+    actor: { type: "system" },
+    fromStage: lead.commercial_stage,
+    toStage: next.commercial_stage,
+    amountCents: cents(input.amountRefundedCents),
+  });
+  return next;
+}
+
 export async function completeLead(leadId: string, actor: LeadActor = { type: "business" }) {
   const lead = await getLeadById(leadId);
   if (!lead) throw new Error("Lead not found.");
