@@ -131,7 +131,9 @@ jobs:
         run: |
           set -euo pipefail
           VAULT_SECRET="${CREDENTIAL_VAULT_PREFIX}/${ENVIRONMENT}/vercel"
-          aws secretsmanager get-secret-value             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/vercel-vault.json"
+          if ! aws secretsmanager get-secret-value             --region "$EDGE_REGION"             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/vercel-vault.json" 2>/dev/null; then
+            printf '{}\n' > "$RUNNER_TEMP/vercel-vault.json"
+          fi
 
           TOKEN="$(jq -r '.drControlToken // empty' "$RUNNER_TEMP/vercel-vault.json")"
           TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
