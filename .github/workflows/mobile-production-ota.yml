@@ -34,37 +34,66 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package.json
 
-      - name: Guard native-impacting changes
-        if: github.event_name == 'push'
+      - name: Classify mobile release route
+        id: release-route
         working-directory: .
         shell: bash
         run: |
           set -euo pipefail
-          before='${{ github.event.before }}'
-          after='${{ github.sha }}'
-          changed="$(git diff --name-only "$before" "$after" || true)"
-          printf '%s\n' "$changed"
 
-          mobile_changed="$(printf '%s\n' "$changed" | grep '^mobile/' || true)"
-          if [ -z "$mobile_changed" ]; then
-            echo 'No mobile source files changed. Treating this as a bootstrap/manual release of current main.'
+          if [ "${GITHUB_EVENT_NAME}" != "push" ]; then
+            echo "route=ota" >> "$GITHUB_OUTPUT"
+            echo "Manual OTA release requested." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          native_changed="$(printf '%s\n' "$mobile_changed" | grep -E '^(mobile/(app\.json|eas\.json|package\.json|package-lock\.json)|mobile/(ios|android|plugins)/)' || true)"
+          before='${{ github.event.before }}'
+          after='${{ github.sha }}'
+          if ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            before="$(git rev-parse "${after}^" 2>/dev/null || true)"
+          fi
+
+          if [ -n "$before" ]; then
+            changed="$(git diff --name-only "$before" "$after" || true)"
+          else
+            changed="$(git show --pretty='' --name-only "$after" || true)"
+          fi
+          printf '%s\n' "$changed"
+
+          mobile_changed="$(printf '%s\n' "$changed" | grep '^mobile/' || true)"
+          native_changed="$(printf '%s\n' "$mobile_changed" | grep -E '^(mobile/(app\.json|eas\.json|package\.json|package-lock\.json)|mobile/(assets|ios|android|plugins)/|mobile/\.eas/workflows/)' || true)"
+
           if [ -n "$native_changed" ]; then
-            echo 'Native-impacting mobile files changed; refusing OTA publication because a fresh native build is required:'
-            printf '%s\n' "$native_changed"
-            exit 1
+            echo "route=native" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Mobile release route"
+              echo
+              echo "Native build required. OTA publication skipped."
+              echo
+              echo 'Native-sensitive files:'
+              echo '```'
+              printf '%s\n' "$native_changed"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "route=ota" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Mobile release route"
+              echo
+              echo "OTA-safe change detected. Publishing through EAS Update; no native build required."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Install mobile dependencies
+        if: steps.release-route.outputs.route == 'ota'
         run: npm install --no-audit --no-fund
 
       - name: Typecheck
+        if: steps.release-route.outputs.route == 'ota'
         run: npm run typecheck
 
       - name: Validate production EAS Update configuration
+        if: steps.release-route.outputs.route == 'ota'
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -82,6 +111,7 @@ jobs:
           NODE
 
       - name: Verify Expo publish credential is configured
+        if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -92,6 +122,7 @@ jobs:
           fi
 
       - name: Publish production OTA update to iOS
+        if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
@@ -102,6 +133,7 @@ jobs:
           --message "Production OTA iOS ${{ github.sha }}"
 
       - name: Publish production OTA update to Android
+        if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
@@ -112,6 +144,7 @@ jobs:
           --message "Production OTA Android ${{ github.sha }}"
 
       - name: Publish preview OTA update to iOS
+        if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
@@ -122,6 +155,7 @@ jobs:
           --message "Preview OTA iOS ${{ github.sha }}"
 
       - name: Publish preview OTA update to Android
+        if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
@@ -131,6 +165,7 @@ jobs:
           --platform android
           --message "Preview OTA Android ${{ github.sha }}"
 
-      - name: Record release
+      - name: Record OTA release
+        if: steps.release-route.outputs.route == 'ota'
         run: |
           echo "Published ${{ github.sha }} to the production and preview EAS Update channels for iOS and Android." >> "$GITHUB_STEP_SUMMARY"
