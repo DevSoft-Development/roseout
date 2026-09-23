@@ -7,6 +7,12 @@ const dockerfile = fs.readFileSync('infra/aws/web-surfaces/Dockerfile', 'utf8');
 const loader = fs.readFileSync('infra/aws/web-surfaces/runtime-env-loader.cjs', 'utf8');
 const healthcheck = fs.readFileSync('infra/aws/web-surfaces/healthcheck.cjs', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/aws-web-surfaces-services.yml', 'utf8');
+if (workflow.includes('vars.AWS_PLATFORM_JOB_GATEWAY_URL')) {
+  throw new Error('AWS web surfaces must resolve the canonical JobGatewayUrl from the worker stack, not a manually configured GitHub URL.');
+}
+requireText(workflow, 'theouthaven-workers-${TARGET_ENV}', 'AWS web surfaces must resolve the environment-specific worker stack.');
+requireText(workflow, "OutputKey=='JobGatewayUrl'", 'AWS web surfaces must bind to the canonical worker-stack JobGatewayUrl output.');
+
 const proxy = fs.readFileSync('proxy.ts', 'utf8');
 const businessLogin = fs.readFileSync('apps/business/app/business/login/page.tsx', 'utf8');
 const adminM365Connect = fs.readFileSync('app/api/admin/integrations/microsoft-365/connect/route.ts', 'utf8');
