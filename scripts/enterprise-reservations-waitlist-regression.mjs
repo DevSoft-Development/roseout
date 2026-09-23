@@ -75,7 +75,8 @@ requireAll(waitlist, [
 if (seatWaitlistRoot !== seatWaitlistReserve) throw new Error("Root and isolated Reserve waitlist seating routes must remain identical.");
 requireText(seatWaitlistRoot, "reserve_seat_waitlist_atomic", "Waitlist seating must have a database-atomic fallback.");
 requireText(atomicWaitlist, "converted_reservation_id", "Waitlist conversion must link the resulting reservation.");
-requireText(waitlistRealtime, "supabase_realtime", "Waitlist must publish realtime location-scoped changes.");\nrequireText(waitlistRealtimeRepair, "alter publication supabase_realtime add table public.reservation_waitlist", "Production/DR repair migration must re-assert waitlist realtime publication.");
+requireText(waitlistRealtime, "supabase_realtime", "Waitlist must publish realtime location-scoped changes.");
+requireText(waitlistRealtimeRepair, "alter publication supabase_realtime add table public.reservation_waitlist", "Production/DR repair migration must re-assert waitlist realtime publication.");
 
 requireAll(host, [
   'kind = "waitlist"',
