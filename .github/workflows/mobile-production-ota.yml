@@ -121,6 +121,21 @@ jobs:
             exit 1
           fi
 
+      - name: Validate mobile auth variables in EAS environments
+        if: steps.release-route.outputs.route == 'ota'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          for environment in production preview; do
+            supabase_url="$(npx --yes eas-cli@latest env:get "$environment" --variable-name EXPO_PUBLIC_SUPABASE_URL --format short --non-interactive)"
+            supabase_key="$(npx --yes eas-cli@latest env:get "$environment" --variable-name EXPO_PUBLIC_SUPABASE_ANON_KEY --format short --non-interactive)"
+            if [ -z "${supabase_url//[[:space:]]/}" ] || [ -z "${supabase_key//[[:space:]]/}" ]; then
+              echo "Missing mobile Supabase configuration in the $environment EAS environment."
+              exit 1
+            fi
+          done
+
       - name: Publish production OTA update to iOS
         if: steps.release-route.outputs.route == 'ota'
         env:
