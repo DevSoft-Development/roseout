@@ -47,6 +47,23 @@ async function authoritativeResource(locationId: string, input: Record<string, a
       };
     }
 
+    const bookable = await supabaseAdmin
+      .from("location_bookable_items")
+      .select("*")
+      .eq("id", rawId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (!bookable.error && bookable.data && bookable.data.is_active !== false) {
+      return {
+        id: bookable.data.id,
+        label: clean(bookable.data.item_name || bookable.data.name || bookable.data.label),
+        type: clean(bookable.data.item_type || bookable.data.type) || "table",
+        capacity: Number(bookable.data.capacity_max ?? bookable.data.capacity ?? 0) || null,
+        bar: isBarType(bookable.data.item_type || bookable.data.type),
+      };
+    }
+  }
+
   const requestedLabel = clean(input.resource_label || input.resource_name || input.item_name);
   const seatMatch = requestedLabel.match(/^(.*)\s+Seat\s+(\d+)$/i);
   if (seatMatch) {
