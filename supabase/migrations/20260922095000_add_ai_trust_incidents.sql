@@ -20,3 +20,13 @@ grant all on table public.ai_trust_incidents to service_role;
 
 create index if not exists ai_trust_incidents_status_created_idx
   on public.ai_trust_incidents (status, created_at desc);
+
+
+drop policy if exists "deny client access to ai trust incidents" on public.ai_trust_incidents;
+
+create policy "deny client access to ai trust incidents"
+  on public.ai_trust_incidents
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
