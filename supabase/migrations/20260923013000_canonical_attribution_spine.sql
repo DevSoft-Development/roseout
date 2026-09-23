@@ -81,9 +81,9 @@ begin
 end
 $$;
 
-create unique index if not exists marketing_attribution_dedupe_key_idx
-  on public.marketing_attribution_events(dedupe_key)
-  where dedupe_key is not null;
+drop index if exists public.marketing_attribution_dedupe_key_idx;
+create unique index marketing_attribution_dedupe_key_idx
+  on public.marketing_attribution_events(dedupe_key);
 
 create index if not exists marketing_attribution_location_time_idx
   on public.marketing_attribution_events(location_id, occurred_at desc);
