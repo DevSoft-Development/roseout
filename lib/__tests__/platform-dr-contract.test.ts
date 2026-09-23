@@ -118,6 +118,7 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
+    expect(workflow).toContain("GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
     expect(workflow).toContain(".VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty");
   });
 
