@@ -133,7 +133,8 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("gitSource:{type:\"github\",org:\"DevSoft-Development\",repo:\"roseout\",ref:\"main\",sha:$sha}");
     expect(workflow).toContain("Vercel DR control environment upsert failed with HTTP $ENV_CODE.");
     expect(catalog).toContain('key: "drControlToken"');
-    expect(guard).toContain("schedule:");
+    expect(guard).toContain("workflow_run:");
+    expect(guard).not.toContain("cron:");
     expect(guard).toContain("Vercel DR control credential is healthy.");
   });
 
