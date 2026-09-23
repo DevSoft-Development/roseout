@@ -112,6 +112,15 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("'infra/aws/background-runtime/**'");
   });
 
+  it("resolves the Vercel control credential from canonical sources before DR API calls", () => {
+    const workflow = source(".github/workflows/aws-platform-dr.yml");
+    expect(workflow).toContain("Resolve Vercel control-plane credential");
+    expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
+    expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
+    expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
+    expect(workflow).toContain(".VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty");
+  });
+
   it("rejects conflicting dynamic slug names that break the standalone router", () => {
     expect(findConflictingDynamicSiblings("app")).toEqual([]);
   });
