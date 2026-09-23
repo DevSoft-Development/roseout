@@ -23,6 +23,7 @@ export const metadata: Metadata = {
     path: "/",
   }),
   metadataBase: new URL(getSiteUrl()),
+  manifest: "/site.webmanifest",
   title: {
     default: DEFAULT_TITLE,
     template: `%s | ${SITE_NAME}`,
@@ -32,6 +33,8 @@ export const metadata: Metadata = {
       { url: "/favicon.ico", sizes: "any" },
       { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
       { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { url: "/android-chrome-192x192.png", type: "image/png", sizes: "192x192" },
+      { url: "/android-chrome-512x512.png", type: "image/png", sizes: "512x512" },
     ],
     shortcut: ["/favicon.ico"],
     apple: [

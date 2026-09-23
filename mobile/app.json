@@ -3,7 +3,7 @@
     "name": "TheOutHaven",
     "slug": "theouthaven",
     "scheme": "theouthaven",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "runtimeVersion": {
       "policy": "fingerprint"
     },
@@ -29,7 +29,7 @@
       "icon": "./assets/app-icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#070303"
       },
       "intentFilters": [
         {
@@ -72,6 +72,7 @@
       "eas": {
         "projectId": "243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
       }
-    }
+    },
+    "backgroundColor": "#070303"
   }
 }
