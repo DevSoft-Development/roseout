@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { analyzeReview } from "@/lib/reviewAi";
 import { refreshLocationReviewScore } from "@/lib/reviews/refresh-location-review-score";
 import { trackEvent } from "@/lib/analytics/trackEvent";
+import { linkReviewToCanonicalVisit } from "@/lib/reviews/visit-verification";
 
 async function getVerifiedEligibility(body: any) {
   const reviewToken = typeof body.reviewToken === "string" ? body.reviewToken.trim() : null;
@@ -110,6 +111,7 @@ export async function POST(req: NextRequest) {
         },
       },
     }).eq("id", eligibility.id);
+    await linkReviewToCanonicalVisit(eligibility.visit_id, review.id);
 
     await trackEvent({
       event_name: "verified_review_submitted",
