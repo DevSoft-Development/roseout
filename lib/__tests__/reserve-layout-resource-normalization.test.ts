@@ -6,57 +6,53 @@ import {
 } from "@/app/api/reserve/portal/resources/route";
 
 describe("Reserve layout resource normalization", () => {
-  it("merges layout_items across source_table variants with legacy items and prefers layout duplicates", () => {
+  it("uses layout_items as the only floor-layout source and ignores legacy rows", () => {
     const resources = mergeLayoutResources(
       [
         {
-          id: "layout-restaurant",
+          id: "layout-bar",
           location_id: "loc",
           source_table: "restaurant",
+          item_name: "Main Bar",
+          item_type: "bar",
+          capacity: 10,
+        },
+        {
+          id: "layout-table",
+          location_id: "loc",
+          source_table: "locations",
           item_name: "Table 1",
           item_type: "table",
           capacity: 2,
         },
-        {
-          id: "layout-location",
-          location_id: "loc",
-          source_table: "locations",
-          item_name: "Patio",
-          item_type: "table",
-          capacity: 4,
-        },
-        {
-          id: "layout-dupe",
-          location_id: "loc",
-          source_table: "locations",
-          item_name: "Legacy Booth",
-          item_type: "booth",
-          capacity: 4,
-        },
       ],
       [
         {
-          id: "legacy-dupe",
+          id: "legacy-bar",
           location_id: "loc",
           location_type: "restaurant",
-          item_name: "Legacy Booth",
-          item_type: "booth",
-          capacity_min: 4,
-          capacity_max: 4,
+          item_name: "Main Bar",
+          item_type: "bar_seat",
+          capacity_min: 1,
+          capacity_max: 10,
+        },
+        {
+          id: "legacy-only",
+          location_id: "loc",
+          location_type: "restaurant",
+          item_name: "Legacy Only",
+          item_type: "table",
+          capacity_min: 2,
+          capacity_max: 2,
         },
       ],
     );
 
-    expect(resources.map((resource) => resource.id)).toEqual(
-      expect.arrayContaining([
-        "layout-restaurant",
-        "layout-location",
-        "layout-dupe",
-      ]),
-    );
-    expect(resources.map((resource) => resource.id)).not.toContain(
-      "legacy-dupe",
-    );
+    expect(resources.map((resource) => resource.id)).toEqual([
+      "layout-bar",
+      "layout-table",
+    ]);
+    expect(resources.every((resource) => resource.resource_source === "layout_items")).toBe(true);
   });
 
   it("maps x_position and y_position to layout coordinates", () => {
