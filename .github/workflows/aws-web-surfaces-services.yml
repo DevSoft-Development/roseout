@@ -163,16 +163,13 @@ jobs:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           ADMIN_SECRET_ARN: ${{ steps.foundation.outputs.adminappenvsecretarn }}
           BUSINESS_SECRET_ARN: ${{ steps.foundation.outputs.businessappenvsecretarn }}
-          CONFIGURED_JOB_GATEWAY_URL: ${{ vars.AWS_PLATFORM_JOB_GATEWAY_URL }}
           CONFIGURED_JOB_GATEWAY_SECRET: ${{ secrets.AWS_PLATFORM_JOB_GATEWAY_SECRET }}
         run: |
           set -euo pipefail
-          if [ -z "${CONFIGURED_JOB_GATEWAY_URL:-}" ]; then
-            WORKER_STACK="theouthaven-workers-${TARGET_ENV}"
-            CONFIGURED_JOB_GATEWAY_URL="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
-          fi
+          WORKER_STACK="theouthaven-workers-${TARGET_ENV}"
+          CONFIGURED_JOB_GATEWAY_URL="$(aws cloudformation describe-stacks --stack-name "$WORKER_STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
           if [ -z "${CONFIGURED_JOB_GATEWAY_URL:-}" ] || [ "$CONFIGURED_JOB_GATEWAY_URL" = "None" ]; then
-            echo "Unable to resolve AWS platform job gateway URL from GitHub variables or $WORKER_STACK." >&2
+            echo "Unable to resolve canonical AWS platform job gateway URL from $WORKER_STACK in $AWS_REGION." >&2
             exit 1
           fi
           export CONFIGURED_JOB_GATEWAY_URL
