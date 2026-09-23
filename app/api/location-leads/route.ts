@@ -51,6 +51,8 @@ export async function POST(request: Request) {
     ? "Demo Event Guest"
     : body.name;
   const customerPhone = demoContext.isDemo ? "212-555-0199" : body.phone;
+  const requestedLeadType = String(body.leadType || "private_event").trim().toLowerCase();
+  const leadType = requestedLeadType === "catering" ? "catering" : "private_event";
   const attribution = body.attribution && typeof body.attribution === "object" ? body.attribution : {};
   const channelClass = ["organic", "sponsored", "owned", "unknown"].includes(String(attribution.channel_class || ""))
     ? String(attribution.channel_class)
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
     .from("location_leads")
     .insert({
       location_id: locationId,
-      lead_type: body.leadType || "private_event",
+      lead_type: leadType,
       customer_name: customerName,
       customer_email: customerEmail,
       customer_phone: customerPhone,
