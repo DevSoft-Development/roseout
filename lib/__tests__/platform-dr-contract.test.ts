@@ -121,6 +121,10 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
     expect(workflow).toContain("https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}");
     expect(workflow).not.toContain("https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}");
+    expect(workflow).toContain("scope_query=${SCOPE_QUERY:-}");
+    expect(workflow).toContain("VERCEL_SCOPE_QUERY: ${{ steps.vercel_primary.outputs.scope_query }}");
+    expect(workflow).toContain("gitSource:{type:\"github\",org:\"DevSoft-Development\",repo:\"roseout\",ref:\"main\",sha:$sha}");
+    expect(workflow).toContain("Vercel DR control environment upsert failed with HTTP $ENV_CODE.");
     expect(workflow).toContain(".VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty");
   });
 
