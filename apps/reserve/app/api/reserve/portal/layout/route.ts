@@ -18,7 +18,6 @@ import {
   sendReservationSms,
 } from "@/lib/reservationOperations";
 
-const LEGACY_TABLE = "location_bookable_items";
 const NEUTRAL_TABLE = "layout_items";
 
 function dateKey(value: Date) {
@@ -170,16 +169,8 @@ export function toLegacyItem(item: any) {
       item.location_type ||
       item.resource_table ||
       "locations",
-    resource_source:
-      item.resource_source ||
-      item.resource_table ||
-      item.source ||
-      (item.location_type ? LEGACY_TABLE : NEUTRAL_TABLE),
-    resource_table:
-      item.resource_table ||
-      item.resource_source ||
-      item.source ||
-      (item.location_type ? LEGACY_TABLE : NEUTRAL_TABLE),
+    resource_source: NEUTRAL_TABLE,
+    resource_table: NEUTRAL_TABLE,
     source_id: item.source_id || null,
     sort_order: Number(item.sort_order || 0),
     duration_minutes: Number(
@@ -207,48 +198,28 @@ export function toLegacyItem(item: any) {
 
 export function mergeLayoutResources(
   layoutItems: any[] = [],
-  legacyItems: any[] = [],
+  _legacyItems: any[] = [],
 ) {
-  const merged = new Map<string, any>();
-  const keyFor = (item: any) => {
-    const name = String(item.item_name || item.name || item.label || "")
-      .trim()
-      .toLowerCase();
-    const type = String(item.item_type || item.type || "")
-      .trim()
-      .toLowerCase();
-    const capacity = Number(
-      item.capacity_max || item.capacity || item.capacity_min || 0,
-    );
-    return name
-      ? `${name}|${type}|${capacity}`
-      : String(item.id || `${type}|${capacity}`);
-  };
-  for (const item of legacyItems.map(toLegacyItem))
-    merged.set(keyFor(item), {
-      ...item,
-      resource_source: LEGACY_TABLE,
-      resource_table: LEGACY_TABLE,
-    });
-  for (const item of layoutItems.map(toLegacyItem))
-    merged.set(keyFor(item), {
-      ...item,
+  return layoutItems
+    .map((item) => ({
+      ...toLegacyItem(item),
       resource_source: NEUTRAL_TABLE,
       resource_table: NEUTRAL_TABLE,
-    });
-  return Array.from(merged.values()).sort(
-    (a, b) =>
-      Number(a.sort_order || 0) - Number(b.sort_order || 0) ||
-      Number(a.layout_y || 0) - Number(b.layout_y || 0) ||
-      Number(a.layout_x || 0) - Number(b.layout_x || 0) ||
-      String(a.item_name || "").localeCompare(String(b.item_name || "")),
-  );
+    }))
+    .sort(
+      (a, b) =>
+        Number(a.sort_order || 0) - Number(b.sort_order || 0) ||
+        Number(a.layout_y || 0) - Number(b.layout_y || 0) ||
+        Number(a.layout_x || 0) - Number(b.layout_x || 0) ||
+        String(a.item_name || "").localeCompare(String(b.item_name || "")),
+    );
 }
 
-async function selectLayoutItems(locationId: string, locationType: string) {
+async function selectLayoutItems(locationId: string, _locationType: string) {
   let query = supabaseAdmin
     .from(NEUTRAL_TABLE)
     .select("*")
+    .neq("is_active", false)
     .order("sort_order", { ascending: true })
     .order("y_position", { ascending: true })
     .order("x_position", { ascending: true });
@@ -256,26 +227,12 @@ async function selectLayoutItems(locationId: string, locationType: string) {
   if (locationId) query = query.eq("location_id", locationId);
 
   const result = await query;
-  if (result.error && !isMissingTable(result.error))
+  if (result.error)
     return { error: result.error, data: [], source: NEUTRAL_TABLE };
 
-  let legacyQuery = supabaseAdmin
-    .from(LEGACY_TABLE)
-    .select("*")
-    .order("layout_zone", { ascending: true })
-    .order("layout_y", { ascending: true })
-    .order("layout_x", { ascending: true })
-    .order("item_name", { ascending: true });
-
-  if (locationId) legacyQuery = legacyQuery.eq("location_id", locationId);
-
-  const legacy = await legacyQuery;
-  if (legacy.error && !isMissingTable(legacy.error))
-    return { error: legacy.error, data: [], source: LEGACY_TABLE };
-
   return {
-    data: mergeLayoutResources(result.data || [], legacy.data || []),
-    source: result.error ? LEGACY_TABLE : "merged",
+    data: mergeLayoutResources(result.data || []),
+    source: NEUTRAL_TABLE,
   };
 }
 
@@ -316,29 +273,8 @@ async function updateLayoutItem(id: string, payload: any) {
       .single();
   }
 
-  if (!neutral.error) return toLegacyItem(neutral.data);
-  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
-
-  const legacy = await supabaseAdmin
-    .from(LEGACY_TABLE)
-    .update({
-      item_type: payload.item_type,
-      item_name: payload.item_name,
-      capacity_min: payload.capacity,
-      capacity_max: payload.capacity,
-      layout_x: payload.layout_x,
-      layout_y: payload.layout_y,
-      layout_width: payload.layout_width,
-      layout_height: payload.layout_height,
-      is_active: payload.is_active,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .select("*")
-    .single();
-
-  if (legacy.error) throw new Error(legacy.error.message);
-  return toLegacyItem(legacy.data);
+  if (neutral.error) throw new Error(neutral.error.message);
+  return toLegacyItem(neutral.data);
 }
 
 async function createLayoutItem(body: any) {
@@ -387,6 +323,7 @@ async function createLayoutItem(body: any) {
     .insert(payload)
     .select("*")
     .single();
+
   if (neutral.error && isMissingColumn(neutral.error)) {
     neutral = await supabaseAdmin
       .from(NEUTRAL_TABLE)
@@ -394,44 +331,18 @@ async function createLayoutItem(body: any) {
       .select("*")
       .single();
   }
-  if (!neutral.error) return toLegacyItem(neutral.data);
-  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
 
-  const legacy = await supabaseAdmin
-    .from(LEGACY_TABLE)
-    .insert({
-      location_id: payload.location_id,
-      location_type: locationType,
-      item_type: payload.item_type,
-      item_name: payload.item_name,
-      capacity_min: payload.capacity,
-      capacity_max: payload.capacity,
-      max_concurrent: 1,
-      auto_confirm: true,
-      is_active: payload.is_active,
-      layout_x: payload.x_position,
-      layout_y: payload.y_position,
-      layout_width: payload.width,
-      layout_height: payload.height,
-      layout_zone: payload.item_type,
-    })
-    .select("*")
-    .single();
-
-  if (legacy.error) throw new Error(legacy.error.message);
-  return toLegacyItem(legacy.data);
+  if (neutral.error) throw new Error(neutral.error.message);
+  return toLegacyItem(neutral.data);
 }
 
 async function deleteLayoutItem(id: string) {
-  const neutral = await supabaseAdmin.from(NEUTRAL_TABLE).delete().eq("id", id);
-  if (!neutral.error) return;
-  if (!isMissingTable(neutral.error)) throw new Error(neutral.error.message);
-
-  const legacy = await supabaseAdmin
-    .from(LEGACY_TABLE)
-    .update({ is_active: false })
+  const neutral = await supabaseAdmin
+    .from(NEUTRAL_TABLE)
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", id);
-  if (legacy.error) throw new Error(legacy.error.message);
+
+  if (neutral.error) throw new Error(neutral.error.message);
 }
 
 async function assertNoOverlap(reservationId: string, itemId: string) {
