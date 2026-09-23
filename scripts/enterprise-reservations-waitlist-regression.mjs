@@ -79,7 +79,7 @@ requireText(waitlistRealtime, "supabase_realtime", "Waitlist must publish realti
 requireText(waitlistRealtimeRepair, "alter publication supabase_realtime add table public.reservation_waitlist", "Production/DR repair migration must re-assert waitlist realtime publication.");
 
 requireAll(host, [
-  'kind = "waitlist"',
+  'kind="waitlist"',
   "useDraggable",
   "useDroppable",
   "seat-waitlist",
