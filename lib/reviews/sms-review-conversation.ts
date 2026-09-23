@@ -3,6 +3,7 @@ import { normalizePhone, sendConciergeSms, TELNYX_CHANNEL_NUMBERS } from "@/lib/
 import { generateReviewToken } from "@/lib/tokens/secure-token";
 import { analyzeReview } from "@/lib/reviewAi";
 import { trackEvent } from "@/lib/analytics/trackEvent";
+import { ensureCanonicalVisitVerification, linkReviewToCanonicalVisit } from "@/lib/reviews/visit-verification";
 
 const CHANNEL_NUMBER = TELNYX_CHANNEL_NUMBERS.concierge;
 const ACTIVE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -260,12 +261,44 @@ export async function startReservationSmsReviewConversation(reservationId: strin
 
 async function ensureEligibility(row: ConversationRow, locationId: string) {
   const context = contextOf(row);
+  const visit = await ensureCanonicalVisitVerification({
+    locationId,
+    outingId: row.outing_id || null,
+    reservationId: row.reservation_id || null,
+    userId: row.user_id || null,
+    verificationType: row.reservation_id ? "reservation_verified" : "attendance_confirmation",
+    verificationStatus: "verified",
+    verificationSource: context.verification_source,
+    metadata: {
+      sms_conversation_id: row.id,
+      verification_level: context.verification_level,
+      canonicalized_for_review: true,
+    },
+  });
+
   let query = supabaseAdmin.from("location_review_eligibility").select("*").eq("location_id", locationId);
   if (row.outing_id) query = query.eq("outing_id", row.outing_id);
   else query = query.eq("reservation_id", row.reservation_id);
   const { data: existing, error: existingError } = await query.maybeSingle();
   if (existingError) throw existingError;
-  if (existing) return existing;
+  if (existing) {
+    if (existing.visit_id === visit.id) return existing;
+    const { data: repaired, error: repairError } = await supabaseAdmin
+      .from("location_review_eligibility")
+      .update({
+        visit_id: visit.id,
+        source: row.reservation_id ? "internal_reservation" : "outing_confirmed",
+        metadata: {
+          ...(existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {}),
+          canonical_visit_linked_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+    if (repairError) throw repairError;
+    return repaired;
+  }
 
   const token = generateReviewToken();
   const sourceRecord = row.outing_id
@@ -278,9 +311,10 @@ async function ensureEligibility(row: ConversationRow, locationId: string) {
       user_id: row.user_id || null,
       outing_id: row.outing_id || null,
       reservation_id: row.reservation_id || null,
+      visit_id: visit.id,
       guest_session_id: sourceRecord.data?.guest_session_id || null,
       guest_email: sourceRecord.data?.guest_email || null,
-      source: context.verification_source,
+      source: row.reservation_id ? "internal_reservation" : "outing_confirmed",
       status: "eligible",
       review_token: token,
       review_token_expires_at: new Date(Date.now() + REVIEW_TTL_MS).toISOString(),
@@ -326,6 +360,7 @@ async function createLocationReview(row: ConversationRow, location: LocationCont
       user_id: row.user_id || null,
       outing_id: row.outing_id || null,
       reservation_id: row.reservation_id || null,
+      visit_id: eligibility.visit_id || null,
       guest_session_id: eligibility.guest_session_id || null,
       guest_email: eligibility.guest_email || null,
       guest_name: context.customer_name || null,
@@ -368,6 +403,7 @@ async function createLocationReview(row: ConversationRow, location: LocationCont
     .from("location_review_eligibility")
     .update({ status: "reviewed", review_id: review.id, reviewed_at: submittedAt })
     .eq("id", eligibility.id);
+  await linkReviewToCanonicalVisit(eligibility.visit_id, review.id);
   await trackEvent({
     event_name: "verified_review_submitted",
     user_id: row.user_id,

@@ -8,6 +8,7 @@ import {
   requireSafeDemoPublicWrite,
 } from "@/lib/demo/demo-public-write";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
+import { ensureCanonicalVisitVerification } from "@/lib/reviews/visit-verification";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
@@ -51,33 +52,26 @@ export async function POST(request: Request) {
   }
 
   if (action === "guest_check_in") {
-    const { data: verification, error } = await supabaseAdmin
-      .from("outing_visit_verifications")
-      .insert({
-        location_id: locationId,
-        verification_type: "guest_check_in",
-        verification_status: "verified",
-        verification_source: demoContext.isDemo
-          ? "demo_center"
-          : "public_growth_pro",
-        guest_session_id: body.guestSessionId || null,
-        reservation_id: body.reservationId || null,
+    let verification;
+    try {
+      verification = await ensureCanonicalVisitVerification({
+        locationId,
+        reservationId: body.reservationId ? String(body.reservationId) : null,
+        guestSessionId: body.guestSessionId ? String(body.guestSessionId) : null,
+        allowUnkeyed: true,
+        verificationType: "guest_check_in",
+        verificationStatus: "verified",
+        verificationSource: demoContext.isDemo ? "demo_center" : "public_growth_pro",
         metadata: {
           customer_name: demoContext.isDemo ? "Demo Check-in Guest" : body.name,
-          customer_email: demoContext.isDemo
-            ? DEMO_CUSTOMER_EMAIL
-            : body.email,
+          customer_email: demoContext.isDemo ? DEMO_CUSTOMER_EMAIL : body.email,
           notes: body.notes || null,
           demo: demoContext.isDemo,
-          demo_key: demoContext.isDemo
-            ? "real_location_mirror_demo"
-            : undefined,
+          demo_key: demoContext.isDemo ? "real_location_mirror_demo" : undefined,
+          checked_in_at: new Date().toISOString(),
         },
-      })
-      .select("id")
-      .single();
-
-    if (error) {
+      });
+    } catch {
       return NextResponse.json(
         { error: "We could not save this check-in." },
         { status: 500 },
