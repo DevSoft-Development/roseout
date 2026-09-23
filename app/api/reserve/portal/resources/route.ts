@@ -5,6 +5,7 @@ import {
   requireAdminLocationApiWrite,
 } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -110,10 +111,18 @@ function payloadFromBody(body: Record<string, any>) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminLocationApiRead();
-  if (auth.error) return auth.error;
-
   const { searchParams } = new URL(request.url);
+  const adminLocationId = clean(searchParams.get("adminLocationId"));
+  const demoAccess = await getInternalDemoLocationAccess({
+    locationId: clean(searchParams.get("locationId")) || adminLocationId,
+    adminLocationId,
+    demo: searchParams.get("demo"),
+    fromDemoCenter: searchParams.get("fromDemoCenter"),
+  });
+  if (!demoAccess) {
+    const auth = await requireAdminLocationApiRead();
+    if (auth.error) return auth.error;
+  }
   const locationId =
     clean(searchParams.get("adminLocationId")) ||
     clean(searchParams.get("locationId"));
