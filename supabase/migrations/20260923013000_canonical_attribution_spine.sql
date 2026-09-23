@@ -1,5 +1,40 @@
 -- Canonical attribution spine: search -> touchpoint -> booking -> verified visit -> revenue.
 
+alter table public.location_reservations
+  add column if not exists attribution_search_id uuid,
+  add column if not exists attribution_session_id text,
+  add column if not exists attribution_anonymous_id text,
+  add column if not exists attribution_result_impression_id text,
+  add column if not exists attribution_promotion_campaign_id uuid references public.promotion_campaigns(id) on delete set null,
+  add column if not exists attribution_promotion_event_id uuid references public.promotion_events(id) on delete set null,
+  add column if not exists attribution_source_event_id uuid references public.analytics_events(id) on delete set null,
+  add column if not exists attribution_channel_class text,
+  add column if not exists attribution_context jsonb not null default '{}'::jsonb;
+
+do $
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname='location_reservations_attribution_channel_class_check'
+      and conrelid='public.location_reservations'::regclass
+  ) then
+    alter table public.location_reservations
+      add constraint location_reservations_attribution_channel_class_check
+      check (attribution_channel_class is null or attribution_channel_class in ('organic','sponsored','owned','unknown'));
+  end if;
+end
+$;
+
+create index if not exists location_reservations_attribution_search_idx
+  on public.location_reservations(attribution_search_id)
+  where attribution_search_id is not null;
+create index if not exists location_reservations_attribution_campaign_idx
+  on public.location_reservations(attribution_promotion_campaign_id)
+  where attribution_promotion_campaign_id is not null;
+create index if not exists location_reservations_attribution_source_event_idx
+  on public.location_reservations(attribution_source_event_id)
+  where attribution_source_event_id is not null;
+
 alter table public.marketing_attribution_events
   add column if not exists location_id uuid references public.locations(id) on delete set null,
   add column if not exists search_id uuid,
