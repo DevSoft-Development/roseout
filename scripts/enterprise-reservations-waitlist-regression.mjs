@@ -28,7 +28,8 @@ const tableReadyReserve = read("apps/reserve/app/api/reserve/portal/reservations
 const guarantee = read("lib/reservations/guarantee.ts");
 const atomicAssignment = read("supabase/migrations/20260906043500_reserve_canonical_bookable_assignment.sql");
 const atomicWaitlist = read("supabase/migrations/20260903213600_reserve_waitlist_atomic_seating.sql");
-const waitlistRealtime = read("supabase/migrations/20260903213400_reserve_waitlist_realtime.sql");\nconst waitlistRealtimeRepair = read("supabase/migrations/20260923102000_reserve_waitlist_realtime_repair.sql");
+const waitlistRealtime = read("supabase/migrations/20260903213400_reserve_waitlist_realtime.sql");
+const waitlistRealtimeRepair = read("supabase/migrations/20260923102000_reserve_waitlist_realtime_repair.sql");
 
 requireAll(status, [
   '"pending"',
