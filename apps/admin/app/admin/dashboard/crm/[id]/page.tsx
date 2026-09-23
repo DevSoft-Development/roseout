@@ -2779,7 +2779,7 @@ function CustomerJourneyTimelinePanel({ timeline }: { timeline: CustomerJourneyT
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
-          ["Unique customers", timeline.summary.uniqueCustomers],
+          ["Customer references", timeline.summary.customerReferences],
           ["Reservations", timeline.summary.reservations],
           ["Verified visits", timeline.summary.verifiedVisits],
           ["Reviews", timeline.summary.reviews],
