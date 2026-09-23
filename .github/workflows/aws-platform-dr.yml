@@ -128,59 +128,43 @@ jobs:
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
       - name: Resolve Vercel control-plane credential
-        env:
-          GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
-          DEFAULT_TEAM_ID="$VERCEL_TEAM_ID"
-          test -n "$DEFAULT_TEAM_ID" || { echo 'No Vercel team id is configured.' >&2; exit 1; }
-
-          VAULT_TOKEN=""
-          VAULT_TEAM_ID=""
-          RUNTIME_TOKEN=""
-          RUNTIME_TEAM_ID=""
-
           VAULT_SECRET="${CREDENTIAL_VAULT_PREFIX}/${ENVIRONMENT}/vercel"
-          if aws secretsmanager get-secret-value --secret-id "$VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vercel-vault.json" 2>/dev/null; then
-            VAULT_TOKEN="$(jq -r '.token // empty' "$RUNNER_TEMP/vercel-vault.json")"
-            VAULT_TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
+          aws secretsmanager get-secret-value             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/vercel-vault.json"
+
+          TOKEN="$(jq -r '.drControlToken // empty' "$RUNNER_TEMP/vercel-vault.json")"
+          TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
+          [ -n "$TEAM_ID" ] || TEAM_ID="$VERCEL_TEAM_ID"
+
+          test -n "$TOKEN" || {
+            echo 'Credential Vault is missing Vercel drControlToken. Create a project-scoped token for roseout and save it in Admin > Settings > Credential Vault > Vercel.' >&2
+            exit 1
+          }
+          echo "::add-mask::$TOKEN"
+
+          # Project-scoped tokens infer project/team context and should not require teamId.
+          CODE="$(curl --silent --show-error             --header "Authorization: Bearer $TOKEN"             --output "$RUNNER_TEMP/vercel-project-probe.json"             --write-out '%{http_code}'             "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}" || true)"
+          SCOPE_QUERY=""
+          if [ "$CODE" != "200" ]; then
+            CODE="$(curl --silent --show-error               --header "Authorization: Bearer $TOKEN"               --output "$RUNNER_TEMP/vercel-project-probe.json"               --write-out '%{http_code}'               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${TEAM_ID}" || true)"
+            SCOPE_QUERY="teamId=${TEAM_ID}"
           fi
 
-          if aws secretsmanager get-secret-value --region "$AUTHORITATIVE_RUNTIME_SECRET_REGION" --secret-id "$AUTHORITATIVE_RUNTIME_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vercel-runtime-source.json" 2>/dev/null; then
-            RUNTIME_TOKEN="$(jq -r '.VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
-            RUNTIME_TEAM_ID="$(jq -r '.VERCEL_TEAM_ID // .VERCEL_ORG_ID // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
-          fi
-
-          validate_candidate() {
-            local source="$1" token="$2" team_id="$3" code scope_query
-            [ -n "$token" ] || return 1
-            [ -n "$team_id" ] || team_id="$DEFAULT_TEAM_ID"
-            echo "::add-mask::$token"
-
-            scope_query="teamId=$team_id"
-            code="$(curl --silent --show-error               --header "Authorization: Bearer $token"               --output "$RUNNER_TEMP/vercel-project-probe.json"               --write-out '%{http_code}'               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?$scope_query" || true)"
-            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
-              scope_query=""
-              code="$(curl --silent --show-error                 --header "Authorization: Bearer $token"                 --output "$RUNNER_TEMP/vercel-project-probe.json"                 --write-out '%{http_code}'                 "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}" || true)"
-            fi
-
-            if [ "$code" != "200" ]; then
-              echo "::warning::Vercel credential source '$source' cannot access the production project (HTTP $code); trying the next configured source."
-              return 1
-            fi
-            jq -e --arg id "$VERCEL_PROJECT_ID" '.id==$id' "$RUNNER_TEMP/vercel-project-probe.json" >/dev/null || {
-              echo "::warning::Vercel credential source '$source' returned a different project; trying the next configured source."
-              return 1
-            }
-
-            echo "VERCEL_CONTROL_TOKEN=$token" >> "$GITHUB_ENV"
-            echo "VERCEL_CONTROL_TEAM_ID=$team_id" >> "$GITHUB_ENV"
-            echo "VERCEL_CONTROL_SCOPE_QUERY=$scope_query" >> "$GITHUB_ENV"
-            echo "Selected Vercel control-plane credential source: $source"
-            return 0
+          test "$CODE" = "200" || {
+            echo "Dedicated Vercel DR control token cannot access production project ${VERCEL_PROJECT_ID} (HTTP $CODE). Rotate only drControlToken in Credential Vault; do not change runtime credentials." >&2
+            cat "$RUNNER_TEMP/vercel-project-probe.json" >&2 || true
+            exit 1
+          }
+          jq -e --arg id "$VERCEL_PROJECT_ID" '.id==$id' "$RUNNER_TEMP/vercel-project-probe.json" >/dev/null || {
+            echo 'Dedicated Vercel DR control token resolved a different project.' >&2
+            exit 1
           }
 
-          validate_candidate "credential-vault" "$VAULT_TOKEN" "$VAULT_TEAM_ID"             || validate_candidate "authoritative-runtime" "$RUNTIME_TOKEN" "$RUNTIME_TEAM_ID"             || validate_candidate "github-actions" "$GITHUB_VERCEL_TOKEN" "$DEFAULT_TEAM_ID"             || { echo 'No configured Vercel control-plane credential can access the production project. Re-authorize or replace the token for the roseout-ventures-projects scope.' >&2; exit 1; }
+          echo "VERCEL_CONTROL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          echo "VERCEL_CONTROL_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+          echo "VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY" >> "$GITHUB_ENV"
+          echo 'Vercel DR control authority validated from Credential Vault.'
 
       - name: Bootstrap platform DR deployment permissions
         env:
