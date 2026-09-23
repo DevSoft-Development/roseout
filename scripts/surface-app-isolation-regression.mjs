@@ -5441,8 +5441,23 @@ if (!isolatedLocationsPage.includes('redirect("/admin/dashboard/crm")')) {
 const isolatedLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
 const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
 const isolatedNewLocationPage = read("apps/admin/app/admin/dashboard/crm/new/page.tsx");
+const isolatedAdminCrmHelper = read("apps/admin/lib/admin-crm.ts");
+if (
+  !isolatedLocationsCrmPage.includes("@theouthaven/auth/admin-session") ||
+  !isolatedLocationsCrmPage.includes("@/lib/admin-crm") ||
+  !isolatedLocationsCrmPage.includes("listBusinessCRMPage") ||
+  isolatedLocationsCrmPage.includes("@/lib/admin-auth") ||
+  isolatedLocationsCrmPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Locations CRM directory must use isolated Admin auth and canonical Admin CRM data access.");
+}
+if (
+  !isolatedAdminCrmHelper.includes("@theouthaven/db/admin-client") ||
+  isolatedAdminCrmHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Canonical Admin CRM data access must use the shared isolated Admin DB client.");
+}
 for (const [label, source] of [
-  ["Locations CRM directory", isolatedLocationsCrmPage],
   ["Locations CRM detail", isolatedLocationDetail],
   ["Locations CRM create", isolatedNewLocationPage],
 ]) {
