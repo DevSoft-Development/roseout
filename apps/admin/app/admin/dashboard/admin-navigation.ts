@@ -15,7 +15,6 @@ import {
   LifeBuoy,
   ListChecks,
   Mail,
-  MapPin,
   Megaphone,
   MessageSquareText,
   ReceiptText,
@@ -128,11 +127,11 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
     icon: CircleDollarSign,
     items: [
       {
-        label: "CRM",
+        label: "Locations CRM",
         href: "/admin/dashboard/crm",
         icon: Workflow,
         migrated: true,
-        roles: commercialRoles,
+        roles: broadReadRoles,
       },
       {
         label: "Businesses",
@@ -176,13 +175,6 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
     label: "Operations",
     icon: Activity,
     items: [
-      {
-        label: "Locations",
-        href: "/admin/dashboard/locations",
-        icon: MapPin,
-        migrated: true,
-        roles: ["superadmin", "admin", "editor", "reviewer", "viewer"],
-      },
       {
         label: "Events & Experiences",
         href: "/admin/dashboard/events-experiences",
