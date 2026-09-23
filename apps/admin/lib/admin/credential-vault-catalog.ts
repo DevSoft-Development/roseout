@@ -50,8 +50,10 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL and server-side credentials.", fields: [
     { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" }, { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true }, { key: "serviceRoleKey", label: "Service role key", secret: true, multiline: true },
   ] },
-  { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", fields: [
-    { key: "token", label: "Access token", secret: true }, { key: "teamId", label: "Team ID" },
+  { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
+    { key: "token", label: "Runtime sync access token", secret: true },
+    { key: "drControlToken", label: "DR control token (project-scoped)", secret: true },
+    { key: "teamId", label: "Team ID" },
   ] },
   { id: "github", label: "GitHub", category: "Cloud", description: "GitHub token or GitHub App credentials for repository automation.", note: "The GitHub token used for automatic credential propagation must be allowed to dispatch Actions workflows for this repository.", fields: [
     { key: "token", label: "Token", secret: true }, { key: "appId", label: "GitHub App ID" }, { key: "privateKey", label: "GitHub App private key", secret: true, multiline: true },
