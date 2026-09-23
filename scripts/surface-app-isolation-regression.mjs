@@ -353,6 +353,7 @@ const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
+const adminLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
 const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
 const adminWorkerOperationsPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
 const adminCronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
@@ -394,14 +395,21 @@ for (const marker of [
   }
 }
 for (const marker of [
-  "Location directory",
-  "Brief overview",
-  "Open full record",
-  "Searchable on page",
-  "<details key={id}",
+  'redirect("/admin/dashboard/crm")',
 ]) {
   if (!adminLocationsPage.includes(marker)) {
-    throw new Error(`Admin Locations enterprise directory must preserve marker: ${marker}`);
+    throw new Error(`Legacy Admin Locations route must consolidate into CRM: ${marker}`);
+  }
+}
+for (const marker of [
+  "Locations CRM",
+  "Add Location",
+  "Data & Import",
+  "listBusinessCRMPage",
+  "AdminCrmWorkspace",
+]) {
+  if (!adminLocationsCrmPage.includes(marker)) {
+    throw new Error(`Admin Locations CRM enterprise directory must preserve marker: ${marker}`);
   }
 }
 for (const marker of [
