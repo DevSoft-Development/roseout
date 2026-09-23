@@ -56,6 +56,7 @@ requireText(dockerfile, 'build:surface:business');
 requireText(dockerfile, 'WEB_SURFACE');
 requireText(dockerfile, '.next/standalone');
 requireText(dockerfile, 'runtime-env-loader.cjs');
+requireText(loader, "String(process.env[key]).trim() === ''", 'Runtime loader must replace blank values with the AWS runtime secret.');
 requireText(dockerfile, 'healthcheck.cjs');
 requireText(dockerfile, '--mount=type=secret,id=platform_env');
 requireText(loader, 'delete process.env.RUNTIME_ENV_JSON');
