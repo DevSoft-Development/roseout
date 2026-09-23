@@ -13,6 +13,7 @@ const ACTIVE_STATUSES = [
   "seated",
 ];
 const LAYOUT_TABLE = "layout_items";
+const BOOKABLE_TABLE = "location_bookable_items";
 const REQUIRED_ASSIGNMENT_COLUMNS = [
   "bookable_item_id",
   "bookable_item_name",
@@ -184,7 +185,7 @@ function overlaps(
 
 type AssignableResource = {
   id: string | null;
-  source: typeof LAYOUT_TABLE | "manual_label";
+  source: typeof LAYOUT_TABLE | typeof BOOKABLE_TABLE | "manual_label";
   label: string | null;
   type: string | null;
   capacity: number | null;
@@ -196,14 +197,19 @@ function normalizeLabel(value: unknown) {
 
 export function normalizeResource(
   resource: any,
-  source: typeof LAYOUT_TABLE,
+  source: typeof LAYOUT_TABLE | typeof BOOKABLE_TABLE,
 ): AssignableResource {
   const label =
     clean(resource.item_name) ||
     clean(resource.name) ||
     clean(resource.label) ||
     null;
-  const capacity = numberOrNull(resource.capacity);
+  const capacity =
+    source === LAYOUT_TABLE
+      ? numberOrNull(resource.capacity)
+      : numberOrNull(
+          resource.capacity_max ?? resource.capacity_min ?? resource.capacity,
+        );
   return {
     id: clean(resource.id) || null,
     source,
@@ -231,23 +237,43 @@ function manualLabelResource(
 async function findResource(
   resourceId: string,
   locationId: string,
-  _source: string | null,
+  source: string | null,
   context: Record<string, any>,
 ) {
-  const layout = await supabaseAdmin
-    .from(LAYOUT_TABLE)
-    .select("id,item_name,item_type,capacity,status,is_active")
-    .eq("id", resourceId)
-    .eq("location_id", locationId)
-    .maybeSingle();
+  const shouldTryLayout = !source || source === LAYOUT_TABLE;
+  const shouldTryBookable = !source || source === BOOKABLE_TABLE;
 
-  if (layout.error) {
-    logDbFailure("find_layout_resource", context, layout.error);
-    if (!isMissingTable(layout.error) && !isMissingColumn(layout.error))
-      throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+  if (shouldTryLayout) {
+    const layout = await supabaseAdmin
+      .from(LAYOUT_TABLE)
+      .select("id,item_name,item_type,capacity,status,is_active")
+      .eq("id", resourceId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (layout.error) {
+      logDbFailure("find_layout_resource", context, layout.error);
+      if (!isMissingTable(layout.error) && !isMissingColumn(layout.error))
+        throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+    }
+    if (layout.data) return normalizeResource(layout.data, LAYOUT_TABLE);
   }
 
-  return layout.data ? normalizeResource(layout.data, LAYOUT_TABLE) : null;
+  if (shouldTryBookable) {
+    const bookable = await supabaseAdmin
+      .from(BOOKABLE_TABLE)
+      .select("*")
+      .eq("id", resourceId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (bookable.error) {
+      logDbFailure("find_bookable_resource", context, bookable.error);
+      if (!isMissingTable(bookable.error) && !isMissingColumn(bookable.error))
+        throw new Error(UNKNOWN_ASSIGNMENT_MESSAGE);
+    }
+    if (bookable.data) return normalizeResource(bookable.data, BOOKABLE_TABLE);
+  }
+
+  return null;
 }
 
 async function validateAssignment(
@@ -291,7 +317,7 @@ async function validateAssignment(
 }
 
 export function shouldPersistBookableItemId(resource: AssignableResource) {
-  return resource.source === LAYOUT_TABLE && isUuid(resource.id);
+  return resource.source === BOOKABLE_TABLE && isUuid(resource.id);
 }
 
 export function reservationConflictsWithResource(
