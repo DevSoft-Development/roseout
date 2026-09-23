@@ -54,6 +54,7 @@ export default function AuthScreen() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [verificationKey, setVerificationKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
@@ -63,6 +64,7 @@ export default function AuthScreen() {
     if (params.mode === "signup" || params.mode === "signin") {
       setMode(params.mode);
       setMessage(null);
+      setVerificationError(null);
       setCaptchaToken(null);
       setVerificationKey((value) => value + 1);
     }
@@ -81,13 +83,14 @@ export default function AuthScreen() {
 
   function handleVerificationError(error: string) {
     setCaptchaToken(null);
-    setMessage(error);
+    setVerificationError(error);
   }
 
   async function submit() {
     if (!captchaToken || !valid || busy) return;
     setBusy(true);
     setMessage(null);
+    setVerificationError(null);
     const result = mode === "signin"
       ? await signIn({ email, password, captchaToken })
       : await signUp({
@@ -133,7 +136,7 @@ export default function AuthScreen() {
 
         <View style={styles.segment}>
           {(["signin", "signup"] as const).map((value) => (
-            <Pressable key={value} onPress={() => { setMode(value); setMessage(null); setCaptchaToken(null); setVerificationKey((key) => key + 1); }} style={[styles.segmentButton, mode === value && { backgroundColor: theme.colors.surfaceElevated }]}>
+            <Pressable key={value} onPress={() => { setMode(value); setMessage(null); setVerificationError(null); setCaptchaToken(null); setVerificationKey((key) => key + 1); }} style={[styles.segmentButton, mode === value && { backgroundColor: theme.colors.surfaceElevated }]}>
               <AppText variant="bodyStrong" accent={mode === value}>{value === "signin" ? "Sign in" : "Create account"}</AppText>
             </Pressable>
           ))}
@@ -196,11 +199,12 @@ export default function AuthScreen() {
             verified={Boolean(captchaToken)}
             onVerified={(token) => {
               setCaptchaToken(token);
-              setMessage(null);
+              setVerificationError(null);
             }}
             onError={handleVerificationError}
           />
 
+          {verificationError ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{verificationError}</AppText></View> : null}
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
           <Button disabled={!valid || busy || !captchaToken} onPress={() => void submit()}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : mode === "signin" ? "Sign in" : "Create account"}</Button>
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
