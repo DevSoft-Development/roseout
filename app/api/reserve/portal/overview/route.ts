@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
       supabaseAdmin
         .from("location_reservations")
         .select(
-          "id,reservation_date,reservation_time,party_size,status,customer_name,reservable_item_name,reservable_item_type,location_id,location_type",
+          "id,reservation_date,reservation_time,party_size,status,customer_name,location_id,location_type",
         )
         .eq("location_id", locationId)
         .gte("reservation_date", trailingStart)
