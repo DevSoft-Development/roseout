@@ -18,6 +18,7 @@ type AttributionRow = {
   review_id?: string | null;
   experience_booking_id?: string | null;
   event_ticket_order_id?: string | null;
+  lead_id?: string | null;
   content_item_id?: string | null;
   social_post_id?: string | null;
   campaign_id?: string | null;
@@ -324,6 +325,88 @@ async function visitRows(cutoff: string, locationId?: string | null) {
   });
 }
 
+
+async function leadRows(cutoff: string, locationId?: string | null) {
+  let query = supabaseAdmin
+    .from("location_leads")
+    .select("id,location_id,lead_type,status,source,created_at,updated_at,contract_signed_at,confirmed_at,completed_at,proposal_currency,deposit_amount_cents,deposit_status,deposit_paid_at,balance_amount_cents,balance_status,balance_paid_at,attribution_search_id,attribution_session_id,attribution_anonymous_id,attribution_promotion_campaign_id,attribution_source_event_id,attribution_channel_class,metadata")
+    .gte("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(5000);
+  if (locationId) query = query.eq("location_id", locationId);
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const now = new Date().toISOString();
+  const rows: AttributionRow[] = [];
+  for (const lead of data || []) {
+    const rawChannel = String(lead.attribution_channel_class || "").toLowerCase();
+    const channelClass = (["organic","sponsored","owned","unknown"].includes(rawChannel)
+      ? rawChannel
+      : lead.attribution_promotion_campaign_id
+        ? "sponsored"
+        : lead.attribution_search_id
+          ? "organic"
+          : "unknown") as ChannelClass;
+    const meta = asObject(lead.metadata);
+    const common = {
+      location_id: lead.location_id,
+      lead_id: lead.id,
+      search_id: lead.attribution_search_id || null,
+      promotion_campaign_id: lead.attribution_promotion_campaign_id || null,
+      anonymous_id: lead.attribution_anonymous_id || null,
+      session_id: lead.attribution_session_id || null,
+      source: stringValue(meta.source) || lead.source || null,
+      medium: stringValue(meta.medium),
+      campaign: stringValue(meta.campaign),
+      channel_class: channelClass,
+      attribution_model: lead.attribution_promotion_campaign_id ? "captured_sponsored_touch" : lead.attribution_search_id ? "captured_search_touch" : "lead_source",
+      conversion_id: String(lead.id),
+      is_conversion: true,
+      currency: String(lead.proposal_currency || "usd").toLowerCase(),
+      source_event_id: lead.attribution_source_event_id || null,
+      updated_at: now,
+    };
+    if (lead.contract_signed_at) {
+      rows.push({
+        ...common,
+        dedupe_key: `location_lead:${lead.id}:contract_signed`,
+        event_type: `${lead.lead_type === "catering" ? "catering" : "private_event"}_contract_signed`,
+        touchpoint_type: "contract",
+        revenue_cents: 0,
+        revenue_kind: "none",
+        metadata: { lead_type: lead.lead_type, status: lead.status },
+        occurred_at: lead.contract_signed_at,
+      });
+    }
+    if (["paid","succeeded","complete","completed"].includes(String(lead.deposit_status || "").toLowerCase()) && Number(lead.deposit_amount_cents || 0) > 0) {
+      rows.push({
+        ...common,
+        dedupe_key: `location_lead:${lead.id}:payment:deposit`,
+        event_type: `${lead.lead_type === "catering" ? "catering" : "private_event"}_deposit_paid`,
+        touchpoint_type: "payment",
+        revenue_cents: Math.max(0, Number(lead.deposit_amount_cents || 0)),
+        revenue_kind: "confirmed",
+        metadata: { lead_type: lead.lead_type, payment_kind: "deposit", status: lead.status },
+        occurred_at: lead.deposit_paid_at || lead.updated_at,
+      });
+    }
+    if (["paid","succeeded","complete","completed"].includes(String(lead.balance_status || "").toLowerCase()) && Number(lead.balance_amount_cents || 0) > 0) {
+      rows.push({
+        ...common,
+        dedupe_key: `location_lead:${lead.id}:payment:balance`,
+        event_type: `${lead.lead_type === "catering" ? "catering" : "private_event"}_balance_paid`,
+        touchpoint_type: "payment",
+        revenue_cents: Math.max(0, Number(lead.balance_amount_cents || 0)),
+        revenue_kind: "confirmed",
+        metadata: { lead_type: lead.lead_type, payment_kind: "balance", status: lead.status },
+        occurred_at: lead.balance_paid_at || lead.updated_at,
+      });
+    }
+  }
+  return rows;
+}
+
 async function experienceRows(cutoff: string, locationId?: string | null) {
   let query = supabaseAdmin
     .from("experience_bookings")
@@ -417,6 +500,7 @@ export async function syncCanonicalAttribution(input?: {
     promotionRows(cutoff, locationId),
     reservationRows(cutoff, locationId),
     visitRows(cutoff, locationId),
+    leadRows(cutoff, locationId),
     experienceRows(cutoff, locationId),
     ticketRows(cutoff, locationId),
   ]);
@@ -429,8 +513,9 @@ export async function syncCanonicalAttribution(input?: {
     promotions: counts[1],
     reservations: counts[2],
     visits: counts[3],
-    experienceBookings: counts[4],
-    ticketOrders: counts[5],
+    leads: counts[4],
+    experienceBookings: counts[5],
+    ticketOrders: counts[6],
     total: counts.reduce((sum, value) => sum + value, 0),
   };
 }
