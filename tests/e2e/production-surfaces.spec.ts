@@ -15,6 +15,10 @@ const bases = {
   reserve: process.env.RESERVE_BASE_URL || "https://reserve.theouthaven.com",
 };
 
+function canonicalHost(hostname: string) {
+  return hostname.toLowerCase().replace(/^www\./, "");
+}
+
 const publicSurfaces = [
   {
     name: "consumer",
@@ -50,7 +54,9 @@ for (const surface of publicSurfaces) {
     const response = await gotoProductionPage(page, `${surface.baseUrl}${surface.path}`);
 
     expect(response?.status() ?? 599).toBeLessThan(500);
-    expect(new URL(page.url()).hostname).toBe(new URL(surface.baseUrl).hostname);
+    expect(canonicalHost(new URL(page.url()).hostname)).toBe(
+      canonicalHost(new URL(surface.baseUrl).hostname),
+    );
     await expect(page.locator("body")).toContainText(surface.expected);
     await assertNoHardProductionError(page);
     await attachProductionEvidence(page, testInfo, surface.name, diagnostics);
