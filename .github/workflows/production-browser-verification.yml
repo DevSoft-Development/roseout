@@ -1,0 +1,114 @@
+name: Production browser verification
+
+on:
+  workflow_run:
+    workflows:
+      - Production CI
+      - AWS web surfaces services
+      - AWS Reserve web
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      surface:
+        description: Production surface to verify
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - consumer
+          - admin
+          - business
+          - reserve
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-browser-verification-${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CONSUMER_BASE_URL: https://theouthaven.com
+      ADMIN_BASE_URL: https://admin.theouthaven.com
+      BUSINESS_BASE_URL: https://business.theouthaven.com
+      RESERVE_BASE_URL: https://reserve.theouthaven.com
+      ADMIN_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_ADMIN_STORAGE_STATE_B64 }}
+      BUSINESS_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_BUSINESS_STORAGE_STATE_B64 }}
+      PRODUCTION_BUSINESS_DEMO_PATH: ${{ vars.PRODUCTION_BUSINESS_DEMO_PATH }}
+
+    steps:
+      - name: Resolve production surface
+        shell: bash
+        env:
+          MANUAL_SURFACE: ${{ github.event.inputs.surface }}
+          TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SURFACES="${MANUAL_SURFACE:-all}"
+          else
+            case "${TRIGGER_WORKFLOW}" in
+              "Production CI") SURFACES="consumer" ;;
+              "AWS web surfaces services") SURFACES="admin,business" ;;
+              "AWS Reserve web") SURFACES="reserve" ;;
+              *) echo "Unsupported deployment workflow: ${TRIGGER_WORKFLOW}" >&2; exit 2 ;;
+            esac
+          fi
+          echo "PRODUCTION_BROWSER_SURFACES=${SURFACES}" >> "$GITHUB_ENV"
+          echo "Verifying production surfaces: ${SURFACES}"
+
+      - name: Check out deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare authenticated browser states
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser-auth"
+
+          if [ -n "${ADMIN_STORAGE_STATE_B64:-}" ]; then
+            printf '%s' "$ADMIN_STORAGE_STATE_B64" | base64 --decode > "$RUNNER_TEMP/browser-auth/admin.json"
+            chmod 600 "$RUNNER_TEMP/browser-auth/admin.json"
+            echo "PLAYWRIGHT_ADMIN_STORAGE_STATE=$RUNNER_TEMP/browser-auth/admin.json" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${BUSINESS_STORAGE_STATE_B64:-}" ]; then
+            printf '%s' "$BUSINESS_STORAGE_STATE_B64" | base64 --decode > "$RUNNER_TEMP/browser-auth/business.json"
+            chmod 600 "$RUNNER_TEMP/browser-auth/business.json"
+            echo "PLAYWRIGHT_BUSINESS_STORAGE_STATE=$RUNNER_TEMP/browser-auth/business.json" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run production browser verification
+        run: npx playwright test tests/e2e/production-surfaces.spec.ts --project=chromium
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-browser-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14
