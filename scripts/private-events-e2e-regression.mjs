@@ -32,7 +32,8 @@ requireText(publicForm, "getActiveAttributionContext", "Public event form must c
 requireText(publicForm, 'name="eventDate"', "Public event form must collect event date.");
 requireText(publicForm, 'name="guestCount"', "Public event form must collect guest count.");
 
-requireText(businessRoute, 'permission: "location.edit"', "Business lead mutations must require location.edit.");
+requireText(businessRoute, 'return requireLocationPermission({ request, locationId, permission });', "Business lead access must delegate to the canonical location permission guard.");
+requireText(businessRoute, 'accessFor(request, locationId, "location.edit")', "Business lead mutations must require location.edit.");
 requireText(businessRoute, 'action === "send_contract"', "Business workflow must support contract delivery.");
 requireText(businessRoute, 'action === "complete"', "Business workflow must support completion.");
 requireText(lifecycle, '"location_lead_payment"', "Private event payments must use the shared Stripe metadata type.");
