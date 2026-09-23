@@ -130,7 +130,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" != "pull_request" ]; then
-            for key in security search reserve billing beta location; do
+            for key in security search reserve billing beta location private_events; do
               echo "$key=true" >> "$GITHUB_OUTPUT"
             done
             exit 0
@@ -152,6 +152,7 @@ jobs:
           billing=false
           beta=false
           location=false
+          private_events=false
 
           if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/|apps/admin/|packages/(auth|db|config)/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
@@ -159,6 +160,7 @@ jobs:
           if [ "$all" = true ] || matches '^(lib/(billing|stripe)/|app/api/(billing|stripe)/|app/.*billing|supabase/.*(billing|stripe)|scripts/billing-production-regression\.mjs$)'; then billing=true; fi
           if [ "$all" = true ] || matches '^(lib/beta/|app/api/beta/|app/beta/|scripts/.*beta)'; then beta=true; fi
           if [ "$all" = true ] || matches '^(lib/locations/|app/api/locations/|app/locations/|components/.*location)'; then location=true; fi
+          if [ "$all" = true ] || matches '^(lib/leads/private-events\.ts$|lib/marketing/canonical-attribution\.ts$|app/api/(business/leads|location-leads|stripe/connect/webhook)/|apps/(business|consumer)/app/(api/business/leads|api/location-leads|api/stripe/connect/webhook|locations/dashboard/leads|private-events)/|components/(private-events/|growth-pro/PublicGrowthProForms\.tsx$)|supabase/migrations/.*private_events|scripts/private-events-e2e-regression\.mjs$)'; then private_events=true; fi
 
           echo "security=$security" >> "$GITHUB_OUTPUT"
           echo "search=$search" >> "$GITHUB_OUTPUT"
@@ -166,16 +168,17 @@ jobs:
           echo "billing=$billing" >> "$GITHUB_OUTPUT"
           echo "beta=$beta" >> "$GITHUB_OUTPUT"
           echo "location=$location" >> "$GITHUB_OUTPUT"
+          echo "private_events=$private_events" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.private_events == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install locked dependencies
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.private_events == 'true'
         run: npm ci
 
       - name: Security access regressions
@@ -226,10 +229,14 @@ jobs:
         if: steps.changes.outputs.location == 'true'
         run: npm run test:location-editor
 
+      - name: Private Events E2E regression
+        if: steps.changes.outputs.private_events == 'true'
+        run: node scripts/private-events-e2e-regression.mjs
+
       - name: Report targeted PR validation
         if: github.event_name == 'pull_request'
         run: |
-          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}, private_events=${{ steps.changes.outputs.private_events }}" >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
     name: Required browser smoke tests
