@@ -1,6 +1,7 @@
 import { getLocationQrStatus } from "@/lib/admin/location-qr-status";
 export const ACTIVITY_CHILD_TABS = [
   "overview",
+  "customer-timeline",
   "analytics",
   "reviews",
   "search-performance",
@@ -19,6 +20,9 @@ export type FreshnessState = "fresh" | "delayed" | "stale" | "unavailable";
 
 export const ACTIVITY_TAB_ALIASES: Record<string, ActivityChildTab> = {
   analytics: "overview",
+  timeline: "customer-timeline",
+  "customer-timeline": "customer-timeline",
+  customer: "customer-timeline",
   "reviews-feedback": "reviews",
   logs: "system-logs",
   reviews: "reviews",
