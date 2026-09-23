@@ -123,6 +123,8 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("Resolve Vercel control-plane credential");
     expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
     expect(workflow).toContain(".drControlToken // empty");
+    expect(workflow).toContain('--region "$EDGE_REGION"');
+    expect(workflow).toContain('printf \'{}\\n\' > "$RUNNER_TEMP/vercel-vault.json"');
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
     expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY");
