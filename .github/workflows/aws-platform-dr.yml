@@ -136,7 +136,10 @@ jobs:
 
           TOKEN="$(jq -r '.drControlToken // empty' "$RUNNER_TEMP/vercel-vault.json")"
           TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
-          [ -n "$TEAM_ID" ] || TEAM_ID="$VERCEL_TEAM_ID"
+          case "$TEAM_ID" in
+            team_*) ;;
+            *) TEAM_ID="$VERCEL_TEAM_ID" ;;
+          esac
 
           echo "VERCEL_CONTROL_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
           echo "VERCEL_CONTROL_SCOPE_QUERY=" >> "$GITHUB_ENV"
