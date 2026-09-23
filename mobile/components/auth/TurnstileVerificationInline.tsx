@@ -22,11 +22,18 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
   const { theme } = useAppTheme();
   const url = `${mobileConfig.siteUrl}/api/mobile/v1/turnstile-frame?action=${encodeURIComponent(action)}`;
 
+  function completeVerification(token?: string, messageAction?: string) {
+    if (token && messageAction === action) {
+      onVerified(token);
+      return true;
+    }
+    return false;
+  }
+
   function handleMessage(event: WebViewMessageEvent) {
     try {
       const payload = JSON.parse(event.nativeEvent.data) as TurnstileMessage;
-      if (payload.type === "turnstile-success" && payload.token && payload.action === action) {
-        onVerified(payload.token);
+      if (payload.type === "turnstile-success" && completeVerification(payload.token, payload.action)) {
         return;
       }
       if (payload.type === "turnstile-error") {
@@ -39,7 +46,7 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
 
   return (
     <View
-      accessibilityLabel="Cloudflare security verification"
+      accessibilityLabel="Security verification"
       style={[
         styles.container,
         {
@@ -55,14 +62,14 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
           </View>
           <View style={styles.verifiedCopy}>
             <AppText variant="bodyStrong">Verification complete</AppText>
-            <AppText variant="caption" muted>Protected by Cloudflare</AppText>
+            <AppText variant="caption" muted>You can continue securely.</AppText>
           </View>
         </View>
       ) : (
         <>
           <View style={styles.labelRow}>
             <AppText variant="bodyStrong">Security check</AppText>
-            <AppText variant="caption" muted>Protected by Cloudflare</AppText>
+            <AppText variant="caption" muted>Complete the quick verification below.</AppText>
           </View>
           <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
             <WebView
@@ -73,10 +80,21 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
               startInLoadingState
               javaScriptEnabled
               domStorageEnabled
-              sharedCookiesEnabled={false}
+              sharedCookiesEnabled
               thirdPartyCookiesEnabled
-              originWhitelist={["https://*", "http://*"]}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              originWhitelist={["https://*", "http://*", "about:blank", "about:srcdoc"]}
               setSupportMultipleWindows={false}
+              onNavigationStateChange={(navState) => {
+                const marker = "#verified=";
+                const index = navState.url.indexOf(marker);
+                if (index < 0) return;
+                const params = new URLSearchParams(navState.url.slice(index + 1));
+                const token = params.get("verified") || "";
+                const messageAction = params.get("action") || "";
+                completeVerification(token, messageAction);
+              }}
               scrollEnabled={false}
               bounces={false}
               showsHorizontalScrollIndicator={false}
