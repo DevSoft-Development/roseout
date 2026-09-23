@@ -735,14 +735,35 @@ jobs:
           ready=false
           DEPLOYMENT_ID=""
           for _ in $(seq 1 120); do
-            curl --fail --silent --show-error \
+            CODE="$(curl --silent --show-error \
               --header "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_CONTROL_TEAM_ID}" > "$RUNNER_TEMP/vercel-deployments.json"
-            DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
-            STATE="$(jq -r --arg id "$DEPLOYMENT_ID" '[.deployments[] | select((.uid==$id) or (.id==$id))][0].readyState // [.deployments[] | select((.uid==$id) or (.id==$id))][0].state // empty' "$RUNNER_TEMP/vercel-deployments.json")"
-            if [ -n "$DEPLOYMENT_ID" ] && [ "$STATE" = "READY" ]; then ready=true; break; fi
-            if [ -n "$DEPLOYMENT_ID" ] && { [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; }; then
-              echo "Vercel deployment for $GITHUB_SHA entered $STATE" >&2
+              --output "$RUNNER_TEMP/vercel-deployments.json" \
+              --write-out '%{http_code}' \
+              "https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_CONTROL_TEAM_ID}" || true)"
+
+            if [ "$CODE" = "200" ]; then
+              DEPLOYMENT_ID="$(jq -r --arg sha "$GITHUB_SHA" '[.deployments[] | select(.meta.githubCommitSha==$sha)][0].uid // [.deployments[] | select(.meta.githubCommitSha==$sha)][0].id // empty' "$RUNNER_TEMP/vercel-deployments.json")"
+              STATE="$(jq -r --arg id "$DEPLOYMENT_ID" '[.deployments[] | select((.uid==$id) or (.id==$id))][0].readyState // [.deployments[] | select((.uid==$id) or (.id==$id))][0].state // empty' "$RUNNER_TEMP/vercel-deployments.json")"
+              if [ -n "$DEPLOYMENT_ID" ] && [ "$STATE" = "READY" ]; then ready=true; break; fi
+              if [ -n "$DEPLOYMENT_ID" ] && { [ "$STATE" = "ERROR" ] || [ "$STATE" = "CANCELED" ]; }; then
+                echo "Vercel deployment for $GITHUB_SHA entered $STATE" >&2
+                exit 1
+              fi
+            elif [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then
+              echo "::warning::Vercel deployments API returned HTTP $CODE; verifying the exact production commit through the direct Vercel health endpoint."
+              HEALTH_CODE="$(curl --silent --show-error \
+                --output "$RUNNER_TEMP/vercel-primary-health.json" \
+                --write-out '%{http_code}' \
+                "$PRIMARY_PROBE_URL" || true)"
+              if [ "$HEALTH_CODE" = "200" ] && jq -e --arg sha "$GITHUB_SHA" '.ok==true and .provider=="vercel" and .revision==$sha' "$RUNNER_TEMP/vercel-primary-health.json" >/dev/null; then
+                DEPLOYMENT_ID="health-endpoint:$GITHUB_SHA"
+                ready=true
+                break
+              fi
+              echo "Vercel API authorization is unavailable and direct Vercel health did not prove exact SHA $GITHUB_SHA (HTTP $HEALTH_CODE)." >&2
+            else
+              echo "Vercel deployments API returned unexpected HTTP $CODE." >&2
+              cat "$RUNNER_TEMP/vercel-deployments.json" >&2 || true
               exit 1
             fi
             sleep 5
