@@ -20,7 +20,7 @@ type TurnstileMessage = {
 
 export function TurnstileVerificationInline({ action, verified, onVerified, onError }: Props) {
   const { theme } = useAppTheme();
-  const url = `${mobileConfig.siteUrl}/mobile/turnstile?embedded=1&compact=1&action=${encodeURIComponent(action)}`;
+  const url = `${mobileConfig.siteUrl}/api/mobile/v1/turnstile-frame?action=${encodeURIComponent(action)}`;
 
   function handleMessage(event: WebViewMessageEvent) {
     try {
@@ -41,74 +41,85 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
     <View
       accessibilityLabel="Cloudflare security verification"
       style={[
-        styles.card,
+        styles.container,
         {
           backgroundColor: theme.colors.surface,
-          borderColor: theme.colors.borderStrong,
+          borderColor: verified ? theme.colors.accent : theme.colors.borderStrong,
         },
       ]}
     >
-      <View style={styles.header}>
-        <View style={[styles.securityIcon, { backgroundColor: theme.colors.accentSoft }]}>
-          <AppText accent>{verified ? "✓" : "•"}</AppText>
+      {verified ? (
+        <View style={styles.verifiedRow}>
+          <View style={[styles.verifiedIcon, { backgroundColor: theme.colors.accentSoft }]}>
+            <AppText accent>✓</AppText>
+          </View>
+          <View style={styles.verifiedCopy}>
+            <AppText variant="bodyStrong">Verification complete</AppText>
+            <AppText variant="caption" muted>Protected by Cloudflare</AppText>
+          </View>
         </View>
-        <View style={styles.headerCopy}>
-          <AppText variant="bodyStrong">Secure {action === "mobile_signin" ? "sign in" : "account creation"}</AppText>
-          <AppText variant="caption" muted style={styles.hint}>
-            {verified ? "Verified by Cloudflare. You can continue." : "Protected by Cloudflare. Verification runs here automatically."}
-          </AppText>
-        </View>
-      </View>
-
-      {!verified ? <View
-        style={[
-          styles.webWrap,
-          {
-            borderColor: theme.colors.borderStrong,
-            backgroundColor: theme.colors.background,
-          },
-        ]}
-      >
-        <WebView
-          source={{ uri: url }}
-          onMessage={handleMessage}
-          onError={() => onError("Security verification is unavailable right now. Please try again.")}
-          onHttpError={() => onError("Security verification is unavailable right now. Please try again.")}
-          startInLoadingState
-          javaScriptEnabled
-          domStorageEnabled
-          sharedCookiesEnabled={false}
-          thirdPartyCookiesEnabled
-          originWhitelist={["https://*", "http://*"]}
-          setSupportMultipleWindows={false}
-          style={styles.webview}
-        />
-      </View> : null}
+      ) : (
+        <>
+          <View style={styles.labelRow}>
+            <AppText variant="bodyStrong">Security check</AppText>
+            <AppText variant="caption" muted>Protected by Cloudflare</AppText>
+          </View>
+          <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
+            <WebView
+              source={{ uri: url }}
+              onMessage={handleMessage}
+              onError={() => onError("Security verification is unavailable right now. Please try again.")}
+              onHttpError={() => onError("Security verification is unavailable right now. Please try again.")}
+              startInLoadingState
+              javaScriptEnabled
+              domStorageEnabled
+              sharedCookiesEnabled={false}
+              thirdPartyCookiesEnabled
+              originWhitelist={["https://*", "http://*"]}
+              setSupportMultipleWindows={false}
+              scrollEnabled={false}
+              bounces={false}
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+              style={styles.webview}
+            />
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  container: {
     width: "100%",
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
+    gap: 10,
+  },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
   },
-  header: {
+  webWrap: {
+    height: 76,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  webview: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  verifiedRow: {
+    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
   },
-  headerCopy: {
-    flex: 1,
-    gap: 3,
-  },
-  hint: {
-    lineHeight: 17,
-  },
-  securityIcon: {
+  verifiedIcon: {
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -116,14 +127,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
-  webWrap: {
-    height: 118,
-    borderWidth: 1,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  webview: {
+  verifiedCopy: {
     flex: 1,
-    backgroundColor: "transparent",
+    gap: 2,
   },
 });
