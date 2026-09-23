@@ -108,6 +108,32 @@ create index if not exists marketing_attribution_revenue_idx
   on public.marketing_attribution_events(location_id, revenue_kind, occurred_at desc)
   where revenue_cents > 0;
 
+create index if not exists location_reservations_attribution_promotion_event_idx
+  on public.location_reservations(attribution_promotion_event_id)
+  where attribution_promotion_event_id is not null;
+
+create index if not exists marketing_attribution_promotion_event_fk_idx
+  on public.marketing_attribution_events(promotion_event_id)
+  where promotion_event_id is not null;
+create index if not exists marketing_attribution_review_fk_idx
+  on public.marketing_attribution_events(review_id)
+  where review_id is not null;
+create index if not exists marketing_attribution_experience_booking_fk_idx
+  on public.marketing_attribution_events(experience_booking_id)
+  where experience_booking_id is not null;
+create index if not exists marketing_attribution_event_ticket_order_fk_idx
+  on public.marketing_attribution_events(event_ticket_order_id)
+  where event_ticket_order_id is not null;
+create index if not exists marketing_attribution_search_event_row_fk_idx
+  on public.marketing_attribution_events(search_event_row_id)
+  where search_event_row_id is not null;
+create index if not exists marketing_attribution_campaign_fk_idx
+  on public.marketing_attribution_events(campaign_id)
+  where campaign_id is not null;
+create index if not exists marketing_attribution_social_post_fk_idx
+  on public.marketing_attribution_events(social_post_id)
+  where social_post_id is not null;
+
 comment on table public.marketing_attribution_events is
   'Canonical attribution spine across organic/sponsored/owned touchpoints, bookings, verified visits, and revenue.';
 comment on column public.marketing_attribution_events.channel_class is
