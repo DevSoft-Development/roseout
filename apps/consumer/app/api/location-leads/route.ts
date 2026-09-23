@@ -51,6 +51,10 @@ export async function POST(request: Request) {
     ? "Demo Event Guest"
     : body.name;
   const customerPhone = demoContext.isDemo ? "212-555-0199" : body.phone;
+  const attribution = body.attribution && typeof body.attribution === "object" ? body.attribution : {};
+  const channelClass = ["organic", "sponsored", "owned", "unknown"].includes(String(attribution.channel_class || ""))
+    ? String(attribution.channel_class)
+    : null;
 
   const { data: lead, error } = await supabaseAdmin
     .from("location_leads")
@@ -61,17 +65,33 @@ export async function POST(request: Request) {
       customer_email: customerEmail,
       customer_phone: customerPhone,
       occasion: body.occasion,
-      guest_count: body.guestCount,
+      event_date: body.eventDate || null,
+      event_time: body.eventTime || null,
+      guest_count: body.guestCount ? Number(body.guestCount) : null,
+      budget_range: body.budgetRange || null,
+      food_needs: body.foodNeeds || null,
+      drink_needs: body.drinkNeeds || null,
+      private_room_needed: body.privateRoomNeeded === true || body.privateRoomNeeded === "true",
+      package_interest: body.packageInterest || null,
       notes: body.notes,
       source: demoContext.isDemo ? "demo_center" : "public_growth_pro",
       status: "new",
+      attribution_search_id: attribution.search_id || null,
+      attribution_session_id: attribution.session_id || null,
+      attribution_anonymous_id: attribution.anonymous_id || null,
+      attribution_promotion_campaign_id: attribution.promotion_campaign_id || null,
+      attribution_channel_class: channelClass,
       metadata: demoContext.isDemo
         ? {
             demo: true,
             demo_key: "real_location_mirror_demo",
             never_contact: true,
           }
-        : {},
+        : {
+            source: attribution.source || null,
+            medium: attribution.medium || null,
+            campaign: attribution.campaign || null,
+          },
     })
     .select("id")
     .single();
