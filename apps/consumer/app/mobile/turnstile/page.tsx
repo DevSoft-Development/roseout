@@ -31,6 +31,7 @@ function MobileTurnstileContent() {
   const requestedAction = params.get("action") || "mobile_signin";
   const action = ALLOWED_ACTIONS.has(requestedAction) ? requestedAction : "mobile_signin";
   const embedded = params.get("embedded") === "1";
+  const compact = embedded && params.get("compact") === "1";
   const [status, setStatus] = useState(embedded ? "Finishing your security check…" : "Complete the quick verification to return to TheOutHaven.");
   const callback = useMemo(() => `theouthaven://auth/turnstile?action=${encodeURIComponent(action)}`, [action]);
 
@@ -60,6 +61,19 @@ function MobileTurnstileContent() {
     setStatus("Verified. Returning to TheOutHaven…");
     window.location.href = `${callback}&token=${encodeURIComponent(token)}`;
   };
+
+  if (compact) {
+    return (
+      <main className="fixed inset-0 flex items-center bg-[#090909] px-2 text-white">
+        <div className="w-full">
+          <div className="flex justify-center">
+            <TurnstileField action={action} onToken={finish} />
+          </div>
+          <p className="mt-2 text-center text-[11px] leading-4 text-white/45">{status}</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <TurnstileShell embedded={embedded}>

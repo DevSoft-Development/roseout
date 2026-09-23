@@ -51,7 +51,8 @@ export default function AuthScreen() {
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [smsConsent, setSmsConsent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [verificationKey, setVerificationKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
@@ -62,7 +63,8 @@ export default function AuthScreen() {
     if (params.mode === "signup" || params.mode === "signin") {
       setMode(params.mode);
       setMessage(null);
-      setVerifying(false);
+      setCaptchaToken(null);
+      setVerificationKey((value) => value + 1);
     }
   }, [params.mode]);
 
@@ -77,20 +79,14 @@ export default function AuthScreen() {
       && /^\d{5}$/.test(homeZipCode);
   }, [birthMonth, email, firstName, homeZipCode, mode, password, passwordsMatch, phone, strength.strong]);
 
-  function startVerification() {
-    if (!valid || busy || verifying) return;
-    setMessage(null);
-    setVerifying(true);
-  }
-
   function handleVerificationError(error: string) {
-    setVerifying(false);
+    setCaptchaToken(null);
     setMessage(error);
   }
 
-  async function submit(captchaToken: string) {
+  async function submit() {
+    if (!captchaToken || !valid || busy) return;
     setBusy(true);
-    setVerifying(false);
     setMessage(null);
     const result = mode === "signin"
       ? await signIn({ email, password, captchaToken })
@@ -106,12 +102,16 @@ export default function AuthScreen() {
         });
     setBusy(false);
     if (result.error) {
+      setCaptchaToken(null);
+      setVerificationKey((value) => value + 1);
       setMessage(result.error);
       return;
     }
     if (mode === "signup" && result.requiresEmailConfirmation) {
       setMessage("Account created. Check your email to confirm your account, then sign in.");
       setMode("signin");
+      setCaptchaToken(null);
+      setVerificationKey((value) => value + 1);
       return;
     }
     router.replace("/(tabs)/profile");
@@ -133,7 +133,7 @@ export default function AuthScreen() {
 
         <View style={styles.segment}>
           {(["signin", "signup"] as const).map((value) => (
-            <Pressable key={value} onPress={() => { setMode(value); setMessage(null); setVerifying(false); }} style={[styles.segmentButton, mode === value && { backgroundColor: theme.colors.surfaceElevated }]}>
+            <Pressable key={value} onPress={() => { setMode(value); setMessage(null); setCaptchaToken(null); setVerificationKey((key) => key + 1); }} style={[styles.segmentButton, mode === value && { backgroundColor: theme.colors.surfaceElevated }]}>
               <AppText variant="bodyStrong" accent={mode === value}>{value === "signin" ? "Sign in" : "Create account"}</AppText>
             </Pressable>
           ))}
@@ -190,25 +190,19 @@ export default function AuthScreen() {
             <AppText variant="caption" muted style={styles.legal}>By creating an account, you agree to TheOutHaven Terms and acknowledge the Privacy Policy. SMS consent is optional.</AppText>
           </> : null}
 
-          <View style={[styles.security, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }]}>
-            <View style={[styles.securityIcon, { backgroundColor: theme.colors.accentSoft }]}><AppText accent>✓</AppText></View>
-            <View style={styles.securityCopy}>
-              <AppText variant="bodyStrong">Secure {mode === "signin" ? "sign in" : "account creation"}</AppText>
-              <AppText variant="caption" muted style={styles.securityHint}>Protected by Cloudflare without sending you out to your browser.</AppText>
-            </View>
-          </View>
-
-          {verifying && !busy ? (
-            <TurnstileVerificationInline
-              action={verificationAction}
-              onCancel={() => setVerifying(false)}
-              onVerified={(token) => void submit(token)}
-              onError={handleVerificationError}
-            />
-          ) : null}
+          <TurnstileVerificationInline
+            key={`${verificationAction}-${verificationKey}`}
+            action={verificationAction}
+            verified={Boolean(captchaToken)}
+            onVerified={(token) => {
+              setCaptchaToken(token);
+              setMessage(null);
+            }}
+            onError={handleVerificationError}
+          />
 
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
-          <Button disabled={!valid || busy || verifying} onPress={startVerification}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : verifying ? "Complete the security check above" : mode === "signin" ? "Sign in" : "Create account"}</Button>
+          <Button disabled={!valid || busy || !captchaToken} onPress={() => void submit()}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : !captchaToken ? "Waiting for security check…" : mode === "signin" ? "Sign in" : "Create account"}</Button>
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
@@ -253,6 +247,5 @@ const styles = StyleSheet.create({
   select: { minHeight: 54, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, selectChevron: { fontSize: 20 },
   consent: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 18, padding: 14, alignItems: "flex-start" }, checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
-  security: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: 16, padding: 13 }, securityIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, securityCopy: { flex: 1, gap: 2 }, securityHint: { lineHeight: 17 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
