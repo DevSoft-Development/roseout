@@ -122,6 +122,8 @@ describe("platform cross-cloud DR contract", () => {
     const catalog = source("lib/admin/credential-vault-catalog.ts");
     expect(workflow).toContain("Resolve Vercel control-plane credential");
     expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
+    expect(workflow).toContain("CREDENTIAL_VAULT_REGION: us-east-1");
+    expect(workflow).toContain('--region "$CREDENTIAL_VAULT_REGION"');
     expect(workflow).toContain(".drControlToken // empty");
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
