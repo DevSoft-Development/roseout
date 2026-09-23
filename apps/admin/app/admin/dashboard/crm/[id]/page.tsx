@@ -64,6 +64,7 @@ import {
 } from "@/lib/locations/public-location-url";
 import { getEditableLocationMenu } from "@/lib/locations/menu";
 import { buildOutreachHref, buildOpportunitiesHref, buildClaimsHref, buildSupportHref, buildTasksHref, buildActivityHref } from "@/lib/crm/context";
+import { loadCustomerJourneyTimeline, type CustomerJourneyTimeline } from "@/lib/crm/customer-journey";
 
 import { ADMIN_PAGE_ACCESS, canAdmin } from "@/lib/admin-permissions";
 import {
@@ -2427,7 +2428,7 @@ export default async function CRMDetailPage({
   );
 }
 
-function ActivityIntelligenceWorkspace({
+async function ActivityIntelligenceWorkspace({
   business,
   related,
   publishability,
@@ -2659,6 +2660,7 @@ function ActivityIntelligenceWorkspace({
       .join(" "),
   }));
   const period = range || "last-30-days";
+  const customerJourney = childTab === "customer-timeline" ? await loadCustomerJourneyTimeline(String(business.id), 300) : null;
   return (
     <section className="space-y-5" aria-labelledby="activity-workspace-title">
       <AdminSectionCard className="p-5">
@@ -2743,7 +2745,10 @@ function ActivityIntelligenceWorkspace({
           />
         </>
       ) : null}
-      {childTab !== "overview" ? (
+      {childTab === "customer-timeline" && customerJourney ? (
+        <CustomerJourneyTimelinePanel timeline={customerJourney} />
+      ) : null}
+      {childTab !== "overview" && childTab !== "customer-timeline" ? (
         <ActivityDetailPanel
           childTab={childTab}
           business={business}
@@ -2758,6 +2763,86 @@ function ActivityIntelligenceWorkspace({
     </section>
   );
 }
+function CustomerJourneyTimelinePanel({ timeline }: { timeline: CustomerJourneyTimeline }) {
+  const money = (cents: number, currency = "USD") =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: String(currency || "USD").toUpperCase() }).format(cents / 100);
+  const categoryLabel = (value: string) => value.split("-").map((part) => part ? part[0].toUpperCase() + part.slice(1) : part).join(" ");
+  const trustClass = (trust: string) =>
+    trust === "confirmed" || trust === "verified"
+      ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"
+      : trust === "estimated"
+        ? "border-amber-300/20 bg-amber-500/10 text-amber-100"
+        : trust === "attributed"
+          ? "border-blue-300/20 bg-blue-500/10 text-blue-100"
+          : "border-white/10 bg-white/[0.04] text-white/65";
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          ["Customer references", timeline.summary.customerReferences],
+          ["Reservations", timeline.summary.reservations],
+          ["Verified visits", timeline.summary.verifiedVisits],
+          ["Reviews", timeline.summary.reviews],
+          ["Conversations", timeline.summary.conversations],
+          ["Private event / catering leads", timeline.summary.leads],
+          ["Campaign records", timeline.summary.campaigns],
+          ["Confirmed revenue", money(timeline.summary.confirmedRevenueCents)],
+          ["Estimated revenue", money(timeline.summary.estimatedRevenueCents)],
+        ].map(([label, value]) => (
+          <AdminKpiCard key={String(label)} label={String(label)} value={String(value)} />
+        ))}
+      </div>
+      <AdminSectionCard className="p-5">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-xl font-black">Canonical customer journey</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">
+              One read-only timeline assembled from the canonical reservation, verified-visit, review, campaign, Private Events/Catering,
+              attribution, revenue, conversation, and CRM activity records. Confirmed and estimated revenue remain separate.
+            </p>
+          </div>
+          <p className="text-xs font-bold text-white/40">{timeline.events.length} recent events</p>
+        </div>
+        {timeline.events.length ? (
+          <div className="mt-5 space-y-3">
+            {timeline.events.map((item) => (
+              <article key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+                        {categoryLabel(item.category)}
+                      </span>
+                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${trustClass(item.trust)}`}>
+                        {item.trust}
+                      </span>
+                      {item.status ? <span className="text-xs font-bold text-white/40">{String(item.status).replace(/_/g, " ")}</span> : null}
+                    </div>
+                    <h4 className="mt-2 font-black text-white">{item.title}</h4>
+                    <p className="mt-1 text-sm leading-6 text-white/60">{item.summary}</p>
+                    <p className="mt-2 text-xs text-white/35">
+                      {new Date(item.occurredAt).toLocaleString()} · {item.sourceTable}
+                      {item.customerLabel ? ` · ${item.customerLabel}` : ""}
+                    </p>
+                  </div>
+                  {item.revenueCents != null ? (
+                    <div className="shrink-0 text-right">
+                      <p className="text-lg font-black text-white">{money(item.revenueCents, item.currency || "USD")}</p>
+                      <p className="text-xs font-bold text-white/40">{item.revenueKind || "attributed"} revenue</p>
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyPanel title="No customer journey events" text="No canonical customer-facing events have been recorded for this location yet." />
+        )}
+      </AdminSectionCard>
+    </div>
+  );
+}
+
 function ActivityAlerts({
   recommendations,
   publishability,
