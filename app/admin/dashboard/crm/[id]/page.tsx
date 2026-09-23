@@ -1628,7 +1628,22 @@ function ProfileForm({
   ];
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+    <section className="space-y-5">
+      <div className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,6,42,0.12),rgba(255,255,255,0.025))] p-5">
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Location Details</p>
+        <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-black text-white">Edit the canonical location record</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-white/55">
+              Update guest-facing business information, hours, visibility, reservation links, and internal search tuning from this CRM record. Changes stay attached to the same location across Admin, Business, Reserve, and consumer search.
+            </p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-black text-white/60">
+            ${canEdit ? "Editing enabled" : "Read only"}
+          </span>
+        </div>
+      </div>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <form
         action={saveLocationProfile}
         className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
@@ -1701,7 +1716,7 @@ function ProfileForm({
             disabled={!canEdit}
             className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save profile
+            Save Location
           </button>
           {!canEdit ? (
             <p className="text-sm text-white/45">Viewer role is read-only.</p>
@@ -1719,6 +1734,7 @@ function ProfileForm({
         aiHelperEnabled={true}
         aiHelperAccessLabel="Admins can keep manual edits and apply only the suggestions they want."
       />
+      </section>
     </section>
   );
 }
@@ -1750,14 +1766,14 @@ function CrmHeroActions({
           href={`/admin/dashboard/crm/${business.id}?tab=listing`}
           className="flex min-h-[52px] items-center justify-center rounded-[1rem] bg-rose-600 px-4 py-3 text-center text-sm font-black text-white shadow-lg shadow-rose-950/35 transition hover:bg-rose-500"
         >
-          Edit Listing Enhancement
+          Listing Enhancement
         </Link>
 
         <Link
           href={`/admin/dashboard/crm/${business.id}?tab=profile`}
           className="flex min-h-[52px] items-center justify-center rounded-[1rem] border border-white/10 bg-white/[0.06] px-4 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white"
         >
-          Edit Profile
+          Edit Location
         </Link>
       </div>
 
@@ -2405,7 +2421,7 @@ export default async function CRMDetailPage({
               href={`/admin/dashboard/crm/${business.id}?tab=profile`}
               className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-white/75"
             >
-              Profile Basics
+              Edit Location
             </Link>
             <Link
               href={`/admin/dashboard/crm/${business.id}?tab=menu-packages`}
