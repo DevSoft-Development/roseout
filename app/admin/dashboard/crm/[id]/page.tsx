@@ -1639,7 +1639,7 @@ function ProfileForm({
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-black text-white/60">
-            ${canEdit ? "Editing enabled" : "Read only"}
+            {canEdit ? "Editing enabled" : "Read only"}
           </span>
         </div>
       </div>
