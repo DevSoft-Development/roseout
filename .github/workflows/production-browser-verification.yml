@@ -1,6 +1,14 @@
 name: Production browser verification
 
 on:
+  pull_request:
+    paths:
+      - 'tests/e2e/production-browser-helpers.ts'
+      - 'tests/e2e/production-surfaces.spec.ts'
+      - '.github/workflows/production-browser-verification.yml'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_run:
     workflows:
       - Production CI
@@ -31,7 +39,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -51,7 +59,9 @@ jobs:
           TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            SURFACES="all"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SURFACES="${MANUAL_SURFACE:-all}"
           else
             case "${TRIGGER_WORKFLOW}" in
@@ -64,7 +74,7 @@ jobs:
           echo "PRODUCTION_BROWSER_SURFACES=${SURFACES}" >> "$GITHUB_ENV"
           echo "Verifying production surfaces: ${SURFACES}"
 
-      - name: Check out deployed commit
+      - name: Check out verification commit
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
