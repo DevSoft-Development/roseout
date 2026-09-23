@@ -127,8 +127,8 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain(".drControlToken // empty");
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
-    expect(workflow).toContain('team_*) ;;\');
-    expect(workflow).toContain('*) TEAM_ID="$VERCEL_TEAM_ID" ;;\');
+    expect(workflow).toContain("team_*) ;;");
+    expect(workflow).toContain('*) TEAM_ID="$VERCEL_TEAM_ID" ;;');
     expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY");
     expect(workflow).toContain("VERCEL_CONTROL_AVAILABLE=false");
     expect(workflow).toContain("/api/health/platform-dr/control-proof");
