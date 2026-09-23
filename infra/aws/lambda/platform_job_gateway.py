@@ -27,7 +27,7 @@ ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
     "supabase": {"url", "publishableKey", "serviceRoleKey"},
-    "vercel": {"token", "teamId"},
+    "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
     "microsoft": {"tenantId", "clientId", "clientSecret", "tokenEncryptionKey"},
     "openai": {"apiKey"},
@@ -335,11 +335,20 @@ def _test_credential(environment, provider):
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "GitHub token verified."}
         raise ValueError("github_credential_test_failed")
 
-    if provider == "vercel" and values.get("token"):
-        status, _ = _http_json("https://api.vercel.com/v2/user", headers={"Authorization": f"Bearer {values['token']}"})
-        if status == 200:
-            return {"ok": True, "provider": provider, "status": "healthy", "detail": "Vercel token verified."}
-        raise ValueError("vercel_credential_test_failed")
+    if provider == "vercel":
+        runtime_token = values.get("token")
+        dr_token = values.get("drControlToken")
+        if runtime_token:
+            status, _ = _http_json("https://api.vercel.com/v2/user", headers={"Authorization": f"Bearer {runtime_token}"})
+            if status != 200:
+                raise ValueError("vercel_credential_test_failed")
+        if dr_token:
+            project_id = "prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN"
+            status, _ = _http_json(f"https://api.vercel.com/v9/projects/{project_id}", headers={"Authorization": f"Bearer {dr_token}"})
+            if status != 200:
+                raise ValueError("vercel_credential_test_failed")
+        if runtime_token or dr_token:
+            return {"ok": True, "provider": provider, "status": "healthy", "detail": "Vercel credential access verified."}
 
     if provider == "huggingface" and values.get("token"):
         status, _ = _http_json("https://huggingface.co/api/whoami-v2", headers={"Authorization": f"Bearer {values['token']}"})
