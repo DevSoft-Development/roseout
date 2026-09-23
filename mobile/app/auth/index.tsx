@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { TurnstileVerificationModal } from "@/components/auth/TurnstileVerificationModal";
+import { TurnstileVerificationInline } from "@/components/auth/TurnstileVerificationInline";
 import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
@@ -198,8 +198,17 @@ export default function AuthScreen() {
             </View>
           </View>
 
+          {verifying && !busy ? (
+            <TurnstileVerificationInline
+              action={verificationAction}
+              onCancel={() => setVerifying(false)}
+              onVerified={(token) => void submit(token)}
+              onError={handleVerificationError}
+            />
+          ) : null}
+
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
-          <Button disabled={!valid || busy || verifying} onPress={startVerification}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : verifying ? "Checking security…" : mode === "signin" ? "Sign in" : "Create account"}</Button>
+          <Button disabled={!valid || busy || verifying} onPress={startVerification}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : verifying ? "Complete the security check above" : mode === "signin" ? "Sign in" : "Create account"}</Button>
           {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
@@ -228,13 +237,6 @@ export default function AuthScreen() {
         </Pressable>
       </Modal>
 
-      <TurnstileVerificationModal
-        visible={verifying && !busy}
-        action={verificationAction}
-        onCancel={() => setVerifying(false)}
-        onVerified={(token) => void submit(token)}
-        onError={handleVerificationError}
-      />
     </KeyboardAvoidingView>
   );
 }
