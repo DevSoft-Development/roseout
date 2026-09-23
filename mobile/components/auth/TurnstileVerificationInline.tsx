@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { AppText } from "@/components/ui/AppText";
 import { mobileConfig } from "@/lib/config";
@@ -6,7 +6,7 @@ import { useAppTheme } from "@/providers/ThemeProvider";
 
 type Props = {
   action: "mobile_signin" | "mobile_signup";
-  onCancel: () => void;
+  verified: boolean;
   onVerified: (token: string) => void;
   onError: (message: string) => void;
 };
@@ -18,9 +18,9 @@ type TurnstileMessage = {
   message?: string;
 };
 
-export function TurnstileVerificationInline({ action, onCancel, onVerified, onError }: Props) {
+export function TurnstileVerificationInline({ action, verified, onVerified, onError }: Props) {
   const { theme } = useAppTheme();
-  const url = `${mobileConfig.siteUrl}/mobile/turnstile?embedded=1&action=${encodeURIComponent(action)}`;
+  const url = `${mobileConfig.siteUrl}/mobile/turnstile?embedded=1&compact=1&action=${encodeURIComponent(action)}`;
 
   function handleMessage(event: WebViewMessageEvent) {
     try {
@@ -49,23 +49,18 @@ export function TurnstileVerificationInline({ action, onCancel, onVerified, onEr
       ]}
     >
       <View style={styles.header}>
+        <View style={[styles.securityIcon, { backgroundColor: theme.colors.accentSoft }]}>
+          <AppText accent>{verified ? "✓" : "•"}</AppText>
+        </View>
         <View style={styles.headerCopy}>
-          <AppText variant="bodyStrong">Security verification</AppText>
+          <AppText variant="bodyStrong">Secure {action === "mobile_signin" ? "sign in" : "account creation"}</AppText>
           <AppText variant="caption" muted style={styles.hint}>
-            Complete the quick check below to continue without leaving this page.
+            {verified ? "Verified by Cloudflare. You can continue." : "Protected by Cloudflare. Verification runs here automatically."}
           </AppText>
         </View>
-        <Pressable
-          onPress={onCancel}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Cancel security verification"
-        >
-          <AppText accent variant="bodyStrong">Cancel</AppText>
-        </Pressable>
       </View>
 
-      <View
+      {!verified ? <View
         style={[
           styles.webWrap,
           {
@@ -88,7 +83,7 @@ export function TurnstileVerificationInline({ action, onCancel, onVerified, onEr
           setSupportMultipleWindows={false}
           style={styles.webview}
         />
-      </View>
+      </View> : null}
     </View>
   );
 }
@@ -103,9 +98,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 14,
+    alignItems: "center",
+    gap: 11,
   },
   headerCopy: {
     flex: 1,
@@ -114,8 +108,16 @@ const styles = StyleSheet.create({
   hint: {
     lineHeight: 17,
   },
+  securityIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
   webWrap: {
-    height: 250,
+    height: 118,
     borderWidth: 1,
     borderRadius: 14,
     overflow: "hidden",
