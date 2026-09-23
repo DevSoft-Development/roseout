@@ -117,7 +117,7 @@ requireText(adminPortalLoginLink, 'https://admin.theouthaven.com/admin/login?aut
 
 const pullRequestPaths = workflow.match(/  pull_request:\n    paths:\n([\s\S]*?)\n  push:/)?.[1] || '';
 const pushPaths = workflow.match(/  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] || '';
-for (const path of ['apps/admin/**', 'apps/business/**', 'packages/auth/**', 'packages/db/**', 'packages/config/**', 'app/auth/**', 'app/api/auth/**', 'app/api/admin/**', 'lib/**']) {
+for (const path of ['apps/admin/**', 'apps/business/**', 'packages/auth/**', 'packages/db/**', 'packages/config/**', 'app/auth/**', 'app/api/auth/**', 'app/api/admin/**', 'app/api/reserve/**', 'lib/**']) {
   requireText(pullRequestPaths, `- '${path}'`, `Pull request validation must run when ${path} changes.`);
   requireText(pushPaths, `- '${path}'`, `Production Admin/Business deployment must run when ${path} changes on main.`);
 }
