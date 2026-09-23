@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
-import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";\nimport { failLeadCheckoutPayment, settleLeadCheckoutPayment } from "@/lib/leads/commercial";
+import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";\nimport { failLeadCheckoutPayment, refundLeadCheckoutPayment, settleLeadCheckoutPayment } from "@/lib/leads/commercial";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -399,7 +399,17 @@ export async function POST(request: NextRequest) {
 
       case "charge.refunded": {
         const type = String(object?.metadata?.type || "");
-        if (type === "event_ticket_order") {
+        if (type === "location_lead_payment") {
+          const leadId = String(object?.metadata?.lead_id || "").trim();
+          const paymentKind = String(object?.metadata?.payment_kind || "").trim();
+          if (leadId && ["deposit", "balance"].includes(paymentKind)) {
+            await refundLeadCheckoutPayment({
+              leadId,
+              kind: paymentKind as "deposit" | "balance",
+              amountRefundedCents: Number(object.amount_refunded || 0),
+            });
+          }
+        } else if (type === "event_ticket_order") {
           const orderId = await resolveOrderId(object);
           if (orderId) {
             await supabaseAdmin.from("event_ticket_orders").update({ payment_status: "refunded", status: "refunded", refunded_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", orderId);
