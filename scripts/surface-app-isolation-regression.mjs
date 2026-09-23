@@ -5434,21 +5434,26 @@ for (const route of [
 
 
 const isolatedLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
-if (
-  !isolatedLocationsPage.includes("@theouthaven/auth/admin-session") ||
-  !isolatedLocationsPage.includes("@theouthaven/db/admin-client") ||
-  isolatedLocationsPage.includes("@/lib/admin-auth") ||
-  isolatedLocationsPage.includes("@/lib/supabase")
-) {
-  throw new Error("Locations command center must use isolated Admin auth and DB.");
+if (!isolatedLocationsPage.includes('redirect("/admin/dashboard/crm")')) {
+  throw new Error("Legacy Locations command center must redirect into CRM.");
 }
 
-const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx");
-if (
-  !isolatedLocationDetail.includes("@theouthaven/auth/admin-session") ||
-  !isolatedLocationDetail.includes("@theouthaven/db/admin-client")
-) {
-  throw new Error("Location detail must use isolated Admin auth and DB.");
+const isolatedLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
+const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+const isolatedNewLocationPage = read("apps/admin/app/admin/dashboard/crm/new/page.tsx");
+for (const [label, source] of [
+  ["Locations CRM directory", isolatedLocationsCrmPage],
+  ["Locations CRM detail", isolatedLocationDetail],
+  ["Locations CRM create", isolatedNewLocationPage],
+]) {
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`${label} must use isolated Admin auth and DB.`);
+  }
 }
 
 const isolatedLocationSearch = read("apps/admin/app/api/admin/search-locations/route.ts");
@@ -5459,8 +5464,8 @@ if (
   throw new Error("Location search API must use shared Admin DB.");
 }
 
-if (!adminNavigation.includes("/admin/dashboard/locations")) {
-  throw new Error("Locations navigation must be present in isolated Admin shell.");
+if (!adminNavigation.includes("/admin/dashboard/crm") || adminNavigation.includes('label: "Locations"')) {
+  throw new Error("Locations CRM must be the sole primary location navigation in isolated Admin shell.");
 }
 
 
