@@ -52,10 +52,14 @@ describe("platform cross-cloud DR contract", () => {
   it("protects live controls while leaving only the origin health marker public", () => {
     const adminRoute = source("app/api/admin/platform-dr/route.ts");
     const healthRoute = source("app/api/health/platform-dr/route.ts");
+    const controlProofRoute = source("app/api/health/platform-dr/control-proof/route.ts");
     expect(adminRoute).toContain('requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine)');
     expect(adminRoute).toContain('LIVE PLATFORM FAILOVER');
     expect(healthRoute).toContain('x-toh-platform-origin');
     expect(healthRoute).toContain('cache-control');
+    expect(controlProofRoute).toContain('createHmac("sha256", secret)');
+    expect(controlProofRoute).toContain('timingSafeEqual');
+    expect(controlProofRoute).toContain('gatewayUrl === configuredUrl');
   });
 
   it("uses an expiring AWS-side failover override and probes all three surfaces", () => {
@@ -122,6 +126,10 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
     expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY");
+    expect(workflow).toContain("VERCEL_CONTROL_AVAILABLE=false");
+    expect(workflow).toContain("/api/health/platform-dr/control-proof");
+    expect(workflow).toContain("Vercel server-side DR control configuration already matches the canonical AWS gateway secret.");
+    expect(workflow).toContain("no authorized Vercel write credential is available to repair it");
     expect(workflow).toContain("https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}");
     expect(workflow).not.toContain("GITHUB_VERCEL_TOKEN");
     expect(workflow).not.toContain('validate_candidate "authoritative-runtime"');
