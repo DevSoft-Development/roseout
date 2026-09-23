@@ -1,4 +1,4 @@
-import LocationInstagramPublisher from "@/components/marketing/LocationInstagramPublisher";
+import LocationSocialComposer from "@/components/marketing/LocationSocialComposer";
 import { getCurrentBusinessLocation } from "@/lib/growth-pro/data";
 import { getLocationName } from "@/lib/locationName";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -15,6 +15,15 @@ import {
 export const dynamic = "force-dynamic";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type SocialConnectionRow = {
+  id: string;
+  provider: string;
+  display_name: string | null;
+  username: string | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  updated_at: string;
+};
 
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] || "" : value || "";
@@ -57,6 +66,19 @@ export default async function LocationMarketingStudioPage({
     .limit(1)
     .maybeSingle();
   const connected = connection?.status === "connected";
+  const { data: socialConnections } = await supabaseAdmin
+    .from("marketing_social_connections")
+    .select("id,provider,display_name,username,status,metadata,updated_at")
+    .eq("scope", "location")
+    .eq("location_id", locationId)
+    .in("provider", ["instagram", "facebook", "tiktok", "youtube"])
+    .neq("status", "disconnected")
+    .order("updated_at", { ascending: false });
+  const socialByProvider = new Map<string, SocialConnectionRow>();
+  for (const row of socialConnections || []) {
+    if (!socialByProvider.has(String(row.provider))) socialByProvider.set(String(row.provider), row as SocialConnectionRow);
+  }
+  const connectedChannelCount = ["instagram", "facebook", "tiktok", "youtube"].filter((provider) => socialByProvider.get(provider)?.status === "connected").length;
 
   const { data: posts } = connection?.id
     ? await supabaseAdmin
@@ -119,8 +141,8 @@ export default async function LocationMarketingStudioPage({
       <BusinessPageHeader
         eyebrow="Marketing & Growth"
         title="Marketing Studio"
-        subtitle={<>Create, approve, publish, schedule, and measure Instagram content for {locationName} from one workspace.</>}
-        badge={<BusinessStatusBadge tone={connected ? "green" : "amber"}>{connected ? (connection?.username ? `@${String(connection.username).replace(/^@/, "")}` : "Instagram connected") : "Instagram not connected"}</BusinessStatusBadge>}
+        subtitle={<>Create once, tailor by channel, publish or schedule, and measure social content for {locationName} from one workspace.</>}
+        badge={<BusinessStatusBadge tone={connectedChannelCount ? "green" : "amber"}>{connectedChannelCount ? `${connectedChannelCount} social channel${connectedChannelCount === 1 ? "" : "s"} connected` : "No social channels connected"}</BusinessStatusBadge>}
         actions={<><BusinessActionButton href={`/locations/dashboard/social-accounts?locationId=${encodeURIComponent(locationId)}`} variant="primary">Social Accounts</BusinessActionButton><BusinessActionButton href={`/locations/dashboard/analytics?locationId=${encodeURIComponent(locationId)}`}>Analytics</BusinessActionButton></>}
       />
 
@@ -164,13 +186,24 @@ export default async function LocationMarketingStudioPage({
 
         <section className="rounded-[2rem] border border-white/10 bg-[#110d0d] p-5 shadow-xl sm:p-7">
           <div className="mb-5">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">Instagram Publisher</p>
-            <h2 className="mt-2 text-2xl font-black">Create your next post</h2>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#ff6b86]">Social Manager</p>
+            <h2 className="mt-2 text-2xl font-black">Create once. Publish everywhere you choose.</h2>
+            <p className="mt-2 max-w-3xl text-sm font-semibold text-white/40">Use one master draft, tailor the copy per connected channel, preserve provider-specific controls, and send everything through the same approved publishing pipeline.</p>
           </div>
-          <LocationInstagramPublisher
+          <LocationSocialComposer
             locationId={locationId}
-            connected={connected}
-            username={connection?.username || null}
+            connections={(["instagram", "facebook", "tiktok", "youtube"] as const).map((provider) => {
+              const row = socialByProvider.get(provider);
+              return {
+                provider,
+                connected: row?.status === "connected",
+                displayName: row?.display_name || null,
+                username: row?.username || null,
+                metadata: row?.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+                  ? row.metadata as Record<string, unknown>
+                  : null,
+              };
+            })}
             mediaOptions={mediaOptions}
             demandOpportunities={(demand?.demandOpportunities || []).map((item) => ({
               query: item.query,

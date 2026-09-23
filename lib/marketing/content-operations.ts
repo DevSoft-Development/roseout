@@ -278,6 +278,12 @@ export async function syncApprovedSocialRecords(content: MarketingContentRow) {
         source_id: content.source_id,
         approval_version: content.approved_version,
         approval_hash: content.approval_hash,
+        ...(platform === "tiktok" ? {
+          tiktok_privacy_level: content.metadata?.tiktok_privacy_level || null,
+          tiktok_disable_comment: Boolean(content.metadata?.tiktok_disable_comment),
+          tiktok_disable_duet: Boolean(content.metadata?.tiktok_disable_duet),
+          tiktok_disable_stitch: Boolean(content.metadata?.tiktok_disable_stitch),
+        } : {}),
       },
     };
 

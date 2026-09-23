@@ -23,7 +23,7 @@ const labels: Record<Provider, string> = {
 
 const descriptions: Record<Provider, string> = {
   facebook: "Publish approved posts to this location's Facebook Page.",
-  tiktok: "Publish approved video or photo content with creator-controlled TikTok privacy settings.",
+  tiktok: "Publish approved video content with creator-controlled TikTok privacy settings.",
   youtube: "Publish approved video content to this location's YouTube channel.",
 };
 
