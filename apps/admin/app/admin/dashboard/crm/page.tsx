@@ -273,12 +273,12 @@ export default async function CRMPage({
   return (
     <CrmWorkspaceShell>
       <AdminPageHeader
-        eyebrow={isSearchMode ? "CRM Search" : "Location Operations · SaaS CRM"}
-        title={isSearchMode ? "Search Results" : "CRM"}
+        eyebrow={isSearchMode ? "Locations CRM Search" : "Location Operations · Enterprise CRM"}
+        title={isSearchMode ? "Search Results" : "Locations CRM"}
         subtitle={
           isSearchMode
             ? `${pageData.total} ${pageData.total === 1 ? "match" : "matches"} for “${q}”`
-            : "Manage partner pipeline, readiness, and outreach."
+            : "Operate every location from one workspace: profile, ownership, reservations, guests, revenue, marketing, support, and lifecycle activity."
         }
         actions={
           isSearchMode ? (
@@ -287,14 +287,14 @@ export default async function CRMPage({
             </AdminActionButton>
           ) : (
             <>
-              <AdminActionButton
-                href={`/admin/dashboard/crm?${baseParams.toString()}`}
-              >
-                Export
+              <AdminActionButton href="/admin/dashboard/crm/new" variant="primary">
+                Add Location
+              </AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/settings/location-tools">
+                Data & Import
               </AdminActionButton>
               <AdminActionButton
                 href="/admin/dashboard/crm/work-queue?view=tasks"
-                variant="primary"
               >
                 Create Task
               </AdminActionButton>

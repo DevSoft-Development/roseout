@@ -28,7 +28,7 @@ export default function LocationWorkspaceNavigation({
     ["Tasks", buildTasksHref(context), false],
     ["Reservations", reservationsHref, activeGroup.id === "operations" && activeTab === "reservations"],
     ["Activity", getLocationWorkspaceHref(locationId, "activity"), activeGroup.id === "activity"],
-    ["Details", getLocationWorkspaceHref(locationId, "profile"), activeGroup.id === "profile" || activeGroup.id === "settings" || activeGroup.id === "menu"],
+    ["Location Details", getLocationWorkspaceHref(locationId, "profile"), activeGroup.id === "profile" || activeGroup.id === "settings" || activeGroup.id === "menu"],
   ] as const;
 
   return (

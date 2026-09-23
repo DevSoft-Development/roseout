@@ -353,6 +353,7 @@ const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
+const adminLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
 const adminWebsiteHostingPage = read("apps/admin/app/admin/dashboard/website-hosting/page.tsx");
 const adminWorkerOperationsPage = read("apps/admin/app/admin/dashboard/operations/workers/page.tsx");
 const adminCronJobsClient = read("apps/admin/app/admin/dashboard/settings/cron-jobs/CronJobsClient.tsx");
@@ -394,14 +395,21 @@ for (const marker of [
   }
 }
 for (const marker of [
-  "Location directory",
-  "Brief overview",
-  "Open full record",
-  "Searchable on page",
-  "<details key={id}",
+  'redirect("/admin/dashboard/crm")',
 ]) {
   if (!adminLocationsPage.includes(marker)) {
-    throw new Error(`Admin Locations enterprise directory must preserve marker: ${marker}`);
+    throw new Error(`Legacy Admin Locations route must consolidate into CRM: ${marker}`);
+  }
+}
+for (const marker of [
+  "Locations CRM",
+  "Add Location",
+  "Data & Import",
+  "listBusinessCRMPage",
+  "AdminCrmWorkspace",
+]) {
+  if (!adminLocationsCrmPage.includes(marker)) {
+    throw new Error(`Admin Locations CRM enterprise directory must preserve marker: ${marker}`);
   }
 }
 for (const marker of [
@@ -5426,21 +5434,41 @@ for (const route of [
 
 
 const isolatedLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
-if (
-  !isolatedLocationsPage.includes("@theouthaven/auth/admin-session") ||
-  !isolatedLocationsPage.includes("@theouthaven/db/admin-client") ||
-  isolatedLocationsPage.includes("@/lib/admin-auth") ||
-  isolatedLocationsPage.includes("@/lib/supabase")
-) {
-  throw new Error("Locations command center must use isolated Admin auth and DB.");
+if (!isolatedLocationsPage.includes('redirect("/admin/dashboard/crm")')) {
+  throw new Error("Legacy Locations command center must redirect into CRM.");
 }
 
-const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx");
+const isolatedLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
+const isolatedLocationDetail = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+const isolatedNewLocationPage = read("apps/admin/app/admin/dashboard/crm/new/page.tsx");
+const isolatedAdminCrmHelper = read("apps/admin/lib/admin-crm.ts");
 if (
-  !isolatedLocationDetail.includes("@theouthaven/auth/admin-session") ||
-  !isolatedLocationDetail.includes("@theouthaven/db/admin-client")
+  !isolatedLocationsCrmPage.includes("@theouthaven/auth/admin-session") ||
+  !isolatedLocationsCrmPage.includes("@/lib/admin-crm") ||
+  !isolatedLocationsCrmPage.includes("listBusinessCRMPage") ||
+  isolatedLocationsCrmPage.includes("@/lib/admin-auth") ||
+  isolatedLocationsCrmPage.includes("@/lib/supabase-admin")
 ) {
-  throw new Error("Location detail must use isolated Admin auth and DB.");
+  throw new Error("Locations CRM directory must use isolated Admin auth and canonical Admin CRM data access.");
+}
+if (
+  !isolatedAdminCrmHelper.includes("@theouthaven/db/admin-client") ||
+  isolatedAdminCrmHelper.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Canonical Admin CRM data access must use the shared isolated Admin DB client.");
+}
+for (const [label, source] of [
+  ["Locations CRM detail", isolatedLocationDetail],
+  ["Locations CRM create", isolatedNewLocationPage],
+]) {
+  if (
+    !source.includes("@theouthaven/auth/admin-session") ||
+    !source.includes("@theouthaven/db/admin-client") ||
+    source.includes("@/lib/admin-auth") ||
+    source.includes("@/lib/supabase-admin")
+  ) {
+    throw new Error(`${label} must use isolated Admin auth and DB.`);
+  }
 }
 
 const isolatedLocationSearch = read("apps/admin/app/api/admin/search-locations/route.ts");
@@ -5451,8 +5479,8 @@ if (
   throw new Error("Location search API must use shared Admin DB.");
 }
 
-if (!adminNavigation.includes("/admin/dashboard/locations")) {
-  throw new Error("Locations navigation must be present in isolated Admin shell.");
+if (!adminNavigation.includes("/admin/dashboard/crm") || adminNavigation.includes('label: "Locations"')) {
+  throw new Error("Locations CRM must be the sole primary location navigation in isolated Admin shell.");
 }
 
 
@@ -5988,7 +6016,6 @@ const enterpriseKnowledgeBasePages = [
   ["Search Anchor Curated Review", read("apps/admin/app/admin/dashboard/search-anchors/curated-review/page.tsx")],
   ["Search Anchor Verification", read("apps/admin/app/admin/dashboard/search-anchors/verification/page.tsx")],
   ["Non-Searchable Locations", read("apps/admin/app/admin/dashboard/locations/non-searchable/page.tsx")],
-  ["Location Detail", read("apps/admin/app/admin/dashboard/locations/id/[locationId]/page.tsx")],
   ["Reserve Layout Boundary", read("apps/admin/app/admin/dashboard/location-layout/create/page.tsx")],
 ];
 for (const [label, source] of enterpriseKnowledgeBasePages) {
@@ -5996,6 +6023,13 @@ for (const [label, source] of enterpriseKnowledgeBasePages) {
     if (!source.includes(marker)) {
       throw new Error(`${label} must preserve shared enterprise Admin shell marker: ${marker}`);
     }
+  }
+}
+
+const enterpriseLocationCrmDetail = read("apps/admin/app/admin/dashboard/crm/[id]/page.tsx");
+for (const marker of ["AdminPageShell", "Location Workspace", "CrmHeroActions", "LocationWorkspaceNavigation"]) {
+  if (!enterpriseLocationCrmDetail.includes(marker)) {
+    throw new Error(`Location CRM Detail must preserve enterprise CRM record shell marker: ${marker}`);
   }
 }
 

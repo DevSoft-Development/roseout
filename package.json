@@ -73,8 +73,9 @@
     "test:crm-customer-timeline": "node scripts/crm-customer-timeline-regression.mjs",
     "test:canonical-attribution": "node scripts/canonical-attribution-roi-regression.mjs",
     "test:enterprise-business": "npm run test:canonical-attribution && npm run test:private-events && npm run test:enterprise-reservations && npm run test:growth-intelligence && npm run test:crm-customer-timeline",
-    "test:enterprise-release": "npm run test:security-access && npm run test:surface-app-isolation && npm run test:enterprise-business && npm run test:release-gate-closure",
-    "test:release-gate-closure": "node scripts/enterprise-release-gate-regression.mjs"
+    "test:enterprise-release": "npm run test:security-access && npm run test:surface-app-isolation && npm run test:enterprise-business && npm run test:release-gate-closure && npm run test:admin-crm-location-workspace",
+    "test:release-gate-closure": "node scripts/enterprise-release-gate-regression.mjs",
+    "test:admin-crm-location-workspace": "node scripts/admin-crm-location-workspace-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
