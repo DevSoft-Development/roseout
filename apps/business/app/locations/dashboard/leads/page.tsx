@@ -21,7 +21,7 @@ export default async function PrivateEventsPage({ searchParams }: { searchParams
   if (!location) {
     return (
       <BusinessPageShell>
-        <BusinessPageHeader title="Private Events" description="No claimed location is available for this workspace." />
+        <BusinessPageHeader eyebrow="Customers" title="Private Events" subtitle="No claimed location is available for this workspace." />
       </BusinessPageShell>
     );
   }
@@ -39,7 +39,7 @@ export default async function PrivateEventsPage({ searchParams }: { searchParams
       <BusinessPageHeader
         eyebrow="Customers"
         title="Private Events"
-        description={`Manage ${getLocationName(location, "your location")} inquiries from lead through proposal, contract, deposit, final payment, and completion.`}
+        subtitle={`Manage ${getLocationName(location, "your location")} inquiries from lead through proposal, contract, deposit, final payment, and completion.`}
       />
       <PrivateEventsWorkspace locationId={String(location.id)} initialLeads={(leads || []) as any[]} />
     </BusinessPageShell>
