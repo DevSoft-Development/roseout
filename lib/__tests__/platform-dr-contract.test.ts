@@ -112,26 +112,30 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("'infra/aws/background-runtime/**'");
   });
 
-  it("resolves the Vercel control credential from canonical sources before DR API calls", () => {
+  it("uses one dedicated project-scoped Vercel DR authority from Credential Vault", () => {
     const workflow = source(".github/workflows/aws-platform-dr.yml");
+    const guard = source(".github/workflows/vercel-dr-control-credential-health.yml");
+    const catalog = source("lib/admin/credential-vault-catalog.ts");
     expect(workflow).toContain("Resolve Vercel control-plane credential");
     expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
+    expect(workflow).toContain(".drControlToken // empty");
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
-    expect(workflow).toContain("GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
-    expect(workflow).toContain("validate_candidate \"credential-vault\"");
-    expect(workflow).toContain("validate_candidate \"authoritative-runtime\"");
-    expect(workflow).toContain("validate_candidate \"github-actions\"");
+    expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY");
     expect(workflow).toContain("https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}");
-    expect(workflow).toContain("trying the next configured source");
-    expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$scope_query");
+    expect(workflow).not.toContain("GITHUB_VERCEL_TOKEN");
+    expect(workflow).not.toContain('validate_candidate "authoritative-runtime"');
+    expect(workflow).not.toContain('validate_candidate "github-actions"');
     expect(workflow).toContain("https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}");
     expect(workflow).not.toContain("https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}");
     expect(workflow).toContain("scope_query=${SCOPE_QUERY:-}");
     expect(workflow).toContain("VERCEL_SCOPE_QUERY: ${{ steps.vercel_primary.outputs.scope_query }}");
     expect(workflow).toContain("gitSource:{type:\"github\",org:\"DevSoft-Development\",repo:\"roseout\",ref:\"main\",sha:$sha}");
     expect(workflow).toContain("Vercel DR control environment upsert failed with HTTP $ENV_CODE.");
-    expect(workflow).toContain(".VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty");
+    expect(catalog).toContain('key: "drControlToken"');
+    expect(guard).toContain("workflow_run:");
+    expect(guard).not.toContain("cron:");
+    expect(guard).toContain("Vercel DR control credential is healthy.");
   });
 
   it("rejects conflicting dynamic slug names that break the standalone router", () => {
