@@ -102,6 +102,8 @@ export default function AuthScreen() {
         });
     setBusy(false);
     if (result.error) {
+      setCaptchaToken(null);
+      setVerificationKey((value) => value + 1);
       setMessage(result.error);
       return;
     }
