@@ -3,6 +3,12 @@ name: Production browser verification
 on:
   pull_request:
     paths:
+      - 'app/**'
+      - 'apps/consumer/**'
+      - 'apps/admin/**'
+      - 'apps/business/**'
+      - 'apps/reserve/**'
+      - 'components/**'
       - 'tests/e2e/production-browser-helpers.ts'
       - 'tests/e2e/production-surfaces.spec.ts'
       - '.github/workflows/production-browser-verification.yml'
