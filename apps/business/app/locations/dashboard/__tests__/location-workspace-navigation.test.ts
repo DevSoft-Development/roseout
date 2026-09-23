@@ -9,12 +9,13 @@ const appShell = readFileSync("components/AppShell.tsx", "utf8");
 const layout = readFileSync("app/locations/dashboard/layout.tsx", "utf8");
 
 describe("location workspace E2E navigation", () => {
-  it("keeps the 17 primary owner workspaces inside the location dashboard shell", () => {
+  it("keeps the 18 primary owner workspaces inside the location dashboard shell", () => {
     const primaryRoutes = [
       "/locations/dashboard",
       "/locations/dashboard/events-experiences",
       "/locations/dashboard/menu",
       "/locations/dashboard/website",
+      "/locations/dashboard/visibility-health",
       "/locations/dashboard/messaging",
       "/locations/dashboard/reservations",
       "/locations/dashboard/reservations/large-group-bookings",
@@ -30,7 +31,7 @@ describe("location workspace E2E navigation", () => {
       "/locations/dashboard/settings",
     ];
     for (const route of primaryRoutes) expect(nav).toContain(`href: "${route}"`);
-    expect(nav.match(/\bicon: [A-Z]/g) || []).toHaveLength(17);
+    expect(nav.match(/\bicon: [A-Z]/g) || []).toHaveLength(18);
   });
 
   it("keeps consolidated child tools reachable and highlights their parent hubs", () => {
