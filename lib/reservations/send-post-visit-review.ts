@@ -3,6 +3,7 @@ import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { generateReviewToken } from "@/lib/tokens/secure-token";
 import { ensureShortLink } from "@/lib/short-links/service";
 import { startInternalReservationReviewConsent } from "@/lib/reviews/internal-reservation-review-consent";
+import { ensureCanonicalVisitVerification } from "@/lib/reviews/visit-verification";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
 
@@ -34,6 +35,21 @@ export async function sendReservationPostVisitReview(reservationId: string) {
     .eq("id", reservation.location_id)
     .maybeSingle();
 
+  const verification = await ensureCanonicalVisitVerification({
+    locationId: String(reservation.location_id),
+    reservationId: String(reservation.id),
+    userId: reservation.user_id || null,
+    verificationType: "reservation_verified",
+    verificationStatus: "verified",
+    verificationSource: reservation.completed_at ? "internal_reservation_completed" : "internal_reservation_seated",
+    metadata: {
+      reservation_status: reservation.status,
+      seated_at: reservation.seated_at || null,
+      completed_at: reservation.completed_at || null,
+      canonicalized_for_review_at: new Date().toISOString(),
+    },
+  });
+
   let { data: eligibility, error: eligibilityError } = await supabaseAdmin
     .from("location_review_eligibility")
     .select("*")
@@ -43,6 +59,23 @@ export async function sendReservationPostVisitReview(reservationId: string) {
   if (eligibilityError) throw eligibilityError;
   if (eligibility?.status === "reviewed") return { ok: true, skipped: true, reason: "already_reviewed" };
 
+  if (eligibility && eligibility.visit_id !== verification.id) {
+    const { data: updatedEligibility, error: visitLinkError } = await supabaseAdmin
+      .from("location_review_eligibility")
+      .update({
+        visit_id: verification.id,
+        metadata: {
+          ...(eligibility.metadata && typeof eligibility.metadata === "object" ? eligibility.metadata : {}),
+          canonical_visit_linked_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", eligibility.id)
+      .select("*")
+      .single();
+    if (visitLinkError) throw visitLinkError;
+    eligibility = updatedEligibility;
+  }
+
   if (!eligibility) {
     const token = generateReviewToken();
     const { data: created, error: createError } = await supabaseAdmin
@@ -51,6 +84,7 @@ export async function sendReservationPostVisitReview(reservationId: string) {
         location_id: reservation.location_id,
         user_id: reservation.user_id || null,
         reservation_id: reservation.id,
+        visit_id: verification.id,
         guest_email: reservation.customer_email || null,
         source: "internal_reservation",
         status: "eligible",
