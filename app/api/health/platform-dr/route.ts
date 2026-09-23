@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getPlatformDrStatus, platformDrConfigured } from "@/lib/aws/platform-dr-client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,9 +37,36 @@ function headers(snapshot: ReturnType<typeof runtimeSnapshot>) {
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const snapshot = runtimeSnapshot();
-  return NextResponse.json(snapshot, { status: 200, headers: headers(snapshot) });
+  if (request.nextUrl.searchParams.get("verifyDrControl") !== "1") {
+    return NextResponse.json(snapshot, { status: 200, headers: headers(snapshot) });
+  }
+
+  const configured = platformDrConfigured();
+  if (!configured) {
+    return NextResponse.json({
+      ...snapshot,
+      drControl: { configured: false, healthy: false },
+    }, { status: 200, headers: headers(snapshot) });
+  }
+
+  try {
+    const status = await getPlatformDrStatus();
+    return NextResponse.json({
+      ...snapshot,
+      drControl: {
+        configured: true,
+        healthy: status?.ok === true,
+        mode: status?.state?.mode || null,
+      },
+    }, { status: 200, headers: headers(snapshot) });
+  } catch {
+    return NextResponse.json({
+      ...snapshot,
+      drControl: { configured: true, healthy: false },
+    }, { status: 200, headers: headers(snapshot) });
+  }
 }
 
 export async function HEAD() {
