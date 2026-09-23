@@ -120,6 +120,8 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
     expect(workflow).toContain("GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
     expect(workflow).toContain(".VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty");
+    expect(workflow).toContain("https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&target=production&limit=20&teamId=${VERCEL_CONTROL_TEAM_ID}");
+    expect(workflow).not.toContain("https://api.vercel.com/v13/deployments?projectId=");
   });
 
   it("rejects conflicting dynamic slug names that break the standalone router", () => {
