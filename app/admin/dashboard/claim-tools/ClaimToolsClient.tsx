@@ -170,11 +170,9 @@ export default function ClaimToolsClient() {
             : result.source_table === "restaurants"
               ? `/restaurants/id/${result.source_id}`
               : `/activities/${result.source_id}`;
-          const editHref = result.source_table === "restaurants"
-            ? `/admin/dashboard/locations/edit/restaurants/${result.source_id}`
-            : result.source_table === "activities"
-              ? `/admin/dashboard/locations/edit/activities/${result.source_id}`
-              : `/admin/dashboard/locations`;
+          const editHref = result.location_id || result.source_id
+            ? `/admin/dashboard/crm/${result.location_id || result.source_id}?tab=profile`
+            : "/admin/dashboard/crm";
 
           return (
             <article key={result.id} className="rounded-[1.75rem] border border-white/10 bg-[#0d0d0d] p-5 shadow-xl">
