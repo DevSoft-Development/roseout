@@ -1,0 +1,1 @@
+export { GET } from "@/app/api/reserve/portal/resources/route";

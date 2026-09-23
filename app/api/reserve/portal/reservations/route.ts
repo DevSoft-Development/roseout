@@ -5,6 +5,7 @@ import { logAdminLocationAction } from "@/lib/admin/audit-log";
 import { getReserveCanonicalLocationId, requireReservePermission } from "@/lib/reserve/locationPermissions";
 import { normalizeReservationFormDateTime } from "@/lib/reservations/timeSlots";
 import { chargeReservationGuarantee, releaseReservationGuarantee } from "@/lib/reservations/guarantee";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 const allowedStatuses = [
   "pending",
@@ -105,9 +106,17 @@ export async function GET(request: NextRequest) {
     const adminLocationId = cleanString(searchParams.get("adminLocationId"));
     let adminUser: any = null;
     if (adminLocationId) {
-      const auth = await requireAdminLocationApiRead();
-      if (auth.error) return auth.error;
-      adminUser = auth.adminUser;
+      const demoAccess = await getInternalDemoLocationAccess({
+        locationId: adminLocationId,
+        adminLocationId,
+        demo: searchParams.get("demo"),
+        fromDemoCenter: searchParams.get("fromDemoCenter"),
+      });
+      if (!demoAccess) {
+        const auth = await requireAdminLocationApiRead();
+        if (auth.error) return auth.error;
+        adminUser = auth.adminUser;
+      }
     }
     let locationId = adminLocationId || cleanString(searchParams.get("locationId"));
     const rawType = cleanString(searchParams.get("type"));

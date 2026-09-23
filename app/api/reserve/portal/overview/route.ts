@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminLocationApiRead } from "@/lib/admin/admin-access";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import {
   getReserveCanonicalLocationId,
   requireReservePermission,
@@ -73,8 +74,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (adminLocationId) {
-      const auth = await requireAdminLocationApiRead();
-      if (auth.error) return auth.error;
+      const demoAccess = await getInternalDemoLocationAccess({
+        locationId,
+        adminLocationId,
+        demo: searchParams.get("demo"),
+        fromDemoCenter: searchParams.get("fromDemoCenter"),
+      });
+      if (!demoAccess) {
+        const auth = await requireAdminLocationApiRead();
+        if (auth.error) return auth.error;
+      } else {
+        locationId = demoAccess.locationId;
+      }
     } else {
       const permission = await requireReservePermission(locationId, "viewDashboard");
       if (permission.error) return permission.error;

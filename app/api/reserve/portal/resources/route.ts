@@ -5,6 +5,7 @@ import {
   requireAdminLocationApiWrite,
 } from "@/lib/admin/admin-access";
 import { logAdminLocationAction } from "@/lib/admin/audit-log";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -110,10 +111,20 @@ function payloadFromBody(body: Record<string, any>) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAdminLocationApiRead();
-  if (auth.error) return auth.error;
-
   const { searchParams } = new URL(request.url);
+  const adminLocationId = clean(searchParams.get("adminLocationId"));
+  const demoAccess = await getInternalDemoLocationAccess({
+    locationId: clean(searchParams.get("locationId")) || adminLocationId,
+    adminLocationId,
+    demo: searchParams.get("demo"),
+    fromDemoCenter: searchParams.get("fromDemoCenter"),
+  });
+  let adminUser: any = null;
+  if (!demoAccess) {
+    const auth = await requireAdminLocationApiRead();
+    if (auth.error) return auth.error;
+    adminUser = auth.adminUser;
+  }
   const locationId =
     clean(searchParams.get("adminLocationId")) ||
     clean(searchParams.get("locationId"));
@@ -177,14 +188,16 @@ export async function GET(request: NextRequest) {
     );
   resources = byResourceKey(resources);
 
-  await logAdminLocationAction({
-    adminUser: auth.adminUser,
-    locationId,
-    actionType: "admin_location_resources_view",
-    targetType: "layout_items",
-    metadata: { date, count: resources.length },
-    request,
-  });
+  if (adminUser) {
+    await logAdminLocationAction({
+      adminUser,
+      locationId,
+      actionType: "admin_location_resources_view",
+      targetType: "layout_items",
+      metadata: { date, count: resources.length },
+      request,
+    });
+  }
   return NextResponse.json({ success: true, resources });
 }
 

@@ -174,6 +174,8 @@ function ReserveOverviewContent({ forcedTheme }: { forcedTheme?: "dark" | "light
       });
       if (adminLocationId) common.set("adminLocationId", adminLocationId);
       if (suppliedType) common.set("type", suppliedType);
+      if (demo) common.set("demo", demo);
+      if (fromDemoCenter) common.set("fromDemoCenter", fromDemoCenter);
 
       const reservationsQuery = new URLSearchParams(common);
       reservationsQuery.set("filter", "date");
