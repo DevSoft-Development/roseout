@@ -28,7 +28,7 @@ const tableReadyReserve = read("apps/reserve/app/api/reserve/portal/reservations
 const guarantee = read("lib/reservations/guarantee.ts");
 const atomicAssignment = read("supabase/migrations/20260906043500_reserve_canonical_bookable_assignment.sql");
 const atomicWaitlist = read("supabase/migrations/20260903213600_reserve_waitlist_atomic_seating.sql");
-const waitlistRealtime = read("supabase/migrations/20260903213400_reserve_waitlist_realtime.sql");
+const waitlistRealtime = read("supabase/migrations/20260903213400_reserve_waitlist_realtime.sql");\nconst waitlistRealtimeRepair = read("supabase/migrations/20260923102000_reserve_waitlist_realtime_repair.sql");
 
 requireAll(status, [
   '"pending"',
@@ -74,7 +74,7 @@ requireAll(waitlist, [
 if (seatWaitlistRoot !== seatWaitlistReserve) throw new Error("Root and isolated Reserve waitlist seating routes must remain identical.");
 requireText(seatWaitlistRoot, "reserve_seat_waitlist_atomic", "Waitlist seating must have a database-atomic fallback.");
 requireText(atomicWaitlist, "converted_reservation_id", "Waitlist conversion must link the resulting reservation.");
-requireText(waitlistRealtime, "supabase_realtime", "Waitlist must publish realtime location-scoped changes.");
+requireText(waitlistRealtime, "supabase_realtime", "Waitlist must publish realtime location-scoped changes.");\nrequireText(waitlistRealtimeRepair, "alter publication supabase_realtime add table public.reservation_waitlist", "Production/DR repair migration must re-assert waitlist realtime publication.");
 
 requireAll(host, [
   'kind = "waitlist"',
