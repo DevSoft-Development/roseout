@@ -15,6 +15,7 @@ describe("location workspace E2E navigation", () => {
       "/locations/dashboard/events-experiences",
       "/locations/dashboard/menu",
       "/locations/dashboard/website",
+      "/locations/dashboard/visibility-health",
       "/locations/dashboard/messaging",
       "/locations/dashboard/reservations",
       "/locations/dashboard/reservations/large-group-bookings",
