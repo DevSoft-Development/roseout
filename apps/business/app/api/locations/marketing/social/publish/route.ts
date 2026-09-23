@@ -223,7 +223,7 @@ export async function POST(request: Request) {
     for (const provider of platforms) {
       const post = postByProvider.get(provider);
       const connection = connectionByProvider.get(provider);
-      if (!post?.id || post.social_connection_id !== connection?.id) {
+      if (!connection?.id || !post?.id || post.social_connection_id !== connection.id) {
         throw new Error(`${platformName(provider)} publishing safety check failed: location connection mismatch.`);
       }
 
