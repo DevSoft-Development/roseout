@@ -24,7 +24,7 @@
     "test:e2e:live": "PLAYWRIGHT_BASE_URL=https://theouthaven.com playwright test",
     "test:e2e:optional": "node scripts/run-e2e-optional.mjs",
     "test:e2e:required": "node scripts/run-e2e-required.mjs",
-    "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run verify:edge-search-boundary && npm run test:candidate-retrieval && npm run test:search-production && npm run test:search-quality && npm run test:search-route-regression && npm run test:security-access",
+    "production-check:strict": "npm run typecheck && npm run lint && npm run build && npm run verify:edge-search-boundary && npm run test:candidate-retrieval && npm run test:search-production && npm run test:search-quality && npm run test:search-route-regression && npm run test:security-access && npm run test:enterprise-reservations",
     "production-check:live": "npm run typecheck && npm run lint && npm run build && PLAYWRIGHT_BASE_URL=https://theouthaven.com npm run test:e2e:required",
     "test:search-quality": "rm -rf .tmp-test/search-quality && tsc --module commonjs --target es2021 --moduleResolution node --baseUrl . --esModuleInterop --skipLibCheck --outDir .tmp-test/search-quality scripts/search-quality-regression.ts lib/search/enterprise/types.ts lib/search/enterprise/normalize-intent.ts lib/search/enterprise/pairing.ts lib/search/enterprise/ranking.ts lib/search/enterprise/distance.ts lib/search/enterprise/geo-taxonomy.ts lib/search/enterprise/taxonomy.ts && node .tmp-test/search-quality/scripts/search-quality-regression.js",
     "location:growth": "node scripts/location-growth-runner.mjs",
@@ -67,7 +67,8 @@
     "test:consumer-surface-migration": "node scripts/consumer-route-migration-regression.mjs",
     "test:reserve-surface-migration": "node scripts/reserve-route-migration-regression.mjs",
     "test:business-surface-migration": "node scripts/business-route-migration-regression.mjs",
-    "test:private-events": "node scripts/private-events-catering-regression.mjs"
+    "test:private-events": "node scripts/private-events-catering-regression.mjs",
+    "test:enterprise-reservations": "node scripts/enterprise-reservations-waitlist-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
