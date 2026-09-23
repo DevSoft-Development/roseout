@@ -35,7 +35,7 @@ export type CustomerJourneyTimeline = {
     conversations: number;
     confirmedRevenueCents: number;
     estimatedRevenueCents: number;
-    uniqueCustomers: number;
+    customerReferences: number;
   };
 };
 
@@ -308,7 +308,7 @@ export async function loadCustomerJourneyTimeline(locationId: string, limit = 25
       conversations: (conversationsResult.data || []).length,
       confirmedRevenueCents: (attributionResult.data || []).filter((row: any) => moneyKind(row.revenue_kind) === "confirmed").reduce((sum: number, row: any) => sum + Number(row.revenue_cents || 0), 0),
       estimatedRevenueCents: (attributionResult.data || []).filter((row: any) => moneyKind(row.revenue_kind) === "estimated").reduce((sum: number, row: any) => sum + Number(row.revenue_cents || 0), 0),
-      uniqueCustomers: customerKeys.size,
+      customerReferences: customerKeys.size,
     },
   };
 }
