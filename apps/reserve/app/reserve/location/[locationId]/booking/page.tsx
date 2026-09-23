@@ -118,6 +118,19 @@ export default function ReservationBookingPage() {
         ? seatingOptions?.dining?.available !== false
         : seatingOptions?.any_available !== false;
   const canConfirm = slotStillAvailable && preferenceAvailable;
+  const attribution = {
+    search_id: searchParams.get("toh_search_id"),
+    session_id: searchParams.get("toh_session_id"),
+    anonymous_id: searchParams.get("toh_anonymous_id"),
+    result_impression_id: searchParams.get("toh_result_impression_id"),
+    promotion_campaign_id: searchParams.get("toh_promotion_campaign_id"),
+    promotion_event_id: searchParams.get("toh_promotion_event_id"),
+    source_event_id: searchParams.get("toh_source_event_id"),
+    channel_class: searchParams.get("toh_channel_class"),
+    source: searchParams.get("utm_source"),
+    medium: searchParams.get("utm_medium"),
+    campaign: searchParams.get("utm_campaign"),
+  };
 
   const backQuery = useMemo(() => {
     const query = new URLSearchParams({
@@ -128,8 +141,24 @@ export default function ReservationBookingPage() {
       seatingPreference: effectiveSeatingPreference,
     });
     if (rescheduleToken) query.set("rescheduleToken", rescheduleToken);
+    for (const key of [
+      "toh_search_id",
+      "toh_session_id",
+      "toh_anonymous_id",
+      "toh_result_impression_id",
+      "toh_promotion_campaign_id",
+      "toh_promotion_event_id",
+      "toh_source_event_id",
+      "toh_channel_class",
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+    ]) {
+      const value = searchParams.get(key);
+      if (value) query.set(key, value);
+    }
     return query.toString();
-  }, [date, effectiveSeatingPreference, locationType, partySize, rescheduleToken, time]);
+  }, [date, effectiveSeatingPreference, locationType, partySize, rescheduleToken, searchParams, time]);
 
   useEffect(() => {
     if (!locationId || !date || !time) {
@@ -253,6 +282,7 @@ export default function ReservationBookingPage() {
           special_request: notes,
           notes,
           reschedule_token: rescheduleToken || null,
+          attribution,
         }),
       });
       const data = await response.json();
