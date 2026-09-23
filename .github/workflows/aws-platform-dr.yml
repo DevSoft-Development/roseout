@@ -67,6 +67,7 @@ env:
   AUTHORITATIVE_RUNTIME_SECRET_REGION: us-east-1
   CERT_PARAMETER: /theouthaven/production/platform-dr/acm-certificate-arn
   CREDENTIAL_VAULT_PREFIX: /theouthaven/credential-vault
+  CREDENTIAL_VAULT_REGION: us-east-1
 
 jobs:
   validate:
@@ -131,7 +132,7 @@ jobs:
         run: |
           set -euo pipefail
           VAULT_SECRET="${CREDENTIAL_VAULT_PREFIX}/${ENVIRONMENT}/vercel"
-          aws secretsmanager get-secret-value             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/vercel-vault.json"
+          aws secretsmanager get-secret-value             --region "$CREDENTIAL_VAULT_REGION"             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/vercel-vault.json"
 
           TOKEN="$(jq -r '.drControlToken // empty' "$RUNNER_TEMP/vercel-vault.json")"
           TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
