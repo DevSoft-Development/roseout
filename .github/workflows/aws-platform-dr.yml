@@ -129,7 +129,7 @@ jobs:
 
       - name: Resolve Vercel control-plane credential
         env:
-          GITHUB_VERCEL_TOKEN: ${{ env.VERCEL_CONTROL_TOKEN }}
+          GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
           TOKEN=""
