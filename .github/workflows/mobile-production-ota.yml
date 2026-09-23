@@ -121,26 +121,57 @@ jobs:
             exit 1
           fi
 
-      - name: Validate mobile auth variables in EAS environments
+      - name: Resolve authoritative mobile auth configuration
         if: steps.release-route.outputs.route == 'ota'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          for environment in production preview; do
-            supabase_url="$(npx --yes eas-cli@latest env:get "$environment" --variable-name EXPO_PUBLIC_SUPABASE_URL --format short --non-interactive)"
-            supabase_key="$(npx --yes eas-cli@latest env:get "$environment" --variable-name EXPO_PUBLIC_SUPABASE_ANON_KEY --format short --non-interactive)"
-            if [ -z "${supabase_url//[[:space:]]/}" ] || [ -z "${supabase_key//[[:space:]]/}" ]; then
-              echo "Missing mobile Supabase configuration in the $environment EAS environment."
-              exit 1
-            fi
-          done
+          test -n "${SUPABASE_ACCESS_TOKEN:-}" || {
+            echo "SUPABASE_ACCESS_TOKEN is required to hydrate mobile auth configuration." >&2
+            exit 1
+          }
+
+          supabase_ref="ftdsltatyqhtllyyefzp"
+          supabase_url="https://${supabase_ref}.supabase.co"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${supabase_ref}/api-keys?reveal=true" \
+            > "$RUNNER_TEMP/mobile-supabase-keys.json"
+
+          supabase_anon="$(jq -r '[.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/mobile-supabase-keys.json")"
+          rm -f "$RUNNER_TEMP/mobile-supabase-keys.json"
+
+          test -n "$supabase_anon" || {
+            echo "Production Supabase anon key could not be resolved." >&2
+            exit 1
+          }
+
+          echo "::add-mask::$supabase_anon"
+          {
+            echo "EXPO_PUBLIC_SUPABASE_URL=$supabase_url"
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$supabase_anon"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify mobile auth configuration is present before bundling
+        if: steps.release-route.outputs.route == 'ota'
+        run: |
+          set -euo pipefail
+          test -n "${EXPO_PUBLIC_SUPABASE_URL:-}" || { echo "EXPO_PUBLIC_SUPABASE_URL is missing." >&2; exit 1; }
+          test -n "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" || { echo "EXPO_PUBLIC_SUPABASE_ANON_KEY is missing." >&2; exit 1; }
+          case "$EXPO_PUBLIC_SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *) echo "EXPO_PUBLIC_SUPABASE_URL is invalid." >&2; exit 1 ;;
+          esac
+          echo "mobile_auth_config_ready=true"
 
       - name: Publish production OTA update to iOS
         if: steps.release-route.outputs.route == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
+          EXPO_PUBLIC_RELEASE_CHANNEL: production
         run: >-
           npx --yes eas-cli@latest update
           --channel production
@@ -165,6 +196,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           CI: '1'
+          EXPO_PUBLIC_RELEASE_CHANNEL: preview
         run: >-
           npx --yes eas-cli@latest update
           --channel preview
