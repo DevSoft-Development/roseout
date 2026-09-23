@@ -16,13 +16,40 @@ async function locs(o:RecalcOptions){ const limit=Math.max(1,Math.min(500,o.limi
 export async function recalculateReviewIntelligence(o:RecalcOptions={}){
   const id=await runLog('review_intelligence'); let updated=0;
   try{
-    for(const l of await locs(o)){
-      const {data:reviews,error}=await supabaseAdmin.from('location_reviews').select('*').eq('location_id',l.id).eq('status','approved').order('created_at',{ascending:false}).limit(500);
+    const locations=await locs(o);
+    const locationIds=locations.map((l:any)=>l.id).filter(Boolean);
+    const reviewByLocation=new Map<string,any[]>();
+    if(locationIds.length){
+      const {data:reviews,error}=await supabaseAdmin
+        .from('location_reviews')
+        .select('*')
+        .in('location_id',locationIds)
+        .eq('status','approved')
+        .order('created_at',{ascending:false})
+        .limit(Math.min(10000,Math.max(500,locationIds.length*500)));
       if(error) throw error;
-      const row={location_id:l.id,...aggregateReviewSignals(reviews||[]),review_summary:null,last_review_at:(reviews||[])[0]?.created_at||null,updated_at:new Date().toISOString()};
-      if(!o.dryRun){ const {error:upsertError}=await supabaseAdmin.from('location_review_ml_features').upsert(row,{onConflict:'location_id'}); if(upsertError) throw upsertError; }
-      updated++;
+      for(const review of reviews||[]){
+        const key=String((review as any).location_id);
+        const list=reviewByLocation.get(key)||[];
+        if(list.length<500) list.push(review);
+        reviewByLocation.set(key,list);
+      }
     }
+    const rows=locations.map((l:any)=>{
+      const reviews=reviewByLocation.get(String(l.id))||[];
+      return {
+        location_id:l.id,
+        ...aggregateReviewSignals(reviews),
+        review_summary:null,
+        last_review_at:reviews[0]?.created_at||null,
+        updated_at:new Date().toISOString(),
+      };
+    });
+    if(!o.dryRun && rows.length){
+      const {error:upsertError}=await supabaseAdmin.from('location_review_ml_features').upsert(rows,{onConflict:'location_id'});
+      if(upsertError) throw upsertError;
+    }
+    updated=rows.length;
     await finish(id,{status:'completed',records_updated:updated}); return {ok:true,recordsUpdated:updated};
   }catch(e:any){ await finish(id,{status:'failed',errors:[e.message]}); return {ok:false,error:e.message}; }
 }
