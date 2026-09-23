@@ -132,36 +132,55 @@ jobs:
           GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
-          TOKEN=""
-          TEAM_ID=""
+          DEFAULT_TEAM_ID="$VERCEL_TEAM_ID"
+          test -n "$DEFAULT_TEAM_ID" || { echo 'No Vercel team id is configured.' >&2; exit 1; }
+
+          VAULT_TOKEN=""
+          VAULT_TEAM_ID=""
+          RUNTIME_TOKEN=""
+          RUNTIME_TEAM_ID=""
 
           VAULT_SECRET="${CREDENTIAL_VAULT_PREFIX}/${ENVIRONMENT}/vercel"
           if aws secretsmanager get-secret-value --secret-id "$VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vercel-vault.json" 2>/dev/null; then
-            TOKEN="$(jq -r '.token // empty' "$RUNNER_TEMP/vercel-vault.json")"
-            TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
+            VAULT_TOKEN="$(jq -r '.token // empty' "$RUNNER_TEMP/vercel-vault.json")"
+            VAULT_TEAM_ID="$(jq -r '.teamId // empty' "$RUNNER_TEMP/vercel-vault.json")"
           fi
 
-          if [ -z "$TOKEN" ]; then
-            if aws secretsmanager get-secret-value --region "$AUTHORITATIVE_RUNTIME_SECRET_REGION" --secret-id "$AUTHORITATIVE_RUNTIME_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vercel-runtime-source.json" 2>/dev/null; then
-              TOKEN="$(jq -r '.VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
-              if [ -z "$TEAM_ID" ]; then
-                TEAM_ID="$(jq -r '.VERCEL_TEAM_ID // .VERCEL_ORG_ID // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
-              fi
+          if aws secretsmanager get-secret-value --region "$AUTHORITATIVE_RUNTIME_SECRET_REGION" --secret-id "$AUTHORITATIVE_RUNTIME_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vercel-runtime-source.json" 2>/dev/null; then
+            RUNTIME_TOKEN="$(jq -r '.VERCEL_TOKEN // .VERCEL_ACCESS_TOKEN // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
+            RUNTIME_TEAM_ID="$(jq -r '.VERCEL_TEAM_ID // .VERCEL_ORG_ID // empty' "$RUNNER_TEMP/vercel-runtime-source.json")"
+          fi
+
+          validate_candidate() {
+            local source="$1" token="$2" team_id="$3" code scope_query
+            [ -n "$token" ] || return 1
+            [ -n "$team_id" ] || team_id="$DEFAULT_TEAM_ID"
+            echo "::add-mask::$token"
+
+            scope_query="teamId=$team_id"
+            code="$(curl --silent --show-error               --header "Authorization: Bearer $token"               --output "$RUNNER_TEMP/vercel-project-probe.json"               --write-out '%{http_code}'               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?$scope_query" || true)"
+            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+              scope_query=""
+              code="$(curl --silent --show-error                 --header "Authorization: Bearer $token"                 --output "$RUNNER_TEMP/vercel-project-probe.json"                 --write-out '%{http_code}'                 "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}" || true)"
             fi
-          fi
 
-          if [ -z "$TOKEN" ]; then
-            TOKEN="$GITHUB_VERCEL_TOKEN"
-          fi
-          if [ -z "$TEAM_ID" ]; then
-            TEAM_ID="$VERCEL_TEAM_ID"
-          fi
+            if [ "$code" != "200" ]; then
+              echo "::warning::Vercel credential source '$source' cannot access the production project (HTTP $code); trying the next configured source."
+              return 1
+            fi
+            jq -e --arg id "$VERCEL_PROJECT_ID" '.id==$id' "$RUNNER_TEMP/vercel-project-probe.json" >/dev/null || {
+              echo "::warning::Vercel credential source '$source' returned a different project; trying the next configured source."
+              return 1
+            }
 
-          test -n "$TOKEN" || { echo 'No Vercel control-plane token is configured in Credential Vault, authoritative runtime, or GitHub Actions.' >&2; exit 1; }
-          test -n "$TEAM_ID" || { echo 'No Vercel team id is configured.' >&2; exit 1; }
-          echo "::add-mask::$TOKEN"
-          echo "VERCEL_CONTROL_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          echo "VERCEL_CONTROL_TEAM_ID=$TEAM_ID" >> "$GITHUB_ENV"
+            echo "VERCEL_CONTROL_TOKEN=$token" >> "$GITHUB_ENV"
+            echo "VERCEL_CONTROL_TEAM_ID=$team_id" >> "$GITHUB_ENV"
+            echo "VERCEL_CONTROL_SCOPE_QUERY=$scope_query" >> "$GITHUB_ENV"
+            echo "Selected Vercel control-plane credential source: $source"
+            return 0
+          }
+
+          validate_candidate "credential-vault" "$VAULT_TOKEN" "$VAULT_TEAM_ID"             || validate_candidate "authoritative-runtime" "$RUNTIME_TOKEN" "$RUNTIME_TEAM_ID"             || validate_candidate "github-actions" "$GITHUB_VERCEL_TOKEN" "$DEFAULT_TEAM_ID"             || { echo 'No configured Vercel control-plane credential can access the production project. Re-authorize or replace the token for the roseout-ventures-projects scope.' >&2; exit 1; }
 
       - name: Bootstrap platform DR deployment permissions
         env:

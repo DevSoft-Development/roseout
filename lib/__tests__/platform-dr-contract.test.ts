@@ -119,6 +119,12 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
     expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
     expect(workflow).toContain("GITHUB_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
+    expect(workflow).toContain("validate_candidate \"credential-vault\"");
+    expect(workflow).toContain("validate_candidate \"authoritative-runtime\"");
+    expect(workflow).toContain("validate_candidate \"github-actions\"");
+    expect(workflow).toContain("https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}");
+    expect(workflow).toContain("trying the next configured source");
+    expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$scope_query");
     expect(workflow).toContain("https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}");
     expect(workflow).not.toContain("https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}");
     expect(workflow).toContain("scope_query=${SCOPE_QUERY:-}");
