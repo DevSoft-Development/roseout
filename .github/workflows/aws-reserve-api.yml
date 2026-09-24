@@ -136,8 +136,9 @@ jobs:
         run: |
           set -euo pipefail
           SHARED_SECRET="$(cat "$RUNNER_TEMP/reserve-api-secret")"
-          aws cloudformation deploy \
-            --stack-name "theouthaven-reserve-api-${TARGET_ENV}" \
+          STACK="theouthaven-reserve-api-${TARGET_ENV}"
+          if ! aws cloudformation deploy \
+            --stack-name "$STACK" \
             --template-file "$TEMPLATE_FILE" \
             --capabilities CAPABILITY_NAMED_IAM \
             --no-fail-on-empty-changeset \
@@ -146,7 +147,14 @@ jobs:
               ReserveApiSharedSecret="$SHARED_SECRET" \
               SupabaseUrl="$SUPABASE_URL" \
               SupabaseServiceRoleSecretArn="$SUPABASE_SECRET_ARN" \
-            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveAPI ManagedBy=CloudFormation
+            --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveAPI ManagedBy=CloudFormation; then
+            echo "Reserve API CloudFormation deployment failed. Recent failed stack events:" >&2
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='DELETE_FAILED'].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]" \
+              --output table >&2 || true
+            exit 1
+          fi
       - name: Build and deploy Reserve API Lambda code
         id: runtime
         env:
