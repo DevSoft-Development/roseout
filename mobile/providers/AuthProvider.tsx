@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Session, User } from "@supabase/supabase-js";
 import { getOrCreateGuestId } from "@/lib/auth/storage";
 import { supabase } from "@/lib/auth/supabase";
+import { mobileConfig } from "@/lib/config";
 
 const SMS_CONSENT_TEXT = "I agree to receive SMS messages from TheOutHaven about my account, saved plans, OUTing reminders, reservations, and optional offers. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. Consent is not a condition of purchase.";
 
@@ -73,24 +74,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error?.message ?? null };
     },
     async signUp(input) {
-      if (!supabase) return { error: "Mobile authentication is not configured." };
-      const { data, error } = await supabase.auth.signUp({
-        email: input.email.trim(),
-        password: input.password,
-        options: {
-          captchaToken: input.captchaToken,
-          data: {
+      try {
+        const response = await fetch(`${mobileConfig.siteUrl}/api/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             first_name: input.firstName.trim(),
-            phone_e164: input.phone,
+            email: input.email.trim().toLowerCase(),
+            password: input.password,
+            mobile_number: input.phone,
             birth_month: input.birthMonth,
-            home_zip_code: input.homeZipCode,
+            zip_code: input.homeZipCode,
             sms_consent: input.smsConsent,
             sms_consent_text: input.smsConsent ? SMS_CONSENT_TEXT : null,
             signup_source: "mobile_app",
-          },
-        },
-      });
-      return { error: error?.message ?? null, requiresEmailConfirmation: !error && !data.session };
+            turnstileToken: input.captchaToken,
+            turnstileAction: "mobile_signup",
+          }),
+        });
+        const payload = await response.json().catch(() => ({})) as {
+          success?: boolean;
+          error?: string;
+          requiresEmailConfirmation?: boolean;
+        };
+        if (!response.ok || payload.success !== true) {
+          return { error: payload.error || "We could not create your account." };
+        }
+        return {
+          error: null,
+          requiresEmailConfirmation: payload.requiresEmailConfirmation === true,
+        };
+      } catch {
+        return { error: "We could not create your account right now. Please check your connection and try again." };
+      }
     },
     async signOut() {
       if (supabase) await supabase.auth.signOut();
