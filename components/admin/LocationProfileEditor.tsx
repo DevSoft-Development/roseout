@@ -14,6 +14,8 @@ type Props = {
   type?: string;
   aiHelperEnabled?: boolean;
   aiHelperAccessLabel?: string;
+  showSearchAndMatching?: boolean;
+  primarySectionsOpen?: boolean;
 };
 
 const inputClass =
@@ -43,6 +45,8 @@ export default function LocationProfileEditor({
   type,
   aiHelperEnabled = false,
   aiHelperAccessLabel,
+  showSearchAndMatching = true,
+  primarySectionsOpen = false,
 }: Props) {
   const [semanticTags, setSemanticTags] = useState(
     arr(record.semantic_tags) ||
@@ -131,7 +135,8 @@ export default function LocationProfileEditor({
 
   return (
     <aside className="space-y-4">
-      <details className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+      {showSearchAndMatching ? (
+      <details open={primarySectionsOpen} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
         <summary className="cursor-pointer list-none">
           <div className="flex items-start gap-3">
             <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/[0.06] text-white/70">
@@ -177,9 +182,10 @@ export default function LocationProfileEditor({
           {status ? <p className="text-sm font-bold text-white/65">{status}</p> : null}
         </div>
       </details>
+      ) : null}
 
       {aiHelperEnabled ? (
-        <details className="rounded-3xl border border-rose-300/20 bg-rose-950/15 p-5">
+        <details open={primarySectionsOpen} className="rounded-3xl border border-rose-300/20 bg-rose-950/15 p-5">
           <summary className="cursor-pointer list-none">
             <div className="flex items-start gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-rose-500/15 text-rose-200">
