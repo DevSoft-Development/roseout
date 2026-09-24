@@ -305,6 +305,22 @@ for (const required of [
     throw new Error(`Location customer lifecycle model must remain connected to canonical CRM/billing signal: ${required}`);
   }
 }
+for (const required of [
+  "admin_location_customer_lifecycle_page",
+  "summaryOnly",
+  "p_include_rows",
+  "p_include_board",
+]) {
+  if (!customerLifecycleModel.includes(required)) {
+    throw new Error(`Location customer lifecycle must preserve 100k-scale bounded-query marker: ${required}`);
+  }
+}
+if (
+  customerLifecycleModel.includes('.select("*").is("deleted_at", null).order("updated_at", { ascending: false }).limit(6000)') ||
+  customerLifecycleModel.includes("Array.from({ length: 6 }")
+) {
+  throw new Error("Location customer lifecycle must never load thousands of locations into application memory.");
+}
 if (!lifecycleCrmRootPage.includes("/admin/dashboard/crm/customer-lifecycle") || !lifecycleCrmRootPage.includes("/admin/dashboard/crm/opportunities")) {
   throw new Error("Locations CRM must expose Customer Lifecycle and Sales Opportunities as first-class actions.");
 }

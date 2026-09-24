@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { listPermittedCrmLocationIds } from "@/lib/crm/location-scope";
 import {
   AdminActionButton,
   AdminKpiCard,
@@ -47,8 +48,10 @@ export default async function CustomerLifecycleDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
   const { id } = await params;
+  const permittedLocationIds = await listPermittedCrmLocationIds(admin.user_id, admin.role);
+  if (Array.isArray(permittedLocationIds) && !permittedLocationIds.includes(id)) notFound();
   const detail = await getLocationCustomerLifecycleDetail(id);
   if (!detail) notFound();
 
