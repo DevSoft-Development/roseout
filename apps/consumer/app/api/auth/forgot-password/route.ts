@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     const email = clean(body.email).toLowerCase();
     const captchaToken = clean(body.captchaToken);
     const client = clean(body.client).toLowerCase();
-    const mobileRecovery = body.mobile === true || mobileRecovery;
+    const mobileRecovery = body.mobile === true || client === "mobile_app";
 
     if (!email) {
       return Response.json({ success: false, error: "Please enter your email address." }, { status: 400 });
