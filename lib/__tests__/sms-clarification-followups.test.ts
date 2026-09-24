@@ -78,14 +78,25 @@ describe("SMS clarification follow-ups", () => {
     expect(ownership).toContain('incoming_${params.entryChannel}_routed_%');
   });
 
-  it("advances claim troubleshooting when the customer cannot find the business", () => {
-    const tools = fs.readFileSync(
-      path.join(process.cwd(), "lib/support/tool-layer.ts"),
+  it("prevents repeated support questions globally when AI degrades", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
       "utf8",
     );
-    expect(tools).toContain("claim_listing_not_found_collect_details");
-    expect(tools).toContain("Send me the business name and its street address or ZIP code");
-    expect(tools).toContain("CLAIM_LISTING_NOT_FOUND");
+    expect(responder).toContain("progressiveFallbackQuestion");
+    expect(responder).toContain("I don’t want to repeat the last question");
+    expect(responder).toContain("Never repeat a question that TheOutHaven already asked");
+    expect(responder).toContain("Treat the customer's newest message as an answer");
+  });
+
+  it("supports migrating the OpenAI credential into the authoritative provider vault", () => {
+    const workflow = fs.readFileSync(
+      path.join(process.cwd(), ".github/workflows/aws-credential-vault-runtime-sync.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("Adopted existing OpenAI credential into Credential Vault.");
+    expect(workflow).toContain("${CREDENTIAL_VAULT_PREFIX}/${TARGET_ENV}/openai");
+    expect(workflow).toContain(".OPENAI_API_KEY // empty");
   });
 
   it("preserves reservation clarification behavior", () => {
