@@ -245,12 +245,22 @@ if (!adminRootLayout.includes("./globals.css")) {
   throw new Error("Isolated Admin root layout must load its own global stylesheet.");
 }
 const adminGlobals = read("apps/admin/app/globals.css");
-if (!adminGlobals.includes('@import "tailwindcss"')) {
-  throw new Error("Isolated Admin global stylesheet must compile Tailwind utilities.");
+if (!adminGlobals.includes('@import "tailwindcss" source("..")')) {
+  throw new Error("Isolated Admin global stylesheet must anchor Tailwind source detection to the Admin app root.");
 }
-for (const source of ['@source ".";', '@source "../components";', '@source "../lib";']) {
+for (const source of ['@source "../../components";', '@source "../../lib";', '@source "../../packages";']) {
   if (!adminGlobals.includes(source)) {
-    throw new Error(`Isolated Admin global stylesheet must explicitly scan its Tailwind source root: ${source}`);
+    throw new Error(`Isolated Admin global stylesheet must explicitly scan shared Tailwind source root: ${source}`);
+  }
+}
+const webSurfaceDockerfile = read("infra/aws/web-surfaces/Dockerfile");
+if (!webSurfaceDockerfile.includes("verify-admin-css-bundle.mjs apps/admin/.next/static/css")) {
+  throw new Error("AWS Admin image builds must verify shared Tailwind utilities are present before deployment.");
+}
+const adminCssVerifier = read("scripts/verify-admin-css-bundle.mjs");
+for (const marker of [".min-w-0", ".px-4", ".py-6", ".shadow-xl", ".rounded-\\\\[18px\\\\]"]) {
+  if (!adminCssVerifier.includes(marker)) {
+    throw new Error(`Admin CSS bundle verifier must preserve shared design-system utility marker: ${marker}`);
   }
 }
 
