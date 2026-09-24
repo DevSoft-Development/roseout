@@ -111,15 +111,6 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
               mediaPlaybackRequiresUserAction={false}
               originWhitelist={["https://*", "http://*", "about:blank", "about:srcdoc"]}
               setSupportMultipleWindows={false}
-              onNavigationStateChange={(navState) => {
-                const marker = "#verified=";
-                const index = navState.url.indexOf(marker);
-                if (index < 0) return;
-                const params = new URLSearchParams(navState.url.slice(index + 1));
-                const token = params.get("verified") || "";
-                const messageAction = params.get("action") || "";
-                completeVerification(token, messageAction);
-              }}
               scrollEnabled={false}
               bounces={false}
               showsHorizontalScrollIndicator={false}
