@@ -61,65 +61,51 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
         },
       ]}
     >
-      {verified ? (
-        <View style={styles.verifiedRow}>
-          <View style={[styles.verifiedIcon, { backgroundColor: theme.colors.accentSoft }]}>
-            <AppText accent>✓</AppText>
-          </View>
-          <View style={styles.verifiedCopy}>
-            <AppText variant="bodyStrong">Verification complete</AppText>
-            <AppText variant="caption" muted>You can continue securely.</AppText>
-          </View>
-        </View>
+      <View style={styles.labelRow}>
+        <AppText variant="bodyStrong">Security check</AppText>
+      </View>
+      {failed ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry security verification"
+          onPress={() => {
+            setFailed(false);
+            setRetryKey((value) => value + 1);
+          }}
+          style={[styles.retryButton, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.background }]}
+        >
+          <AppText variant="bodyStrong">Retry security check</AppText>
+        </Pressable>
       ) : (
-        <>
-          <View style={styles.labelRow}>
-            <AppText variant="bodyStrong">Security check</AppText>
-          </View>
-          {failed ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Retry security verification"
-              onPress={() => {
-                setFailed(false);
-                setRetryKey((value) => value + 1);
-              }}
-              style={[styles.retryButton, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.background }]}
-            >
-              <AppText variant="bodyStrong">Retry security check</AppText>
-            </Pressable>
-          ) : (
-          <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
-            <WebView
-              key={retryKey}
-              source={{ uri: url }}
-              onMessage={handleMessage}
-              onError={() => {
-                setFailed(true);
-                onError("Security verification is unavailable right now. Please try again.");
-              }}
-              onHttpError={() => {
-                setFailed(true);
-                onError("Security verification is unavailable right now. Please try again.");
-              }}
-              startInLoadingState
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              originWhitelist={["https://*", "http://*", "about:blank", "about:srcdoc"]}
-              setSupportMultipleWindows={false}
-              scrollEnabled={false}
-              bounces={false}
-              showsHorizontalScrollIndicator={false}
-              showsVerticalScrollIndicator={false}
-              style={styles.webview}
-            />
-          </View>
-          )}
-        </>
+        <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
+          <WebView
+            key={retryKey}
+            source={{ uri: url }}
+            onMessage={handleMessage}
+            onError={() => {
+              setFailed(true);
+              onError("Security verification is unavailable right now. Please try again.");
+            }}
+            onHttpError={() => {
+              setFailed(true);
+              onError("Security verification is unavailable right now. Please try again.");
+            }}
+            startInLoadingState
+            javaScriptEnabled
+            domStorageEnabled
+            sharedCookiesEnabled
+            thirdPartyCookiesEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            originWhitelist={["https://*", "http://*", "about:blank", "about:srcdoc"]}
+            setSupportMultipleWindows={false}
+            scrollEnabled={false}
+            bounces={false}
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+            style={styles.webview}
+          />
+        </View>
       )}
     </View>
   );
@@ -153,23 +139,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
-  },
-  verifiedRow: {
-    minHeight: 48,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-  },
-  verifiedIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  verifiedCopy: {
-    flex: 1,
-    gap: 2,
   },
 });

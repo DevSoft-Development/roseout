@@ -3025,6 +3025,7 @@ const canonicalSignupRoute = read("app/api/auth/signup/route.ts");
 const canonicalSignupConsumerRoute = read("apps/consumer/app/api/auth/signup/route.ts");
 const mobileAuthProvider = read("mobile/providers/AuthProvider.tsx");
 const mobileTurnstileFrame = read("app/api/mobile/v1/turnstile-frame/route.ts");
+const mobileTurnstileInline = read("mobile/components/auth/TurnstileVerificationInline.tsx");
 const globalTurnstileWidget = read("components/auth/TurnstileWidget.tsx");
 const accountExistsRoute = read("app/api/auth/account-exists/route.ts");
 const resendVerificationRoute = read("app/api/auth/resend-verification/route.ts");
@@ -6240,4 +6241,13 @@ for (const [label, source] of enterpriseSocialClaimPages) {
 const enterpriseClaimQrPrintPage = read("apps/admin/app/admin/dashboard/claim-qrs/page.tsx");
 if (!enterpriseClaimQrPrintPage.includes("AdminPageHeader")) {
   throw new Error("Claim QR print page must preserve shared enterprise Admin header while retaining its print-specific outer wrapper.");
+}
+
+if (
+  mobileTurnstileInline.includes("Verification complete") ||
+  !mobileTurnstileInline.includes("<WebView") ||
+  !mobileForgotPasswordScreen.includes("<BrandHeader compact />") ||
+  !mobileResetPasswordScreen.includes("<BrandHeader compact />")
+) {
+  throw new Error("Forgot/reset native auth screens must preserve the completed Turnstile widget and TheOutHaven branding.");
 }
