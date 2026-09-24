@@ -2951,6 +2951,12 @@ const canonicalSignupRoute = read("app/api/auth/signup/route.ts");
 const canonicalSignupConsumerRoute = read("apps/consumer/app/api/auth/signup/route.ts");
 const mobileAuthProvider = read("mobile/providers/AuthProvider.tsx");
 const mobileTurnstileFrame = read("app/api/mobile/v1/turnstile-frame/route.ts");
+const globalTurnstileWidget = read("components/auth/TurnstileWidget.tsx");
+const accountExistsRoute = read("app/api/auth/account-exists/route.ts");
+const resendVerificationRoute = read("app/api/auth/resend-verification/route.ts");
+const webLoginPage = read("app/login/page.tsx");
+const mobileAuthScreen = read("mobile/app/auth/index.tsx");
+const mobileCheckEmailScreen = read("mobile/app/auth/check-email.tsx");
 
 for (const source of [canonicalSignupRoute, canonicalSignupConsumerRoute]) {
   if (
@@ -2960,7 +2966,9 @@ for (const source of [canonicalSignupRoute, canonicalSignupConsumerRoute]) {
     !source.includes("createAuthEmailToken") ||
     !source.includes("sendRawBrandedEmail") ||
     !source.includes('emailResult.status !== "sent"') ||
-    !source.includes("verificationEmailSent: true")
+    !source.includes("verificationEmailSent: true") ||
+    !source.includes('code: "account_exists"') ||
+    !source.includes("auth.admin.getUserById")
   ) {
     throw new Error("Canonical account signup must create Auth, consumer_profiles, users, and verification email records.");
   }
@@ -2974,10 +2982,32 @@ if (
 if (
   !canonicalSignupRoute.includes('turnstileAction === "mobile_signup"') ||
   !mobileTurnstileFrame.includes('retry: "never"') ||
+  !mobileTurnstileFrame.includes('"refresh-expired": "never"') ||
+  !mobileTurnstileFrame.includes('"refresh-timeout": "never"') ||
   mobileTurnstileFrame.includes('"retry-interval"') ||
-  mobileTurnstileFrame.includes("window.turnstile.reset()")
+  mobileTurnstileFrame.includes("window.turnstile.reset()") ||
+  mobileTurnstileFrame.includes("window.location.hash")
 ) {
-  throw new Error("Mobile signup Turnstile must use the canonical mobile action without an automatic retry/reset loop.");
+  throw new Error("Mobile signup Turnstile must disable retry, expiry refresh, timeout refresh, resets, and navigation loops.");
+}
+if (
+  !globalTurnstileWidget.includes('retry: "never"') ||
+  !globalTurnstileWidget.includes('refreshExpired: "never"') ||
+  !globalTurnstileWidget.includes('refreshTimeout: "never"')
+) {
+  throw new Error("Global web/mobile-web Turnstile must disable automatic retries and refresh loops.");
+}
+if (
+  !accountExistsRoute.includes("auth.admin.listUsers") ||
+  !resendVerificationRoute.includes("createAuthEmailToken") ||
+  !resendVerificationRoute.includes("sendRawBrandedEmail") ||
+  !webLoginPage.includes("/api/auth/account-exists") ||
+  !webLoginPage.includes("Account already created") ||
+  !mobileAuthScreen.includes("/api/auth/account-exists") ||
+  !mobileAuthScreen.includes("Account already created") ||
+  !mobileCheckEmailScreen.includes("ACCOUNT CREATED")
+) {
+  throw new Error("Global signup UX must preflight existing accounts, offer recovery, and route successful signups to an account-created screen.");
 }
 if (
   !usersBetaControl.includes("/api/admin/users/") ||
