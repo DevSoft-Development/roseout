@@ -1610,7 +1610,11 @@ function ProfileForm({
   const fieldClass =
     "w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition focus:border-rose-300/40 focus:ring-2 focus:ring-rose-300/10 disabled:opacity-60";
   const labelClass = "space-y-2 text-sm font-bold text-white/65";
-  const locationName = business.name || business.restaurant_name || business.activity_name || "Location";
+  const locationName =
+    business.name ||
+    (business as any).restaurant_name ||
+    (business as any).activity_name ||
+    "Location";
 
   return (
     <section className="space-y-5">
