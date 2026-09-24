@@ -254,6 +254,36 @@ function routineFallbackQuestion(textInput: string) {
   return "I can keep troubleshooting this with you. What were you trying to do, and what happened on the screen or in the text conversation when you tried it?";
 }
 
+function normalizedReply(value: string) {
+  return normalizeText(value).replace(/\s+/g, " ").trim();
+}
+
+function recentOutboundBodies(conversation: SupportMessageContext[]) {
+  return conversation
+    .filter((item) => item.direction === "outbound")
+    .map((item) => String(item.body || "").trim())
+    .filter(Boolean)
+    .slice(-4);
+}
+
+function progressiveFallbackQuestion(
+  conversation: SupportMessageContext[],
+  latestMessage: string,
+  searchContext: string,
+) {
+  const candidate = routineFallbackQuestion(searchContext);
+  const recent = recentOutboundBodies(conversation);
+  const normalizedCandidate = normalizedReply(candidate);
+  const repeated = recent.some((body) => normalizedReply(body) === normalizedCandidate);
+
+  if (!repeated) return candidate;
+
+  const latest = latestMessage.trim();
+  return latest
+    ? `Thanks — I got your answer: "${latest.slice(0, 140)}". I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?`
+    : "Thanks — I got your reply. I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?";
+}
+
 function safeRoutineDecision(
   message: string,
   reason: string,
@@ -340,7 +370,7 @@ export async function getSupportAiDecision(params: {
 
   if (!aiEnabled()) {
     return safeRoutineDecision(
-      routineFallbackQuestion(searchContext),
+      progressiveFallbackQuestion(conversation, latestMessage, searchContext),
       "ai_unavailable_continued_troubleshooting",
       searchContext,
       "deterministic",
@@ -392,6 +422,8 @@ export async function getSupportAiDecision(params: {
             "Be conversational, concise, calm, and useful. Keep SMS replies under 500 characters when possible.",
             "The provided recent conversation is scoped to the customer's current support topic. A clear new topic starts fresh context; a short answer or clarification continues the current topic.",
             "You may ask multiple follow-up questions across the conversation when needed, but ask only one focused question in each SMS. Do not give up after one clarification.",
+            "Treat the customer's newest message as an answer to the most recent relevant question unless they clearly start a new topic. Advance the conversation from that answer instead of restarting the troubleshooting flow.",
+            "Never repeat a question that TheOutHaven already asked in the recent conversation. If the customer answered it, acknowledge the answer and ask only the next missing question.",
             "For routine product questions, navigation help, setup, troubleshooting, account access, business claims, profile management, reservations, events, experiences, websites, menus, QR codes, leads, offers, VIP, reviews, marketing, analytics, and plan navigation, prefer REPLY over HANDOFF.",
             "Routine business-claim assistance should stay conversational. Explain the normal claim flow and troubleshoot claim codes, OTP delivery/expiry, pending review, and owner-access setup from approved sources.",
             "A business being shown as already claimed can be explained and you may collect the business name, address/profile link, and the customer's relationship to it before a human ownership review is needed.",
@@ -421,7 +453,7 @@ export async function getSupportAiDecision(params: {
 
     if (!safeMessage) {
       return safeRoutineDecision(
-        routineFallbackQuestion(searchContext),
+        progressiveFallbackQuestion(conversation, latestMessage, searchContext),
         "empty_ai_response_continued_troubleshooting",
         searchContext,
         model,
@@ -451,7 +483,7 @@ export async function getSupportAiDecision(params: {
   } catch (error) {
     console.error("Support AI response failed", error);
     return safeRoutineDecision(
-      routineFallbackQuestion(searchContext),
+      progressiveFallbackQuestion(conversation, latestMessage, searchContext),
       "ai_error_continued_troubleshooting",
       searchContext,
       "deterministic",
