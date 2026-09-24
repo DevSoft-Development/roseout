@@ -264,6 +264,54 @@ for (const marker of [".min-w-0", ".px-4", ".py-6", ".shadow-xl", ".rounded-\\\\
   }
 }
 
+const customerLifecyclePage = read("apps/admin/app/admin/dashboard/crm/customer-lifecycle/page.tsx");
+const customerLifecycleDetailPage = read("apps/admin/app/admin/dashboard/crm/customer-lifecycle/[id]/page.tsx");
+const customerLifecycleModel = read("apps/admin/lib/crm/location-customer-lifecycle.ts");
+const crmRootPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
+const crmOpportunitiesPage = read("apps/admin/app/admin/dashboard/crm/opportunities/page.tsx");
+
+for (const required of [
+  "Customer Lifecycle",
+  "Paid Customers",
+  "Renewals Coming Up",
+  "Needs Attention",
+  "Customer Journey Board",
+]) {
+  if (!customerLifecyclePage.includes(required)) {
+    throw new Error(`Location customer lifecycle dashboard must preserve enterprise CRM marker: ${required}`);
+  }
+}
+for (const required of [
+  "Relationship overview",
+  "Commercial relationship",
+  "Customer timeline",
+  "Customer health",
+  "Move the relationship forward",
+]) {
+  if (!customerLifecycleDetailPage.includes(required)) {
+    throw new Error(`Location customer lifecycle detail must preserve account-view marker: ${required}`);
+  }
+}
+for (const required of [
+  "deriveCustomerLifecycleStage",
+  "subscription_status",
+  "claim_status",
+  "churn_risk_score",
+  "current_period_end",
+  "crm_opportunities",
+  "crm_account_locations",
+]) {
+  if (!customerLifecycleModel.includes(required)) {
+    throw new Error(`Location customer lifecycle model must remain connected to canonical CRM/billing signal: ${required}`);
+  }
+}
+if (!crmRootPage.includes("/admin/dashboard/crm/customer-lifecycle") || !crmRootPage.includes("/admin/dashboard/crm/opportunities")) {
+  throw new Error("Locations CRM must expose Customer Lifecycle and Sales Opportunities as first-class actions.");
+}
+if (!crmOpportunitiesPage.includes("/admin/dashboard/crm/customer-lifecycle")) {
+  throw new Error("Sales Opportunities must stay connected to the location Customer Lifecycle.");
+}
+
 const adminDashboardLayout = read("apps/admin/app/admin/dashboard/layout.tsx");
 if (!adminDashboardLayout.includes("@theouthaven/auth/admin-session") || !adminDashboardLayout.includes("./AdminShell")) {
   throw new Error("Admin dashboard must use the isolated session guard and Admin shell.");
