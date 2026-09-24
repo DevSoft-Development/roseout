@@ -185,7 +185,7 @@ export default function TheOutHavenHeader() {
               lineHeight: 1,
             }}
           >
-            Restaurants • Bars • Nightlife • Activities • Experiences
+            ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
           </span>
         </Link>
 
