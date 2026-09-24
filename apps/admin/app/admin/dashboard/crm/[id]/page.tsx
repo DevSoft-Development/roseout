@@ -1795,9 +1795,22 @@ function ProfileForm({
           </div>
         </AdminSectionCard>
 
-        <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#111114]/95 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+        <LocationProfileEditor
+          table="locations"
+          id={business.id}
+          record={business as any}
+          canEdit={canEdit}
+          canViewAdvancedSystemData={false}
+          saveMode="admin"
+          type={String(business.location_type || "locations")}
+          aiHelperEnabled={true}
+          aiHelperAccessLabel="Keep your edits and apply only the suggestions you want."
+          primarySectionsOpen={true}
+        />
+
+        <div className="sticky bottom-3 z-40 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#111114]/95 p-3 shadow-2xl shadow-black/50 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between md:bottom-5">
           <p className="px-2 text-sm text-white/50">
-            {canEdit ? "Save when you’re finished." : "You have view-only access."}
+            {canEdit ? "Save profile changes anytime while you work." : "You have view-only access."}
           </p>
           <button
             disabled={!canEdit}
@@ -1814,7 +1827,7 @@ function ProfileForm({
             <div>
               <p className="font-black text-white">More settings</p>
               <p className="mt-1 text-sm text-white/50">
-                Additional listing, search, photo, and admin controls.
+                Advanced system information and admin-only diagnostics.
               </p>
             </div>
             <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-black text-white/50">
@@ -1831,8 +1844,8 @@ function ProfileForm({
             canViewAdvancedSystemData={true}
             saveMode="admin"
             type={String(business.location_type || "locations")}
-            aiHelperEnabled={true}
-            aiHelperAccessLabel="Keep your edits and apply only the suggestions you want."
+            aiHelperEnabled={false}
+            showSearchAndMatching={false}
           />
         </div>
       </details>

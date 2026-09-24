@@ -17,6 +17,7 @@ const legacyDetail = read("apps/admin/app/admin/dashboard/locations/id/[location
 const rootLegacyEdit = read("app/admin/dashboard/locations/edit/[type]/[locationId]/page.tsx");
 const claimTools = read("apps/admin/app/admin/dashboard/claim-tools/ClaimToolsClient.tsx");
 const workspaceNav = read("apps/admin/components/admin/location-workspace/LocationWorkspaceNavigation.tsx");
+const profileEditor = read("apps/admin/components/admin/LocationProfileEditor.tsx");
 
 requireText(nav, 'label: "Locations CRM"', "Admin navigation must expose the canonical Locations CRM.");
 forbidText(nav, 'label: "Locations"', "Admin navigation must not expose a competing Locations workspace.");
@@ -26,8 +27,14 @@ requireText(crmList, 'href="/admin/dashboard/crm/new"', "CRM must expose Add Loc
 requireText(crmList, 'Data & Import', "CRM must retain data/import access without a second Locations nav.");
 
 requireText(crmDetail, "Edit Location", "CRM record must expose first-class location editing.");
-requireText(crmDetail, "Save Location", "CRM location editor must provide an explicit save action.");
-requireText(crmDetail, "Edit the canonical location record", "CRM location editor must explain canonical ownership.");
+requireText(crmDetail, "Save changes", "CRM location editor must provide a clear save action.");
+requireText(crmDetail, "Location profile", "CRM location editor must present the canonical profile workspace.");
+requireText(crmDetail, "primarySectionsOpen={true}", "Search and AI controls must be first-class on the profile page.");
+requireText(crmDetail, "sticky bottom-3 z-40", "Save changes must remain sticky while editing the profile.");
+requireText(crmDetail, 'showSearchAndMatching={false}', "More settings must not duplicate Search & matching.");
+requireText(profileEditor, "Search & matching", "Location profile editor must retain Search & matching controls.");
+requireText(profileEditor, "AI profile helper", "Location profile editor must retain the AI helper.");
+requireText(profileEditor, "primarySectionsOpen", "Location profile editor must support visible primary controls.");
 requireText(workspaceNav, '"Location Details"', "CRM workspace navigation must expose Location Details.");
 
 requireText(crmNew, '.from("locations")', "Location creation must write the canonical locations model.");
