@@ -54,11 +54,9 @@ export async function GET(request: NextRequest) {
       if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === "function") {
         window.ReactNativeWebView.postMessage(JSON.stringify(payload));
       }
-      if (payload && payload.type === "turnstile-success" && payload.token) {
-        window.location.hash =
-          "verified=" + encodeURIComponent(payload.token) +
-          "&action=" + encodeURIComponent(payload.action || ACTION);
-      }
+      // React Native receives the token through postMessage. Avoid changing
+      // window.location here because WebView navigation can cause Turnstile
+      // to reinitialize and appear to loop.
     }
 
     function fail(message) {
@@ -82,6 +80,8 @@ export async function GET(request: NextRequest) {
           send({ type: "turnstile-success", action: ACTION, token: token });
         },
         retry: "never",
+        "refresh-expired": "never",
+        "refresh-timeout": "never",
         "error-callback": function () {
           fail("Security verification did not complete. Please try again.");
         },
