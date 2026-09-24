@@ -278,7 +278,7 @@ export default async function CRMPage({
         subtitle={
           isSearchMode
             ? `${pageData.total} ${pageData.total === 1 ? "match" : "matches"} for “${q}”`
-            : "Operate every location from one workspace: profile, ownership, reservations, guests, revenue, marketing, support, and lifecycle activity."
+            : "Manage every location from first outreach through claim, paid membership, customer success, renewal, and retention — with the full location workspace one click away."
         }
         actions={
           isSearchMode ? (
@@ -287,16 +287,19 @@ export default async function CRMPage({
             </AdminActionButton>
           ) : (
             <>
-              <AdminActionButton href="/admin/dashboard/crm/new" variant="primary">
-                Add Location
+              <AdminActionButton href="/admin/dashboard/crm/customer-lifecycle" variant="primary">
+                Customer Lifecycle
               </AdminActionButton>
-              <AdminActionButton href="/admin/dashboard/settings/location-tools">
-                Data & Import
+              <AdminActionButton href="/admin/dashboard/crm/opportunities">
+                Sales Opportunities
+              </AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/crm/new">
+                Add Location
               </AdminActionButton>
               <AdminActionButton
                 href="/admin/dashboard/crm/work-queue?view=tasks"
               >
-                Create Task
+                Team Follow-ups
               </AdminActionButton>
               <AdminActionButton href="#crm-filters">Filters</AdminActionButton>
             </>
