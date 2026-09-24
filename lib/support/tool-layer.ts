@@ -21,7 +21,6 @@ type ConversationMessage = {
 
 const CLAIM_CONTEXT = /\b(claim|claiming|claimed|owner verification|ownership)\b/i;
 const CLAIM_SEARCH = /\b(?:search|find|look up|lookup)\b.*\b(?:location|business|restaurant|bar|venue|listing|profile)\b/i;
-const CLAIM_LISTING_NOT_FOUND = /\b(?:don'?t|do not|can'?t|cannot)\s+(?:see|find|locate)\b.*\b(?:business|location|restaurant|bar|venue|listing|profile)\b|\b(?:business|location|restaurant|bar|venue|listing|profile)\b.*\b(?:missing|not listed|isn'?t there|is not there)\b/i;
 const ACCOUNT_ACCESS = /\b(password|passcode|log\s*in|login|sign\s*in|signin|account\s+access|reset\s+(?:my\s+)?password|forgot\s+(?:my\s+)?password|change\s+(?:my\s+)?password|locked\s+out)\b/i;
 const PASSWORD_REQUEST = /\b(password|reset\s+(?:my\s+)?password|forgot\s+(?:my\s+)?password|change\s+(?:my\s+)?password)\b/i;
 const NEGATED_RESOLUTION = /\b(but|still|however|not working|didn'?t work|doesn'?t work|issue|problem)\b/i;
@@ -254,17 +253,6 @@ export async function getSupportToolDecision(params: { ticketId: string; latestM
 
   const conversation = await loadConversation(params.ticketId);
   const claimContext = conversation.some((item) => CLAIM_CONTEXT.test(String(item.body || ""))) || CLAIM_CONTEXT.test(latestMessage);
-
-  if (claimContext && CLAIM_LISTING_NOT_FOUND.test(latestMessage)) {
-    return {
-      message: "Got it. Send me the business name and its street address or ZIP code, and I’ll search TheOutHaven for the correct listing.",
-      reason: "claim_listing_not_found_collect_details",
-      category: "Business Claim",
-      priority: "normal",
-      metadata: { support_tool: "location_lookup", claim_step: "collect_listing_details" },
-    };
-  }
-
   const hasSearchIntent = CLAIM_SEARCH.test(latestMessage) || conversation.some((item) => CLAIM_SEARCH.test(String(item.body || "")));
   if (claimContext && hasSearchIntent) {
     return claimLocationDecision(latestMessage, conversation);
