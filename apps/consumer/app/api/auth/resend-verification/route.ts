@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { createAuthEmailToken } from "@/lib/auth/authEmailTokens";
+import { createAuthEmailToken, getAuthEmailCooldownSeconds } from "@/lib/auth/authEmailTokens";
 import { sendRawBrandedEmail } from "@/lib/email/sender";
 import { buildSiteUrl } from "@/lib/site-url";
 
@@ -34,7 +34,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "We could not find an account for this email." }, { status: 404 });
     }
     if (user.email_confirmed_at) {
-      return NextResponse.json({ success: true, alreadyVerified: true, email });
+      return NextResponse.json({ success: true, alreadyVerified: true, email, cooldownSeconds: 0 });
+    }
+
+    const cooldownSeconds = await getAuthEmailCooldownSeconds({
+      email,
+      purpose: "signup_verify",
+      cooldownSeconds: 60,
+    });
+    if (cooldownSeconds > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "email_cooldown",
+          error: `Please wait ${cooldownSeconds} seconds before sending another verification email.`,
+          cooldownSeconds,
+          email,
+        },
+        { status: 429 },
+      );
     }
 
     const { token, expiresAt } = await createAuthEmailToken({
@@ -65,7 +83,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, verificationEmailSent: true, email });
+    return NextResponse.json({ success: true, verificationEmailSent: true, email, cooldownSeconds: 60 });
   } catch (error) {
     console.error("RESEND_SIGNUP_VERIFICATION_ERROR", error);
     return NextResponse.json(
