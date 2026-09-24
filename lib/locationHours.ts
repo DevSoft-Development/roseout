@@ -2,6 +2,8 @@ export type LocationHoursFields = {
   operating_hours?: any;
   special_hours?: any;
   holiday_closures?: any;
+  google_current_opening_hours?: any;
+  google_regular_opening_hours?: any;
   hours?: string | null;
   days_of_operation?: string[] | null;
   kitchen_closing_time?: string | null;
@@ -10,6 +12,8 @@ export type LocationHoursFields = {
 export function getOperatingHours(location: any) {
   return (
     location?.operating_hours ||
+    location?.google_current_opening_hours ||
+    location?.google_regular_opening_hours ||
     location?.hours ||
     null
   );
@@ -57,6 +61,17 @@ function stringifyHoursValue(value: unknown): string | null {
 export function formatOperatingHoursForDisplay(hours: unknown) {
   if (!hours) return null;
   if (typeof hours === "string") return hours;
+
+  if (typeof hours === "object" && !Array.isArray(hours)) {
+    const record = hours as Record<string, unknown>;
+    const descriptions =
+      record.weekdayDescriptions ||
+      record.weekday_descriptions ||
+      record.weekday_text;
+    if (Array.isArray(descriptions) && descriptions.length) {
+      return descriptions.map((line) => String(line)).join("; ");
+    }
+  }
 
   if (Array.isArray(hours)) {
     return stringifyHoursValue(hours);
