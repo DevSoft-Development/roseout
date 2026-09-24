@@ -39,14 +39,31 @@ export function parseWeeklyHoursFromEditor(text:string): ParsedWeeklyHours | nul
 }
 
 function fromWeekdayText(value:any): string | null {
-  const arr=Array.isArray(value)?value:Array.isArray(value?.weekday_text)?value.weekday_text:null;
+  const arr=Array.isArray(value)
+    ? value
+    : Array.isArray(value?.weekday_text)
+      ? value.weekday_text
+      : Array.isArray(value?.weekdayDescriptions)
+        ? value.weekdayDescriptions
+        : null;
   if(!arr) return null;
   return arr.map((line:any)=>String(line).replace(/:\s*/," - ")).join("\n");
+}
+
+function formatLegacyRange(range:any): string | null {
+  if (typeof range === "string") {
+    const trimmed = range.trim();
+    return trimmed || null;
+  }
+  if (range && typeof range === "object" && range.open && range.close) {
+    return `${formatTime(range.open)} - ${formatTime(range.close)}`;
+  }
+  return null;
 }
 export function formatOperatingHoursForEditor(hours:any, fallbackGoogleHours?:any): string {
   const google=fromWeekdayText(fallbackGoogleHours);
   if(!hours) return google ?? "";
-  if(Array.isArray(hours?.weekday_text)) return fromWeekdayText(hours) ?? google ?? "";
+  if(Array.isArray(hours?.weekday_text) || Array.isArray(hours?.weekdayDescriptions)) return fromWeekdayText(hours) ?? google ?? "";
   if(typeof hours==="string") return hours;
   if(typeof hours!=="object") return google ?? "";
   const lines:string[]=[];
@@ -56,7 +73,8 @@ export function formatOperatingHoursForEditor(hours:any, fallbackGoogleHours?:an
     if(v.closed) { lines.push(`${dayLabel(day)} - Closed`); continue; }
     if(v.open_24_hours) { lines.push(`${dayLabel(day)} - 24 hours`); continue; }
     const ranges=Array.isArray(v.ranges)?v.ranges:Array.isArray(v)?v:[];
-    if(ranges.length) lines.push(`${dayLabel(day)} - ${ranges.map((r:any)=>`${formatTime(r.open)} - ${formatTime(r.close)}`).join(", ")}`);
+    const formattedRanges=ranges.map(formatLegacyRange).filter(Boolean);
+    if(formattedRanges.length) lines.push(`${dayLabel(day)} - ${formattedRanges.join(", ")}`);
   }
   return lines.join("\n") || google || "";
 }
