@@ -166,10 +166,10 @@ export default function TheOutHavenHeader() {
             src="/toh_logo_wordmark_dark.png"
             alt="TheOutHaven"
             width={900}
-            height={274}
+            height={120}
             priority
             unoptimized
-            className={scrolled ? "h-10 w-auto max-w-[170px] object-contain sm:max-w-[190px]" : "h-12 w-auto max-w-[190px] object-contain sm:max-w-[220px]"}
+            className={scrolled ? "h-auto w-[150px] object-contain sm:w-[165px]" : "h-auto w-[165px] object-contain sm:w-[185px]"}
           />
         </Link>
 
