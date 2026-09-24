@@ -141,11 +141,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
 
   useEffect(() => {
     if (verificationCooldownSeconds <= 0) return;
-    const timer = window.setInterval(() => {
+    const timer = window.setTimeout(() => {
       setVerificationCooldownSeconds((current) => Math.max(0, current - 1));
     }, 1000);
-    return () => window.clearInterval(timer);
-  }, [verificationCooldownSeconds > 0]);
+    return () => window.clearTimeout(timer);
+  }, [verificationCooldownSeconds]);
 
   useEffect(() => {
     if (tab !== "signup") {
