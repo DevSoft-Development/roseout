@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_ACTIONS = new Set(["mobile_signin", "mobile_signup"]);
+const ALLOWED_ACTIONS = new Set(["mobile_signin", "mobile_signup", "mobile_password_reset"]);
 
 function safeJson(value: string) {
   return JSON.stringify(value).replace(/</g, "\\u003c");
