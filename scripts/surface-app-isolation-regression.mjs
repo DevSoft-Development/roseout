@@ -2953,7 +2953,9 @@ for (const source of [canonicalSignupRoute, canonicalSignupConsumerRoute]) {
     !source.includes('from("users").upsert') ||
     !source.includes("auth.admin.createUser") ||
     !source.includes("createAuthEmailToken") ||
-    !source.includes("sendRawBrandedEmail")
+    !source.includes("sendRawBrandedEmail") ||
+    !source.includes('emailResult.status !== "sent"') ||
+    !source.includes("verificationEmailSent: true")
   ) {
     throw new Error("Canonical account signup must create Auth, consumer_profiles, users, and verification email records.");
   }
