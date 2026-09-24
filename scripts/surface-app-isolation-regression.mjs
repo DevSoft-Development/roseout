@@ -2964,6 +2964,9 @@ const mobileTurnstileFrame = read("app/api/mobile/v1/turnstile-frame/route.ts");
 const globalTurnstileWidget = read("components/auth/TurnstileWidget.tsx");
 const accountExistsRoute = read("app/api/auth/account-exists/route.ts");
 const resendVerificationRoute = read("app/api/auth/resend-verification/route.ts");
+const forgotPasswordRoute = read("app/api/auth/forgot-password/route.ts");
+const forgotPasswordPage = read("app/forgot-password/page.tsx");
+const authEmailTokens = read("lib/auth/authEmailTokens.ts");
 const webLoginPage = read("app/login/page.tsx");
 const mobileAuthScreen = read("mobile/app/auth/index.tsx");
 const mobileCheckEmailScreen = read("mobile/app/auth/check-email.tsx");
@@ -3011,10 +3014,20 @@ if (
   !accountExistsRoute.includes("auth.admin.listUsers") ||
   !resendVerificationRoute.includes("createAuthEmailToken") ||
   !resendVerificationRoute.includes("sendRawBrandedEmail") ||
+  !resendVerificationRoute.includes("getAuthEmailCooldownSeconds") ||
+  !forgotPasswordRoute.includes("getAuthEmailCooldownSeconds") ||
+  !forgotPasswordRoute.includes("passwordResetEmailSent: true") ||
+  !authEmailTokens.includes("getAuthEmailCooldownSeconds") ||
   !webLoginPage.includes("/api/auth/account-exists") ||
   !webLoginPage.includes("Account already created") ||
+  !webLoginPage.includes("Forgot / reset password") ||
+  !webLoginPage.includes("Send again in") ||
+  !forgotPasswordPage.includes("cooldownSeconds") ||
+  !forgotPasswordPage.includes("Password reset email sent") ||
   !mobileAuthScreen.includes("/api/auth/account-exists") ||
   !mobileAuthScreen.includes("Account already created") ||
+  !mobileAuthScreen.includes("Forgot / reset password") ||
+  !mobileAuthScreen.includes("verificationCooldownSeconds") ||
   !mobileCheckEmailScreen.includes("ACCOUNT CREATED")
 ) {
   throw new Error("Global signup UX must preflight existing accounts, offer recovery, and route successful signups to an account-created screen.");

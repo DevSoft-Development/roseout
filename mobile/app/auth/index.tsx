@@ -13,6 +13,10 @@ import { useAuth } from "@/providers/AuthProvider";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
 const SMS_TERMS = "I agree to receive SMS messages from TheOutHaven about my account, saved plans, OUTing reminders, reservations, and optional offers. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. Consent is not a condition of purchase.";
 
+function formatEmailCountdown(seconds: number) {
+  return `00:${String(Math.max(0, seconds)).padStart(2, "0")}`;
+}
+
 function normalizePhone(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
   if (digits.length <= 3) return digits;
@@ -57,6 +61,8 @@ export default function AuthScreen() {
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [accountExists, setAccountExists] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
+  const [verificationCooldownSeconds, setVerificationCooldownSeconds] = useState(0);
+  const [accountRecoveryMessage, setAccountRecoveryMessage] = useState<string | null>(null);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
@@ -71,6 +77,14 @@ export default function AuthScreen() {
       setVerificationKey((value) => value + 1);
     }
   }, [params.mode]);
+
+  useEffect(() => {
+    if (verificationCooldownSeconds <= 0) return;
+    const timer = setTimeout(() => {
+      setVerificationCooldownSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [verificationCooldownSeconds]);
 
   useEffect(() => {
     if (mode !== "signup") {
@@ -203,6 +217,16 @@ export default function AuthScreen() {
                   <AppText variant="bodyStrong">Account already created</AppText>
                   <AppText variant="caption" muted>This email already has a TheOutHaven account.</AppText>
                 </View>
+                {accountRecoveryMessage ? (
+                  <View style={[styles.accountRecoveryMessage, { borderColor: theme.colors.borderStrong }]}>
+                    <AppText variant="caption">{accountRecoveryMessage}</AppText>
+                    {verificationCooldownSeconds > 0 ? (
+                      <AppText variant="caption" muted>
+                        You can send another verification email in {formatEmailCountdown(verificationCooldownSeconds)}.
+                      </AppText>
+                    ) : null}
+                  </View>
+                ) : null}
                 <View style={styles.accountExistsActions}>
                   <Button
                     variant="ghost"
@@ -218,9 +242,12 @@ export default function AuthScreen() {
                   </Button>
                   <Button
                     variant="ghost"
+                    disabled={verificationCooldownSeconds > 0}
                     onPress={() => {
+                      if (verificationCooldownSeconds > 0) return;
                       void (async () => {
                         setMessage(null);
+                        setAccountRecoveryMessage(null);
                         try {
                           const response = await fetch(`${mobileConfig.siteUrl}/api/auth/resend-verification`, {
                             method: "POST",
@@ -231,21 +258,40 @@ export default function AuthScreen() {
                             success?: boolean;
                             alreadyVerified?: boolean;
                             error?: string;
+                            code?: string;
+                            cooldownSeconds?: number;
                           };
+                          const cooldown = Math.max(0, Number(payload.cooldownSeconds || 0));
+                          if (cooldown > 0) setVerificationCooldownSeconds(cooldown);
                           if (!response.ok || payload.success !== true) {
+                            if (payload.code === "email_cooldown" && cooldown > 0) {
+                              setAccountRecoveryMessage("A verification email was already sent. Check your inbox.");
+                              return;
+                            }
                             setMessage(payload.error || "We could not resend the verification email.");
                             return;
                           }
-                          setMessage(payload.alreadyVerified
+                          setAccountRecoveryMessage(payload.alreadyVerified
                             ? "This account is already verified. Sign in to continue."
                             : "Verification email sent. Check your inbox.");
+                          if (!payload.alreadyVerified) setVerificationCooldownSeconds(Math.max(60, cooldown));
                         } catch {
                           setMessage("We could not resend the verification email.");
                         }
                       })();
                     }}
                   >
-                    Resend verification
+                    {verificationCooldownSeconds > 0
+                      ? `Send again in ${formatEmailCountdown(verificationCooldownSeconds)}`
+                      : "Resend verification"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onPress={() => Linking.openURL(
+                      `${mobileConfig.siteUrl}/forgot-password?email=${encodeURIComponent(email.trim().toLowerCase())}`
+                    )}
+                  >
+                    Forgot / reset password
                   </Button>
                 </View>
               </View>
@@ -352,6 +398,7 @@ const styles = StyleSheet.create({
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
   accountExistsCard: { borderWidth: 1, borderRadius: 16, padding: 13, gap: 10 },
   accountExistsCopy: { gap: 3 },
+  accountRecoveryMessage: { borderWidth: 1, borderRadius: 12, padding: 10, gap: 4 },
   accountExistsActions: { gap: 6 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
