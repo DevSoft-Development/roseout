@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { AppText } from "@/components/ui/AppText";
 import { mobileConfig } from "@/lib/config";
@@ -20,10 +21,13 @@ type TurnstileMessage = {
 
 export function TurnstileVerificationInline({ action, verified, onVerified, onError }: Props) {
   const { theme } = useAppTheme();
+  const [failed, setFailed] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const url = `${mobileConfig.siteUrl}/api/mobile/v1/turnstile-frame?action=${encodeURIComponent(action)}`;
 
   function completeVerification(token?: string, messageAction?: string) {
     if (token && messageAction === action) {
+      setFailed(false);
       onVerified(token);
       return true;
     }
@@ -37,9 +41,11 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
         return;
       }
       if (payload.type === "turnstile-error") {
+        setFailed(true);
         onError(payload.message || "Security verification did not complete. Please try again.");
       }
     } catch {
+      setFailed(true);
       onError("Security verification did not complete. Please try again.");
     }
   }
@@ -70,12 +76,32 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
           <View style={styles.labelRow}>
             <AppText variant="bodyStrong">Security check</AppText>
           </View>
+          {failed ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry security verification"
+              onPress={() => {
+                setFailed(false);
+                setRetryKey((value) => value + 1);
+              }}
+              style={[styles.retryButton, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.background }]}
+            >
+              <AppText variant="bodyStrong">Retry security check</AppText>
+            </Pressable>
+          ) : (
           <View style={[styles.webWrap, { backgroundColor: theme.colors.background }]}>
             <WebView
+              key={retryKey}
               source={{ uri: url }}
               onMessage={handleMessage}
-              onError={() => onError("Security verification is unavailable right now. Please try again.")}
-              onHttpError={() => onError("Security verification is unavailable right now. Please try again.")}
+              onError={() => {
+                setFailed(true);
+                onError("Security verification is unavailable right now. Please try again.");
+              }}
+              onHttpError={() => {
+                setFailed(true);
+                onError("Security verification is unavailable right now. Please try again.");
+              }}
               startInLoadingState
               javaScriptEnabled
               domStorageEnabled
@@ -101,6 +127,7 @@ export function TurnstileVerificationInline({ action, verified, onVerified, onEr
               style={styles.webview}
             />
           </View>
+          )}
         </>
       )}
     </View>
@@ -127,6 +154,14 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: "transparent",
+  },
+  retryButton: {
+    minHeight: 52,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
   },
   verifiedRow: {
     minHeight: 48,
