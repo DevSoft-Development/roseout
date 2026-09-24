@@ -21,6 +21,11 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { listPermittedCrmLocationIds } from "@/lib/crm/location-scope";
 import {
+  CUSTOMER_LIFECYCLE_META,
+  CUSTOMER_LIFECYCLE_STAGES,
+  listLocationCustomerLifecycle,
+} from "@/lib/crm/location-customer-lifecycle";
+import {
   getBusinessCRMSummary,
   getPartnerPlanDisplay,
   getPartnerSalesStatus,
@@ -239,9 +244,10 @@ export default async function CRMPage({
   const page = Math.max(Number(params.page || 1), 1);
   const parsedPageSize = Number(params.pageSize || 25);
   const pageSize = [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 25;
-  const [pageData, summary] = await Promise.all([
+  const [pageData, summary, lifecycle] = await Promise.all([
     listBusinessCRMPage({ page, pageSize, query: q, filter, market, permittedLocationIds }),
     getBusinessCRMSummary(),
+    listLocationCustomerLifecycle({ permittedLocationIds }),
   ]);
   const businesses = pageData.rows;
   const pendingClaims = pageData.pendingClaims || [];
@@ -334,38 +340,41 @@ export default async function CRMPage({
         </AdminSectionCard>
       ) : (
         <>
-          <AdminKpiGrid>
-            <AdminKpiCard
-              label="Total CRM records"
-              value={summary.total}
-              helper="100% of total"
-            />
-            <AdminKpiCard
-              label="Claim Sent"
-              value={summary.claimSent}
-              helper={`${summary.total ? Math.round((summary.claimSent / summary.total) * 100) : 0}%`}
-            />
-            <AdminKpiCard
-              label="Claim Started"
-              value={summary.claimStarted}
-              helper={`${summary.total ? Math.round((summary.claimStarted / summary.total) * 100) : 0}%`}
-            />
-            <AdminKpiCard
-              label="Claim Approved"
-              value={summary.claimApproved}
-              helper={`${summary.total ? Math.round((summary.claimApproved / summary.total) * 100) : 0}%`}
-            />
-            <AdminKpiCard
-              label="Payment Pending"
-              value={summary.paymentPending}
-              helper="Needs billing follow-up"
-            />
-            <AdminKpiCard
-              label="Active Partners"
-              value={summary.activePartners}
-              helper={`MRR $${fmt((summary.mrrCents || 0) / 100)}`}
-            />
-          </AdminKpiGrid>
+          <>
+            <AdminKpiGrid>
+              <AdminKpiCard label="All Locations" value={lifecycle.totals.total} helper="In the customer lifecycle" />
+              <AdminKpiCard label="In Conversation" value={lifecycle.totals.inConversation} helper="Contacted, interested, or claiming" />
+              <AdminKpiCard label="Claimed" value={lifecycle.totals.claimed} helper="Ownership connected" />
+              <AdminKpiCard label="Paid Customers" value={lifecycle.totals.paid} helper={`MRR $${fmt((lifecycle.totals.mrrCents || 0) / 100)}`} />
+              <AdminKpiCard label="Renewals Coming Up" value={lifecycle.totals.renewals} helper="Within the next 45 days" />
+              <AdminKpiCard label="Needs Attention" value={lifecycle.totals.atRisk} helper="Retention or billing follow-up" />
+            </AdminKpiGrid>
+
+            <AdminSectionCard className="p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-200">Customer journey</p>
+                  <h2 className="mt-1 text-xl font-black text-white">One relationship from prospect to retained customer</h2>
+                  <p className="mt-1 text-sm text-white/45">These stages update from real claim, billing, engagement, renewal, and retention signals.</p>
+                </div>
+                <AdminActionButton href="/admin/dashboard/crm/customer-lifecycle" variant="primary">
+                  Open lifecycle board
+                </AdminActionButton>
+              </div>
+              <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+                {CUSTOMER_LIFECYCLE_STAGES.map((stage) => (
+                  <Link
+                    key={stage}
+                    href={`/admin/dashboard/crm/customer-lifecycle?stage=${stage}`}
+                    className="min-w-[150px] rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-3 transition hover:border-rose-300/30 hover:bg-white/[0.055]"
+                  >
+                    <p className="text-xs font-black text-white">{CUSTOMER_LIFECYCLE_META[stage].label}</p>
+                    <p className="mt-1 text-2xl font-black text-rose-100">{lifecycle.stageCounts[stage]}</p>
+                  </Link>
+                ))}
+              </div>
+            </AdminSectionCard>
+          </>
           <AdminSectionCard className="p-4">
             <div id="crm-filters" className="space-y-4">
               <div>

@@ -319,6 +319,7 @@ export async function listLocationCustomerLifecycle(input: {
   health?: string;
   page?: number;
   pageSize?: number;
+  permittedLocationIds?: string[] | null;
 } = {}) {
   const db = getAdminDatabaseClient();
   const page = Math.max(1, Number(input.page || 1));
@@ -353,6 +354,11 @@ export async function listLocationCustomerLifecycle(input: {
   let rows = (locationsResult.data || []).map((row: RawLocation) =>
     normalizeRow(row, links.get(String(row.id)), opportunities.get(String(row.id)) || []),
   );
+
+  if (Array.isArray(input.permittedLocationIds)) {
+    const permitted = new Set(input.permittedLocationIds.map(String));
+    rows = rows.filter((row) => permitted.has(String(row.id)));
+  }
 
   const q = clean(input.q).toLowerCase();
   if (q) {
