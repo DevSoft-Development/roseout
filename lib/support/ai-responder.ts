@@ -284,6 +284,56 @@ function progressiveFallbackQuestion(
     : "Thanks — I got your reply. I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?";
 }
 
+function normalizeLearnedQuestion(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, " <email> ")
+    .replace(/\+?1?[\s().-]*(?:\d[\s().-]*){10,}/g, " <phone> ")
+    .replace(/\b\d{5,}\b/g, " <number> ")
+    .replace(/[^a-z0-9<>\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+function learnedConversationKey(conversation: SupportMessageContext[], latestMessage: string) {
+  const previousOutbound = [...conversation]
+    .reverse()
+    .find((item) => item.direction === "outbound" && String(item.body || "").trim());
+  const prior = previousOutbound ? String(previousOutbound.body || "").trim() : "";
+  return normalizeLearnedQuestion(prior ? `${prior} || customer: ${latestMessage}` : latestMessage);
+}
+
+async function matchLearnedResponse(conversation: SupportMessageContext[], latestMessage: string) {
+  const contextual = learnedConversationKey(conversation, latestMessage);
+  const standalone = normalizeLearnedQuestion(latestMessage);
+
+  for (const question of [contextual, standalone]) {
+    if (!question || question.length < 4) continue;
+    const { data, error } = await supabaseAdmin.rpc("match_support_learned_response", {
+      p_question: question,
+      p_threshold: 0.84,
+    });
+    if (error) {
+      console.warn("Support learned response lookup failed", error.message);
+      return null;
+    }
+    const match = Array.isArray(data) ? data[0] : null;
+    if (!match?.id || !match?.response_text) continue;
+    return {
+      id: String(match.id),
+      responseText: String(match.response_text).trim().slice(0, 900),
+      category: String(match.category || "General Support").slice(0, 80),
+      priority: ["low", "normal", "high", "urgent"].includes(String(match.priority)) ? String(match.priority) : "normal",
+      sourceArticleIds: Array.isArray(match.source_article_ids) ? match.source_article_ids.map(String).filter(Boolean) : [],
+      similarity: Number(match.similarity_score || 0),
+      confidence: Number(match.confidence || 0),
+    };
+  }
+
+  return null;
+}
+
 function safeRoutineDecision(
   message: string,
   reason: string,
@@ -367,6 +417,19 @@ export async function getSupportAiDecision(params: {
   if (routineClaimDecision) return routineClaimDecision;
 
   const searchContext = buildKnowledgeSearchContext(conversation, latestMessage);
+
+  const learned = await matchLearnedResponse(conversation, latestMessage);
+  if (learned) {
+    return {
+      action: "reply",
+      message: learned.responseText,
+      reason: `learned_response:${learned.id}`,
+      category: learned.category,
+      priority: learned.priority as SupportAiDecision["priority"],
+      model: "learned",
+      sourceArticleIds: learned.sourceArticleIds,
+    };
+  }
 
   if (!aiEnabled()) {
     return safeRoutineDecision(
