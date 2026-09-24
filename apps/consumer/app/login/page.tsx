@@ -569,19 +569,48 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                             <p className="text-sm font-bold text-amber-100">Account already created</p>
                             <p className="mt-1 text-xs leading-5 text-white/60">This email already has a TheOutHaven account. Sign in instead of creating another account.</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const normalized = normalizeEmail(signup.email);
-                              setSignin((current) => ({ ...current, email: normalized }));
-                              setTab("signin");
-                              setError("");
-                              setMessage("");
-                            }}
-                            className="shrink-0 rounded-full bg-[#e1062a] px-4 py-2.5 text-sm font-bold text-white"
-                          >
-                            Sign in
-                          </button>
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const normalized = normalizeEmail(signup.email);
+                                setSignin((current) => ({ ...current, email: normalized }));
+                                setTab("signin");
+                                setError("");
+                                setMessage("");
+                              }}
+                              className="rounded-full bg-[#e1062a] px-4 py-2.5 text-sm font-bold text-white"
+                            >
+                              Sign in
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setMessage("");
+                                setError("");
+                                try {
+                                  const response = await fetch("/api/auth/resend-verification", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ email: normalizeEmail(signup.email) }),
+                                  });
+                                  const data = await response.json().catch(() => ({}));
+                                  if (!response.ok || data.success !== true) {
+                                    setError(data.error || "We could not resend the verification email.");
+                                    return;
+                                  }
+                                  setMessage(data.alreadyVerified
+                                    ? "This account is already verified. Sign in to continue."
+                                    : "Verification email sent. Check your inbox.");
+                                } catch {
+                                  setError("We could not resend the verification email.");
+                                }
+                              }}
+                              className="rounded-full border border-white/15 px-4 py-2.5 text-sm font-bold text-white"
+                            >
+                              Resend verification
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                     </div>
