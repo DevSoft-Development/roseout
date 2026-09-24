@@ -120,6 +120,32 @@ describe("SMS clarification follow-ups", () => {
     expect(worker).toContain("|| customer:");
   });
 
+  it("supports an explicit RESET CHAT boundary without deleting history", () => {
+    const crossChannel = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/cross-channel-sms.ts"),
+      "utf8",
+    );
+    const legacy = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/sms-routing.ts"),
+      "utf8",
+    );
+    for (const source of [crossChannel, legacy]) {
+      expect(source).toContain('RESET_CHAT_COMMAND = /^reset chat$/i');
+      expect(source).toContain("conversation_reset");
+      expect(source).toContain("exclude_from_learning");
+      expect(source).toContain("fresh support conversation with no previous chat context");
+    }
+  });
+
+  it("keeps reset test threads out of support self-learning", () => {
+    const worker = fs.readFileSync(
+      path.join(process.cwd(), "supabase/functions/support-learning-worker/index.ts"),
+      "utf8",
+    );
+    expect(worker).toContain("metadata?.exclude_from_learning === true");
+    expect(worker).toContain('select("id,status,category,priority,metadata")');
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");

@@ -43,7 +43,7 @@ async function learnFromResolvedAiReplies(limit: number) {
 
   const ticketIds = [...new Set(aiMessages.map((m: Row) => String(m.ticket_id)).filter(Boolean))];
   const [{ data: tickets, error: ticketError }, { data: timeline, error: timelineError }] = await Promise.all([
-    supabase.from("support_tickets").select("id,status,category,priority").in("id", ticketIds),
+    supabase.from("support_tickets").select("id,status,category,priority,metadata").in("id", ticketIds),
     supabase.from("support_ticket_messages").select("ticket_id,actor_type,direction,body,created_at").in("ticket_id", ticketIds).order("created_at", { ascending: true }),
   ]);
   if (ticketError) throw ticketError;
@@ -56,6 +56,7 @@ async function learnFromResolvedAiReplies(limit: number) {
   for (const ai of aiMessages as Row[]) {
     const ticket = ticketById.get(String(ai.ticket_id));
     if (!ticket || !["resolved", "closed"].includes(String(ticket.status))) { skipped++; continue; }
+    if (ticket.metadata?.exclude_from_learning === true) { skipped++; continue; }
     const sourceIds = Array.isArray(ai.metadata?.ai_source_article_ids) ? ai.metadata.ai_source_article_ids.map(String).filter(Boolean).sort() : [];
     if (!sourceIds.length) { skipped++; continue; }
     const rows = messagesByTicket.get(String(ai.ticket_id)) || [];

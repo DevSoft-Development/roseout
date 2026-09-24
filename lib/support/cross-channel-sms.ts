@@ -9,6 +9,7 @@ import { normalizePhone, purposeForTelnyxNumber, sendTelnyxSmsFromNumber, TELNYX
 const ACTIVE_STATUSES = ["new", "open", "pending", "waiting_on_customer", "waiting_on_internal", "escalated", "reopened"];
 const REOPENABLE_STATUSES = [...ACTIVE_STATUSES, "resolved", "closed"];
 const RECENT_CLOSED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RESET_CHAT_COMMAND = /^reset chat$/i;
 
 type Ticket = {
   id: string;
@@ -27,6 +28,7 @@ function ticketNumber() {
 }
 
 function reusable(ticket: Ticket) {
+  if (ticket.metadata?.conversation_reset === true) return false;
   if (ACTIVE_STATUSES.includes(String(ticket.status))) return true;
   if (ticket.status === "resolved") return true;
   if (ticket.status !== "closed") return false;
@@ -138,6 +140,81 @@ async function recordOutbound(params: {
   return { messageId: inserted.data.id as string, providerMessageId: sent.id, status: sent.status };
 }
 
+async function resetConversationContext(params: {
+  ticket: Ticket;
+  phone: string;
+  entryNumber: string;
+  eventId: string;
+  providerMessageId: string | null;
+}) {
+  const now = new Date().toISOString();
+  const inbound = await supabaseAdmin.from("support_ticket_messages").insert({
+    ticket_id: params.ticket.id,
+    actor_type: "creator",
+    author_name: params.phone,
+    author_phone: params.phone,
+    body: "RESET CHAT",
+    direction: "inbound",
+    channel: "sms",
+    provider: "telnyx",
+    delivery_status: "received",
+    from_address: params.phone,
+    to_address: params.entryNumber,
+    provider_message_id: params.providerMessageId,
+    metadata: {
+      telnyx_event_id: params.eventId,
+      entry_number: params.entryNumber,
+      entry_channel: entryChannel(params.entryNumber),
+      handling_department: "support",
+      conversation_reset: true,
+      exclude_from_learning: true,
+    },
+  }).select("id").single();
+  if (inbound.error) throw inbound.error;
+
+  const confirmation = "TheOutHaven Support: Chat reset. Your next message will start a fresh support conversation with no previous chat context.";
+  await recordOutbound({
+    ticketId: params.ticket.id,
+    phone: params.phone,
+    fromNumber: params.entryNumber,
+    body: confirmation,
+    actorType: "system",
+    authorName: "TheOutHaven Support",
+    metadata: {
+      automatic_acknowledgement: true,
+      conversation_reset: true,
+      exclude_from_learning: true,
+      entry_number: params.entryNumber,
+    },
+  });
+
+  const metadata = {
+    ...(params.ticket.metadata || {}),
+    conversation_reset: true,
+    conversation_reset_at: now,
+    exclude_from_learning: true,
+  };
+  const updated = await supabaseAdmin.from("support_tickets").update({
+    status: "closed",
+    closed_at: now,
+    last_message_at: now,
+    updated_at: now,
+    metadata,
+  }).eq("id", params.ticket.id);
+  if (updated.error) throw updated.error;
+
+  return {
+    ticketId: params.ticket.id,
+    messageId: inbound.data.id as string,
+    duplicate: false,
+    aiHandled: false,
+    reopened: false,
+    topicBoundary: false,
+    previousTicketId: null,
+    reset: true,
+  };
+}
+
 async function addHandoffNote(ticketId: string, reason: string, entryNumber: string) {
   await supabaseAdmin.from("support_ticket_messages").insert({
     ticket_id: ticketId,
@@ -243,6 +320,18 @@ export async function routeSupportFromSmsChannel(params: {
   }
 
   let ticket = await findTicket(phone);
+
+  if (RESET_CHAT_COMMAND.test(params.body.trim())) {
+    if (!ticket) ticket = await createTicket(phone, params.body, entryNumber);
+    return resetConversationContext({
+      ticket,
+      phone,
+      entryNumber,
+      eventId: params.eventId,
+      providerMessageId: params.providerMessageId,
+    });
+  }
+
   const rotatedFromTicketId = ticket && await shouldRotateTicket(ticket, params.body) ? ticket.id : null;
   if (rotatedFromTicketId) ticket = null;
   const created = !ticket;
