@@ -42,7 +42,7 @@ const STOP_WORDS = new Set([
 ]);
 
 function aiEnabled() {
-  return process.env.SUPPORT_AI_ENABLED === "true" && Boolean(process.env.OPENAI_API_KEY);
+  return process.env.SUPPORT_AI_ENABLED !== "false" && Boolean(process.env.OPENAI_API_KEY);
 }
 
 function fallbackHandoff(
@@ -260,7 +260,6 @@ function safeRoutineDecision(
 }
 
 export async function supportAiCanRespond(ticketId: string) {
-  if (!aiEnabled()) return false;
   const { data, error } = await supabaseAdmin
     .from("support_ticket_messages")
     .select("actor_type,metadata")
@@ -282,9 +281,6 @@ export async function getSupportAiDecision(params: {
   latestMessage: string;
 }): Promise<SupportAiDecision> {
   const latestMessage = params.latestMessage.trim();
-  if (!aiEnabled()) {
-    return { action: "silent", message: "", reason: "ai_disabled", category: "General Support", priority: "normal" };
-  }
 
   if (HUMAN_HANDOFF.test(latestMessage)) {
     return fallbackHandoff(
@@ -307,6 +303,16 @@ export async function getSupportAiDecision(params: {
   const fullConversation = await loadConversation(params.ticketId);
   const conversation = scopeConversationToCurrentTopic(fullConversation, latestMessage);
   const searchContext = buildKnowledgeSearchContext(conversation, latestMessage);
+
+  if (!aiEnabled()) {
+    return safeRoutineDecision(
+      routineFallbackQuestion(searchContext),
+      "ai_unavailable_continued_troubleshooting",
+      searchContext,
+      "deterministic",
+    );
+  }
+
   const articles = await loadKnowledge(searchContext);
   const contextCategory = inferSupportCategory(searchContext);
 
