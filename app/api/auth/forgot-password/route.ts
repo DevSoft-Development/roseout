@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const email = clean(body.email).toLowerCase();
     const captchaToken = clean(body.captchaToken);
-    const mobileRecovery = body.mobile === true;
+    const mobileRecovery = body.mobile === true || body.client === "mobile_app";
     const client = clean(body.client).toLowerCase();
 
     if (!email) {
