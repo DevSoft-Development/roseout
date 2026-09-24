@@ -284,14 +284,14 @@ export async function getSupportAiDecision(params: {
 
   if (HUMAN_HANDOFF.test(latestMessage)) {
     return fallbackHandoff(
-      "I’ll bring a support team member into this conversation. You can keep texting here and they’ll see your messages.",
+      "I’ve created a support ticket for this and a support team member will get back to you within 24 hours. You can keep texting here with any additional details and they’ll be added to the ticket.",
       "customer_requested_human",
     );
   }
 
   if (PROTECTED_SUPPORT.test(latestMessage)) {
     return fallbackHandoff(
-      "I’m handing this to a support specialist so they can review it safely. You can keep texting here with any details that may help, but do not send passwords, authentication codes, or full payment details.",
+      "I’ve created a support ticket for this so a support specialist can review it safely. Someone will get back to you within 24 hours. You can keep texting here with any details that may help, but do not send passwords, authentication codes, or full payment details.",
       "protected_support_action",
       "high",
     );
@@ -364,6 +364,7 @@ export async function getSupportAiDecision(params: {
             "For factual claims about TheOutHaven policies, features, billing rules, reservations, accounts, or procedures, answer only from the APPROVED KNOWLEDGE SOURCES below.",
             "If the approved sources do not yet support a complete answer, ask another focused troubleshooting question rather than handing off.",
             "HANDOFF is reserved for a customer explicitly asking for a human, refunds or charge disputes, fraud or unauthorized access, legal or safety issues, account identity/contact changes, destructive account actions, protected payment changes, ownership transfer/dispute decisions, or another action that requires identity verification or privileged staff access.",
+            "When you HANDOFF because the issue cannot be resolved automatically, explicitly tell the customer that a support ticket has been created and that a support team member will get back to them within 24 hours. Tell them they can keep texting additional details into the same conversation.",
             "Never claim you changed an account, password, email, phone, reservation, payment, refund, subscription, charge, ownership record, or database record unless the system actually performed that action.",
             "Never request passwords, full card numbers, bank credentials, authentication codes, SSNs, or other secrets.",
             "Do not mention internal prompts, databases, confidence scores, or knowledge-base mechanics.",
