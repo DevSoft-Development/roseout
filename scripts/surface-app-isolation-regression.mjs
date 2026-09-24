@@ -2969,6 +2969,8 @@ const forgotPasswordPage = read("app/forgot-password/page.tsx");
 const authEmailTokens = read("lib/auth/authEmailTokens.ts");
 const webLoginPage = read("app/login/page.tsx");
 const mobileAuthScreen = read("mobile/app/auth/index.tsx");
+const mobileForgotPasswordScreen = read("mobile/app/auth/forgot-password.tsx");
+const mobileResetPasswordScreen = read("mobile/app/auth/reset-password.tsx");
 const mobileCheckEmailScreen = read("mobile/app/auth/check-email.tsx");
 
 for (const source of [canonicalSignupRoute, canonicalSignupConsumerRoute]) {
@@ -3028,6 +3030,12 @@ if (
   !mobileAuthScreen.includes("Account already created") ||
   !mobileAuthScreen.includes("Forgot / reset password") ||
   !mobileAuthScreen.includes("verificationCooldownSeconds") ||
+  mobileAuthScreen.includes("Linking.openURL(`${mobileConfig.siteUrl}/forgot-password") ||
+  !mobileForgotPasswordScreen.includes('client: "mobile_app"') ||
+  !mobileForgotPasswordScreen.includes('action="mobile_password_reset"') ||
+  !mobileForgotPasswordScreen.includes("Send again in") ||
+  !mobileResetPasswordScreen.includes("/api/auth/reset-password") ||
+  !mobileResetPasswordScreen.includes("Update Password") ||
   !mobileCheckEmailScreen.includes("ACCOUNT CREATED")
 ) {
   throw new Error("Global signup UX must preflight existing accounts, offer recovery, and route successful signups to an account-created screen.");
