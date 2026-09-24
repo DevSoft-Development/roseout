@@ -20,6 +20,7 @@ const ACTIVE_SUPPORT_STATUSES = [
 ];
 const REOPENABLE_SUPPORT_STATUSES = [...ACTIVE_SUPPORT_STATUSES, "resolved", "closed"];
 const RECENT_CLOSED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RESET_CHAT_COMMAND = /^reset chat$/i;
 
 type SmsTicketCandidate = {
   id: string;
@@ -31,6 +32,7 @@ type SmsTicketCandidate = {
   last_message_at?: string | null;
   resolved_at?: string | null;
   closed_at?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 function ticketNumber() {
@@ -38,6 +40,7 @@ function ticketNumber() {
 }
 
 function canReuseTicket(ticket: SmsTicketCandidate) {
+  if (ticket.metadata?.conversation_reset === true) return false;
   if (ACTIVE_SUPPORT_STATUSES.includes(String(ticket.status))) return true;
   if (ticket.status === "resolved") return true;
   if (ticket.status !== "closed") return false;
@@ -62,7 +65,7 @@ async function findTicketFromSmsHistory(phone: string) {
 
   const { data: tickets, error: ticketError } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at,metadata")
     .in("id", ticketIds)
     .in("status", REOPENABLE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
@@ -75,7 +78,7 @@ async function findTicketFromSmsHistory(phone: string) {
 async function findTicketFromRequesterPhone(phone: string) {
   const { data, error } = await supabaseAdmin
     .from("support_tickets")
-    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source,last_message_at,resolved_at,closed_at,metadata")
     .eq("requester_phone", phone)
     .in("status", REOPENABLE_SUPPORT_STATUSES)
     .order("last_message_at", { ascending: false })
@@ -107,7 +110,7 @@ async function createSmsTicket(phone: string, body: string) {
       last_message_at: now,
       metadata: { first_channel: "sms", support_number: SUPPORT_SMS_NUMBER },
     })
-    .select("id,status,ticket_number,requester_phone,public_access_token,source")
+    .select("id,status,ticket_number,requester_phone,public_access_token,source,metadata")
     .single();
 
   if (error || !data?.id) throw error || new Error("Unable to create SMS support ticket");
@@ -147,6 +150,64 @@ async function recordOutboundSupportSms(params: {
 
   if (error) throw error;
   return data.id as string;
+}
+
+async function resetLegacySupportConversation(params: {
+  ticket: SmsTicketCandidate;
+  phone: string;
+  eventId: string;
+  providerMessageId: string | null;
+}) {
+  const now = new Date().toISOString();
+  const inbound = await supabaseAdmin.from("support_ticket_messages").insert({
+    ticket_id: params.ticket.id,
+    actor_type: "creator",
+    author_name: params.phone,
+    author_phone: params.phone,
+    body: "RESET CHAT",
+    direction: "inbound",
+    channel: "sms",
+    provider: "telnyx",
+    delivery_status: "received",
+    from_address: params.phone,
+    to_address: SUPPORT_SMS_NUMBER,
+    provider_message_id: params.providerMessageId,
+    metadata: {
+      telnyx_event_id: params.eventId,
+      conversation_reset: true,
+      exclude_from_learning: true,
+    },
+  }).select("id").single();
+  if (inbound.error) throw inbound.error;
+
+  const body = "TheOutHaven Support: Chat reset. Your next message will start a fresh support conversation with no previous chat context.";
+  const sent = await sendSupportSms({ to: params.phone, body });
+  await recordOutboundSupportSms({
+    ticketId: params.ticket.id,
+    to: params.phone,
+    body,
+    providerMessageId: sent.id,
+    deliveryStatus: sent.status,
+    actorType: "system",
+    authorName: "TheOutHaven Support",
+    metadata: { automatic_acknowledgement: true, conversation_reset: true, exclude_from_learning: true },
+  });
+
+  const updated = await supabaseAdmin.from("support_tickets").update({
+    status: "closed",
+    closed_at: now,
+    last_message_at: now,
+    updated_at: now,
+    metadata: {
+      ...(params.ticket.metadata || {}),
+      conversation_reset: true,
+      conversation_reset_at: now,
+      exclude_from_learning: true,
+    },
+  }).eq("id", params.ticket.id);
+  if (updated.error) throw updated.error;
+
+  return { ticketId: params.ticket.id, messageId: inbound.data.id as string, duplicate: false, reset: true };
 }
 
 async function sendFallbackAcknowledgement(ticket: { id: string; ticket_number: string | null }, phone: string) {
@@ -367,6 +428,17 @@ export async function routeInboundSupportSms(params: {
 
   let ticket = await findTicketFromSmsHistory(from);
   if (!ticket) ticket = await findTicketFromRequesterPhone(from);
+
+  if (RESET_CHAT_COMMAND.test(params.body.trim())) {
+    if (!ticket) ticket = await createSmsTicket(from, params.body);
+    return resetLegacySupportConversation({
+      ticket,
+      phone: from,
+      eventId: params.eventId,
+      providerMessageId: params.providerMessageId,
+    });
+  }
+
   const createdNewTicket = !ticket;
   if (!ticket) ticket = await createSmsTicket(from, params.body);
   const priorStatus = ticket.status;
