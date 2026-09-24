@@ -37,6 +37,16 @@ describe("SMS clarification follow-ups", () => {
     expect(supportRouting).toContain("It’s been added to your support conversation.");
   });
 
+  it("keeps support clarification available when the AI flag is unset", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain('process.env.SUPPORT_AI_ENABLED !== "false"');
+    expect(responder).toContain("ai_unavailable_continued_troubleshooting");
+    expect(responder).toContain("routineFallbackQuestion(searchContext)");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
