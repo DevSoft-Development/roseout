@@ -254,7 +254,7 @@ for (const source of ['@source "../../components";', '@source "../../lib";', '@s
   }
 }
 const webSurfaceDockerfile = read("infra/aws/web-surfaces/Dockerfile");
-if (!webSurfaceDockerfile.includes("verify-admin-css-bundle.mjs apps/admin/.next/static/css")) {
+if (!webSurfaceDockerfile.includes("verify-admin-css-bundle.mjs apps/admin/.next/static")) {
   throw new Error("AWS Admin image builds must verify shared Tailwind utilities are present before deployment.");
 }
 const adminCssVerifier = read("scripts/verify-admin-css-bundle.mjs");
