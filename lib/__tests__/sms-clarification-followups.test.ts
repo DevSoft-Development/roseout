@@ -78,6 +78,16 @@ describe("SMS clarification follow-ups", () => {
     expect(ownership).toContain('incoming_${params.entryChannel}_routed_%');
   });
 
+  it("advances claim troubleshooting when the customer cannot find the business", () => {
+    const tools = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/tool-layer.ts"),
+      "utf8",
+    );
+    expect(tools).toContain("claim_listing_not_found_collect_details");
+    expect(tools).toContain("Send me the business name and its street address or ZIP code");
+    expect(tools).toContain("CLAIM_LISTING_NOT_FOUND");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
