@@ -61,9 +61,17 @@ async function learnFromResolvedAiReplies(limit: number) {
     const rows = messagesByTicket.get(String(ai.ticket_id)) || [];
     const aiTime = new Date(String(ai.created_at)).getTime();
     if (rows.some((m) => m.actor_type === "admin" && new Date(String(m.created_at)).getTime() > aiTime)) { skipped++; continue; }
-    const inbound = [...rows].reverse().find((m) => m.direction === "inbound" && new Date(String(m.created_at)).getTime() < aiTime && String(m.body || "").trim());
+    const inboundIndex = rows.findLastIndex((m) => m.direction === "inbound" && new Date(String(m.created_at)).getTime() < aiTime && String(m.body || "").trim());
+    const inbound = inboundIndex >= 0 ? rows[inboundIndex] : null;
     if (!inbound) { skipped++; continue; }
-    const question = normalize(String(inbound.body));
+    const previousOutbound = inboundIndex > 0
+      ? [...rows.slice(0, inboundIndex)].reverse().find((m) => m.direction === "outbound" && String(m.body || "").trim())
+      : null;
+    const standaloneQuestion = normalize(String(inbound.body));
+    const contextualQuestion = previousOutbound
+      ? normalize(`${String(previousOutbound.body || "").trim()} || customer: ${String(inbound.body || "").trim()}`)
+      : standaloneQuestion;
+    const question = contextualQuestion || standaloneQuestion;
     const answer = String(ai.body || "").trim().slice(0, 900);
     if (question.length < 4 || !answer) { skipped++; continue; }
     const signature = sourceIds.join(",");

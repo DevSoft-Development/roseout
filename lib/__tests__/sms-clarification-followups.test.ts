@@ -78,6 +78,48 @@ describe("SMS clarification follow-ups", () => {
     expect(ownership).toContain('incoming_${params.entryChannel}_routed_%');
   });
 
+  it("prevents repeated support questions globally when AI degrades", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("progressiveFallbackQuestion");
+    expect(responder).toContain("I don’t want to repeat the last question");
+    expect(responder).toContain("Never repeat a question that TheOutHaven already asked");
+    expect(responder).toContain("Treat the customer's newest message as an answer");
+  });
+
+  it("supports migrating the OpenAI credential into the authoritative provider vault", () => {
+    const workflow = fs.readFileSync(
+      path.join(process.cwd(), ".github/workflows/aws-credential-vault-runtime-sync.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("Adopted existing OpenAI credential into Credential Vault.");
+    expect(workflow).toContain("${CREDENTIAL_VAULT_PREFIX}/${TARGET_ENV}/openai");
+    expect(workflow).toContain(".OPENAI_API_KEY // empty");
+  });
+
+  it("uses high-confidence learned support responses before the LLM", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("matchLearnedResponse");
+    expect(responder).toContain('model: "learned"');
+    expect(responder).toContain("learned_response:");
+    expect(responder.indexOf("matchLearnedResponse")).toBeLessThan(responder.indexOf("if (!aiEnabled())"));
+  });
+
+  it("learns support answers with the preceding support question as context", () => {
+    const worker = fs.readFileSync(
+      path.join(process.cwd(), "supabase/functions/support-learning-worker/index.ts"),
+      "utf8",
+    );
+    expect(worker).toContain("previousOutbound");
+    expect(worker).toContain("contextualQuestion");
+    expect(worker).toContain("|| customer:");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");

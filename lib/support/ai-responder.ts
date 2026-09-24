@@ -254,6 +254,86 @@ function routineFallbackQuestion(textInput: string) {
   return "I can keep troubleshooting this with you. What were you trying to do, and what happened on the screen or in the text conversation when you tried it?";
 }
 
+function normalizedReply(value: string) {
+  return normalizeText(value).replace(/\s+/g, " ").trim();
+}
+
+function recentOutboundBodies(conversation: SupportMessageContext[]) {
+  return conversation
+    .filter((item) => item.direction === "outbound")
+    .map((item) => String(item.body || "").trim())
+    .filter(Boolean)
+    .slice(-4);
+}
+
+function progressiveFallbackQuestion(
+  conversation: SupportMessageContext[],
+  latestMessage: string,
+  searchContext: string,
+) {
+  const candidate = routineFallbackQuestion(searchContext);
+  const recent = recentOutboundBodies(conversation);
+  const normalizedCandidate = normalizedReply(candidate);
+  const repeated = recent.some((body) => normalizedReply(body) === normalizedCandidate);
+
+  if (!repeated) return candidate;
+
+  const latest = latestMessage.trim();
+  return latest
+    ? `Thanks — I got your answer: "${latest.slice(0, 140)}". I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?`
+    : "Thanks — I got your reply. I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?";
+}
+
+function normalizeLearnedQuestion(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, " <email> ")
+    .replace(/\+?1?[\s().-]*(?:\d[\s().-]*){10,}/g, " <phone> ")
+    .replace(/\b\d{5,}\b/g, " <number> ")
+    .replace(/[^a-z0-9<>\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+}
+
+function learnedConversationKey(conversation: SupportMessageContext[], latestMessage: string) {
+  const previousOutbound = [...conversation]
+    .reverse()
+    .find((item) => item.direction === "outbound" && String(item.body || "").trim());
+  const prior = previousOutbound ? String(previousOutbound.body || "").trim() : "";
+  return normalizeLearnedQuestion(prior ? `${prior} || customer: ${latestMessage}` : latestMessage);
+}
+
+async function matchLearnedResponse(conversation: SupportMessageContext[], latestMessage: string) {
+  const contextual = learnedConversationKey(conversation, latestMessage);
+  const standalone = normalizeLearnedQuestion(latestMessage);
+
+  for (const question of [contextual, standalone]) {
+    if (!question || question.length < 4) continue;
+    const { data, error } = await supabaseAdmin.rpc("match_support_learned_response", {
+      p_question: question,
+      p_threshold: 0.84,
+    });
+    if (error) {
+      console.warn("Support learned response lookup failed", error.message);
+      return null;
+    }
+    const match = Array.isArray(data) ? data[0] : null;
+    if (!match?.id || !match?.response_text) continue;
+    return {
+      id: String(match.id),
+      responseText: String(match.response_text).trim().slice(0, 900),
+      category: String(match.category || "General Support").slice(0, 80),
+      priority: ["low", "normal", "high", "urgent"].includes(String(match.priority)) ? String(match.priority) : "normal",
+      sourceArticleIds: Array.isArray(match.source_article_ids) ? match.source_article_ids.map(String).filter(Boolean) : [],
+      similarity: Number(match.similarity_score || 0),
+      confidence: Number(match.confidence || 0),
+    };
+  }
+
+  return null;
+}
+
 function safeRoutineDecision(
   message: string,
   reason: string,
@@ -338,9 +418,22 @@ export async function getSupportAiDecision(params: {
 
   const searchContext = buildKnowledgeSearchContext(conversation, latestMessage);
 
+  const learned = await matchLearnedResponse(conversation, latestMessage);
+  if (learned) {
+    return {
+      action: "reply",
+      message: learned.responseText,
+      reason: `learned_response:${learned.id}`,
+      category: learned.category,
+      priority: learned.priority as SupportAiDecision["priority"],
+      model: "learned",
+      sourceArticleIds: learned.sourceArticleIds,
+    };
+  }
+
   if (!aiEnabled()) {
     return safeRoutineDecision(
-      routineFallbackQuestion(searchContext),
+      progressiveFallbackQuestion(conversation, latestMessage, searchContext),
       "ai_unavailable_continued_troubleshooting",
       searchContext,
       "deterministic",
@@ -392,6 +485,8 @@ export async function getSupportAiDecision(params: {
             "Be conversational, concise, calm, and useful. Keep SMS replies under 500 characters when possible.",
             "The provided recent conversation is scoped to the customer's current support topic. A clear new topic starts fresh context; a short answer or clarification continues the current topic.",
             "You may ask multiple follow-up questions across the conversation when needed, but ask only one focused question in each SMS. Do not give up after one clarification.",
+            "Treat the customer's newest message as an answer to the most recent relevant question unless they clearly start a new topic. Advance the conversation from that answer instead of restarting the troubleshooting flow.",
+            "Never repeat a question that TheOutHaven already asked in the recent conversation. If the customer answered it, acknowledge the answer and ask only the next missing question.",
             "For routine product questions, navigation help, setup, troubleshooting, account access, business claims, profile management, reservations, events, experiences, websites, menus, QR codes, leads, offers, VIP, reviews, marketing, analytics, and plan navigation, prefer REPLY over HANDOFF.",
             "Routine business-claim assistance should stay conversational. Explain the normal claim flow and troubleshoot claim codes, OTP delivery/expiry, pending review, and owner-access setup from approved sources.",
             "A business being shown as already claimed can be explained and you may collect the business name, address/profile link, and the customer's relationship to it before a human ownership review is needed.",
@@ -421,7 +516,7 @@ export async function getSupportAiDecision(params: {
 
     if (!safeMessage) {
       return safeRoutineDecision(
-        routineFallbackQuestion(searchContext),
+        progressiveFallbackQuestion(conversation, latestMessage, searchContext),
         "empty_ai_response_continued_troubleshooting",
         searchContext,
         model,
@@ -451,7 +546,7 @@ export async function getSupportAiDecision(params: {
   } catch (error) {
     console.error("Support AI response failed", error);
     return safeRoutineDecision(
-      routineFallbackQuestion(searchContext),
+      progressiveFallbackQuestion(conversation, latestMessage, searchContext),
       "ai_error_continued_troubleshooting",
       searchContext,
       "deterministic",
