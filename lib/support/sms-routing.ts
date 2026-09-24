@@ -114,7 +114,7 @@ async function createSmsTicket(phone: string, body: string) {
     .single();
 
   if (error || !data?.id) throw error || new Error("Unable to create SMS support ticket");
-  return data;
+  return data as SmsTicketCandidate;
 }
 
 async function recordOutboundSupportSms(params: {
