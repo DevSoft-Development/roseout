@@ -136,6 +136,12 @@ jobs:
           echo "foundation_stack=theouthaven-web-surfaces-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
           echo "services_stack=theouthaven-web-surface-services-${TARGET_ENV}" >> "$GITHUB_OUTPUT"
 
+      - name: Require healthy production DR before deployment
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash scripts/dr/require-production-dr-healthy.sh
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
