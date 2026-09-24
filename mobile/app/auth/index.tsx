@@ -80,11 +80,11 @@ export default function AuthScreen() {
 
   useEffect(() => {
     if (verificationCooldownSeconds <= 0) return;
-    const timer = setInterval(() => {
+    const timer = setTimeout(() => {
       setVerificationCooldownSeconds((current) => Math.max(0, current - 1));
     }, 1000);
-    return () => clearInterval(timer);
-  }, [verificationCooldownSeconds > 0]);
+    return () => clearTimeout(timer);
+  }, [verificationCooldownSeconds]);
 
   useEffect(() => {
     if (mode !== "signup") {
