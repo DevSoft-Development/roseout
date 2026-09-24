@@ -68,6 +68,16 @@ describe("SMS clarification follow-ups", () => {
     expect(responder).toContain("customer_confirmed_resolution_after_troubleshooting");
   });
 
+  it("does not query nonexistent sms_logs metadata for continuation routing", () => {
+    const ownership = fs.readFileSync(
+      path.join(process.cwd(), "lib/communications/sms-flow-ownership.ts"),
+      "utf8",
+    );
+    expect(ownership).toContain('.select("message_type,created_at")');
+    expect(ownership).not.toContain('.select("message_type,metadata,created_at")');
+    expect(ownership).toContain('incoming_${params.entryChannel}_routed_%');
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
