@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TurnstileVerificationInline } from "@/components/auth/TurnstileVerificationInline";
+import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
 import { mobileConfig } from "@/lib/config";
@@ -91,6 +92,8 @@ export default function ForgotPasswordScreen() {
           { paddingTop: Math.max(insets.top + 24, 44), paddingBottom: Math.max(insets.bottom + 32, 48) },
         ]}
       >
+        <BrandHeader compact />
+
         <View style={styles.heading}>
           <AppText variant="eyebrow" accent>ACCOUNT RECOVERY</AppText>
           <AppText variant="h1">Forgot / Reset Password</AppText>
