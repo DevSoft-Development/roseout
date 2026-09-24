@@ -192,7 +192,10 @@ jobs:
           \$dr\$;"
           query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/publication.json"
           query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION refresh publication with (copy_data = true);" "$RUNNER_TEMP/subscription-refresh.json"
-          query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION enable;" "$RUNNER_TEMP/subscription-enable.json"
+          query_ref "$OREGON_REF" "select subenabled from pg_subscription where subname='$EXPECTED_SUBSCRIPTION';" "$RUNNER_TEMP/subscription-state.json"
+          if [ "$(jq -r '.[0].subenabled' "$RUNNER_TEMP/subscription-state.json")" != "true" ]; then
+            query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION enable;" "$RUNNER_TEMP/subscription-enable.json"
+          fi
           for attempt in $(seq 1 60); do
             query_ref "$OREGON_REF" "select count(*) pending from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='$EXPECTED_SUBSCRIPTION' and sr.srsubstate<>'r';" "$RUNNER_TEMP/pending.json"
             if [ "$(jq -r '.[0].pending' "$RUNNER_TEMP/pending.json")" = "0" ]; then exit 0; fi
