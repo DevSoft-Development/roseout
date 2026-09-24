@@ -1,0 +1,206 @@
+name: Supabase dual-region migrations
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/supabase-dual-region-migrations.yml'
+      - 'scripts/dr/require-production-dr-healthy.sh'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/supabase-dual-region-migrations.yml'
+      - 'scripts/dr/require-production-dr-healthy.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-dual-region-migrations-production
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
+
+jobs:
+  preflight:
+    name: Validate migrations against both regions
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect migration files
+        id: migrations
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            git diff --name-only HEAD^ HEAD -- 'supabase/migrations/*.sql' > "$RUNNER_TEMP/migrations.txt" || true
+          else
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'supabase/migrations/*.sql' > "$RUNNER_TEMP/migrations.txt"
+          fi
+          sed -i '/^[[:space:]]*$/d' "$RUNNER_TEMP/migrations.txt"
+          cat "$RUNNER_TEMP/migrations.txt"
+          if [ -s "$RUNNER_TEMP/migrations.txt" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Reject destructive or non-transactional SQL from automatic lane
+        if: steps.migrations.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          blocked='(^|[^a-z])(drop[[:space:]]+(table|schema|database|subscription|publication)|truncate[[:space:]]+table|alter[[:space:]]+subscription|create[[:space:]]+subscription|alter[[:space:]]+publication|create[[:space:]]+publication|pg_drop_replication_slot|create[[:space:]]+index[[:space:]]+concurrently|reindex[[:space:]]+concurrently|vacuum)([^a-z]|$)'
+          while IFS= read -r file; do
+            test -f "$file"
+            if grep -Eiq "$blocked" "$file"; then
+              echo "Migration $file must use a protected explicit recovery/change workflow." >&2
+              grep -Ein "$blocked" "$file" | head -n 20 >&2 || true
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/migrations.txt"
+      - name: Require healthy starting DR state
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash scripts/dr/require-production-dr-healthy.sh
+      - name: Prove each migration applies to Oregon and Virginia
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/${ref}/database/query" >/dev/null
+          }
+          while IFS= read -r file; do
+            sql="$(cat "$file")"
+            wrapped=$'begin;\nset local statement_timeout = '\''120s'\'';\n'"$sql"$'\nrollback;'
+            query_ref "$OREGON_REF" "$wrapped"
+            query_ref "$VIRGINIA_REF" "$wrapped"
+          done < "$RUNNER_TEMP/migrations.txt"
+
+  deploy:
+    name: Apply migrations Oregon then Virginia
+    if: github.event_name == 'push'
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Detect migration files
+        id: migrations
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'supabase/migrations/*.sql' > "$RUNNER_TEMP/migrations.txt"
+          sed -i '/^[[:space:]]*$/d' "$RUNNER_TEMP/migrations.txt"
+          cat "$RUNNER_TEMP/migrations.txt"
+          if [ -s "$RUNNER_TEMP/migrations.txt" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Require healthy DR before mutation
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash scripts/dr/require-production-dr-healthy.sh
+      - name: Apply changed migrations with per-region ledger
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          ledger_sql="create schema if not exists private;
+          create table if not exists private.toh_dual_region_migration_ledger (
+            migration_path text primary key,
+            migration_sha256 text not null,
+            git_sha text not null,
+            applied_at timestamptz not null default now()
+          );
+          revoke all on private.toh_dual_region_migration_ledger from public, anon, authenticated;"
+          query_ref "$OREGON_REF" "$ledger_sql" "$RUNNER_TEMP/ledger-or.json"
+          query_ref "$VIRGINIA_REF" "$ledger_sql" "$RUNNER_TEMP/ledger-va.json"
+          apply_one() {
+            local ref="$1" side="$2" file="$3" hash="$4"
+            local out existing existing_hash sql
+            query_ref "$ref" "select migration_sha256 from private.toh_dual_region_migration_ledger where migration_path='$file' limit 1;" "$RUNNER_TEMP/check-$side.json"
+            out="$RUNNER_TEMP/check-$side.json"
+            existing="$(jq 'length' "$out")"
+            if [ "$existing" -gt 0 ]; then
+              existing_hash="$(jq -r '.[0].migration_sha256' "$out")"
+              test "$existing_hash" = "$hash" || { echo "Immutable migration hash changed for $file in $side." >&2; exit 1; }
+              return
+            fi
+            sql="$(cat "$file")"
+            query_ref "$ref" "begin;
+            $sql
+            insert into private.toh_dual_region_migration_ledger(migration_path,migration_sha256,git_sha)
+            values ('$file','$hash','$GITHUB_SHA');
+            commit;" "$RUNNER_TEMP/apply-$side.json"
+          }
+          while IFS= read -r file; do
+            hash="$(sha256sum "$file" | awk '{print $1}')"
+            apply_one "$OREGON_REF" "oregon" "$file" "$hash"
+            apply_one "$VIRGINIA_REF" "virginia" "$file" "$hash"
+          done < "$RUNNER_TEMP/migrations.txt"
+      - name: Reconcile publication and subscription membership
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          source_sql="do \$dr\$
+          declare r record;
+          begin
+            for r in
+              select n.nspname schema_name,c.relname table_name
+              from pg_class c join pg_namespace n on n.oid=c.relnamespace
+              where c.relkind in ('r','p') and n.nspname='public'
+                and c.relname not in ('toh_region_migration_apply_errors','toh_storage_migration_manifest')
+                and not exists (
+                  select 1 from pg_publication_tables p
+                  where p.pubname='$EXPECTED_PUBLICATION' and p.schemaname=n.nspname and p.tablename=c.relname
+                )
+            loop
+              execute format('alter publication %I add table %I.%I','$EXPECTED_PUBLICATION',r.schema_name,r.table_name);
+            end loop;
+          end
+          \$dr\$;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/publication.json"
+          query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION refresh publication with (copy_data = true);" "$RUNNER_TEMP/subscription-refresh.json"
+          for attempt in $(seq 1 60); do
+            query_ref "$OREGON_REF" "select count(*) pending from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='$EXPECTED_SUBSCRIPTION' and sr.srsubstate<>'r';" "$RUNNER_TEMP/pending.json"
+            if [ "$(jq -r '.[0].pending' "$RUNNER_TEMP/pending.json")" = "0" ]; then exit 0; fi
+            sleep 5
+          done
+          echo "Oregon subscription did not return to ready state after migration." >&2
+          exit 1
+      - name: Require healthy DR after migration
+        if: steps.migrations.outputs.changed == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash scripts/dr/require-production-dr-healthy.sh
