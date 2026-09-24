@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
     const claimReturnUrl = isBusinessClaimSignup && intendedPath ? buildSiteUrl(intendedPath) : null;
     const greetingName = firstName || "there";
 
-    await sendRawBrandedEmail({
+    const emailResult = await sendRawBrandedEmail({
       to: email,
       department: "account",
       subject: isBusinessClaimSignup
@@ -226,8 +226,30 @@ export async function POST(req: NextRequest) {
       cta: { label: isBusinessClaimSignup ? "Verify email and continue claim" : "Verify Email", url },
     });
 
+    if (emailResult.status !== "sent") {
+      console.error("signup verification email failed", {
+        userId,
+        email,
+        signupSource,
+        status: emailResult.status,
+        error: emailResult.error || null,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          accountCreated: true,
+          verificationEmailSent: false,
+          error: "Your account was created, but we could not send the verification email. Please use resend verification or try again shortly.",
+          email,
+          userId,
+        },
+        { status: 502 },
+      );
+    }
+
     return NextResponse.json({
       success: true,
+      verificationEmailSent: true,
       requiresEmailConfirmation: true,
       email,
       next: intendedPath,
