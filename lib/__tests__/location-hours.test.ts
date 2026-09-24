@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { humanTextToOperatingHoursJson, normalizeTimeRange, operatingHoursJsonToHumanText, validateHumanHoursText } from "../location-hours";
-import { getLocationHoursDisplay, normalizeWeeklyHoursForDisplay } from "../locationHours";
+import { formatOperatingHoursForDisplay, getLocationHoursDisplay, getOperatingHours, normalizeWeeklyHoursForDisplay } from "../locationHours";
+import { formatOperatingHoursForEditor } from "../weekly-hours";
 
 describe("location hours helpers", () => {
   it("converts operating_hours JSON to human weekly text", () => {
@@ -34,6 +35,27 @@ describe("location hours helpers", () => {
     const week = normalizeWeeklyHoursForDisplay({ Friday: ["11:30 AM - 10:30 PM"], monday: "11:30 AM - 10:00 PM" });
     expect(week.friday).toEqual(["11:30 AM - 10:30 PM"]);
     expect(week.monday).toEqual(["11:30 AM - 10:00 PM"]);
+  });
+
+
+  it("normalizes legacy and Google weekly hours consistently across surfaces", () => {
+    const legacy = {
+      monday: ["11:30 AM - 9:00 PM"],
+      tuesday: ["Closed"],
+      wednesday: ["11:30 AM - 9:00 PM"],
+    };
+    expect(formatOperatingHoursForEditor(legacy)).toContain("Monday - 11:30 AM - 9:00 PM");
+    expect(formatOperatingHoursForEditor(legacy)).toContain("Tuesday - Closed");
+
+    const google = {
+      weekdayDescriptions: [
+        "Monday: 11:30 AM – 9:00 PM",
+        "Tuesday: Closed",
+      ],
+    };
+    expect(formatOperatingHoursForEditor(null, google)).toContain("Monday - 11:30 AM – 9:00 PM");
+    expect(formatOperatingHoursForDisplay(google)).toContain("Monday: 11:30 AM – 9:00 PM");
+    expect(getOperatingHours({ google_regular_opening_hours: google })).toEqual(google);
   });
 
   it("calculates public open, opening-soon, split, invalid, and overnight statuses", () => {
