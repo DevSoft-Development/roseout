@@ -81,16 +81,15 @@ export async function GET(request: NextRequest) {
         callback: function (token) {
           send({ type: "turnstile-success", action: ACTION, token: token });
         },
-        retry: "auto",
-        "retry-interval": 1200,
+        retry: "never",
         "error-callback": function () {
           fail("Security verification did not complete. Please try again.");
         },
         "expired-callback": function () {
-          if (window.turnstile) window.turnstile.reset();
+          fail("Security verification expired. Tap retry to continue.");
         },
         "timeout-callback": function () {
-          if (window.turnstile) window.turnstile.reset();
+          fail("Security verification timed out. Tap retry to continue.");
         }
       });
     };
