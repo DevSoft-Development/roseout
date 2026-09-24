@@ -3,15 +3,26 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const cssRoot = process.argv[2] || "apps/admin/.next/static/css";
+const cssRoot = process.argv[2] || "apps/admin/.next/static";
 
 if (!fs.existsSync(cssRoot)) {
-  throw new Error(`Admin CSS output directory does not exist: ${cssRoot}`);
+  throw new Error(`Admin static output directory does not exist: ${cssRoot}`);
 }
 
-const files = fs.readdirSync(cssRoot)
-  .filter((name) => name.endsWith(".css"))
-  .map((name) => path.join(cssRoot, name));
+function collectCssFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectCssFiles(absolute));
+    } else if (entry.isFile() && entry.name.endsWith(".css")) {
+      files.push(absolute);
+    }
+  }
+  return files;
+}
+
+const files = collectCssFiles(cssRoot);
 
 if (!files.length) {
   throw new Error(`Admin build did not emit CSS files under ${cssRoot}`);
