@@ -96,17 +96,26 @@ export async function POST(req: NextRequest) {
     if (listed.error) throw listed.error;
 
     const existing = listed.data.users?.find((u) => u.email?.toLowerCase() === email);
-    if (existing?.email_confirmed_at) {
+    if (existing) {
       return NextResponse.json(
-        { success: false, error: "An account with this email already exists. Please log in or reset your password." },
-        { status: 400 },
+        {
+          success: false,
+          code: "account_exists",
+          accountExists: true,
+          emailConfirmed: Boolean(existing.email_confirmed_at),
+          email,
+          error: existing.email_confirmed_at
+            ? "An account with this email is already created. Sign in to continue."
+            : "An account with this email is already created and is waiting for email verification.",
+        },
+        { status: 409 },
       );
     }
 
     const accountType = isBusinessClaimSignup ? "business_owner" : "user";
-    let user = existing || null;
+    let user = null;
 
-    if (!user) {
+    {
       const created = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
@@ -130,25 +139,22 @@ export async function POST(req: NextRequest) {
         );
       }
       user = created.data.user;
-    } else {
-      await supabaseAdmin.auth.admin.updateUserById(user.id, {
-        password,
-        user_metadata: {
-          ...(user.user_metadata || {}),
-          role: user.user_metadata?.role || "user",
-          first_name: firstName,
-          birth_month: birthMonth,
-          home_zip_code: zip,
-          phone_e164: phone || null,
-          sms_consent: smsConsent,
-          account_type: accountType,
-          business_claim_signup:
-            Boolean(user.user_metadata?.business_claim_signup) || isBusinessClaimSignup,
-          pending_business_claim:
-            pendingBusinessClaim || user.user_metadata?.pending_business_claim || null,
-        },
-      });
     }
+
+    const verifiedCreate = await supabaseAdmin.auth.admin.getUserById(user.id);
+    if (verifiedCreate.error || !verifiedCreate.data.user) {
+      console.error("signup auth verification failed", {
+        userId: user.id,
+        email,
+        signupSource,
+        error: verifiedCreate.error?.message || null,
+      });
+      return NextResponse.json(
+        { success: false, error: "We could not verify that your account was created. Please try again." },
+        { status: 500 },
+      );
+    }
+    user = verifiedCreate.data.user;
 
     const userId = user.id;
     const { error: profileError } = await supabaseAdmin.from("consumer_profiles").upsert(
