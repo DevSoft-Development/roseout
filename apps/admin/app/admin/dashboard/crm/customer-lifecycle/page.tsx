@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { listPermittedCrmLocationIds } from "@/lib/crm/location-scope";
 import {
   AdminActionButton,
   AdminKpiCard,
@@ -121,7 +122,8 @@ export default async function CustomerLifecyclePage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.crm);
+  const permittedLocationIds = await listPermittedCrmLocationIds(admin.user_id, admin.role);
   const params = await searchParams;
   const q = String(params.q || "").trim();
   const stage = String(params.stage || "all");
@@ -130,7 +132,7 @@ export default async function CustomerLifecyclePage({
   const page = Math.max(1, Number(params.page || 1));
   const pageSize = [25, 50, 100].includes(Number(params.pageSize)) ? Number(params.pageSize) : 50;
 
-  const result = await listLocationCustomerLifecycle({ q, stage, health, page, pageSize });
+  const result = await listLocationCustomerLifecycle({ q, stage, health, page, pageSize, permittedLocationIds });
   const boardGroups = Object.fromEntries(
     CUSTOMER_LIFECYCLE_STAGES.map((key) => [key, result.boardRows.filter((row) => row.stage === key)]),
   ) as Record<CustomerLifecycleStage, LocationCustomerLifecycleRow[]>;
