@@ -1,0 +1,36 @@
+name: Production DR health gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dr-health-gate
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
+
+jobs:
+  dr-health:
+    name: Require healthy production DR
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require production DR health
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash scripts/dr/require-production-dr-healthy.sh
