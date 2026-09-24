@@ -57,6 +57,17 @@ describe("SMS clarification follow-ups", () => {
     expect(responder).toContain("keep texting");
   });
 
+  it("confirms resolution before routine human handoff", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("confirm_resolution_before_handoff");
+    expect(responder).toContain("did that resolve your issue? Reply YES or NO");
+    expect(responder).toContain("unresolved_after_resolution_confirmation");
+    expect(responder).toContain("customer_confirmed_resolution_after_troubleshooting");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
