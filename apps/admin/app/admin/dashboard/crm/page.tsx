@@ -293,6 +293,9 @@ export default async function CRMPage({
               <AdminActionButton href="/admin/dashboard/crm/opportunities">
                 Sales Opportunities
               </AdminActionButton>
+              <AdminActionButton href="/admin/dashboard/settings/location-tools">
+                Data & Import
+              </AdminActionButton>
               <AdminActionButton href="/admin/dashboard/crm/new">
                 Add Location
               </AdminActionButton>
