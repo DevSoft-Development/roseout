@@ -3,15 +3,6 @@
 import { useMemo, useState } from "react";
 import LocationEditorHoursPanel from "@/components/location-editor/LocationEditorHoursPanel";
 
-function prettyJson(value: unknown) {
-  if (!value) return "";
-  try {
-    return JSON.stringify(typeof value === "string" ? JSON.parse(value) : value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 export default function LocationHoursEditor({
   value,
   disabled = false,
@@ -66,22 +57,19 @@ export default function LocationHoursEditor({
           }`}
         >
           <summary className="cursor-pointer text-sm font-black">
-            Hours source & diagnostics
+            About these hours
           </summary>
-          <div className="mt-3 grid gap-1">
-            <p>Backfill status: {String(status.hours_backfill_status || "—")}</p>
-            <p>Hours confidence: {String(status.hours_confidence || "—")}</p>
+          <div className="mt-3 grid gap-2">
             <p>
-              Hours source: {String(status.hours_source || (importedHours ? "Google Places" : "—"))}
+              Source: {String(status.hours_source ? "Verified business information" : importedHours ? "Google business listing" : "Saved manually")}
             </p>
-            <p>Last backfilled: {String(status.hours_last_backfilled_at || "—")}</p>
+            <p>
+              Last checked: {status.hours_last_backfilled_at ? new Date(String(status.hours_last_backfilled_at)).toLocaleDateString() : "Not available"}
+            </p>
             {status.hours_backfill_error ? (
-              <p>Backfill error: {String(status.hours_backfill_error)}</p>
+              <p className="text-amber-200">These hours may need a quick review.</p>
             ) : null}
           </div>
-          <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-black/20 p-3 font-mono text-[11px]">
-            {prettyJson(hours)}
-          </pre>
         </details>
       ) : null}
     </div>
