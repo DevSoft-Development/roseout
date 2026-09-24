@@ -4,6 +4,7 @@ import { Turnstile } from "@marsidev/react-turnstile";
 export function TurnstileWidget({
   onToken,
   onTokenChange,
+  turnstileRef,
 }: {
   onToken?: (token: string) => void;
   onTokenChange?: (token: string) => void;
@@ -25,6 +26,7 @@ export function TurnstileWidget({
 
   return (
     <Turnstile
+      ref={turnstileRef}
       siteKey={siteKey}
       onSuccess={(token) => {
         onToken?.(token);
