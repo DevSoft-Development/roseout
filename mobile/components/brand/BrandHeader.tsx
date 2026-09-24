@@ -23,7 +23,7 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
           minimumFontScale={0.72}
           style={[styles.tagline, compact && styles.taglineCompact]}
         >
-          RESTAURANTS • BARS • NIGHTLIFE • ACTIVITIES • EXPERIENCES
+          ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
         </Text>
       </View>
     </Pressable>
