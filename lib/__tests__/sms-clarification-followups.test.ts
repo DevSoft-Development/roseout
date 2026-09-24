@@ -99,6 +99,27 @@ describe("SMS clarification follow-ups", () => {
     expect(workflow).toContain(".OPENAI_API_KEY // empty");
   });
 
+  it("uses high-confidence learned support responses before the LLM", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("matchLearnedResponse");
+    expect(responder).toContain('model: "learned"');
+    expect(responder).toContain("learned_response:");
+    expect(responder.indexOf("matchLearnedResponse")).toBeLessThan(responder.indexOf("if (!aiEnabled())"));
+  });
+
+  it("learns support answers with the preceding support question as context", () => {
+    const worker = fs.readFileSync(
+      path.join(process.cwd(), "supabase/functions/support-learning-worker/index.ts"),
+      "utf8",
+    );
+    expect(worker).toContain("previousOutbound");
+    expect(worker).toContain("contextualQuestion");
+    expect(worker).toContain("|| customer:");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
