@@ -8,8 +8,9 @@ const migrationWorkflowPath = ".github/workflows/supabase-dual-region-migrations
 const healthWorkflowPath = ".github/workflows/production-dr-health-gate.yml";
 const webWorkflowPath = ".github/workflows/aws-web-surfaces-services.yml";
 const healthScriptPath = "scripts/dr/require-production-dr-healthy.sh";
+const recoverableScriptPath = "scripts/dr/require-production-dr-recoverable.sh";
 
-for (const file of [migrationWorkflowPath, healthWorkflowPath, webWorkflowPath, healthScriptPath]) {
+for (const file of [migrationWorkflowPath, healthWorkflowPath, webWorkflowPath, healthScriptPath, recoverableScriptPath]) {
   if (!fs.existsSync(path.join(root, file))) throw new Error(`Missing DR/migration contract file: ${file}`);
 }
 
@@ -18,7 +19,7 @@ for (const marker of [
   "Validate migrations against both regions",
   "Apply migrations Oregon then Virginia",
   "Require healthy starting DR state",
-  "Require healthy DR before mutation",
+  "Require recoverable DR topology before safe auto-repair",
   "Require healthy DR after migration",
   "toh_dual_region_migration_ledger",
   "alter subscription $EXPECTED_SUBSCRIPTION refresh publication",
@@ -33,6 +34,10 @@ if (oregonApply < 0 || virginiaApply < 0 || oregonApply > virginiaApply) {
 }
 
 const healthScript = read(healthScriptPath);
+const recoverableScript = read(recoverableScriptPath);
+if (!recoverableScript.includes('wal_status != "lost"') || !recoverableScript.includes("protected recovery is required")) {
+  throw new Error("Safe migration auto-repair must refuse lost-slot/destructive recovery states.");
+}
 for (const marker of [
   "writable-catalog.sql",
   "active_slots == 1",
