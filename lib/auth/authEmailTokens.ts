@@ -26,6 +26,30 @@ function requestMeta(request?: Request) {
   };
 }
 
+
+export async function getAuthEmailCooldownSeconds(input: {
+  email: string;
+  purpose: AuthEmailTokenPurpose;
+  cooldownSeconds?: number;
+}) {
+  assertPurpose(input.purpose);
+  const email = normalizeAuthEmail(input.email);
+  if (!email) return 0;
+  const cooldownSeconds = Math.max(1, input.cooldownSeconds ?? 60);
+  const { data, error } = await supabaseAdmin
+    .from("auth_email_tokens")
+    .select("created_at")
+    .eq("email", email)
+    .eq("purpose", input.purpose)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data?.created_at) return 0;
+  const elapsedMs = Date.now() - new Date(data.created_at).getTime();
+  const remainingMs = cooldownSeconds * 1000 - elapsedMs;
+  return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+}
+
 export async function createAuthEmailToken(input: { email: string; userId?: string | null; purpose: AuthEmailTokenPurpose; metadata?: Record<string, unknown>; expiresInMinutes: number; createdBy?: string | null; request?: Request }) {
   assertPurpose(input.purpose);
   const email = normalizeAuthEmail(input.email);
