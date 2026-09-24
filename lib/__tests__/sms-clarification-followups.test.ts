@@ -47,6 +47,16 @@ describe("SMS clarification follow-ups", () => {
     expect(responder).toContain("routineFallbackQuestion(searchContext)");
   });
 
+  it("tells customers a support ticket was created on human handoff", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("support ticket");
+    expect(responder).toContain("within 24 hours");
+    expect(responder).toContain("keep texting");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
