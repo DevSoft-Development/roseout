@@ -119,6 +119,59 @@ jobs:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Reconcile Reserve API deploy-role permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME="TheOutHavenReserveApiDeployment"
+          POLICY_FILE="$RUNNER_TEMP/reserve-api-deploy-policy.json"
+          cat > "$POLICY_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"ReserveApiConcurrency",
+                "Effect":"Allow",
+                "Action":[
+                  "lambda:GetFunctionConcurrency",
+                  "lambda:PutFunctionConcurrency",
+                  "lambda:DeleteFunctionConcurrency"
+                ],
+                "Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-*-reserve-api"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "file://$POLICY_FILE"
+          sleep 8
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --query 'PolicyDocument.Statement[0].Action' \
+            --output json | jq -e 'index("lambda:PutFunctionConcurrency") != null' >/dev/null
+
+      - name: Recover failed Reserve API stack
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STACK="theouthaven-reserve-api-${TARGET_ENV}"
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+          if [ "$STATUS" = "ROLLBACK_COMPLETE" ]; then
+            echo "Reserve API stack is ROLLBACK_COMPLETE. Failed events before recovery:"
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='DELETE_FAILED'].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]" \
+              --output table || true
+            aws cloudformation delete-stack --stack-name "$STACK"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          fi
+
       - name: Resolve Supabase service-role secret ARN
         id: supabase-secret
         env:
