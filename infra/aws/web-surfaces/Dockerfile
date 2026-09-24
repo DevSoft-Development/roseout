@@ -16,7 +16,7 @@ RUN --mount=type=secret,id=platform_env,target=/tmp/platform_env,required=true \
     cp /tmp/platform_env "apps/$WEB_SURFACE/.env.production.local"; \
     trap 'rm -f "apps/$WEB_SURFACE/.env.production.local"' EXIT; \
     case "$WEB_SURFACE" in \
-      admin) npm run build:surface:admin && node scripts/verify-admin-css-bundle.mjs apps/admin/.next/static/css ;; \
+      admin) npm run build:surface:admin && node scripts/verify-admin-css-bundle.mjs apps/admin/.next/static ;; \
       business) npm run build:surface:business ;; \
       reserve) npm run build:surface:reserve ;; \
       *) echo "WEB_SURFACE must be admin, business, or reserve" >&2; exit 2 ;; \
