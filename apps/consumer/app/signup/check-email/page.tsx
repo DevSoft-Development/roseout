@@ -17,12 +17,12 @@ export default async function CheckEmailPage({
     <main className="min-h-screen bg-[#090706] px-4 pt-28 text-white">
       <section className="mx-auto max-w-2xl rounded-[2rem] border border-white/10 bg-white/[0.05] p-8 text-center">
         <p className="text-xs font-black uppercase tracking-[.3em] text-rose-200">
-          Email confirmation required
+          Account created
         </p>
         <h1 className="mt-3 text-4xl font-black">
           {businessSignup
             ? "Verify your email to continue your business setup."
-            : "Check your email to finish creating your TheOutHaven account."}
+            : "Your account is created. Check your email to verify it."}
         </h1>
         {sp.email ? (
           <p className="mt-4 text-white/65">

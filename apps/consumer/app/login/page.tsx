@@ -103,6 +103,8 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [businessSignup, setBusinessSignup] = useState(false);
   const [businessPlanLabel, setBusinessPlanLabel] = useState("Essentials");
   const [selectedBusinessLocation, setSelectedBusinessLocation] = useState(false);
+  const [signupAccountExists, setSignupAccountExists] = useState(false);
+  const [checkingSignupEmail, setCheckingSignupEmail] = useState(false);
 
   useEffect(() => {
     const next = sanitizeIntendedPath(
@@ -130,6 +132,43 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   useEffect(() => {
     if (!mobileProvided && smsOptIn) setSmsOptIn(false);
   }, [mobileProvided, smsOptIn]);
+
+  useEffect(() => {
+    if (tab !== "signup") {
+      setSignupAccountExists(false);
+      setCheckingSignupEmail(false);
+      return;
+    }
+    const normalized = normalizeEmail(signup.email);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setSignupAccountExists(false);
+      setCheckingSignupEmail(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setCheckingSignupEmail(true);
+      try {
+        const response = await fetch("/api/auth/account-exists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalized }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!cancelled) setSignupAccountExists(response.ok && data.accountExists === true);
+      } catch {
+        if (!cancelled) setSignupAccountExists(false);
+      } finally {
+        if (!cancelled) setCheckingSignupEmail(false);
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [signup.email, tab]);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,6 +234,7 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
     e.preventDefault();
     setError("");
     setMessage("");
+    if (signupAccountExists) return setError("An account with this email is already created. Sign in to continue.");
     if (!strong) return setError("Please use a stronger password.");
     if (signup.password !== signup.confirm_password) return setError("Passwords do not match.");
     if (!agreeTerms) return setError("You must agree to the Terms of Use and Privacy Policy.");
@@ -228,6 +268,10 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.success) {
         setLoading(false);
+        if (data.code === "account_exists" || data.accountExists === true) {
+          setSignupAccountExists(true);
+          return setError("");
+        }
         return setError(data.error || "We could not create your account.");
       }
       const checkEmailParams = new URLSearchParams({
@@ -516,6 +560,59 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                     <div className="sm:col-span-2">
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Email</label>
                       <input required type="email" placeholder="Email" value={signup.email} onChange={(e) => setSignup((s) => ({ ...s, email: e.target.value }))} onBlur={(e) => setSignup((s) => ({ ...s, email: normalizeEmail(e.target.value) }))} className="sm:col-span-2 min-h-[56px] rounded-2xl border border-white/10 bg-white/5 px-4 text-white" />
+                      {checkingSignupEmail ? (
+                        <p className="mt-2 text-xs text-white/50">Checking account…</p>
+                      ) : null}
+                      {signupAccountExists ? (
+                        <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-bold text-amber-100">Account already created</p>
+                            <p className="mt-1 text-xs leading-5 text-white/60">This email already has a TheOutHaven account. Sign in instead of creating another account.</p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const normalized = normalizeEmail(signup.email);
+                                setSignin((current) => ({ ...current, email: normalized }));
+                                setTab("signin");
+                                setError("");
+                                setMessage("");
+                              }}
+                              className="rounded-full bg-[#e1062a] px-4 py-2.5 text-sm font-bold text-white"
+                            >
+                              Sign in
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setMessage("");
+                                setError("");
+                                try {
+                                  const response = await fetch("/api/auth/resend-verification", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ email: normalizeEmail(signup.email) }),
+                                  });
+                                  const data = await response.json().catch(() => ({}));
+                                  if (!response.ok || data.success !== true) {
+                                    setError(data.error || "We could not resend the verification email.");
+                                    return;
+                                  }
+                                  setMessage(data.alreadyVerified
+                                    ? "This account is already verified. Sign in to continue."
+                                    : "Verification email sent. Check your inbox.");
+                                } catch {
+                                  setError("We could not resend the verification email.");
+                                }
+                              }}
+                              className="rounded-full border border-white/15 px-4 py-2.5 text-sm font-bold text-white"
+                            >
+                              Resend verification
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-white/45">Mobile Number (Optional)</label>
