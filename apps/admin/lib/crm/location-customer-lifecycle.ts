@@ -363,47 +363,52 @@ const LOCATION_SELECT = [
   "created_at",
 ].join(",");
 
-export async function listLocationCustomerLifecycle(input: {
-  q?: string;
-  stage?: string;
-  health?: string;
-  page?: number;
-  pageSize?: number;
-  permittedLocationIds?: string[] | null;
-} = {}) {
-  const db = getAdminDatabaseClient();
-  const page = Math.max(1, Number(input.page || 1));
-  const pageSize = [25, 50, 100].includes(Number(input.pageSize)) ? Number(input.pageSize) : 50;
+function fallbackNextAction(stage: CustomerLifecycleStage) {
+  return stage === "unclaimed" ? "Contact the owner" :
+    stage === "outreach" ? "Follow up with the owner" :
+    stage === "interested" ? "Help the owner claim the profile" :
+    stage === "claim_started" ? "Help finish the claim" :
+    stage === "claimed" ? "Introduce Essentials+" :
+    stage === "paid" ? "Complete customer setup" :
+    stage === "active" ? "Keep showing customer value" :
+    stage === "renewal" ? "Prepare renewal conversation" :
+    stage === "at_risk" ? "Start retention follow-up" :
+    stage === "churned" ? "Plan a win-back conversation" :
+    "Continue win-back follow-up";
+}
 
-  const locationPages = await Promise.all(
-    Array.from({ length: 6 }, (_, pageIndex) => {
-      const start = pageIndex * 1000;
-      return db
-        .from("locations")
-        .select(LOCATION_SELECT)
-        .is("deleted_at", null)
-        .order("updated_at", { ascending: false })
-        .range(start, start + 999);
-    }),
-  );
+async function hydrateLifecycleRows(
+  db: ReturnType<typeof getAdminDatabaseClient>,
+  inputRows: Record<string, any>[],
+): Promise<LocationCustomerLifecycleRow[]> {
+  const ids = Array.from(new Set(inputRows.map((row) => String(row.id || "")).filter(Boolean)));
+  if (!ids.length) return [];
 
   const [linksResult, opportunitiesResult] = await Promise.all([
-    db.from("crm_account_locations").select("location_id,account_id,is_primary_location,crm_accounts(id,name,lifecycle_stage,next_action,next_action_at)").eq("status", "active").limit(10000),
-    db.from("crm_opportunities").select("id,name,pipeline_key,stage,status,owner_user_id,primary_location_id,last_stage_changed_at,expected_close_date,next_step,next_step_at,amount,monthly_recurring_revenue,annual_recurring_revenue").is("archived_at", null).order("updated_at", { ascending: false }).limit(10000),
+    db
+      .from("crm_account_locations")
+      .select("location_id,account_id,is_primary_location,crm_accounts(id,name,lifecycle_stage,next_action,next_action_at)")
+      .in("location_id", ids)
+      .eq("status", "active")
+      .limit(Math.min(ids.length * 3, 1000)),
+    db
+      .from("crm_opportunities")
+      .select("id,name,pipeline_key,stage,status,owner_user_id,primary_location_id,last_stage_changed_at,expected_close_date,next_step,next_step_at,amount,monthly_recurring_revenue,annual_recurring_revenue")
+      .in("primary_location_id", ids)
+      .is("archived_at", null)
+      .order("updated_at", { ascending: false })
+      .limit(Math.min(ids.length * 5, 2000)),
   ]);
 
-  const failedLocationPage = locationPages.find((pageResult) => pageResult.error);
-  if (failedLocationPage?.error) throw failedLocationPage.error;
   if (linksResult.error) throw linksResult.error;
   if (opportunitiesResult.error) throw opportunitiesResult.error;
-
-  const locationRows = locationPages.flatMap((pageResult) => pageResult.data || []);
 
   const links = new Map<string, RawAccountLink>();
   for (const link of linksResult.data || []) {
     if (!link.location_id) continue;
-    const current = links.get(String(link.location_id));
-    if (!current || link.is_primary_location) links.set(String(link.location_id), link);
+    const key = String(link.location_id);
+    const current = links.get(key);
+    if (!current || link.is_primary_location) links.set(key, link);
   }
 
   const opportunities = new Map<string, RawOpportunity[]>();
@@ -415,58 +420,135 @@ export async function listLocationCustomerLifecycle(input: {
     opportunities.set(key, bucket);
   }
 
-  let rows = locationRows.map((row: RawLocation) =>
-    normalizeRow(row, links.get(String(row.id)), opportunities.get(String(row.id)) || []),
-  );
+  return inputRows.map((base) => {
+    const stage = base.stage as CustomerLifecycleStage;
+    const meta = CUSTOMER_LIFECYCLE_META[stage] || CUSTOMER_LIFECYCLE_META.unclaimed;
+    const health = (base.health || "healthy") as CustomerHealth;
+    const link = links.get(String(base.id));
+    const account = link?.crm_accounts || null;
+    const opportunity = preferredOpportunity(opportunities.get(String(base.id)) || []);
+    const stageChangedAt = opportunity?.last_stage_changed_at || base.stageChangedAt || base.raw?.updated_at;
 
-  if (Array.isArray(input.permittedLocationIds)) {
-    const permitted = new Set(input.permittedLocationIds.map(String));
-    rows = rows.filter((row) => permitted.has(String(row.id)));
+    return {
+      id: String(base.id),
+      name: base.name || "Unnamed location",
+      address: base.address || null,
+      city: base.city || null,
+      state: base.state || null,
+      zipCode: base.zipCode || null,
+      phone: base.phone || null,
+      website: base.website || null,
+      ownerEmail: base.ownerEmail || null,
+      stage,
+      stageLabel: meta.label,
+      stageHelper: meta.helper,
+      health,
+      healthLabel: health === "healthy" ? "Healthy" : health === "needs_attention" ? "Needs attention" : "At risk",
+      planLabel: base.planLabel || "Free listing",
+      billingLabel: base.billingLabel || "Not started",
+      monthlyValueCents: Number(base.monthlyValueCents || 0),
+      renewalDate: base.renewalDate || null,
+      nextAction: clean(account?.next_action || base.nextAction) || fallbackNextAction(stage),
+      nextActionDueAt: account?.next_action_at || base.nextActionDueAt || null,
+      claimStatus: base.claimStatus || "Unclaimed",
+      opportunityId: opportunity?.id || null,
+      opportunityName: opportunity?.name || null,
+      opportunityPipeline: opportunity?.pipeline_key || null,
+      accountId: link?.account_id || account?.id || null,
+      accountName: account?.name || null,
+      assignedOwnerId: opportunity?.owner_user_id || null,
+      daysInStage: daysSince(stageChangedAt),
+      interestLabel: base.interestLabel || "Not contacted",
+      churnRisk: Number(base.churnRisk || 0),
+      retentionScore: Number(base.retentionScore || 0),
+      activity30d: Number(base.activity30d || 0),
+      isPaid: Boolean(base.isPaid),
+      isClaimed: Boolean(base.isClaimed),
+      subscriptionStatus: base.subscriptionStatus || null,
+      raw: base.raw || {},
+    };
+  });
+}
+
+export async function listLocationCustomerLifecycle(input: {
+  q?: string;
+  stage?: string;
+  health?: string;
+  page?: number;
+  pageSize?: number;
+  permittedLocationIds?: string[] | null;
+  summaryOnly?: boolean;
+} = {}) {
+  const db = getAdminDatabaseClient();
+  const page = Math.max(1, Number(input.page || 1));
+  const pageSize = [25, 50, 100].includes(Number(input.pageSize)) ? Number(input.pageSize) : 50;
+  const summaryOnly = Boolean(input.summaryOnly);
+
+  const { data, error } = await (db as any).rpc("admin_location_customer_lifecycle_page", {
+    p_query: clean(input.q) || null,
+    p_stage: input.stage && input.stage !== "all" ? input.stage : null,
+    p_health: input.health && input.health !== "all" ? input.health : null,
+    p_page: page,
+    p_page_size: pageSize,
+    p_permitted_location_ids: Array.isArray(input.permittedLocationIds) ? input.permittedLocationIds : null,
+    p_include_rows: !summaryOnly,
+    p_include_board: !summaryOnly,
+  });
+
+  if (error) throw error;
+
+  const payload = (data || {}) as Record<string, any>;
+  if (summaryOnly) {
+    return {
+      rows: [] as LocationCustomerLifecycleRow[],
+      boardRows: [] as LocationCustomerLifecycleRow[],
+      total: Number(payload.total || 0),
+      page: Number(payload.page || page),
+      pageSize: Number(payload.pageSize || pageSize),
+      totalPages: Number(payload.totalPages || 1),
+      stageCounts: payload.stageCounts || Object.fromEntries(CUSTOMER_LIFECYCLE_STAGES.map((stage) => [stage, 0])),
+      totals: payload.totals || {
+        total: 0,
+        unclaimed: 0,
+        inConversation: 0,
+        claimed: 0,
+        paid: 0,
+        renewals: 0,
+        atRisk: 0,
+        churned: 0,
+        winBack: 0,
+        mrrCents: 0,
+      },
+    };
   }
 
-  const q = clean(input.q).toLowerCase();
-  if (q) {
-    rows = rows.filter((row) =>
-      [row.name, row.address, row.city, row.state, row.zipCode, row.phone, row.ownerEmail, row.accountName]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q)),
-    );
-  }
+  const rawRows = Array.isArray(payload.rows) ? payload.rows : [];
+  const rawBoardRows = Array.isArray(payload.boardRows) ? payload.boardRows : [];
+  const uniqueRows = new Map<string, Record<string, any>>();
+  for (const row of [...rawRows, ...rawBoardRows]) uniqueRows.set(String(row.id), row);
+  const hydrated = await hydrateLifecycleRows(db, Array.from(uniqueRows.values()));
+  const hydratedById = new Map(hydrated.map((row) => [row.id, row]));
 
-  if (input.stage && input.stage !== "all" && CUSTOMER_LIFECYCLE_STAGES.includes(input.stage as CustomerLifecycleStage)) {
-    rows = rows.filter((row) => row.stage === input.stage);
-  }
-  if (input.health && input.health !== "all") {
-    rows = rows.filter((row) => row.health === input.health);
-  }
-
-  const stageCounts = Object.fromEntries(CUSTOMER_LIFECYCLE_STAGES.map((stage) => [stage, 0])) as Record<CustomerLifecycleStage, number>;
-  for (const row of rows) stageCounts[row.stage] += 1;
-
-  const paidRows = rows.filter((row) => row.isPaid);
-  const totals = {
-    total: rows.length,
-    unclaimed: rows.filter((row) => row.stage === "unclaimed").length,
-    inConversation: rows.filter((row) => ["outreach", "interested", "claim_started"].includes(row.stage)).length,
-    claimed: rows.filter((row) => row.isClaimed).length,
-    paid: paidRows.length,
-    renewals: rows.filter((row) => row.stage === "renewal").length,
-    atRisk: rows.filter((row) => row.stage === "at_risk").length,
-    churned: rows.filter((row) => row.stage === "churned").length,
-    winBack: rows.filter((row) => row.stage === "win_back").length,
-    mrrCents: paidRows.reduce((sum, row) => sum + row.monthlyValueCents, 0),
-  };
-
-  const start = (page - 1) * pageSize;
   return {
-    rows: rows.slice(start, start + pageSize),
-    boardRows: rows.slice(0, 1200),
-    total: rows.length,
-    page,
-    pageSize,
-    totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
-    stageCounts,
-    totals,
+    rows: rawRows.map((row: any) => hydratedById.get(String(row.id))).filter(Boolean) as LocationCustomerLifecycleRow[],
+    boardRows: rawBoardRows.map((row: any) => hydratedById.get(String(row.id))).filter(Boolean) as LocationCustomerLifecycleRow[],
+    total: Number(payload.total || 0),
+    page: Number(payload.page || page),
+    pageSize: Number(payload.pageSize || pageSize),
+    totalPages: Number(payload.totalPages || 1),
+    stageCounts: payload.stageCounts || Object.fromEntries(CUSTOMER_LIFECYCLE_STAGES.map((stage) => [stage, 0])),
+    totals: payload.totals || {
+      total: 0,
+      unclaimed: 0,
+      inConversation: 0,
+      claimed: 0,
+      paid: 0,
+      renewals: 0,
+      atRisk: 0,
+      churned: 0,
+      winBack: 0,
+      mrrCents: 0,
+    },
   };
 }
 
