@@ -85,6 +85,10 @@ const passwordLabels: Record<keyof ReturnType<typeof passwordChecks>, string> = 
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+function formatEmailCountdown(seconds: number) {
+  return `00:${String(Math.max(0, seconds)).padStart(2, "0")}`;
+}
+
 export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab }) {
   const supabase = createClient();
   const router = useRouter();
@@ -105,6 +109,8 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   const [selectedBusinessLocation, setSelectedBusinessLocation] = useState(false);
   const [signupAccountExists, setSignupAccountExists] = useState(false);
   const [checkingSignupEmail, setCheckingSignupEmail] = useState(false);
+  const [verificationCooldownSeconds, setVerificationCooldownSeconds] = useState(0);
+  const [accountRecoveryMessage, setAccountRecoveryMessage] = useState("");
 
   useEffect(() => {
     const next = sanitizeIntendedPath(
@@ -132,6 +138,14 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
   useEffect(() => {
     if (!mobileProvided && smsOptIn) setSmsOptIn(false);
   }, [mobileProvided, smsOptIn]);
+
+  useEffect(() => {
+    if (verificationCooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setVerificationCooldownSeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [verificationCooldownSeconds > 0]);
 
   useEffect(() => {
     if (tab !== "signup") {
@@ -564,12 +578,20 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                         <p className="mt-2 text-xs text-white/50">Checking account…</p>
                       ) : null}
                       {signupAccountExists ? (
-                        <div className="mt-3 flex flex-col gap-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div>
-                            <p className="text-sm font-bold text-amber-100">Account already created</p>
-                            <p className="mt-1 text-xs leading-5 text-white/60">This email already has a TheOutHaven account. Sign in instead of creating another account.</p>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap gap-2">
+                        <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.08] p-4">
+                          <p className="text-sm font-bold text-amber-100">Account already created</p>
+                          <p className="mt-1 text-xs leading-5 text-white/60">This email already has a TheOutHaven account. Sign in instead of creating another account.</p>
+
+                          {accountRecoveryMessage ? (
+                            <div className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/[0.08] px-3 py-2.5 text-xs font-semibold text-emerald-100">
+                              <p>{accountRecoveryMessage}</p>
+                              {verificationCooldownSeconds > 0 ? (
+                                <p className="mt-1">You can send another verification email in {formatEmailCountdown(verificationCooldownSeconds)}.</p>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
                               onClick={() => {
@@ -585,9 +607,11 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                             </button>
                             <button
                               type="button"
+                              disabled={verificationCooldownSeconds > 0}
                               onClick={async () => {
-                                setMessage("");
+                                if (verificationCooldownSeconds > 0) return;
                                 setError("");
+                                setAccountRecoveryMessage("");
                                 try {
                                   const response = await fetch("/api/auth/resend-verification", {
                                     method: "POST",
@@ -595,22 +619,38 @@ export default function LoginPage({ initialTab = "signin" }: { initialTab?: Tab 
                                     body: JSON.stringify({ email: normalizeEmail(signup.email) }),
                                   });
                                   const data = await response.json().catch(() => ({}));
+                                  const cooldown = Math.max(0, Number(data.cooldownSeconds || 0));
+                                  if (cooldown > 0) setVerificationCooldownSeconds(cooldown);
                                   if (!response.ok || data.success !== true) {
+                                    if (data.code === "email_cooldown" && cooldown > 0) {
+                                      setAccountRecoveryMessage("A verification email was already sent. Check your inbox.");
+                                      return;
+                                    }
                                     setError(data.error || "We could not resend the verification email.");
                                     return;
                                   }
-                                  setMessage(data.alreadyVerified
+                                  setAccountRecoveryMessage(data.alreadyVerified
                                     ? "This account is already verified. Sign in to continue."
                                     : "Verification email sent. Check your inbox.");
+                                  if (!data.alreadyVerified) setVerificationCooldownSeconds(Math.max(60, cooldown));
                                 } catch {
                                   setError("We could not resend the verification email.");
                                 }
                               }}
-                              className="rounded-full border border-white/15 px-4 py-2.5 text-sm font-bold text-white"
+                              className="rounded-full border border-white/15 px-4 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              Resend verification
+                              {verificationCooldownSeconds > 0
+                                ? `Send again in ${formatEmailCountdown(verificationCooldownSeconds)}`
+                                : "Resend verification"}
                             </button>
                           </div>
+
+                          <Link
+                            href={`/forgot-password?email=${encodeURIComponent(normalizeEmail(signup.email))}`}
+                            className="mt-3 inline-block text-xs font-bold text-rose-200 transition hover:text-white"
+                          >
+                            Forgot / reset password
+                          </Link>
                         </div>
                       ) : null}
                     </div>
