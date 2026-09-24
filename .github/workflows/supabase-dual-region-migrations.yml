@@ -113,11 +113,11 @@ jobs:
           sed -i '/^[[:space:]]*$/d' "$RUNNER_TEMP/migrations.txt"
           cat "$RUNNER_TEMP/migrations.txt"
           if [ -s "$RUNNER_TEMP/migrations.txt" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Require healthy DR before mutation
+      - name: Require recoverable DR topology before safe auto-repair
         if: steps.migrations.outputs.changed == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: bash scripts/dr/require-production-dr-healthy.sh
+        run: bash scripts/dr/require-production-dr-recoverable.sh
       - name: Apply changed migrations with per-region ledger
         if: steps.migrations.outputs.changed == 'true'
         env:
@@ -192,6 +192,7 @@ jobs:
           \$dr\$;"
           query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/publication.json"
           query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION refresh publication with (copy_data = true);" "$RUNNER_TEMP/subscription-refresh.json"
+          query_ref "$OREGON_REF" "alter subscription $EXPECTED_SUBSCRIPTION enable;" "$RUNNER_TEMP/subscription-enable.json"
           for attempt in $(seq 1 60); do
             query_ref "$OREGON_REF" "select count(*) pending from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='$EXPECTED_SUBSCRIPTION' and sr.srsubstate<>'r';" "$RUNNER_TEMP/pending.json"
             if [ "$(jq -r '.[0].pending' "$RUNNER_TEMP/pending.json")" = "0" ]; then exit 0; fi
