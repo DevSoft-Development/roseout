@@ -48,6 +48,7 @@ export default function ForgotPasswordScreen() {
         body: JSON.stringify({
           email: normalizedEmail,
           captchaToken,
+          mobile: true,
           client: "mobile_app",
         }),
       });
