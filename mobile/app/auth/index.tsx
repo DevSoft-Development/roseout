@@ -55,6 +55,8 @@ export default function AuthScreen() {
   const [verificationKey, setVerificationKey] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [accountExists, setAccountExists] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
 
   const strength = useMemo(() => passwordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
@@ -70,16 +72,54 @@ export default function AuthScreen() {
     }
   }, [params.mode]);
 
+  useEffect(() => {
+    if (mode !== "signup") {
+      setAccountExists(false);
+      setCheckingEmail(false);
+      return;
+    }
+    const normalized = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setAccountExists(false);
+      setCheckingEmail(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setCheckingEmail(true);
+      try {
+        const response = await fetch(`${mobileConfig.siteUrl}/api/auth/account-exists`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalized }),
+        });
+        const payload = await response.json().catch(() => ({})) as { accountExists?: boolean };
+        if (!cancelled) setAccountExists(response.ok && payload.accountExists === true);
+      } catch {
+        if (!cancelled) setAccountExists(false);
+      } finally {
+        if (!cancelled) setCheckingEmail(false);
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [email, mode]);
+
   const valid = useMemo(() => {
     if (!email.trim() || !password) return false;
     if (mode === "signin") return password.length >= 8;
+    if (accountExists) return false;
     return firstName.trim().length >= 2
       && strength.strong
       && passwordsMatch
       && phone.replace(/\D/g, "").length === 10
       && birthMonth !== null
       && /^\d{5}$/.test(homeZipCode);
-  }, [birthMonth, email, firstName, homeZipCode, mode, password, passwordsMatch, phone, strength.strong]);
+  }, [accountExists, birthMonth, email, firstName, homeZipCode, mode, password, passwordsMatch, phone, strength.strong]);
 
   function handleVerificationError(error: string) {
     setCaptchaToken(null);
@@ -105,16 +145,21 @@ export default function AuthScreen() {
         });
     setBusy(false);
     if (result.error) {
+      if (result.code === "account_exists") {
+        setAccountExists(true);
+        setMessage(null);
+        return;
+      }
       setCaptchaToken(null);
       setVerificationKey((value) => value + 1);
       setMessage(result.error);
       return;
     }
     if (mode === "signup" && result.requiresEmailConfirmation) {
-      setMessage("Account created. Check your email to confirm your account, then sign in.");
-      setMode("signin");
-      setCaptchaToken(null);
-      setVerificationKey((value) => value + 1);
+      router.replace({
+        pathname: "/auth/check-email",
+        params: { email: result.email || email.trim().toLowerCase() },
+      });
       return;
     }
     router.replace("/(tabs)/profile");
@@ -151,6 +196,27 @@ export default function AuthScreen() {
 
           <Field label="Email">
             <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" placeholder="you@example.com" placeholderTextColor={theme.colors.textMuted} value={email} onChangeText={setEmail} style={[styles.input, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, color: theme.colors.text }]} />
+            {mode === "signup" && checkingEmail ? <AppText variant="caption" muted>Checking account…</AppText> : null}
+            {mode === "signup" && accountExists ? (
+              <View style={[styles.accountExistsCard, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }]}>
+                <View style={styles.accountExistsCopy}>
+                  <AppText variant="bodyStrong">Account already created</AppText>
+                  <AppText variant="caption" muted>This email already has a TheOutHaven account.</AppText>
+                </View>
+                <Button
+                  variant="ghost"
+                  onPress={() => {
+                    setMode("signin");
+                    setMessage(null);
+                    setVerificationError(null);
+                    setCaptchaToken(null);
+                    setVerificationKey((value) => value + 1);
+                  }}
+                >
+                  Sign in
+                </Button>
+              </View>
+            ) : null}
           </Field>
 
           <Field label="Password" hint={mode === "signup" ? "Use 10+ characters with a mix of letters, numbers, and symbols." : undefined}>
@@ -251,5 +317,7 @@ const styles = StyleSheet.create({
   select: { minHeight: 54, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, selectChevron: { fontSize: 20 },
   consent: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 18, padding: 14, alignItems: "flex-start" }, checkbox: { width: 24, height: 24, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
+  accountExistsCard: { borderWidth: 1, borderRadius: 16, padding: 13, gap: 10 },
+  accountExistsCopy: { gap: 3 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
