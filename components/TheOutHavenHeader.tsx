@@ -163,7 +163,7 @@ export default function TheOutHavenHeader() {
       <div className={shellClass}>
         <Link
           href="/"
-          className="flex min-w-0 shrink-0 items-center"
+          className="flex min-w-0 shrink-0 flex-col items-center justify-center"
           aria-label="TheOutHaven home"
           style={{ width: scrolled ? 175 : 210 }}
         >
@@ -176,6 +176,17 @@ export default function TheOutHavenHeader() {
             unoptimized
             style={{ display: "block", width: "100%", height: "auto", maxWidth: "100%" }}
           />
+          <span
+            aria-hidden="true"
+            className="mt-0.5 whitespace-nowrap font-black uppercase text-white/80"
+            style={{
+              fontSize: scrolled ? 5 : 6,
+              letterSpacing: scrolled ? "0.07em" : "0.08em",
+              lineHeight: 1,
+            }}
+          >
+            ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-4 lg:flex">
