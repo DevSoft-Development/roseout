@@ -2941,6 +2941,37 @@ if (
 ) {
   throw new Error("Users read path must preserve canonical consumer profile shared DB fallback and AWS Core API reads.");
 }
+
+const canonicalSignupRoute = read("app/api/auth/signup/route.ts");
+const canonicalSignupConsumerRoute = read("apps/consumer/app/api/auth/signup/route.ts");
+const mobileAuthProvider = read("mobile/providers/AuthProvider.tsx");
+const mobileTurnstileFrame = read("app/api/mobile/v1/turnstile-frame/route.ts");
+
+for (const source of [canonicalSignupRoute, canonicalSignupConsumerRoute]) {
+  if (
+    !source.includes('from("consumer_profiles").upsert') ||
+    !source.includes('from("users").upsert') ||
+    !source.includes("auth.admin.createUser") ||
+    !source.includes("createAuthEmailToken") ||
+    !source.includes("sendRawBrandedEmail")
+  ) {
+    throw new Error("Canonical account signup must create Auth, consumer_profiles, users, and verification email records.");
+  }
+}
+if (
+  !mobileAuthProvider.includes('/api/auth/signup') ||
+  mobileAuthProvider.includes("supabase.auth.signUp(")
+) {
+  throw new Error("Mobile account creation must use the canonical global signup API and must not create a parallel Supabase signup path.");
+}
+if (
+  !canonicalSignupRoute.includes('turnstileAction === "mobile_signup"') ||
+  !mobileTurnstileFrame.includes('retry: "never"') ||
+  mobileTurnstileFrame.includes('"retry-interval"') ||
+  mobileTurnstileFrame.includes("window.turnstile.reset()")
+) {
+  throw new Error("Mobile signup Turnstile must use the canonical mobile action without an automatic retry/reset loop.");
+}
 if (
   !usersBetaControl.includes("/api/admin/users/") ||
   !usersBetaControl.includes("/beta-access") ||
