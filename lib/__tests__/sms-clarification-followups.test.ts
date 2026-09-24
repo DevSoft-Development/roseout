@@ -26,6 +26,17 @@ describe("SMS clarification follow-ups", () => {
     expect(route).toContain("Is this about a reservation, support issue, outing recommendation, or one of our updates?");
   });
 
+
+  it("acknowledges active support follow-ups when AI does not respond", () => {
+    const supportRouting = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/cross-channel-sms.ts"),
+      "utf8",
+    );
+    expect(supportRouting).toContain("follow_up_acknowledgement");
+    expect(supportRouting).toContain("We received your update");
+    expect(supportRouting).toContain("It’s been added to your support conversation.");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
