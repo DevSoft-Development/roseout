@@ -279,18 +279,19 @@ export async function findRecentExplicitSmsRouteOwnership(params: { phone: strin
   const cutoff = new Date(Date.now() - RECENT_EXPLICIT_ROUTE_MS).toISOString();
   const result = await supabaseAdmin
     .from("sms_logs")
-    .select("message_type,metadata,created_at")
+    .select("message_type,created_at")
     .eq("customer_phone", phone)
-    .like("message_type", "incoming_%_routed_%")
+    .like("message_type", `incoming_${params.entryChannel}_routed_%`)
     .gte("created_at", cutoff)
     .order("created_at", { ascending: false })
     .limit(12);
   if (result.error) throw result.error;
 
   for (const row of result.data || []) {
-    const metadata = (row.metadata || {}) as Record<string, unknown>;
-    if (String(metadata.entry_channel || "") !== params.entryChannel) continue;
-    const department = String(metadata.handling_department || "");
+    const prefix = `incoming_${params.entryChannel}_routed_`;
+    const messageType = String(row.message_type || "");
+    if (!messageType.startsWith(prefix)) continue;
+    const department = messageType.slice(prefix.length);
     if (department === "concierge" || department === "support" || department === "reservations") {
       return { department, lastMessageAt: String(row.created_at || "") } as const;
     }
