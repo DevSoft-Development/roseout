@@ -26,11 +26,11 @@ export default function ForgotPasswordPage() {
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
-    const timer = window.setInterval(() => {
+    const timer = window.setTimeout(() => {
       setCooldownSeconds((current) => Math.max(0, current - 1));
     }, 1000);
-    return () => window.clearInterval(timer);
-  }, [cooldownSeconds > 0]);
+    return () => window.clearTimeout(timer);
+  }, [cooldownSeconds]);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
