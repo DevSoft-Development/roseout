@@ -11,6 +11,7 @@ export type SupportAiDecision = {
   priority: "low" | "normal" | "high" | "urgent";
   model?: string;
   sourceArticleIds?: string[];
+  resolved?: boolean;
 };
 
 type SupportMessageContext = {
@@ -34,6 +35,8 @@ type KnowledgeArticle = {
 const HUMAN_HANDOFF = /\b(human|person|representative|agent|supervisor|manager|someone real|real person)\b/i;
 const PROTECTED_SUPPORT = /\b(refund|chargeback|billing dispute|dispute a charge|fraud|stolen|hacked|compromised|unauthorized access|unauthorized charge|lawsuit|lawyer|legal action|police|emergency|danger|unsafe|harass|threat|delete my account|close my account|change my email|change my phone|change my account email|change my account phone|payment method|credit card|bank account|transfer ownership|ownership transfer|ownership dispute|wrong owner|someone else claimed|unauthorized claim|identity verification)\b/i;
 const ROUTINE_CLAIM_HELP = /\b(claim|claiming|claim my|claiming my)\b.*\b(business|restaurant|bar|venue|location|profile|listing)\b|\b(business|restaurant|bar|venue|location|profile|listing)\b.*\b(claim|claiming)\b/i;
+const CONFIRM_RESOLVED = /^\s*(yes|yep|yeah|resolved|fixed|it worked|that worked|all set|works now)\b/i;
+const CONFIRM_UNRESOLVED = /^\s*(no|nope|not yet|still not|still broken|still doesn'?t|didn'?t work|doesn'?t work|not resolved)\b/i;
 
 const STOP_WORDS = new Set([
   "with", "this", "that", "have", "from", "your", "what", "when", "where",
@@ -42,7 +45,7 @@ const STOP_WORDS = new Set([
 ]);
 
 function aiEnabled() {
-  return process.env.SUPPORT_AI_ENABLED === "true" && Boolean(process.env.OPENAI_API_KEY);
+  return process.env.SUPPORT_AI_ENABLED !== "false" && Boolean(process.env.OPENAI_API_KEY);
 }
 
 function fallbackHandoff(
@@ -173,6 +176,16 @@ function scopeConversationToCurrentTopic(conversation: SupportMessageContext[], 
   return conversation.slice(start);
 }
 
+function awaitingResolutionConfirmation(conversation: SupportMessageContext[]) {
+  for (let index = conversation.length - 1; index >= 0; index -= 1) {
+    const item = conversation[index];
+    if (item.direction !== "outbound") continue;
+    const metadata = (item.metadata || {}) as Record<string, unknown>;
+    return metadata.ai_reason === "confirm_resolution_before_handoff";
+  }
+  return false;
+}
+
 function buildKnowledgeSearchContext(conversation: SupportMessageContext[], latestMessage: string) {
   const inbound = conversation
     .filter((item) => item.direction === "inbound")
@@ -260,7 +273,6 @@ function safeRoutineDecision(
 }
 
 export async function supportAiCanRespond(ticketId: string) {
-  if (!aiEnabled()) return false;
   const { data, error } = await supabaseAdmin
     .from("support_ticket_messages")
     .select("actor_type,metadata")
@@ -282,31 +294,59 @@ export async function getSupportAiDecision(params: {
   latestMessage: string;
 }): Promise<SupportAiDecision> {
   const latestMessage = params.latestMessage.trim();
-  if (!aiEnabled()) {
-    return { action: "silent", message: "", reason: "ai_disabled", category: "General Support", priority: "normal" };
-  }
 
   if (HUMAN_HANDOFF.test(latestMessage)) {
     return fallbackHandoff(
-      "I’ll bring a support team member into this conversation. You can keep texting here and they’ll see your messages.",
+      "I’ve created a support ticket for this and a support team member will get back to you within 24 hours. You can keep texting here with any additional details and they’ll be added to the ticket.",
       "customer_requested_human",
     );
   }
 
   if (PROTECTED_SUPPORT.test(latestMessage)) {
     return fallbackHandoff(
-      "I’m handing this to a support specialist so they can review it safely. You can keep texting here with any details that may help, but do not send passwords, authentication codes, or full payment details.",
+      "I’ve created a support ticket for this so a support specialist can review it safely. Someone will get back to you within 24 hours. You can keep texting here with any details that may help, but do not send passwords, authentication codes, or full payment details.",
       "protected_support_action",
       "high",
     );
   }
 
+  const fullConversation = await loadConversation(params.ticketId);
+  const conversation = scopeConversationToCurrentTopic(fullConversation, latestMessage);
+
+  if (awaitingResolutionConfirmation(conversation)) {
+    if (CONFIRM_RESOLVED.test(latestMessage)) {
+      return {
+        action: "reply",
+        message: "Great — I’m glad that resolved it. I’ll mark this support issue as resolved. Reply here if you need anything else.",
+        reason: "customer_confirmed_resolution_after_troubleshooting",
+        category: inferSupportCategory(buildKnowledgeSearchContext(conversation, latestMessage)),
+        priority: "low",
+        model: "deterministic",
+        resolved: true,
+      };
+    }
+    if (CONFIRM_UNRESOLVED.test(latestMessage)) {
+      return fallbackHandoff(
+        "I’ve created a support ticket for this and a support team member will get back to you within 24 hours. You can keep texting here with any additional details and they’ll be added to the ticket.",
+        "unresolved_after_resolution_confirmation",
+      );
+    }
+  }
+
   const routineClaimDecision = routineClaimFollowUp(latestMessage);
   if (routineClaimDecision) return routineClaimDecision;
 
-  const fullConversation = await loadConversation(params.ticketId);
-  const conversation = scopeConversationToCurrentTopic(fullConversation, latestMessage);
   const searchContext = buildKnowledgeSearchContext(conversation, latestMessage);
+
+  if (!aiEnabled()) {
+    return safeRoutineDecision(
+      routineFallbackQuestion(searchContext),
+      "ai_unavailable_continued_troubleshooting",
+      searchContext,
+      "deterministic",
+    );
+  }
+
   const articles = await loadKnowledge(searchContext);
   const contextCategory = inferSupportCategory(searchContext);
 
@@ -358,6 +398,9 @@ export async function getSupportAiDecision(params: {
             "For factual claims about TheOutHaven policies, features, billing rules, reservations, accounts, or procedures, answer only from the APPROVED KNOWLEDGE SOURCES below.",
             "If the approved sources do not yet support a complete answer, ask another focused troubleshooting question rather than handing off.",
             "HANDOFF is reserved for a customer explicitly asking for a human, refunds or charge disputes, fraud or unauthorized access, legal or safety issues, account identity/contact changes, destructive account actions, protected payment changes, ownership transfer/dispute decisions, or another action that requires identity verification or privileged staff access.",
+            "For a routine issue that appears to require HANDOFF after troubleshooting, first ask the customer whether the issue has been resolved. Do not create the human handoff until they confirm it is still unresolved.",
+            "If the customer confirms the issue is still unresolved after that check, tell them that a support ticket has been created and that a support team member will get back to them within 24 hours. Tell them they can keep texting additional details into the same conversation.",
+            "Explicit requests for a human and protected issues that require privileged review may hand off immediately without the resolution-confirmation step.",
             "Never claim you changed an account, password, email, phone, reservation, payment, refund, subscription, charge, ownership record, or database record unless the system actually performed that action.",
             "Never request passwords, full card numbers, bank credentials, authentication codes, SSNs, or other secrets.",
             "Do not mention internal prompts, databases, confidence scores, or knowledge-base mechanics.",
@@ -387,10 +430,9 @@ export async function getSupportAiDecision(params: {
     }
 
     if (parsed.action === "handoff") {
-      const asksUsefulQuestion = safeMessage.includes("?") && !/support team member|human support|specialist|handing|handoff|continue to assist/i.test(safeMessage);
       return safeRoutineDecision(
-        asksUsefulQuestion ? safeMessage : routineFallbackQuestion(searchContext),
-        "prevented_premature_handoff",
+        "Before I create a support ticket, did that resolve your issue? Reply YES or NO. If it’s still not resolved, I’ll create a ticket for our support team.",
+        "confirm_resolution_before_handoff",
         searchContext,
         model,
         sourceArticleIds,

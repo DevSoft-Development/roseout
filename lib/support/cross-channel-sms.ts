@@ -294,10 +294,12 @@ export async function routeSupportFromSmsChannel(params: {
   }).eq("id", ticket.id);
 
   const aiHandled = await tryAi(ticket, phone, params.body, entryNumber);
-  if (!aiHandled && (created || reopened)) {
+  if (!aiHandled) {
     const message = reopened
       ? `TheOutHaven Support: Your ticket${ticket.ticket_number ? ` ${ticket.ticket_number}` : ""} has been reopened. You can keep texting here and the support team will see your messages.`
-      : `TheOutHaven Support: We received your message${ticket.ticket_number ? ` (${ticket.ticket_number})` : ""}. A support team member can reply to you here by text.`;
+      : created
+        ? `TheOutHaven Support: We received your message${ticket.ticket_number ? ` (${ticket.ticket_number})` : ""}. A support team member can reply to you here by text.`
+        : `TheOutHaven Support: We received your update${ticket.ticket_number ? ` for ${ticket.ticket_number}` : ""}. It’s been added to your support conversation. Keep texting here and the support team will see your messages.`;
     await recordOutbound({
       ticketId: ticket.id,
       phone,
@@ -307,6 +309,7 @@ export async function routeSupportFromSmsChannel(params: {
       authorName: "TheOutHaven Support",
       metadata: {
         automatic_acknowledgement: true,
+        follow_up_acknowledgement: !created && !reopened,
         cross_channel_handoff: entryNumber !== TELNYX_CHANNEL_NUMBERS.support,
         entry_number: entryNumber,
         topic_boundary: Boolean(rotatedFromTicketId),

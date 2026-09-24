@@ -26,6 +26,48 @@ describe("SMS clarification follow-ups", () => {
     expect(route).toContain("Is this about a reservation, support issue, outing recommendation, or one of our updates?");
   });
 
+
+  it("acknowledges active support follow-ups when AI does not respond", () => {
+    const supportRouting = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/cross-channel-sms.ts"),
+      "utf8",
+    );
+    expect(supportRouting).toContain("follow_up_acknowledgement");
+    expect(supportRouting).toContain("We received your update");
+    expect(supportRouting).toContain("It’s been added to your support conversation.");
+  });
+
+  it("keeps support clarification available when the AI flag is unset", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain('process.env.SUPPORT_AI_ENABLED !== "false"');
+    expect(responder).toContain("ai_unavailable_continued_troubleshooting");
+    expect(responder).toContain("routineFallbackQuestion(searchContext)");
+  });
+
+  it("tells customers a support ticket was created on human handoff", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("support ticket");
+    expect(responder).toContain("within 24 hours");
+    expect(responder).toContain("keep texting");
+  });
+
+  it("confirms resolution before routine human handoff", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("confirm_resolution_before_handoff");
+    expect(responder).toContain("did that resolve your issue? Reply YES or NO");
+    expect(responder).toContain("unresolved_after_resolution_confirmation");
+    expect(responder).toContain("customer_confirmed_resolution_after_troubleshooting");
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");
