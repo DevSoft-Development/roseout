@@ -248,6 +248,11 @@ const adminGlobals = read("apps/admin/app/globals.css");
 if (!adminGlobals.includes('@import "tailwindcss"')) {
   throw new Error("Isolated Admin global stylesheet must compile Tailwind utilities.");
 }
+for (const source of ['@source ".";', '@source "../components";', '@source "../lib";']) {
+  if (!adminGlobals.includes(source)) {
+    throw new Error(`Isolated Admin global stylesheet must explicitly scan its Tailwind source root: ${source}`);
+  }
+}
 
 const adminDashboardLayout = read("apps/admin/app/admin/dashboard/layout.tsx");
 if (!adminDashboardLayout.includes("@theouthaven/auth/admin-session") || !adminDashboardLayout.includes("./AdminShell")) {
