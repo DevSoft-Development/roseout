@@ -6,7 +6,7 @@ import { mobileConfig } from "@/lib/config";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
 type Props = {
-  action: "mobile_signin" | "mobile_signup";
+  action: "mobile_signin" | "mobile_signup" | "mobile_password_reset";
   verified: boolean;
   onVerified: (token: string) => void;
   onError: (message: string) => void;

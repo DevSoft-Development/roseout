@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TurnstileVerificationInline } from "@/components/auth/TurnstileVerificationInline";
@@ -287,9 +287,10 @@ export default function AuthScreen() {
                   </Button>
                   <Button
                     variant="ghost"
-                    onPress={() => Linking.openURL(
-                      `${mobileConfig.siteUrl}/forgot-password?email=${encodeURIComponent(email.trim().toLowerCase())}`
-                    )}
+                    onPress={() => router.push({
+                      pathname: "/auth/forgot-password",
+                      params: { email: email.trim().toLowerCase() },
+                    })}
                   >
                     Forgot / reset password
                   </Button>
@@ -352,7 +353,17 @@ export default function AuthScreen() {
           {verificationError ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{verificationError}</AppText></View> : null}
           {message ? <View style={[styles.message, { borderColor: theme.colors.borderStrong }]}><AppText muted>{message}</AppText></View> : null}
           <Button disabled={!valid || busy || !captchaToken} onPress={() => void submit()}>{busy ? (mode === "signin" ? "Signing you in…" : "Creating account…") : mode === "signin" ? "Sign in" : "Create account"}</Button>
-          {mode === "signin" ? <Button variant="ghost" onPress={() => Linking.openURL(`${mobileConfig.siteUrl}/forgot-password`)}>Forgot password?</Button> : null}
+          {mode === "signin" ? (
+            <Button
+              variant="ghost"
+              onPress={() => router.push({
+                pathname: "/auth/forgot-password",
+                params: email.trim() ? { email: email.trim().toLowerCase() } : undefined,
+              })}
+            >
+              Forgot / reset password
+            </Button>
+          ) : null}
           <Button variant="ghost" onPress={() => router.replace("/(tabs)/profile")}>Continue as guest</Button>
         </View>
 
