@@ -267,8 +267,8 @@ for (const marker of [".min-w-0", ".px-4", ".py-6", ".shadow-xl", ".rounded-\\\\
 const customerLifecyclePage = read("apps/admin/app/admin/dashboard/crm/customer-lifecycle/page.tsx");
 const customerLifecycleDetailPage = read("apps/admin/app/admin/dashboard/crm/customer-lifecycle/[id]/page.tsx");
 const customerLifecycleModel = read("apps/admin/lib/crm/location-customer-lifecycle.ts");
-const crmRootPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
-const crmOpportunitiesPage = read("apps/admin/app/admin/dashboard/crm/opportunities/page.tsx");
+const lifecycleCrmRootPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
+const lifecycleCrmOpportunitiesPage = read("apps/admin/app/admin/dashboard/crm/opportunities/page.tsx");
 
 for (const required of [
   "Customer Lifecycle",
@@ -305,10 +305,10 @@ for (const required of [
     throw new Error(`Location customer lifecycle model must remain connected to canonical CRM/billing signal: ${required}`);
   }
 }
-if (!crmRootPage.includes("/admin/dashboard/crm/customer-lifecycle") || !crmRootPage.includes("/admin/dashboard/crm/opportunities")) {
+if (!lifecycleCrmRootPage.includes("/admin/dashboard/crm/customer-lifecycle") || !lifecycleCrmRootPage.includes("/admin/dashboard/crm/opportunities")) {
   throw new Error("Locations CRM must expose Customer Lifecycle and Sales Opportunities as first-class actions.");
 }
-if (!crmOpportunitiesPage.includes("/admin/dashboard/crm/customer-lifecycle")) {
+if (!lifecycleCrmOpportunitiesPage.includes("/admin/dashboard/crm/customer-lifecycle")) {
   throw new Error("Sales Opportunities must stay connected to the location Customer Lifecycle.");
 }
 
