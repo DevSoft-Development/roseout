@@ -21,7 +21,7 @@ export default function TheOutHavenFooter() {
                 aria-hidden="true"
                 className="mt-1 whitespace-nowrap text-[6px] font-black uppercase leading-none tracking-[0.08em] text-white/70"
               >
-                Restaurants • Bars • Nightlife • Activities • Experiences
+                ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
               </span>
             </span>
           </Link>
