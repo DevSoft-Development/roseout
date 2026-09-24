@@ -37,8 +37,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const email = clean(body.email).toLowerCase();
     const captchaToken = clean(body.captchaToken);
-    const mobileRecovery = body.mobile === true || body.client === "mobile_app";
     const client = clean(body.client).toLowerCase();
+    const mobileRecovery = body.mobile === true || mobileRecovery;
 
     if (!email) {
       return Response.json({ success: false, error: "Please enter your email address." }, { status: 400 });
@@ -79,8 +79,9 @@ export async function POST(req: Request) {
       purpose: "password_reset",
       expiresInMinutes: 60,
       request: req,
+      metadata: { channel: mobileRecovery ? "mobile" : "web" },
     });
-    const url = client === "mobile_app"
+    const url = mobileRecovery
       ? `theouthaven://auth/reset-password?token=${encodeURIComponent(token)}`
       : buildSiteUrl(`/reset-password?token=${encodeURIComponent(token)}`);
     const emailResult = await sendRawBrandedEmail({
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
       subject: "Reset your TheOutHaven password",
       heading: "Reset your password",
       preview: "Use this secure link to reset your TheOutHaven password.",
-      body: `Use the secure link below to reset your TheOutHaven password. This link expires ${new Date(expiresAt).toLocaleString()}.\n\n${client === "mobile_app" ? "This reset was requested in the TheOutHaven app. Tap the button below to return to the app and choose a new password.\n\n" : ""}If you did not request a password reset, you can ignore this email.`,
+      body: `Use the secure link below to reset your TheOutHaven password. This link expires ${new Date(expiresAt).toLocaleString()}.\n\n${mobileRecovery ? "This reset was requested in the TheOutHaven app. Tap the button below to return to the app and choose a new password.\n\n" : ""}If you did not request a password reset, you can ignore this email.`,
       cta: { label: "Reset Password", url },
     });
 
