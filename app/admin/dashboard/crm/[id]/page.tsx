@@ -1607,138 +1607,238 @@ function ProfileForm({
   business: BusinessCRMRow;
   canEdit: boolean;
 }) {
-  const fields: Array<[string, string, string | null | undefined]> = [
-    ["name", "Name", business.name],
-    ["address", "Address", business.address],
-    ["city", "City", business.city],
-    ["borough", "Borough", business.borough],
-    ["state", "State", business.state],
-    ["zip_code", "Zip code", business.zip_code || business.zip],
-    ["phone", "Phone", business.phone],
-    ["website", "Website", business.website],
-    ["category", "Category", business.category],
-    ["cuisine", "Cuisine", business.cuisine],
-    ["reservation_url", "Reservation URL", business.reservation_url],
-    [
-      "external_reservation_url",
-      "External reservation URL",
-      (business as any).external_reservation_url,
-    ],
-    ["status", "Status", business.status],
-  ];
+  const fieldClass =
+    "w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition focus:border-rose-300/40 focus:ring-2 focus:ring-rose-300/10 disabled:opacity-60";
+  const labelClass = "space-y-2 text-sm font-bold text-white/65";
+  const locationName =
+    business.name ||
+    (business as any).restaurant_name ||
+    (business as any).activity_name ||
+    "Location";
 
   return (
     <section className="space-y-5">
-      <div className="rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,6,42,0.12),rgba(255,255,255,0.025))] p-5">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">Location Details</p>
-        <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-2xl font-black text-white">Edit the canonical location record</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-white/55">
-              Update guest-facing business information, hours, visibility, reservation links, and internal search tuning from this CRM record. Changes stay attached to the same location across Admin, Business, Reserve, and consumer search.
+      <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(135deg,rgba(225,6,42,0.14),rgba(255,255,255,0.035)_52%,rgba(255,255,255,0.02))] shadow-2xl shadow-black/20">
+        <div className="flex flex-col gap-5 p-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-rose-200">
+              Location profile
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-white">
+              {locationName}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Keep the information customers see accurate and up to date.
             </p>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-black text-white/60">
-            {canEdit ? "Editing enabled" : "Read only"}
-          </span>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-black text-white/70">
+              {canEdit ? "Ready to edit" : "View only"}
+            </span>
+            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-black text-white/55">
+              {business.is_searchable ? "Visible in search" : "Hidden from search"}
+            </span>
+          </div>
         </div>
       </div>
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <form
-        action={saveLocationProfile}
-        className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
-      >
+
+      <form action={saveLocationProfile} className="space-y-5">
         <input type="hidden" name="location_id" value={business.id} />
-        <p className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/60">
-          <b className="text-white/80">Public address preview:</b>{" "}
-          {formatLocationAddress(business)}
-        </p>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {fields.map(([name, label, value]) => (
-            <label
-              key={name}
-              className="space-y-2 text-sm font-bold text-white/65"
-            >
-              <span>{label}</span>
-              <input
-                name={name}
-                defaultValue={String(value || "")}
+
+        <AdminSectionCard className="p-0">
+          <div className="border-b border-white/10 px-5 py-4">
+            <h3 className="text-lg font-black text-white">Business details</h3>
+            <p className="mt-1 text-sm text-white/50">
+              The name and description customers see.
+            </p>
+          </div>
+          <div className="grid gap-4 p-5 md:grid-cols-2">
+            <label className={labelClass}>
+              <span>Business name</span>
+              <input name="name" defaultValue={String(business.name || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Status</span>
+              <input name="status" defaultValue={String(business.status || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Category</span>
+              <input name="category" defaultValue={String(business.category || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Cuisine</span>
+              <input name="cuisine" defaultValue={String(business.cuisine || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={`${labelClass} md:col-span-2`}>
+              <span>Description</span>
+              <textarea
+                name="description"
+                defaultValue={business.description || ""}
                 disabled={!canEdit}
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none disabled:opacity-60"
+                rows={5}
+                className={fieldClass}
               />
             </label>
-          ))}
-          <label className="space-y-2 text-sm font-bold text-white/65 xl:col-span-3">
-            <span>Description</span>
-            <textarea
-              name="description"
-              defaultValue={business.description || ""}
-              disabled={!canEdit}
-              rows={5}
-              className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none disabled:opacity-60"
-            />
-          </label>
-          <div className="xl:col-span-3">
+          </div>
+        </AdminSectionCard>
+
+        <AdminSectionCard className="p-0">
+          <div className="border-b border-white/10 px-5 py-4">
+            <h3 className="text-lg font-black text-white">Contact & address</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Where customers can find and contact this location.
+            </p>
+          </div>
+          <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+            <label className={`${labelClass} md:col-span-2 xl:col-span-3`}>
+              <span>Street address</span>
+              <input name="address" defaultValue={String(business.address || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>City</span>
+              <input name="city" defaultValue={String(business.city || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Borough / area</span>
+              <input name="borough" defaultValue={String(business.borough || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>State</span>
+              <input name="state" defaultValue={String(business.state || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>ZIP code</span>
+              <input name="zip_code" defaultValue={String(business.zip_code || business.zip || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Phone</span>
+              <input name="phone" defaultValue={String(business.phone || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Website</span>
+              <input name="website" defaultValue={String(business.website || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+          </div>
+          <div className="border-t border-white/10 px-5 py-4 text-sm text-white/55">
+            <span className="font-bold text-white/75">Address preview:</span>{" "}
+            {formatLocationAddress(business)}
+          </div>
+        </AdminSectionCard>
+
+        <AdminSectionCard className="p-0">
+          <div className="border-b border-white/10 px-5 py-4">
+            <h3 className="text-lg font-black text-white">Reservations</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Links customers can use when they want to book.
+            </p>
+          </div>
+          <div className="grid gap-4 p-5 md:grid-cols-2">
+            <label className={labelClass}>
+              <span>Primary booking link</span>
+              <input name="reservation_url" defaultValue={String(business.reservation_url || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+            <label className={labelClass}>
+              <span>Other booking link</span>
+              <input name="external_reservation_url" defaultValue={String((business as any).external_reservation_url || "")} disabled={!canEdit} className={fieldClass} />
+            </label>
+          </div>
+        </AdminSectionCard>
+
+        <AdminSectionCard className="p-0">
+          <div className="border-b border-white/10 px-5 py-4">
+            <h3 className="text-lg font-black text-white">Hours</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Set the regular weekly schedule customers should see.
+            </p>
+          </div>
+          <div className="p-5">
             <LocationHoursEditor
               value={business.operating_hours}
               disabled={!canEdit}
               theme="dark"
               status={business as Record<string, unknown>}
             />
+            {business.special_hours ? (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-sm font-black text-white">Holiday or special hours saved</p>
+                <p className="mt-1 text-sm text-white/50">
+                  This location also has special hours that may override the weekly schedule on specific dates.
+                </p>
+              </div>
+            ) : null}
           </div>
-          <details className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm font-bold text-white/65 xl:col-span-3">
-            <summary className="cursor-pointer">
-              Special/Holiday Hours JSON
-            </summary>
-            <textarea
-              readOnly
-              rows={5}
-              value={
-                business.special_hours
-                  ? JSON.stringify(business.special_hours, null, 2)
-                  : ""
-              }
-              className="mt-3 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 font-mono text-xs text-white outline-none"
-            />
-          </details>
-          <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/70">
-            <input
-              type="checkbox"
-              name="is_searchable"
-              defaultChecked={Boolean(business.is_searchable)}
-              disabled={!canEdit}
-            />{" "}
-            Searchable
-          </label>
-        </div>
-        <div className="mt-5 flex flex-wrap gap-3">
+        </AdminSectionCard>
+
+        <AdminSectionCard className="p-0">
+          <div className="border-b border-white/10 px-5 py-4">
+            <h3 className="text-lg font-black text-white">Visibility</h3>
+            <p className="mt-1 text-sm text-white/50">
+              Control whether this location can appear in customer search.
+            </p>
+          </div>
+          <div className="p-5">
+            <label className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+              <span>
+                <span className="block text-sm font-black text-white">Show in search</span>
+                <span className="mt-1 block text-sm text-white/50">
+                  Turn this off when the location should stay hidden from customers.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                name="is_searchable"
+                defaultChecked={Boolean(business.is_searchable)}
+                disabled={!canEdit}
+                className="h-5 w-5 accent-rose-600"
+              />
+            </label>
+          </div>
+        </AdminSectionCard>
+
+        <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#111114]/95 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+          <p className="px-2 text-sm text-white/50">
+            {canEdit ? "Save when you’re finished." : "You have view-only access."}
+          </p>
           <button
             disabled={!canEdit}
-            className="rounded-full bg-rose-600 px-6 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-rose-600 px-6 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save Location
+            Save changes
           </button>
-          {!canEdit ? (
-            <p className="text-sm text-white/45">Viewer role is read-only.</p>
-          ) : null}
         </div>
       </form>
-      <LocationProfileEditor
-        table="locations"
-        id={business.id}
-        record={business as any}
-        canEdit={canEdit}
-        canViewAdvancedSystemData={true}
-        saveMode="admin"
-        type={String(business.location_type || "locations")}
-        aiHelperEnabled={true}
-        aiHelperAccessLabel="Admins can keep manual edits and apply only the suggestions they want."
-      />
-      </section>
+
+      <details className="rounded-3xl border border-white/10 bg-white/[0.025]">
+        <summary className="cursor-pointer list-none px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-black text-white">More settings</p>
+              <p className="mt-1 text-sm text-white/50">
+                Additional listing, search, photo, and admin controls.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-black text-white/50">
+              Optional
+            </span>
+          </div>
+        </summary>
+        <div className="border-t border-white/10 p-5">
+          <LocationProfileEditor
+            table="locations"
+            id={business.id}
+            record={business as any}
+            canEdit={canEdit}
+            canViewAdvancedSystemData={true}
+            saveMode="admin"
+            type={String(business.location_type || "locations")}
+            aiHelperEnabled={true}
+            aiHelperAccessLabel="Keep your edits and apply only the suggestions you want."
+          />
+        </div>
+      </details>
     </section>
   );
 }
-
 function CrmHeroActions({
   business,
   publicHref,
