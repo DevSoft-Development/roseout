@@ -1,12 +1,12 @@
 {
   "enabled": true,
-  "reason": "oregon-forward-logical-replication-slot-lost-after-gbp-schema",
+  "reason": "oregon-forward-logical-replication-slot-lost-wal-removed-2026-09-24",
   "expected_slot": "theouthaven_va_to_or_dr_slot",
   "expected_subscription": "theouthaven_va_to_or_dr",
   "expected_invalidation_reason": "wal_removed",
   "reseed_mode": "copy_data_true",
-  "requested_at": "2026-09-22T19:30:00-04:00",
-  "retrigger": "gbp-publication-repair-2026-09-22",
+  "requested_at": "2026-09-24T00:00:00-04:00",
+  "retrigger": "restore-forward-replication-after-personalization-parity-repair-2026-09-24",
   "completed_at": null,
   "completion": null
 }
