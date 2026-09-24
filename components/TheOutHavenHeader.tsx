@@ -163,7 +163,7 @@ export default function TheOutHavenHeader() {
       <div className={shellClass}>
         <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="TheOutHaven home">
           <span className={scrolled ? "relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full ring-1 ring-white/15" : "relative flex h-11 w-11 shrink-0 overflow-hidden rounded-full ring-1 ring-white/15"}>
-            <Image src="/toh_logo.png" alt="TheOutHaven logo" fill sizes={scrolled ? "36px" : "44px"} priority className="object-contain" />
+            <Image src="/toh_logo.png" alt="TheOutHaven logo" fill sizes={scrolled ? "36px" : "44px"} priority unoptimized className="object-contain" />
           </span>
           <span className="truncate text-xl font-black tracking-tight text-white sm:text-3xl">TheOutHaven</span>
         </Link>
