@@ -311,7 +311,57 @@ function normalizeRow(row: RawLocation, link: RawAccountLink | undefined, opport
   };
 }
 
-const LOCATION_SELECT = "*";;
+const LOCATION_SELECT = [
+  "id",
+  "name",
+  "business_name",
+  "restaurant_name",
+  "activity_name",
+  "address",
+  "city",
+  "state",
+  "zip_code",
+  "phone",
+  "website",
+  "owner_email",
+  "claimed_by_email",
+  "claim_status",
+  "is_claimed",
+  "claimed",
+  "owner_user_id",
+  "subscription_plan",
+  "plan",
+  "subscription_status",
+  "plan_status",
+  "is_pro",
+  "partner_canceled_at",
+  "claim_sent_at",
+  "last_contacted_at",
+  "claim_last_follow_up_at",
+  "outreach_status",
+  "claim_outreach_status",
+  "claim_viewed_at",
+  "claim_started_at",
+  "claim_submitted_at",
+  "demo_scheduled_at",
+  "demo_completed_at",
+  "engagement_score",
+  "opportunity_score",
+  "past_due_at",
+  "cancel_at_period_end",
+  "churn_risk_score",
+  "churn_risk",
+  "retention_score",
+  "partner_activated_at",
+  "current_period_end",
+  "next_billing_date",
+  "partner_plan_price_cents",
+  "subscription_interval",
+  "next_action",
+  "next_action_due_at",
+  "updated_at",
+  "created_at",
+].join(",");
 
 export async function listLocationCustomerLifecycle(input: {
   q?: string;
@@ -325,15 +375,29 @@ export async function listLocationCustomerLifecycle(input: {
   const page = Math.max(1, Number(input.page || 1));
   const pageSize = [25, 50, 100].includes(Number(input.pageSize)) ? Number(input.pageSize) : 50;
 
-  const [locationsResult, linksResult, opportunitiesResult] = await Promise.all([
-    db.from("locations").select(LOCATION_SELECT).is("deleted_at", null).order("updated_at", { ascending: false }).limit(6000),
+  const locationPages = await Promise.all(
+    Array.from({ length: 6 }, (_, pageIndex) => {
+      const start = pageIndex * 1000;
+      return db
+        .from("locations")
+        .select(LOCATION_SELECT)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false })
+        .range(start, start + 999);
+    }),
+  );
+
+  const [linksResult, opportunitiesResult] = await Promise.all([
     db.from("crm_account_locations").select("location_id,account_id,is_primary_location,crm_accounts(id,name,lifecycle_stage,next_action,next_action_at)").eq("status", "active").limit(10000),
     db.from("crm_opportunities").select("id,name,pipeline_key,stage,status,owner_user_id,primary_location_id,last_stage_changed_at,expected_close_date,next_step,next_step_at,amount,monthly_recurring_revenue,annual_recurring_revenue").is("archived_at", null).order("updated_at", { ascending: false }).limit(10000),
   ]);
 
-  if (locationsResult.error) throw locationsResult.error;
+  const failedLocationPage = locationPages.find((pageResult) => pageResult.error);
+  if (failedLocationPage?.error) throw failedLocationPage.error;
   if (linksResult.error) throw linksResult.error;
   if (opportunitiesResult.error) throw opportunitiesResult.error;
+
+  const locationRows = locationPages.flatMap((pageResult) => pageResult.data || []);
 
   const links = new Map<string, RawAccountLink>();
   for (const link of linksResult.data || []) {
@@ -351,7 +415,7 @@ export async function listLocationCustomerLifecycle(input: {
     opportunities.set(key, bucket);
   }
 
-  let rows = (locationsResult.data || []).map((row: RawLocation) =>
+  let rows = locationRows.map((row: RawLocation) =>
     normalizeRow(row, links.get(String(row.id)), opportunities.get(String(row.id)) || []),
   );
 
