@@ -37,6 +37,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Enforce dual-region migration ownership
+        run: node scripts/dr/dual-region-migration-contract.mjs
+
       - name: Detect quality scope
         id: quality_scope
         env:
