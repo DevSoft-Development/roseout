@@ -247,7 +247,7 @@ export default async function CRMPage({
   const [pageData, summary, lifecycle] = await Promise.all([
     listBusinessCRMPage({ page, pageSize, query: q, filter, market, permittedLocationIds }),
     getBusinessCRMSummary(),
-    listLocationCustomerLifecycle({ permittedLocationIds }),
+    listLocationCustomerLifecycle({ permittedLocationIds, summaryOnly: true }),
   ]);
   const businesses = pageData.rows;
   const pendingClaims = pageData.pendingClaims || [];
