@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
     const intendedPath = sanitizeIntendedPath(
       typeof b.next === "string" ? b.next : null,
     );
+    const signupSource = b.signup_source === "mobile_app" ? "mobile_app" : "web";
+    const expectedTurnstileAction =
+      b.turnstileAction === "mobile_signup" ? "mobile_signup" : "signup";
     const isBusinessClaimSignup = Boolean(
       intendedPath && intendedPath.startsWith("/business/claim"),
     );
@@ -78,9 +81,9 @@ export async function POST(req: NextRequest) {
     const ts = await verifyTurnstileToken({
       token: b.turnstileToken,
       remoteIp: ip(req),
-      expectedAction: "signup",
-      source: "signup",
-      metadata: { email, intendedPath, isBusinessClaimSignup },
+      expectedAction: expectedTurnstileAction,
+      source: signupSource === "mobile_app" ? "mobile_signup" : "signup",
+      metadata: { email, intendedPath, isBusinessClaimSignup, signupSource },
     });
     if (!ts.success) {
       return NextResponse.json(
@@ -157,7 +160,9 @@ export async function POST(req: NextRequest) {
         home_zip_code: zip,
         sms_consent: smsConsent,
         sms_consent_at: smsConsentAt,
-        sms_consent_source: smsConsent ? "web_account_signup" : null,
+        sms_consent_source: smsConsent
+          ? signupSource === "mobile_app" ? "mobile_account_signup" : "web_account_signup"
+          : null,
         sms_consent_text: smsConsent
           ? "I agree to receive SMS messages from TheOutHaven about my account, saved plans, OUTing reminders, reservations, and optional offers."
           : null,
@@ -192,7 +197,9 @@ export async function POST(req: NextRequest) {
       request: req,
       metadata: {
         next: intendedPath,
-        source: isBusinessClaimSignup ? "business_claim" : "signup",
+        source: isBusinessClaimSignup
+          ? "business_claim"
+          : signupSource === "mobile_app" ? "mobile_signup" : "signup",
       },
     });
 
@@ -224,6 +231,8 @@ export async function POST(req: NextRequest) {
       requiresEmailConfirmation: true,
       email,
       next: intendedPath,
+      signupSource,
+      userId,
     });
   } catch (e: any) {
     console.error("SIGNUP_ERROR", e);
