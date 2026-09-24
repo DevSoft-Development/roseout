@@ -8,17 +8,14 @@ export default function TheOutHavenFooter() {
 
       <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
         <div>
-          <Link href="/" className="group inline-flex items-center gap-3">
-            <span className="relative flex h-10 w-10 overflow-hidden rounded-full ring-1 ring-white/15 transition group-hover:scale-105">
-              <Image
-                src="/toh_logo.png"
-                alt="TheOutHaven logo"
-                fill
-                sizes="40px"
-                className="object-contain"
-              />
-            </span>
-            <span className="text-2xl font-black tracking-tight">TheOutHaven</span>
+          <Link href="/" className="group inline-flex items-center">
+            <Image
+              src="/toh_logo_wordmark_dark.png"
+              alt="TheOutHaven"
+              width={900}
+              height={274}
+              className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
+            />
           </Link>
 
           <p className="mt-5 max-w-md text-sm leading-7 text-white/45">
