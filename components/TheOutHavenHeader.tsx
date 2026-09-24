@@ -165,7 +165,7 @@ export default function TheOutHavenHeader() {
           href="/"
           className="flex min-w-0 shrink-0 items-center"
           aria-label="TheOutHaven home"
-          style={{ width: scrolled ? 150 : 185 }}
+          style={{ width: scrolled ? 175 : 210 }}
         >
           <Image
             src="/toh_logo_wordmark_dark.png"
