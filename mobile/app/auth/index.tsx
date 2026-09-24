@@ -203,18 +203,51 @@ export default function AuthScreen() {
                   <AppText variant="bodyStrong">Account already created</AppText>
                   <AppText variant="caption" muted>This email already has a TheOutHaven account.</AppText>
                 </View>
-                <Button
-                  variant="ghost"
-                  onPress={() => {
-                    setMode("signin");
-                    setMessage(null);
-                    setVerificationError(null);
-                    setCaptchaToken(null);
-                    setVerificationKey((value) => value + 1);
-                  }}
-                >
-                  Sign in
-                </Button>
+                <View style={styles.accountExistsActions}>
+                  <Button
+                    variant="ghost"
+                    onPress={() => {
+                      setMode("signin");
+                      setMessage(null);
+                      setVerificationError(null);
+                      setCaptchaToken(null);
+                      setVerificationKey((value) => value + 1);
+                    }}
+                  >
+                    Sign in
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onPress={() => {
+                      void (async () => {
+                        setMessage(null);
+                        try {
+                          const response = await fetch(`${mobileConfig.siteUrl}/api/auth/resend-verification`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ email: email.trim().toLowerCase() }),
+                          });
+                          const payload = await response.json().catch(() => ({})) as {
+                            success?: boolean;
+                            alreadyVerified?: boolean;
+                            error?: string;
+                          };
+                          if (!response.ok || payload.success !== true) {
+                            setMessage(payload.error || "We could not resend the verification email.");
+                            return;
+                          }
+                          setMessage(payload.alreadyVerified
+                            ? "This account is already verified. Sign in to continue."
+                            : "Verification email sent. Check your inbox.");
+                        } catch {
+                          setMessage("We could not resend the verification email.");
+                        }
+                      })();
+                    }}
+                  >
+                    Resend verification
+                  </Button>
+                </View>
               </View>
             ) : null}
           </Field>
@@ -319,5 +352,6 @@ const styles = StyleSheet.create({
   consentText: { flex: 1, fontSize: 12, lineHeight: 18 }, legal: { lineHeight: 18 }, message: { borderWidth: 1, borderRadius: 16, padding: 13 },
   accountExistsCard: { borderWidth: 1, borderRadius: 16, padding: 13, gap: 10 },
   accountExistsCopy: { gap: 3 },
+  accountExistsActions: { gap: 6 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end", padding: 14 }, monthSheet: { maxHeight: "72%", borderWidth: 1, borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 22 }, monthSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 10 }, monthList: { flexGrow: 0 }, monthRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
