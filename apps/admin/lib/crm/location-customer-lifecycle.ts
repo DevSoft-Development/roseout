@@ -311,16 +311,7 @@ function normalizeRow(row: RawLocation, link: RawAccountLink | undefined, opport
   };
 }
 
-const LOCATION_SELECT = [
-  "id","name","business_name","restaurant_name","activity_name","address","city","state","zip_code","phone","website",
-  "is_claimed","claimed","claim_status","claim_sent_at","claim_viewed_at","claim_started_at","claim_submitted_at","claim_approved_at",
-  "owner_user_id","owner_email","claimed_by_email","subscription_plan","subscription_status","subscription_interval","current_period_start",
-  "current_period_end","next_billing_date","trial_ends_at","cancel_at_period_end","past_due_at","stripe_customer_id","stripe_subscription_id",
-  "partner_activated_at","partner_canceled_at","partner_plan_price_cents","opportunity_score","engagement_score","churn_risk_score","retention_score",
-  "profile_views_30d","search_appearances_30d","reservation_completions_30d","saves_30d","conversion_rate_30d","next_action","next_action_due_at",
-  "last_contacted_at","claim_last_follow_up_at","outreach_status","claim_outreach_status","demo_scheduled_at","demo_completed_at","crm_status",
-  "plan","plan_status","is_pro","active","is_searchable","updated_at","created_at"
-].join(",");
+const LOCATION_SELECT = "*";;
 
 export async function listLocationCustomerLifecycle(input: {
   q?: string;
