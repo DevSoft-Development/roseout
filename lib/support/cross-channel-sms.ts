@@ -203,7 +203,16 @@ async function resetConversationContext(params: {
   }).eq("id", params.ticket.id);
   if (updated.error) throw updated.error;
 
-  return { ticketId: params.ticket.id, messageId: inbound.data.id as string, duplicate: false, reset: true };
+  return {
+    ticketId: params.ticket.id,
+    messageId: inbound.data.id as string,
+    duplicate: false,
+    aiHandled: false,
+    reopened: false,
+    topicBoundary: false,
+    previousTicketId: null,
+    reset: true,
+  };
 }
 
 async function addHandoffNote(ticketId: string, reason: string, entryNumber: string) {
