@@ -7,10 +7,12 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const migrationWorkflowPath = ".github/workflows/supabase-dual-region-migrations.yml";
 const healthWorkflowPath = ".github/workflows/production-dr-health-gate.yml";
 const webWorkflowPath = ".github/workflows/aws-web-surfaces-services.yml";
+const reserveWebWorkflowPath = ".github/workflows/aws-reserve-web.yml";
+const reserveApiWorkflowPath = ".github/workflows/aws-reserve-api.yml";
 const healthScriptPath = "scripts/dr/require-production-dr-healthy.sh";
 const recoverableScriptPath = "scripts/dr/require-production-dr-recoverable.sh";
 
-for (const file of [migrationWorkflowPath, healthWorkflowPath, webWorkflowPath, healthScriptPath, recoverableScriptPath]) {
+for (const file of [migrationWorkflowPath, healthWorkflowPath, webWorkflowPath, reserveWebWorkflowPath, reserveApiWorkflowPath, healthScriptPath, recoverableScriptPath]) {
   if (!fs.existsSync(path.join(root, file))) throw new Error(`Missing DR/migration contract file: ${file}`);
 }
 
@@ -50,10 +52,12 @@ for (const marker of [
   if (!healthScript.includes(marker)) throw new Error(`Production DR health gate missing invariant: ${marker}`);
 }
 
-const webWorkflow = read(webWorkflowPath);
-if (!webWorkflow.includes("Require healthy production DR before deployment") ||
-    !webWorkflow.includes("bash scripts/dr/require-production-dr-healthy.sh")) {
-  throw new Error("AWS production web deployment must fail closed on unhealthy DR.");
+for (const deploymentWorkflowPath of [webWorkflowPath, reserveWebWorkflowPath, reserveApiWorkflowPath]) {
+  const deploymentWorkflow = read(deploymentWorkflowPath);
+  if (!deploymentWorkflow.includes("Require healthy production DR before deployment") ||
+      !deploymentWorkflow.includes("bash scripts/dr/require-production-dr-healthy.sh")) {
+    throw new Error(`${deploymentWorkflowPath} must fail closed on unhealthy production DR.`);
+  }
 }
 
 const workflowsDir = path.join(root, ".github/workflows");
