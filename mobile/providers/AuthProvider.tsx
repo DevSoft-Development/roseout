@@ -17,7 +17,12 @@ type SignUpInput = {
   smsConsent: boolean;
   captchaToken: string;
 };
-type AuthResult = { error: string | null; requiresEmailConfirmation?: boolean };
+type AuthResult = {
+  error: string | null;
+  code?: "account_exists";
+  email?: string;
+  requiresEmailConfirmation?: boolean;
+};
 
 type AuthState = {
   loading: boolean;
@@ -95,13 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const payload = await response.json().catch(() => ({})) as {
           success?: boolean;
           error?: string;
+          code?: "account_exists";
+          email?: string;
           requiresEmailConfirmation?: boolean;
         };
         if (!response.ok || payload.success !== true) {
-          return { error: payload.error || "We could not create your account." };
+          return {
+            error: payload.error || "We could not create your account.",
+            code: payload.code,
+            email: payload.email,
+          };
         }
         return {
           error: null,
+          email: payload.email || input.email.trim().toLowerCase(),
           requiresEmailConfirmation: payload.requiresEmailConfirmation === true,
         };
       } catch {
