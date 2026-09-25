@@ -45,7 +45,7 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
 }
 
 resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(registry.id, identity.properties.principalId, acrPullRoleDefinitionId)
+  name: guid(registry.id, identity.id, acrPullRoleDefinitionId)
   scope: registry
   properties: {
     principalId: identity.properties.principalId
@@ -55,7 +55,7 @@ resource registryPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 resource keyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(vault.id, identity.properties.principalId, keyVaultSecretsUserRoleDefinitionId)
+  name: guid(vault.id, identity.id, keyVaultSecretsUserRoleDefinitionId)
   scope: vault
   properties: {
     principalId: identity.properties.principalId
@@ -109,12 +109,12 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         {
           name: 'supabase-service-role-key'
-          keyVaultUrl: 'https://${vault.name}.vault.azure.net/secrets/${supabaseServiceRoleSecret.name}'
+          keyVaultUrl: 'https://${vault.name}.${environment().suffixes.keyvaultDns}/secrets/${supabaseServiceRoleSecret.name}'
           identity: identity.id
         }
         {
           name: 'azure-ai-api-key'
-          keyVaultUrl: 'https://${vault.name}.vault.azure.net/secrets/${azureAiApiKeySecret.name}'
+          keyVaultUrl: 'https://${vault.name}.${environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
           identity: identity.id
         }
       ]
