@@ -98,7 +98,7 @@ jobs:
           }
           while IFS= read -r file; do
             sql="$(cat "$file")"
-            wrapped=$'begin;\nset local statement_timeout = '\''120s'\'';\n'"$sql"$'\nrollback;'
+            printf -v wrapped "begin;\nset local statement_timeout = '120s';\n%s\nrollback;" "$sql"
             query_ref "$OREGON_REF" "$wrapped"
             query_ref "$VIRGINIA_REF" "$wrapped"
           done < "$RUNNER_TEMP/migrations.txt"
