@@ -1,0 +1,180 @@
+name: Azure consumer runtime
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/azure/**"
+      - ".github/workflows/azure-consumer-runtime.yml"
+      - "docs/architecture/azure-consumer-runtime.md"
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Full Git commit SHA already pushed as the staging ACR consumer image tag
+        type: string
+        required: true
+      deploy:
+        description: Deploy the staging consumer Container App
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-consumer-runtime-staging
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate consumer runtime Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Bicep
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az bicep build --file infra/azure/main.bicep
+            test -f infra/azure/main.json
+            rm infra/azure/main.json
+
+  deploy:
+    name: Deploy staging consumer runtime
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require staging runtime configuration
+        env:
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SITE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SITE_URL"; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing staging secret NEXT_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Missing staging secret SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve staging dependencies
+        id: azure
+        uses: azure/CLI@v2
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            if ! printf '%s' "$IMAGE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::image_sha must be a full 40-character Git commit SHA."
+              exit 1
+            fi
+
+            RG="rg-toh-consumer-staging"
+            ACR="$(az acr list --resource-group "$RG" --query '[0].name' -o tsv)"
+            test -n "$ACR" || { echo "::error::No staging ACR found."; exit 1; }
+
+            IMAGE_TAG="$(az acr repository show-tags               --name "$ACR"               --repository consumer               --query "[?@=='$IMAGE_SHA'] | [0]"               -o tsv)"
+            test "$IMAGE_TAG" = "$IMAGE_SHA" || {
+              echo "::error::consumer:$IMAGE_SHA is not present in staging ACR. Push the image first."
+              exit 1
+            }
+
+            AI_ACCOUNT="$(az cognitiveservices account list               --resource-group "$RG"               --query "[?kind=='AIServices'] | [0].name"               -o tsv)"
+            test -n "$AI_ACCOUNT" || { echo "::error::No staging Azure AI account found."; exit 1; }
+
+            AI_ENDPOINT="$(az cognitiveservices account show               --resource-group "$RG"               --name "$AI_ACCOUNT"               --query properties.endpoint               -o tsv)"
+            AI_KEY="$(az cognitiveservices account keys list               --resource-group "$RG"               --name "$AI_ACCOUNT"               --query key1               -o tsv)"
+            test -n "$AI_ENDPOINT" || { echo "::error::Azure AI endpoint is missing."; exit 1; }
+            test -n "$AI_KEY" || { echo "::error::Azure AI key is missing."; exit 1; }
+            echo "::add-mask::$AI_KEY"
+
+            echo "registry=$ACR" >> "$GITHUB_OUTPUT"
+            echo "image=$ACR.azurecr.io/consumer:$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+            echo "ai_endpoint=$AI_ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "ai_key=$AI_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: What-if staging runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
+          AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary
+
+      - name: Deploy staging runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
+          AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary
+
+      - name: Smoke-test Azure Container App
+        uses: azure/CLI@v2
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            FQDN="$(az deployment sub show               --name toh-consumer-runtime-staging               --query properties.outputs.consumerRuntimeFqdn.value               -o tsv)"
+            test -n "$FQDN" || { echo "::error::Container App FQDN was not returned."; exit 1; }
+
+            ACTUAL_IMAGE="$(az containerapp show               --resource-group rg-toh-consumer-staging               --name ca-toh-consumer-stg-primary               --query properties.template.containers[0].image               -o tsv)"
+            case "$ACTUAL_IMAGE" in
+              *":$IMAGE_SHA") ;;
+              *) echo "::error::Runtime image does not match requested commit SHA."; exit 1 ;;
+            esac
+
+            for attempt in $(seq 1 18); do
+              CODE="$(curl --silent --output health.json --write-out '%{http_code}'                 --connect-timeout 10 --max-time 20                 "https://$FQDN/api/health/azure" || true)"
+              if [ "$CODE" = "200" ] && jq -e '.ok == true and .service == "theouthaven-consumer"' health.json >/dev/null 2>&1; then
+                echo "Azure consumer health smoke passed."
+                {
+                  echo "### Azure consumer staging runtime"
+                  echo ""
+                  echo "- Image: $ACTUAL_IMAGE"
+                  echo "- FQDN: https://$FQDN"
+                  echo "- Health: passed"
+                  echo "- DNS cutover: not performed"
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+              sleep 10
+            done
+
+            echo "::error::Azure consumer runtime did not become healthy."
+            cat health.json 2>/dev/null || true
+            exit 1
