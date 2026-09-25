@@ -1,0 +1,180 @@
+name: Azure AI live smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Azure environment to verify
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+        default: staging
+      deployment:
+        description: Azure AI deployment name to test
+        type: string
+        required: true
+        default: toh-primary
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-ai-live-smoke-${{ inputs.environment }}-${{ inputs.deployment }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Verify live Azure AI deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.environment == 'production' && 'Production' || 'staging' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Foundry account and deployment
+        id: foundry
+        uses: azure/CLI@v2
+        env:
+          TARGET_DEPLOYMENT: ${{ inputs.deployment }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            if [ "${{ inputs.environment }}" = "production" ]; then
+              RG="rg-toh-consumer-production"
+            else
+              RG="rg-toh-consumer-staging"
+            fi
+
+            ACCOUNT="$(az cognitiveservices account list \
+              --resource-group "$RG" \
+              --query "[?kind=='AIServices'] | [0].name" \
+              --output tsv)"
+
+            if [ -z "$ACCOUNT" ]; then
+              echo "::error::No AIServices/Foundry account exists in $RG."
+              exit 1
+            fi
+
+            ENDPOINT="$(az cognitiveservices account show \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query properties.endpoint \
+              --output tsv)"
+
+            if [ -z "$ENDPOINT" ]; then
+              echo "::error::Foundry account $ACCOUNT has no endpoint."
+              exit 1
+            fi
+
+            az cognitiveservices account deployment list \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --output json > deployments.json
+
+            jq --arg deployment "$TARGET_DEPLOYMENT" \
+              '[.[] | select(.name == $deployment)]' deployments.json > target-deployment.json
+
+            MATCHES="$(jq 'length' target-deployment.json)"
+            if [ "$MATCHES" -ne 1 ]; then
+              echo "::error::Expected exactly one deployment named $TARGET_DEPLOYMENT in $ACCOUNT; found $MATCHES."
+              cat target-deployment.json
+              exit 1
+            fi
+
+            MODEL_NAME="$(jq -r '.[0].properties.model.name // empty' target-deployment.json)"
+            MODEL_VERSION="$(jq -r '.[0].properties.model.version // empty' target-deployment.json)"
+            SKU_NAME="$(jq -r '.[0].sku.name // empty' target-deployment.json)"
+            CAPACITY="$(jq -r '.[0].sku.capacity // empty' target-deployment.json)"
+
+            echo "resource_group=$RG" >> "$GITHUB_OUTPUT"
+            echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+            echo "endpoint=$ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "model_name=$MODEL_NAME" >> "$GITHUB_OUTPUT"
+            echo "model_version=$MODEL_VERSION" >> "$GITHUB_OUTPUT"
+            echo "sku_name=$SKU_NAME" >> "$GITHUB_OUTPUT"
+            echo "capacity=$CAPACITY" >> "$GITHUB_OUTPUT"
+
+      - name: Invoke live model
+        uses: azure/CLI@v2
+        env:
+          RG: ${{ steps.foundry.outputs.resource_group }}
+          ACCOUNT: ${{ steps.foundry.outputs.account }}
+          ENDPOINT: ${{ steps.foundry.outputs.endpoint }}
+          TARGET_DEPLOYMENT: ${{ inputs.deployment }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            KEY="$(az cognitiveservices account keys list \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query key1 \
+              --output tsv)"
+
+            if [ -z "$KEY" ]; then
+              echo "::error::Could not resolve an ephemeral account key for the smoke test."
+              exit 1
+            fi
+
+            echo "::add-mask::$KEY"
+
+            BASE="${ENDPOINT%/}"
+            HTTP_CODE="$(curl --silent --show-error \
+              --output response.json \
+              --write-out '%{http_code}' \
+              --connect-timeout 10 \
+              --max-time 60 \
+              --request POST \
+              --header "Content-Type: application/json" \
+              --header "api-key: $KEY" \
+              --data "$(jq -nc --arg model "$TARGET_DEPLOYMENT" '{
+                model: $model,
+                messages: [
+                  {role: "system", content: "Return exactly THEOUTHAVEN_AZURE_SMOKE_OK and nothing else."},
+                  {role: "user", content: "Health check"}
+                ],
+                max_completion_tokens: 32
+              }')" \
+              "$BASE/openai/v1/chat/completions")"
+
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "::error::Azure AI live request failed with HTTP $HTTP_CODE."
+              jq '{error: .error // .message // "unknown"}' response.json || cat response.json
+              exit 1
+            fi
+
+            CONTENT="$(jq -r '.choices[0].message.content // empty' response.json)"
+            if [ "$CONTENT" != "THEOUTHAVEN_AZURE_SMOKE_OK" ]; then
+              echo "::error::Azure AI returned an unexpected smoke response."
+              jq '{model: .model, finish_reason: .choices[0].finish_reason, content: .choices[0].message.content}' response.json
+              exit 1
+            fi
+
+            echo "Azure AI live invocation succeeded."
+
+      - name: Publish smoke summary
+        run: |
+          {
+            echo "### Azure AI live smoke"
+            echo ""
+            echo "- Environment: ${{ inputs.environment }}"
+            echo "- Account: ${{ steps.foundry.outputs.account }}"
+            echo "- Deployment: ${{ inputs.deployment }}"
+            echo "- Model: ${{ steps.foundry.outputs.model_name }}"
+            echo "- Version: ${{ steps.foundry.outputs.model_version }}"
+            echo "- SKU: ${{ steps.foundry.outputs.sku_name }}"
+            echo "- Capacity: ${{ steps.foundry.outputs.capacity }}"
+            echo "- Live inference: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
