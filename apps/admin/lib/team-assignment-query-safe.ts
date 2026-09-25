@@ -14,6 +14,7 @@ export type SafeAssignmentFacets = {
   neighborhoods: string[];
   zips: string[];
   states: string[];
+  territories: Array<{ id: string; name: string; borough: string | null }>;
 };
 
 const EMPTY_FACETS: SafeAssignmentFacets = {
@@ -23,6 +24,7 @@ const EMPTY_FACETS: SafeAssignmentFacets = {
   neighborhoods: [],
   zips: [],
   states: [],
+  territories: [],
 };
 
 function unique(values: unknown[]) {
@@ -132,34 +134,62 @@ async function readLocationsWithOptionalMarket(limit: number) {
 }
 
 export async function getSafeAssignmentFacets(): Promise<SafeAssignmentFacets> {
-  const result = await readLocationsWithOptionalMarket(5000);
-  if (!result.rows.length) return EMPTY_FACETS;
+  const adminDb = getAdminDatabaseClient();
+  const [result, territoryResult] = await Promise.all([
+    readLocationsWithOptionalMarket(25000),
+    adminDb
+      .from("crm_territories")
+      .select("id,name,borough")
+      .eq("status", "active")
+      .order("name", { ascending: true }),
+  ]);
+  if (!result.rows.length) {
+    return {
+      ...EMPTY_FACETS,
+      territories: (territoryResult.data || []).map((row) => ({
+        id: String(row.id),
+        name: String(row.name || "Untitled territory"),
+        borough: row.borough || null,
+      })),
+    };
+  }
   return {
     markets: unique(result.rows.map((row) => row.market)),
     cities: unique(result.rows.map((row) => row.city)),
     boroughs: unique(result.rows.map((row) => row.borough)),
     neighborhoods: unique(result.rows.map((row) => row.neighborhood)),
-    zips: unique(
-      result.rows.map((row) => row.zip_code || row.postal_code),
-    ),
+    zips: unique(result.rows.map((row) => row.zip_code || row.postal_code)),
     states: unique(result.rows.map((row) => row.state)),
+    territories: (territoryResult.data || []).map((row) => ({
+      id: String(row.id),
+      name: String(row.name || "Untitled territory"),
+      borough: row.borough || null,
+    })),
   };
 }
 
 export async function searchSafeAssignmentLocations(
-  filters: TeamAssignmentFilters,
+  filters: TeamAssignmentFilters & { territory?: string; page?: number },
 ) {
-  const requestedLimit = Math.min(
-    Math.max(Number(filters.limit || 100), 1),
-    500,
-  );
-  const readLimit = Math.min(
-    Math.max(requestedLimit * 10, 500),
-    5000,
-  );
+  const requestedLimit = Math.min(Math.max(Number(filters.limit || 100), 1), 500);
+  const page = Math.max(Number(filters.page || 1), 1);
+  const readLimit = 25000;
   const result = await readLocationsWithOptionalMarket(readLimit);
+  const adminDb = getAdminDatabaseClient();
 
-  let rows = result.rows.filter((row) => {
+  let territoryLocationIds: Set<string> | null = null;
+  const territory = cleanAssignmentFilter(filters.territory);
+  if (territory) {
+    const { data: links, error: linkError } = await adminDb
+      .from("crm_location_territories")
+      .select("location_id")
+      .eq("territory_id", territory);
+    if (linkError) throw linkError;
+    territoryLocationIds = new Set((links || []).map((row) => String(row.location_id)));
+  }
+
+  const rows = result.rows.filter((row) => {
+    if (territoryLocationIds && !territoryLocationIds.has(String(row.id))) return false;
     if (!textMatches(row, filters.q)) return false;
     if (!matches(row.state, filters.state)) return false;
     if (!matches(row.city, filters.city)) return false;
@@ -169,9 +199,7 @@ export async function searchSafeAssignmentLocations(
     if (
       cleanAssignmentFilter(filters.zip) &&
       !matches(row.zip_code || row.postal_code, filters.zip)
-    ) {
-      return false;
-    }
+    ) return false;
     if (cleanAssignmentFilter(filters.market)) {
       if (!result.marketAvailable) return false;
       if (!matches(row.market, filters.market)) return false;
@@ -180,16 +208,37 @@ export async function searchSafeAssignmentLocations(
   });
 
   const count = rows.length;
-  rows = rows.slice(0, requestedLimit);
+  const from = (page - 1) * requestedLimit;
+  const pagedRows = rows.slice(from, from + requestedLimit);
+
+  let scope = assignmentScopeSummary(filters);
+  if (territory) {
+    const { data: territoryRow } = await adminDb
+      .from("crm_territories")
+      .select("name")
+      .eq("id", territory)
+      .maybeSingle();
+    if (territoryRow?.name) {
+      scope = scope === "Selected locations"
+        ? `Territory: ${territoryRow.name}`
+        : `Territory: ${territoryRow.name} · ${scope}`;
+    }
+  }
 
   return {
-    locations: rows.map((row) => ({
+    locations: pagedRows.map((row) => ({
       ...row,
       display_name: displayName(row),
     })),
     count,
     limited: count > requestedLimit,
-    scope: assignmentScopeSummary(filters),
-    warning: result.warning,
+    page,
+    pageSize: requestedLimit,
+    totalPages: Math.max(1, Math.ceil(count / requestedLimit)),
+    scope,
+    warning:
+      readLimit >= 25000 && result.rows.length >= readLimit
+        ? "The location universe exceeds the assignment search safety window. Narrow the filters for exact counts."
+        : result.warning,
   };
 }

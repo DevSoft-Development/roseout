@@ -227,14 +227,60 @@ export async function createTeamAssignmentsAndTasks(
     throw new Error("A single assignment is limited to 500 locations.");
   }
 
-  const { data: member, error: memberError } = await adminDb
-    .from("team_member_profiles")
-    .select("id,user_id,team_type,status")
-    .eq("id", input.assignedTo)
-    .in("status", ["active", "training"])
-    .single();
+  let member: { id: string; user_id: string; team_type: string | null; status: string | null } | null = null;
 
-  if (memberError || !member?.user_id) {
+  if (input.assignedTo.startsWith("admin:")) {
+    const userId = input.assignedTo.slice("admin:".length);
+    const { data: adminUser, error: adminError } = await adminDb
+      .from("admin_users")
+      .select("user_id,role")
+      .eq("user_id", userId)
+      .neq("role", "disabled")
+      .maybeSingle();
+
+    if (adminError || !adminUser?.user_id) {
+      throw new Error("Choose an active team member.");
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await adminDb
+      .from("team_member_profiles")
+      .select("id,user_id,team_type,status")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (existingProfileError) throw existingProfileError;
+
+    if (existingProfile?.id) {
+      member = existingProfile;
+    } else {
+      const { data: createdProfile, error: createProfileError } = await adminDb
+        .from("team_member_profiles")
+        .insert({
+          user_id: userId,
+          team_type: adminUser.role || "team",
+          status: "active",
+        })
+        .select("id,user_id,team_type,status")
+        .single();
+      if (createProfileError) {
+        throw new Error("Could not activate this team member for assignments.");
+      }
+      member = createdProfile;
+    }
+  } else {
+    const { data: profile, error: memberError } = await adminDb
+      .from("team_member_profiles")
+      .select("id,user_id,team_type,status")
+      .eq("id", input.assignedTo)
+      .in("status", ["active", "training"])
+      .single();
+
+    if (memberError || !profile?.user_id) {
+      throw new Error("Choose an active team member.");
+    }
+    member = profile;
+  }
+
+  if (!member?.user_id) {
     throw new Error("Choose an active team member.");
   }
 
