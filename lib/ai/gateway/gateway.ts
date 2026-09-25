@@ -29,7 +29,11 @@ export class TheOutHavenAiGateway {
     let attempt = 0;
 
     while (true) {
-      const result = await provider.invoke<TInput, TOutput>(request);
+      const providerRequest: AiGatewayRequest<TInput> = {
+        ...request,
+        model: request.providerModels?.[provider.name] ?? request.model,
+      };
+      const result = await provider.invoke<TInput, TOutput>(providerRequest);
       if (!options.validateOutput || options.validateOutput(result.output)) return result;
 
       if (attempt >= validationRetries) {
@@ -58,7 +62,8 @@ export class TheOutHavenAiGateway {
 
       return {
         provider: this.primary.name,
-        model: result.model ?? request.model ?? null,
+        model:
+          result.model ?? request.providerModels?.[this.primary.name] ?? request.model ?? null,
         output: result.output,
         failoverUsed: false,
       };
@@ -74,7 +79,11 @@ export class TheOutHavenAiGateway {
 
     return {
       provider: this.fallback.name,
-      model: fallbackResult.model ?? request.model ?? null,
+      model:
+        fallbackResult.model ??
+        request.providerModels?.[this.fallback.name] ??
+        request.model ??
+        null,
       output: fallbackResult.output,
       failoverUsed: true,
     };

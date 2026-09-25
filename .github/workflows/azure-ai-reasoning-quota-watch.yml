@@ -1,0 +1,149 @@
+name: Azure AI reasoning quota watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Azure environment to inspect
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+        default: staging
+      model:
+        description: Reasoning model quota to watch
+        type: string
+        required: true
+        default: gpt-5.6-sol
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: azure-ai-reasoning-quota-watch-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Watch reasoning-model quota
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' && 'Production' || 'staging' }}
+    env:
+      TARGET_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'gpt-5.6-sol' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Foundry account
+        id: foundry
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.environment }}" = "production" ]; then
+              RG="rg-toh-consumer-production"
+            else
+              RG="rg-toh-consumer-staging"
+            fi
+
+            ACCOUNT="$(az cognitiveservices account list \
+              --resource-group "$RG" \
+              --query "[?kind=='AIServices'] | [0].name" \
+              --output tsv)"
+
+            if [ -z "$ACCOUNT" ]; then
+              echo "::error::No AIServices/Foundry account exists in $RG."
+              exit 1
+            fi
+
+            LOCATION="$(az cognitiveservices account show \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query location \
+              --output tsv)"
+
+            echo "resource_group=$RG" >> "$GITHUB_OUTPUT"
+            echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+            echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect reasoning quota
+        id: quota
+        uses: azure/CLI@v2
+        env:
+          LOCATION: ${{ steps.foundry.outputs.location }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            az cognitiveservices usage list \
+              --location "$LOCATION" \
+              --output json > reasoning-quota.json
+
+            jq --arg model "$TARGET_MODEL" \
+              '[.[] | select(((.name.value // "") | endswith("." + $model)) and ((((.name.value // "") | contains("DataZoneStandard"))) or (((.name.value // "") | contains("GlobalStandard")))))]' \
+              reasoning-quota.json > reasoning-quota-matches.json
+
+            MAX_LIMIT="$(jq '[.[].limit // 0] | max // 0' reasoning-quota-matches.json)"
+            MATCHES="$(jq 'length' reasoning-quota-matches.json)"
+
+            echo "matches=$MATCHES" >> "$GITHUB_OUTPUT"
+            echo "max_limit=$MAX_LIMIT" >> "$GITHUB_OUTPUT"
+
+            if awk "BEGIN { exit !($MAX_LIMIT > 0) }"; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::Usable Azure quota is available for $TARGET_MODEL (max limit $MAX_LIMIT)."
+            else
+              echo "available=false" >> "$GITHUB_OUTPUT"
+              echo "No usable Standard/Data Zone quota yet for $TARGET_MODEL."
+            fi
+
+            echo "### Azure reasoning quota watch" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Model: $TARGET_MODEL" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Region: $LOCATION" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Matching quota lines: $MATCHES" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Maximum reported limit: $MAX_LIMIT" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat reasoning-quota-matches.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open quota-available issue
+        if: steps.quota.outputs.available == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_LIMIT: ${{ steps.quota.outputs.max_limit }}
+          LOCATION: ${{ steps.foundry.outputs.location }}
+        run: |
+          set -euo pipefail
+          TITLE="Azure AI reasoning quota available: $TARGET_MODEL"
+          EXISTING="$(gh issue list --state open --search "$TITLE in:title" --json title --jq "[.[] | select(.title == \"$TITLE\")] | length")"
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "An open quota-available issue already exists."
+            exit 0
+          fi
+
+          BODY="Azure now reports usable Standard/Data Zone quota for **$TARGET_MODEL** in **$LOCATION** (maximum reported limit: **$MAX_LIMIT**).
+
+Next step: deploy/update the \`toh-reasoning\` Azure model deployment, validate it in staging, then set \`AZURE_AI_REASONING_MODEL=toh-reasoning\`."
+          gh issue create --title "$TITLE" --body "$BODY"
+
+      - name: Upload quota evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-ai-reasoning-quota-${{ github.run_id }}
+          path: |
+            reasoning-quota.json
+            reasoning-quota-matches.json
+          retention-days: 14

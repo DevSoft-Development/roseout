@@ -10,10 +10,14 @@ export type AiCapability =
 
 export type AiProviderName = "azure" | "huggingface";
 
+export type AiServiceTier = "standard" | "high_value" | "hard_reasoning";
+
 export type AiGatewayRequest<TInput = unknown> = {
   capability: AiCapability;
   input: TInput;
   model?: string;
+  tier?: AiServiceTier;
+  providerModels?: Partial<Record<AiProviderName, string>>;
   timeoutMs?: number;
   metadata?: Record<string, string | number | boolean | null>;
 };
