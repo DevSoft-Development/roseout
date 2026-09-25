@@ -27,13 +27,22 @@ concurrency:
 
 jobs:
   smoke:
-    name: Verify live Azure AI deployment
+    name: Verify live Azure AI through application gateway
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: ${{ inputs.environment == 'production' && 'Production' || 'staging' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
@@ -106,7 +115,7 @@ jobs:
             echo "sku_name=$SKU_NAME" >> "$GITHUB_OUTPUT"
             echo "capacity=$CAPACITY" >> "$GITHUB_OUTPUT"
 
-      - name: Invoke live model
+      - name: Prepare ephemeral gateway credentials
         uses: azure/CLI@v2
         env:
           RG: ${{ steps.foundry.outputs.resource_group }}
@@ -129,45 +138,20 @@ jobs:
             fi
 
             echo "::add-mask::$KEY"
+            echo "AZURE_AI_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+            echo "AZURE_AI_API_KEY=$KEY" >> "$GITHUB_ENV"
+            echo "AZURE_AI_MODEL=$TARGET_DEPLOYMENT" >> "$GITHUB_ENV"
 
-            BASE="${ENDPOINT%/}"
-            HTTP_CODE="$(curl --silent --show-error \
-              --output response.json \
-              --write-out '%{http_code}' \
-              --connect-timeout 10 \
-              --max-time 60 \
-              --request POST \
-              --header "Content-Type: application/json" \
-              --header "api-key: $KEY" \
-              --data "$(jq -nc --arg model "$TARGET_DEPLOYMENT" '{
-                model: $model,
-                messages: [
-                  {role: "system", content: "Return exactly THEOUTHAVEN_AZURE_SMOKE_OK and nothing else."},
-                  {role: "user", content: "Health check"}
-                ],
-                max_completion_tokens: 32
-              }')" \
-              "$BASE/openai/v1/chat/completions")"
-
-            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-              echo "::error::Azure AI live request failed with HTTP $HTTP_CODE."
-              jq '{error: .error // .message // "unknown"}' response.json || cat response.json
-              exit 1
-            fi
-
-            CONTENT="$(jq -r '.choices[0].message.content // empty' response.json)"
-            if [ "$CONTENT" != "THEOUTHAVEN_AZURE_SMOKE_OK" ]; then
-              echo "::error::Azure AI returned an unexpected smoke response."
-              jq '{model: .model, finish_reason: .choices[0].finish_reason, content: .choices[0].message.content}' response.json
-              exit 1
-            fi
-
-            echo "Azure AI live invocation succeeded."
+      - name: Invoke through TheOutHaven AI gateway
+        env:
+          HUGGINGFACE_AI_ENDPOINT: https://router.huggingface.co/v1
+          HUGGINGFACE_AI_MODEL: smoke-fallback-not-used
+        run: npx --yes tsx lib/ai/gateway/live-smoke.ts
 
       - name: Publish smoke summary
         run: |
           {
-            echo "### Azure AI live smoke"
+            echo "### Azure AI application-gateway live smoke"
             echo ""
             echo "- Environment: ${{ inputs.environment }}"
             echo "- Account: ${{ steps.foundry.outputs.account }}"
@@ -176,5 +160,7 @@ jobs:
             echo "- Version: ${{ steps.foundry.outputs.model_version }}"
             echo "- SKU: ${{ steps.foundry.outputs.sku_name }}"
             echo "- Capacity: ${{ steps.foundry.outputs.capacity }}"
-            echo "- Live inference: passed"
+            echo "- Provider: Azure"
+            echo "- Application gateway path: passed"
+            echo "- Failover used: no"
           } >> "$GITHUB_STEP_SUMMARY"
