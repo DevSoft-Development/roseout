@@ -173,10 +173,7 @@ export async function searchSafeAssignmentLocations(
 ) {
   const requestedLimit = Math.min(Math.max(Number(filters.limit || 100), 1), 500);
   const page = Math.max(Number(filters.page || 1), 1);
-  const readLimit = Math.min(
-    Math.max(page * requestedLimit * 10, 5000),
-    25000,
-  );
+  const readLimit = 25000;
   const result = await readLocationsWithOptionalMarket(readLimit);
   const adminDb = getAdminDatabaseClient();
 
