@@ -17,7 +17,7 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   location: location
   tags: tags
   properties: {
-    retentionInDays: environment == 'production' ? 30 : 14
+    retentionInDays: 30
     features: {
       enableLogAccessUsingOnlyResourcePermissions: true
     }
@@ -58,7 +58,9 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
-    enablePurgeProtection: environment == 'production'
+    ...(environment == 'production' ? {
+      enablePurgeProtection: true
+    } : {})
     publicNetworkAccess: 'Enabled'
     sku: {
       family: 'A'
