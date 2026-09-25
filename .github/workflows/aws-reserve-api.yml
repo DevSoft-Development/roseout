@@ -59,6 +59,12 @@ jobs:
         run: python -m pip install --disable-pip-version-check cfn-lint
       - name: Lint Reserve API CloudFormation
         run: cfn-lint "$TEMPLATE_FILE"
+      - name: Validate persistent secret ownership boundary
+        run: |
+          set -euo pipefail
+          grep -F 'ReserveApiSecretArn:' "$TEMPLATE_FILE" >/dev/null
+          ! grep -F 'Type: AWS::SecretsManager::Secret' "$TEMPLATE_FILE" >/dev/null
+          grep -F 'Reconcile persistent Reserve API HMAC secret' .github/workflows/aws-reserve-api.yml >/dev/null
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -140,6 +146,18 @@ jobs:
                   "lambda:DeleteFunctionConcurrency"
                 ],
                 "Resource":"arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:toh-*-reserve-api"
+              },
+              {
+                "Sid":"ReserveApiPersistentSecret",
+                "Effect":"Allow",
+                "Action":[
+                  "secretsmanager:CreateSecret",
+                  "secretsmanager:DescribeSecret",
+                  "secretsmanager:GetSecretValue",
+                  "secretsmanager:PutSecretValue",
+                  "secretsmanager:TagResource"
+                ],
+                "Resource":"arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/theouthaven/*/reserve-api/hmac-*"
               }
             ]
           }
@@ -152,8 +170,35 @@ jobs:
           aws iam get-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name "$POLICY_NAME" \
-            --query 'PolicyDocument.Statement[0].Action' \
-            --output json | jq -e 'index("lambda:PutFunctionConcurrency") != null' >/dev/null
+            --query 'PolicyDocument.Statement' \
+            --output json | jq -e '
+              ([.[].Action] | flatten | index("lambda:PutFunctionConcurrency")) != null and
+              ([.[].Action] | flatten | index("secretsmanager:PutSecretValue")) != null
+            ' >/dev/null
+
+      - name: Reconcile persistent Reserve API HMAC secret
+        id: reserve-secret
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          SECRET_NAME="/theouthaven/${TARGET_ENV}/reserve-api/hmac"
+          SECRET_FILE="$RUNNER_TEMP/reserve-api-secret"
+          if SECRET_ARN="$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --query ARN --output text 2>/dev/null)"; then
+            test -n "$SECRET_ARN" && test "$SECRET_ARN" != "None"
+            aws secretsmanager put-secret-value \
+              --secret-id "$SECRET_ARN" \
+              --secret-string "file://$SECRET_FILE" >/dev/null
+          else
+            SECRET_ARN="$(aws secretsmanager create-secret \
+              --name "$SECRET_NAME" \
+              --description "Persistent HMAC secret for the isolated TheOutHaven Reserve API." \
+              --secret-string "file://$SECRET_FILE" \
+              --tags Key=Project,Value=TheOutHaven Key=Environment,Value="$TARGET_ENV" Key=Service,Value=ReserveAPI \
+              --query ARN --output text)"
+          fi
+          test -n "$SECRET_ARN" && test "$SECRET_ARN" != "None"
+          echo "arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Recover failed Reserve API stack
         env:
@@ -186,9 +231,9 @@ jobs:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           SUPABASE_URL: ${{ steps.config.outputs.supabase_url }}
           SUPABASE_SECRET_ARN: ${{ steps.supabase-secret.outputs.arn }}
+          RESERVE_API_SECRET_ARN: ${{ steps.reserve-secret.outputs.arn }}
         run: |
           set -euo pipefail
-          SHARED_SECRET="$(cat "$RUNNER_TEMP/reserve-api-secret")"
           STACK="theouthaven-reserve-api-${TARGET_ENV}"
           if ! aws cloudformation deploy \
             --stack-name "$STACK" \
@@ -197,7 +242,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               Environment="$TARGET_ENV" \
-              ReserveApiSharedSecret="$SHARED_SECRET" \
+              ReserveApiSecretArn="$RESERVE_API_SECRET_ARN" \
               SupabaseUrl="$SUPABASE_URL" \
               SupabaseServiceRoleSecretArn="$SUPABASE_SECRET_ARN" \
             --tags Project=TheOutHaven Environment="$TARGET_ENV" Service=ReserveAPI ManagedBy=CloudFormation; then
