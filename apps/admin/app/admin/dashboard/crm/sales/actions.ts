@@ -23,6 +23,13 @@ async function ensureAccount(locationId:string){
   const db=getAdminDatabaseClient();
   const {data:link}=await db.from("crm_account_locations").select("account_id").eq("location_id",locationId).eq("status","active").limit(1).maybeSingle();
   if(link?.account_id)return link.account_id;
+  const externalReference=`location:${locationId}`;
+  const {data:existingAccount}=await db.from("crm_accounts").select("id").eq("external_reference",externalReference).is("archived_at",null).limit(1).maybeSingle();
+  if(existingAccount?.id){
+    const {error:existingLinkError}=await db.from("crm_account_locations").insert({account_id:existingAccount.id,location_id:locationId,relationship_type:"operator",is_primary_location:true,status:"active",source:"unified_sales_workspace",metadata:{automatic:true,repaired_link:true}});
+    if(existingLinkError&&!String(existingLinkError.message||"").toLowerCase().includes("duplicate"))throw existingLinkError;
+    return existingAccount.id;
+  }
   const {data:location,error}=await db.from("locations").select("id,name,business_name,restaurant_name,activity_name,website,phone,owner_email,location_type,category").eq("id",locationId).single();
   if(error||!location)throw error||new Error("Location not found");
   const name=String(location.name||location.business_name||location.restaurant_name||location.activity_name||"Business");
@@ -37,7 +44,7 @@ async function ensureAccount(locationId:string){
     industry:location.location_type||location.category||null,
     source:"unified_sales_workspace",
     source_detail:"ambassador_qualified_product_gap",
-    external_reference:`location:${locationId}`,
+    external_reference:externalReference,
     metadata:{location_id:locationId,association_reason:"ambassador_qualified_product_gap"},
   }).select("id").single();
   if(accountError)throw accountError;
