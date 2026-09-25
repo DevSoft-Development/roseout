@@ -1,0 +1,145 @@
+name: Azure AI model readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Azure environment to inspect
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+        default: staging
+      model:
+        description: Optional model name to highlight in the readiness report
+        type: string
+        required: false
+        default: gpt-5.4-mini
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-ai-model-readiness-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Inspect Azure AI model availability and quota
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'production' && 'Production' || 'staging' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Foundry account
+        id: foundry
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            if [ "${{ inputs.environment }}" = "production" ]; then
+              RG="rg-toh-consumer-production"
+            else
+              RG="rg-toh-consumer-staging"
+            fi
+
+            ACCOUNT="$(az cognitiveservices account list \
+              --resource-group "$RG" \
+              --query "[?kind=='AIServices'] | [0].name" \
+              --output tsv)"
+
+            if [ -z "$ACCOUNT" ]; then
+              echo "::error::No AIServices/Foundry account exists in $RG. Deploy the Azure foundation first."
+              exit 1
+            fi
+
+            LOCATION="$(az cognitiveservices account show \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query location \
+              --output tsv)"
+
+            echo "resource_group=$RG" >> "$GITHUB_OUTPUT"
+            echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+            echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect account models
+        uses: azure/CLI@v2
+        env:
+          RG: ${{ steps.foundry.outputs.resource_group }}
+          ACCOUNT: ${{ steps.foundry.outputs.account }}
+          REQUESTED_MODEL: ${{ inputs.model }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            az cognitiveservices account list-models \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --output json > account-models.json
+
+            echo "### Azure AI model readiness" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Environment: ${{ inputs.environment }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Foundry account: $ACCOUNT" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Resource group: $RG" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Requested model: $REQUESTED_MODEL" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            MATCHES="$(jq --arg model "$REQUESTED_MODEL" '[.[] | select((.model.name // .name // "") == $model)] | length' account-models.json)"
+            echo "- Matching account model entries: $MATCHES" >> "$GITHUB_STEP_SUMMARY"
+
+            if [ "$MATCHES" -eq 0 ]; then
+              echo "::warning::Requested model $REQUESTED_MODEL was not returned by account list-models."
+            fi
+
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "#### Matching model entries" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            jq --arg model "$REQUESTED_MODEL" \
+              '[.[] | select((.model.name // .name // "") == $model)]' \
+              account-models.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Inspect regional quota
+        uses: azure/CLI@v2
+        env:
+          LOCATION: ${{ steps.foundry.outputs.location }}
+          REQUESTED_MODEL: ${{ inputs.model }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            az cognitiveservices usage list \
+              --location "$LOCATION" \
+              --output json > usage.json
+
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "#### Regional quota lines" >> "$GITHUB_STEP_SUMMARY"
+            echo "Location: $LOCATION" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            jq --arg model "$REQUESTED_MODEL" \
+              '[.[] | select(((.name.value // "") | ascii_downcase | contains($model | ascii_downcase)) or ((.name.localizedValue // "") | ascii_downcase | contains($model | ascii_downcase)))]' \
+              usage.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload readiness evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-ai-model-readiness-${{ inputs.environment }}
+          path: |
+            account-models.json
+            usage.json
+          retention-days: 14
