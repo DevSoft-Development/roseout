@@ -1,0 +1,6 @@
+using '../main.bicep'
+
+param environment = 'production'
+param location = 'eastus2'
+param secondaryLocation = 'centralus'
+param resourceGroupName = 'rg-toh-consumer-production'

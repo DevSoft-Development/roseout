@@ -1,0 +1,89 @@
+name: Azure foundation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'infra/azure/**'
+      - 'docs/architecture/**'
+      - '.github/workflows/azure-foundation.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Azure environment to deploy
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+        default: staging
+      deploy:
+        description: Apply the validated Bicep deployment
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-foundation-${{ github.ref }}-${{ inputs.environment || 'validate' }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Bicep
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az bicep build --file infra/azure/main.bicep
+            test -f infra/azure/main.json
+            rm infra/azure/main.json
+
+  deploy:
+    name: Deploy Azure foundation
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-if
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub what-if \
+              --name "toh-foundation-${{ inputs.environment }}" \
+              --location eastus2 \
+              --template-file infra/azure/main.bicep \
+              --parameters infra/azure/parameters/${{ inputs.environment }}.bicepparam
+
+      - name: Deploy
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create \
+              --name "toh-foundation-${{ inputs.environment }}" \
+              --location eastus2 \
+              --template-file infra/azure/main.bicep \
+              --parameters infra/azure/parameters/${{ inputs.environment }}.bicepparam
