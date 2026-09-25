@@ -6,3 +6,5 @@ param secondaryLocation = 'centralus'
 param resourceGroupName = 'rg-toh-consumer-production'
 
 param aiModelDeploymentEnabled = false
+
+param consumerContainerAppsEnvironmentEnabled = false
