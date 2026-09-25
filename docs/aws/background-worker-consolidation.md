@@ -2,12 +2,12 @@
 
 ## Target operating model
 
-- Vercel serves the public/admin/location web application only.
+- Azure will serve the target-state public consumer web application and consumer synchronous APIs after the controlled Vercel cutover.
 - AWS EventBridge Scheduler is the only recurring scheduler.
 - The self-hosted Supabase Edge Runtime on AWS Lambda is the default background runtime.
 - A private Node.js Lambda compatibility runtime executes jobs that still depend on Next.js/server-only modules.
 - Dedicated SQS/Lambda workers own infrastructure workloads such as registrar lifecycle.
-- ECS/Fargate remains web disaster-recovery capacity and is not a routine cron executor.
+- ECS/Fargate remains AWS operational/DR capacity and is not a routine cron executor.
 - Virginia Supabase keeps zero `pg_cron` jobs.
 - Oregon DR does not run an independent business scheduler.
 
@@ -30,7 +30,7 @@ The Vercel domain-lifecycle schedule must be removed only after the AWS worker t
 | Search anchor reconciliation | `/api/cron/search-anchor-reconciliation` enqueues `search.anchor.reconcile` | AWS worker dispatcher -> `search-anchor-reconciliation` Edge function |
 | Nightly search profile queue | `/api/cron/nightly-search-profile-queue` proxies the Edge function | EventBridge -> `nightly-search-profile-queue` Edge function |
 
-These routes can remain temporarily for manual/backward compatibility, but recurring execution should bypass Vercel.
+These routes can remain temporarily for manual/backward compatibility, but recurring execution should bypass Vercel and must not be recreated as Azure recurring schedules.
 
 ### Shared capabilities that are not automatically duplicates
 
@@ -60,10 +60,12 @@ For each area, preserve a single producer/scheduler and keep queue consumers onl
 7. Move the website-hosting heartbeat receiver to AWS and repoint the hosting nodes.
 8. Update the admin cron control plane and manual Run Now action so work executes in AWS rather than inside Vercel.
 9. Verify Vercel recurring `/api/cron/*`, `/api/cron/managed`, and hosting heartbeat traffic falls to zero.
+10. During the Azure consumer migration, verify no recurring business schedule is introduced in Azure.
 
 ## Safety invariants
 
 - Never enable AWS and Vercel recurring ownership for the same operation during cutover.
+- Never create duplicate Azure recurring ownership for an AWS-owned business operation.
 - New AWS schedules are deployed disabled until their target is successfully probed.
 - A failed activation probe rolls back the managed AWS schedule batch.
 - Virginia remains the normal writable production database and keeps zero `pg_cron` jobs.

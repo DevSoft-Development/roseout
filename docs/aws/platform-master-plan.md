@@ -4,15 +4,20 @@ Status: implementation roadmap
 
 ## Architecture boundary
 
-TheOutHaven keeps the user-facing Next.js application on Vercel and core PostgreSQL/Auth/RLS/Realtime on Supabase. AWS owns infrastructure workloads: customer-site delivery, durable object storage, asynchronous workers, scheduling, scalable email delivery, observability, backups, and the existing domain gateway.
+TheOutHaven uses a split-cloud operating model. The consumer surface (`theouthaven.com`, `www.theouthaven.com`, and consumer synchronous APIs) is migrating from Vercel to Azure. AWS remains the canonical owner of operational and business workloads: Admin, Business, Reserve, customer-site delivery, durable object storage, asynchronous workers, recurring scheduling, scalable email delivery, observability, backups, Route 53 DNS, and the existing domain gateway. Supabase remains the core PostgreSQL/Auth/RLS/Realtime/Storage platform.
+
+The canonical cross-cloud ownership map lives in `docs/architecture/platform-ownership.md`. If an older AWS document conflicts with that ownership map, the canonical ownership document wins.
 
 ### Systems that remain in place
 
-- Vercel: `theouthaven.com`, `www.theouthaven.com`, consumer UI, admin UI, location dashboard, synchronous web APIs.
-- Supabase: PostgreSQL, Auth, RLS, Realtime, core application state.
+- Azure target: `theouthaven.com`, `www.theouthaven.com`, consumer UI, consumer synchronous APIs, consumer regional DR, primary AI, mobile build infrastructure, and self-hosted OTA.
+- AWS: `admin.theouthaven.com`, `business.theouthaven.com`, `reserve.theouthaven.com`, EventBridge, SQS/DLQ, Lambda/Fargate workers, S3 backups, SES, CloudFront customer websites, CloudWatch, Secrets Manager, and Route 53.
+- Supabase: PostgreSQL, Auth, RLS, Realtime, Storage, and controlled Virginia-to-Oregon database DR.
+- Hugging Face: full AI fallback behind the TheOutHaven AI gateway.
+- Vercel: temporary consumer migration source only until Azure cutover is verified; no target-state production ownership.
 - OpenSRS/Tucows: wholesale registrar.
 - `theouthaven-domains-gateway`: AWS-hosted registrar/DNS boundary for OpenSRS.
-- Resend: critical transactional mail and inbound mail during migration.
+- Resend: critical transactional mail and inbound mail where still required.
 - Google: Maps, Places, Geocoding, supported Places photo delivery.
 - Stripe: payments and Connect.
 
@@ -28,7 +33,7 @@ TheOutHaven keeps the user-facing Next.js application on Vercel and core Postgre
 - CloudWatch: platform logs, alarms, metrics.
 - Secrets Manager/SSM: AWS-side secrets.
 - ACM: CloudFront customer-domain TLS.
-- Route 53: TheOutHaven-controlled DNS zones where appropriate. OpenSRS DNS remains supported for OpenSRS-managed customer domains.
+- Route 53: authoritative TheOutHaven DNS zones where appropriate. OpenSRS DNS remains supported for OpenSRS-managed customer domains.
 - Lightsail: existing website hosting during dual-publish migration and legacy/fallback capacity until S3/CloudFront is proven.
 
 ## Customer website target
@@ -94,7 +99,7 @@ Route 53 zone          -> AWS Route 53 API
 External DNS           -> required-record instructions + verification
 ```
 
-The hosting provisioner returns the CloudFront routing target/validation records; the DNS orchestration layer applies them through the appropriate adapter.
+The hosting provisioner returns the CloudFront routing target/validation records; the DNS orchestration layer applies them through the appropriate adapter. Route 53 remains authoritative for TheOutHaven-owned zones while consumer records can target Azure Front Door.
 
 ## Background jobs
 
@@ -150,7 +155,7 @@ CloudWatch alarms should cover:
 - TLS/domain provisioning failures
 - SES bounce/complaint rate
 
-The admin dashboard remains the operational control plane and should surface normalized health rather than requiring routine AWS Console use.
+The admin dashboard remains the operational control plane and should surface normalized health across AWS, Azure, Supabase, and AI providers rather than requiring routine console use.
 
 ## Implementation phases
 
@@ -183,8 +188,9 @@ The admin dashboard remains the operational control plane and should surface nor
 
 ## Rollout rules
 
-- Default production hosting mode remains `lightsail` until explicitly changed.
-- `dual` is the only allowed intermediate production mode.
+- Default customer-site production hosting mode remains `lightsail` until explicitly changed.
+- `dual` is the only allowed intermediate customer-site production mode.
 - A CloudFront/S3 canary must pass content parity, HTTPS, custom domain, mobile, reservation/group booking widget, forms, analytics, cache behavior, rollback, and failure testing before `cloudfront_s3` is enabled broadly.
 - Domain registration/renewal stays behind `theouthaven-domains-gateway` throughout the migration.
-- Supabase database/Auth and the main Vercel app are out of scope for migration unless future measured cost/reliability data justifies revisiting them.
+- Supabase database/Auth remain in place.
+- Consumer migration to Azure is governed by `docs/architecture/azure-consumer-foundation.md`; no Vercel removal happens until Azure production verification and rollback testing are complete.
