@@ -11,3 +11,5 @@ param aiModelName = 'gpt-5.4-mini'
 param aiModelVersion = '2026-03-17'
 param aiModelSkuName = 'DataZoneStandard'
 param aiModelCapacity = 10
+
+param consumerContainerAppsEnvironmentEnabled = true
