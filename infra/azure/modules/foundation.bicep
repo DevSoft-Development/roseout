@@ -2,6 +2,12 @@ param environment string
 param location string
 param secondaryLocation string
 param tags object
+param aiModelDeploymentEnabled bool
+param aiModelDeploymentName string
+param aiModelName string
+param aiModelVersion string
+param aiModelSkuName string
+param aiModelCapacity int
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
@@ -68,6 +74,23 @@ resource aiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
+resource aiModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiModelDeploymentEnabled) {
+  parent: aiFoundry
+  name: aiModelDeploymentName
+  sku: {
+    name: aiModelSkuName
+    capacity: aiModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: aiModelName
+      version: aiModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: 'toh-${envShort}-${suffix}-kv'
   location: location
@@ -95,4 +118,6 @@ output applicationInsightsName string = insights.name
 output logAnalyticsWorkspaceName string = logs.name
 output aiFoundryName string = aiFoundry.name
 output aiFoundryEndpoint string = aiFoundry.properties.endpoint
+output aiModelDeploymentName string = aiModelDeploymentEnabled ? aiModelDeployment.name : ''
+output aiModelName string = aiModelDeploymentEnabled ? aiModelName : ''
 output secondaryLocation string = secondaryLocation
