@@ -17,6 +17,19 @@ param aiModelVersion string = '2026-03-17'
 param aiModelSkuName string = 'DataZoneStandard'
 param aiModelCapacity int = 10
 param consumerContainerAppsEnvironmentEnabled bool = false
+param consumerRuntimeEnabled bool = false
+param consumerImage string = ''
+param consumerGitSha string = ''
+param consumerNextPublicSiteUrl string = ''
+param consumerNextPublicSupabaseUrl string = ''
+@secure()
+param consumerNextPublicSupabaseAnonKey string = ''
+@secure()
+param consumerSupabaseServiceRoleKey string = ''
+param consumerAzureAiEndpoint string = ''
+@secure()
+param consumerAzureAiApiKey string = ''
+param consumerAzureAiModel string = ''
 
 param tags object = {
   application: 'theouthaven'
@@ -49,6 +62,29 @@ module foundation './modules/foundation.bicep' = {
   }
 }
 
+module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeEnabled) {
+  name: 'consumer-runtime-${environment}'
+  scope: consumerRg
+  params: {
+    environment: environment
+    location: location
+    tags: tags
+    containerAppsEnvironmentName: foundation.outputs.consumerContainerAppsEnvironmentName
+    registryName: foundation.outputs.containerRegistryName
+    identityName: foundation.outputs.managedIdentityName
+    keyVaultName: foundation.outputs.keyVaultName
+    image: consumerImage
+    gitSha: consumerGitSha
+    nextPublicSiteUrl: consumerNextPublicSiteUrl
+    nextPublicSupabaseUrl: consumerNextPublicSupabaseUrl
+    nextPublicSupabaseAnonKey: consumerNextPublicSupabaseAnonKey
+    supabaseServiceRoleKey: consumerSupabaseServiceRoleKey
+    azureAiEndpoint: consumerAzureAiEndpoint
+    azureAiApiKey: consumerAzureAiApiKey
+    azureAiModel: consumerAzureAiModel
+  }
+}
+
 output resourceGroupName string = consumerRg.name
 output primaryLocation string = location
 output secondaryLocation string = secondaryLocation
@@ -61,3 +97,6 @@ output aiFoundryEndpoint string = foundation.outputs.aiFoundryEndpoint
 output aiModelDeploymentName string = foundation.outputs.aiModelDeploymentName
 output aiModelName string = foundation.outputs.aiModelName
 output consumerContainerAppsEnvironmentName string = foundation.outputs.consumerContainerAppsEnvironmentName
+output consumerRuntimeName string = consumerRuntimeEnabled ? consumerRuntime!.outputs.name : ''
+output consumerRuntimeFqdn string = consumerRuntimeEnabled ? consumerRuntime!.outputs.fqdn : ''
+output consumerRuntimeImage string = consumerRuntimeEnabled ? consumerRuntime!.outputs.image : ''

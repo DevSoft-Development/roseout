@@ -68,7 +68,7 @@ jobs:
           # Isolated surfaces and dedicated Azure/AI lanes are validated by their own
           # workflows and still pass through this lightweight required-check shell.
           root=false
-          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/(admin|business)/|packages/(auth|db|config)/|infra/aws/web-surfaces/|infra/aws/cloudformation/web-surfaces-services\.yml$|infra/azure/|lib/ai/gateway/|docs/|\.env\.example$|scripts/(surface-app-isolation-regression|web-surfaces-services-regression)\.mjs$|\.github/workflows/(aws-web-surfaces-services|azure-ai-gateway|azure-ai-live-smoke|azure-ai-model-readiness|azure-ai-reasoning-quota-watch|azure-foundation|production-ci)\.yml$)'; then
+          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/(admin|business)/|packages/(auth|db|config)/|infra/aws/web-surfaces/|infra/aws/cloudformation/web-surfaces-services\.yml$|infra/azure/|lib/ai/gateway/|docs/|\.env\.example$|scripts/(surface-app-isolation-regression|web-surfaces-services-regression)\.mjs$|\.github/workflows/(aws-web-surfaces-services|azure-ai-gateway|azure-ai-live-smoke|azure-ai-model-readiness|azure-ai-reasoning-quota-watch|azure-consumer-image|azure-consumer-runtime|azure-foundation|production-ci)\.yml$)'; then
             root=true
           fi
 
