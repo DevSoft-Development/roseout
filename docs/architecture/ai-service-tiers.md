@@ -34,7 +34,7 @@ Provider model names are carried separately, so an Azure deployment name is neve
 
 ## GPT-5.6 Sol quota watch
 
-`Azure AI reasoning quota watch` runs daily against staging and can also be run manually for staging or production.
+`Azure AI reasoning quota watch` is a manual GitHub workflow for staging or production. Recurring execution remains owned by AWS, in accordance with the platform scheduler-ownership rule.
 
 It checks Standard/Data Zone quota for `gpt-5.6-sol`. When Azure reports a nonzero quota limit, the workflow opens a GitHub issue once so the reasoning deployment can be activated.
 
