@@ -29,11 +29,16 @@ export default async function TeamAssignmentsPage({
     neighborhood: sp.neighborhood || "all",
     zip: sp.zip || "all",
     state: sp.state || "all",
+    territory: sp.territory || "all",
   };
+  const initialLimit = [100, 250, 500].includes(Number(sp.limit))
+    ? Number(sp.limit)
+    : 100;
+  const initialPage = Math.max(1, Number(sp.page || 1));
 
   const [searchResultState, teamMembersState, facetsState] =
     await Promise.allSettled([
-      searchSafeAssignmentLocations({ ...initialFilters, limit: 100 }),
+      searchSafeAssignmentLocations({ ...initialFilters, limit: initialLimit, page: initialPage }),
       listAssignableTeamMembers(),
       getSafeAssignmentFacets(),
     ]);
@@ -60,6 +65,7 @@ export default async function TeamAssignmentsPage({
           neighborhoods: [],
           zips: [],
           states: [],
+          territories: [],
         };
 
   const pageWarnings = [
@@ -92,6 +98,9 @@ export default async function TeamAssignmentsPage({
           initialLocations={searchResult.locations}
           initialCount={searchResult.count}
           initialScope={searchResult.scope}
+          initialPage={searchResult.page || initialPage}
+          initialPageSize={searchResult.pageSize || initialLimit}
+          initialTotalPages={searchResult.totalPages || 1}
           teamMembers={teamMembers}
           initialFilters={initialFilters}
           facets={facets}
