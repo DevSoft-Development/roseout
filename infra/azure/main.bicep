@@ -16,6 +16,7 @@ param aiModelName string = 'gpt-5.4-mini'
 param aiModelVersion string = '2026-03-17'
 param aiModelSkuName string = 'DataZoneStandard'
 param aiModelCapacity int = 10
+param consumerContainerAppsEnvironmentEnabled bool = false
 
 param tags object = {
   application: 'theouthaven'
@@ -44,6 +45,7 @@ module foundation './modules/foundation.bicep' = {
     aiModelVersion: aiModelVersion
     aiModelSkuName: aiModelSkuName
     aiModelCapacity: aiModelCapacity
+    consumerContainerAppsEnvironmentEnabled: consumerContainerAppsEnvironmentEnabled
   }
 }
 
@@ -58,3 +60,4 @@ output aiFoundryName string = foundation.outputs.aiFoundryName
 output aiFoundryEndpoint string = foundation.outputs.aiFoundryEndpoint
 output aiModelDeploymentName string = foundation.outputs.aiModelDeploymentName
 output aiModelName string = foundation.outputs.aiModelName
+output consumerContainerAppsEnvironmentName string = foundation.outputs.consumerContainerAppsEnvironmentName
