@@ -41,3 +41,5 @@ output containerRegistryName string = foundation.outputs.containerRegistryName
 output keyVaultName string = foundation.outputs.keyVaultName
 output managedIdentityName string = foundation.outputs.managedIdentityName
 output applicationInsightsName string = foundation.outputs.applicationInsightsName
+output aiFoundryName string = foundation.outputs.aiFoundryName
+output aiFoundryEndpoint string = foundation.outputs.aiFoundryEndpoint
