@@ -18,6 +18,9 @@ export async function GET(req: Request) {
       borough: searchParams.get("borough") || undefined,
       neighborhood: searchParams.get("neighborhood") || undefined,
       state: searchParams.get("state") || undefined,
+      zip: searchParams.get("zip") || undefined,
+      territory: searchParams.get("territory") || undefined,
+      page: Number(searchParams.get("page") || 1),
       limit: Number(searchParams.get("limit") || 100),
     };
 
