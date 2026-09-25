@@ -10,7 +10,7 @@ export default function CrmWorkspaceShell({ children }: { children: React.ReactN
   const isPlainCrmRoot = pathname === "/admin/dashboard/crm" && !searchParams.get("q");
 
   useEffect(() => {
-    if (isPlainCrmRoot) router.replace("/admin/dashboard/crm/today");
+    if (isPlainCrmRoot) router.replace("/admin/dashboard/crm/sales");
   }, [isPlainCrmRoot, router]);
 
   if (isPlainCrmRoot) return null;

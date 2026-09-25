@@ -5,7 +5,6 @@ import {
   getLocationWorkspaceHref,
 } from "@/lib/admin/location-workspace";
 import {
-  buildOpportunitiesHref,
   buildOutreachHref,
   buildTasksHref,
 } from "@/lib/crm/context";
@@ -24,7 +23,7 @@ export default function LocationWorkspaceNavigation({
   const tabs = [
     ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview"],
     ["Communications", buildOutreachHref(context), false],
-    ["Sales", buildOpportunitiesHref(context), false],
+    ["Sales", `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(locationId)}`, false],
     ["Tasks", buildTasksHref(context), false],
     ["Reservations", reservationsHref, activeGroup.id === "operations" && activeTab === "reservations"],
     ["Activity", getLocationWorkspaceHref(locationId, "activity"), activeGroup.id === "activity"],
