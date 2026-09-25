@@ -199,7 +199,7 @@ const LOCATION_SELECT=[
 "id","name","business_name","restaurant_name","activity_name","city","state","location_type","primary_category","category",
 "is_claimed","claim_status","claim_started_at","website","website_url","phone","owner_email","subscription_status","plan_status","subscription_plan","plan","partner_plan_name","is_pro",
 "reservation_url","reservation_link","booking_url","external_reservation_url","reservation_provider_url","reservation_platform","reservation_provider_name","internal_reservations_enabled","uses_internal_reservations",
-"reservation_opportunity_score","reservation_opportunity_evidence","search_appearances_30d","profile_views_30d","opportunity_score","next_action","next_action_type","updated_at"
+"reservation_opportunity_score","reservation_opportunity_evidence","opportunity_score","next_action","next_action_type","updated_at"
 ].join(",");
 
 export async function listUnifiedSalesLocations(input:{userId:string;role:string;q?:string;owner?:string;page?:number;pageSize?:number;locationId?:string}){
