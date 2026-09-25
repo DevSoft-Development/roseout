@@ -1,6 +1,6 @@
 # Azure consumer foundation
 
-Status: PR 1 foundation
+Status: staging runtime foundation in progress
 
 PR 1 creates the deployable Azure foundation and the architecture contract. It does **not** move production traffic.
 
@@ -14,9 +14,13 @@ The initial Bicep deployment creates one environment resource group containing:
 - Azure Key Vault with RBAC authorization
 - user-assigned managed identity
 
+Current staging foundation now adds:
+
+- Container Apps primary-region managed environment in East US 2, connected to the existing Log Analytics workspace
+
 Later PRs add:
 
-- Container Apps primary region
+- consumer container app and immutable image deployment
 - Container Apps secondary/DR region
 - Azure Front Door Standard
 - WAF policy
@@ -32,7 +36,7 @@ Environment parameter files currently use:
 - primary: East US 2
 - secondary: Central US
 
-These are deployment defaults, not irreversible application assumptions. Region-specific service/model availability must be verified before AI and Container Apps production activation.
+These are deployment defaults, not irreversible application assumptions. Staging enables only the primary Container Apps managed environment. Production keeps Container Apps disabled until the staging consumer image, runtime configuration, and smoke tests pass. The secondary/DR environment remains a later controlled step.
 
 ## GitHub OIDC bootstrap
 
@@ -61,9 +65,9 @@ No long-lived Azure client secret should be stored in the repository.
 
 ## Safety invariants
 
-- PR 1 does not remove Vercel.
-- PR 1 does not modify Route 53 records.
-- PR 1 does not create a second recurring scheduler.
+- This slice does not remove Vercel.
+- This slice does not modify Route 53 records.
+- This slice does not create a second recurring scheduler.
 - AWS remains the scheduler/worker/business platform.
 - Supabase remains the core data/auth platform.
 - Production cutover requires later explicit PRs and verification.
