@@ -1,6 +1,6 @@
 # TheOutHaven AI gateway
 
-Status: provider adapters and Azure AI resource provisioning
+Status: staging model deployment selected from live Azure readiness evidence
 
 TheOutHaven uses one application-facing AI gateway so product code does not choose providers directly.
 
@@ -44,7 +44,7 @@ No real credentials are committed. Runtime secrets will be injected from the pla
 
 ## Azure Foundry resource
 
-The Azure foundation now provisions one `Microsoft.CognitiveServices/accounts` resource of kind `AIServices` per environment.
+The Azure foundation provisions one `Microsoft.CognitiveServices/accounts` resource of kind `AIServices` per environment.
 
 The resource:
 
@@ -54,7 +54,24 @@ The resource:
 - enables project management
 - keeps public network access enabled during the migration phase
 
-The Bicep deployment does not create a model deployment yet. Model availability and quota are region-specific, so deployment selection is handled separately after the Foundry resource exists.
+## Staging model deployment
+
+The live staging readiness run in `eastus2` confirmed:
+
+- `gpt-5.4-mini` version `2026-03-17` is Generally Available
+- `DataZoneStandard` is supported for the model
+- the staging subscription has nonzero Data Zone quota for `gpt-5.4-mini`
+- `gpt-5.6-sol` and `gpt-5.6-luna` were visible in the catalog but had zero Standard/Data Zone quota in the staging subscription at the time of the check
+
+The staging Bicep parameters therefore enable:
+
+- deployment name: `toh-primary`
+- model: `gpt-5.4-mini`
+- version: `2026-03-17`
+- SKU: `DataZoneStandard`
+- initial capacity: `10`
+
+Production model deployment remains disabled until production readiness is run and explicitly approved.
 
 ## Failover rules
 
@@ -81,8 +98,8 @@ This slice does not:
 - move existing production AI call sites to the new gateway
 - remove the AWS Assistant API
 - change Search V2 embedding ownership
-- deploy a specific Azure model
+- enable a production Azure model deployment
 - commit Azure or Hugging Face secrets
 - modify DNS, Route 53, Vercel, Supabase, or AWS scheduling
 
-Activation remains staged: provision the Foundry account, select models with confirmed regional quota, inject secrets, then migrate individual call sites behind explicit verification.
+Activation remains staged: deploy the model to staging, validate the gateway against it, inject runtime secrets, then migrate individual call sites behind explicit verification.
