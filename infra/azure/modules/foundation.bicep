@@ -5,6 +5,7 @@ param tags object
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
+var aiFoundryName = 'toh-${envShort}-${suffix}-ai'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-toh-consumer-${envShort}'
@@ -49,6 +50,24 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = 
   }
 }
 
+resource aiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
+  name: aiFoundryName
+  location: location
+  kind: 'AIServices'
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: aiFoundryName
+    publicNetworkAccess: 'Enabled'
+    allowProjectManagement: true
+  }
+}
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: 'toh-${envShort}-${suffix}-kv'
   location: location
@@ -74,4 +93,6 @@ output keyVaultName string = vault.name
 output managedIdentityName string = identity.name
 output applicationInsightsName string = insights.name
 output logAnalyticsWorkspaceName string = logs.name
+output aiFoundryName string = aiFoundry.name
+output aiFoundryEndpoint string = aiFoundry.properties.endpoint
 output secondaryLocation string = secondaryLocation
