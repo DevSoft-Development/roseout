@@ -11,7 +11,9 @@ export type TeamAssignmentFilters = {
   zip?: string;
   town?: string;
   state?: string;
+  territory?: string;
   assigned?: string;
+  page?: number;
   limit?: number;
 };
 
@@ -74,6 +76,7 @@ export function assignmentScopeSummary(filters: TeamAssignmentFilters) {
     cleanAssignmentFilter(filters.neighborhood) && `Neighborhood: ${filters.neighborhood}`,
     cleanAssignmentFilter(filters.zip) && `ZIP: ${filters.zip}`,
     cleanAssignmentFilter(filters.q) && `Search: ${filters.q}`,
+    cleanAssignmentFilter(filters.territory) && `Territory ID: ${filters.territory}`,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "Selected locations";
 }
