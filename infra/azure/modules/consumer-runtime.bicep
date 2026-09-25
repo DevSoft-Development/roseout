@@ -109,12 +109,12 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         {
           name: 'supabase-service-role-key'
-          keyVaultUrl: 'https://${vault.name}.${environment().suffixes.keyvaultDns}/secrets/${supabaseServiceRoleSecret.name}'
+          keyVaultUrl: 'https://${vault.name}.${az.environment().suffixes.keyvaultDns}/secrets/${supabaseServiceRoleSecret.name}'
           identity: identity.id
         }
         {
           name: 'azure-ai-api-key'
-          keyVaultUrl: 'https://${vault.name}.${environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
+          keyVaultUrl: 'https://${vault.name}.${az.environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
           identity: identity.id
         }
       ]
