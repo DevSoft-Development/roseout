@@ -1,0 +1,82 @@
+name: Azure consumer image
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/consumer/**"
+      - "infra/azure/consumer-runtime/**"
+      - ".github/workflows/azure-consumer-image.yml"
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: Build and push immutable staging image to ACR
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    name: Build consumer container
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: |
+          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL=https://staging.theouthaven.com             --build-arg NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=consumer-ci-placeholder             --tag theouthaven-consumer:ci             .
+
+  push:
+    name: Push immutable staging image
+    if: github.event_name == 'workflow_dispatch' && inputs.push_image
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require staging public runtime variables
+        env:
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SITE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SITE_URL"; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SUPABASE_URL"; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing staging secret NEXT_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve staging ACR
+        id: acr
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            ACR="$(az acr list --resource-group rg-toh-consumer-staging --query '[0].name' -o tsv)"
+            test -n "$ACR" || { echo "::error::No ACR found in staging resource group"; exit 1; }
+            echo "name=$ACR" >> "$GITHUB_OUTPUT"
+            echo "login_server=$ACR.azurecr.io" >> "$GITHUB_OUTPUT"
+      - name: Login to ACR
+        run: az acr login --name "${{ steps.acr.outputs.name }}"
+      - name: Build and push commit image
+        env:
+          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          LOGIN_SERVER: ${{ steps.acr.outputs.login_server }}
+        run: |
+          set -euo pipefail
+          IMAGE="$LOGIN_SERVER/consumer:${GITHUB_SHA}"
+          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"             --tag "$IMAGE"             .
+          docker push "$IMAGE"
+          echo "Pushed $IMAGE" >> "$GITHUB_STEP_SUMMARY"
