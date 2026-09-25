@@ -14,7 +14,7 @@ async function main() {
   const expectedModel = required("AZURE_AI_MODEL");
 
   const gateway = createDefaultAiGateway(process.env);
-  const response = await gateway.invoke<string, string>({
+  const response = await gateway.invoke<{ messages: { role: string; content: string }[] }, string>({
     capability: "generate",
     input: {
       messages: [
