@@ -81,8 +81,20 @@ jobs:
           set -euo pipefail
           query_ref() {
             local ref="$1" sql="$2"
+            local out="$RUNNER_TEMP/query-${ref}.json" code
             jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-            curl --fail --silent --show-error --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/${ref}/database/query" >/dev/null
+            code="$(curl --silent --show-error --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              --output "$out" \
+              --write-out '%{http_code}' \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "Supabase migration preflight failed for project ${ref} with HTTP ${code}." >&2
+              cat "$out" >&2 || true
+              exit 1
+            fi
           }
           while IFS= read -r file; do
             sql="$(cat "$file")"
