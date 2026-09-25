@@ -20,8 +20,8 @@ export async function POST(req: Request) {
     const admin = await requireAdminRole(["superadmin", "admin", "manager"]);
     const body = await req.json();
     const scope = body.scope || {};
-    let locationIds = Array.isArray(body.locationIds)
-      ? body.locationIds.map(String).filter(Boolean)
+    let locationIds: string[] = Array.isArray(body.locationIds)
+      ? body.locationIds.map((value: unknown) => String(value)).filter(Boolean)
       : [];
 
     if (body.assignmentMode === "all_matching") {
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       }
     }
 
-    locationIds = Array.from(new Set(locationIds));
+    locationIds = Array.from(new Set<string>(locationIds));
     if (!locationIds.length) {
       throw new Error("Select at least one location.");
     }
