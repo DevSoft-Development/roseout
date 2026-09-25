@@ -133,11 +133,16 @@ function clean(value:unknown){return String(value??"").trim();}
 function num(value:unknown){const n=Number(value??0);return Number.isFinite(n)?n:0;}
 function truthy(value:unknown){return value===true||value===1||value==="true";}
 function paid(row:any){
+  const status=clean(row.subscription_status||row.plan_status).toLowerCase().replaceAll("_","-");
+  const plan=clean(row.subscription_plan||row.plan||row.partner_plan_name).toLowerCase().replaceAll("_","-");
   return truthy(row.is_pro) ||
-    /active|paid|comped/i.test(clean(row.subscription_status||row.plan_status)) ||
-    /essential|pro|partner|reserve/i.test(clean(row.subscription_plan||row.plan||row.partner_plan_name));
+    ["active","paid","comped"].includes(status) ||
+    ["essentials","essentials+","pro","partner","partner-99","reserve","pro-reserve"].some((value)=>plan===value||plan.startsWith(value+"-"));
 }
-function claimed(row:any){return truthy(row.is_claimed)||/approved|claimed/i.test(clean(row.claim_status));}
+function claimed(row:any){
+  const status=clean(row.claim_status).toLowerCase().replaceAll("_","-");
+  return truthy(row.is_claimed)||["approved","claimed"].includes(status);
+}
 function restaurant(row:any){
   return /restaurant/i.test(clean(row.location_type)) ||
     /restaurant|steak|sushi|italian|seafood|thai|mexican|cafe|bar|lounge/i.test(clean(row.primary_category||row.category));
