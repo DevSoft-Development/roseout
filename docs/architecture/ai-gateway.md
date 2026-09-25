@@ -1,6 +1,6 @@
 # TheOutHaven AI gateway
 
-Status: staging model deployment selected from live Azure readiness evidence
+Status: staging Azure primary deployed; application gateway live-contract validation in progress
 
 TheOutHaven uses one application-facing AI gateway so product code does not choose providers directly.
 
@@ -80,10 +80,11 @@ The `Azure AI live smoke` workflow verifies a deployed model without storing an 
 1. GitHub OIDC authenticates to Azure.
 2. The workflow resolves the environment's AIServices account and confirms the requested deployment exists.
 3. It reads an account key only inside the job, masks it immediately, and does not persist it as a repository/environment secret.
-4. It calls the same OpenAI-compatible `/openai/v1/chat/completions` contract used by the application adapter.
-5. The run fails unless the model returns the deterministic smoke token.
+4. It injects the endpoint, ephemeral key, and deployment name into the job environment only.
+5. It invokes `createDefaultAiGateway()` through `lib/ai/gateway/live-smoke.ts`, so the live check exercises the actual Azure provider adapter, tier routing, gateway response handling, and model selection used by application code.
+6. The run fails if Azure is not the provider, if failover occurs, if the deployment name changes, or if the deterministic smoke token is not returned.
 
-The workflow is manual so live inference is an explicit action and does not create recurring or per-PR model spend. Staging should be verified before any application call site is migrated.
+The workflow is manual so live inference is an explicit action and does not create recurring or per-PR model spend. This is the staging runtime contract gate before any user-facing application call site is migrated.
 
 ## Failover rules
 
