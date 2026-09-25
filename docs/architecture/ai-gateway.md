@@ -73,6 +73,18 @@ The staging Bicep parameters therefore enable:
 
 Production model deployment remains disabled until production readiness is run and explicitly approved.
 
+## Live staging verification
+
+The `Azure AI live smoke` workflow verifies a deployed model without storing an Azure AI key in GitHub:
+
+1. GitHub OIDC authenticates to Azure.
+2. The workflow resolves the environment's AIServices account and confirms the requested deployment exists.
+3. It reads an account key only inside the job, masks it immediately, and does not persist it as a repository/environment secret.
+4. It calls the same OpenAI-compatible `/openai/v1/chat/completions` contract used by the application adapter.
+5. The run fails unless the model returns the deterministic smoke token.
+
+The workflow is manual so live inference is an explicit action and does not create recurring or per-PR model spend. Staging should be verified before any application call site is migrated.
+
 ## Failover rules
 
 Fail over from Azure to Hugging Face only when the primary provider is operationally unavailable, including:
