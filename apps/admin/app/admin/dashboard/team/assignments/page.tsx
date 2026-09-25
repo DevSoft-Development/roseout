@@ -50,6 +50,9 @@ export default async function TeamAssignmentsPage({
           locations: [],
           count: 0,
           limited: false,
+          page: initialPage,
+          pageSize: initialLimit,
+          totalPages: 1,
           scope: "All locations",
           warning: "Locations could not be loaded.",
         };
