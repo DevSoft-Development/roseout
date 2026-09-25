@@ -8,6 +8,7 @@ param aiModelName string
 param aiModelVersion string
 param aiModelSkuName string
 param aiModelCapacity int
+param consumerContainerAppsEnvironmentEnabled bool
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
@@ -53,6 +54,22 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = 
     adminUserEnabled: false
     publicNetworkAccess: 'Enabled'
     zoneRedundancy: 'Disabled'
+  }
+}
+
+resource consumerContainerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (consumerContainerAppsEnvironmentEnabled) {
+  name: 'cae-toh-consumer-${envShort}-primary'
+  location: location
+  tags: tags
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logs.properties.customerId
+        sharedKey: logs.listKeys().primarySharedKey
+      }
+    }
+    zoneRedundant: false
   }
 }
 
@@ -121,3 +138,4 @@ output aiFoundryEndpoint string = aiFoundry.properties.endpoint
 output aiModelDeploymentName string = aiModelDeploymentEnabled ? aiModelDeployment.name : ''
 output aiModelName string = aiModelDeploymentEnabled ? aiModelName : ''
 output secondaryLocation string = secondaryLocation
+output consumerContainerAppsEnvironmentName string = consumerContainerAppsEnvironmentEnabled ? consumerContainerAppsEnvironment.name : ''
