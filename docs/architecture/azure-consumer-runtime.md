@@ -14,7 +14,7 @@ The deployment uses:
 - scale-to-zero in staging
 - Azure AI deployment `toh-primary`
 
-The Container App receives ACR pull access through its managed identity. Application credentials are entered once in the Admin Credential Vault (AWS Secrets Manager). The Azure deployment resolves the approved staging values from that central vault, materializes the Azure-side runtime secrets into Azure Key Vault, and references them from the Container App with the same managed identity. Azure AI account credentials are resolved directly from Azure and are not duplicated in the Admin vault.
+The Container App receives ACR pull access through its managed identity. Application credentials are entered once in the Admin Credential Vault (AWS Secrets Manager). The Azure deployment resolves the shared primary Supabase values and staging-scoped optional provider values from that central vault, materializes the Azure-side runtime secrets into Azure Key Vault, and references them from the Container App with the same managed identity. Azure AI account credentials are resolved directly from Azure and are not duplicated in the Admin vault.
 
 ## Manual staging deployment
 
@@ -53,6 +53,6 @@ For the Azure consumer migration, provider configuration is entered in **Admin â
 - **Supabase**: project URL, publishable key, and service-role key.
 - **Hugging Face (optional)**: access token, AI fallback endpoint, and AI fallback model.
 
-The staging runtime reads `/theouthaven/credential-vault/staging/<provider>` from AWS Secrets Manager by GitHub OIDC. Secret values are masked immediately and are never returned to the browser or committed to the repository. GitHub environment secrets are no longer the authority for these provider values.
+The staging runtime reads the shared primary Supabase provider from `/theouthaven/credential-vault/production/supabase` and staging-scoped optional providers from `/theouthaven/credential-vault/staging/<provider>` by GitHub OIDC. The normal Supabase target remains the primary East project; Oregon remains DR-only. Secret values are masked immediately and are never returned to the browser or committed to the repository. GitHub environment secrets are no longer the authority for server-side provider values.
 
 Infrastructure identity values such as Azure tenant/client/subscription IDs and AWS deploy-role identifiers remain role/OIDC deployment metadata rather than application credentials. No long-lived Azure client secret is introduced.
