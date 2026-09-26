@@ -61,6 +61,8 @@ jobs:
           grep -F 'BackgroundCronPreflightLogsBootstrap' "$FILE" >/dev/null
           grep -F 'logs:FilterLogEvents' "$FILE" >/dev/null
           grep -F 'toh-*-background-cron-worker' "$FILE" >/dev/null
+          grep -F 'ABANDONED_BOOTSTRAP_POLICIES' "$FILE" >/dev/null
+          grep -F 'Remove foundation bootstrap inline policy' "$FILE" >/dev/null
 
   deploy:
     if: >-
@@ -197,6 +199,33 @@ jobs:
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           POLICY_FILE="$RUNNER_TEMP/platform-bootstrap-repair.json"
+
+          mapfile -t ABANDONED_BOOTSTRAP_POLICIES <<'EOF'
+          TheOutHavenPlatformDrBootstrap
+          TheOutHavenSesTelemetryBootstrap
+          TheOutHavenWorkerRuntimeBootstrap
+          TheOutHavenDnsVerificationBootstrap
+          TheOutHavenCloudFormationChangeSetsBootstrap
+          TheOutHavenSearchMlBootstrap
+          TheOutHavenSesProductionAccessBootstrap
+          TheOutHavenOpsCodeBuildBootstrap
+          TheOutHavenWebsiteRuntimeBootstrap
+          TheOutHavenEdgeRuntimeEcrBootstrap
+          TheOutHavenWebsiteAcmBootstrap
+          TheOutHavenPlatformDrTargetDiagnosticsBootstrap
+          TheOutHavenDomainGatewayBootstrap
+          TheOutHavenDomainGatewayAuthorityBootstrap
+          TheOutHavenDomainGatewayCredentialBootstrap
+          TheOutHavenElbServiceLinkedRoleBootstrap
+          TheOutHavenEcsServiceLinkedRoleBootstrap
+          EOF
+
+          for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
+            test "$policy" != "TheOutHavenPlatformCloudFormation"
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$policy" >/dev/null 2>&1 || true
+          done
           cat > "$POLICY_FILE" <<JSON
           {
             "Version": "2012-10-17",
@@ -416,6 +445,18 @@ jobs:
             --stack-name "$STACK_NAME" \
             --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]' \
             --output table || true
+
+      - name: Remove foundation bootstrap inline policy
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
+            2>/dev/null || true
 
       - name: Publish stack outputs
         env:
