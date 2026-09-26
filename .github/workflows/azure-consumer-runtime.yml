@@ -53,22 +53,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require staging runtime configuration
-        env:
-          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
-          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          HUGGINGFACE_AI_TOKEN: ${{ secrets.HUGGINGFACE_AI_TOKEN }}
-          HUGGINGFACE_AI_MODEL: ${{ vars.HUGGINGFACE_AI_MODEL }}
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve staging configuration from Admin Credential Vault
         run: |
           set -euo pipefail
-          test -n "$SITE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SITE_URL"; exit 1; }
-          test -n "$SUPABASE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SUPABASE_URL"; exit 1; }
-          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing staging secret NEXT_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
-          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Missing staging secret SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
-          test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Missing staging secret HUGGINGFACE_AI_TOKEN"; exit 1; }
-          test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Missing staging variable HUGGINGFACE_AI_MODEL"; exit 1; }
+          PREFIX="/theouthaven/credential-vault/staging"
+          WORK="$RUNNER_TEMP/azure-consumer-vault"
+          mkdir -p "$WORK"
+
+          aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json"
+          aws secretsmanager get-secret-value --secret-id "$PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json"
+
+          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+          jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
+
+          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
+          SITE_URL="https://staging.theouthaven.com"
+
+          test -n "$SUPABASE_URL" || { echo "::error::Admin Credential Vault staging Supabase URL is missing."; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Admin Credential Vault staging Supabase publishable key is missing."; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Admin Credential Vault staging Supabase service role key is missing."; exit 1; }
+          test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Admin Credential Vault staging Hugging Face access token is missing."; exit 1; }
+          test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Admin Credential Vault staging Hugging Face AI fallback model is missing."; exit 1; }
+
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$HUGGINGFACE_AI_TOKEN"; do
+            echo "::add-mask::$value"
+          done
+
+          {
+            echo "SITE_URL=$SITE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
+            echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
+            echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
+          } >> "$GITHUB_ENV"
+
+          rm -rf "$WORK"
+          echo "Azure consumer configuration resolved from the central Admin Credential Vault."
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
@@ -119,36 +153,24 @@ jobs:
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ inputs.image_sha }}
-          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
-          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
           AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
-          HUGGINGFACE_AI_TOKEN: ${{ secrets.HUGGINGFACE_AI_TOKEN }}
-          HUGGINGFACE_AI_MODEL: ${{ vars.HUGGINGFACE_AI_MODEL }}
         with:
           inlineScript: |
             set -euo pipefail
-            az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
+            az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
 
       - name: Deploy staging runtime
         uses: azure/CLI@v2
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ inputs.image_sha }}
-          SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
-          SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
           AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
-          HUGGINGFACE_AI_TOKEN: ${{ secrets.HUGGINGFACE_AI_TOKEN }}
-          HUGGINGFACE_AI_MODEL: ${{ vars.HUGGINGFACE_AI_MODEL }}
         with:
           inlineScript: |
             set -euo pipefail
-            az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
+            az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
 
       - name: Smoke-test Azure Container App
         uses: azure/CLI@v2

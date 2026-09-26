@@ -23,7 +23,11 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "clientSecret", env: ["MICROSOFT_CLIENT_SECRET", "AZURE_CLIENT_SECRET", "M365_CLIENT_SECRET"] },
   ] },
   openai: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["OPENAI_API_KEY"] }] },
-  huggingface: { source: "Runtime environment", fields: [{ field: "token", env: ["SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] }] },
+  huggingface: { source: "Runtime environment", fields: [
+    { field: "token", env: ["HUGGINGFACE_AI_TOKEN", "SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] },
+    { field: "aiEndpoint", env: ["HUGGINGFACE_AI_ENDPOINT"] },
+    { field: "aiModel", env: ["HUGGINGFACE_AI_MODEL"] },
+  ] },
   brave: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["BRAVE_SEARCH_API_KEY"] }] },
   serpapi: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["SERPAPI_API_KEY"] }] },
   stripe: { source: "Runtime environment / AWS integration secret", fields: [
