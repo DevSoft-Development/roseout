@@ -124,7 +124,7 @@ jobs:
 
           BODY="Azure now reports usable Standard/Data Zone quota for **$TARGET_MODEL** in **$LOCATION** (maximum reported limit: **$MAX_LIMIT**).
 
-Next step: deploy/update the \`toh-reasoning\` Azure model deployment, validate it in staging, then set \`AZURE_AI_REASONING_MODEL=toh-reasoning\`."
+          Next step: deploy/update the \`toh-reasoning\` Azure model deployment, validate it in staging, then set \`AZURE_AI_REASONING_MODEL=toh-reasoning\`."
           gh issue create --title "$TITLE" --body "$BODY"
 
       - name: Upload quota evidence
