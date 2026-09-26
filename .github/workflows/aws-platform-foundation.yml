@@ -149,6 +149,9 @@ jobs:
           TheOutHavenDomainGatewayCredentialBootstrap
           TheOutHavenElbServiceLinkedRoleBootstrap
           TheOutHavenEcsServiceLinkedRoleBootstrap
+          TheOutHavenAssumeRoleTrustBootstrap
+          TheOutHavenInlinePolicyHygieneSelfInspection
+          TheOutHavenDeployRoleRecoveryBootstrap
           EOF
 
           for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
