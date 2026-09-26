@@ -1,224 +1,43 @@
-name: Mobile production OTA
+name: Mobile production OTA migration guard
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    branches:
+      - main
     paths:
       - 'mobile/**'
       - '.github/workflows/mobile-production-ota.yml'
+      - '.github/workflows/mobile-azure-ota.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: mobile-production-ota
-  cancel-in-progress: false
-
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Use Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.13.1'
-          cache: npm
-          cache-dependency-path: mobile/package.json
-
-      - name: Classify mobile release route
-        id: release-route
-        working-directory: .
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${GITHUB_EVENT_NAME}" != "push" ]; then
-            echo "route=ota" >> "$GITHUB_OUTPUT"
-            echo "Manual OTA release requested." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          before='${{ github.event.before }}'
-          after='${{ github.sha }}'
-          if ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-            before="$(git rev-parse "${after}^" 2>/dev/null || true)"
-          fi
-
-          if [ -n "$before" ]; then
-            changed="$(git diff --name-only "$before" "$after" || true)"
-          else
-            changed="$(git show --pretty='' --name-only "$after" || true)"
-          fi
-          printf '%s\n' "$changed"
-
-          mobile_changed="$(printf '%s\n' "$changed" | grep '^mobile/' || true)"
-          native_changed="$(printf '%s\n' "$mobile_changed" | grep -E '^(mobile/(app\.json|eas\.json|package\.json|package-lock\.json)|mobile/(assets|ios|android|plugins)/|mobile/\.eas/workflows/)' || true)"
-
-          if [ -n "$native_changed" ]; then
-            echo "route=native" >> "$GITHUB_OUTPUT"
-            {
-              echo "## Mobile release route"
-              echo
-              echo "Native build required. OTA publication skipped."
-              echo
-              echo 'Native-sensitive files:'
-              echo '```'
-              printf '%s\n' "$native_changed"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "route=ota" >> "$GITHUB_OUTPUT"
-            {
-              echo "## Mobile release route"
-              echo
-              echo "OTA-safe change detected. Publishing through EAS Update; no native build required."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Install mobile dependencies
-        if: steps.release-route.outputs.route == 'ota'
-        run: npm install --no-audit --no-fund
-
-      - name: Typecheck
-        if: steps.release-route.outputs.route == 'ota'
-        run: npm run typecheck
-
-      - name: Validate production EAS Update configuration
-        if: steps.release-route.outputs.route == 'ota'
+      - uses: actions/checkout@v4
+      - name: Prove EAS Update hosting is disabled
         run: |
           set -euo pipefail
           node - <<'NODE'
           const fs = require('fs');
-          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
-          const eas = JSON.parse(fs.readFileSync('eas.json', 'utf8'));
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          const projectId = '243ab88a-53dc-4f94-ae7e-6cc3d24b94be';
-          const expectedUrl = `https://u.expo.dev/${projectId}`;
-          if (pkg?.dependencies?.['expo-updates'] !== '~57.0.22') throw new Error('expo-updates dependency missing or unexpected');
-          if (app?.extra?.eas?.projectId !== projectId) throw new Error('Unexpected EAS project ID');
-          if (app?.updates?.url !== expectedUrl) throw new Error('EAS Update URL is missing or unexpected');
-          if (app?.runtimeVersion?.policy !== 'fingerprint') throw new Error('EAS runtimeVersion must use fingerprint policy');
-          if (eas?.build?.production?.channel !== 'production') throw new Error('Production build channel must be production');
+          const app = JSON.parse(fs.readFileSync('mobile/app.json', 'utf8')).expo;
+          const url = String(app?.updates?.url || '');
+          if (url !== 'https://updates.theouthaven.com/api/mobile/ota/manifest') {
+            throw new Error('Mobile update URL must use the TheOutHaven Azure OTA endpoint');
+          }
+          if (url.includes('u.expo.dev')) {
+            throw new Error('EAS Update hosting is still configured');
+          }
+          if (app?.extra?.eas?.projectId) {
+            throw new Error('EAS project ID must not be required by the production runtime');
+          }
           NODE
-
-      - name: Verify Expo publish credential is configured
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${EXPO_TOKEN:-}" ]; then
-            echo 'EXPO_TOKEN GitHub Actions secret is required to publish EAS Updates.'
+          test -f .github/workflows/mobile-azure-ota.yml
+          if grep -Eq 'eas-cli@.* update|eas update|u\.expo\.dev' .github/workflows/mobile-production-ota.yml; then
+            echo "::error::Legacy production OTA workflow still publishes through EAS."
             exit 1
           fi
-
-      - name: Resolve authoritative mobile auth configuration
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "${SUPABASE_ACCESS_TOKEN:-}" || {
-            echo "SUPABASE_ACCESS_TOKEN is required to hydrate mobile auth configuration." >&2
-            exit 1
-          }
-
-          supabase_ref="ftdsltatyqhtllyyefzp"
-          supabase_url="https://${supabase_ref}.supabase.co"
-
-          curl --fail --silent --show-error \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/${supabase_ref}/api-keys?reveal=true" \
-            > "$RUNNER_TEMP/mobile-supabase-keys.json"
-
-          supabase_anon="$(jq -r '[.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/mobile-supabase-keys.json")"
-          rm -f "$RUNNER_TEMP/mobile-supabase-keys.json"
-
-          test -n "$supabase_anon" || {
-            echo "Production Supabase anon key could not be resolved." >&2
-            exit 1
-          }
-
-          echo "::add-mask::$supabase_anon"
-          {
-            echo "EXPO_PUBLIC_SUPABASE_URL=$supabase_url"
-            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$supabase_anon"
-          } >> "$GITHUB_ENV"
-
-      - name: Verify mobile auth configuration is present before bundling
-        if: steps.release-route.outputs.route == 'ota'
-        run: |
-          set -euo pipefail
-          test -n "${EXPO_PUBLIC_SUPABASE_URL:-}" || { echo "EXPO_PUBLIC_SUPABASE_URL is missing." >&2; exit 1; }
-          test -n "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" || { echo "EXPO_PUBLIC_SUPABASE_ANON_KEY is missing." >&2; exit 1; }
-          case "$EXPO_PUBLIC_SUPABASE_URL" in
-            https://*.supabase.co) ;;
-            *) echo "EXPO_PUBLIC_SUPABASE_URL is invalid." >&2; exit 1 ;;
-          esac
-          echo "mobile_auth_config_ready=true"
-
-      - name: Publish production OTA update to iOS
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          CI: '1'
-          EXPO_PUBLIC_RELEASE_CHANNEL: production
-        run: >-
-          npx --yes eas-cli@latest update
-          --channel production
-          --environment production
-          --platform ios
-          --message "Production OTA iOS ${{ github.sha }}"
-
-      - name: Publish production OTA update to Android
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          CI: '1'
-          EXPO_PUBLIC_RELEASE_CHANNEL: production
-        run: >-
-          npx --yes eas-cli@latest update
-          --channel production
-          --environment production
-          --platform android
-          --message "Production OTA Android ${{ github.sha }}"
-
-      - name: Publish preview OTA update to iOS
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          CI: '1'
-          EXPO_PUBLIC_RELEASE_CHANNEL: preview
-        run: >-
-          npx --yes eas-cli@latest update
-          --channel preview
-          --environment preview
-          --platform ios
-          --message "Preview OTA iOS ${{ github.sha }}"
-
-      - name: Publish preview OTA update to Android
-        if: steps.release-route.outputs.route == 'ota'
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          CI: '1'
-          EXPO_PUBLIC_RELEASE_CHANNEL: preview
-        run: >-
-          npx --yes eas-cli@latest update
-          --channel preview
-          --environment preview
-          --platform android
-          --message "Preview OTA Android ${{ github.sha }}"
-
-      - name: Record OTA release
-        if: steps.release-route.outputs.route == 'ota'
-        run: |
-          echo "Published ${{ github.sha }} to the production and preview EAS Update channels for iOS and Android." >> "$GITHUB_STEP_SUMMARY"
+          echo "Production OTA publication authority: Azure self-hosted workflow."
