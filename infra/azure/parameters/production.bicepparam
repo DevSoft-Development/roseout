@@ -10,3 +10,5 @@ param aiModelDeploymentEnabled = false
 param consumerContainerAppsEnvironmentEnabled = true
 param consumerRegionalFailoverEnabled = true
 param consumerEdgeEnabled = false
+
+param otaEnabled = true
