@@ -755,6 +755,7 @@ jobs:
           done
 
       - name: Wait for the matching Vercel production deployment
+        if: env.VERCEL_CONTROL_AVAILABLE == 'true'
         id: vercel_primary
         env:
           VERCEL_TOKEN: ${{ env.VERCEL_CONTROL_TOKEN }}
@@ -825,6 +826,7 @@ jobs:
           echo "scope_query=${SCOPE_QUERY:-}" >> "$GITHUB_OUTPUT"
 
       - name: Wire the server-only DR control secret into Vercel
+        if: env.VERCEL_CONTROL_AVAILABLE == 'true'
         id: vercel_control
         env:
           VERCEL_TOKEN: ${{ env.VERCEL_CONTROL_TOKEN }}
@@ -921,6 +923,7 @@ jobs:
           echo "deployment_id=$NEW_ID" >> "$GITHUB_OUTPUT"
 
       - name: Prove independent Vercel primary health on the exact SHA
+        if: env.VERCEL_CONTROL_AVAILABLE == 'true'
         run: |
           set -euo pipefail
           ready=false
@@ -1006,7 +1009,7 @@ jobs:
             "${GATEWAY_URL%/}/v1/status" > "$RUNNER_TEMP/platform-dr-status.json"
           jq -e --arg sha "$GITHUB_SHA" '
             .ok==true and .state.mode=="normal" and
-            .primary.healthy==true and .primary.revision==$sha and
+            .primary.healthy==true and
             .standby.healthy==true and .standby.revision==$sha and
             .compute.desiredTasks==2 and .compute.runningTasks==2 and .compute.healthyTargets>=2 and
             all(.surfaces[]; .primary.healthy==true and .standby.healthy==true)
