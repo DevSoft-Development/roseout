@@ -179,6 +179,9 @@ jobs:
         with:
           inlineScript: |
             set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
 
       - name: Deploy staging runtime
@@ -191,6 +194,9 @@ jobs:
         with:
           inlineScript: |
             set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
 
       - name: Smoke-test Azure Container App
