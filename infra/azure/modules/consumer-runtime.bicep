@@ -17,6 +17,10 @@ param azureAiEndpoint string
 @secure()
 param azureAiApiKey string
 param azureAiModel string
+param huggingFaceAiEndpoint string
+@secure()
+param huggingFaceAiToken string
+param huggingFaceAiModel string
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var acrPullRoleDefinitionId = subscriptionResourceId(
@@ -80,6 +84,14 @@ resource azureAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
+resource huggingFaceAiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: vault
+  name: 'consumer-huggingface-ai-token'
+  properties: {
+    value: huggingFaceAiToken
+  }
+}
+
 resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ca-toh-consumer-${envShort}-primary'
   location: location
@@ -115,6 +127,11 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'azure-ai-api-key'
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
+          identity: identity.id
+        }
+        {
+          name: 'huggingface-ai-token'
+          keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${huggingFaceAiTokenSecret.name}'
           identity: identity.id
         }
       ]
@@ -160,6 +177,18 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_AI_MODEL'
               value: azureAiModel
+            }
+            {
+              name: 'HUGGINGFACE_AI_ENDPOINT'
+              value: huggingFaceAiEndpoint
+            }
+            {
+              name: 'HUGGINGFACE_AI_TOKEN'
+              secretRef: 'huggingface-ai-token'
+            }
+            {
+              name: 'HUGGINGFACE_AI_MODEL'
+              value: huggingFaceAiModel
             }
           ]
           resources: {
