@@ -195,6 +195,64 @@ jobs:
 
           echo "GitHub OIDC deploy role trust reconciled for production, Production, and staging." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Reconcile canonical deploy role stack
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          STACK_NAME="$(aws cloudformation describe-stack-resources \
+            --physical-resource-id "$ROLE_NAME" \
+            --query 'StackResources[0].StackName' \
+            --output text)"
+          test -n "$STACK_NAME"
+          test "$STACK_NAME" != "None"
+
+          STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)"
+          case "$STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE)
+              ;;
+            *)
+              echo "Deploy-role stack $STACK_NAME is not in a safe stable state: $STATUS" >&2
+              exit 1
+              ;;
+          esac
+
+          set +e
+          UPDATE_OUTPUT="$(aws cloudformation update-stack \
+            --stack-name "$STACK_NAME" \
+            --template-body "file://$ROLE_TEMPLATE_FILE" \
+            --capabilities CAPABILITY_NAMED_IAM 2>&1)"
+          UPDATE_RC=$?
+          set -e
+
+          if [ "$UPDATE_RC" -eq 0 ]; then
+            aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+          elif printf '%s' "$UPDATE_OUTPUT" | grep -Fq 'No updates are to be performed'; then
+            :
+          else
+            printf '%s\n' "$UPDATE_OUTPUT" >&2
+            exit "$UPDATE_RC"
+          fi
+
+          FINAL_STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)"
+          case "$FINAL_STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE)
+              ;;
+            *)
+              echo "Deploy-role stack reconciliation did not finish safely: $FINAL_STATUS" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Canonical deploy-role stack reconciled in place from $ROLE_TEMPLATE_FILE." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Repair bootstrap deployment permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
