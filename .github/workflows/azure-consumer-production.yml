@@ -198,6 +198,13 @@ jobs:
           set -euo pipefail
           git checkout --detach "$IMAGE_SHA"
 
+      - name: Refresh Azure OIDC before ACR login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Login to production ACR
         run: az acr login --name "${{ steps.azure.outputs.registry }}"
 
