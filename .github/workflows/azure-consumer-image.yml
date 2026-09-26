@@ -8,6 +8,12 @@ on:
       - "apps/consumer/**"
       - "infra/azure/consumer-runtime/**"
       - ".github/workflows/azure-consumer-image.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/azure-consumer-image.yml"
+      - ".github/workflows/azure-consumer-runtime.yml"
   workflow_dispatch:
     inputs:
       push_image:
@@ -33,7 +39,7 @@ jobs:
 
   push:
     name: Push immutable staging image
-    if: github.event_name == 'workflow_dispatch' && inputs.push_image
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_image)
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 25
