@@ -29,7 +29,8 @@ The workflow:
 3. runs an Azure what-if,
 4. deploys the commit-pinned Container App,
 5. verifies the running image tag,
-6. smoke-tests the Azure-generated HTTPS endpoint.
+6. smoke-tests the Azure-generated HTTPS health endpoint,
+7. smoke-tests the consumer home, Explore, and Create pages through the Azure-generated FQDN before any DNS cutover.
 
 No Route 53 record is changed. Vercel remains the consumer production traffic owner until later explicit cutover gates pass.
 
