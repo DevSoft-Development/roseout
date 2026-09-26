@@ -71,10 +71,14 @@ jobs:
         run: |
           set -euo pipefail
           PREFIX="/theouthaven/credential-vault/staging"
+          SHARED_SUPABASE_SECRET="/theouthaven/credential-vault/production/supabase"
           WORK="$RUNNER_TEMP/azure-consumer-vault"
           mkdir -p "$WORK"
 
-          aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json"
+          if ! aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json" 2>/dev/null; then
+            echo "Staging Supabase provider is not configured; using shared primary Supabase vault authority."
+            aws secretsmanager get-secret-value --secret-id "$SHARED_SUPABASE_SECRET" --query SecretString --output text > "$WORK/supabase.json"
+          fi
           if aws secretsmanager get-secret-value --secret-id "$PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
             jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
           else
@@ -91,9 +95,9 @@ jobs:
           HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
           SITE_URL="https://staging.theouthaven.com"
 
-          test -n "$SUPABASE_URL" || { echo "::error::Admin Credential Vault staging Supabase URL is missing."; exit 1; }
-          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Admin Credential Vault staging Supabase publishable key is missing."; exit 1; }
-          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Admin Credential Vault staging Supabase service role key is missing."; exit 1; }
+          test -n "$SUPABASE_URL" || { echo "::error::Admin Credential Vault shared primary Supabase URL is missing."; exit 1; }
+          test -n "$SUPABASE_ANON_KEY" || { echo "::error::Admin Credential Vault shared primary Supabase publishable key is missing."; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Admin Credential Vault shared primary Supabase service role key is missing."; exit 1; }
           if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
             test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face fallback is partially configured: access token is missing."; exit 1; }
             test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face fallback is partially configured: model is missing."; exit 1; }
