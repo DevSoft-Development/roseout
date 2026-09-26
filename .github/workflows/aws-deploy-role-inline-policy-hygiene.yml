@@ -128,10 +128,16 @@ jobs:
           EOF
 
           aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/inline-policies.json"
-          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies.json" >/dev/null || {
-            echo "Canonical inline policy $PRESERVE is missing; refusing cleanup." >&2
-            exit 1
-          }
+          MANAGED_COUNT="$(aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+            --output text 2>/dev/null || echo 0)"
+          if [ "$MANAGED_COUNT" != 4 ]; then
+            jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies.json" >/dev/null || {
+              echo "Canonical inline policy $PRESERVE is missing before managed-policy migration; refusing cleanup." >&2
+              exit 1
+            }
+          fi
 
           before=0
           while IFS= read -r policy; do
@@ -164,7 +170,9 @@ jobs:
             echo "Deploy role inline policies remain at or above the AWS 10,240-byte limit after bounded cleanup." >&2
             exit 1
           }
-          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies-after.json" >/dev/null
+          if [ "$MANAGED_COUNT" != 4 ]; then
+            jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies-after.json" >/dev/null
+          fi
 
           aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$INSPECTION_POLICY"
 
