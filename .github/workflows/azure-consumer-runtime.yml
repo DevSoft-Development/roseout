@@ -178,3 +178,42 @@ jobs:
             echo "::error::Azure consumer runtime did not become healthy."
             cat health.json 2>/dev/null || true
             exit 1
+
+      - name: Smoke-test consumer pages before DNS cutover
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            FQDN="$(az deployment sub show --name toh-consumer-runtime-staging --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+            test -n "$FQDN" || { echo "::error::Container App FQDN was not returned."; exit 1; }
+
+            for path in / /explore /create; do
+              body_file="$(mktemp)"
+              code="$(curl --silent --show-error --location --output "$body_file" --write-out '%{http_code}' --connect-timeout 10 --max-time 30 "https://$FQDN$path" || true)"
+              if [ "$code" != "200" ]; then
+                echo "::error::Consumer page $path returned HTTP $code"
+                head -c 1000 "$body_file" || true
+                rm -f "$body_file"
+                exit 1
+              fi
+
+              if ! grep -qi '<html' "$body_file"; then
+                echo "::error::Consumer page $path did not return an HTML document."
+                head -c 1000 "$body_file" || true
+                rm -f "$body_file"
+                exit 1
+              fi
+
+              rm -f "$body_file"
+              echo "Consumer page smoke passed: $path"
+            done
+
+            {
+              echo ""
+              echo "### Pre-DNS consumer surface smoke"
+              echo ""
+              echo "- Home: passed"
+              echo "- Explore: passed"
+              echo "- Create: passed"
+              echo "- DNS cutover: not performed"
+            } >> "$GITHUB_STEP_SUMMARY"
