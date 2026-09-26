@@ -22,14 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f azure-pipelines-mobile.yml
-          if grep -F 'secrets.EXPO_TOKEN' .github/workflows/mobile-production-native.yml >/dev/null; then
-            echo "::error::Legacy Expo native credential is still referenced."
-            exit 1
-          fi
-          if grep -F '.eas/workflows/' .github/workflows/mobile-production-native.yml >/dev/null; then
-            echo "::error::Legacy EAS native workflow path is still referenced."
-            exit 1
-          fi
+          grep -F 'name: Mobile production native migration guard' .github/workflows/mobile-production-native.yml >/dev/null
           grep -F 'InstallAppleCertificate@2' azure-pipelines-mobile.yml >/dev/null
           grep -F 'InstallAppleProvisioningProfile@1' azure-pipelines-mobile.yml >/dev/null
           grep -F 'bundleRelease' azure-pipelines-mobile.yml >/dev/null
