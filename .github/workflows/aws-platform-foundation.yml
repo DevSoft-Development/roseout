@@ -131,8 +131,22 @@ jobs:
           test -n "$STACK_NAME"
           test "$STACK_NAME" != "None"
 
+          ATTACHED_COUNT="$(aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+            --output text 2>/dev/null || echo 0)"
+          STACK_STATUS="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].StackStatus' \
+            --output text)"
+          if [ "$ATTACHED_COUNT" = 4 ] && { [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; }; then
+            echo "Canonical deploy role is already on the four-managed-policy model." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           mapfile -t ABANDONED_BOOTSTRAP_POLICIES <<'EOF'
           TheOutHavenPlatformDrBootstrap
+          TheOutHavenPlatformDrSelfInspectionBootstrap
           TheOutHavenSesTelemetryBootstrap
           TheOutHavenWorkerRuntimeBootstrap
           TheOutHavenDnsVerificationBootstrap
@@ -160,24 +174,53 @@ jobs:
               --policy-name "$policy" >/dev/null 2>&1 || true
           done
 
-          RECOVERY_POLICY='TheOutHavenDeployRoleRecoveryBootstrap'
-          RECOVERY_FILE="$RUNNER_TEMP/deploy-role-recovery-bootstrap.json"
-          cleanup_recovery() {
-            aws iam delete-role-policy \
-              --role-name "$ROLE_NAME" \
-              --policy-name "$RECOVERY_POLICY" >/dev/null 2>&1 || true
-            rm -f "$RECOVERY_FILE"
-          }
-          trap cleanup_recovery EXIT
+          PRESERVE='TheOutHavenPlatformCloudFormation'
+          ORIGINAL_FILE="$RUNNER_TEMP/platform-canonical-original.json"
+          BRIDGE_FILE="$RUNNER_TEMP/platform-canonical-recovery-bridge.json"
+          RECOVERY_FILE="$RUNNER_TEMP/platform-managed-recovery-policy.json"
+          RECOVERY_NAME='TheOutHavenDeployRoleRecoveryManagedPolicy'
+          RECOVERY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${RECOVERY_NAME}"
+          RECOVERY_ATTACHED=false
 
-          cat > "$RECOVERY_FILE" <<JSON
+          aws iam get-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$PRESERVE" \
+            --query PolicyDocument \
+            --output json > "$ORIGINAL_FILE"
+
+          restore_if_unattached() {
+            if [ "$RECOVERY_ATTACHED" != true ]; then
+              aws iam put-role-policy \
+                --role-name "$ROLE_NAME" \
+                --policy-name "$PRESERVE" \
+                --policy-document "file://$ORIGINAL_FILE" >/dev/null 2>&1 || true
+            fi
+            rm -f "$ORIGINAL_FILE" "$BRIDGE_FILE" "$RECOVERY_FILE"
+          }
+          trap restore_if_unattached EXIT
+
+          cat > "$BRIDGE_FILE" <<JSON
           {
             "Version":"2012-10-17",
             "Statement":[
               {
                 "Effect":"Allow",
                 "Action":[
+                  "iam:GetRole",
                   "iam:UpdateAssumeRolePolicy",
+                  "iam:PutRolePolicy",
+                  "iam:DeleteRolePolicy",
+                  "iam:GetRolePolicy",
+                  "iam:ListRolePolicies",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:AttachRolePolicy",
+                  "iam:DetachRolePolicy"
+                ],
+                "Resource":"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
+              },
+              {
+                "Effect":"Allow",
+                "Action":[
                   "iam:CreatePolicy",
                   "iam:DeletePolicy",
                   "iam:GetPolicy",
@@ -185,44 +228,63 @@ jobs:
                   "iam:CreatePolicyVersion",
                   "iam:DeletePolicyVersion",
                   "iam:ListPolicyVersions",
-                  "iam:AttachRolePolicy",
-                  "iam:DetachRolePolicy",
                   "iam:TagPolicy",
                   "iam:UntagPolicy"
                 ],
                 "Resource":[
-                  "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}",
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployCore",
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployDr",
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployServices",
-                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime"
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime",
+                  "$RECOVERY_ARN"
                 ]
               },
               {
                 "Effect":"Allow",
-                "Action":"cloudformation:ContinueUpdateRollback",
+                "Action":[
+                  "cloudformation:ContinueUpdateRollback",
+                  "cloudformation:UpdateStack",
+                  "cloudformation:DescribeStacks",
+                  "cloudformation:DescribeStackEvents",
+                  "cloudformation:DescribeStackResources",
+                  "cloudformation:GetTemplate"
+                ],
                 "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${STACK_NAME}/*"
               }
             ]
           }
           JSON
+          cp "$BRIDGE_FILE" "$RECOVERY_FILE"
 
           aws iam put-role-policy \
             --role-name "$ROLE_NAME" \
-            --policy-name "$RECOVERY_POLICY" \
-            --policy-document "file://$RECOVERY_FILE"
-          aws iam get-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name "$RECOVERY_POLICY" \
-            --query 'PolicyName' \
-            --output text >/dev/null
+            --policy-name "$PRESERVE" \
+            --policy-document "file://$BRIDGE_FILE"
+          sleep 20
+
+          if aws iam get-policy --policy-arn "$RECOVERY_ARN" >/dev/null 2>&1; then
+            while IFS= read -r version; do
+              test -n "$version" || continue
+              aws iam delete-policy-version --policy-arn "$RECOVERY_ARN" --version-id "$version"
+            done < <(aws iam list-policy-versions --policy-arn "$RECOVERY_ARN" --query 'Versions[?IsDefaultVersion==`false`].VersionId' --output text | tr '\t' '\n')
+            aws iam create-policy-version \
+              --policy-arn "$RECOVERY_ARN" \
+              --policy-document "file://$RECOVERY_FILE" \
+              --set-as-default >/dev/null
+          else
+            aws iam create-policy \
+              --policy-name "$RECOVERY_NAME" \
+              --policy-document "file://$RECOVERY_FILE" >/dev/null
+          fi
+
+          aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$RECOVERY_ARN"
+          RECOVERY_ATTACHED=true
           sleep 20
 
           STATUS="$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].StackStatus' \
             --output text)"
-
           if [ "$STATUS" = 'UPDATE_ROLLBACK_FAILED' ]; then
             aws cloudformation continue-update-rollback --stack-name "$STACK_NAME"
             aws cloudformation wait stack-rollback-complete --stack-name "$STACK_NAME"
@@ -272,14 +334,7 @@ jobs:
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].StackStatus' \
             --output text)"
-          case "$FINAL_STATUS" in
-            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE)
-              ;;
-            *)
-              echo "Deploy-role stack reconciliation did not finish safely: $FINAL_STATUS" >&2
-              exit 1
-              ;;
-          esac
+          test "$FINAL_STATUS" = "UPDATE_COMPLETE" -o "$FINAL_STATUS" = "CREATE_COMPLETE"
 
           for policy in \
             TheOutHavenPlatformDeployCore \
@@ -308,9 +363,12 @@ jobs:
             ($subs | index("repo:DevSoft-Development/roseout:environment:staging") != null)
           ' >/dev/null
 
-          cleanup_recovery
+          aws iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$RECOVERY_ARN"
+          aws iam delete-policy --policy-arn "$RECOVERY_ARN"
+          RECOVERY_ATTACHED=false
+          rm -f "$ORIGINAL_FILE" "$BRIDGE_FILE" "$RECOVERY_FILE"
           trap - EXIT
-          echo "Canonical deploy-role stack recovered and reconciled to four managed policies." >> "$GITHUB_STEP_SUMMARY"
+          echo "Canonical deploy-role stack recovered and reconciled to four managed policies using a quota-safe managed recovery bridge." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Repair bootstrap deployment permissions
         env:
@@ -318,6 +376,14 @@ jobs:
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          MANAGED_COUNT="$(aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+            --output text 2>/dev/null || echo 0)"
+          if [ "$MANAGED_COUNT" = 4 ]; then
+            echo "Managed deploy-role policy model is active; legacy inline bootstrap repair is not required." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           POLICY_FILE="$RUNNER_TEMP/platform-bootstrap-repair.json"
 
           mapfile -t ABANDONED_BOOTSTRAP_POLICIES <<'EOF'
