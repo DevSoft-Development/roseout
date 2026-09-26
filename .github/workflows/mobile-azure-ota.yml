@@ -83,7 +83,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: Production
+    environment: production
     steps:
       - uses: actions/checkout@v4
         with:

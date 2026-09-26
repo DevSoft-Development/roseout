@@ -63,7 +63,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: Production
+    environment: production
     steps:
       - name: Check out deployment workflow
         uses: actions/checkout@v4
