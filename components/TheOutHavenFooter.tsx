@@ -10,13 +10,15 @@ export default function TheOutHavenFooter() {
         <div>
           <Link href="/" className="group inline-flex items-center">
             <span className="flex flex-col items-center">
-              <Image
-                src="/toh_logo_wordmark_dark.png"
-                alt="TheOutHaven"
-                width={900}
-                height={120}
-                className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
-              />
+              <span aria-hidden="true" className="block h-[24px] w-[220px] max-w-full overflow-hidden">
+                <Image
+                  src="/toh_logo_wordmark_dark.png"
+                  alt="TheOutHaven"
+                  width={900}
+                  height={120}
+                  className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
+                />
+              </span>
               <span
                 aria-hidden="true"
                 className="mt-1 whitespace-nowrap text-[6px] font-black uppercase leading-none tracking-[0.08em] text-white/70"
