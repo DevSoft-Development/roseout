@@ -217,6 +217,10 @@ jobs:
               ;;
             *)
               echo "Deploy-role stack $STACK_NAME is not in a safe stable state: $STATUS" >&2
+              aws cloudformation describe-stack-events \
+                --stack-name "$STACK_NAME" \
+                --query 'StackEvents[0:20].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+                --output table >&2 || true
               exit 1
               ;;
           esac
