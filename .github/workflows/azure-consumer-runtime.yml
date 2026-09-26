@@ -234,19 +234,32 @@ jobs:
             fi
             echo "Consumer auth route smoke passed."
 
-            search_code="$(curl --silent --show-error --output search.json --write-out '%{http_code}'               --connect-timeout 10 --max-time 90               -H 'content-type: application/json'               -H 'x-theouthaven-guest-id: azure-staging-smoke'               --data '{"query":"Italian restaurant in Manhattan","planType":"restaurant","area":"Manhattan","areaSource":"manual"}'               "https://$FQDN/api/mobile/v1/search" || true)"
-            if [ "$search_code" != "200" ] || ! jq -e '.ok == true and (.restaurants | type == "array") and (.activities | type == "array") and (.pairs | type == "array")' search.json >/dev/null 2>&1; then
-              echo "::error::Search route smoke failed with HTTP $search_code"
-              jq '{ok,error,reply,resolvedPlanType,canonicalSearchType}' search.json 2>/dev/null || cat search.json 2>/dev/null || true
+            web_search_code="$(curl --silent --show-error --output web-search.json --write-out '%{http_code}'               --connect-timeout 10 --max-time 90               -H 'content-type: application/json'               -H 'x-theouthaven-guest-id: azure-staging-web-smoke'               --data '{"input":"Italian restaurant in Manhattan","selectedSearchLane":"restaurant","timezone":"America/New_York"}'               "https://$FQDN/api/generate" || true)"
+            if [ "$web_search_code" != "200" ] || ! jq -e '.success == true or .status == "ok" or .restaurants != null or .cards != null' web-search.json >/dev/null 2>&1; then
+              echo "::error::Canonical web search smoke failed with HTTP $web_search_code"
+              jq '{success,status,error,reply,render_mode,renderMode}' web-search.json 2>/dev/null || cat web-search.json 2>/dev/null || true
+              echo "Recent Container App logs:"
+              az containerapp logs show --resource-group rg-toh-consumer-staging --name ca-toh-consumer-stg-primary --tail 100 --follow false || true
               exit 1
             fi
-            echo "Consumer search route smoke passed."
+            echo "Canonical web search route smoke passed."
+
+            search_code="$(curl --silent --show-error --output search.json --write-out '%{http_code}'               --connect-timeout 10 --max-time 90               -H 'content-type: application/json'               -H 'x-theouthaven-guest-id: azure-staging-mobile-smoke'               --data '{"query":"Italian restaurant in Manhattan","planType":"restaurant","area":"Manhattan","areaSource":"manual"}'               "https://$FQDN/api/mobile/v1/search" || true)"
+            if [ "$search_code" != "200" ] || ! jq -e '.ok == true and (.restaurants | type == "array") and (.activities | type == "array") and (.pairs | type == "array")' search.json >/dev/null 2>&1; then
+              echo "::error::Mobile search adapter smoke failed with HTTP $search_code"
+              jq '{ok,error,reply,resolvedPlanType,canonicalSearchType}' search.json 2>/dev/null || cat search.json 2>/dev/null || true
+              echo "Recent Container App logs:"
+              az containerapp logs show --resource-group rg-toh-consumer-staging --name ca-toh-consumer-stg-primary --tail 100 --follow false || true
+              exit 1
+            fi
+            echo "Consumer mobile search route smoke passed."
 
             {
               echo ""
               echo "### Pre-DNS consumer API smoke"
               echo ""
               echo "- Auth validation route: passed"
-              echo "- Search route: passed"
+              echo "- Canonical web search route: passed"
+              echo "- Mobile search adapter: passed"
               echo "- DNS cutover: not performed"
             } >> "$GITHUB_STEP_SUMMARY"
