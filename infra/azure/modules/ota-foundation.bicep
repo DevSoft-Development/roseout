@@ -2,6 +2,9 @@ param environment string
 param location string
 param secondaryLocation string
 param tags object
+param apiEnabled bool = false
+param primaryApiHostName string = ''
+param secondaryApiHostName string = ''
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
@@ -120,9 +123,58 @@ resource secondaryOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01
   }
 }
 
-resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
+resource apiOriginGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = if (apiEnabled) {
+  parent: profile
+  name: 'ota-api'
+  properties: {
+    sessionAffinityState: 'Disabled'
+    healthProbeSettings: {
+      probePath: '/api/health/azure'
+      probeRequestType: 'GET'
+      probeProtocol: 'Https'
+      probeIntervalInSeconds: 30
+    }
+    loadBalancingSettings: {
+      sampleSize: 4
+      successfulSamplesRequired: 3
+      additionalLatencyInMilliseconds: 0
+    }
+  }
+}
+
+resource primaryApiOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = if (apiEnabled) {
+  parent: apiOriginGroup
+  name: 'primary'
+  properties: {
+    hostName: primaryApiHostName
+    httpPort: 80
+    httpsPort: 443
+    originHostHeader: primaryApiHostName
+    priority: 1
+    weight: 1000
+    enabledState: 'Enabled'
+    enforceCertificateNameCheck: true
+  }
+}
+
+resource secondaryApiOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = if (apiEnabled && environment == 'production') {
+  parent: apiOriginGroup
+  name: 'secondary'
+  properties: {
+    hostName: secondaryApiHostName
+    httpPort: 80
+    httpsPort: 443
+    originHostHeader: secondaryApiHostName
+    priority: 2
+    weight: 1000
+    enabledState: 'Enabled'
+    enforceCertificateNameCheck: true
+  }
+}
+
+resource assetRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
   parent: endpoint
-  name: 'ota'
+  name: 'ota-assets'
   properties: {
     originGroup: {
       id: originGroup.id
@@ -144,6 +196,33 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
     secondaryOrigin
   ] : [
     primaryOrigin
+  ]
+}
+
+resource apiRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = if (apiEnabled) {
+  parent: endpoint
+  name: 'ota-api'
+  properties: {
+    originGroup: {
+      id: apiOriginGroup.id
+    }
+    supportedProtocols: [
+      'Http'
+      'Https'
+    ]
+    patternsToMatch: [
+      '/api/*'
+    ]
+    forwardingProtocol: 'HttpsOnly'
+    linkToDefaultDomain: 'Enabled'
+    httpsRedirect: 'Enabled'
+    enabledState: 'Enabled'
+  }
+  dependsOn: environment == 'production' ? [
+    primaryApiOrigin
+    secondaryApiOrigin
+  ] : [
+    primaryApiOrigin
   ]
 }
 
