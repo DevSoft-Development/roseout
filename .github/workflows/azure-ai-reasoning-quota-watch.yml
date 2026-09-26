@@ -3,14 +3,6 @@ name: Azure AI reasoning quota watch
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: Azure environment to inspect
-        type: choice
-        required: true
-        options:
-          - staging
-          - production
-        default: staging
       model:
         description: Reasoning model quota to watch
         type: string
@@ -23,16 +15,16 @@ permissions:
   issues: write
 
 concurrency:
-  group: azure-ai-reasoning-quota-watch-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+  group: azure-ai-reasoning-quota-watch-staging
   cancel-in-progress: true
 
 jobs:
   inspect:
     name: Watch reasoning-model quota
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' && 'Production' || 'staging' }}
+    environment: staging
     env:
-      TARGET_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'gpt-5.6-sol' }}
+      TARGET_MODEL: ${{ inputs.model }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -51,11 +43,7 @@ jobs:
           inlineScript: |
             set -euo pipefail
 
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.environment }}" = "production" ]; then
-              RG="rg-toh-consumer-production"
-            else
-              RG="rg-toh-consumer-staging"
-            fi
+            RG="rg-toh-consumer-staging"
 
             ACCOUNT="$(az cognitiveservices account list \
               --resource-group "$RG" \
