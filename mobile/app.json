@@ -4,11 +4,12 @@
     "slug": "theouthaven",
     "scheme": "theouthaven",
     "version": "0.1.2",
-    "runtimeVersion": {
-      "policy": "fingerprint"
-    },
+    "runtimeVersion": "1",
     "updates": {
-      "url": "https://u.expo.dev/243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
+      "url": "https://updates.theouthaven.com/api/mobile/ota/manifest",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "icon": "./assets/app-icon.png",
     "orientation": "portrait",
@@ -67,11 +68,6 @@
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "243ab88a-53dc-4f94-ae7e-6cc3d24b94be"
-      }
     },
     "backgroundColor": "#070303"
   }
