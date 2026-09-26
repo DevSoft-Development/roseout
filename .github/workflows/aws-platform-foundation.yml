@@ -316,41 +316,50 @@ jobs:
               exit 1
             }
 
-          existing_bytes=0
-          while IFS= read -r policy; do
-            doc="$RUNNER_TEMP/platform-bootstrap-existing-${policy}.json"
-            aws iam get-role-policy \
-              --role-name "$ROLE_NAME" \
-              --policy-name "$policy" \
-              --query PolicyDocument \
-              --output json > "$doc"
-            bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
-            existing_bytes=$((existing_bytes + bytes))
-          done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/platform-bootstrap-inline-policies.json")
-
-          bootstrap_bytes="$(jq -c . "$POLICY_FILE" | wc -c | tr -d ' ')"
-          projected_bytes=$((existing_bytes + bootstrap_bytes))
-          echo "inline_policy_bytes_after_cleanup=$existing_bytes"
-          echo "bootstrap_policy_bytes=$bootstrap_bytes"
-          echo "projected_inline_policy_bytes=$projected_bytes"
-          test "$projected_bytes" -lt 10240 || {
-            echo "Refusing bootstrap repair: projected inline policy size ${projected_bytes} is not below the AWS 10,240-byte role limit." >&2
-            exit 1
-          }
-
-          aws iam put-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
-            --policy-document "file://$POLICY_FILE"
+          CANONICAL_FILE="$RUNNER_TEMP/platform-canonical-policy.json"
           aws iam get-role-policy \
             --role-name "$ROLE_NAME" \
-            --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
-            --query 'PolicyName' \
-            --output text >/dev/null
-          sleep 8
+            --policy-name "$PRESERVE" \
+            --query PolicyDocument \
+            --output json > "$CANONICAL_FILE"
+
+          mapfile -t REQUIRED_ACTIONS <<'EOF'
+          cloudformation:CreateChangeSet
+          cloudformation:DescribeChangeSet
+          cloudformation:ExecuteChangeSet
+          cloudformation:DeleteChangeSet
+          scheduler:ListTagsForResource
+          sns:ListTagsForResource
+          s3:GetEncryptionConfiguration
+          s3:PutEncryptionConfiguration
+          s3:GetLifecycleConfiguration
+          s3:PutLifecycleConfiguration
+          s3:DeleteBucketPolicy
+          sqs:GetQueueUrl
+          logs:FilterLogEvents
+          EOF
+
+          missing=()
+          for action in "${REQUIRED_ACTIONS[@]}"; do
+            if ! jq -e --arg action "$action" '
+              [
+                .Statement[]?.Action
+                | if type == "array" then .[] else . end
+              ] | index($action) != null
+            ' "$CANONICAL_FILE" >/dev/null; then
+              missing+=("$action")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Canonical policy is missing required bootstrap actions:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+
           cleanup_inspection
           trap - EXIT
-          echo "Bootstrap deployment permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Canonical deployment policy already contains all required foundation bootstrap permissions; redundant bootstrap policy was not created." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ensure ELB service-linked role prerequisite
         env:
