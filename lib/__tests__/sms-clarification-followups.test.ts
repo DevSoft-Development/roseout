@@ -146,6 +146,30 @@ describe("SMS clarification follow-ups", () => {
     expect(worker).toContain('select("id,status,category,priority,metadata")');
   });
 
+  it("advances fallback support after a customer answers the prior question", () => {
+    const responder = fs.readFileSync(
+      path.join(process.cwd(), "lib/support/ai-responder.ts"),
+      "utf8",
+    );
+    expect(responder).toContain("latestRelevantOutboundQuestion");
+    expect(responder).toContain("looksLikeSubstantiveAnswer");
+    expect(responder).toContain("move forward instead of asking the same troubleshooting question again");
+    expect(responder).toContain("answeredQuestion && looksLikeSubstantiveAnswer");
+  });
+
+  it("preserves AI and learned-response metadata when Telnyx delivery updates arrive", () => {
+    for (const routePath of [
+      "app/api/webhooks/telnyx/messages/route.ts",
+      "apps/consumer/app/api/webhooks/telnyx/messages/route.ts",
+    ]) {
+      const source = fs.readFileSync(path.join(process.cwd(), routePath), "utf8");
+      expect(source).toContain('.select("id,metadata")');
+      expect(source).toContain("existingSupportMetadata");
+      expect(source).toContain("metadata: { ...existingSupportMetadata, telnyx_delivery: payload }");
+      expect(source).not.toContain('metadata: { telnyx_delivery: payload },\n    }).eq("provider", "telnyx").eq("provider_message_id", messageId).eq("direction", "outbound")');
+    }
+  });
+
   it("preserves reservation clarification behavior", () => {
     expect(route).toContain("incoming_reservation_clarification");
     expect(route).toContain("reservation_clarification_sent");

@@ -146,16 +146,33 @@ async function updateDelivery(messageId: string, status: string, payload: unknow
   const normalizedStatus = status.toLowerCase();
   const failed = normalizedStatus.includes("failed");
   const delivered = normalizedStatus === "delivered";
+
+  const { data: supportMessage, error: supportMessageError } = await supabaseAdmin
+    .from("support_ticket_messages")
+    .select("id,metadata")
+    .eq("provider", "telnyx")
+    .eq("provider_message_id", messageId)
+    .eq("direction", "outbound")
+    .maybeSingle();
+  if (supportMessageError) throw supportMessageError;
+
+  const existingSupportMetadata =
+    supportMessage?.metadata && typeof supportMessage.metadata === "object" && !Array.isArray(supportMessage.metadata)
+      ? supportMessage.metadata as Record<string, unknown>
+      : {};
+
   await Promise.all([
     supabaseAdmin.from("marketing_send_logs").update({ status: delivered ? "sent" : failed ? "failed" : "sent", provider_response: payload as Record<string, unknown> }).eq("provider", "telnyx").contains("provider_response", { id: messageId }),
     supabaseAdmin.from("crm_messages").update({ status: delivered ? "delivered" : failed ? "failed" : "sent", delivered_at: delivered ? now : null, failed_at: failed ? now : null, metadata: { telnyx_delivery: payload }, updated_at: now }).eq("provider", "telnyx").eq("provider_message_id", messageId),
     supabaseAdmin.from("crm_message_recipients").update({ delivery_status: normalizedStatus }).eq("provider_recipient_id", messageId),
-    supabaseAdmin.from("support_ticket_messages").update({
-      delivery_status: normalizedStatus,
-      delivered_at: delivered ? now : null,
-      failed_at: failed ? now : null,
-      metadata: { telnyx_delivery: payload },
-    }).eq("provider", "telnyx").eq("provider_message_id", messageId).eq("direction", "outbound"),
+    supportMessage?.id
+      ? supabaseAdmin.from("support_ticket_messages").update({
+          delivery_status: normalizedStatus,
+          delivered_at: delivered ? now : null,
+          failed_at: failed ? now : null,
+          metadata: { ...existingSupportMetadata, telnyx_delivery: payload },
+        }).eq("id", supportMessage.id)
+      : Promise.resolve(),
   ]);
 }
 
