@@ -30,6 +30,10 @@ param consumerAzureAiEndpoint string = ''
 @secure()
 param consumerAzureAiApiKey string = ''
 param consumerAzureAiModel string = ''
+param consumerHuggingFaceAiEndpoint string = 'https://router.huggingface.co/v1'
+@secure()
+param consumerHuggingFaceAiToken string = ''
+param consumerHuggingFaceAiModel string = ''
 
 param tags object = {
   application: 'theouthaven'
@@ -82,6 +86,9 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     azureAiEndpoint: consumerAzureAiEndpoint
     azureAiApiKey: consumerAzureAiApiKey
     azureAiModel: consumerAzureAiModel
+    huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
+    huggingFaceAiToken: consumerHuggingFaceAiToken
+    huggingFaceAiModel: consumerHuggingFaceAiModel
   }
 }
 

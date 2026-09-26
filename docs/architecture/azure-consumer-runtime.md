@@ -36,3 +36,16 @@ The workflow:
 No Route 53 record is changed. Vercel remains the consumer production traffic owner until later explicit cutover gates pass.
 
 Hugging Face fallback credentials are intentionally not attached in this slice because no user-facing AI call site has moved to the Azure consumer runtime yet. They must be added before any migrated call site can rely on provider failover.
+
+
+## AI fallback runtime configuration
+
+Before any user-facing AI call site is moved to Azure, the staging Container App must have the full AI gateway fallback contract:
+
+- Azure Foundry remains the primary provider through `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`, and `AZURE_AI_MODEL`.
+- Hugging Face is configured as the full operational fallback through `HUGGINGFACE_AI_ENDPOINT`, `HUGGINGFACE_AI_TOKEN`, and `HUGGINGFACE_AI_MODEL`.
+- The Hugging Face token is stored in Azure Key Vault and injected into the Container App by secret reference.
+- The runtime workflow requires the staging GitHub environment secret `HUGGINGFACE_AI_TOKEN` and environment variable `HUGGINGFACE_AI_MODEL` before deployment.
+- Search V2's Hugging Face embedding/reranking configuration remains separate. Do not reuse or migrate Search V2 vector spaces as part of this gateway change.
+
+This only provisions the fallback provider. It does not move a production AI call site or perform a DNS cutover.
