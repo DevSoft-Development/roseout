@@ -147,6 +147,9 @@ module otaFoundation './modules/ota-foundation.bicep' = if (otaEnabled) {
     location: location
     secondaryLocation: secondaryLocation
     tags: tags
+    apiEnabled: consumerRuntimeEnabled && consumerRegionalFailoverEnabled
+    primaryApiHostName: consumerRuntimeEnabled ? consumerRuntime.outputs.fqdn : ''
+    secondaryApiHostName: consumerRuntimeEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryRuntime.outputs.fqdn : ''
   }
 }
 
