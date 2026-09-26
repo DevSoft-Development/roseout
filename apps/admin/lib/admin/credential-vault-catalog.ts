@@ -64,7 +64,11 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "openai", label: "OpenAI", category: "AI", description: "OpenAI API credential used by server-side AI features and assistant workloads.", fields: [
     { key: "apiKey", label: "API key", secret: true },
   ] },
-  { id: "huggingface", label: "Hugging Face", category: "AI", description: "Hugging Face access token used by search and AI services.", fields: [{ key: "token", label: "Access token", secret: true }] },
+  { id: "huggingface", label: "Hugging Face", category: "AI", description: "Hugging Face access token and shared runtime settings used by search and AI fallback services.", fields: [
+    { key: "token", label: "Access token", secret: true },
+    { key: "aiEndpoint", label: "AI fallback endpoint", placeholder: "https://router.huggingface.co/v1" },
+    { key: "aiModel", label: "AI fallback model", placeholder: "provider/model-name" },
+  ] },
   { id: "brave", label: "Brave Search", category: "AI", description: "Brave Search API credential used by search enrichment and discovery.", fields: [{ key: "apiKey", label: "API key", secret: true }] },
   { id: "serpapi", label: "SerpAPI", category: "AI", description: "SerpAPI credential used by search and enrichment fallbacks.", fields: [{ key: "apiKey", label: "API key", secret: true }] },
   { id: "stripe", label: "Stripe", category: "Payments", description: "Stripe server and webhook credentials used by payments, subscriptions, and Connect.", fields: [
