@@ -72,6 +72,10 @@ Resources:
           Secrets:
             - Name: RUNTIME_ENV_JSON
               ValueFrom: !Ref AdminAppEnvSecretArn
+            - Name: AWS_PLATFORM_JOB_GATEWAY_URL
+              ValueFrom: !Sub '${AdminAppEnvSecretArn}:AWS_PLATFORM_JOB_GATEWAY_URL::'
+            - Name: AWS_PLATFORM_JOB_GATEWAY_SECRET
+              ValueFrom: !Sub '${AdminAppEnvSecretArn}:AWS_PLATFORM_JOB_GATEWAY_SECRET::'
           LogConfiguration:
             LogDriver: awslogs
             Options:
