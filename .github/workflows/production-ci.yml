@@ -58,6 +58,18 @@ jobs:
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           printf '%s\n' "$CHANGED"
 
+          # Workflow-only PRs are owned by their dedicated workflow checks. Keep
+          # Production CI required, but do not spend time on the root app lane
+          # unless this workflow definition itself is being changed.
+          if [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -Evq '^\.github/workflows/'; then
+            if ! printf '%s\n' "$CHANGED" | grep -Fxq '.github/workflows/production-ci.yml'; then
+              echo "root=false" >> "$GITHUB_OUTPUT"
+              echo "admin=false" >> "$GITHUB_OUTPUT"
+              echo "scope=workflow-only" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           admin=false
           if printf '%s\n' "$CHANGED" | grep -Eq '^(apps/admin/|packages/(auth|db|config)/|scripts/surface-app-isolation-regression\.mjs$)'; then
             admin=true
@@ -74,6 +86,7 @@ jobs:
 
           echo "root=$root" >> "$GITHUB_OUTPUT"
           echo "admin=$admin" >> "$GITHUB_OUTPUT"
+          echo "scope=targeted" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
         if: steps.quality_scope.outputs.root == 'true' || steps.quality_scope.outputs.admin == 'true'
@@ -115,6 +128,7 @@ jobs:
         run: |
           echo "Root quality gate: ${{ steps.quality_scope.outputs.root }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Targeted Admin quality gate: ${{ steps.quality_scope.outputs.admin }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Quality scope mode: ${{ steps.quality_scope.outputs.scope }}" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.quality_scope.outputs.root }}" != "true" ] && [ "${{ steps.quality_scope.outputs.admin }}" != "true" ]; then
             echo "Production CI mode: lightweight required check; dedicated workflow owns validation for this change set." >> "$GITHUB_STEP_SUMMARY"
           fi
