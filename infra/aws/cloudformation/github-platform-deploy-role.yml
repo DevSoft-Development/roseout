@@ -33,6 +33,7 @@ Resources:
               StringLike:
                 token.actions.githubusercontent.com:sub:
                   - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:production
+                  - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:Production
                   - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:staging
       Policies:
         - PolicyName: TheOutHavenPlatformCloudFormation
