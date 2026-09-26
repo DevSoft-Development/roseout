@@ -184,6 +184,35 @@ jobs:
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
 
+          ROLE_STACK="$(aws cloudformation describe-stack-resources \
+            --physical-resource-id "$ROLE_NAME" \
+            --query 'StackResources[0].StackName' \
+            --output text 2>/dev/null || true)"
+
+          if [ -n "$ROLE_STACK" ] && [ "$ROLE_STACK" != "None" ]; then
+            migration_ready=false
+            for attempt in $(seq 1 40); do
+              STACK_STATUS="$(aws cloudformation describe-stacks \
+                --stack-name "$ROLE_STACK" \
+                --query 'Stacks[0].StackStatus' \
+                --output text 2>/dev/null || true)"
+              ATTACHED_COUNT="$(aws iam list-attached-role-policies \
+                --role-name "$ROLE_NAME" \
+                --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+                --output text 2>/dev/null || echo 0)"
+              if [ "$ATTACHED_COUNT" = 4 ] && { [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_ROLLBACK_COMPLETE" ]; }; then
+                migration_ready=true
+                break
+              fi
+              echo "Waiting for canonical deploy-role migration before DR bootstrap (status=$STACK_STATUS managed_policies=$ATTACHED_COUNT attempt=$attempt/40)."
+              sleep 15
+            done
+            test "$migration_ready" = true || {
+              echo "Canonical deploy-role migration did not become ready; refusing concurrent DR bootstrap." >&2
+              exit 1
+            }
+          fi
+
           mapfile -t TEMPORARY_POLICIES <<'EOF'
           TheOutHavenPlatformDrBootstrap
           TheOutHavenPlatformDrSelfInspectionBootstrap
