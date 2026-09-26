@@ -63,6 +63,26 @@ jobs:
           set -euo pipefail
           ROLE_ARN="${CONFIGURED_ROLE:-$DEPLOY_ROLE_ARN}"
           ROLE_NAME="${ROLE_ARN##*/}"
+
+          ROLE_STACK="$(aws cloudformation describe-stack-resources \
+            --physical-resource-id "$ROLE_NAME" \
+            --query 'StackResources[0].StackName' \
+            --output text 2>/dev/null || true)"
+          if [ -n "$ROLE_STACK" ] && [ "$ROLE_STACK" != "None" ]; then
+            STACK_STATUS="$(aws cloudformation describe-stacks \
+              --stack-name "$ROLE_STACK" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || true)"
+            ATTACHED_COUNT="$(aws iam list-attached-role-policies \
+              --role-name "$ROLE_NAME" \
+              --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+              --output text 2>/dev/null || echo 0)"
+            if [ "$ATTACHED_COUNT" != 4 ] || { [ "$STACK_STATUS" != "CREATE_COMPLETE" ] && [ "$STACK_STATUS" != "UPDATE_COMPLETE" ] && [ "$STACK_STATUS" != "UPDATE_ROLLBACK_COMPLETE" ]; }; then
+              echo "Deploy-role managed-policy migration is not stable (status=$STACK_STATUS managed_policies=$ATTACHED_COUNT); deferring inline-policy hygiene to avoid a quota race."
+              exit 0
+            fi
+          fi
+
           PRESERVE='TheOutHavenPlatformCloudFormation'
           INSPECTION_POLICY='TheOutHavenInlinePolicyHygieneSelfInspection'
 
