@@ -1,0 +1,320 @@
+name: Azure consumer production
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'infra/azure/**'
+      - 'apps/consumer/app/api/health/azure/**'
+      - '.github/workflows/azure-consumer-production.yml'
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Full main-branch Git commit SHA to build and deploy
+        type: string
+        required: true
+      deploy:
+        description: Build and deploy the dual-region production consumer
+        type: boolean
+        required: true
+        default: false
+      run_failover_drill:
+        description: Temporarily disable the primary Front Door origin and prove secondary routing
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-consumer-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate production consumer Bicep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Bicep
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az bicep build --file infra/azure/main.bicep
+            test -f infra/azure/main.json
+            rm infra/azure/main.json
+
+  deploy:
+    name: Deploy dual-region production consumer
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: Production
+    steps:
+      - name: Check out deployment workflow
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate requested release SHA
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$IMAGE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::image_sha must be a full 40-character Git commit SHA."
+            exit 1
+          fi
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$IMAGE_SHA" origin/main || {
+            echo "::error::Requested image SHA is not on main."
+            exit 1
+          }
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve production consumer configuration from Admin Credential Vault
+        run: |
+          set -euo pipefail
+          PREFIX="/theouthaven/credential-vault/production"
+          WORK="$RUNNER_TEMP/azure-consumer-production-vault"
+          mkdir -p "$WORK"
+
+          aws secretsmanager get-secret-value             --secret-id "$PREFIX/supabase"             --query SecretString --output text > "$WORK/supabase.json"
+
+          if aws secretsmanager get-secret-value             --secret-id "$PREFIX/huggingface"             --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
+            jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
+          else
+            printf '{}' > "$WORK/huggingface.json"
+          fi
+
+          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+
+          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
+          SITE_URL="https://theouthaven.com"
+
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+
+          if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
+            test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face token is missing."; exit 1; }
+            test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face model is missing."; exit 1; }
+            echo "::add-mask::$HUGGINGFACE_AI_TOKEN"
+          else
+            HUGGINGFACE_AI_ENDPOINT=""
+          fi
+
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY"; do
+            echo "::add-mask::$value"
+          done
+
+          {
+            echo "SITE_URL=$SITE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
+            echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
+            echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
+          } >> "$GITHUB_ENV"
+
+          rm -rf "$WORK"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure production dual-region foundation
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create               --name toh-consumer-foundation-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=false               consumerEdgeEnabled=false
+
+      - name: Resolve production Azure dependencies
+        id: azure
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            ACR="$(az acr list --resource-group "$RG" --query '[0].name' -o tsv)"
+            test -n "$ACR" || { echo "::error::No production ACR found."; exit 1; }
+
+            PRIMARY_AI="$(az cognitiveservices account list --resource-group "$RG" --query "[?kind=='AIServices' && location=='eastus2'] | [0].name" -o tsv)"
+            SECONDARY_AI="$(az cognitiveservices account list --resource-group "$RG" --query "[?kind=='AIServices' && location=='centralus'] | [0].name" -o tsv)"
+            test -n "$PRIMARY_AI" || { echo "::error::Primary Azure AI account is missing."; exit 1; }
+            test -n "$SECONDARY_AI" || { echo "::error::Secondary Azure AI account is missing."; exit 1; }
+
+            PRIMARY_AI_ENDPOINT="$(az cognitiveservices account show --resource-group "$RG" --name "$PRIMARY_AI" --query properties.endpoint -o tsv)"
+            SECONDARY_AI_ENDPOINT="$(az cognitiveservices account show --resource-group "$RG" --name "$SECONDARY_AI" --query properties.endpoint -o tsv)"
+            PRIMARY_AI_KEY="$(az cognitiveservices account keys list --resource-group "$RG" --name "$PRIMARY_AI" --query key1 -o tsv)"
+            SECONDARY_AI_KEY="$(az cognitiveservices account keys list --resource-group "$RG" --name "$SECONDARY_AI" --query key1 -o tsv)"
+
+            for value in "$PRIMARY_AI_KEY" "$SECONDARY_AI_KEY"; do echo "::add-mask::$value"; done
+
+            echo "registry=$ACR" >> "$GITHUB_OUTPUT"
+            echo "login_server=$ACR.azurecr.io" >> "$GITHUB_OUTPUT"
+            echo "primary_ai_endpoint=$PRIMARY_AI_ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "primary_ai_key=$PRIMARY_AI_KEY" >> "$GITHUB_OUTPUT"
+            echo "secondary_ai_endpoint=$SECONDARY_AI_ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "secondary_ai_key=$SECONDARY_AI_KEY" >> "$GITHUB_OUTPUT"
+            echo "image=$ACR.azurecr.io/consumer:$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact release SHA
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "$IMAGE_SHA"
+
+      - name: Login to production ACR
+        run: az acr login --name "${{ steps.azure.outputs.registry }}"
+
+      - name: Build and push immutable production image
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+        run: |
+          set -euo pipefail
+          if az acr repository show-tags             --name "${{ steps.azure.outputs.registry }}"             --repository consumer             --query "[?@=='${{ inputs.image_sha }}'] | [0]" -o tsv | grep -qx "${{ inputs.image_sha }}"; then
+            echo "Production image already exists; reusing immutable tag."
+          else
+            docker build               --file infra/azure/consumer-runtime/Dockerfile               --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"               --tag "$IMAGE"               .
+            docker push "$IMAGE"
+          fi
+
+      - name: What-if dual-region production runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+          PRIMARY_AI_ENDPOINT: ${{ steps.azure.outputs.primary_ai_endpoint }}
+          PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
+          SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
+          SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
+            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
+
+      - name: Deploy dual-region production runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+          PRIMARY_AI_ENDPOINT: ${{ steps.azure.outputs.primary_ai_endpoint }}
+          PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
+          SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
+          SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
+            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
+
+      - name: Prove both production regions and Front Door
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            DEPLOYMENT=toh-consumer-runtime-production
+            PRIMARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+            SECONDARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerSecondaryRuntimeFqdn.value -o tsv)"
+            EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE"
+
+            check_region() {
+              host="$1"
+              role="$2"
+              for _ in $(seq 1 24); do
+                code="$(curl --silent --show-error --output health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$host/api/health/azure" || true)"
+                if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" --arg role "$role" '.ok==true and .revision==$sha and .regionRole==$role' health.json >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 10
+              done
+              cat health.json >&2 || true
+              return 1
+            }
+
+            check_region "$PRIMARY" primary
+            check_region "$SECONDARY" secondary
+
+            for _ in $(seq 1 24); do
+              code="$(curl --silent --show-error --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
+                break
+              fi
+              sleep 10
+            done
+            jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha' edge-health.json >/dev/null
+
+            {
+              echo "## Azure production consumer readiness"
+              echo
+              echo "- Primary: https://$PRIMARY"
+              echo "- Secondary: https://$SECONDARY"
+              echo "- Front Door: https://$EDGE"
+              echo "- Release SHA: $IMAGE_SHA"
+              echo "- Route 53 cutover: not performed"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Drill regional failover through Front Door
+        if: inputs.run_failover_drill
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG=rg-toh-consumer-production
+            PROFILE=afd-toh-consumer-prod
+            GROUP=consumer-regions
+            EDGE="$(az deployment sub show --name toh-consumer-runtime-production --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+
+            restore() {
+              az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Enabled >/dev/null || true
+            }
+            trap restore EXIT
+
+            az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Disabled >/dev/null
+
+            passed=false
+            for _ in $(seq 1 30); do
+              code="$(curl --silent --show-error --output failover-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="secondary"' failover-health.json >/dev/null 2>&1; then
+                passed=true
+                break
+              fi
+              sleep 10
+            done
+            test "$passed" = true || { cat failover-health.json >&2 || true; exit 1; }
+            echo "Front Door regional failover drill passed." >> "$GITHUB_STEP_SUMMARY"

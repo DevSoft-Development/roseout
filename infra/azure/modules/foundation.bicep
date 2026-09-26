@@ -9,10 +9,12 @@ param aiModelVersion string
 param aiModelSkuName string
 param aiModelCapacity int
 param consumerContainerAppsEnvironmentEnabled bool
+param consumerRegionalFailoverEnabled bool = false
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
 var aiFoundryName = 'toh-${envShort}-${suffix}-ai'
+var secondaryAiFoundryName = 'toh-${envShort}-${suffix}-ai-dr'
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'id-toh-consumer-${envShort}'
@@ -48,7 +50,7 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = 
   location: location
   tags: tags
   sku: {
-    name: environment == 'production' ? 'Standard' : 'Basic'
+    name: environment == 'production' ? 'Premium' : 'Basic'
   }
   properties: {
     adminUserEnabled: false
@@ -57,10 +59,37 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = 
   }
 }
 
+resource registrySecondaryReplica 'Microsoft.ContainerRegistry/registries/replications@2023-11-01-preview' = if (environment == 'production' && consumerRegionalFailoverEnabled) {
+  parent: registry
+  name: replace(secondaryLocation, ' ', '')
+  location: secondaryLocation
+  tags: tags
+  properties: {
+    zoneRedundancy: 'Disabled'
+    regionEndpointEnabled: true
+  }
+}
+
 resource consumerContainerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (consumerContainerAppsEnvironmentEnabled) {
   name: 'cae-toh-consumer-${envShort}-primary'
   location: location
   tags: tags
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logs.properties.customerId
+        sharedKey: logs.listKeys().primarySharedKey
+      }
+    }
+    zoneRedundant: false
+  }
+}
+
+resource consumerSecondaryContainerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (consumerContainerAppsEnvironmentEnabled && consumerRegionalFailoverEnabled) {
+  name: 'cae-toh-consumer-${envShort}-secondary'
+  location: secondaryLocation
+  tags: union(tags, { regionRole: 'secondary' })
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -91,8 +120,43 @@ resource aiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
+resource secondaryAiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (consumerRegionalFailoverEnabled) {
+  name: secondaryAiFoundryName
+  location: secondaryLocation
+  kind: 'AIServices'
+  tags: union(tags, { regionRole: 'secondary' })
+  identity: {
+    type: 'SystemAssigned'
+  }
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: secondaryAiFoundryName
+    publicNetworkAccess: 'Enabled'
+    allowProjectManagement: true
+  }
+}
+
 resource aiModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiModelDeploymentEnabled) {
   parent: aiFoundry
+  name: aiModelDeploymentName
+  sku: {
+    name: aiModelSkuName
+    capacity: aiModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: aiModelName
+      version: aiModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
+resource secondaryAiModelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiModelDeploymentEnabled && consumerRegionalFailoverEnabled) {
+  parent: secondaryAiFoundry
   name: aiModelDeploymentName
   sku: {
     name: aiModelSkuName
@@ -135,7 +199,12 @@ output applicationInsightsName string = insights.name
 output logAnalyticsWorkspaceName string = logs.name
 output aiFoundryName string = aiFoundry.name
 output aiFoundryEndpoint string = aiFoundry.properties.endpoint
+output secondaryAiFoundryName string = consumerRegionalFailoverEnabled ? secondaryAiFoundry.name : ''
+output secondaryAiFoundryEndpoint string = consumerRegionalFailoverEnabled ? secondaryAiFoundry.properties.endpoint : ''
 output aiModelDeploymentName string = aiModelDeploymentEnabled ? aiModelDeployment.name : ''
+output secondaryAiModelDeploymentName string = aiModelDeploymentEnabled && consumerRegionalFailoverEnabled ? secondaryAiModelDeployment.name : ''
 output aiModelName string = aiModelDeploymentEnabled ? aiModelName : ''
 output secondaryLocation string = secondaryLocation
 output consumerContainerAppsEnvironmentName string = consumerContainerAppsEnvironmentEnabled ? consumerContainerAppsEnvironment.name : ''
+output consumerSecondaryContainerAppsEnvironmentName string = consumerContainerAppsEnvironmentEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryContainerAppsEnvironment.name : ''
+output registrySecondaryReplicationEnabled bool = environment == 'production' && consumerRegionalFailoverEnabled

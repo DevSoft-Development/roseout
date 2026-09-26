@@ -1,5 +1,6 @@
 param environment string
 param location string
+param regionRole string = 'primary'
 param tags object
 param containerAppsEnvironmentName string
 param registryName string
@@ -31,6 +32,8 @@ var keyVaultSecretsUserRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '4633458b-17de-408a-b874-0445c86b69e6'
 )
+var secretSuffix = regionRole == 'primary' ? 'primary' : 'secondary'
+var providerName = regionRole == 'primary' ? 'azure-consumer-primary' : 'azure-consumer-secondary'
 
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: containerAppsEnvironmentName
@@ -70,7 +73,7 @@ resource keyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01
 
 resource supabaseServiceRoleSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: vault
-  name: 'consumer-supabase-service-role-key'
+  name: 'consumer-supabase-service-role-key-${secretSuffix}'
   properties: {
     value: supabaseServiceRoleKey
   }
@@ -78,7 +81,7 @@ resource supabaseServiceRoleSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01
 
 resource azureAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: vault
-  name: 'consumer-azure-ai-api-key'
+  name: 'consumer-azure-ai-api-key-${secretSuffix}'
   properties: {
     value: azureAiApiKey
   }
@@ -88,16 +91,16 @@ var huggingFaceEnabled = !empty(huggingFaceAiToken) && !empty(huggingFaceAiModel
 
 resource huggingFaceAiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (huggingFaceEnabled) {
   parent: vault
-  name: 'consumer-huggingface-ai-token'
+  name: 'consumer-huggingface-ai-token-${secretSuffix}'
   properties: {
     value: huggingFaceAiToken
   }
 }
 
 resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
-  name: 'ca-toh-consumer-${envShort}-primary'
+  name: 'ca-toh-consumer-${envShort}-${regionRole}'
   location: location
-  tags: tags
+  tags: union(tags, { regionRole: regionRole })
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -147,7 +150,11 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
           env: concat([
             {
               name: 'PLATFORM_RUNTIME_PROVIDER'
-              value: 'azure-consumer'
+              value: providerName
+            }
+            {
+              name: 'PLATFORM_RUNTIME_REGION_ROLE'
+              value: regionRole
             }
             {
               name: 'PLATFORM_RUNTIME_GIT_SHA'
@@ -242,3 +249,4 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
 output name string = consumer.name
 output fqdn string = consumer.properties.configuration.ingress.fqdn
 output image string = image
+output regionRole string = regionRole
