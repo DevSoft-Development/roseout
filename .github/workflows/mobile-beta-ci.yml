@@ -85,7 +85,7 @@ jobs:
           NODE
 
       - name: Verify Azure native build authority
-        working-directory: ..
+        working-directory: .
         run: |
           set -euo pipefail
           test -f azure-pipelines-mobile.yml
