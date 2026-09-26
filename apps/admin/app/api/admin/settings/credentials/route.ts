@@ -74,6 +74,7 @@ function safeError(error: unknown) {
     "twilio_credential_test_failed",
     "meta_credential_test_failed",
     "microsoft_credential_test_failed",
+    "mobile_credential_test_failed",
   ]);
   return allowed.has(code) ? code : "credential_vault_request_failed";
 }
