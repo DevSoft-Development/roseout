@@ -7,4 +7,6 @@ param resourceGroupName = 'rg-toh-consumer-production'
 
 param aiModelDeploymentEnabled = false
 
-param consumerContainerAppsEnvironmentEnabled = false
+param consumerContainerAppsEnvironmentEnabled = true
+param consumerRegionalFailoverEnabled = true
+param consumerEdgeEnabled = false
