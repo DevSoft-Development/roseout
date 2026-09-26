@@ -284,14 +284,20 @@ jobs:
             check_region "$PRIMARY" primary
             check_region "$SECONDARY" secondary
 
-            for _ in $(seq 1 24); do
+            edge_ready=false
+            for _ in $(seq 1 60); do
               code="$(curl --silent --show-error --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
               if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
+                edge_ready=true
                 break
               fi
               sleep 10
             done
-            jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha' edge-health.json >/dev/null
+            if [ "$edge_ready" != true ]; then
+              echo "Front Door did not return the expected JSON health payload for release $IMAGE_SHA (last HTTP status: ${code:-unknown})." >&2
+              cat edge-health.json >&2 || true
+              exit 1
+            fi
 
             {
               echo "## Azure production consumer readiness"
