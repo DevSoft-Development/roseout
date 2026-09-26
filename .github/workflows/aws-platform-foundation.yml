@@ -136,12 +136,6 @@ jobs:
           }
           trap cleanup EXIT
 
-          aws iam put-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name "$INSPECTION_POLICY" \
-            --policy-document "file://$INSPECTION_FILE"
-          sleep 8
-
           cat > "$POLICY_FILE" <<JSON
           {
             "Version":"2012-10-17",
@@ -254,6 +248,12 @@ jobs:
             }]
           }
           JSON
+
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$INSPECTION_POLICY" \
+            --policy-document "file://$INSPECTION_FILE"
+          sleep 8
 
           for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
             test "$policy" != "$PRESERVE"
