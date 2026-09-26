@@ -49,7 +49,7 @@ stages:
   - stage: Build
     displayName: Native iOS and Android builds
     dependsOn: Validate
-    condition: succeeded()
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
       - job: iOS
         displayName: Build signed iOS IPA
@@ -77,7 +77,6 @@ stages:
 
           - task: DownloadSecureFile@1
             name: appStoreKey
-            condition: and(succeeded(), eq(variables['SUBMIT_IOS'], 'true'))
             inputs:
               secureFile: $(APP_STORE_CONNECT_KEY_SECURE_FILE)
 
@@ -138,8 +137,7 @@ stages:
               mkdir -p "$HOME/.appstoreconnect/private_keys"
               cp "$(appStoreKey.secureFilePath)" "$HOME/.appstoreconnect/private_keys/AuthKey_$(APP_STORE_CONNECT_KEY_ID).p8"
               xcrun iTMSTransporter                 -m upload                 -assetFile "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa"                 -apiKey "$(APP_STORE_CONNECT_KEY_ID)"                 -apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
-            condition: and(succeeded(), eq(variables['SUBMIT_IOS'], 'true'))
-            displayName: Submit IPA to App Store Connect
+            displayName: Submit IPA to TestFlight via App Store Connect
 
       - job: Android
         displayName: Build signed Android AAB
@@ -163,7 +161,6 @@ stages:
 
           - task: DownloadSecureFile@1
             name: googlePlayServiceAccount
-            condition: and(succeeded(), eq(variables['SUBMIT_ANDROID'], 'true'))
             inputs:
               secureFile: $(GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE)
 
@@ -279,5 +276,4 @@ stages:
             env:
               AAB_PATH: $(Build.ArtifactStagingDirectory)/TheOutHaven.aab
               GOOGLE_APPLICATION_CREDENTIALS: $(googlePlayServiceAccount.secureFilePath)
-            condition: and(succeeded(), eq(variables['SUBMIT_ANDROID'], 'true'))
             displayName: Submit AAB to Google Play internal testing
