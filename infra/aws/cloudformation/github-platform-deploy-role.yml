@@ -35,11 +35,19 @@ Resources:
                   - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:production
                   - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:Production
                   - !Sub repo:${GitHubOrganization}/${GitHubRepository}:environment:staging
-      Policies:
-        - PolicyName: TheOutHavenPlatformCloudFormation
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: PlatformDeployment
+
+  PlatformDeployCorePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: TheOutHavenPlatformDeployCore
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
               - Sid: CloudFormationStacks
                 Effect: Allow
                 Action:
@@ -118,6 +126,16 @@ Resources:
                   - cloudfront:UntagResource
                   - cloudfront:ListTagsForResource
                 Resource: '*'
+      Roles:
+        - !Ref PlatformDeployRole
+
+  PlatformDeployDrPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: TheOutHavenPlatformDeployDr
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
               - Sid: PlatformDrInfrastructure
                 Effect: Allow
                 Action:
@@ -217,6 +235,16 @@ Resources:
                   - route53:ChangeResourceRecordSets
                   - route53:GetChange
                 Resource: '*'
+      Roles:
+        - !Ref PlatformDeployRole
+
+  PlatformDeployServicesPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: TheOutHavenPlatformDeployServices
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
               - Sid: QueueSchedulerEmailMonitoring
                 Effect: Allow
                 Action:
@@ -307,6 +335,16 @@ Resources:
                   - dynamodb:UntagResource
                   - dynamodb:ListTagsOfResource
                 Resource: '*'
+      Roles:
+        - !Ref PlatformDeployRole
+
+  PlatformDeployRuntimePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: TheOutHavenPlatformDeployRuntime
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
               - Sid: PlatformLambdaRuntime
                 Effect: Allow
                 Action:
@@ -373,11 +411,31 @@ Resources:
                   - iam:UntagRole
                   - iam:PassRole
                 Resource: arn:aws:iam::742020474738:role/TheOutHaven*
-      Tags:
-        - Key: Project
-          Value: TheOutHaven
-        - Key: Service
-          Value: PlatformDeployment
+              - Sid: ManagePlatformDeployManagedPolicies
+                Effect: Allow
+                Action:
+                  - iam:CreatePolicy
+                  - iam:DeletePolicy
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                  - iam:CreatePolicyVersion
+                  - iam:DeletePolicyVersion
+                  - iam:ListPolicyVersions
+                  - iam:TagPolicy
+                  - iam:UntagPolicy
+                Resource:
+                  - arn:aws:iam::742020474738:policy/TheOutHavenPlatformDeployCore
+                  - arn:aws:iam::742020474738:policy/TheOutHavenPlatformDeployDr
+                  - arn:aws:iam::742020474738:policy/TheOutHavenPlatformDeployServices
+                  - arn:aws:iam::742020474738:policy/TheOutHavenPlatformDeployRuntime
+              - Sid: AttachPlatformDeployManagedPolicies
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                Resource: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
+      Roles:
+        - !Ref PlatformDeployRole
 
 Outputs:
   PlatformDeployRoleArn:
