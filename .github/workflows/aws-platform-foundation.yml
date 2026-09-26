@@ -195,7 +195,7 @@ jobs:
 
           echo "GitHub OIDC deploy role trust reconciled for production, Production, and staging." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Reconcile canonical deploy role stack
+      - name: Recover and reconcile canonical deploy role stack
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
@@ -208,18 +208,107 @@ jobs:
           test -n "$STACK_NAME"
           test "$STACK_NAME" != "None"
 
+          mapfile -t ABANDONED_BOOTSTRAP_POLICIES <<'EOF'
+          TheOutHavenPlatformDrBootstrap
+          TheOutHavenSesTelemetryBootstrap
+          TheOutHavenWorkerRuntimeBootstrap
+          TheOutHavenDnsVerificationBootstrap
+          TheOutHavenCloudFormationChangeSetsBootstrap
+          TheOutHavenSearchMlBootstrap
+          TheOutHavenSesProductionAccessBootstrap
+          TheOutHavenOpsCodeBuildBootstrap
+          TheOutHavenWebsiteRuntimeBootstrap
+          TheOutHavenEdgeRuntimeEcrBootstrap
+          TheOutHavenWebsiteAcmBootstrap
+          TheOutHavenPlatformDrTargetDiagnosticsBootstrap
+          TheOutHavenDomainGatewayBootstrap
+          TheOutHavenDomainGatewayAuthorityBootstrap
+          TheOutHavenDomainGatewayCredentialBootstrap
+          TheOutHavenElbServiceLinkedRoleBootstrap
+          TheOutHavenEcsServiceLinkedRoleBootstrap
+          EOF
+
+          for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$policy" >/dev/null 2>&1 || true
+          done
+
+          RECOVERY_POLICY='TheOutHavenDeployRoleRecoveryBootstrap'
+          RECOVERY_FILE="$RUNNER_TEMP/deploy-role-recovery-bootstrap.json"
+          cleanup_recovery() {
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$RECOVERY_POLICY" >/dev/null 2>&1 || true
+            rm -f "$RECOVERY_FILE"
+          }
+          trap cleanup_recovery EXIT
+
+          cat > "$RECOVERY_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "iam:UpdateAssumeRolePolicy",
+                  "iam:CreatePolicy",
+                  "iam:DeletePolicy",
+                  "iam:GetPolicy",
+                  "iam:GetPolicyVersion",
+                  "iam:CreatePolicyVersion",
+                  "iam:DeletePolicyVersion",
+                  "iam:ListPolicyVersions",
+                  "iam:AttachRolePolicy",
+                  "iam:DetachRolePolicy",
+                  "iam:TagPolicy",
+                  "iam:UntagPolicy"
+                ],
+                "Resource":[
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployCore",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployDr",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployServices",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime"
+                ]
+              },
+              {
+                "Effect":"Allow",
+                "Action":"cloudformation:ContinueUpdateRollback",
+                "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${STACK_NAME}/*"
+              }
+            ]
+          }
+          JSON
+
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$RECOVERY_POLICY" \
+            --policy-document "file://$RECOVERY_FILE"
+          sleep 8
+
           STATUS="$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].StackStatus' \
             --output text)"
+
+          if [ "$STATUS" = 'UPDATE_ROLLBACK_FAILED' ]; then
+            aws cloudformation continue-update-rollback --stack-name "$STACK_NAME"
+            aws cloudformation wait stack-rollback-complete --stack-name "$STACK_NAME"
+            STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          elif [ "$STATUS" = 'UPDATE_ROLLBACK_IN_PROGRESS' ]; then
+            aws cloudformation wait stack-rollback-complete --stack-name "$STACK_NAME"
+            STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          fi
+
           case "$STATUS" in
             CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE)
               ;;
             *)
-              echo "Deploy-role stack $STACK_NAME is not in a safe stable state: $STATUS" >&2
+              echo "Deploy-role stack $STACK_NAME is not in a safe stable state after recovery: $STATUS" >&2
               aws cloudformation describe-stack-events \
                 --stack-name "$STACK_NAME" \
-                --query 'StackEvents[0:20].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+                --query 'StackEvents[0:30].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
                 --output table >&2 || true
               exit 1
               ;;
@@ -234,7 +323,13 @@ jobs:
           set -e
 
           if [ "$UPDATE_RC" -eq 0 ]; then
-            aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"
+            if ! aws cloudformation wait stack-update-complete --stack-name "$STACK_NAME"; then
+              aws cloudformation describe-stack-events \
+                --stack-name "$STACK_NAME" \
+                --query 'StackEvents[0:30].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+                --output table >&2 || true
+              exit 1
+            fi
           elif printf '%s' "$UPDATE_OUTPUT" | grep -Fq 'No updates are to be performed'; then
             :
           else
@@ -255,7 +350,26 @@ jobs:
               ;;
           esac
 
-          echo "Canonical deploy-role stack reconciled in place from $ROLE_TEMPLATE_FILE." >> "$GITHUB_STEP_SUMMARY"
+          for policy in \
+            TheOutHavenPlatformDeployCore \
+            TheOutHavenPlatformDeployDr \
+            TheOutHavenPlatformDeployServices \
+            TheOutHavenPlatformDeployRuntime; do
+            aws iam get-policy \
+              --policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/$policy" \
+              --query 'Policy.Arn' \
+              --output text >/dev/null
+          done
+
+          ATTACHED_COUNT="$(aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+            --output text)"
+          test "$ATTACHED_COUNT" = 4
+
+          cleanup_recovery
+          trap - EXIT
+          echo "Canonical deploy-role stack recovered and reconciled to four managed policies." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Repair bootstrap deployment permissions
         env:
