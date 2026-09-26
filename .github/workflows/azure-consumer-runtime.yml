@@ -70,13 +70,16 @@ jobs:
       - name: Resolve staging configuration from Admin Credential Vault
         run: |
           set -euo pipefail
-          STAGING_PREFIX="/theouthaven/credential-vault/staging"
+          PREFIX="/theouthaven/credential-vault/staging"
           SHARED_SUPABASE_SECRET="/theouthaven/credential-vault/production/supabase"
           WORK="$RUNNER_TEMP/azure-consumer-vault"
           mkdir -p "$WORK"
 
-          aws secretsmanager get-secret-value --secret-id "$SHARED_SUPABASE_SECRET" --query SecretString --output text > "$WORK/supabase.json"
-          if aws secretsmanager get-secret-value --secret-id "$STAGING_PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
+          if ! aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json" 2>/dev/null; then
+            echo "Staging Supabase provider is not configured; using shared primary Supabase vault authority."
+            aws secretsmanager get-secret-value --secret-id "$SHARED_SUPABASE_SECRET" --query SecretString --output text > "$WORK/supabase.json"
+          fi
+          if aws secretsmanager get-secret-value --secret-id "$PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
             jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
           else
             printf '{}' > "$WORK/huggingface.json"
