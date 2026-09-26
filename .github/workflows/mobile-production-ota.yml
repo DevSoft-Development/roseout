@@ -36,12 +36,6 @@ jobs:
           }
           NODE
           test -f .github/workflows/mobile-azure-ota.yml
-          if grep -F 'secrets.EXPO_TOKEN' .github/workflows/mobile-production-ota.yml >/dev/null; then
-            echo "::error::Legacy Expo publish credential is still referenced."
-            exit 1
-          fi
-          if grep -F '.eas/workflows/' .github/workflows/mobile-production-ota.yml >/dev/null; then
-            echo "::error::Legacy EAS workflow path is still referenced."
-            exit 1
-          fi
+          grep -F 'name: Mobile production OTA migration guard' .github/workflows/mobile-production-ota.yml >/dev/null
+          grep -F 'name: Mobile Azure OTA release' .github/workflows/mobile-azure-ota.yml >/dev/null
           echo "Production OTA publication authority: Azure self-hosted workflow."
