@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "1",
+  "channels": ["internal", "preview", "production"],
+  "manifestPathTemplate": "releases/{releaseSha}/{platform}/manifest.json",
+  "channelPathTemplate": "channels/{channel}/{platform}.json",
+  "publicKeyPath": "keys/production-ed25519.pem"
+}
