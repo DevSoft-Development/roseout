@@ -225,6 +225,7 @@ jobs:
           mkdir -p "$ROOT/ios" "$ROOT/android"
           CI=1 npx expo export --platform ios --output-dir "$ROOT/ios/export"
           CI=1 npx expo export --platform android --output-dir "$ROOT/android/export"
+          npx expo config --type public --json > "$ROOT/expoConfig.json"
 
           tar -C "$ROOT/ios/export" -czf "$ROOT/ios/archive.tgz" .
           tar -C "$ROOT/android/export" -czf "$ROOT/android/archive.tgz" .
@@ -271,6 +272,91 @@ jobs:
             az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$ROOT/$platform/manifest.sig.b64"               --name "$base/manifest.sig"               --content-type text/plain               --overwrite false >/dev/null
           done
 
+      - name: Publish Expo-protocol assets and manifests for compatibility clients
+        if: inputs.action == 'publish'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ota-release"
+          RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for platform in ios android; do
+            export_dir="$ROOT/$platform/export"
+            test -f "$export_dir/metadata.json"
+
+            RELEASE_SHA="$RELEASE_SHA"             PLATFORM="$platform"             RUNTIME_VERSION="$RUNTIME_VERSION"             PUBLISHED_AT="$PUBLISHED_AT"             EXPORT_DIR="$export_dir"             EXPO_CONFIG="$ROOT/expoConfig.json"             node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+
+          const exportDir = process.env.EXPORT_DIR;
+          const platform = process.env.PLATFORM;
+          const releaseSha = process.env.RELEASE_SHA;
+          const runtimeVersion = process.env.RUNTIME_VERSION;
+          const publishedAt = process.env.PUBLISHED_AT;
+          const metadata = JSON.parse(fs.readFileSync(path.join(exportDir, 'metadata.json'), 'utf8'));
+          const expoClient = JSON.parse(fs.readFileSync(process.env.EXPO_CONFIG, 'utf8'));
+          const platformMetadata = metadata.fileMetadata?.[platform];
+          if (!platformMetadata?.bundle) throw new Error('Expo export bundle metadata is missing');
+
+          function normalized(relativePath) {
+            return String(relativePath).replaceAll('\\\\', '/').replace(/^\.\//, '');
+          }
+
+          function asset(relativePath, ext, launch) {
+            const rel = normalized(relativePath);
+            const bytes = fs.readFileSync(path.join(exportDir, rel));
+            const sha = crypto.createHash('sha256').update(bytes).digest('base64url');
+            const md5 = crypto.createHash('md5').update(bytes).digest('hex');
+            const suffix = ext ? (String(ext).startsWith('.') ? String(ext) : '.' + String(ext)) : undefined;
+            const contentType = launch
+              ? 'application/javascript'
+              : ({
+                  '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif',
+                  '.webp':'image/webp','.svg':'image/svg+xml','.json':'application/json',
+                  '.ttf':'font/ttf','.otf':'font/otf','.woff':'font/woff','.woff2':'font/woff2',
+                  '.mp3':'audio/mpeg','.mp4':'video/mp4'
+                }[suffix || ''] || 'application/octet-stream');
+            return {
+              hash: sha,
+              key: md5,
+              ...(suffix ? { fileExtension: suffix } : {}),
+              contentType,
+              url: 'https://updates.theouthaven.com/releases/' + releaseSha + '/expo/' + platform + '/' + rel,
+            };
+          }
+
+          const digest = crypto.createHash('sha256').update(releaseSha + ':' + platform + ':' + runtimeVersion).digest();
+          const uuid = Buffer.from(digest.subarray(0, 16));
+          uuid[6] = (uuid[6] & 0x0f) | 0x40;
+          uuid[8] = (uuid[8] & 0x3f) | 0x80;
+          const hex = uuid.toString('hex');
+          const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
+
+          const manifest = {
+            id,
+            createdAt: publishedAt,
+            runtimeVersion,
+            launchAsset: asset(platformMetadata.bundle, null, true),
+            assets: (platformMetadata.assets || []).map((entry) => asset(entry.path, entry.ext, false)),
+            metadata: { releaseSha },
+            extra: {
+              expoClient,
+              theOutHaven: { releaseSha, source: 'azure-self-hosted' },
+            },
+          };
+          fs.writeFileSync(path.join(exportDir, 'toh-expo-manifest.json'), JSON.stringify(manifest));
+          NODE
+
+            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite false >/dev/null
+
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --overwrite false >/dev/null
+          done
+
       - name: Resolve rollback release compatibility
         if: inputs.action == 'rollback'
         env:
@@ -313,7 +399,7 @@ jobs:
             fi
 
             pointer="$RUNNER_TEMP/channel-$platform.json"
-            jq -n               --argjson schemaVersion 1               --arg channel "$CHANNEL"               --arg platform "$platform"               --arg runtimeVersion "$RUNTIME_VERSION"               --arg releaseSha "$TARGET_SHA"               --arg manifestPath "releases/$TARGET_SHA/$platform/manifest.json"               --arg manifestSignaturePath "releases/$TARGET_SHA/$platform/manifest.sig"               --arg keyId "$KEY_ID"               --arg updatedAt "$UPDATED_AT"               --argjson rolloutPercentage "$ROLLOUT"               '{
+            jq -n               --argjson schemaVersion 1               --arg channel "$CHANNEL"               --arg platform "$platform"               --arg runtimeVersion "$RUNTIME_VERSION"               --arg releaseSha "$TARGET_SHA"               --arg manifestPath "releases/$TARGET_SHA/$platform/manifest.json"               --arg manifestSignaturePath "releases/$TARGET_SHA/$platform/manifest.sig"               --arg expoManifestPath "releases/$TARGET_SHA/expo/$platform/manifest.json"               --arg keyId "$KEY_ID"               --arg updatedAt "$UPDATED_AT"               --argjson rolloutPercentage "$ROLLOUT"               '{
                 schemaVersion:$schemaVersion,
                 channel:$channel,
                 platform:$platform,
@@ -321,6 +407,7 @@ jobs:
                 releaseSha:$releaseSha,
                 manifestPath:$manifestPath,
                 manifestSignaturePath:$manifestSignaturePath,
+                expoManifestPath:$expoManifestPath,
                 keyId:$keyId,
                 rolloutPercentage:$rolloutPercentage,
                 updatedAt:$updatedAt
