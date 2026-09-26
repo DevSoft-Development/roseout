@@ -113,6 +113,83 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
+      - name: Reconcile GitHub OIDC deploy role trust
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME="TheOutHavenAssumeRoleTrustBootstrap"
+          POLICY_FILE="$RUNNER_TEMP/assume-role-trust-bootstrap.json"
+          TRUST_FILE="$RUNNER_TEMP/github-platform-deploy-role-trust.json"
+
+          cleanup() {
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$POLICY_NAME" >/dev/null 2>&1 || true
+            rm -f "$POLICY_FILE" "$TRUST_FILE"
+          }
+          trap cleanup EXIT
+
+          cat > "$POLICY_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Effect":"Allow",
+              "Action":"iam:UpdateAssumeRolePolicy",
+              "Resource":"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
+            }]
+          }
+          JSON
+
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$POLICY_NAME" \
+            --policy-document "file://$POLICY_FILE"
+
+          sleep 8
+
+          cat > "$TRUST_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Effect":"Allow",
+              "Principal":{
+                "Federated":"arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
+              },
+              "Action":"sts:AssumeRoleWithWebIdentity",
+              "Condition":{
+                "StringEquals":{
+                  "token.actions.githubusercontent.com:aud":"sts.amazonaws.com"
+                },
+                "StringLike":{
+                  "token.actions.githubusercontent.com:sub":[
+                    "repo:DevSoft-Development/roseout:environment:production",
+                    "repo:DevSoft-Development/roseout:environment:Production",
+                    "repo:DevSoft-Development/roseout:environment:staging"
+                  ]
+                }
+              }
+            }]
+          }
+          JSON
+
+          aws iam update-assume-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-document "file://$TRUST_FILE"
+
+          LIVE_TRUST="$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.AssumeRolePolicyDocument' --output json)"
+          printf '%s' "$LIVE_TRUST" | jq -e '
+            .Statement[] |
+            select(.Action=="sts:AssumeRoleWithWebIdentity") |
+            .Condition.StringLike["token.actions.githubusercontent.com:sub"] as $subs |
+            ($subs | index("repo:DevSoft-Development/roseout:environment:production") != null) and
+            ($subs | index("repo:DevSoft-Development/roseout:environment:Production") != null) and
+            ($subs | index("repo:DevSoft-Development/roseout:environment:staging") != null)
+          ' >/dev/null
+
+          echo "GitHub OIDC deploy role trust reconciled for production, Production, and staging." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Repair bootstrap deployment permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
