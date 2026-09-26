@@ -84,7 +84,9 @@ resource azureAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
-resource huggingFaceAiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+var huggingFaceEnabled = !empty(huggingFaceAiToken) && !empty(huggingFaceAiModel)
+
+resource huggingFaceAiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (huggingFaceEnabled) {
   parent: vault
   name: 'consumer-huggingface-ai-token'
   properties: {
@@ -118,7 +120,7 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
           identity: identity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'supabase-service-role-key'
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${supabaseServiceRoleSecret.name}'
@@ -129,19 +131,20 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
           identity: identity.id
         }
+      ], huggingFaceEnabled ? [
         {
           name: 'huggingface-ai-token'
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${huggingFaceAiTokenSecret.name}'
           identity: identity.id
         }
-      ]
+      ] : [])
     }
     template: {
       containers: [
         {
           name: 'consumer'
           image: image
-          env: [
+          env: concat([
             {
               name: 'PLATFORM_RUNTIME_PROVIDER'
               value: 'azure-consumer'
@@ -178,6 +181,7 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_AI_MODEL'
               value: azureAiModel
             }
+          ], huggingFaceEnabled ? [
             {
               name: 'HUGGINGFACE_AI_ENDPOINT'
               value: huggingFaceAiEndpoint
@@ -190,7 +194,7 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'HUGGINGFACE_AI_MODEL'
               value: huggingFaceAiModel
             }
-          ]
+          ] : [])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
