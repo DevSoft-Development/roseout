@@ -8,6 +8,9 @@ on:
       - "infra/azure/**"
       - ".github/workflows/azure-consumer-runtime.yml"
       - "docs/architecture/azure-consumer-runtime.md"
+  workflow_run:
+    workflows: ['Azure consumer image']
+    types: [completed]
   workflow_dispatch:
     inputs:
       image_sha:
@@ -45,7 +48,11 @@ jobs:
 
   deploy:
     name: Deploy staging consumer runtime
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -125,7 +132,7 @@ jobs:
         id: azure
         uses: azure/CLI@v2
         env:
-          IMAGE_SHA: ${{ inputs.image_sha }}
+          IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
         with:
           inlineScript: |
             set -euo pipefail
@@ -162,7 +169,7 @@ jobs:
         uses: azure/CLI@v2
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
-          IMAGE_SHA: ${{ inputs.image_sha }}
+          IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
           AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
           AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
         with:
@@ -174,7 +181,7 @@ jobs:
         uses: azure/CLI@v2
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
-          IMAGE_SHA: ${{ inputs.image_sha }}
+          IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
           AZURE_AI_ENDPOINT: ${{ steps.azure.outputs.ai_endpoint }}
           AZURE_AI_API_KEY: ${{ steps.azure.outputs.ai_key }}
         with:
@@ -185,7 +192,7 @@ jobs:
       - name: Smoke-test Azure Container App
         uses: azure/CLI@v2
         env:
-          IMAGE_SHA: ${{ inputs.image_sha }}
+          IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
         with:
           inlineScript: |
             set -euo pipefail
