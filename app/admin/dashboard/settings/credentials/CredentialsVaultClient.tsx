@@ -33,6 +33,8 @@ function messageForError(error: string | undefined) {
       return "Meta rejected the saved credential.";
     case "microsoft_credential_test_failed":
       return "Microsoft rejected the saved application credentials.";
+    case "mobile_credential_test_failed":
+      return "The mobile signing package is incomplete or one of the uploaded files is invalid.";
     default:
       return error || "The request could not be completed.";
   }
@@ -85,6 +87,17 @@ export default function CredentialsVaultClient() {
       next.delete(key);
       return { ...current, [provider]: next };
     });
+  }
+
+  async function setFileField(provider: CredentialProviderId, key: string, file: File | null) {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+    }
+    setField(provider, key, btoa(binary));
   }
 
   function toggleClear(provider: CredentialProviderId, key: string) {
@@ -255,7 +268,19 @@ export default function CredentialsVaultClient() {
                           </button>
                         ) : null}
                       </div>
-                      {field.multiline ? (
+                      {field.file ? (
+                        <div className="mt-2">
+                          <input
+                            id={`${provider.id}-${field.key}`}
+                            type="file"
+                            accept={field.accept}
+                            onChange={(event) => void setFileField(provider.id, field.key, event.target.files?.[0] || null)}
+                            disabled={willClear}
+                            className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
+                          />
+                          <p className="mt-1 text-[11px] leading-4 text-white/35">{isConfigured ? "Saved securely — choose a file only to replace it." : "The file is encoded locally in this browser before it is saved to the vault."}</p>
+                        </div>
+                      ) : field.multiline ? (
                         <textarea
                           id={`${provider.id}-${field.key}`}
                           rows={4}
