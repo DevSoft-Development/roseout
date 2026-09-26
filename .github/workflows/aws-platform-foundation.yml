@@ -352,14 +352,54 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Canonical policy is missing required bootstrap actions:\n' >&2
-            printf ' - %s\n' "${missing[@]}" >&2
-            exit 1
-          fi
+            if [ "${#missing[@]}" -ne 1 ] || [ "${missing[0]}" != "s3:DeleteBucketPolicy" ]; then
+              printf 'Canonical policy is missing unexpected required bootstrap actions:\n' >&2
+              printf ' - %s\n' "${missing[@]}" >&2
+              exit 1
+            fi
 
-          cleanup_inspection
-          trap - EXIT
-          echo "Canonical deployment policy already contains all required foundation bootstrap permissions; redundant bootstrap policy was not created." >> "$GITHUB_STEP_SUMMARY"
+            cleanup_inspection
+            trap - EXIT
+
+            cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Effect":"Allow",
+              "Action":"s3:DeleteBucketPolicy",
+              "Resource":"*"
+            }]
+          }
+          JSON
+
+            aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/platform-bootstrap-inline-policies-after-inspection.json"
+            current_bytes=0
+            while IFS= read -r policy; do
+              doc="$RUNNER_TEMP/platform-bootstrap-policy-${policy}.json"
+              aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "$policy" --query PolicyDocument --output json > "$doc"
+              bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
+              current_bytes=$((current_bytes + bytes))
+            done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/platform-bootstrap-inline-policies-after-inspection.json")
+
+            bootstrap_bytes="$(jq -c . "$POLICY_FILE" | wc -c | tr -d ' ')"
+            projected_bytes=$((current_bytes + bootstrap_bytes))
+            echo "foundation_bootstrap_projected_inline_policy_bytes=$projected_bytes"
+            test "$projected_bytes" -lt 10240 || {
+              echo "Refusing to add the targeted foundation bootstrap policy because projected inline-policy bytes would reach or exceed the AWS 10,240-byte limit." >&2
+              exit 1
+            }
+
+            aws iam put-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
+              --policy-document "file://$POLICY_FILE"
+            sleep 8
+            echo "Applied a temporary quota-checked bootstrap for the live role's single stale s3:DeleteBucketPolicy permission." >> "$GITHUB_STEP_SUMMARY"
+          else
+            cleanup_inspection
+            trap - EXIT
+            echo "Canonical deployment policy already contains all required foundation bootstrap permissions; redundant bootstrap policy was not created." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Ensure ELB service-linked role prerequisite
         env:
