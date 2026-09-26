@@ -430,6 +430,43 @@ if (!platformErrorsLoader.includes("@theouthaven/db/admin-client") || platformEr
 const adminNavigation = read("apps/admin/app/admin/dashboard/admin-navigation.ts");
 const enterpriseAdminShell = read("apps/admin/app/admin/dashboard/AdminShell.tsx");
 const adminShellCss = read("apps/admin/app/admin/dashboard/admin-shell.css");
+
+const adminDashboardThemeFiles = [];
+const collectAdminThemeFiles = (dir) => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) collectAdminThemeFiles(full);
+    else if (/\\.(tsx|css)$/.test(entry.name)) adminDashboardThemeFiles.push(full);
+  }
+};
+collectAdminThemeFiles(path.join(root, "apps", "admin", "app", "admin", "dashboard"));
+
+const adminDashboardPageCount = adminDashboardThemeFiles.filter((file) => file.endsWith(`${path.sep}page.tsx`)).length;
+if (adminDashboardPageCount < 200) {
+  throw new Error(`Admin theme audit expected the full isolated dashboard surface, found only ${adminDashboardPageCount} pages.`);
+}
+
+const hardCodedAdminThemeFiles = adminDashboardThemeFiles.filter((file) => {
+  const source = fs.readFileSync(file, "utf8");
+  return source.includes('data-admin-theme="dark"') || source.includes('data-admin-theme="light"');
+});
+if (hardCodedAdminThemeFiles.length) {
+  throw new Error(`Admin pages must inherit the shell theme instead of hard-coding one: ${hardCodedAdminThemeFiles.map((file) => path.relative(root, file)).join(", ")}`);
+}
+
+for (const marker of [
+  "Route-by-route visibility exceptions discovered by the Admin theme audit.",
+  ':is(a, button)[class~="bg-white"]',
+  ".bg-orange-500",
+  ".bg-violet-500",
+  ".bg-black",
+  ").text-white",
+  '[aria-disabled="true"]',
+]) {
+  if (!adminShellCss.includes(marker)) {
+    throw new Error(`Admin route visibility audit requires shared theme guard: ${marker}`);
+  }
+}
 const adminSettingsPage = read("apps/admin/app/admin/dashboard/settings/page.tsx");
 const adminLocationsPage = read("apps/admin/app/admin/dashboard/locations/page.tsx");
 const adminLocationsCrmPage = read("apps/admin/app/admin/dashboard/crm/page.tsx");
