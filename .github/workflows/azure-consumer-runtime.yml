@@ -217,3 +217,36 @@ jobs:
               echo "- Create: passed"
               echo "- DNS cutover: not performed"
             } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke-test consumer APIs before DNS cutover
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            FQDN="$(az deployment sub show --name toh-consumer-runtime-staging --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+            test -n "$FQDN" || { echo "::error::Container App FQDN was not returned."; exit 1; }
+
+            auth_code="$(curl --silent --show-error --output auth.json --write-out '%{http_code}'               --connect-timeout 10 --max-time 30               -H 'content-type: application/json'               --data '{}'               "https://$FQDN/api/auth/sign-in" || true)"
+            if [ "$auth_code" != "400" ] || ! jq -e '.ok == false' auth.json >/dev/null 2>&1; then
+              echo "::error::Auth route validation failed with HTTP $auth_code"
+              cat auth.json 2>/dev/null || true
+              exit 1
+            fi
+            echo "Consumer auth route smoke passed."
+
+            search_code="$(curl --silent --show-error --output search.json --write-out '%{http_code}'               --connect-timeout 10 --max-time 90               -H 'content-type: application/json'               -H 'x-theouthaven-guest-id: azure-staging-smoke'               --data '{"query":"Italian restaurant in Manhattan","planType":"restaurant","area":"Manhattan","areaSource":"manual"}'               "https://$FQDN/api/mobile/v1/search" || true)"
+            if [ "$search_code" != "200" ] || ! jq -e '.ok == true and (.restaurants | type == "array") and (.activities | type == "array") and (.pairs | type == "array")' search.json >/dev/null 2>&1; then
+              echo "::error::Search route smoke failed with HTTP $search_code"
+              jq '{ok,error,reply,resolvedPlanType,canonicalSearchType}' search.json 2>/dev/null || cat search.json 2>/dev/null || true
+              exit 1
+            fi
+            echo "Consumer search route smoke passed."
+
+            {
+              echo ""
+              echo "### Pre-DNS consumer API smoke"
+              echo ""
+              echo "- Auth validation route: passed"
+              echo "- Search route: passed"
+              echo "- DNS cutover: not performed"
+            } >> "$GITHUB_STEP_SUMMARY"
