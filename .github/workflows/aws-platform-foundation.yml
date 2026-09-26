@@ -136,6 +136,12 @@ jobs:
           }
           trap cleanup EXIT
 
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$INSPECTION_POLICY" \
+            --policy-document "file://$INSPECTION_FILE"
+          sleep 8
+
           cat > "$POLICY_FILE" <<JSON
           {
             "Version":"2012-10-17",
@@ -224,6 +230,30 @@ jobs:
           EOF
 
           PRESERVE='TheOutHavenPlatformCloudFormation'
+          INSPECTION_POLICY='TheOutHavenFoundationInlinePolicyInspection'
+          INSPECTION_FILE="$RUNNER_TEMP/foundation-inline-policy-inspection.json"
+
+          cleanup_inspection() {
+            aws iam delete-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$INSPECTION_POLICY" >/dev/null 2>&1 || true
+            rm -f "$INSPECTION_FILE"
+          }
+          trap cleanup_inspection EXIT
+
+          cat > "$INSPECTION_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Effect":"Allow",
+              "Action":[
+                "iam:ListRolePolicies",
+                "iam:GetRolePolicy"
+              ],
+              "Resource":"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
+            }]
+          }
+          JSON
 
           for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
             test "$policy" != "$PRESERVE"
@@ -318,6 +348,8 @@ jobs:
             --query 'PolicyName' \
             --output text >/dev/null
           sleep 8
+          cleanup_inspection
+          trap - EXIT
           echo "Bootstrap deployment permissions verified for \`$ROLE_NAME\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ensure ELB service-linked role prerequisite
