@@ -174,7 +174,7 @@ jobs:
           echo "$RESPONSE" | jq -e '.ok == true and (.services | type == "array") and (.services | length >= 10)' >/dev/null
           STATUS_RESPONSE="$(curl --fail --silent --show-error -H "x-toh-timestamp: $TIMESTAMP" -H "x-toh-signature: $(TIMESTAMP="$TIMESTAMP" JOB_GATEWAY_SECRET="$JOB_GATEWAY_SECRET" python - <<'PY'
           import hashlib, hmac, os
-          payload = '\\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/status', ''])
+          payload = '\n'.join([os.environ['TIMESTAMP'], 'GET', '/v1/status', ''])
           print(hmac.new(os.environ['JOB_GATEWAY_SECRET'].encode(), payload.encode(), hashlib.sha256).hexdigest())
           PY
           )" "${JOB_GATEWAY_URL%/}/v1/status")"
