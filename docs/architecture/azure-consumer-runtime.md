@@ -24,7 +24,7 @@ Then run **Azure consumer runtime** with that exact 40-character SHA and `deploy
 
 The workflow:
 
-1. authenticates to AWS with OIDC and reads the staging Supabase and Hugging Face configuration from the Admin Credential Vault,
+1. authenticates to AWS with OIDC, reads required Supabase configuration from the Admin Credential Vault, and reads Hugging Face configuration only when it exists,
 2. verifies the image exists in staging ACR,
 3. resolves the live Azure AI endpoint and an ephemeral account key,
 4. runs an Azure what-if,
@@ -37,17 +37,13 @@ The workflow:
 No Route 53 record is changed. Vercel remains the consumer production traffic owner until later explicit cutover gates pass.
 
 
-## AI fallback runtime configuration
+## Optional AI fallback runtime configuration
 
-Before any user-facing AI call site is moved to Azure, the staging Container App must have the full AI gateway fallback contract:
+Azure Foundry is the required AI provider through `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`, and `AZURE_AI_MODEL`.
 
-- Azure Foundry remains the primary provider through `AZURE_AI_ENDPOINT`, `AZURE_AI_API_KEY`, and `AZURE_AI_MODEL`.
-- Hugging Face is configured as the full operational fallback through `HUGGINGFACE_AI_ENDPOINT`, `HUGGINGFACE_AI_TOKEN`, and `HUGGINGFACE_AI_MODEL`.
-- The Hugging Face token is stored in Azure Key Vault and injected into the Container App by secret reference.
-- The Hugging Face token, fallback endpoint, and fallback model are managed in **Admin → Credentials → Hugging Face** for the selected environment. The Azure runtime workflow does not maintain duplicate provider credentials in GitHub.
-- Search V2's Hugging Face embedding/reranking configuration remains separate. Do not reuse or migrate Search V2 vector spaces as part of this gateway change.
+Hugging Face is optional. When both `HUGGINGFACE_AI_TOKEN` and `HUGGINGFACE_AI_MODEL` are configured in **Admin → Credentials → Hugging Face**, the Azure consumer runtime provisions the Hugging Face token in Azure Key Vault and enables provider failover. When those values are absent, the runtime deploys in Azure-only mode and does not create or inject Hugging Face runtime secrets.
 
-This only provisions the fallback provider. It does not move a production AI call site or perform a DNS cutover.
+Partially configured Hugging Face fallback is rejected so a token cannot silently exist without a model or vice versa. Search V2's Hugging Face embedding/reranking configuration remains separate and must not be mixed with the generic AI gateway.
 
 
 ## Central configuration authority
@@ -55,7 +51,7 @@ This only provisions the fallback provider. It does not move a production AI cal
 For the Azure consumer migration, provider configuration is entered in **Admin → Credentials**:
 
 - **Supabase**: project URL, publishable key, and service-role key.
-- **Hugging Face**: access token, AI fallback endpoint, and AI fallback model.
+- **Hugging Face (optional)**: access token, AI fallback endpoint, and AI fallback model.
 
 The staging runtime reads `/theouthaven/credential-vault/staging/<provider>` from AWS Secrets Manager by GitHub OIDC. Secret values are masked immediately and are never returned to the browser or committed to the repository. GitHub environment secrets are no longer the authority for these provider values.
 

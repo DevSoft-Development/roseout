@@ -54,6 +54,28 @@ describe("TheOutHavenAiGateway", () => {
     });
   });
 
+
+  it("runs Azure-only when no fallback provider is configured", async () => {
+    const gateway = new TheOutHavenAiGateway(
+      provider("azure", async () => {
+        throw new AiProviderError({
+          provider: "azure",
+          code: "provider_unavailable",
+          status: 503,
+          message: "azure unavailable",
+        });
+      }),
+    );
+
+    await expect(
+      gateway.invoke({ capability: "reason", input: { prompt: "test" } }),
+    ).rejects.toMatchObject({
+      provider: "azure",
+      code: "provider_unavailable",
+      status: 503,
+    });
+  });
+
   it("does not fail over merely because structured output is invalid", async () => {
     const azureInvoke = vi.fn(async () => ({ model: "azure-model", output: { invalid: true } }));
     const hfInvoke = vi.fn(async () => ({ model: "hf-model", output: { valid: true } }));

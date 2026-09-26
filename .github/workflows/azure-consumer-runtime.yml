@@ -68,10 +68,13 @@ jobs:
           mkdir -p "$WORK"
 
           aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json"
-          aws secretsmanager get-secret-value --secret-id "$PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json"
+          if aws secretsmanager get-secret-value --secret-id "$PREFIX/huggingface" --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
+            jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
+          else
+            printf '{}' > "$WORK/huggingface.json"
+          fi
 
           jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
-          jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
 
           SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
           SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
@@ -84,10 +87,17 @@ jobs:
           test -n "$SUPABASE_URL" || { echo "::error::Admin Credential Vault staging Supabase URL is missing."; exit 1; }
           test -n "$SUPABASE_ANON_KEY" || { echo "::error::Admin Credential Vault staging Supabase publishable key is missing."; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Admin Credential Vault staging Supabase service role key is missing."; exit 1; }
-          test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Admin Credential Vault staging Hugging Face access token is missing."; exit 1; }
-          test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Admin Credential Vault staging Hugging Face AI fallback model is missing."; exit 1; }
+          if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
+            test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face fallback is partially configured: access token is missing."; exit 1; }
+            test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face fallback is partially configured: model is missing."; exit 1; }
+            echo "::add-mask::$HUGGINGFACE_AI_TOKEN"
+            echo "Optional Hugging Face AI fallback is configured."
+          else
+            HUGGINGFACE_AI_ENDPOINT=""
+            echo "Hugging Face AI fallback is not configured; Azure AI will run as the sole provider."
+          fi
 
-          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$HUGGINGFACE_AI_TOKEN"; do
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY"; do
             echo "::add-mask::$value"
           done
 
