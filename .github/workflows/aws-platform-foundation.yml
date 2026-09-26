@@ -71,6 +71,9 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
+    concurrency:
+      group: aws-deploy-role-inline-policy-mutation-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -220,12 +223,15 @@ jobs:
           TheOutHavenEcsServiceLinkedRoleBootstrap
           EOF
 
+          PRESERVE='TheOutHavenPlatformCloudFormation'
+
           for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
-            test "$policy" != "TheOutHavenPlatformCloudFormation"
+            test "$policy" != "$PRESERVE"
             aws iam delete-role-policy \
               --role-name "$ROLE_NAME" \
               --policy-name "$policy" >/dev/null 2>&1 || true
           done
+
           cat > "$POLICY_FILE" <<JSON
           {
             "Version": "2012-10-17",
@@ -268,6 +274,40 @@ jobs:
             ]
           }
           JSON
+
+          aws iam list-role-policies \
+            --role-name "$ROLE_NAME" \
+            --output json > "$RUNNER_TEMP/platform-bootstrap-inline-policies.json"
+
+          jq -e --arg preserve "$PRESERVE" \
+            '.PolicyNames | index($preserve) != null' \
+            "$RUNNER_TEMP/platform-bootstrap-inline-policies.json" >/dev/null || {
+              echo "Canonical inline policy $PRESERVE is missing; refusing bootstrap repair." >&2
+              exit 1
+            }
+
+          existing_bytes=0
+          while IFS= read -r policy; do
+            doc="$RUNNER_TEMP/platform-bootstrap-existing-${policy}.json"
+            aws iam get-role-policy \
+              --role-name "$ROLE_NAME" \
+              --policy-name "$policy" \
+              --query PolicyDocument \
+              --output json > "$doc"
+            bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
+            existing_bytes=$((existing_bytes + bytes))
+          done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/platform-bootstrap-inline-policies.json")
+
+          bootstrap_bytes="$(jq -c . "$POLICY_FILE" | wc -c | tr -d ' ')"
+          projected_bytes=$((existing_bytes + bootstrap_bytes))
+          echo "inline_policy_bytes_after_cleanup=$existing_bytes"
+          echo "bootstrap_policy_bytes=$bootstrap_bytes"
+          echo "projected_inline_policy_bytes=$projected_bytes"
+          test "$projected_bytes" -lt 10240 || {
+            echo "Refusing bootstrap repair: projected inline policy size ${projected_bytes} is not below the AWS 10,240-byte role limit." >&2
+            exit 1
+          }
+
           aws iam put-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
