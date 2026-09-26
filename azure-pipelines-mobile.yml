@@ -1,0 +1,283 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - mobile/*
+      - azure-pipelines-mobile.yml
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - mobile/*
+      - azure-pipelines-mobile.yml
+
+variables:
+  - group: theouthaven-mobile-production
+  - name: nodeVersion
+    value: '22.x'
+  - name: appVersion
+    value: '0.1.2'
+  - name: iosArtifactName
+    value: 'theouthaven-ios'
+  - name: androidArtifactName
+    value: 'theouthaven-android'
+
+stages:
+  - stage: Validate
+    displayName: Validate mobile source
+    jobs:
+      - job: Validate
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm ci --no-audit --no-fund
+              npm run typecheck
+              npx expo config --type public >/dev/null
+            displayName: Typecheck and validate Expo config
+
+  - stage: Build
+    displayName: Native iOS and Android builds
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - job: iOS
+        displayName: Build signed iOS IPA
+        pool:
+          vmImage: macOS-latest
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - task: InstallAppleCertificate@2
+            name: installAppleCertificate
+            inputs:
+              certSecureFile: $(IOS_CERTIFICATE_SECURE_FILE)
+              certPwd: $(IOS_CERTIFICATE_PASSWORD)
+              keychain: temp
+              deleteCert: true
+
+          - task: InstallAppleProvisioningProfile@1
+            name: installProvisioningProfile
+            inputs:
+              provisioningProfileLocation: secureFiles
+              provProfileSecureFile: $(IOS_PROFILE_SECURE_FILE)
+              removeProfile: true
+
+          - task: DownloadSecureFile@1
+            name: appStoreKey
+            condition: and(succeeded(), eq(variables['SUBMIT_IOS'], 'true'))
+            inputs:
+              secureFile: $(APP_STORE_CONNECT_KEY_SECURE_FILE)
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm ci --no-audit --no-fund
+              npx expo prebuild --clean --platform ios --no-install
+              cd ios
+              pod install --repo-update
+            displayName: Generate iOS native project
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' | head -1)"
+              test -n "$WORKSPACE"
+              SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
+              ARCHIVE="$(Build.ArtifactStagingDirectory)/TheOutHaven.xcarchive"
+              PROFILE_UUID="$(installProvisioningProfile.provisioningProfileUuid)"
+
+              xcodebuild                 -workspace "$WORKSPACE"                 -scheme "$SCHEME"                 -configuration Release                 -archivePath "$ARCHIVE"                 -destination 'generic/platform=iOS'                 DEVELOPMENT_TEAM="$(IOS_TEAM_ID)"                 CODE_SIGN_STYLE=Manual                 PROVISIONING_PROFILE="$PROFILE_UUID"                 clean archive
+
+              cat > "$(Build.ArtifactStagingDirectory)/ExportOptions.plist" <<PLIST
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+              <plist version="1.0">
+              <dict>
+                <key>method</key>
+                <string>app-store-connect</string>
+                <key>signingStyle</key>
+                <string>manual</string>
+                <key>teamID</key>
+                <string>$(IOS_TEAM_ID)</string>
+                <key>stripSwiftSymbols</key>
+                <true/>
+                <key>uploadSymbols</key>
+                <true/>
+              </dict>
+              </plist>
+              PLIST
+
+              mkdir -p "$(Build.ArtifactStagingDirectory)/ios-export"
+              xcodebuild                 -exportArchive                 -archivePath "$ARCHIVE"                 -exportPath "$(Build.ArtifactStagingDirectory)/ios-export"                 -exportOptionsPlist "$(Build.ArtifactStagingDirectory)/ExportOptions.plist"
+
+              IPA="$(find "$(Build.ArtifactStagingDirectory)/ios-export" -name '*.ipa' | head -1)"
+              test -n "$IPA"
+              cp "$IPA" "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa"
+            displayName: Archive and export signed IPA
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/TheOutHaven.ipa
+              artifactName: $(iosArtifactName)
+
+          - script: |
+              set -euo pipefail
+              mkdir -p "$HOME/.appstoreconnect/private_keys"
+              cp "$(appStoreKey.secureFilePath)" "$HOME/.appstoreconnect/private_keys/AuthKey_$(APP_STORE_CONNECT_KEY_ID).p8"
+              xcrun iTMSTransporter                 -m upload                 -assetFile "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa"                 -apiKey "$(APP_STORE_CONNECT_KEY_ID)"                 -apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
+            condition: and(succeeded(), eq(variables['SUBMIT_IOS'], 'true'))
+            displayName: Submit IPA to App Store Connect
+
+      - job: Android
+        displayName: Build signed Android AAB
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - task: JavaToolInstaller@0
+            inputs:
+              versionSpec: '17'
+              jdkArchitectureOption: x64
+              jdkSourceOption: PreInstalled
+
+          - task: DownloadSecureFile@1
+            name: androidKeystore
+            inputs:
+              secureFile: $(ANDROID_KEYSTORE_SECURE_FILE)
+
+          - task: DownloadSecureFile@1
+            name: googlePlayServiceAccount
+            condition: and(succeeded(), eq(variables['SUBMIT_ANDROID'], 'true'))
+            inputs:
+              secureFile: $(GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE)
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm ci --no-audit --no-fund
+              npx expo prebuild --clean --platform android --no-install
+
+              python3 - <<'PY'
+              from pathlib import Path
+              path = Path('android/app/build.gradle')
+              text = path.read_text()
+              debug_block = """signingConfigs {
+                  debug {
+                      storeFile file('debug.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }"""
+              release_block = """signingConfigs {
+                  debug {
+                      storeFile file('debug.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+                  release {
+                      storeFile file(System.getenv('TOH_ANDROID_KEYSTORE'))
+                      storePassword System.getenv('TOH_ANDROID_KEYSTORE_PASSWORD')
+                      keyAlias System.getenv('TOH_ANDROID_KEY_ALIAS')
+                      keyPassword System.getenv('TOH_ANDROID_KEY_PASSWORD')
+                  }
+              }"""
+              if debug_block not in text:
+                  raise SystemExit('Expected generated signingConfigs block was not found')
+              text = text.replace(debug_block, release_block)
+              marker = "release {\n            // Caution! In production, you need to generate your own keystore file."
+              if marker not in text:
+                  raise SystemExit('Expected generated release block was not found')
+              text = text.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release', 1)
+              path.write_text(text)
+              PY
+            displayName: Generate Android native project and production signing config
+
+          - script: |
+              set -euo pipefail
+              cd mobile/android
+              chmod +x gradlew
+              ./gradlew --no-daemon bundleRelease
+              AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
+              test -n "$AAB"
+              cp "$AAB" "$(Build.ArtifactStagingDirectory)/TheOutHaven.aab"
+            env:
+              TOH_ANDROID_KEYSTORE: $(androidKeystore.secureFilePath)
+              TOH_ANDROID_KEYSTORE_PASSWORD: $(ANDROID_KEYSTORE_PASSWORD)
+              TOH_ANDROID_KEY_ALIAS: $(ANDROID_KEY_ALIAS)
+              TOH_ANDROID_KEY_PASSWORD: $(ANDROID_KEY_PASSWORD)
+            displayName: Build signed Android App Bundle
+
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/TheOutHaven.aab
+              artifactName: $(androidArtifactName)
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm install --no-save --no-audit --no-fund googleapis
+              node - <<'NODE'
+              const fs = require('fs');
+              const { google } = require('googleapis');
+              const packageName = 'com.theouthaven.app';
+              const aabPath = process.env.AAB_PATH;
+              const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+              (async () => {
+                const auth = new google.auth.GoogleAuth({
+                  keyFile,
+                  scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+                });
+                const androidpublisher = google.androidpublisher({ version: 'v3', auth });
+                const edit = await androidpublisher.edits.insert({ packageName });
+                const editId = edit.data.id;
+                if (!editId) throw new Error('Google Play edit ID was not returned');
+                const upload = await androidpublisher.edits.bundles.upload({
+                  packageName,
+                  editId,
+                  media: {
+                    mimeType: 'application/octet-stream',
+                    body: fs.createReadStream(aabPath),
+                  },
+                });
+                const versionCode = String(upload.data.versionCode || '');
+                if (!versionCode) throw new Error('Google Play did not return a versionCode');
+                await androidpublisher.edits.tracks.update({
+                  packageName,
+                  editId,
+                  track: 'internal',
+                  requestBody: {
+                    releases: [{
+                      status: 'completed',
+                      versionCodes: [versionCode],
+                    }],
+                  },
+                });
+                await androidpublisher.edits.commit({ packageName, editId });
+              })().catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+              NODE
+            env:
+              AAB_PATH: $(Build.ArtifactStagingDirectory)/TheOutHaven.aab
+              GOOGLE_APPLICATION_CREDENTIALS: $(googlePlayServiceAccount.secureFilePath)
+            condition: and(succeeded(), eq(variables['SUBMIT_ANDROID'], 'true'))
+            displayName: Submit AAB to Google Play internal testing
