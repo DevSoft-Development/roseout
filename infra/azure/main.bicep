@@ -20,6 +20,7 @@ param consumerContainerAppsEnvironmentEnabled bool = false
 param consumerRuntimeEnabled bool = false
 param consumerRegionalFailoverEnabled bool = false
 param consumerEdgeEnabled bool = false
+param otaEnabled bool = false
 param consumerImage string = ''
 param consumerGitSha string = ''
 param consumerNextPublicSiteUrl string = ''
@@ -137,6 +138,18 @@ module consumerEdge './modules/consumer-edge.bicep' = if (consumerRuntimeEnabled
   }
 }
 
+
+module otaFoundation './modules/ota-foundation.bicep' = if (otaEnabled) {
+  name: 'ota-foundation-${environment}'
+  scope: consumerRg
+  params: {
+    environment: environment
+    location: location
+    secondaryLocation: secondaryLocation
+    tags: tags
+  }
+}
+
 output resourceGroupName string = consumerRg.name
 output primaryLocation string = location
 output secondaryLocation string = secondaryLocation
@@ -160,3 +173,9 @@ output consumerSecondaryRuntimeFqdn string = consumerRuntimeEnabled && consumerR
 output consumerRuntimeImage string = consumerRuntimeEnabled ? consumerRuntime!.outputs.image : ''
 output consumerFrontDoorProfileName string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.profileName : ''
 output consumerFrontDoorEndpointHostName string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointHostName : ''
+
+output otaStorageAccountName string = otaEnabled ? otaFoundation!.outputs.storageAccountName : ''
+output otaPrimaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.primaryWebEndpoint : ''
+output otaSecondaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.secondaryWebEndpoint : ''
+output otaFrontDoorProfileName string = otaEnabled ? otaFoundation!.outputs.frontDoorProfileName : ''
+output otaFrontDoorEndpointHostName string = otaEnabled ? otaFoundation!.outputs.frontDoorEndpointHostName : ''
