@@ -8,6 +8,8 @@ on:
       - 'infra/azure/**'
       - 'apps/consumer/**'
       - '.github/workflows/azure-consumer-production.yml'
+      - '.github/scripts/prove-azure-frontdoor.py'
+      - '.github/scripts/prove-azure-frontdoor.py'
   push:
     branches:
       - main
