@@ -160,15 +160,18 @@ jobs:
               --policy-name "$policy" >/dev/null 2>&1 || true
           done
 
-          RECOVERY_POLICY='TheOutHavenDeployRoleRecoveryBootstrap'
+          # Reuse the existing legacy inline-policy slot instead of adding a second
+          # inline policy. This shrinks the role below the aggregate 10,240-byte
+          # inline-policy quota before reconciliation begins.
+          RECOVERY_POLICY='TheOutHavenPlatformCloudFormation'
           RECOVERY_FILE="$RUNNER_TEMP/deploy-role-recovery-bootstrap.json"
-          cleanup_recovery() {
-            aws iam delete-role-policy \
-              --role-name "$ROLE_NAME" \
-              --policy-name "$RECOVERY_POLICY" >/dev/null 2>&1 || true
+          cleanup_recovery_file() {
             rm -f "$RECOVERY_FILE"
           }
-          trap cleanup_recovery EXIT
+          # If reconciliation fails, keep the small recovery policy in place so the
+          # next run can safely retry. Remove it only after managed-policy authority
+          # and trust are fully verified.
+          trap cleanup_recovery_file EXIT
 
           cat > "$RECOVERY_FILE" <<JSON
           {
@@ -178,6 +181,14 @@ jobs:
                 "Effect":"Allow",
                 "Action":[
                   "iam:UpdateAssumeRolePolicy",
+                  "iam:GetRole",
+                  "iam:ListRolePolicies",
+                  "iam:GetRolePolicy",
+                  "iam:PutRolePolicy",
+                  "iam:DeleteRolePolicy",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:TagRole",
+                  "iam:UntagRole",
                   "iam:CreatePolicy",
                   "iam:DeletePolicy",
                   "iam:GetPolicy",
@@ -308,9 +319,12 @@ jobs:
             ($subs | index("repo:DevSoft-Development/roseout:environment:staging") != null)
           ' >/dev/null
 
-          cleanup_recovery
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name "$RECOVERY_POLICY" >/dev/null 2>&1 || true
+          cleanup_recovery_file
           trap - EXIT
-          echo "Canonical deploy-role stack recovered and reconciled to four managed policies." >> "$GITHUB_STEP_SUMMARY"
+          echo "Canonical deploy-role stack recovered and reconciled to four managed policies; legacy inline recovery slot removed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify canonical managed deployment permissions
         env:
