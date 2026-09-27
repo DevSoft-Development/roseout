@@ -413,10 +413,14 @@ Resources:
                   - iam:UntagRole
                   - iam:PassRole
                 Resource: arn:aws:iam::742020474738:role/TheOutHaven*
-              - Sid: ManagePlatformDeployManagedPolicies
+              - Sid: CreatePlatformDeployManagedPolicies
                 Effect: Allow
                 Action:
                   - iam:CreatePolicy
+                Resource: '*'
+              - Sid: ManagePlatformDeployManagedPolicies
+                Effect: Allow
+                Action:
                   - iam:DeletePolicy
                   - iam:GetPolicy
                   - iam:GetPolicyVersion
