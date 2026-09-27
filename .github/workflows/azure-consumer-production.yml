@@ -303,7 +303,7 @@ jobs:
 
             edge_ready=false
             for _ in $(seq 1 60); do
-              code="$(curl --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              code="$(curl --http1.1 --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
               header_revision=""
               header_role=""
               while IFS=: read -r header_name header_value; do
@@ -363,7 +363,7 @@ jobs:
 
             passed=false
             for _ in $(seq 1 30); do
-              code="$(curl --silent --show-error --output failover-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              code="$(curl --http1.1 --silent --show-error --output failover-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
               if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="secondary"' failover-health.json >/dev/null 2>&1; then
                 passed=true
                 break
