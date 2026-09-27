@@ -232,65 +232,65 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account after recovery refresh: $ACCOUNT" >&2; exit 1; }
 
-      - name: Repair canonical managed recovery actions
+      - name: Attach temporary managed recovery policy
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
           set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          RECOVERY_POLICY_NAME="TheOutHavenPlatformDeployRecovery"
+          RECOVERY_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${RECOVERY_POLICY_NAME}"
+          RECOVERY_POLICY_FILE="$RUNNER_TEMP/platform-deploy-recovery-managed.json"
 
-          patch_policy() {
-            local policy_name="$1"
-            local jq_filter="$2"
-            local arn="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/$policy_name"
-            local current_version
-            local source_file="$RUNNER_TEMP/$policy_name-current.json"
-            local patched_file="$RUNNER_TEMP/$policy_name-patched.json"
-
-            current_version="$(aws iam get-policy --policy-arn "$arn" --query 'Policy.DefaultVersionId' --output text)"
-            aws iam get-policy-version \
-              --policy-arn "$arn" \
-              --version-id "$current_version" \
-              --query 'PolicyVersion.Document' \
-              --output json > "$source_file"
-
-            jq "$jq_filter" "$source_file" > "$patched_file"
-
-            if cmp -s "$source_file" "$patched_file"; then
-              echo "$policy_name already contains canonical recovery permissions."
-              return
-            fi
-
-            mapfile -t old_versions < <(aws iam list-policy-versions \
-              --policy-arn "$arn" \
-              --query 'Versions[?IsDefaultVersion==`false`]|sort_by(@,&CreateDate)[].VersionId' \
-              --output text | tr '\t' '\n')
-
-            version_count="$(aws iam list-policy-versions --policy-arn "$arn" --query 'length(Versions)' --output text)"
-            if [ "$version_count" -ge 5 ] && [ "${#old_versions[@]}" -gt 0 ]; then
-              aws iam delete-policy-version --policy-arn "$arn" --version-id "${old_versions[0]}"
-            fi
-
-            aws iam create-policy-version \
-              --policy-arn "$arn" \
-              --policy-document "file://$patched_file" \
-              --set-as-default >/dev/null
+          cat > "$RECOVERY_POLICY_FILE" <<JSON
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Sid":"RecoverDeployRoleStack",
+                "Effect":"Allow",
+                "Action":[
+                  "cloudformation:ContinueUpdateRollback",
+                  "iam:UpdateAssumeRolePolicy"
+                ],
+                "Resource":"*"
+              }
+            ]
           }
+          JSON
 
-          patch_policy TheOutHavenPlatformDeployCore '
-            .Statement |= map(
-              if .Sid == "CloudFormationStacks" then
-                .Action = ((.Action + ["cloudformation:ContinueUpdateRollback"]) | unique)
-              else . end
-            )'
+          if aws iam get-policy --policy-arn "$RECOVERY_POLICY_ARN" >/dev/null 2>&1; then
+            version_count="$(aws iam list-policy-versions --policy-arn "$RECOVERY_POLICY_ARN" --query 'length(Versions)' --output text)"
+            if [ "$version_count" -ge 5 ]; then
+              oldest="$(aws iam list-policy-versions \
+                --policy-arn "$RECOVERY_POLICY_ARN" \
+                --query 'Versions[?IsDefaultVersion==`false`]|sort_by(@,&CreateDate)[0].VersionId' \
+                --output text)"
+              test -n "$oldest" && test "$oldest" != "None"
+              aws iam delete-policy-version --policy-arn "$RECOVERY_POLICY_ARN" --version-id "$oldest"
+            fi
+            aws iam create-policy-version \
+              --policy-arn "$RECOVERY_POLICY_ARN" \
+              --policy-document "file://$RECOVERY_POLICY_FILE" \
+              --set-as-default >/dev/null
+          else
+            aws iam create-policy \
+              --policy-name "$RECOVERY_POLICY_NAME" \
+              --policy-document "file://$RECOVERY_POLICY_FILE" >/dev/null
+          fi
 
-          patch_policy TheOutHavenPlatformDeployRuntime '
-            .Statement |= map(
-              if .Sid == "ManageTheOutHavenLambdaRoles" then
-                .Action = ((.Action + ["iam:UpdateAssumeRolePolicy"]) | unique)
-              else . end
-            )'
+          aws iam attach-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-arn "$RECOVERY_POLICY_ARN"
+          aws iam list-attached-role-policies \
+            --role-name "$ROLE_NAME" \
+            --query "AttachedPolicies[?PolicyArn=='$RECOVERY_POLICY_ARN'].PolicyArn | [0]" \
+            --output text | grep -Fx "$RECOVERY_POLICY_ARN" >/dev/null
+          rm -f "$RECOVERY_POLICY_FILE"
+          sleep 20
+          echo "Temporary managed recovery policy attached before rollback recovery." >> "$GITHUB_STEP_SUMMARY"
 
-          echo "Canonical managed recovery actions repaired before CloudFormation rollback recovery." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Refresh AWS credentials after managed-policy repair
+      - name: Refresh AWS credentials after recovery-policy attach
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
@@ -484,6 +484,33 @@ jobs:
             --policy-name TheOutHavenPlatformCloudFormation >/dev/null 2>&1 || true
 
           echo "Canonical managed deployment policies verified; stale legacy inline policy removed if present." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary managed recovery policy
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          RECOVERY_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRecovery"
+
+          aws iam detach-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-arn "$RECOVERY_POLICY_ARN" >/dev/null 2>&1 || true
+
+          if aws iam get-policy --policy-arn "$RECOVERY_POLICY_ARN" >/dev/null 2>&1; then
+            mapfile -t versions < <(aws iam list-policy-versions \
+              --policy-arn "$RECOVERY_POLICY_ARN" \
+              --query 'Versions[?IsDefaultVersion==`false`].VersionId' \
+              --output text | tr '\t' '\n')
+            for version in "${versions[@]}"; do
+              [ -n "$version" ] && aws iam delete-policy-version \
+                --policy-arn "$RECOVERY_POLICY_ARN" \
+                --version-id "$version"
+            done
+            aws iam delete-policy --policy-arn "$RECOVERY_POLICY_ARN"
+          fi
+
+          echo "Temporary managed recovery policy removed after canonical policy verification." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ensure ELB service-linked role prerequisite
         env:
