@@ -2,7 +2,7 @@ param environment string
 param tags object
 param primaryOriginHostName string
 param secondaryOriginHostName string
-param healthProbePath string = '/api/health/azure'
+param healthProbePath string = '/api/health/azure/probe'
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
