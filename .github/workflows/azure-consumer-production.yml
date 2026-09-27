@@ -284,10 +284,27 @@ jobs:
             check_region "$PRIMARY" primary
             check_region "$SECONDARY" secondary
 
+            RG=rg-toh-consumer-production
+            PROFILE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
+            ENDPOINT_NAME="$(az afd endpoint list --resource-group "$RG" --profile-name "$PROFILE" --query '[0].name' -o tsv)"
+            ROUTE_NAME="$(az afd route list --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query '[0].name' -o tsv)"
+            test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME"
+
+            for _ in $(seq 1 60); do
+              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
+              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
+              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ]; then
+                break
+              fi
+              sleep 10
+            done
+            test "$endpoint_state" = Succeeded
+            test "$route_state" = Succeeded
+
             edge_ready=false
             for _ in $(seq 1 60); do
-              code="$(curl --silent --show-error --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
-              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
+              code="$(curl --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              if [ "$code" = 200 ] && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
                 edge_ready=true
                 break
               fi
@@ -295,6 +312,11 @@ jobs:
             done
             if [ "$edge_ready" != true ]; then
               echo "Front Door did not return the expected JSON health payload for release $IMAGE_SHA (last HTTP status: ${code:-unknown})." >&2
+              echo "Endpoint provisioning state: ${endpoint_state:-unknown}" >&2
+              echo "Route provisioning state: ${route_state:-unknown}" >&2
+              echo "--- response headers ---" >&2
+              cat edge-health.headers >&2 || true
+              echo "--- response body ---" >&2
               cat edge-health.json >&2 || true
               exit 1
             fi
