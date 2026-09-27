@@ -286,15 +286,21 @@ jobs:
 
             RG=rg-toh-consumer-production
             PROFILE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
-            ENDPOINT_NAME="$(az afd endpoint list --resource-group "$RG" --profile-name "$PROFILE" --query '[0].name' -o tsv)"
-            ROUTE_NAME="$(az afd route list --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query '[0].name' -o tsv)"
-            test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME"
+            ENDPOINT_NAME="${EDGE%%.*}"
+            ROUTE_NAME=consumer
+            SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+            API_VERSION=2024-02-01
+            ENDPOINT_URL="https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG/providers/Microsoft.Cdn/profiles/$PROFILE/afdEndpoints/$ENDPOINT_NAME?api-version=$API_VERSION"
+            ROUTE_URL="https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG/providers/Microsoft.Cdn/profiles/$PROFILE/afdEndpoints/$ENDPOINT_NAME/routes/$ROUTE_NAME?api-version=$API_VERSION"
+            test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME" && test -n "$SUBSCRIPTION_ID"
 
             for _ in $(seq 1 180); do
-              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
-              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
-              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
-              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
+              endpoint_json="$(az rest --method get --url "$ENDPOINT_URL" 2>/dev/null || true)"
+              route_json="$(az rest --method get --url "$ROUTE_URL" 2>/dev/null || true)"
+              endpoint_state="$(printf '%s' "$endpoint_json" | jq -r '.properties.provisioningState // empty' 2>/dev/null || true)"
+              endpoint_deployment="$(printf '%s' "$endpoint_json" | jq -r '.properties.deploymentStatus // empty' 2>/dev/null || true)"
+              route_state="$(printf '%s' "$route_json" | jq -r '.properties.provisioningState // empty' 2>/dev/null || true)"
+              route_deployment="$(printf '%s' "$route_json" | jq -r '.properties.deploymentStatus // empty' 2>/dev/null || true)"
               if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
                 break
               fi
