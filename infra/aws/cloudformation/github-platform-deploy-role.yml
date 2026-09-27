@@ -53,6 +53,7 @@ Resources:
                 Action:
                   - cloudformation:CreateStack
                   - cloudformation:UpdateStack
+                  - cloudformation:ContinueUpdateRollback
                   - cloudformation:DeleteStack
                   - cloudformation:CreateChangeSet
                   - cloudformation:DescribeChangeSet
@@ -401,6 +402,7 @@ Resources:
                   - iam:CreateRole
                   - iam:DeleteRole
                   - iam:GetRole
+                  - iam:UpdateAssumeRolePolicy
                   - iam:PutRolePolicy
                   - iam:DeleteRolePolicy
                   - iam:GetRolePolicy
