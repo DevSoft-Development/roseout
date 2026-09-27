@@ -178,6 +178,7 @@ output consumerFrontDoorProfileName string = consumerRuntimeEnabled && consumerR
 output consumerFrontDoorEndpointHostName string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointHostName : ''
 output consumerFrontDoorEndpointResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointResourceId : ''
 output consumerFrontDoorRouteResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.routeResourceId : ''
+output consumerFrontDoorPrimaryOriginResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.primaryOriginResourceId : ''
 
 output otaStorageAccountName string = otaEnabled ? otaFoundation!.outputs.storageAccountName : ''
 output otaPrimaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.primaryWebEndpoint : ''

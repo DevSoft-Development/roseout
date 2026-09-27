@@ -105,5 +105,6 @@ output endpointName string = endpoint.name
 output endpointHostName string = endpoint.properties.hostName
 output endpointResourceId string = endpoint.id
 output routeResourceId string = route.id
+output primaryOriginResourceId string = primaryOrigin.id
 output primaryOriginHostName string = primaryOriginHostName
 output secondaryOriginHostName string = secondaryOriginHostName
