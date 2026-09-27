@@ -304,8 +304,75 @@ jobs:
             edge_ready=false
             for _ in $(seq 1 60); do
               code="$(curl --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
-              header_revision="$(awk 'BEGIN{IGNORECASE=1} /^x-theouthaven-health-revision:/ {gsub("\r","",$2); print $2}' edge-health.headers | tail -n1)"
-              header_role="$(awk 'BEGIN{IGNORECASE=1} /^x-theouthaven-region-role:/ {gsub("\r","",$2); print $2}' edge-health.headers | tail -n1)"
+              header_revision=""
+              header_role=""
+              while IFS=: read -r header_name header_value; do
+                header_name="${header_name,,}"
+                header_value="${header_value# }"
+                header_value="${header_value%              if [ "$code" = 200 ] && [ "$header_revision" = "$IMAGE_SHA" ] && { [ "$header_role" = primary ] || [ "$header_role" = secondary ]; } && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
+                edge_ready=true
+                break
+              fi
+              sleep 10
+            done
+            if [ "$edge_ready" != true ]; then
+              echo "Front Door did not return the expected JSON health payload for release $IMAGE_SHA (last HTTP status: ${code:-unknown})." >&2
+              echo "Endpoint provisioning state: ${endpoint_state:-unknown}" >&2
+              echo "Route provisioning state: ${route_state:-unknown}" >&2
+              echo "--- response headers ---" >&2
+              cat edge-health.headers >&2 || true
+              echo "--- response body ---" >&2
+              cat edge-health.json >&2 || true
+              exit 1
+            fi
+
+            {
+              echo "## Azure production consumer readiness"
+              echo
+              echo "- Primary: https://$PRIMARY"
+              echo "- Secondary: https://$SECONDARY"
+              echo "- Front Door: https://$EDGE"
+              echo "- Release SHA: $IMAGE_SHA"
+              echo "- Route 53 cutover: not performed"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Drill regional failover through Front Door
+        if: inputs.run_failover_drill
+        env:
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG=rg-toh-consumer-production
+            PROFILE=afd-toh-consumer-prod
+            GROUP=consumer-regions
+            EDGE="$(az deployment sub show --name toh-consumer-runtime-production --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+
+            restore() {
+              az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Enabled >/dev/null || true
+            }
+            trap restore EXIT
+
+            az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Disabled >/dev/null
+
+            passed=false
+            for _ in $(seq 1 30); do
+              code="$(curl --silent --show-error --output failover-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="secondary"' failover-health.json >/dev/null 2>&1; then
+                passed=true
+                break
+              fi
+              sleep 10
+            done
+            test "$passed" = true || { cat failover-health.json >&2 || true; exit 1; }
+            echo "Front Door regional failover drill passed." >> "$GITHUB_STEP_SUMMARY"
+\r'}"
+                case "$header_name" in
+                  x-theouthaven-health-revision) header_revision="$header_value" ;;
+                  x-theouthaven-region-role) header_role="$header_value" ;;
+                esac
+              done < edge-health.headers
               if [ "$code" = 200 ] && [ "$header_revision" = "$IMAGE_SHA" ] && { [ "$header_role" = primary ] || [ "$header_role" = secondary ]; } && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
                 edge_ready=true
                 break
