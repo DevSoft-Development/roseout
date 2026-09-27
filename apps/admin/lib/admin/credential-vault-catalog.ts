@@ -21,7 +21,8 @@ export type CredentialProviderId =
   | "turnstile"
   | "expo"
   | "domains"
-  | "platform";
+  | "platform"
+  | "mobile";
 
 export type CredentialField = {
   key: string;
@@ -29,6 +30,8 @@ export type CredentialField = {
   secret?: boolean;
   multiline?: boolean;
   placeholder?: string;
+  file?: boolean;
+  accept?: string;
 };
 
 export type CredentialProvider = {
@@ -114,6 +117,25 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   ] },
   { id: "apple", label: "Apple Business", category: "Identity", description: "Apple Business API credentials used for Business Manager and device enrollment integrations.", note: "Use the Apple Business API Client ID, Key ID, and downloaded private key. App Store Connect Issuer ID is not used here.", fields: [
     { key: "issuerId", label: "Client ID", placeholder: "BUSINESSAPI..." }, { key: "keyId", label: "Key ID" }, { key: "privateKey", label: "Private key (PEM)", secret: true, multiline: true },
+  ] },
+  { id: "mobile", label: "Mobile Release Signing", category: "Security", description: "Apple App Store Connect and Google Play signing credentials used by the Azure mobile release pipeline.", note: "This is the production source of truth for mobile signing. Binary files are base64-encoded in the Admin browser before they are written to AWS Secrets Manager. Existing secret values are never returned to the browser.", fields: [
+    { key: "azureDevOpsOrg", label: "Azure DevOps organization", placeholder: "your-organization" },
+    { key: "azureDevOpsProject", label: "Azure DevOps project", placeholder: "TheOutHaven" },
+    { key: "azureDevOpsPat", label: "Azure DevOps bootstrap PAT", secret: true },
+    { key: "azureDevOpsGithubServiceConnectionId", label: "Azure DevOps GitHub service connection ID", placeholder: "Optional when the project has exactly one GitHub connection" },
+    { key: "iosCertificateP12Base64", label: "iOS distribution certificate (.p12)", secret: true, file: true, accept: ".p12,.pfx,application/x-pkcs12" },
+    { key: "iosCertificatePassword", label: "iOS certificate password", secret: true },
+    { key: "iosProvisioningProfileBase64", label: "App Store provisioning profile (.mobileprovision)", secret: true, file: true, accept: ".mobileprovision,application/octet-stream" },
+    { key: "iosTeamId", label: "Apple Team ID" },
+    { key: "appStoreConnectKeyId", label: "App Store Connect Key ID" },
+    { key: "appStoreConnectIssuerId", label: "App Store Connect Issuer ID" },
+    { key: "appStoreConnectPrivateKey", label: "App Store Connect private key (.p8)", secret: true, multiline: true, placeholder: "-----BEGIN PRIVATE KEY-----" },
+    { key: "appStoreConnectAppId", label: "App Store Connect app ID", placeholder: "6811955108" },
+    { key: "androidKeystoreBase64", label: "Android upload keystore (.jks / .keystore)", secret: true, file: true, accept: ".jks,.keystore,application/octet-stream" },
+    { key: "androidKeystorePassword", label: "Android keystore password", secret: true },
+    { key: "androidKeyAlias", label: "Android key alias" },
+    { key: "androidKeyPassword", label: "Android key password", secret: true },
+    { key: "googlePlayServiceAccountJson", label: "Google Play service account JSON", secret: true, multiline: true, placeholder: "{\n  \"type\": \"service_account\", ...\n}" },
   ] },
   { id: "turnstile", label: "Cloudflare Turnstile", category: "Security", description: "Turnstile server-side verification credential.", fields: [
     { key: "secretKey", label: "Secret key", secret: true },
