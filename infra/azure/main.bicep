@@ -176,6 +176,8 @@ output consumerSecondaryRuntimeFqdn string = consumerRuntimeEnabled && consumerR
 output consumerRuntimeImage string = consumerRuntimeEnabled ? consumerRuntime!.outputs.image : ''
 output consumerFrontDoorProfileName string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.profileName : ''
 output consumerFrontDoorEndpointHostName string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointHostName : ''
+output consumerFrontDoorEndpointResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointResourceId : ''
+output consumerFrontDoorRouteResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.routeResourceId : ''
 
 output otaStorageAccountName string = otaEnabled ? otaFoundation!.outputs.storageAccountName : ''
 output otaPrimaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.primaryWebEndpoint : ''
