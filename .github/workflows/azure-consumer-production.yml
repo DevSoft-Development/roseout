@@ -300,6 +300,10 @@ jobs:
               fi
               sleep 10
             done
+            echo "Front Door endpoint provisioning state: ${endpoint_state:-unknown}"
+            echo "Front Door endpoint deployment status: ${endpoint_deployment:-unknown}"
+            echo "Front Door route provisioning state: ${route_state:-unknown}"
+            echo "Front Door route deployment status: ${route_deployment:-unknown}"
             test "$endpoint_state" = Succeeded
             test "$route_state" = Succeeded
             test "$endpoint_deployment" = Succeeded
