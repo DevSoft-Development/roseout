@@ -304,7 +304,9 @@ jobs:
             edge_ready=false
             for _ in $(seq 1 60); do
               code="$(curl --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
-              if [ "$code" = 200 ] && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
+              header_revision="$(awk 'BEGIN{IGNORECASE=1} /^x-theouthaven-health-revision:/ {gsub("\r","",$2); print $2}' edge-health.headers | tail -n1)"
+              header_role="$(awk 'BEGIN{IGNORECASE=1} /^x-theouthaven-region-role:/ {gsub("\r","",$2); print $2}' edge-health.headers | tail -n1)"
+              if [ "$code" = 200 ] && [ "$header_revision" = "$IMAGE_SHA" ] && { [ "$header_role" = primary ] || [ "$header_role" = secondary ]; } && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
                 edge_ready=true
                 break
               fi
