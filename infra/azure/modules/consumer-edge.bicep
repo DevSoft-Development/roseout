@@ -103,5 +103,7 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
 output profileName string = profile.name
 output endpointName string = endpoint.name
 output endpointHostName string = endpoint.properties.hostName
+output endpointResourceId string = endpoint.id
+output routeResourceId string = route.id
 output primaryOriginHostName string = primaryOriginHostName
 output secondaryOriginHostName string = secondaryOriginHostName
