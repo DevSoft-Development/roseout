@@ -310,21 +310,25 @@ jobs:
               route_json="$(cat route-arm.json)"
               endpoint_state="$(printf '%s' "$endpoint_json" | jq -r '.properties.provisioningState // empty')"
               endpoint_deployment="$(printf '%s' "$endpoint_json" | jq -r '.properties.deploymentStatus // empty')"
+              endpoint_enabled="$(printf '%s' "$endpoint_json" | jq -r '.properties.enabledState // empty')"
               route_state="$(printf '%s' "$route_json" | jq -r '.properties.provisioningState // empty')"
               route_deployment="$(printf '%s' "$route_json" | jq -r '.properties.deploymentStatus // empty')"
-              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
+              route_enabled="$(printf '%s' "$route_json" | jq -r '.properties.enabledState // empty')"
+              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_enabled" = Enabled ] && [ "$route_enabled" = Enabled ]; then
                 break
               fi
               sleep 10
             done
             echo "Front Door endpoint provisioning state: ${endpoint_state:-unknown}"
-            echo "Front Door endpoint deployment status: ${endpoint_deployment:-unknown}"
+            echo "Front Door endpoint deployment status (informational): ${endpoint_deployment:-unknown}"
+            echo "Front Door endpoint enabled state: ${endpoint_enabled:-unknown}"
             echo "Front Door route provisioning state: ${route_state:-unknown}"
-            echo "Front Door route deployment status: ${route_deployment:-unknown}"
+            echo "Front Door route deployment status (informational): ${route_deployment:-unknown}"
+            echo "Front Door route enabled state: ${route_enabled:-unknown}"
             test "$endpoint_state" = Succeeded
             test "$route_state" = Succeeded
-            test "$endpoint_deployment" = Succeeded
-            test "$route_deployment" = Succeeded
+            test "$endpoint_enabled" = Enabled
+            test "$route_enabled" = Enabled
 
             edge_ready=false
             for _ in $(seq 1 90); do
@@ -376,44 +380,74 @@ jobs:
         with:
           inlineScript: |
             set -euo pipefail
-            RG=rg-toh-consumer-production
             DEPLOYMENT=toh-consumer-runtime-production
-            PROFILE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
-            GROUP=consumer-regions
             EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
-            test -n "$PROFILE" && test -n "$EDGE"
+            PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
+            API_VERSION=2024-02-01
+            test -n "$EDGE" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID"
+
+            set_origin_state() {
+              desired="$1"
+              az rest                 --method patch                 --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION"                 --headers 'Content-Type=application/json'                 --body "{\"properties\":{\"enabledState\":\"$desired\"}}"                 --output none
+            }
+
+            wait_origin_state() {
+              desired="$1"
+              for _ in $(seq 1 30); do
+                state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
+                provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
+                if [ "$state" = "$desired" ] && [ "$provisioning" = Succeeded ]; then
+                  return 0
+                fi
+                sleep 10
+              done
+              echo "::error::Primary Front Door origin did not reach enabledState=$desired with provisioningState=Succeeded."
+              return 1
+            }
+
+            check_edge_role() {
+              expected_role="$1"
+              body_file="$2"
+              header_file="$3"
+              for _ in $(seq 1 30); do
+                code="$(curl --http1.1 --silent --show-error --dump-header "$header_file" --output "$body_file" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+                header_revision=""
+                header_role=""
+                while IFS=: read -r header_name header_value; do
+                  header_name="${header_name,,}"
+                  header_value="${header_value# }"
+                  case "$header_name" in
+                    x-theouthaven-health-revision) header_revision="$header_value" ;;
+                    x-theouthaven-region-role) header_role="$header_value" ;;
+                  esac
+                done < "$header_file"
+                if [ "$code" = 200 ] && [[ "$header_revision" == "$IMAGE_SHA"* ]] && [[ "$header_role" == "$expected_role"* ]] && jq -e --arg sha "$IMAGE_SHA" --arg role "$expected_role" '.ok==true and .revision==$sha and .regionRole==$role' "$body_file" >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 10
+              done
+              echo "::error::Front Door did not route release $IMAGE_SHA to expected role $expected_role."
+              echo "--- response headers ---" >&2
+              cat "$header_file" >&2 || true
+              echo "--- response body ---" >&2
+              cat "$body_file" >&2 || true
+              return 1
+            }
 
             restore() {
-              az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Enabled >/dev/null || true
+              set_origin_state Enabled >/dev/null 2>&1 || true
+              wait_origin_state Enabled >/dev/null 2>&1 || true
             }
             trap restore EXIT
 
-            az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Disabled >/dev/null
+            set_origin_state Disabled
+            wait_origin_state Disabled
+            check_edge_role secondary failover-health.json failover-health.headers
 
-            passed=false
-            for _ in $(seq 1 30); do
-              code="$(curl --http1.1 --silent --show-error --output failover-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
-              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="secondary"' failover-health.json >/dev/null 2>&1; then
-                passed=true
-                break
-              fi
-              sleep 10
-            done
-            test "$passed" = true || { cat failover-health.json >&2 || true; exit 1; }
-
-            restore
+            set_origin_state Enabled
+            wait_origin_state Enabled
+            check_edge_role primary restore-health.json restore-health.headers
             trap - EXIT
-
-            restored=false
-            for _ in $(seq 1 30); do
-              code="$(curl --http1.1 --silent --show-error --output restore-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
-              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="primary"' restore-health.json >/dev/null 2>&1; then
-                restored=true
-                break
-              fi
-              sleep 10
-            done
-            test "$restored" = true || { cat restore-health.json >&2 || true; exit 1; }
 
             {
               echo "Front Door regional failover drill passed."
