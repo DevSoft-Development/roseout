@@ -118,7 +118,7 @@ jobs:
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
           test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account: $ACCOUNT" >&2; exit 1; }
 
-      - name: Recover and reconcile canonical deploy role stack
+      - name: Install deploy-role recovery permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
@@ -160,19 +160,8 @@ jobs:
               --policy-name "$policy" >/dev/null 2>&1 || true
           done
 
-          # Reuse the existing legacy inline-policy slot instead of adding a second
-          # inline policy. This shrinks the role below the aggregate 10,240-byte
-          # inline-policy quota before reconciliation begins.
           RECOVERY_POLICY='TheOutHavenPlatformCloudFormation'
           RECOVERY_FILE="$RUNNER_TEMP/deploy-role-recovery-bootstrap.json"
-          cleanup_recovery_file() {
-            rm -f "$RECOVERY_FILE"
-          }
-          # If reconciliation fails, keep the small recovery policy in place so the
-          # next run can safely retry. Remove it only after managed-policy authority
-          # and trust are fully verified.
-          trap cleanup_recovery_file EXIT
-
           cat > "$RECOVERY_FILE" <<JSON
           {
             "Version":"2012-10-17",
@@ -227,7 +216,35 @@ jobs:
             --policy-name "$RECOVERY_POLICY" \
             --query 'PolicyName' \
             --output text >/dev/null
-          sleep 20
+          rm -f "$RECOVERY_FILE"
+          echo "Minimal deploy-role recovery policy installed; refreshing AWS session before reconciliation." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refresh AWS credentials for recovery permissions
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify refreshed AWS identity
+        run: |
+          set -euo pipefail
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          test "$ACCOUNT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account after recovery refresh: $ACCOUNT" >&2; exit 1; }
+
+      - name: Recover and reconcile canonical deploy role stack
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          RECOVERY_POLICY='TheOutHavenPlatformCloudFormation'
+          STACK_NAME="$(aws cloudformation describe-stack-resources \
+            --physical-resource-id "$ROLE_NAME" \
+            --query 'StackResources[0].StackName' \
+            --output text)"
+          test -n "$STACK_NAME"
+          test "$STACK_NAME" != "None"
 
           STATUS="$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
@@ -322,8 +339,6 @@ jobs:
           aws iam delete-role-policy \
             --role-name "$ROLE_NAME" \
             --policy-name "$RECOVERY_POLICY" >/dev/null 2>&1 || true
-          cleanup_recovery_file
-          trap - EXIT
           echo "Canonical deploy-role stack recovered and reconciled to four managed policies; legacy inline recovery slot removed." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify canonical managed deployment permissions
