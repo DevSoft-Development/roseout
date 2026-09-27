@@ -350,9 +350,11 @@ jobs:
           inlineScript: |
             set -euo pipefail
             RG=rg-toh-consumer-production
-            PROFILE=afd-toh-consumer-prod
+            DEPLOYMENT=toh-consumer-runtime-production
+            PROFILE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
             GROUP=consumer-regions
-            EDGE="$(az deployment sub show --name toh-consumer-runtime-production --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$PROFILE" && test -n "$EDGE"
 
             restore() {
               az afd origin update --resource-group "$RG" --profile-name "$PROFILE" --origin-group-name "$GROUP" --origin-name primary --enabled-state Enabled >/dev/null || true
