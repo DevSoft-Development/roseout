@@ -441,7 +441,7 @@ jobs:
 
           ATTACHED_COUNT="$(aws iam list-attached-role-policies \
             --role-name "$ROLE_NAME" \
-            --query 'length(AttachedPolicies[?starts_with(PolicyName, `TheOutHavenPlatformDeploy`)])' \
+            --query 'length(AttachedPolicies[?PolicyName==`TheOutHavenPlatformDeployCore` || PolicyName==`TheOutHavenPlatformDeployDr` || PolicyName==`TheOutHavenPlatformDeployServices` || PolicyName==`TheOutHavenPlatformDeployRuntime`])' \
             --output text)"
           test "$ATTACHED_COUNT" = 4
 
