@@ -312,133 +312,40 @@ jobs:
           trap - EXIT
           echo "Canonical deploy-role stack recovered and reconciled to four managed policies." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Repair bootstrap deployment permissions
+      - name: Verify canonical managed deployment permissions
         env:
           DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
         run: |
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
-          POLICY_FILE="$RUNNER_TEMP/platform-bootstrap-repair.json"
 
-          mapfile -t ABANDONED_BOOTSTRAP_POLICIES <<'EOF'
-          TheOutHavenPlatformDrBootstrap
-          TheOutHavenSesTelemetryBootstrap
-          TheOutHavenWorkerRuntimeBootstrap
-          TheOutHavenDnsVerificationBootstrap
-          TheOutHavenCloudFormationChangeSetsBootstrap
-          TheOutHavenSearchMlBootstrap
-          TheOutHavenSesProductionAccessBootstrap
-          TheOutHavenOpsCodeBuildBootstrap
-          TheOutHavenWebsiteRuntimeBootstrap
-          TheOutHavenEdgeRuntimeEcrBootstrap
-          TheOutHavenWebsiteAcmBootstrap
-          TheOutHavenPlatformDrTargetDiagnosticsBootstrap
-          TheOutHavenDomainGatewayBootstrap
-          TheOutHavenDomainGatewayAuthorityBootstrap
-          TheOutHavenDomainGatewayCredentialBootstrap
-          TheOutHavenElbServiceLinkedRoleBootstrap
-          TheOutHavenEcsServiceLinkedRoleBootstrap
+          mapfile -t REQUIRED_POLICIES <<'EOF'
+          TheOutHavenPlatformDeployCore
+          TheOutHavenPlatformDeployDr
+          TheOutHavenPlatformDeployServices
+          TheOutHavenPlatformDeployRuntime
           EOF
 
-          PRESERVE='TheOutHavenPlatformCloudFormation'
-          INSPECTION_POLICY='TheOutHavenFoundationInlinePolicyInspection'
-          INSPECTION_FILE="$RUNNER_TEMP/foundation-inline-policy-inspection.json"
-
-          cleanup_inspection() {
-            aws iam delete-role-policy \
+          for policy in "${REQUIRED_POLICIES[@]}"; do
+            arn="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/$policy"
+            aws iam get-policy --policy-arn "$arn" --query 'Policy.Arn' --output text >/dev/null
+            aws iam list-attached-role-policies \
               --role-name "$ROLE_NAME" \
-              --policy-name "$INSPECTION_POLICY" >/dev/null 2>&1 || true
-            rm -f "$INSPECTION_FILE"
-          }
-          trap cleanup_inspection EXIT
+              --query "AttachedPolicies[?PolicyArn=='$arn'].PolicyArn | [0]" \
+              --output text | grep -Fx "$arn" >/dev/null
 
-          cat > "$INSPECTION_FILE" <<JSON
-          {
-            "Version":"2012-10-17",
-            "Statement":[{
-              "Effect":"Allow",
-              "Action":[
-                "iam:ListRolePolicies",
-                "iam:GetRolePolicy"
-              ],
-              "Resource":"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
-            }]
-          }
-          JSON
-
-          aws iam put-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name "$INSPECTION_POLICY" \
-            --policy-document "file://$INSPECTION_FILE"
-          sleep 8
-
-          for policy in "${ABANDONED_BOOTSTRAP_POLICIES[@]}"; do
-            test "$policy" != "$PRESERVE"
-            aws iam delete-role-policy \
-              --role-name "$ROLE_NAME" \
-              --policy-name "$policy" >/dev/null 2>&1 || true
+            version="$(aws iam get-policy --policy-arn "$arn" --query 'Policy.DefaultVersionId' --output text)"
+            aws iam get-policy-version \
+              --policy-arn "$arn" \
+              --version-id "$version" \
+              --query 'PolicyVersion.Document' \
+              --output json > "$RUNNER_TEMP/$policy.json"
           done
 
-          cat > "$POLICY_FILE" <<JSON
-          {
-            "Version": "2012-10-17",
-            "Statement": [
-              {
-                "Sid": "CloudFormationChangeSetsBootstrap",
-                "Effect": "Allow",
-                "Action": [
-                  "cloudformation:CreateChangeSet",
-                  "cloudformation:DescribeChangeSet",
-                  "cloudformation:ExecuteChangeSet",
-                  "cloudformation:DeleteChangeSet"
-                ],
-                "Resource": "*"
-              },
-              {
-                "Sid": "CloudFormationFoundationResourcesBootstrap",
-                "Effect": "Allow",
-                "Action": [
-                  "scheduler:ListTagsForResource",
-                  "sns:ListTagsForResource",
-                  "s3:GetEncryptionConfiguration",
-                  "s3:PutEncryptionConfiguration",
-                  "s3:GetLifecycleConfiguration",
-                  "s3:PutLifecycleConfiguration",
-                  "s3:DeleteBucketPolicy",
-                  "sqs:GetQueueUrl"
-                ],
-                "Resource": "*"
-              },
-              {
-                "Sid": "BackgroundCronPreflightLogsBootstrap",
-                "Effect": "Allow",
-                "Action": "logs:FilterLogEvents",
-                "Resource": [
-                  "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/toh-*-background-cron-worker",
-                  "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:/aws/lambda/toh-*-background-cron-worker:*"
-                ]
-              }
-            ]
-          }
-          JSON
-
-          aws iam list-role-policies \
-            --role-name "$ROLE_NAME" \
-            --output json > "$RUNNER_TEMP/platform-bootstrap-inline-policies.json"
-
-          jq -e --arg preserve "$PRESERVE" \
-            '.PolicyNames | index($preserve) != null' \
-            "$RUNNER_TEMP/platform-bootstrap-inline-policies.json" >/dev/null || {
-              echo "Canonical inline policy $PRESERVE is missing; refusing bootstrap repair." >&2
-              exit 1
-            }
-
-          CANONICAL_FILE="$RUNNER_TEMP/platform-canonical-policy.json"
-          aws iam get-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name "$PRESERVE" \
-            --query PolicyDocument \
-            --output json > "$CANONICAL_FILE"
+          cat "$RUNNER_TEMP/TheOutHavenPlatformDeployCore.json" \
+              "$RUNNER_TEMP/TheOutHavenPlatformDeployServices.json" \
+              "$RUNNER_TEMP/TheOutHavenPlatformDeployRuntime.json" \
+              > "$RUNNER_TEMP/platform-managed-policy-docs.jsonl"
 
           mapfile -t REQUIRED_ACTIONS <<'EOF'
           cloudformation:CreateChangeSet
@@ -458,67 +365,29 @@ jobs:
 
           missing=()
           for action in "${REQUIRED_ACTIONS[@]}"; do
-            action="$(printf '%s' "$action" | xargs)"
-            test -n "$action" || continue
-            if ! jq -e --arg action "$action" '
+            if ! jq -s -e --arg action "$action" '
               [
-                .Statement[]?.Action
+                .[]?.Statement[]?.Action
                 | if type == "array" then .[] else . end
               ] | index($action) != null
-            ' "$CANONICAL_FILE" >/dev/null; then
+            ' "$RUNNER_TEMP/platform-managed-policy-docs.jsonl" >/dev/null; then
               missing+=("$action")
             fi
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            if [ "${#missing[@]}" -ne 1 ] || [ "${missing[0]}" != "s3:DeleteBucketPolicy" ]; then
-              printf 'Canonical policy is missing unexpected required bootstrap actions:\n' >&2
-              printf ' - %s\n' "${missing[@]}" >&2
-              exit 1
-            fi
-
-            cleanup_inspection
-            trap - EXIT
-
-            cat > "$POLICY_FILE" <<'JSON'
-          {
-            "Version":"2012-10-17",
-            "Statement":[{
-              "Effect":"Allow",
-              "Action":"s3:DeleteBucketPolicy",
-              "Resource":"*"
-            }]
-          }
-          JSON
-
-            aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/platform-bootstrap-inline-policies-after-inspection.json"
-            current_bytes=0
-            while IFS= read -r policy; do
-              doc="$RUNNER_TEMP/platform-bootstrap-policy-${policy}.json"
-              aws iam get-role-policy --role-name "$ROLE_NAME" --policy-name "$policy" --query PolicyDocument --output json > "$doc"
-              bytes="$(jq -c . "$doc" | wc -c | tr -d ' ')"
-              current_bytes=$((current_bytes + bytes))
-            done < <(jq -r '.PolicyNames[]' "$RUNNER_TEMP/platform-bootstrap-inline-policies-after-inspection.json")
-
-            bootstrap_bytes="$(jq -c . "$POLICY_FILE" | wc -c | tr -d ' ')"
-            projected_bytes=$((current_bytes + bootstrap_bytes))
-            echo "foundation_bootstrap_projected_inline_policy_bytes=$projected_bytes"
-            test "$projected_bytes" -lt 10240 || {
-              echo "Refusing to add the targeted foundation bootstrap policy because projected inline-policy bytes would reach or exceed the AWS 10,240-byte limit." >&2
-              exit 1
-            }
-
-            aws iam put-role-policy \
-              --role-name "$ROLE_NAME" \
-              --policy-name TheOutHavenCloudFormationChangeSetsBootstrap \
-              --policy-document "file://$POLICY_FILE"
-            sleep 8
-            echo "Applied a temporary quota-checked bootstrap for the live role's single stale s3:DeleteBucketPolicy permission." >> "$GITHUB_STEP_SUMMARY"
-          else
-            cleanup_inspection
-            trap - EXIT
-            echo "Canonical deployment policy already contains all required foundation bootstrap permissions; redundant bootstrap policy was not created." >> "$GITHUB_STEP_SUMMARY"
+            printf 'Canonical managed deployment policies are missing required actions:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
           fi
+
+          # The role has been migrated to managed policies; remove stale legacy inline
+          # policy if it still exists so it cannot consume the 10,240-byte inline quota.
+          aws iam delete-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name TheOutHavenPlatformCloudFormation >/dev/null 2>&1 || true
+
+          echo "Canonical managed deployment policies verified; stale legacy inline policy removed if present." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Ensure ELB service-linked role prerequisite
         env:
