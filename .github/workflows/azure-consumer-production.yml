@@ -290,19 +290,23 @@ jobs:
             ROUTE_NAME="$(az afd route list --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query '[0].name' -o tsv)"
             test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME"
 
-            for _ in $(seq 1 60); do
+            for _ in $(seq 1 180); do
               endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
+              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
               route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
-              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ]; then
+              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
+              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
                 break
               fi
               sleep 10
             done
             test "$endpoint_state" = Succeeded
             test "$route_state" = Succeeded
+            test "$endpoint_deployment" = Succeeded
+            test "$route_deployment" = Succeeded
 
             edge_ready=false
-            for _ in $(seq 1 60); do
+            for _ in $(seq 1 90); do
               code="$(curl --http1.1 --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
               header_revision=""
               header_role=""
@@ -323,7 +327,9 @@ jobs:
             if [ "$edge_ready" != true ]; then
               echo "Front Door did not return the expected JSON health payload for release $IMAGE_SHA (last HTTP status: ${code:-unknown})." >&2
               echo "Endpoint provisioning state: ${endpoint_state:-unknown}" >&2
+              echo "Endpoint deployment status: ${endpoint_deployment:-unknown}" >&2
               echo "Route provisioning state: ${route_state:-unknown}" >&2
+              echo "Route deployment status: ${route_deployment:-unknown}" >&2
               echo "--- response headers ---" >&2
               cat edge-health.headers >&2 || true
               echo "--- response body ---" >&2
