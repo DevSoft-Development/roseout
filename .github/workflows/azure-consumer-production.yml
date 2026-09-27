@@ -291,10 +291,10 @@ jobs:
             test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME"
 
             for _ in $(seq 1 180); do
-              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
-              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
-              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
-              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
+              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
+              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
+              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
+              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
               if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
                 break
               fi
