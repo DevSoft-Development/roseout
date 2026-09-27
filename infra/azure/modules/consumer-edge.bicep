@@ -8,7 +8,7 @@ var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
 
 resource profile 'Microsoft.Cdn/profiles@2024-02-01' = {
-  name: 'afd-toh-consumer-${envShort}'
+  name: 'afd-toh-consumer-${envShort}-v2'
   location: 'global'
   tags: tags
   sku: {
@@ -18,7 +18,7 @@ resource profile 'Microsoft.Cdn/profiles@2024-02-01' = {
 
 resource endpoint 'Microsoft.Cdn/profiles/afdEndpoints@2024-02-01' = {
   parent: profile
-  name: 'toh-consumer-${envShort}-${suffix}'
+  name: 'toh-consumer-${envShort}-v2-${suffix}'
   location: 'global'
   tags: tags
   properties: {
@@ -33,7 +33,7 @@ resource originGroup 'Microsoft.Cdn/profiles/originGroups@2024-02-01' = {
     sessionAffinityState: 'Disabled'
     healthProbeSettings: {
       probePath: healthProbePath
-      probeRequestType: 'GET'
+      probeRequestType: 'HEAD'
       probeProtocol: 'Https'
       probeIntervalInSeconds: 30
     }
