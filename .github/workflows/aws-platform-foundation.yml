@@ -222,7 +222,8 @@ jobs:
             --query 'PolicyName' \
             --output text >/dev/null
           rm -f "$RECOVERY_FILE"
-          echo "Minimal deploy-role recovery policy installed; refreshing AWS session before reconciliation." >> "$GITHUB_STEP_SUMMARY"
+          sleep 20
+          echo "Minimal deploy-role recovery policy installed and allowed to propagate; refreshing AWS session before reconciliation." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Refresh AWS credentials for recovery permissions
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -302,7 +303,18 @@ jobs:
           }
           JSON
 
-          if aws iam get-policy --policy-arn "$RECOVERY_POLICY_ARN" >/dev/null 2>&1; then
+          set +e
+          create_output="$(aws iam create-policy \
+            --policy-name "$RECOVERY_POLICY_NAME" \
+            --policy-document "file://$RECOVERY_POLICY_FILE" 2>&1)"
+          create_rc=$?
+          set -e
+
+          if [ "$create_rc" -eq 0 ]; then
+            :
+          elif printf '%s' "$create_output" | grep -Fq 'EntityAlreadyExists'; then
+            current_version="$(aws iam get-policy --policy-arn "$RECOVERY_POLICY_ARN" --query 'Policy.DefaultVersionId' --output text)"
+            test -n "$current_version"
             version_count="$(aws iam list-policy-versions --policy-arn "$RECOVERY_POLICY_ARN" --query 'length(Versions)' --output text)"
             if [ "$version_count" -ge 5 ]; then
               oldest="$(aws iam list-policy-versions \
@@ -317,9 +329,8 @@ jobs:
               --policy-document "file://$RECOVERY_POLICY_FILE" \
               --set-as-default >/dev/null
           else
-            aws iam create-policy \
-              --policy-name "$RECOVERY_POLICY_NAME" \
-              --policy-document "file://$RECOVERY_POLICY_FILE" >/dev/null
+            printf '%s\n' "$create_output" >&2
+            exit "$create_rc"
           fi
 
           aws iam attach-role-policy \
