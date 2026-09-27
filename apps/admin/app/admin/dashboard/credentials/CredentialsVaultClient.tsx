@@ -79,6 +79,17 @@ export default function CredentialsVaultClient() {
     setValues((current) => ({ ...current, [provider]: { ...(current[provider] || {}), [key]: value } }));
   }
 
+  async function setFileField(provider: CredentialProviderId, key: string, file: File | null) {
+    if (!file) return;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+    }
+    setField(provider, key, btoa(binary));
+  }
+
   async function migrateAll() {
     setBusy("import:all"); setError(null); setSuccess(null);
     try {
@@ -213,7 +224,7 @@ export default function CredentialsVaultClient() {
                   const isExternal = external.has(field.key);
                   return <div key={field.key}>
                     <div className="flex items-center justify-between gap-3"><label htmlFor={`${provider.id}-${field.key}`} className="text-sm font-black text-white/80">{field.label}</label><span className="text-[11px] font-bold text-white/40">{isConfigured ? "Vault" : isExternal ? "External" : "Missing"}</span></div>
-                    {field.multiline ? <textarea id={`${provider.id}-${field.key}`} rows={3} autoComplete="off" value={values[provider.id]?.[field.key] || ""} onChange={(event) => setField(provider.id, field.key, event.target.value)} placeholder={isConfigured ? "Saved securely — enter only to replace" : isExternal ? "Configured externally — import or enter replacement" : field.placeholder || "Enter value"} className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/25" /> : <input id={`${provider.id}-${field.key}`} type={field.secret ? "password" : "text"} autoComplete="new-password" value={values[provider.id]?.[field.key] || ""} onChange={(event) => setField(provider.id, field.key, event.target.value)} placeholder={isConfigured ? "Saved securely — enter only to replace" : isExternal ? "Configured externally — import or enter replacement" : field.placeholder || "Enter value"} className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/25" />}
+                    {field.file ? <div className="mt-2"><input id={`${provider.id}-${field.key}`} type="file" accept={field.accept} onChange={(event) => void setFileField(provider.id, field.key, event.target.files?.[0] || null)} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-black file:text-black" /><p className="mt-1 text-[11px] leading-4 text-white/35">{isConfigured ? "Saved securely — choose a file only to replace it." : "The file is encoded locally in this browser before it is saved to the vault."}</p></div> : field.multiline ? <textarea id={`${provider.id}-${field.key}`} rows={3} autoComplete="off" value={values[provider.id]?.[field.key] || ""} onChange={(event) => setField(provider.id, field.key, event.target.value)} placeholder={isConfigured ? "Saved securely — enter only to replace" : isExternal ? "Configured externally — import or enter replacement" : field.placeholder || "Enter value"} className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/25" /> : <input id={`${provider.id}-${field.key}`} type={field.secret ? "password" : "text"} autoComplete="new-password" value={values[provider.id]?.[field.key] || ""} onChange={(event) => setField(provider.id, field.key, event.target.value)} placeholder={isConfigured ? "Saved securely — enter only to replace" : isExternal ? "Configured externally — import or enter replacement" : field.placeholder || "Enter value"} className="mt-2 w-full rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/25" />}
                   </div>;
                 })}
               </div>

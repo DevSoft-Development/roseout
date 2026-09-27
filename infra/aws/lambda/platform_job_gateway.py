@@ -19,7 +19,7 @@ CREDENTIAL_VAULT_PREFIX = os.environ.get("CREDENTIAL_VAULT_PREFIX", "/theouthave
 MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
-CREDENTIAL_SCHEMA_VERSION = 2
+CREDENTIAL_SCHEMA_VERSION = 3
 MAX_CREDENTIAL_BYTES = 48 * 1024
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_./@+-]{8,200}$")
 PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
@@ -44,6 +44,7 @@ ALLOWED_PROVIDERS = {
     "meta": {"appId", "appSecret", "instagramAppId", "instagramAppSecret", "graphVersion", "loginConfigurationId", "accessToken"},
     "tiktok": {"clientKey", "clientSecret"},
     "apple": {"issuerId", "keyId", "privateKey"},
+    "mobile": {"azureDevOpsOrg", "azureDevOpsProject", "azureDevOpsPat", "azureDevOpsGithubServiceConnectionId", "iosCertificateP12Base64", "iosCertificatePassword", "iosProvisioningProfileBase64", "iosTeamId", "appStoreConnectKeyId", "appStoreConnectIssuerId", "appStoreConnectPrivateKey", "appStoreConnectAppId", "androidKeystoreBase64", "androidKeystorePassword", "androidKeyAlias", "androidKeyPassword", "googlePlayServiceAccountJson"},
     "turnstile": {"secretKey"},
     "expo": {"accessToken"},
     "domains": {"apiKey", "apiSecret", "accountId", "gatewaySecret"},
@@ -383,6 +384,42 @@ def _test_credential(environment, provider):
         if status == 200:
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Meta access token verified."}
         raise ValueError("meta_credential_test_failed")
+
+    if provider == "mobile":
+        required = [
+            "azureDevOpsOrg",
+            "azureDevOpsProject",
+            "azureDevOpsPat",
+            "iosCertificateP12Base64",
+            "iosCertificatePassword",
+            "iosProvisioningProfileBase64",
+            "iosTeamId",
+            "appStoreConnectKeyId",
+            "appStoreConnectIssuerId",
+            "appStoreConnectPrivateKey",
+            "appStoreConnectAppId",
+            "androidKeystoreBase64",
+            "androidKeystorePassword",
+            "androidKeyAlias",
+            "androidKeyPassword",
+            "googlePlayServiceAccountJson",
+        ]
+        if any(not str(values.get(key) or "").strip() for key in required):
+            raise ValueError("mobile_credential_test_failed")
+        try:
+            p12 = base64.b64decode(values["iosCertificateP12Base64"], validate=True)
+            profile = base64.b64decode(values["iosProvisioningProfileBase64"], validate=True)
+            keystore = base64.b64decode(values["androidKeystoreBase64"], validate=True)
+            google = json.loads(values["googlePlayServiceAccountJson"])
+        except Exception:
+            raise ValueError("mobile_credential_test_failed")
+        if len(p12) < 128 or len(profile) < 128 or len(keystore) < 128:
+            raise ValueError("mobile_credential_test_failed")
+        if "BEGIN PRIVATE KEY" not in values["appStoreConnectPrivateKey"]:
+            raise ValueError("mobile_credential_test_failed")
+        if google.get("type") != "service_account" or not google.get("client_email") or not google.get("private_key"):
+            raise ValueError("mobile_credential_test_failed")
+        return {"ok": True, "provider": provider, "status": "healthy", "detail": "Mobile release signing package is structurally valid. Live Apple and Google authorization is verified by the Azure release pipeline."}
 
     if provider == "microsoft" and values.get("tenantId") and values.get("clientId") and values.get("clientSecret"):
         form = urllib.parse.urlencode({"client_id": values["clientId"], "client_secret": values["clientSecret"], "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials"}).encode()
