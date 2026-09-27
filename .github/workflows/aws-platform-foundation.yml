@@ -255,10 +255,48 @@ jobs:
                 "Sid":"RecoverDeployRoleStack",
                 "Effect":"Allow",
                 "Action":[
-                  "cloudformation:ContinueUpdateRollback",
-                  "iam:UpdateAssumeRolePolicy"
+                  "cloudformation:ContinueUpdateRollback"
                 ],
+                "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/*/*"
+              },
+              {
+                "Sid":"RecoverDeployRole",
+                "Effect":"Allow",
+                "Action":[
+                  "iam:UpdateAssumeRolePolicy",
+                  "iam:GetRole",
+                  "iam:ListAttachedRolePolicies",
+                  "iam:AttachRolePolicy",
+                  "iam:DetachRolePolicy"
+                ],
+                "Resource":"arn:aws:iam::${AWS_ACCOUNT_ID}:role/${ROLE_NAME}"
+              },
+              {
+                "Sid":"CreateCanonicalManagedPolicies",
+                "Effect":"Allow",
+                "Action":"iam:CreatePolicy",
                 "Resource":"*"
+              },
+              {
+                "Sid":"ManageCanonicalManagedPolicies",
+                "Effect":"Allow",
+                "Action":[
+                  "iam:DeletePolicy",
+                  "iam:GetPolicy",
+                  "iam:GetPolicyVersion",
+                  "iam:CreatePolicyVersion",
+                  "iam:DeletePolicyVersion",
+                  "iam:ListPolicyVersions",
+                  "iam:TagPolicy",
+                  "iam:UntagPolicy"
+                ],
+                "Resource":[
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployCore",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployDr",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployServices",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRecovery"
+                ]
               }
             ]
           }
