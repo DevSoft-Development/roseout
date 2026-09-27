@@ -284,23 +284,34 @@ jobs:
             check_region "$PRIMARY" primary
             check_region "$SECONDARY" secondary
 
-            RG=rg-toh-consumer-production
-            PROFILE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
-            ENDPOINT_NAME="${EDGE%%.*}"
-            ROUTE_NAME=consumer
-            SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+            ENDPOINT_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointResourceId.value -o tsv)"
+            ROUTE_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorRouteResourceId.value -o tsv)"
             API_VERSION=2024-02-01
-            ENDPOINT_URL="https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG/providers/Microsoft.Cdn/profiles/$PROFILE/afdEndpoints/$ENDPOINT_NAME?api-version=$API_VERSION"
-            ROUTE_URL="https://management.azure.com/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG/providers/Microsoft.Cdn/profiles/$PROFILE/afdEndpoints/$ENDPOINT_NAME/routes/$ROUTE_NAME?api-version=$API_VERSION"
-            test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME" && test -n "$SUBSCRIPTION_ID"
+            test -n "$ENDPOINT_RESOURCE_ID" && test -n "$ROUTE_RESOURCE_ID"
 
-            for _ in $(seq 1 180); do
-              endpoint_json="$(az rest --method get --url "$ENDPOINT_URL" 2>/dev/null || true)"
-              route_json="$(az rest --method get --url "$ROUTE_URL" 2>/dev/null || true)"
-              endpoint_state="$(printf '%s' "$endpoint_json" | jq -r '.properties.provisioningState // empty' 2>/dev/null || true)"
-              endpoint_deployment="$(printf '%s' "$endpoint_json" | jq -r '.properties.deploymentStatus // empty' 2>/dev/null || true)"
-              route_state="$(printf '%s' "$route_json" | jq -r '.properties.provisioningState // empty' 2>/dev/null || true)"
-              route_deployment="$(printf '%s' "$route_json" | jq -r '.properties.deploymentStatus // empty' 2>/dev/null || true)"
+            rest_get() {
+              resource_id="$1"
+              body_file="$2"
+              error_file="$3"
+              if ! az rest --method get --url "https://management.azure.com${resource_id}?api-version=$API_VERSION" >"$body_file" 2>"$error_file"; then
+                echo "::error::Azure ARM GET failed for $resource_id"
+                cat "$error_file" >&2 || true
+                cat "$body_file" >&2 || true
+                return 1
+              fi
+            }
+
+            endpoint_json=""
+            route_json=""
+            for _ in $(seq 1 30); do
+              rest_get "$ENDPOINT_RESOURCE_ID" endpoint-arm.json endpoint-arm.err
+              rest_get "$ROUTE_RESOURCE_ID" route-arm.json route-arm.err
+              endpoint_json="$(cat endpoint-arm.json)"
+              route_json="$(cat route-arm.json)"
+              endpoint_state="$(printf '%s' "$endpoint_json" | jq -r '.properties.provisioningState // empty')"
+              endpoint_deployment="$(printf '%s' "$endpoint_json" | jq -r '.properties.deploymentStatus // empty')"
+              route_state="$(printf '%s' "$route_json" | jq -r '.properties.provisioningState // empty')"
+              route_deployment="$(printf '%s' "$route_json" | jq -r '.properties.deploymentStatus // empty')"
               if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
                 break
               fi
