@@ -254,7 +254,7 @@ jobs:
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"
 
-      - name: Prove both production regions and Front Door
+      - name: Resolve Azure production proof targets
         env:
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
         uses: azure/CLI@v2
@@ -265,29 +265,13 @@ jobs:
             PRIMARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
             SECONDARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerSecondaryRuntimeFqdn.value -o tsv)"
             EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
-            test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE"
-
-            check_region() {
-              host="$1"
-              role="$2"
-              for _ in $(seq 1 24); do
-                code="$(curl --silent --show-error --output health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$host/api/health/azure" || true)"
-                if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" --arg role "$role" '.ok==true and .revision==$sha and .regionRole==$role' health.json >/dev/null 2>&1; then
-                  return 0
-                fi
-                sleep 10
-              done
-              cat health.json >&2 || true
-              return 1
-            }
-
-            check_region "$PRIMARY" primary
-            check_region "$SECONDARY" secondary
-
             ENDPOINT_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointResourceId.value -o tsv)"
             ROUTE_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorRouteResourceId.value -o tsv)"
+            PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
             API_VERSION=2024-02-01
-            test -n "$ENDPOINT_RESOURCE_ID" && test -n "$ROUTE_RESOURCE_ID"
+
+            test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE"
+            test -n "$ENDPOINT_RESOURCE_ID" && test -n "$ROUTE_RESOURCE_ID" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID"
 
             rest_get() {
               resource_id="$1"
@@ -301,24 +285,21 @@ jobs:
               fi
             }
 
-            endpoint_json=""
-            route_json=""
             for _ in $(seq 1 30); do
               rest_get "$ENDPOINT_RESOURCE_ID" endpoint-arm.json endpoint-arm.err
               rest_get "$ROUTE_RESOURCE_ID" route-arm.json route-arm.err
-              endpoint_json="$(cat endpoint-arm.json)"
-              route_json="$(cat route-arm.json)"
-              endpoint_state="$(printf '%s' "$endpoint_json" | jq -r '.properties.provisioningState // empty')"
-              endpoint_deployment="$(printf '%s' "$endpoint_json" | jq -r '.properties.deploymentStatus // empty')"
-              endpoint_enabled="$(printf '%s' "$endpoint_json" | jq -r '.properties.enabledState // empty')"
-              route_state="$(printf '%s' "$route_json" | jq -r '.properties.provisioningState // empty')"
-              route_deployment="$(printf '%s' "$route_json" | jq -r '.properties.deploymentStatus // empty')"
-              route_enabled="$(printf '%s' "$route_json" | jq -r '.properties.enabledState // empty')"
+              endpoint_state="$(jq -r '.properties.provisioningState // empty' endpoint-arm.json)"
+              endpoint_deployment="$(jq -r '.properties.deploymentStatus // empty' endpoint-arm.json)"
+              endpoint_enabled="$(jq -r '.properties.enabledState // empty' endpoint-arm.json)"
+              route_state="$(jq -r '.properties.provisioningState // empty' route-arm.json)"
+              route_deployment="$(jq -r '.properties.deploymentStatus // empty' route-arm.json)"
+              route_enabled="$(jq -r '.properties.enabledState // empty' route-arm.json)"
               if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_enabled" = Enabled ] && [ "$route_enabled" = Enabled ]; then
                 break
               fi
               sleep 10
             done
+
             echo "Front Door endpoint provisioning state: ${endpoint_state:-unknown}"
             echo "Front Door endpoint deployment status (informational): ${endpoint_deployment:-unknown}"
             echo "Front Door endpoint enabled state: ${endpoint_enabled:-unknown}"
@@ -330,131 +311,103 @@ jobs:
             test "$endpoint_enabled" = Enabled
             test "$route_enabled" = Enabled
 
-            edge_ready=false
-            for _ in $(seq 1 90); do
-              rm -f edge-health.json edge-health.status
-              curl --http1.1 --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" > edge-health.status || true
-              code="$(cat edge-health.status 2>/dev/null || true)"
-              header_revision=""
-              header_role=""
-              while IFS=: read -r header_name header_value; do
-                header_name="${header_name,,}"
-                header_value="${header_value# }"
-                case "$header_name" in
-                  x-theouthaven-health-revision) header_revision="$header_value" ;;
-                  x-theouthaven-region-role) header_role="$header_value" ;;
-                esac
-              done < edge-health.headers
-              if [ "$code" = 200 ] && [[ "$header_revision" == "$IMAGE_SHA"* ]] && { [[ "$header_role" == primary* ]] || [[ "$header_role" == secondary* ]]; } && jq -e empty edge-health.json >/dev/null 2>&1 && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' edge-health.json >/dev/null 2>&1; then
-                edge_ready=true
-                break
-              fi
-              sleep 10
-            done
-            if [ "$edge_ready" != true ]; then
-              echo "Front Door did not return the expected JSON health payload for release $IMAGE_SHA (last HTTP status: ${code:-unknown})." >&2
-              echo "Endpoint provisioning state: ${endpoint_state:-unknown}" >&2
-              echo "Endpoint deployment status: ${endpoint_deployment:-unknown}" >&2
-              echo "Route provisioning state: ${route_state:-unknown}" >&2
-              echo "Route deployment status: ${route_deployment:-unknown}" >&2
-              echo "--- response headers ---" >&2
-              cat edge-health.headers >&2 || true
-              echo "--- response body ---" >&2
-              cat edge-health.json >&2 || true
-              exit 1
-            fi
-
             {
-              echo "## Azure production consumer readiness"
-              echo
-              echo "- Primary: https://$PRIMARY"
-              echo "- Secondary: https://$SECONDARY"
-              echo "- Front Door: https://$EDGE"
-              echo "- Release SHA: $IMAGE_SHA"
-              echo "- Route 53 cutover: not performed"
-            } >> "$GITHUB_STEP_SUMMARY"
+              printf 'PRIMARY_HOST=%s\n' "$PRIMARY"
+              printf 'SECONDARY_HOST=%s\n' "$SECONDARY"
+              printf 'EDGE_HOST=%s\n' "$EDGE"
+              printf 'PRIMARY_ORIGIN_RESOURCE_ID=%s\n' "$PRIMARY_ORIGIN_RESOURCE_ID"
+              printf 'IMAGE_SHA=%s\n' "$IMAGE_SHA"
+            } > "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
 
-      - name: Drill regional failover through Front Door
-        if: inputs.run_failover_drill
-        env:
-          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+      - name: Prove both production regions and Front Door from runner
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$PRIMARY_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 24 --interval 10 --label "direct primary"
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$SECONDARY_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 24 --interval 10 --label "direct secondary"
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary,secondary --attempts 90 --interval 10 --label "Front Door"
+
+          {
+            echo "## Azure production consumer readiness"
+            echo
+            echo "- Primary: https://$PRIMARY_HOST"
+            echo "- Secondary: https://$SECONDARY_HOST"
+            echo "- Front Door: https://$EDGE_HOST"
+            echo "- Release SHA: $IMAGE_SHA"
+            echo "- Strict JSON/SHA/region proof: passed"
+            echo "- Route 53 cutover: not performed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Disable primary Front Door origin for regional failover drill
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            DEPLOYMENT=toh-consumer-runtime-production
-            EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
-            PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
             API_VERSION=2024-02-01
-            test -n "$EDGE" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID"
+            az rest \
+              --method patch \
+              --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" \
+              --headers 'Content-Type=application/json' \
+              --body '{"properties":{"enabledState":"Disabled"}}' \
+              --output none
 
-            set_origin_state() {
-              desired="$1"
-              az rest                 --method patch                 --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION"                 --headers 'Content-Type=application/json'                 --body "{\"properties\":{\"enabledState\":\"$desired\"}}"                 --output none
-            }
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Disabled ] && [ "$provisioning" = Succeeded ]; then
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::Primary Front Door origin did not reach Disabled/Succeeded."
+            exit 1
 
-            wait_origin_state() {
-              desired="$1"
-              for _ in $(seq 1 30); do
-                state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
-                provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
-                if [ "$state" = "$desired" ] && [ "$provisioning" = Succeeded ]; then
-                  return 0
-                fi
-                sleep 10
-              done
-              echo "::error::Primary Front Door origin did not reach enabledState=$desired with provisioningState=Succeeded."
-              return 1
-            }
+      - name: Prove secondary routing through Front Door
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 60 --interval 10 --label "Front Door failover to secondary"
 
-            check_edge_role() {
-              expected_role="$1"
-              body_file="$2"
-              header_file="$3"
-              for _ in $(seq 1 30); do
-                status_file="${body_file}.status"
-                rm -f "$body_file" "$status_file"
-                curl --http1.1 --silent --show-error --dump-header "$header_file" --output "$body_file" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" > "$status_file" || true
-                code="$(cat "$status_file" 2>/dev/null || true)"
-                header_revision=""
-                header_role=""
-                while IFS=: read -r header_name header_value; do
-                  header_name="${header_name,,}"
-                  header_value="${header_value# }"
-                  case "$header_name" in
-                    x-theouthaven-health-revision) header_revision="$header_value" ;;
-                    x-theouthaven-region-role) header_role="$header_value" ;;
-                  esac
-                done < "$header_file"
-                if [ "$code" = 200 ] && [[ "$header_revision" == "$IMAGE_SHA"* ]] && [[ "$header_role" == "$expected_role"* ]] && jq -e --arg sha "$IMAGE_SHA" --arg role "$expected_role" '.ok==true and .revision==$sha and .regionRole==$role' "$body_file" >/dev/null 2>&1; then
-                  return 0
-                fi
-                sleep 10
-              done
-              echo "::error::Front Door did not route release $IMAGE_SHA to expected role $expected_role."
-              echo "--- response headers ---" >&2
-              cat "$header_file" >&2 || true
-              echo "--- response body ---" >&2
-              cat "$body_file" >&2 || true
-              return 1
-            }
+      - name: Restore primary Front Door origin
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+            API_VERSION=2024-02-01
+            az rest \
+              --method patch \
+              --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" \
+              --headers 'Content-Type=application/json' \
+              --body '{"properties":{"enabledState":"Enabled"}}' \
+              --output none
 
-            restore() {
-              set_origin_state Enabled >/dev/null 2>&1 || true
-              wait_origin_state Enabled >/dev/null 2>&1 || true
-            }
-            trap restore EXIT
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Enabled ] && [ "$provisioning" = Succeeded ]; then
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::Primary Front Door origin did not return to Enabled/Succeeded."
+            exit 1
 
-            set_origin_state Disabled
-            wait_origin_state Disabled
-            check_edge_role secondary failover-health.json failover-health.headers
+      - name: Prove primary restoration through Front Door
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 60 --interval 10 --label "Front Door restoration to primary"
 
-            set_origin_state Enabled
-            wait_origin_state Enabled
-            check_edge_role primary restore-health.json restore-health.headers
-            trap - EXIT
-
-            {
-              echo "Front Door regional failover drill passed."
-              echo "Front Door primary restoration verified."
-            } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record regional failover drill success
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        run: |
+          {
+            echo "Front Door regional failover drill passed."
+            echo "Front Door primary restoration verified."
+          } >> "$GITHUB_STEP_SUMMARY"
