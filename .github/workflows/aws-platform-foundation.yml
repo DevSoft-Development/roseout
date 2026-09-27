@@ -178,7 +178,6 @@ jobs:
                   "iam:ListAttachedRolePolicies",
                   "iam:TagRole",
                   "iam:UntagRole",
-                  "iam:CreatePolicy",
                   "iam:DeletePolicy",
                   "iam:GetPolicy",
                   "iam:GetPolicyVersion",
@@ -203,6 +202,11 @@ jobs:
                 "Effect":"Allow",
                 "Action":"cloudformation:ContinueUpdateRollback",
                 "Resource":"arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${STACK_NAME}/*"
+              },
+              {
+                "Effect":"Allow",
+                "Action":"iam:CreatePolicy",
+                "Resource":"*"
               }
             ]
           }
