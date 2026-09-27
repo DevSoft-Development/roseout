@@ -332,7 +332,10 @@ jobs:
 
             edge_ready=false
             for _ in $(seq 1 90); do
-              code="$(curl --http1.1 --silent --show-error --dump-header edge-health.headers --output edge-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              response="$(curl --http1.1 --silent --show-error --dump-header edge-health.headers --write-out $'\\n%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              code="${response##*$'\\n'}"
+              body="${response%$'\\n'*}"
+              printf '%s' "$body" > edge-health.json
               header_revision=""
               header_role=""
               while IFS=: read -r header_name header_value; do
@@ -410,7 +413,10 @@ jobs:
               body_file="$2"
               header_file="$3"
               for _ in $(seq 1 30); do
-                code="$(curl --http1.1 --silent --show-error --dump-header "$header_file" --output "$body_file" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+                response="$(curl --http1.1 --silent --show-error --dump-header "$header_file" --write-out $'\\n%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+                code="${response##*$'\\n'}"
+                body="${response%$'\\n'*}"
+                printf '%s' "$body" > "$body_file"
                 header_revision=""
                 header_role=""
                 while IFS=: read -r header_name header_value; do
