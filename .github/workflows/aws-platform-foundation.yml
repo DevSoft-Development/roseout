@@ -195,7 +195,8 @@ jobs:
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployCore",
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployDr",
                   "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployServices",
-                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime"
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRuntime",
+                  "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/TheOutHavenPlatformDeployRecovery"
                 ]
               },
               {
