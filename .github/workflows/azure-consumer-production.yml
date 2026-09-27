@@ -9,7 +9,6 @@ on:
       - 'apps/consumer/**'
       - '.github/workflows/azure-consumer-production.yml'
       - '.github/scripts/prove-azure-frontdoor.py'
-      - '.github/scripts/prove-azure-frontdoor.py'
   push:
     branches:
       - main
@@ -17,6 +16,7 @@ on:
       - 'infra/azure/**'
       - 'apps/consumer/**'
       - '.github/workflows/azure-consumer-production.yml'
+      - '.github/scripts/prove-azure-frontdoor.py'
   workflow_dispatch:
     inputs:
       image_sha:
@@ -371,7 +371,7 @@ jobs:
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
-          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 60 --interval 10 --label "Front Door failover to secondary"
+          # Front Door origin updates are global operations. ARM can report Disabled/Succeeded\n          # before the edge configuration has converged, so edge behavior is the authority.\n          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 120 --interval 10 --label "Front Door failover to secondary"
 
       - name: Restore primary Front Door origin
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
@@ -404,7 +404,7 @@ jobs:
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
-          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 60 --interval 10 --label "Front Door restoration to primary"
+          # Restoration is another global Front Door update; allow the same convergence window.\n          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label "Front Door restoration to primary"
 
       - name: Record regional failover drill success
         if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
