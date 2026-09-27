@@ -291,10 +291,10 @@ jobs:
             test -n "$PROFILE" && test -n "$ENDPOINT_NAME" && test -n "$ROUTE_NAME"
 
             for _ in $(seq 1 180); do
-              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
-              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
-              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query provisioningState -o tsv 2>/dev/null || true)"
-              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query deploymentStatus -o tsv 2>/dev/null || true)"
+              endpoint_state="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
+              endpoint_deployment="$(az afd endpoint show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
+              route_state="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.provisioningState -o tsv 2>/dev/null || true)"
+              route_deployment="$(az afd route show --resource-group "$RG" --profile-name "$PROFILE" --endpoint-name "$ENDPOINT_NAME" --route-name "$ROUTE_NAME" --query properties.deploymentStatus -o tsv 2>/dev/null || true)"
               if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_deployment" = Succeeded ] && [ "$route_deployment" = Succeeded ]; then
                 break
               fi
@@ -383,4 +383,22 @@ jobs:
               sleep 10
             done
             test "$passed" = true || { cat failover-health.json >&2 || true; exit 1; }
-            echo "Front Door regional failover drill passed." >> "$GITHUB_STEP_SUMMARY"
+
+            restore
+            trap - EXIT
+
+            restored=false
+            for _ in $(seq 1 30); do
+              code="$(curl --http1.1 --silent --show-error --output restore-health.json --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$EDGE/api/health/azure" || true)"
+              if [ "$code" = 200 ] && jq -e --arg sha "$IMAGE_SHA" '.ok==true and .revision==$sha and .regionRole=="primary"' restore-health.json >/dev/null 2>&1; then
+                restored=true
+                break
+              fi
+              sleep 10
+            done
+            test "$restored" = true || { cat restore-health.json >&2 || true; exit 1; }
+
+            {
+              echo "Front Door regional failover drill passed."
+              echo "Front Door primary restoration verified."
+            } >> "$GITHUB_STEP_SUMMARY"
