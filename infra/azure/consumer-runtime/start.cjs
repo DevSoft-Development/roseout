@@ -100,6 +100,23 @@ function proxyRequest(req, res) {
 
 const server = http.createServer((req, res) => {
   const path = new URL(req.url || "/", "http://localhost").pathname;
+  if (path === "/api/health/azure/probe") {
+    if (req.method !== "GET") {
+      res.writeHead(405, { allow: "GET", "content-length": "0", connection: "close" });
+      res.end();
+      return;
+    }
+    void checkUpstreamReady().then((ready) => {
+      res.writeHead(ready ? 204 : 503, {
+        "cache-control": "no-store, max-age=0",
+        "content-length": "0",
+        connection: "close",
+      });
+      res.end();
+    });
+    return;
+  }
+
   if (path === "/api/health/azure") {
     void handleHealth(req, res);
     return;
