@@ -17,7 +17,6 @@ export async function GET() {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store, max-age=0",
-      "content-length": String(Buffer.byteLength(body)),
       "x-theouthaven-health-revision": payload.revision,
       "x-theouthaven-region-role": payload.regionRole,
     },
