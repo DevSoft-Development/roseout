@@ -100,9 +100,9 @@ stages:
               PROFILE_UUID="$(APPLE_PROV_PROFILE_UUID)"
               SIGNING_IDENTITY="$(APPLE_CERTIFICATE_SIGNING_IDENTITY)"
 
-              echo "Using iOS bundle identifier: com.theouthaven.app"
-              echo "Using provisioning profile UUID: $PROFILE_UUID"
-              echo "Using signing identity: $SIGNING_IDENTITY"
+              echo "Using iOS bundle identifier from Expo project: com.theouthaven.app"
+              echo "Installed provisioning profile UUID: $PROFILE_UUID"
+              echo "Installed signing identity: $SIGNING_IDENTITY"
               security find-identity -v -p codesigning || true
               xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -showBuildSettings \
                 | grep -E 'PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING_PROFILE' \
@@ -115,11 +115,12 @@ stages:
                 -configuration Release \
                 -archivePath "$ARCHIVE" \
                 -destination 'generic/platform=iOS' \
+                -allowProvisioningUpdates \
+                -authenticationKeyPath "$(appStoreKey.secureFilePath)" \
+                -authenticationKeyID "$(APP_STORE_CONNECT_KEY_ID)" \
+                -authenticationKeyIssuerID "$(APP_STORE_CONNECT_ISSUER_ID)" \
                 DEVELOPMENT_TEAM="$(IOS_TEAM_ID)" \
-                CODE_SIGN_STYLE=Manual \
-                CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
-                PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
-                PRODUCT_BUNDLE_IDENTIFIER="com.theouthaven.app" \
+                CODE_SIGN_STYLE=Automatic \
                 CURRENT_PROJECT_VERSION="$(Build.BuildId)" \
                 MARKETING_VERSION="$(appVersion)" \
                 clean archive 2>&1 | tee "$(Build.ArtifactStagingDirectory)/xcode-archive.log"
@@ -140,7 +141,7 @@ stages:
                 <key>method</key>
                 <string>app-store-connect</string>
                 <key>signingStyle</key>
-                <string>manual</string>
+                <string>automatic</string>
                 <key>teamID</key>
                 <string>$(IOS_TEAM_ID)</string>
                 <key>stripSwiftSymbols</key>
