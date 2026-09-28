@@ -49,18 +49,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "root=true" >> "$GITHUB_OUTPUT"
-            echo "admin=false" >> "$GITHUB_OUTPUT"
+            echo "admin=true" >> "$GITHUB_OUTPUT"
+            echo "scope=manual-full" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           printf '%s\n' "$CHANGED"
 
-          # Workflow-only PRs are owned by their dedicated workflow checks. Keep
-          # Production CI required, but do not spend time on the root app lane
-          # unless this workflow definition itself is being changed.
+          # Workflow-only changes are owned by their dedicated workflow checks.
+          # Keep Production CI required, but avoid a full application build unless
+          # the Production CI definition itself changed.
           if [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -Evq '^\.github/workflows/'; then
             if ! printf '%s\n' "$CHANGED" | grep -Fxq '.github/workflows/production-ci.yml'; then
               echo "root=false" >> "$GITHUB_OUTPUT"
@@ -80,7 +81,13 @@ jobs:
           # Isolated surfaces and dedicated Azure/AI lanes are validated by their own
           # workflows and still pass through this lightweight required-check shell.
           root=false
-          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/(admin|business)/|packages/(auth|db|config)/|infra/aws/web-surfaces/|infra/aws/cloudformation/web-surfaces-services\.yml$|infra/azure/|lib/ai/gateway/|docs/|\.env\.example$|scripts/(surface-app-isolation-regression|web-surfaces-services-regression)\.mjs$|\.github/workflows/(aws-web-surfaces-services|azure-ai-gateway|azure-ai-live-smoke|azure-ai-model-readiness|azure-ai-reasoning-quota-watch|azure-consumer-image|azure-consumer-runtime|azure-foundation|production-ci)\.yml$)'; then
+          if printf '%s\n' "$CHANGED" | grep -Evq '^(apps/(admin|business)/|packages/(auth|db|config)/|infra/(aws|azure)/|lib/ai/gateway/|docs/|\.env\.example$|scripts/(aws/|azure-devops-mobile-bootstrap\.sh$|surface-app-isolation-regression\.mjs$|web-surfaces-services-regression\.mjs$)|\.github/workflows/)'; then
+            root=true
+          fi
+
+          # Changes to this workflow always receive the full lane so path-routing
+          # changes validate themselves before they can reduce future work.
+          if printf '%s\n' "$CHANGED" | grep -Fxq '.github/workflows/production-ci.yml'; then
             root=true
           fi
 
@@ -155,7 +162,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             for key in security search reserve billing beta location business_revenue; do
               echo "$key=true" >> "$GITHUB_OUTPUT"
             done
@@ -285,7 +292,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "pull_request" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
