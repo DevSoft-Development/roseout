@@ -85,6 +85,28 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+              test -n "$SENTRY_AUTH_TOKEN" || { echo "SENTRY_AUTH_TOKEN is missing" >&2; exit 1; }
+              test -n "$SENTRY_ORG" || { echo "SENTRY_ORG is missing" >&2; exit 1; }
+              test -n "$SENTRY_PROJECT" || { echo "SENTRY_PROJECT is missing" >&2; exit 1; }
+
+              SENTRY_CLI="./node_modules/@sentry/cli/bin/sentry-cli"
+              test -x "$SENTRY_CLI" || { echo "sentry-cli is not installed" >&2; exit 1; }
+
+              "$SENTRY_CLI" info
+              "$SENTRY_CLI" projects list --org "$SENTRY_ORG" | grep -F "$SENTRY_PROJECT" >/dev/null || {
+                echo "Sentry project '$SENTRY_PROJECT' was not visible in organization '$SENTRY_ORG'. Check the organization slug, project slug, and org:ci token scope." >&2
+                exit 1
+              }
+            env:
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
+            displayName: Validate Sentry CI credentials
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm ci --no-audit --no-fund
               npx expo prebuild --clean --platform ios --no-install
               cd ios
               pod install --repo-update
@@ -290,6 +312,28 @@ stages:
             name: googlePlayServiceAccount
             inputs:
               secureFile: $(GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE)
+
+          - script: |
+              set -euo pipefail
+              cd mobile
+              npm ci --no-audit --no-fund
+              test -n "$SENTRY_AUTH_TOKEN" || { echo "SENTRY_AUTH_TOKEN is missing" >&2; exit 1; }
+              test -n "$SENTRY_ORG" || { echo "SENTRY_ORG is missing" >&2; exit 1; }
+              test -n "$SENTRY_PROJECT" || { echo "SENTRY_PROJECT is missing" >&2; exit 1; }
+
+              SENTRY_CLI="./node_modules/@sentry/cli/bin/sentry-cli"
+              test -x "$SENTRY_CLI" || { echo "sentry-cli is not installed" >&2; exit 1; }
+
+              "$SENTRY_CLI" info
+              "$SENTRY_CLI" projects list --org "$SENTRY_ORG" | grep -F "$SENTRY_PROJECT" >/dev/null || {
+                echo "Sentry project '$SENTRY_PROJECT' was not visible in organization '$SENTRY_ORG'. Check the organization slug, project slug, and org:ci token scope." >&2
+                exit 1
+              }
+            env:
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
+            displayName: Validate Sentry CI credentials
 
           - script: |
               set -euo pipefail
