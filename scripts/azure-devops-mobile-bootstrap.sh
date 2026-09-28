@@ -59,6 +59,14 @@ SENTRY_AUTH_TOKEN="$(jq -r '.sentryAuthToken' "$WORK/mobile.json")"
 SENTRY_ORG="$(jq -r '.sentryOrg' "$WORK/mobile.json")"
 SENTRY_PROJECT="$(jq -r '.sentryProject' "$WORK/mobile.json")"
 
+urlencode() {
+  python3 - "$1" <<'PY'
+import sys
+from urllib.parse import quote
+print(quote(sys.argv[1], safe=''))
+PY
+}
+
 for pair in \
   "SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN" \
   "SENTRY_ORG=$SENTRY_ORG" \
@@ -98,14 +106,6 @@ jq -e '.type == "service_account" and (.client_email | length > 0) and (.private
 API_ROOT="https://dev.azure.com/$AZDO_ORG"
 AUTH_HEADER="Authorization: Basic $(printf ':%s' "$AZDO_PAT" | base64 | tr -d '\n')"
 JSON_HEADER="Content-Type: application/json"
-
-urlencode() {
-  python3 - "$1" <<'PY'
-import sys
-from urllib.parse import quote
-print(quote(sys.argv[1], safe=''))
-PY
-}
 
 api() {
   curl --fail --silent --show-error -H "$AUTH_HEADER" "$@"
