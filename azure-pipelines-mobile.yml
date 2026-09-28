@@ -243,35 +243,59 @@ stages:
               from pathlib import Path
               path = Path('android/app/build.gradle')
               text = path.read_text()
-              debug_block = """signingConfigs {
-                  debug {
-                      storeFile file('debug.keystore')
-                      storePassword 'android'
-                      keyAlias 'androiddebugkey'
-                      keyPassword 'android'
-                  }
-              }"""
-              release_block = """signingConfigs {
-                  debug {
-                      storeFile file('debug.keystore')
-                      storePassword 'android'
-                      keyAlias 'androiddebugkey'
-                      keyPassword 'android'
-                  }
+              def find_block(source, keyword, start=0):
+                  match = re.search(r'\\b' + re.escape(keyword) + r'\\s*\\{', source[start:])
+                  if not match:
+                      raise SystemExit(f'Generated Android {keyword} block was not found')
+                  block_start = start + match.start()
+                  open_brace = start + match.end() - 1
+                  depth = 0
+                  for index in range(open_brace, len(source)):
+                      if source[index] == '{':
+                          depth += 1
+                      elif source[index] == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return block_start, index + 1, open_brace
+                  raise SystemExit(f'Generated Android {keyword} block is unbalanced')
+
+              signing_start, signing_end, signing_open = find_block(text, 'signingConfigs')
+              signing_block = text[signing_start:signing_end]
+              if not re.search(r'\\brelease\\s*\\{', signing_block):
+                  release_signing = """
                   release {
                       storeFile file(System.getenv('TOH_ANDROID_KEYSTORE'))
                       storePassword System.getenv('TOH_ANDROID_KEYSTORE_PASSWORD')
                       keyAlias System.getenv('TOH_ANDROID_KEY_ALIAS')
                       keyPassword System.getenv('TOH_ANDROID_KEY_PASSWORD')
                   }
-              }"""
-              if debug_block not in text:
-                  raise SystemExit('Expected generated signingConfigs block was not found')
-              text = text.replace(debug_block, release_block)
-              marker = "release {\n            // Caution! In production, you need to generate your own keystore file."
-              if marker not in text:
-                  raise SystemExit('Expected generated release block was not found')
-              text = text.replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.release', 1)
+              """
+                  text = text[:signing_end - 1] + release_signing + text[signing_end - 1:]
+
+              build_types_start, build_types_end, _ = find_block(text, 'buildTypes')
+              release_match = re.search(r'\\brelease\\s*\\{', text[build_types_start:build_types_end])
+              if not release_match:
+                  raise SystemExit('Generated Android release buildType was not found')
+              release_start = build_types_start + release_match.start()
+              _, release_end, release_open = find_block(text, 'release', release_start)
+              release_block = text[release_start:release_end]
+
+              if re.search(r'\\bsigningConfig\\s+signingConfigs\\.[A-Za-z0-9_]+', release_block):
+                  release_block = re.sub(
+                      r'\\bsigningConfig\\s+signingConfigs\\.[A-Za-z0-9_]+',
+                      'signingConfig signingConfigs.release',
+                      release_block,
+                      count=1,
+                  )
+              else:
+                  indent_match = re.search(r'\\n([ \\t]+)\\S', release_block)
+                  indent = indent_match.group(1) if indent_match else '            '
+                  release_block = (
+                      release_block[:release_open - release_start + 1]
+                      + f'\\n{indent}signingConfig signingConfigs.release'
+                      + release_block[release_open - release_start + 1:]
+                  )
+              text = text[:release_start] + release_block + text[release_end:]
               version_code = int(os.environ['BUILD_BUILDID'])
               version_name = os.environ['TOH_APP_VERSION']
               text, code_count = re.subn(r'versionCode\s+\d+', f'versionCode {version_code}', text, count=1)
