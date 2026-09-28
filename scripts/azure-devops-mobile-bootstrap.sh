@@ -162,7 +162,15 @@ else
 fi
 
 if [ -z "$AZDO_GITHUB_SERVICE_CONNECTION_ID" ]; then
-  CONNECTIONS="$(api "$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?api-version=7.1")"
+  SERVICE_ENDPOINT_URL="$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?api-version=7.1"
+  SERVICE_ENDPOINT_BODY="$WORK/service-endpoints-response.json"
+  SERVICE_ENDPOINT_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$SERVICE_ENDPOINT_BODY" -w '%{http_code}' "$SERVICE_ENDPOINT_URL")"
+  if [ "$SERVICE_ENDPOINT_STATUS" -lt 200 ] || [ "$SERVICE_ENDPOINT_STATUS" -ge 300 ]; then
+    echo "Azure DevOps service-endpoint lookup failed with HTTP $SERVICE_ENDPOINT_STATUS." >&2
+    jq -c '{message, typeName, errorCode, eventId}' "$SERVICE_ENDPOINT_BODY" 2>/dev/null >&2 || cat "$SERVICE_ENDPOINT_BODY" >&2
+    exit 1
+  fi
+  CONNECTIONS="$(cat "$SERVICE_ENDPOINT_BODY")"
   GITHUB_CONNECTIONS="$(printf '%s' "$CONNECTIONS" | jq '{value: [.value[]? | select((.type // "" | ascii_downcase) == "github")]}')"
   CONNECTION_COUNT="$(printf '%s' "$GITHUB_CONNECTIONS" | jq '.value | length')"
   if [ "$CONNECTION_COUNT" -eq 1 ]; then
