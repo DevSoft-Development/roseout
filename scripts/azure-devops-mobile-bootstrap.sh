@@ -118,8 +118,8 @@ replace_secure_file "$WORK/$ANDROID_KEYSTORE_SECURE_FILE" "$ANDROID_KEYSTORE_SEC
 replace_secure_file "$WORK/$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE" "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"
 
 GROUP_NAME="theouthaven-mobile-production"
-GROUPS="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variablegroups?groupName=$(urlencode "$GROUP_NAME")&api-version=7.1")"
-GROUP_ID="$(printf '%s' "$GROUPS" | jq -r '.value[0].id // empty')"
+VARIABLE_GROUPS_JSON="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variablegroups?groupName=$(urlencode "$GROUP_NAME")&api-version=7.1")"
+GROUP_ID="$(printf '%s' "$VARIABLE_GROUPS_JSON" | jq -r '.value[0].id // empty')"
 
 GROUP_BODY="$(
   jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     '{
