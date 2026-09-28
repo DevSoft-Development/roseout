@@ -89,3 +89,9 @@ if (/route53.*change-resource-record-sets|cloudfront update-distribution/i.test(
 }
 
 console.log("web-surfaces-foundation-regression: PASS");
+
+requireText(foundation, 'RuleActionOverrides:', 'Common managed WAF rules must override the generic body-size rule for the credential upload exception.');
+requireText(foundation, 'Name: SizeRestrictions_BODY', 'AWS CommonRuleSet body-size restriction must be overridden explicitly, not disabled wholesale.');
+requireText(foundation, 'Name: SizeRestrictionsBodyExceptAdminCredentialVault', 'A replacement body-size WAF rule must protect every route except the Admin credential upload endpoint.');
+requireText(foundation, 'SearchString: /api/admin/settings/credentials', 'Only the authenticated Admin credential endpoint may receive larger request bodies.');
+requireText(foundation, 'Size: 8192', 'Non-credential web-surface requests must retain the existing 8 KiB body-size protection.');
