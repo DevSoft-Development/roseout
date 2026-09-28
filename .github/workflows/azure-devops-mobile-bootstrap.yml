@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows: ['AWS Credential Vault runtime sync']
     types: [completed]
+  schedule:
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +25,7 @@ jobs:
   bootstrap:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
