@@ -185,43 +185,63 @@ if [ -z "$AZDO_GITHUB_SERVICE_CONNECTION_ID" ]; then
 fi
 
 PIPELINE_NAME="TheOutHaven Mobile Production"
-PIPELINE_LIST_URL="$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1"
-PIPELINE_LIST_BODY="$WORK/pipelines-response.json"
-PIPELINE_LIST_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$PIPELINE_LIST_BODY" -w '%{http_code}' "$PIPELINE_LIST_URL")"
-if [ "$PIPELINE_LIST_STATUS" -lt 200 ] || [ "$PIPELINE_LIST_STATUS" -ge 300 ]; then
-  echo "Azure DevOps pipeline list failed with HTTP $PIPELINE_LIST_STATUS." >&2
-  jq -c '{message, typeName, errorCode, eventId}' "$PIPELINE_LIST_BODY" 2>/dev/null >&2 || cat "$PIPELINE_LIST_BODY" >&2
+PIPELINE_FOLDER="\\TheOutHaven"
+PIPELINE_YAML="azure-pipelines-mobile.yml"
+GITHUB_REPOSITORY="DevSoft-Development/roseout"
+GITHUB_REPOSITORY_URL="https://github.com/DevSoft-Development/roseout"
+GITHUB_API_URL="https://api.github.com/repos/DevSoft-Development/roseout"
+
+DEFINITION_LIST_URL="$API_ROOT/$PROJECT_ID/_apis/build/definitions?name=$(urlencode "$PIPELINE_NAME")&path=$(urlencode "$PIPELINE_FOLDER")&api-version=7.1"
+DEFINITION_LIST_BODY="$WORK/build-definitions-response.json"
+DEFINITION_LIST_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$DEFINITION_LIST_BODY" -w '%{http_code}' "$DEFINITION_LIST_URL")"
+if [ "$DEFINITION_LIST_STATUS" -lt 200 ] || [ "$DEFINITION_LIST_STATUS" -ge 300 ]; then
+  echo "Azure DevOps build-definition list failed with HTTP $DEFINITION_LIST_STATUS." >&2
+  jq -c '{message, typeName, errorCode, eventId}' "$DEFINITION_LIST_BODY" 2>/dev/null >&2 || cat "$DEFINITION_LIST_BODY" >&2
   exit 1
 fi
-PIPELINES="$(cat "$PIPELINE_LIST_BODY")"
-PIPELINE_ID="$(printf '%s' "$PIPELINES" | jq -r --arg name "$PIPELINE_NAME" '.value[]? | select(.name == $name) | .id' | head -1)"
+PIPELINE_ID="$(jq -r --arg name "$PIPELINE_NAME" '.value[]? | select(.name == $name) | .id' "$DEFINITION_LIST_BODY" | head -1)"
 
 if [ -z "$PIPELINE_ID" ]; then
   PIPELINE_BODY="$(
-    jq -n       --arg name "$PIPELINE_NAME"       --arg connectionId "$AZDO_GITHUB_SERVICE_CONNECTION_ID"       '{
+    jq -n \
+      --arg name "$PIPELINE_NAME" \
+      --arg path "$PIPELINE_FOLDER" \
+      --arg yaml "$PIPELINE_YAML" \
+      --arg repo "$GITHUB_REPOSITORY" \
+      --arg repoUrl "$GITHUB_REPOSITORY_URL" \
+      --arg apiUrl "$GITHUB_API_URL" \
+      --arg connectionId "$AZDO_GITHUB_SERVICE_CONNECTION_ID" \
+      '{
         name: $name,
-        folder: "\\TheOutHaven",
-        configuration: {
-          type: "yaml",
-          path: "/azure-pipelines-mobile.yml",
-          repository: {
-            id: "DevSoft-Development/roseout",
-            name: "DevSoft-Development/roseout",
-            type: "github",
-            connection: { id: $connectionId }
+        path: $path,
+        process: {
+          type: 2,
+          yamlFilename: $yaml
+        },
+        repository: {
+          id: $repo,
+          name: $repo,
+          url: $repoUrl,
+          type: "GitHub",
+          defaultBranch: "refs/heads/main",
+          properties: {
+            connectedServiceId: $connectionId,
+            defaultBranch: "refs/heads/main",
+            apiUrl: $apiUrl
           }
         }
       }'
   )"
-  PIPELINE_CREATE_BODY_FILE="$WORK/pipeline-create-response.json"
-  PIPELINE_CREATE_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -H "$JSON_HEADER" -X POST --data "$PIPELINE_BODY" -o "$PIPELINE_CREATE_BODY_FILE" -w '%{http_code}' "$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1")"
+
+  PIPELINE_CREATE_BODY_FILE="$WORK/build-definition-create-response.json"
+  PIPELINE_CREATE_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -H "$JSON_HEADER" -X POST --data "$PIPELINE_BODY" -o "$PIPELINE_CREATE_BODY_FILE" -w '%{http_code}' "$API_ROOT/$PROJECT_ID/_apis/build/definitions?api-version=7.1")"
   if [ "$PIPELINE_CREATE_STATUS" -lt 200 ] || [ "$PIPELINE_CREATE_STATUS" -ge 300 ]; then
-    echo "Azure DevOps pipeline creation failed with HTTP $PIPELINE_CREATE_STATUS." >&2
+    echo "Azure DevOps build-definition creation failed with HTTP $PIPELINE_CREATE_STATUS." >&2
     jq -c '{message, typeName, errorCode, eventId}' "$PIPELINE_CREATE_BODY_FILE" 2>/dev/null >&2 || cat "$PIPELINE_CREATE_BODY_FILE" >&2
     exit 1
   fi
-  CREATED_PIPELINE="$(cat "$PIPELINE_CREATE_BODY_FILE")"
-  PIPELINE_ID="$(printf '%s' "$CREATED_PIPELINE" | jq -r '.id // empty')"
+
+  PIPELINE_ID="$(jq -r '.id // empty' "$PIPELINE_CREATE_BODY_FILE")"
   test -n "$PIPELINE_ID"
   echo "Created Azure DevOps pipeline: $PIPELINE_NAME ($PIPELINE_ID)"
 else
@@ -243,7 +263,7 @@ for name in   "$IOS_CERTIFICATE_SECURE_FILE"   "$IOS_PROFILE_SECURE_FILE"   "$AP
   printf '%s' "$response" | jq -e --arg name "$name" 'any(.value[]?; .name == $name)' >/dev/null
 done
 
-api "$API_ROOT/$PROJECT_ID/_apis/pipelines/$PIPELINE_ID?api-version=7.1" | jq -e --arg name "$PIPELINE_NAME" '.name == $name' >/dev/null
+api "$API_ROOT/$PROJECT_ID/_apis/build/definitions/$PIPELINE_ID?api-version=7.1" | jq -e --arg name "$PIPELINE_NAME" '.name == $name and .process.type == 2 and .process.yamlFilename == "azure-pipelines-mobile.yml"' >/dev/null
 
 echo "Azure DevOps mobile release prerequisites are configured from the Admin Credential Vault."
 echo "Pipeline ID: $PIPELINE_ID"
