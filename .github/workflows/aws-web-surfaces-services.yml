@@ -293,6 +293,11 @@ jobs:
                 aws cloudformation rollback-stack --stack-name "$STACK"
                 aws cloudformation wait stack-rollback-complete --stack-name "$STACK"
                 ;;
+              UPDATE_ROLLBACK_FAILED)
+                echo 'Continuing failed services-stack rollback before retrying the deployment.'
+                aws cloudformation continue-update-rollback --stack-name "$STACK"
+                aws cloudformation wait stack-update-rollback-complete --stack-name "$STACK"
+                ;;
               *)
                 echo "Existing services stack status: $STATUS"
                 ;;
