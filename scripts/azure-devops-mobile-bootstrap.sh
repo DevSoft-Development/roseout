@@ -59,6 +59,28 @@ SENTRY_AUTH_TOKEN="$(jq -r '.sentryAuthToken' "$WORK/mobile.json")"
 SENTRY_ORG="$(jq -r '.sentryOrg' "$WORK/mobile.json")"
 SENTRY_PROJECT="$(jq -r '.sentryProject' "$WORK/mobile.json")"
 
+for pair in \
+  "SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN" \
+  "SENTRY_ORG=$SENTRY_ORG" \
+  "SENTRY_PROJECT=$SENTRY_PROJECT"; do
+  name="${pair%%=*}"
+  value="${pair#*=}"
+  test -n "$value" || { echo "$name is missing from the Admin Credential Vault." >&2; exit 1; }
+  case "$value" in
+    '\$('*) echo "$name contains an unresolved Azure macro and must be replaced in the Admin Credential Vault." >&2; exit 1 ;;
+  esac
+done
+
+SENTRY_PROBE_FILE="$WORK/sentry-release-probe.json"
+SENTRY_PROBE_STATUS="$(curl --silent --show-error --output "$SENTRY_PROBE_FILE" --write-out '%{http_code}' \
+  -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+  "https://sentry.io/api/0/organizations/$(urlencode "$SENTRY_ORG")/releases/?project=$(urlencode "$SENTRY_PROJECT")&per_page=1")"
+if [ "$SENTRY_PROBE_STATUS" != "200" ]; then
+  echo "Sentry CI credential validation failed before Azure synchronization (HTTP $SENTRY_PROBE_STATUS)." >&2
+  jq -c '{detail, error, message}' "$SENTRY_PROBE_FILE" 2>/dev/null >&2 || cat "$SENTRY_PROBE_FILE" >&2
+  exit 1
+fi
+
 for value in   "$AZDO_PAT"   "$IOS_CERTIFICATE_PASSWORD"   "$ANDROID_KEYSTORE_PASSWORD"   "$ANDROID_KEY_PASSWORD" \
   "$SENTRY_AUTH_TOKEN"; do
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$value"; fi
