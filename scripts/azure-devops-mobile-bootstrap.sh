@@ -34,7 +34,10 @@ jq -e '
   (.androidKeystorePassword | type == "string" and length > 0) and
   (.androidKeyAlias | type == "string" and length > 0) and
   (.androidKeyPassword | type == "string" and length > 0) and
-  (.googlePlayServiceAccountJson | type == "string" and length > 0)
+  (.googlePlayServiceAccountJson | type == "string" and length > 0) and
+  (.sentryAuthToken | type == "string" and length > 0) and
+  (.sentryOrg | type == "string" and length > 0) and
+  (.sentryProject | type == "string" and length > 0)
 ' "$WORK/mobile.json" >/dev/null || {
   echo "Mobile Release Signing credential in the Admin Credential Vault is incomplete." >&2
   exit 1
@@ -52,8 +55,12 @@ APP_STORE_CONNECT_APP_ID="$(jq -r '.appStoreConnectAppId' "$WORK/mobile.json")"
 ANDROID_KEYSTORE_PASSWORD="$(jq -r '.androidKeystorePassword' "$WORK/mobile.json")"
 ANDROID_KEY_ALIAS="$(jq -r '.androidKeyAlias' "$WORK/mobile.json")"
 ANDROID_KEY_PASSWORD="$(jq -r '.androidKeyPassword' "$WORK/mobile.json")"
+SENTRY_AUTH_TOKEN="$(jq -r '.sentryAuthToken' "$WORK/mobile.json")"
+SENTRY_ORG="$(jq -r '.sentryOrg' "$WORK/mobile.json")"
+SENTRY_PROJECT="$(jq -r '.sentryProject' "$WORK/mobile.json")"
 
-for value in   "$AZDO_PAT"   "$IOS_CERTIFICATE_PASSWORD"   "$ANDROID_KEYSTORE_PASSWORD"   "$ANDROID_KEY_PASSWORD"; do
+for value in   "$AZDO_PAT"   "$IOS_CERTIFICATE_PASSWORD"   "$ANDROID_KEYSTORE_PASSWORD"   "$ANDROID_KEY_PASSWORD" \
+  "$SENTRY_AUTH_TOKEN"; do
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$value"; fi
 done
 
@@ -122,7 +129,7 @@ VARIABLE_GROUPS_JSON="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variabl
 GROUP_ID="$(printf '%s' "$VARIABLE_GROUPS_JSON" | jq -r '.value[0].id // empty')"
 
 GROUP_BODY="$(
-  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     '{
+  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     --arg sentryAuthToken "$SENTRY_AUTH_TOKEN"     --arg sentryOrg "$SENTRY_ORG"     --arg sentryProject "$SENTRY_PROJECT"     '{
       name: $name,
       description: "TheOutHaven production mobile signing and store submission configuration. Source of truth: Admin Credential Vault.",
       type: "Vsts",
@@ -144,7 +151,10 @@ GROUP_BODY="$(
         APP_STORE_CONNECT_APP_ID: { value: $appStoreAppId },
         ANDROID_KEYSTORE_PASSWORD: { value: $androidStorePassword, isSecret: true },
         ANDROID_KEY_ALIAS: { value: $androidAlias },
-        ANDROID_KEY_PASSWORD: { value: $androidKeyPassword, isSecret: true }
+        ANDROID_KEY_PASSWORD: { value: $androidKeyPassword, isSecret: true },
+        SENTRY_AUTH_TOKEN: { value: $sentryAuthToken, isSecret: true },
+        SENTRY_ORG: { value: $sentryOrg },
+        SENTRY_PROJECT: { value: $sentryProject }
       }
     }'
 )"
@@ -298,7 +308,10 @@ printf '%s' "$VERIFY_GROUP" | jq -e '
   .value[0].variables.IOS_PROFILE_SECURE_FILE.value == "theouthaven-appstore.mobileprovision" and
   .value[0].variables.APP_STORE_CONNECT_KEY_SECURE_FILE.value == "theouthaven-appstore-connect.p8" and
   .value[0].variables.ANDROID_KEYSTORE_SECURE_FILE.value == "theouthaven-android-upload.jks" and
-  .value[0].variables.GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE.value == "theouthaven-google-play-service-account.json"
+  .value[0].variables.GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE.value == "theouthaven-google-play-service-account.json" and
+  (.value[0].variables.SENTRY_AUTH_TOKEN.isSecret == true) and
+  (.value[0].variables.SENTRY_ORG.value | length > 0) and
+  (.value[0].variables.SENTRY_PROJECT.value | length > 0)
 ' >/dev/null
 
 for name in   "$IOS_CERTIFICATE_SECURE_FILE"   "$IOS_PROFILE_SECURE_FILE"   "$APP_STORE_CONNECT_KEY_SECURE_FILE"   "$ANDROID_KEYSTORE_SECURE_FILE"   "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"; do
