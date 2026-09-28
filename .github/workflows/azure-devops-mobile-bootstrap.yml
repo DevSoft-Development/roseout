@@ -64,7 +64,10 @@ jobs:
             (.androidKeystorePassword | length > 0) and
             (.androidKeyAlias | length > 0) and
             (.androidKeyPassword | length > 0) and
-            (.googlePlayServiceAccountJson | length > 0)
+            (.googlePlayServiceAccountJson | length > 0) and
+            (.sentryAuthToken | length > 0) and
+            (.sentryOrg | length > 0) and
+            (.sentryProject | length > 0)
           ' "$WORK" >/dev/null; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
@@ -87,6 +90,9 @@ jobs:
               androidKeyAlias
               androidKeyPassword
               googlePlayServiceAccountJson
+              sentryAuthToken
+              sentryOrg
+              sentryProject
             )
             MISSING=()
             for field in "${REQUIRED_FIELDS[@]}"; do
