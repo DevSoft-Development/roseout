@@ -468,6 +468,25 @@ stages:
 
               build_gradle.write_text(text)
               PY
+
+              python3 - <<'PY'
+              from pathlib import Path
+
+              path = Path('android/gradle.properties')
+              text = path.read_text() if path.exists() else ''
+              lines = [
+                  line for line in text.splitlines()
+                  if not line.startswith('org.gradle.jvmargs=')
+                  and not line.startswith('org.gradle.workers.max=')
+                  and not line.startswith('org.gradle.parallel=')
+              ]
+              lines.extend([
+                  'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1536m -Dfile.encoding=UTF-8',
+                  'org.gradle.workers.max=2',
+                  'org.gradle.parallel=false',
+              ])
+              path.write_text('\n'.join(lines) + '\n')
+              PY
             env:
               TOH_APP_VERSION: $(appVersion)
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
@@ -479,7 +498,7 @@ stages:
               set -euo pipefail
               cd mobile/android
               chmod +x gradlew
-              ./gradlew --no-daemon bundleRelease
+              ./gradlew --no-daemon --max-workers=2 bundleRelease
               AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
               test -n "$AAB"
               cp "$AAB" "$(Build.ArtifactStagingDirectory)/TheOutHaven.aab"
