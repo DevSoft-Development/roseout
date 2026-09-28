@@ -162,10 +162,11 @@ else
 fi
 
 if [ -z "$AZDO_GITHUB_SERVICE_CONNECTION_ID" ]; then
-  CONNECTIONS="$(api "$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?type=github&api-version=7.1")"
-  CONNECTION_COUNT="$(printf '%s' "$CONNECTIONS" | jq '.value | length')"
+  CONNECTIONS="$(api "$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?api-version=7.1")"
+  GITHUB_CONNECTIONS="$(printf '%s' "$CONNECTIONS" | jq '{value: [.value[]? | select((.type // "" | ascii_downcase) == "github")]}')"
+  CONNECTION_COUNT="$(printf '%s' "$GITHUB_CONNECTIONS" | jq '.value | length')"
   if [ "$CONNECTION_COUNT" -eq 1 ]; then
-    AZDO_GITHUB_SERVICE_CONNECTION_ID="$(printf '%s' "$CONNECTIONS" | jq -r '.value[0].id')"
+    AZDO_GITHUB_SERVICE_CONNECTION_ID="$(printf '%s' "$GITHUB_CONNECTIONS" | jq -r '.value[0].id')"
   elif [ "$CONNECTION_COUNT" -eq 0 ]; then
     echo "No Azure DevOps GitHub service connection exists for project $PROJECT_NAME." >&2
     exit 1
