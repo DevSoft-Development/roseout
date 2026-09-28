@@ -70,6 +70,31 @@ jobs:
           else
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "Mobile Release Signing exists but is incomplete; Azure DevOps bootstrap skipped."
+            REQUIRED_FIELDS=(
+              azureDevOpsOrg
+              azureDevOpsProject
+              azureDevOpsPat
+              iosCertificateP12Base64
+              iosCertificatePassword
+              iosProvisioningProfileBase64
+              iosTeamId
+              appStoreConnectKeyId
+              appStoreConnectIssuerId
+              appStoreConnectPrivateKey
+              appStoreConnectAppId
+              androidKeystoreBase64
+              androidKeystorePassword
+              androidKeyAlias
+              androidKeyPassword
+              googlePlayServiceAccountJson
+            )
+            MISSING=()
+            for field in "${REQUIRED_FIELDS[@]}"; do
+              if ! jq -e --arg field "$field" '(.[$field] // "") | strings | length > 0' "$WORK" >/dev/null; then
+                MISSING+=("$field")
+              fi
+            done
+            printf 'Missing Mobile Release Signing fields: %s\n' "$(IFS=', '; echo "${MISSING[*]}")"
           fi
           rm -f "$WORK"
 
