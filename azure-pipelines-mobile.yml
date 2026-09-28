@@ -85,18 +85,27 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
-              test -n "$SENTRY_AUTH_TOKEN" || { echo "SENTRY_AUTH_TOKEN is missing" >&2; exit 1; }
-              test -n "$SENTRY_ORG" || { echo "SENTRY_ORG is missing" >&2; exit 1; }
-              test -n "$SENTRY_PROJECT" || { echo "SENTRY_PROJECT is missing" >&2; exit 1; }
+              for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
+                value="${!name:-}"
+                test -n "$value" || { echo "$name is missing" >&2; exit 1; }
+                case "$value" in
+                  '\$('*) echo "$name is unresolved in Azure DevOps: $value" >&2; exit 1 ;;
+                esac
+              done
 
               SENTRY_CLI="./node_modules/@sentry/cli/bin/sentry-cli"
               test -x "$SENTRY_CLI" || { echo "sentry-cli is not installed" >&2; exit 1; }
 
               "$SENTRY_CLI" info
-              "$SENTRY_CLI" projects list --org "$SENTRY_ORG" | grep -F "$SENTRY_PROJECT" >/dev/null || {
-                echo "Sentry project '$SENTRY_PROJECT' was not visible in organization '$SENTRY_ORG'. Check the organization slug, project slug, and org:ci token scope." >&2
+
+              STATUS="$(curl --silent --show-error --output "$(Agent.TempDirectory)/sentry-release-probe.json" --write-out '%{http_code}' \
+                -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+                "https://sentry.io/api/0/organizations/$SENTRY_ORG/releases/?project=$SENTRY_PROJECT&per_page=1")"
+              if [ "$STATUS" != "200" ]; then
+                echo "Sentry CI validation failed for organization '$SENTRY_ORG' and project '$SENTRY_PROJECT' (HTTP $STATUS)." >&2
+                cat "$(Agent.TempDirectory)/sentry-release-probe.json" >&2 || true
                 exit 1
-              }
+              fi
             env:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
@@ -317,18 +326,27 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
-              test -n "$SENTRY_AUTH_TOKEN" || { echo "SENTRY_AUTH_TOKEN is missing" >&2; exit 1; }
-              test -n "$SENTRY_ORG" || { echo "SENTRY_ORG is missing" >&2; exit 1; }
-              test -n "$SENTRY_PROJECT" || { echo "SENTRY_PROJECT is missing" >&2; exit 1; }
+              for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
+                value="${!name:-}"
+                test -n "$value" || { echo "$name is missing" >&2; exit 1; }
+                case "$value" in
+                  '\$('*) echo "$name is unresolved in Azure DevOps: $value" >&2; exit 1 ;;
+                esac
+              done
 
               SENTRY_CLI="./node_modules/@sentry/cli/bin/sentry-cli"
               test -x "$SENTRY_CLI" || { echo "sentry-cli is not installed" >&2; exit 1; }
 
               "$SENTRY_CLI" info
-              "$SENTRY_CLI" projects list --org "$SENTRY_ORG" | grep -F "$SENTRY_PROJECT" >/dev/null || {
-                echo "Sentry project '$SENTRY_PROJECT' was not visible in organization '$SENTRY_ORG'. Check the organization slug, project slug, and org:ci token scope." >&2
+
+              STATUS="$(curl --silent --show-error --output "$(Agent.TempDirectory)/sentry-release-probe.json" --write-out '%{http_code}' \
+                -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+                "https://sentry.io/api/0/organizations/$SENTRY_ORG/releases/?project=$SENTRY_PROJECT&per_page=1")"
+              if [ "$STATUS" != "200" ]; then
+                echo "Sentry CI validation failed for organization '$SENTRY_ORG' and project '$SENTRY_PROJECT' (HTTP $STATUS)." >&2
+                cat "$(Agent.TempDirectory)/sentry-release-probe.json" >&2 || true
                 exit 1
-              }
+              fi
             env:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
