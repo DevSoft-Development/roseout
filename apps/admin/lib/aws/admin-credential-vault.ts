@@ -104,7 +104,7 @@ export async function requestCredentialVaultRuntimeSync(environment: CredentialV
       return { triggered: false, workflow, error: "credential_vault_sync_repository_invalid" };
     }
 
-    const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
+    const dispatch = () => fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
       method: "POST",
       cache: "no-store",
       headers: {
@@ -116,6 +116,12 @@ export async function requestCredentialVaultRuntimeSync(environment: CredentialV
       },
       body: JSON.stringify({ ref: "main", inputs: { environment } }),
     });
+
+    let response = await dispatch();
+    if (!response.ok && (response.status === 429 || response.status >= 500)) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      response = await dispatch();
+    }
     if (!response.ok) {
       return { triggered: false, workflow, error: `github_runtime_sync_http_${response.status}` };
     }
