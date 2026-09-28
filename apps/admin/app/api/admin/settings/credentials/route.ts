@@ -78,6 +78,8 @@ function safeError(error: unknown) {
     "credential_payload_too_large",
     "credential_vault_runtime_sync_failed",
   ]);
+  if (/^github_runtime_sync_http_\d{3}$/.test(code)) return code;
+  if (code === "github_runtime_sync_token_not_configured" || code === "credential_vault_sync_repository_invalid") return code;
   return allowed.has(code) ? code : "credential_vault_request_failed";
 }
 
@@ -137,7 +139,7 @@ export async function PUT(request: NextRequest) {
     const result = await updateCredentialVaultProvider({ provider, environment, values, clearFields });
     const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
     if (provider === "mobile" && !runtimeSync.triggered) {
-      throw new Error("credential_vault_runtime_sync_failed");
+      throw new Error(runtimeSync.error || "credential_vault_runtime_sync_failed");
     }
     await logAdminAuditEvent({
       actor: adminUser,
