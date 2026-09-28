@@ -44,7 +44,7 @@ ALLOWED_PROVIDERS = {
     "meta": {"appId", "appSecret", "instagramAppId", "instagramAppSecret", "graphVersion", "loginConfigurationId", "accessToken"},
     "tiktok": {"clientKey", "clientSecret"},
     "apple": {"issuerId", "keyId", "privateKey"},
-    "mobile": {"azureDevOpsOrg", "azureDevOpsProject", "azureDevOpsPat", "azureDevOpsGithubServiceConnectionId", "iosCertificateP12Base64", "iosCertificatePassword", "iosProvisioningProfileBase64", "iosTeamId", "appStoreConnectKeyId", "appStoreConnectIssuerId", "appStoreConnectPrivateKey", "appStoreConnectAppId", "androidKeystoreBase64", "androidKeystorePassword", "androidKeyAlias", "androidKeyPassword", "googlePlayServiceAccountJson"},
+    "mobile": {"azureDevOpsOrg", "azureDevOpsProject", "azureDevOpsPat", "azureDevOpsGithubServiceConnectionId", "iosCertificateP12Base64", "iosCertificatePassword", "iosProvisioningProfileBase64", "iosTeamId", "appStoreConnectKeyId", "appStoreConnectIssuerId", "appStoreConnectPrivateKey", "appStoreConnectAppId", "androidKeystoreBase64", "androidKeystorePassword", "androidKeyAlias", "androidKeyPassword", "googlePlayServiceAccountJson", "sentryAuthToken", "sentryOrg", "sentryProject"},
     "turnstile": {"secretKey"},
     "expo": {"accessToken"},
     "domains": {"apiKey", "apiSecret", "accountId", "gatewaySecret"},
