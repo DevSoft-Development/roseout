@@ -77,7 +77,7 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           const ota = JSON.parse(fs.readFileSync('ota.config.json', 'utf8'));
           const expectedUrl = 'https://updates.theouthaven.com/api/mobile/ota/manifest';
-          if (pkg?.dependencies?.['expo-updates'] !== '~57.0.22') throw new Error('Transitional expo-updates client dependency missing or unexpected');
+          if (pkg?.dependencies?.['expo-updates'] !== '~57.0.23') throw new Error('Transitional expo-updates client dependency missing or unexpected');
           if (app?.updates?.url !== expectedUrl) throw new Error('TheOutHaven Azure OTA URL is missing or unexpected');
           if (String(app?.runtimeVersion || '') !== String(ota.runtimeVersion || '')) throw new Error('App and OTA runtime versions must match');
           if (app?.extra?.eas?.projectId) throw new Error('Production runtime must not require an EAS project ID');
