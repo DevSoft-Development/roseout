@@ -162,7 +162,7 @@ else
 fi
 
 if [ -z "$AZDO_GITHUB_SERVICE_CONNECTION_ID" ]; then
-  CONNECTIONS="$(api "$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?type=github&api-version=7.1-preview.4")"
+  CONNECTIONS="$(api "$API_ROOT/$PROJECT_ID/_apis/serviceendpoint/endpoints?type=github&api-version=7.1")"
   CONNECTION_COUNT="$(printf '%s' "$CONNECTIONS" | jq '.value | length')"
   if [ "$CONNECTION_COUNT" -eq 1 ]; then
     AZDO_GITHUB_SERVICE_CONNECTION_ID="$(printf '%s' "$CONNECTIONS" | jq -r '.value[0].id')"
