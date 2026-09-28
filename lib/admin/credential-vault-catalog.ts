@@ -136,6 +136,9 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "androidKeyAlias", label: "Android key alias" },
     { key: "androidKeyPassword", label: "Android key password", secret: true },
     { key: "googlePlayServiceAccountJson", label: "Google Play service account JSON", secret: true, multiline: true, placeholder: "{\n  \"type\": \"service_account\", ...\n}" },
+    { key: "sentryAuthToken", label: "Sentry CI auth token", secret: true, placeholder: "sntrys_..." },
+    { key: "sentryOrg", label: "Sentry organization slug", placeholder: "your-sentry-org" },
+    { key: "sentryProject", label: "Sentry mobile project slug", placeholder: "theouthaven-mobile" },
   ] },
   { id: "turnstile", label: "Cloudflare Turnstile", category: "Security", description: "Turnstile server-side verification credential.", fields: [
     { key: "secretKey", label: "Secret key", secret: true },
