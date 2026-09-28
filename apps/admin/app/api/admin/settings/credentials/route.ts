@@ -75,6 +75,7 @@ function safeError(error: unknown) {
     "meta_credential_test_failed",
     "microsoft_credential_test_failed",
     "mobile_credential_test_failed",
+    "credential_payload_too_large",
   ]);
   return allowed.has(code) ? code : "credential_vault_request_failed";
 }

@@ -21,6 +21,7 @@ function errorMessage(error?: string) {
   if (error === "runtime_credential_not_available") return "No runtime-readable credential is available for this provider. Re-enter or rotate it once to move it into the vault.";
   if (error === "credential_not_configured") return "This provider is not yet vault-managed.";
   if (error === "no_credential_changes") return "Enter a new value or select a saved field to clear.";
+  if (error === "credential_payload_too_large") return "The selected signing files are too large to store in the mobile credential vault. Remove unnecessary files or use the split signing-file storage flow.";
   return error || "The credential request could not be completed.";
 }
 

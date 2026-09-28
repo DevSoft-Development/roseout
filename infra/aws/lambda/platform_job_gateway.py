@@ -20,7 +20,7 @@ MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
 CREDENTIAL_SCHEMA_VERSION = 3
-MAX_CREDENTIAL_BYTES = 48 * 1024
+MAX_CREDENTIAL_BYTES = 60 * 1024
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_./@+-]{8,200}$")
 PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 ALLOWED_ENVIRONMENTS = {"production", "staging"}
@@ -278,6 +278,8 @@ def _write_credential(environment, provider, values, clear_fields):
         merged.pop(key, None)
     secret_id = _credential_secret_id(environment, provider)
     secret_string = json.dumps(merged, separators=(",", ":"), ensure_ascii=False)
+    if len(secret_string.encode("utf-8")) > MAX_CREDENTIAL_BYTES:
+        raise ValueError("credential_payload_too_large")
     try:
         result = secrets.put_secret_value(SecretId=secret_id, SecretString=secret_string)
     except ClientError as error:
