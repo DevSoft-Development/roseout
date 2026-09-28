@@ -185,7 +185,15 @@ if [ -z "$AZDO_GITHUB_SERVICE_CONNECTION_ID" ]; then
 fi
 
 PIPELINE_NAME="TheOutHaven Mobile Production"
-PIPELINES="$(api "$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1")"
+PIPELINE_LIST_URL="$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1"
+PIPELINE_LIST_BODY="$WORK/pipelines-response.json"
+PIPELINE_LIST_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$PIPELINE_LIST_BODY" -w '%{http_code}' "$PIPELINE_LIST_URL")"
+if [ "$PIPELINE_LIST_STATUS" -lt 200 ] || [ "$PIPELINE_LIST_STATUS" -ge 300 ]; then
+  echo "Azure DevOps pipeline list failed with HTTP $PIPELINE_LIST_STATUS." >&2
+  jq -c '{message, typeName, errorCode, eventId}' "$PIPELINE_LIST_BODY" 2>/dev/null >&2 || cat "$PIPELINE_LIST_BODY" >&2
+  exit 1
+fi
+PIPELINES="$(cat "$PIPELINE_LIST_BODY")"
 PIPELINE_ID="$(printf '%s' "$PIPELINES" | jq -r --arg name "$PIPELINE_NAME" '.value[]? | select(.name == $name) | .id' | head -1)"
 
 if [ -z "$PIPELINE_ID" ]; then
@@ -205,7 +213,14 @@ if [ -z "$PIPELINE_ID" ]; then
         }
       }'
   )"
-  CREATED_PIPELINE="$(api -X POST -H "$JSON_HEADER" --data "$PIPELINE_BODY" "$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1")"
+  PIPELINE_CREATE_BODY_FILE="$WORK/pipeline-create-response.json"
+  PIPELINE_CREATE_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -H "$JSON_HEADER" -X POST --data "$PIPELINE_BODY" -o "$PIPELINE_CREATE_BODY_FILE" -w '%{http_code}' "$API_ROOT/$PROJECT_ID/_apis/pipelines?api-version=7.1")"
+  if [ "$PIPELINE_CREATE_STATUS" -lt 200 ] || [ "$PIPELINE_CREATE_STATUS" -ge 300 ]; then
+    echo "Azure DevOps pipeline creation failed with HTTP $PIPELINE_CREATE_STATUS." >&2
+    jq -c '{message, typeName, errorCode, eventId}' "$PIPELINE_CREATE_BODY_FILE" 2>/dev/null >&2 || cat "$PIPELINE_CREATE_BODY_FILE" >&2
+    exit 1
+  fi
+  CREATED_PIPELINE="$(cat "$PIPELINE_CREATE_BODY_FILE")"
   PIPELINE_ID="$(printf '%s' "$CREATED_PIPELINE" | jq -r '.id // empty')"
   test -n "$PIPELINE_ID"
   echo "Created Azure DevOps pipeline: $PIPELINE_NAME ($PIPELINE_ID)"
