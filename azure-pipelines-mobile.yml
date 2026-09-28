@@ -128,8 +128,9 @@ stages:
                 echo "Provisioning profile team '$PROFILE_TEAM' does not match IOS_TEAM_ID '$(IOS_TEAM_ID)'." >&2
                 exit 1
               }
-              test "$PROFILE_APP_ID" = "$(IOS_TEAM_ID).com.theouthaven.app" || {
-                echo "Provisioning profile app identifier '$PROFILE_APP_ID' does not match $(IOS_TEAM_ID).com.theouthaven.app." >&2
+              PROFILE_PREFIX="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationIdentifierPrefix:0' "$PROFILE_PLIST")"
+              test "$PROFILE_APP_ID" = "$PROFILE_PREFIX.com.theouthaven.app" || {
+                echo "Provisioning profile app identifier '$PROFILE_APP_ID' does not match profile prefix '$PROFILE_PREFIX' plus bundle ID com.theouthaven.app." >&2
                 exit 1
               }
               test "$PROFILE_GET_TASK_ALLOW" = "false" || {
