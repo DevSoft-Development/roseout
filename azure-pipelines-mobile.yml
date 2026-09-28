@@ -88,6 +88,10 @@ stages:
               npx expo prebuild --clean --platform ios --no-install
               cd ios
               pod install --repo-update
+            env:
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
             displayName: Generate iOS native project
 
           - task: Xcode@5
@@ -110,6 +114,10 @@ stages:
               provisioningProfileUuid: '$(APPLE_PROV_PROFILE_UUID)'
               args: 'CURRENT_PROJECT_VERSION=$(Build.BuildId) MARKETING_VERSION=$(appVersion)'
               useXcpretty: false
+            env:
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
 
           - script: |
               set -euo pipefail
@@ -283,6 +291,9 @@ stages:
               PY
             env:
               TOH_APP_VERSION: $(appVersion)
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
             displayName: Generate Android native project and production signing config
 
           - script: |
@@ -298,6 +309,9 @@ stages:
               TOH_ANDROID_KEYSTORE_PASSWORD: $(ANDROID_KEYSTORE_PASSWORD)
               TOH_ANDROID_KEY_ALIAS: $(ANDROID_KEY_ALIAS)
               TOH_ANDROID_KEY_PASSWORD: $(ANDROID_KEY_PASSWORD)
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
             displayName: Build signed Android App Bundle
 
           - task: PublishPipelineArtifact@1
