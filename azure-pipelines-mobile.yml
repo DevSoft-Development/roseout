@@ -518,7 +518,56 @@ stages:
               set -euo pipefail
               cd mobile/android
               chmod +x gradlew
-              ./gradlew --no-daemon --max-workers=2 bundleRelease
+
+              echo "Android release build diagnostics:"
+              ./gradlew --version
+              echo "Gradle properties:"
+              grep -E '^(org\.gradle\.(jvmargs|workers\.max|parallel))=' gradle.properties || true
+
+              GRADLE_LOG="$(Build.ArtifactStagingDirectory)/android-gradle-release.log"
+              rm -f "$GRADLE_LOG"
+
+              set +e
+              (
+                set -o pipefail
+                ./gradlew \
+                  --no-daemon \
+                  --max-workers=2 \
+                  --console=plain \
+                  --info \
+                  --stacktrace \
+                  bundleRelease 2>&1 | tee "$GRADLE_LOG"
+              ) &
+              GRADLE_PIPE_PID=$!
+
+              (
+                while kill -0 "$GRADLE_PIPE_PID" 2>/dev/null; do
+                  sleep 60
+                  if kill -0 "$GRADLE_PIPE_PID" 2>/dev/null; then
+                    echo "===== Android Gradle heartbeat $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
+                    echo "Active Java/Gradle/Kotlin processes:"
+                    ps -eo pid,ppid,%cpu,%mem,etime,command | grep -E '[j]ava|[g]radle|[k]otlin' | head -25 || true
+                    echo "Recent Gradle output:"
+                    tail -30 "$GRADLE_LOG" || true
+                    echo "==========================================================="
+                  fi
+                done
+              ) &
+              HEARTBEAT_PID=$!
+
+              wait "$GRADLE_PIPE_PID"
+              GRADLE_STATUS=$?
+              kill "$HEARTBEAT_PID" 2>/dev/null || true
+              wait "$HEARTBEAT_PID" 2>/dev/null || true
+              set -e
+
+              if [ "$GRADLE_STATUS" -ne 0 ]; then
+                echo "Android Gradle release build failed with exit code $GRADLE_STATUS." >&2
+                echo "Last 200 Gradle log lines:" >&2
+                tail -200 "$GRADLE_LOG" >&2 || true
+                exit "$GRADLE_STATUS"
+              fi
+
               AAB="$(find app/build/outputs/bundle/release -name '*.aab' | head -1)"
               test -n "$AAB"
               cp "$AAB" "$(Build.ArtifactStagingDirectory)/TheOutHaven.aab"
