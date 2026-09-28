@@ -1,0 +1,94 @@
+name: Azure DevOps mobile bootstrap
+
+on:
+  workflow_run:
+    workflows: ['AWS Credential Vault runtime sync']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-devops-mobile-bootstrap-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  MOBILE_SIGNING_SECRET_ID: /theouthaven/credential-vault/production/mobile
+
+jobs:
+  bootstrap:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS access to Admin Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Check whether Mobile Release Signing is complete
+        id: state
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/mobile-vault-state.json"
+          if ! aws secretsmanager get-secret-value             --secret-id "$MOBILE_SIGNING_SECRET_ID"             --query SecretString --output text > "$WORK" 2>/dev/null; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Mobile Release Signing is not configured yet; Azure DevOps bootstrap skipped."
+            exit 0
+          fi
+          if jq -e '
+            (.azureDevOpsOrg | length > 0) and
+            (.azureDevOpsProject | length > 0) and
+            (.azureDevOpsPat | length > 0) and
+            (.iosCertificateP12Base64 | length > 0) and
+            (.iosCertificatePassword | length > 0) and
+            (.iosProvisioningProfileBase64 | length > 0) and
+            (.iosTeamId | length > 0) and
+            (.appStoreConnectKeyId | length > 0) and
+            (.appStoreConnectIssuerId | length > 0) and
+            (.appStoreConnectPrivateKey | length > 0) and
+            (.appStoreConnectAppId | length > 0) and
+            (.androidKeystoreBase64 | length > 0) and
+            (.androidKeystorePassword | length > 0) and
+            (.androidKeyAlias | length > 0) and
+            (.androidKeyPassword | length > 0) and
+            (.googlePlayServiceAccountJson | length > 0)
+          ' "$WORK" >/dev/null; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Mobile Release Signing exists but is incomplete; Azure DevOps bootstrap skipped."
+          fi
+          rm -f "$WORK"
+
+      - name: Synchronize Azure DevOps mobile release configuration
+        if: steps.state.outputs.configured == 'true'
+        run: bash scripts/azure-devops-mobile-bootstrap.sh
+
+      - name: Summary
+        run: |
+          {
+            echo "## Azure DevOps mobile bootstrap"
+            echo
+            if [ "${{ steps.state.outputs.configured }}" = "true" ]; then
+              echo "- Credential source: Admin Credential Vault"
+              echo "- Azure DevOps Secure Files: synchronized"
+              echo "- Variable group: theouthaven-mobile-production"
+              echo "- Pipeline: TheOutHaven Mobile Production"
+            else
+              echo "- Mobile Release Signing is not complete yet."
+              echo "- No Azure DevOps resources were changed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
