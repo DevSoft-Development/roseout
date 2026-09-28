@@ -96,9 +96,40 @@ stages:
               test -n "$WORKSPACE"
               SCHEME="$(basename "$WORKSPACE" .xcworkspace)"
               ARCHIVE="$(Build.ArtifactStagingDirectory)/TheOutHaven.xcarchive"
-              PROFILE_UUID="$(installProvisioningProfile.provisioningProfileUuid)"
+              PROFILE_UUID="$(APPLE_PROV_PROFILE_UUID)"
+              SIGNING_IDENTITY="$(APPLE_CERTIFICATE_SIGNING_IDENTITY)"
 
-              xcodebuild                 -workspace "$WORKSPACE"                 -scheme "$SCHEME"                 -configuration Release                 -archivePath "$ARCHIVE"                 -destination 'generic/platform=iOS'                 DEVELOPMENT_TEAM="$(IOS_TEAM_ID)"                 CODE_SIGN_STYLE=Manual                 PROVISIONING_PROFILE="$PROFILE_UUID"                 CURRENT_PROJECT_VERSION="$(Build.BuildId)"                 MARKETING_VERSION="$(appVersion)"                 clean archive
+              echo "Using iOS bundle identifier: com.theouthaven.app"
+              echo "Using provisioning profile UUID: $PROFILE_UUID"
+              echo "Using signing identity: $SIGNING_IDENTITY"
+              security find-identity -v -p codesigning || true
+              xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release -showBuildSettings \
+                | grep -E 'PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING_PROFILE' \
+                | sed -E 's/(PROVISIONING_PROFILE_SPECIFIER|PROVISIONING_PROFILE) = .*/\\1 = <configured>/' || true
+
+              set +e
+              xcodebuild \
+                -workspace "$WORKSPACE" \
+                -scheme "$SCHEME" \
+                -configuration Release \
+                -archivePath "$ARCHIVE" \
+                -destination 'generic/platform=iOS' \
+                DEVELOPMENT_TEAM="$(IOS_TEAM_ID)" \
+                CODE_SIGN_STYLE=Manual \
+                CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+                PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+                PRODUCT_BUNDLE_IDENTIFIER="com.theouthaven.app" \
+                CURRENT_PROJECT_VERSION="$(Build.BuildId)" \
+                MARKETING_VERSION="$(appVersion)" \
+                clean archive 2>&1 | tee "$(Build.ArtifactStagingDirectory)/xcode-archive.log"
+              XCODE_STATUS=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$XCODE_STATUS" -ne 0 ]; then
+                echo "Xcode archive failed. Relevant signing/build errors:" >&2
+                grep -Ei 'error:|provision|signing|certificate|profile|entitlement|bundle identifier' "$(Build.ArtifactStagingDirectory)/xcode-archive.log" | tail -120 >&2 || true
+                exit "$XCODE_STATUS"
+              fi
 
               cat > "$(Build.ArtifactStagingDirectory)/ExportOptions.plist" <<PLIST
               <?xml version="1.0" encoding="UTF-8"?>
