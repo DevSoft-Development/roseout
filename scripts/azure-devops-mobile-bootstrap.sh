@@ -191,6 +191,26 @@ GITHUB_REPOSITORY="DevSoft-Development/roseout"
 GITHUB_REPOSITORY_URL="https://github.com/DevSoft-Development/roseout"
 GITHUB_API_URL="https://api.github.com/repos/DevSoft-Development/roseout"
 
+QUEUES_URL="$API_ROOT/$PROJECT_ID/_apis/distributedtask/queues?api-version=7.1"
+QUEUES_BODY="$WORK/agent-queues-response.json"
+QUEUES_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$QUEUES_BODY" -w '%{http_code}' "$QUEUES_URL")"
+if [ "$QUEUES_STATUS" -lt 200 ] || [ "$QUEUES_STATUS" -ge 300 ]; then
+  echo "Azure DevOps agent-queue lookup failed with HTTP $QUEUES_STATUS." >&2
+  jq -c '{message, typeName, errorCode, eventId}' "$QUEUES_BODY" 2>/dev/null >&2 || cat "$QUEUES_BODY" >&2
+  exit 1
+fi
+
+AZURE_PIPELINES_QUEUE_ID="$(jq -r '
+  [.value[]? | select((.name == "Azure Pipelines") or (.pool.name == "Azure Pipelines") or (.pool.isHosted == true))]
+  | sort_by(if .name == "Azure Pipelines" then 0 else 1 end)
+  | .[0].id // empty
+' "$QUEUES_BODY")"
+if [ -z "$AZURE_PIPELINES_QUEUE_ID" ]; then
+  echo "No Microsoft-hosted Azure Pipelines queue is connected to project $PROJECT_NAME." >&2
+  exit 1
+fi
+echo "Azure DevOps hosted queue selected: $AZURE_PIPELINES_QUEUE_ID"
+
 DEFINITION_LIST_URL="$API_ROOT/$PROJECT_ID/_apis/build/definitions?name=$(urlencode "$PIPELINE_NAME")&path=$(urlencode "$PIPELINE_FOLDER")&api-version=7.1"
 DEFINITION_LIST_BODY="$WORK/build-definitions-response.json"
 DEFINITION_LIST_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -o "$DEFINITION_LIST_BODY" -w '%{http_code}' "$DEFINITION_LIST_URL")"
@@ -211,9 +231,11 @@ if [ -z "$PIPELINE_ID" ]; then
       --arg repoUrl "$GITHUB_REPOSITORY_URL" \
       --arg apiUrl "$GITHUB_API_URL" \
       --arg connectionId "$AZDO_GITHUB_SERVICE_CONNECTION_ID" \
+      --argjson queueId "$AZURE_PIPELINES_QUEUE_ID" \
       '{
         name: $name,
         path: $path,
+        queue: { id: $queueId },
         process: {
           type: 2,
           yamlFilename: $yaml
@@ -246,6 +268,27 @@ if [ -z "$PIPELINE_ID" ]; then
   echo "Created Azure DevOps pipeline: $PIPELINE_NAME ($PIPELINE_ID)"
 else
   echo "Azure DevOps pipeline already exists: $PIPELINE_NAME ($PIPELINE_ID)"
+
+  EXISTING_DEFINITION_FILE="$WORK/build-definition-existing.json"
+  api "$API_ROOT/$PROJECT_ID/_apis/build/definitions/$PIPELINE_ID?api-version=7.1" > "$EXISTING_DEFINITION_FILE"
+  EXISTING_QUEUE_ID="$(jq -r '.queue.id // empty' "$EXISTING_DEFINITION_FILE")"
+
+  if [ "$EXISTING_QUEUE_ID" != "$AZURE_PIPELINES_QUEUE_ID" ]; then
+    UPDATED_DEFINITION_FILE="$WORK/build-definition-updated.json"
+    jq --argjson queueId "$AZURE_PIPELINES_QUEUE_ID" '.queue = {id: $queueId}' "$EXISTING_DEFINITION_FILE" > "$UPDATED_DEFINITION_FILE"
+
+    DEFINITION_UPDATE_BODY_FILE="$WORK/build-definition-update-response.json"
+    DEFINITION_UPDATE_STATUS="$(curl --silent --show-error -H "$AUTH_HEADER" -H "$JSON_HEADER" -X PUT --data-binary "@$UPDATED_DEFINITION_FILE" -o "$DEFINITION_UPDATE_BODY_FILE" -w '%{http_code}' "$API_ROOT/$PROJECT_ID/_apis/build/definitions/$PIPELINE_ID?api-version=7.1")"
+    if [ "$DEFINITION_UPDATE_STATUS" -lt 200 ] || [ "$DEFINITION_UPDATE_STATUS" -ge 300 ]; then
+      echo "Azure DevOps build-definition queue repair failed with HTTP $DEFINITION_UPDATE_STATUS." >&2
+      jq -c '{message, typeName, errorCode, eventId}' "$DEFINITION_UPDATE_BODY_FILE" 2>/dev/null >&2 || cat "$DEFINITION_UPDATE_BODY_FILE" >&2
+      exit 1
+    fi
+
+    echo "Attached Azure Pipelines hosted queue to existing pipeline: $PIPELINE_NAME ($PIPELINE_ID)"
+  else
+    echo "Azure DevOps pipeline already has the hosted queue: $PIPELINE_NAME ($PIPELINE_ID)"
+  fi
 fi
 
 VERIFY_GROUP="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variablegroups?groupName=$(urlencode "$GROUP_NAME")&api-version=7.1")"
@@ -263,7 +306,7 @@ for name in   "$IOS_CERTIFICATE_SECURE_FILE"   "$IOS_PROFILE_SECURE_FILE"   "$AP
   printf '%s' "$response" | jq -e --arg name "$name" 'any(.value[]?; .name == $name)' >/dev/null
 done
 
-api "$API_ROOT/$PROJECT_ID/_apis/build/definitions/$PIPELINE_ID?api-version=7.1" | jq -e --arg name "$PIPELINE_NAME" '.name == $name and .process.type == 2 and .process.yamlFilename == "azure-pipelines-mobile.yml"' >/dev/null
+api "$API_ROOT/$PROJECT_ID/_apis/build/definitions/$PIPELINE_ID?api-version=7.1" | jq -e --arg name "$PIPELINE_NAME" --argjson queueId "$AZURE_PIPELINES_QUEUE_ID" '.name == $name and .queue.id == $queueId and .process.type == 2 and .process.yamlFilename == "azure-pipelines-mobile.yml"' >/dev/null
 
 echo "Azure DevOps mobile release prerequisites are configured from the Admin Credential Vault."
 echo "Pipeline ID: $PIPELINE_ID"
