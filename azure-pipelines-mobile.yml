@@ -186,30 +186,86 @@ stages:
                 grep -E '(^| )[[:space:]]*(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER|PROVISIONING_PROFILE) =' || true
             displayName: Validate iOS distribution signing inputs
 
-          - task: Xcode@5
-            displayName: Archive and export signed IPA
-            inputs:
-              actions: 'clean archive'
-              configuration: 'Release'
-              sdk: 'iphoneos'
-              xcWorkspacePath: 'mobile/ios/TheOutHaven.xcworkspace'
-              scheme: 'TheOutHaven'
-              xcodeVersion: 'default'
-              packageApp: true
-              archivePath: '$(Build.ArtifactStagingDirectory)/TheOutHaven.xcarchive'
-              exportPath: '$(Build.ArtifactStagingDirectory)/ios-export'
-              exportOptions: 'specify'
-              exportMethod: 'app-store'
-              exportTeamId: '$(IOS_TEAM_ID)'
-              signingOption: 'manual'
-              signingIdentity: '$(APPLE_CERTIFICATE_SIGNING_IDENTITY)'
-              provisioningProfileUuid: '$(APPLE_PROV_PROFILE_UUID)'
-              args: 'CURRENT_PROJECT_VERSION=$(Build.BuildId) MARKETING_VERSION=$(appVersion)'
-              useXcpretty: false
+          - script: |
+              set -euo pipefail
+              cd mobile
+
+              ARCHIVE="$(Build.ArtifactStagingDirectory)/TheOutHaven.xcarchive"
+              EXPORT_DIR="$(Build.ArtifactStagingDirectory)/ios-export"
+              ARCHIVE_LOG="$(Build.ArtifactStagingDirectory)/xcode-archive.log"
+              EXPORT_LOG="$(Build.ArtifactStagingDirectory)/xcode-export.log"
+
+              rm -rf "$ARCHIVE" "$EXPORT_DIR"
+              mkdir -p "$EXPORT_DIR"
+
+              set +e
+              xcodebuild \
+                -workspace ios/TheOutHaven.xcworkspace \
+                -scheme TheOutHaven \
+                -configuration Release \
+                -sdk iphoneos \
+                -destination 'generic/platform=iOS' \
+                -archivePath "$ARCHIVE" \
+                DEVELOPMENT_TEAM="$(IOS_TEAM_ID)" \
+                CODE_SIGN_STYLE=Manual \
+                CODE_SIGN_IDENTITY="$(APPLE_CERTIFICATE_SIGNING_IDENTITY)" \
+                PROVISIONING_PROFILE="$(APPLE_PROV_PROFILE_UUID)" \
+                CURRENT_PROJECT_VERSION="$(Build.BuildId)" \
+                MARKETING_VERSION="$(appVersion)" \
+                clean archive 2>&1 | tee "$ARCHIVE_LOG"
+              XCODE_STATUS=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$XCODE_STATUS" -ne 0 ]; then
+                echo "Xcode archive failed. Relevant build/signing errors:" >&2
+                grep -Ei '(^|[[:space:]])(error:|fatal error:)|provision|signing|certificate|entitlement|bundle identifier|PhaseScriptExecution|Command .* failed' "$ARCHIVE_LOG" | tail -200 >&2 || true
+                exit "$XCODE_STATUS"
+              fi
+
+              cat > "$(Build.ArtifactStagingDirectory)/ExportOptions.plist" <<PLIST
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+              <plist version="1.0">
+              <dict>
+                <key>method</key>
+                <string>app-store-connect</string>
+                <key>signingStyle</key>
+                <string>manual</string>
+                <key>teamID</key>
+                <string>$(IOS_TEAM_ID)</string>
+                <key>provisioningProfiles</key>
+                <dict>
+                  <key>com.theouthaven.app</key>
+                  <string>$(APPLE_PROV_PROFILE_UUID)</string>
+                </dict>
+                <key>stripSwiftSymbols</key>
+                <true/>
+                <key>uploadSymbols</key>
+                <true/>
+              </dict>
+              </plist>
+              PLIST
+
+              set +e
+              xcodebuild \
+                -exportArchive \
+                -archivePath "$ARCHIVE" \
+                -exportPath "$EXPORT_DIR" \
+                -exportOptionsPlist "$(Build.ArtifactStagingDirectory)/ExportOptions.plist" \
+                2>&1 | tee "$EXPORT_LOG"
+              EXPORT_STATUS=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$EXPORT_STATUS" -ne 0 ]; then
+                echo "Xcode export failed. Relevant export/signing errors:" >&2
+                grep -Ei 'error:|provision|signing|certificate|profile|entitlement|bundle identifier' "$EXPORT_LOG" | tail -200 >&2 || true
+                exit "$EXPORT_STATUS"
+              fi
             env:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
+            displayName: Archive and export signed IPA with diagnostics
 
           - script: |
               set -euo pipefail
