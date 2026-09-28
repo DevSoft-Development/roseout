@@ -303,9 +303,43 @@ Resources:
             ManagedRuleGroupStatement:
               VendorName: AWS
               Name: AWSManagedRulesCommonRuleSet
+              RuleActionOverrides:
+                - Name: SizeRestrictions_BODY
+                  ActionToUse:
+                    Count: {}
           VisibilityConfig:
             CloudWatchMetricsEnabled: true
             MetricName: !Sub 'toh-${Environment}-common-rules'
+            SampledRequestsEnabled: true
+        - Name: SizeRestrictionsBodyExceptAdminCredentialVault
+          Priority: 15
+          Action:
+            Block: {}
+          Statement:
+            AndStatement:
+              Statements:
+                - NotStatement:
+                    Statement:
+                      ByteMatchStatement:
+                        FieldToMatch:
+                          UriPath: {}
+                        PositionalConstraint: EXACTLY
+                        SearchString: /api/admin/settings/credentials
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE
+                - SizeConstraintStatement:
+                    FieldToMatch:
+                      Body:
+                        OversizeHandling: MATCH
+                    ComparisonOperator: GT
+                    Size: 8192
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub 'toh-${Environment}-body-size-except-admin-credentials'
             SampledRequestsEnabled: true
         - Name: AWSManagedRulesKnownBadInputsRuleSet
           Priority: 20

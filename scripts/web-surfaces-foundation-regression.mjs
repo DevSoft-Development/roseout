@@ -89,3 +89,13 @@ if (/route53.*change-resource-record-sets|cloudfront update-distribution/i.test(
 }
 
 console.log("web-surfaces-foundation-regression: PASS");
+
+for (const token of [
+  "RuleActionOverrides:",
+  "Name: SizeRestrictions_BODY",
+  "Name: SizeRestrictionsBodyExceptAdminCredentialVault",
+  "SearchString: /api/admin/settings/credentials",
+  "Size: 8192",
+]) {
+  if (!source.includes(token)) throw new Error(`Missing Admin credential WAF upload contract: ${token}`);
+}
