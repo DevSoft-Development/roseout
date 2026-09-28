@@ -94,6 +94,66 @@ stages:
               SENTRY_PROJECT: $(SENTRY_PROJECT)
             displayName: Generate iOS native project
 
+          - script: |
+              set -euo pipefail
+
+              PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/$(APPLE_PROV_PROFILE_UUID).mobileprovision"
+              test -f "$PROFILE_PATH" || {
+                echo "Provisioning profile was not installed at expected UUID path: $PROFILE_PATH" >&2
+                exit 1
+              }
+
+              PROFILE_PLIST="$(Agent.TempDirectory)/theouthaven-profile.plist"
+              security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+
+              PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+              PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")"
+              PROFILE_TEAM="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
+              PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
+              PROFILE_GET_TASK_ALLOW="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$PROFILE_PLIST" 2>/dev/null || echo false)"
+              PROFILE_EXPIRATION="$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$PROFILE_PLIST")"
+
+              echo "Provisioning profile: $PROFILE_NAME"
+              echo "Provisioning UUID: $PROFILE_UUID"
+              echo "Provisioning team: $PROFILE_TEAM"
+              echo "Provisioning app identifier: $PROFILE_APP_ID"
+              echo "Provisioning expiration: $PROFILE_EXPIRATION"
+              echo "Provisioning get-task-allow: $PROFILE_GET_TASK_ALLOW"
+
+              test "$PROFILE_UUID" = "$(APPLE_PROV_PROFILE_UUID)" || {
+                echo "Installed provisioning profile UUID does not match Azure task output." >&2
+                exit 1
+              }
+              test "$PROFILE_TEAM" = "$(IOS_TEAM_ID)" || {
+                echo "Provisioning profile team '$PROFILE_TEAM' does not match IOS_TEAM_ID '$(IOS_TEAM_ID)'." >&2
+                exit 1
+              }
+              test "$PROFILE_APP_ID" = "$(IOS_TEAM_ID).com.theouthaven.app" || {
+                echo "Provisioning profile app identifier '$PROFILE_APP_ID' does not match $(IOS_TEAM_ID).com.theouthaven.app." >&2
+                exit 1
+              }
+              test "$PROFILE_GET_TASK_ALLOW" = "false" || {
+                echo "Provisioning profile is not an App Store distribution profile (get-task-allow must be false)." >&2
+                exit 1
+              }
+
+              if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.associated-domains' "$PROFILE_PLIST" >/dev/null 2>&1; then
+                echo "Provisioning profile is missing the Associated Domains entitlement required by app.json (applinks:outhvn.com)." >&2
+                exit 1
+              fi
+
+              echo "Installed code-signing identities:"
+              security find-identity -v -p codesigning
+              security find-identity -v -p codesigning | grep -F "$(APPLE_CERTIFICATE_SIGNING_IDENTITY)" >/dev/null || {
+                echo "Installed certificate identity does not match APPLE_CERTIFICATE_SIGNING_IDENTITY." >&2
+                exit 1
+              }
+
+              cd mobile
+              xcodebuild -workspace ios/TheOutHaven.xcworkspace -scheme TheOutHaven -configuration Release -showBuildSettings |
+                grep -E '(^| )[[:space:]]*(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|CODE_SIGN_IDENTITY|PROVISIONING_PROFILE_SPECIFIER|PROVISIONING_PROFILE) =' || true
+            displayName: Validate iOS distribution signing inputs
+
           - task: Xcode@5
             displayName: Archive and export signed IPA
             inputs:
