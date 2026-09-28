@@ -59,6 +59,7 @@ function safeError(error: unknown) {
     "microsoft_credential_test_failed",
     "mobile_credential_test_failed",
     "credential_payload_too_large",
+    "credential_vault_runtime_sync_failed",
   ]);
   return allowed.has(code) ? code : "credential_vault_request_failed";
 }
@@ -117,6 +118,9 @@ export async function PUT(request: NextRequest) {
   try {
     const result = await updateCredentialVaultProvider({ provider, environment, values, clearFields });
     const runtimeSync = await requestCredentialVaultRuntimeSync(environment);
+    if (provider === "mobile" && !runtimeSync.triggered) {
+      throw new Error("credential_vault_runtime_sync_failed");
+    }
     await logAdminAuditEvent({
       actor: adminUser,
       action: "credential_vault.updated",
