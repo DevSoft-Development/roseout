@@ -45,6 +45,7 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+              npx expo install --fix --npm
               npm run typecheck
               npx expo config --type public >/dev/null
               npx expo install --check
@@ -103,6 +104,7 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+              npx expo install --fix --npm
               for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
                 value="${!name:-}"
                 test -n "$value" || { echo "$name is missing" >&2; exit 1; }
@@ -402,6 +404,7 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+              npx expo install --fix --npm
               for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
                 value="${!name:-}"
                 test -n "$value" || { echo "$name is missing" >&2; exit 1; }
