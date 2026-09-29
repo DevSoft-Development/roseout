@@ -17,12 +17,6 @@ export default function TheOutHavenFooter() {
                 height={120}
                 className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
               />
-              <span
-                aria-hidden="true"
-                className="mt-1 whitespace-nowrap text-[6px] font-black uppercase leading-none tracking-[0.08em] text-white/70"
-              >
-                ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
-              </span>
             </span>
           </Link>
 
