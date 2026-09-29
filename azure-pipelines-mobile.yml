@@ -551,7 +551,6 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
-
               npx expo prebuild --clean --platform android --no-install
 
               python3 - <<'PY'
