@@ -139,7 +139,7 @@ jobs:
       - name: Require healthy production DR before deployment
         if: steps.config.outputs.target_env == 'production'
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: bash scripts/dr/require-production-dr-healthy.sh
 
       - name: Configure AWS credentials
