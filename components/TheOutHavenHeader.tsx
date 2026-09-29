@@ -167,15 +167,25 @@ export default function TheOutHavenHeader() {
           aria-label="TheOutHaven home"
           style={{ width: scrolled ? 175 : 210 }}
         >
-          <Image
-            src="/toh_logo_wordmark_dark.png"
-            alt="TheOutHaven"
-            width={900}
-            height={120}
-            priority
-            unoptimized
-            style={{ display: "block", width: "100%", height: "auto", maxWidth: "100%" }}
-          />
+          <span
+            aria-hidden="true"
+            style={{
+              display: "block",
+              width: "100%",
+              height: scrolled ? 19 : 23,
+              overflow: "hidden",
+            }}
+          >
+            <Image
+              src="/toh_logo_wordmark_dark.png"
+              alt="TheOutHaven"
+              width={900}
+              height={120}
+              priority
+              unoptimized
+              style={{ display: "block", width: "100%", height: "auto", maxWidth: "100%" }}
+            />
+          </span>
           <span
             aria-hidden="true"
             className="mt-0.5 whitespace-nowrap font-black uppercase text-white/80"

@@ -14,7 +14,9 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.72 : 1 }]}
     >
       <View style={styles.brandLockup}>
-        <Image source={{ uri: OFFICIAL_LOGO_URI }} style={compact ? styles.logoCompact : styles.logo} resizeMode="contain" />
+        <View style={compact ? styles.logoMaskCompact : styles.logoMask}>
+          <Image source={{ uri: OFFICIAL_LOGO_URI }} style={compact ? styles.logoCompact : styles.logo} resizeMode="contain" />
+        </View>
         <Text
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
@@ -33,11 +35,13 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
 const styles = StyleSheet.create({
   row: { alignItems: "center", alignSelf: "flex-start", flexShrink: 1 },
   brandLockup: { alignItems: "center", flexShrink: 1 },
-  logo: { width: 180, height: 55, flexShrink: 0 },
-  logoCompact: { width: 148, height: 45, flexShrink: 0 },
+  logoMask: { width: 180, height: 20, overflow: "hidden" },
+  logoMaskCompact: { width: 148, height: 16, overflow: "hidden" },
+  logo: { width: 180, height: 24, flexShrink: 0 },
+  logoCompact: { width: 148, height: 20, flexShrink: 0 },
   tagline: {
     width: 205,
-    marginTop: -2,
+    marginTop: 2,
     color: "rgba(255,255,255,0.82)",
     fontSize: 6,
     fontWeight: "800",
