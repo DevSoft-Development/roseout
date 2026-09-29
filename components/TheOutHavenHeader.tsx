@@ -163,9 +163,9 @@ export default function TheOutHavenHeader() {
       <div className={shellClass}>
         <Link
           href="/"
-          className="flex min-w-0 shrink-0 flex-col items-center justify-center"
+          className="flex min-w-0 shrink-0 items-center justify-center"
           aria-label="TheOutHaven home"
-          style={{ width: scrolled ? 175 : 210 }}
+          style={{ width: scrolled ? 180 : 220 }}
         >
           <Image
             src="/toh_logo_wordmark_dark.png"
