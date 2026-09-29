@@ -9,12 +9,17 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: production-dr-health-gate
   cancel-in-progress: false
 
 env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  CREDENTIAL_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  LEGACY_RUNTIME_SECRET: /theouthaven/production/edge-runtime/env
   VIRGINIA_REF: ftdsltatyqhtllyyefzp
   OREGON_REF: hnhbzynoyrhjndefbwkh
   EXPECTED_PUBLICATION: theouthaven_dr_publication
@@ -30,7 +35,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
       - name: Require production DR health
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: bash scripts/dr/require-production-dr-healthy.sh
+        run: |
+          set -euo pipefail
+
+          TOKEN=""
+          if VAULT_JSON="$(aws secretsmanager get-secret-value --secret-id "$CREDENTIAL_VAULT_SECRET" --query SecretString --output text 2>/dev/null)"; then
+            TOKEN="$(printf '%s' "$VAULT_JSON" | jq -r '.managementAccessToken // empty')"
+          fi
+
+          # Transitional recovery path while the Credential Vault runtime sync adopts
+          # the legacy management token into the Supabase provider record.
+          if [ -z "$TOKEN" ]; then
+            LEGACY_JSON="$(aws secretsmanager get-secret-value --secret-id "$LEGACY_RUNTIME_SECRET" --query SecretString --output text)"
+            TOKEN="$(printf '%s' "$LEGACY_JSON" | jq -r '.SUPABASE_ACCESS_TOKEN // empty')"
+          fi
+
+          test -n "$TOKEN" || {
+            echo "Supabase management access token is missing from Credential Vault and legacy runtime." >&2
+            exit 1
+          }
+
+          echo "::add-mask::$TOKEN"
+          export SUPABASE_ACCESS_TOKEN="$TOKEN"
+          bash scripts/dr/require-production-dr-healthy.sh
