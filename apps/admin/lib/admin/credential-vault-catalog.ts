@@ -51,7 +51,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "apiKey", label: "API key", secret: true }, { key: "clientId", label: "OAuth client ID" }, { key: "clientSecret", label: "OAuth client secret", secret: true },
   ] },
   { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL and server-side credentials.", fields: [
-    { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" }, { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true }, { key: "serviceRoleKey", label: "Service role key", secret: true, multiline: true },
+    { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" }, { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true }, { key: "serviceRoleKey", label: "Service role key", secret: true, multiline: true }, { key: "managementAccessToken", label: "Management API access token", secret: true, multiline: true },
   ] },
   { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
     { key: "token", label: "Runtime sync access token", secret: true },
