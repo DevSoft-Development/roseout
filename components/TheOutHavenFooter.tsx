@@ -13,8 +13,8 @@ export default function TheOutHavenFooter() {
               <Image
                 src="/toh_logo_wordmark_dark.png"
                 alt="TheOutHaven"
-                width={900}
-                height={120}
+                width={1200}
+                height={372}
                 className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
               />
             </span>
