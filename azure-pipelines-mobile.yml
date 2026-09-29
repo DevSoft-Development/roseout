@@ -411,6 +411,7 @@ stages:
                 ca-certificates \
                 curl \
                 git \
+                imagemagick \
                 python3 \
                 unzip \
                 zip \
@@ -551,6 +552,19 @@ stages:
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+
+              WORDMARK_ASSET="assets/logo-wordmark.png"
+              WORDMARK_TMP="$(mktemp --suffix=.png)"
+              test -f "$WORDMARK_ASSET"
+              convert "$WORDMARK_ASSET" \
+                -strip \
+                -alpha on \
+                PNG32:"$WORDMARK_TMP"
+              identify "$WORDMARK_TMP"
+              test "$(identify -format '%m' "$WORDMARK_TMP")" = "PNG"
+              test "$(identify -format '%wx%h' "$WORDMARK_TMP")" = "1200x372"
+              mv "$WORDMARK_TMP" "$WORDMARK_ASSET"
+
               npx expo prebuild --clean --platform android --no-install
 
               python3 - <<'PY'
