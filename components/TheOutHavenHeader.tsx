@@ -170,8 +170,8 @@ export default function TheOutHavenHeader() {
           <Image
             src="/toh_logo_wordmark_dark.png"
             alt="TheOutHaven"
-            width={900}
-            height={120}
+            width={1200}
+            height={372}
             priority
             unoptimized
             style={{ display: "block", width: "100%", height: "auto", maxWidth: "100%" }}
