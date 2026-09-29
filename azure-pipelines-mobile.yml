@@ -28,7 +28,7 @@ variables:
   - name: androidArtifactName
     value: 'theouthaven-android'
   - name: storeSubmissionEnabled
-    value: 'false'
+    value: 'true'
 
 stages:
   - stage: Validate
