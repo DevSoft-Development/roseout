@@ -409,6 +409,34 @@ stages:
 
           - script: |
               set -euo pipefail
+
+              echo "Disk usage before cleanup:"
+              df -h
+              echo "Largest preinstalled toolchain directories before cleanup:"
+              sudo du -sh /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/share/powershell 2>/dev/null || true
+
+              # Azure ubuntu-latest includes large SDKs/toolchains that this Android build does not use.
+              # Keep the Android SDK/NDK, Java, Node, and build workspace intact.
+              sudo rm -rf /usr/share/dotnet
+              sudo rm -rf /opt/ghc
+              sudo rm -rf /usr/local/.ghcup
+              sudo rm -rf /usr/local/share/powershell
+              sudo rm -rf /var/lib/apt/lists/*
+              sudo apt-get clean || true
+              rm -rf "$HOME/.cache/pip" "$HOME/.cache/go-build" 2>/dev/null || true
+
+              echo "Disk usage after cleanup:"
+              df -h
+              FREE_KB="$(df -Pk "$(Build.SourcesDirectory)" | awk 'NR==2 {print $4}')"
+              MIN_FREE_KB=$((12 * 1024 * 1024))
+              if [ "$FREE_KB" -lt "$MIN_FREE_KB" ]; then
+                echo "Insufficient free disk after cleanup: $FREE_KB KB available; require at least $MIN_FREE_KB KB." >&2
+                exit 1
+              fi
+            displayName: Reclaim Android runner disk space
+
+          - script: |
+              set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
               for name in SENTRY_AUTH_TOKEN SENTRY_ORG SENTRY_PROJECT; do
@@ -532,6 +560,8 @@ stages:
               ./gradlew --version
               echo "Gradle properties:"
               grep -E '^(org\.gradle\.(jvmargs|workers\.max|parallel))=' gradle.properties || true
+              echo "Disk usage immediately before bundleRelease:"
+              df -h
 
               GRADLE_LOG="$(Build.ArtifactStagingDirectory)/android-gradle-release.log"
               rm -f "$GRADLE_LOG"
