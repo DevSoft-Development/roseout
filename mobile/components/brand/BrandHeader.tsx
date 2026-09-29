@@ -1,7 +1,6 @@
 import { Image, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-
-const OFFICIAL_LOGO = require("../../assets/logo-wordmark.png");
+import OFFICIAL_LOGO from "../../assets/logo-wordmark.png";
 
 export function BrandHeader({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
