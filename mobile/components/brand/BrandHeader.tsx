@@ -1,6 +1,6 @@
 import { Image, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import OFFICIAL_LOGO from "../../assets/app-icon.png";
+import OFFICIAL_LOGO from "../../assets/logo.png";
 
 export function BrandHeader({ compact = false }: { compact?: boolean }) {
   const router = useRouter();
@@ -22,6 +22,6 @@ export function BrandHeader({ compact = false }: { compact?: boolean }) {
 const styles = StyleSheet.create({
   row: { alignItems: "center", alignSelf: "flex-start", flexShrink: 1 },
   brandLockup: { alignItems: "center", flexShrink: 1 },
-  logo: { width: 52, height: 52, flexShrink: 0 },
-  logoCompact: { width: 42, height: 42, flexShrink: 0 },
+  logo: { width: 196, height: 65, flexShrink: 0 },
+  logoCompact: { width: 158, height: 53, flexShrink: 0 },
 });
