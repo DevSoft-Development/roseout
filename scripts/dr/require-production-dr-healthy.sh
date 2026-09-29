@@ -28,8 +28,6 @@ query_ref_db() {
 
   if [ "$ref" = "$OREGON_REF" ]; then
     cat > "$wrapper" <<SQL
-\\pset tuples_only on
-\\pset format unaligned
 select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
 from (
 $sql
@@ -37,8 +35,6 @@ $sql
 SQL
   elif [ "$ref" = "$VIRGINIA_REF" ]; then
     cat > "$wrapper" <<SQL
-\\pset tuples_only on
-\\pset format unaligned
 select remote.payload
 from pg_subscription s
 cross join lateral extensions.dblink(
@@ -57,7 +53,7 @@ SQL
     exit 1
   fi
 
-  psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -f "$wrapper" > "$out"
+  psql "$SUPABASE_DB_URL" -X -q -A -t -v ON_ERROR_STOP=1 -f "$wrapper" > "$out"
   jq -e 'type == "array"' "$out" >/dev/null
 }
 
