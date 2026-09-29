@@ -66,12 +66,21 @@ stages:
               XCODE_VERSION="$(xcodebuild -version | awk '/Xcode/{print $2}')"
               python3 - "$XCODE_VERSION" <<'PY'
               import sys
-              from packaging.version import Version
-              current = Version(sys.argv[1])
-              minimum = Version("26.4")
+
+              def parse_version(value):
+                  parts = value.split(".")
+                  try:
+                      return tuple(int(part) for part in parts)
+                  except ValueError as exc:
+                      raise SystemExit(f"Unable to parse Xcode version: {value}") from exc
+
+              current = parse_version(sys.argv[1])
+              minimum = parse_version("26.4")
               if current < minimum:
-                  raise SystemExit(f"Expo SDK 57 requires Xcode {minimum}+; runner has Xcode {current}")
-              print(f"Xcode toolchain validated: {current}")
+                  raise SystemExit(
+                      f"Expo SDK 57 requires Xcode 26.4+; runner has Xcode {sys.argv[1]}"
+                  )
+              print(f"Xcode toolchain validated: {sys.argv[1]}")
               PY
             displayName: Validate Xcode 26.4+ toolchain
 
