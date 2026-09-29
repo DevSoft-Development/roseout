@@ -29,6 +29,10 @@ variables:
     value: 'theouthaven-android'
   - name: storeSubmissionEnabled
     value: 'false'
+  - name: npmCacheFolder
+    value: '$(Pipeline.Workspace)/.npm'
+  - name: gradleUserHome
+    value: '$(Pipeline.Workspace)/.gradle'
 
 stages:
   - stage: Validate
@@ -385,17 +389,82 @@ stages:
       - job: Android
         displayName: Build signed Android AAB
         pool:
-          vmImage: ubuntu-latest
+          name: theouthaven-android-build
         steps:
           - task: NodeTool@0
             inputs:
               versionSpec: $(nodeVersion)
 
-          - task: JavaToolInstaller@0
+          - script: |
+              set -euo pipefail
+
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends \
+                ca-certificates \
+                curl \
+                unzip \
+                openjdk-17-jdk
+
+              JAVA_HOME_VALUE="/usr/lib/jvm/java-17-openjdk-amd64"
+              test -x "$JAVA_HOME_VALUE/bin/java"
+              echo "##vso[task.setvariable variable=JAVA_HOME]$JAVA_HOME_VALUE"
+              echo "##vso[task.prependpath]$JAVA_HOME_VALUE/bin"
+
+              ANDROID_SDK_ROOT_VALUE="/opt/android-sdk"
+              sudo mkdir -p "$ANDROID_SDK_ROOT_VALUE"
+              sudo chown -R "$(id -u):$(id -g)" "$ANDROID_SDK_ROOT_VALUE"
+
+              CMDLINE_BIN="$ANDROID_SDK_ROOT_VALUE/cmdline-tools/latest/bin"
+              if [ ! -x "$CMDLINE_BIN/sdkmanager" ]; then
+                TMP_DIR="$(mktemp -d)"
+                curl -fsSL \
+                  "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+                  -o "$TMP_DIR/cmdline-tools.zip"
+                unzip -q "$TMP_DIR/cmdline-tools.zip" -d "$TMP_DIR"
+                mkdir -p "$ANDROID_SDK_ROOT_VALUE/cmdline-tools/latest"
+                mv "$TMP_DIR/cmdline-tools/"* "$ANDROID_SDK_ROOT_VALUE/cmdline-tools/latest/"
+                rm -rf "$TMP_DIR"
+              fi
+
+              export JAVA_HOME="$JAVA_HOME_VALUE"
+              export ANDROID_HOME="$ANDROID_SDK_ROOT_VALUE"
+              export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT_VALUE"
+              export PATH="$JAVA_HOME/bin:$CMDLINE_BIN:$ANDROID_SDK_ROOT_VALUE/platform-tools:$PATH"
+
+              yes | sdkmanager --licenses >/dev/null || true
+              sdkmanager \
+                "platform-tools" \
+                "platforms;android-35" \
+                "build-tools;35.0.0" \
+                "ndk;27.1.12297006" \
+                "cmake;3.22.1"
+
+              echo "##vso[task.setvariable variable=ANDROID_HOME]$ANDROID_SDK_ROOT_VALUE"
+              echo "##vso[task.setvariable variable=ANDROID_SDK_ROOT]$ANDROID_SDK_ROOT_VALUE"
+              echo "##vso[task.prependpath]$CMDLINE_BIN"
+              echo "##vso[task.prependpath]$ANDROID_SDK_ROOT_VALUE/platform-tools"
+
+              java -version
+              node --version
+              sdkmanager --version
+              df -h
+            displayName: Bootstrap Android build toolchain
+
+          - task: Cache@2
+            displayName: Restore npm download cache
             inputs:
-              versionSpec: '17'
-              jdkArchitectureOption: x64
-              jdkSourceOption: PreInstalled
+              key: 'npm | "$(Agent.OS)" | mobile/package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)"
+              path: $(npmCacheFolder)
+
+          - task: Cache@2
+            displayName: Restore Gradle dependency cache
+            inputs:
+              key: 'gradle | "$(Agent.OS)" | mobile/package-lock.json'
+              restoreKeys: |
+                gradle | "$(Agent.OS)"
+              path: $(gradleUserHome)
 
           - task: DownloadSecureFile@1
             name: androidKeystore
@@ -464,6 +533,7 @@ stages:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
+              npm_config_cache: $(npmCacheFolder)
             displayName: Validate Sentry CI credentials
 
           - script: |
@@ -549,6 +619,8 @@ stages:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
+              npm_config_cache: $(npmCacheFolder)
+              GRADLE_USER_HOME: $(gradleUserHome)
             displayName: Generate Android native project and production signing config
 
           - script: |
@@ -618,6 +690,7 @@ stages:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
+              GRADLE_USER_HOME: $(gradleUserHome)
             displayName: Build signed Android App Bundle
 
           - task: PublishPipelineArtifact@1
