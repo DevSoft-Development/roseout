@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN is required}"
-
 VIRGINIA_REF="${VIRGINIA_REF:-ftdsltatyqhtllyyefzp}"
 OREGON_REF="${OREGON_REF:-hnhbzynoyrhjndefbwkh}"
 PUBLICATION="${EXPECTED_PUBLICATION:-theouthaven_dr_publication}"
@@ -10,10 +8,65 @@ SUBSCRIPTION="${EXPECTED_SUBSCRIPTION:-theouthaven_va_to_or_dr}"
 SLOT="${EXPECTED_SLOT:-theouthaven_va_to_or_dr_slot}"
 MAX_LAG_BYTES="${MAX_DR_LAG_BYTES:-67108864}"
 
-query_ref() {
+query_ref_api() {
   local ref="$1" sql="$2" out="$3"
+  : "${SUPABASE_ACCESS_TOKEN:?SUPABASE_ACCESS_TOKEN is required for Management API mode}"
   jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
-  curl --fail --silent --show-error --request POST     --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"     --header 'Content-Type: application/json'     --data-binary "@$RUNNER_TEMP/query.json"     "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+  curl --fail --silent --show-error --request POST \
+    --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    --header 'Content-Type: application/json' \
+    --data-binary "@$RUNNER_TEMP/query.json" \
+    "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+}
+
+query_ref_db() {
+  local ref="$1" sql="$2" out="$3"
+  : "${SUPABASE_DB_URL:?SUPABASE_DB_URL is required for database mode}"
+
+  sql="$(printf '%s' "$sql" | sed -e ':a' -e '/[[:space:]]$/ { s/[[:space:]]$//; ba; }' -e 's/;[[:space:]]*$//')"
+  local wrapper="$RUNNER_TEMP/dr-query-${ref}.sql"
+
+  if [ "$ref" = "$OREGON_REF" ]; then
+    cat > "$wrapper" <<SQL
+\\pset tuples_only on
+\\pset format unaligned
+select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
+from (
+$sql
+) q;
+SQL
+  elif [ "$ref" = "$VIRGINIA_REF" ]; then
+    cat > "$wrapper" <<SQL
+\\pset tuples_only on
+\\pset format unaligned
+select remote.payload
+from pg_subscription s
+cross join lateral extensions.dblink(
+  s.subconninfo,
+  \$toh_remote\$
+    select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
+    from (
+$sql
+    ) q
+  \$toh_remote\$
+) as remote(payload text)
+where s.subname = '${SUBSCRIPTION}';
+SQL
+  else
+    echo "Unsupported Supabase project ref in database mode: $ref" >&2
+    exit 1
+  fi
+
+  psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -f "$wrapper" > "$out"
+  jq -e 'type == "array"' "$out" >/dev/null
+}
+
+query_ref() {
+  if [ -n "${SUPABASE_DB_URL:-}" ]; then
+    query_ref_db "$@"
+  else
+    query_ref_api "$@"
+  fi
 }
 
 catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
