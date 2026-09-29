@@ -40,19 +40,26 @@ stages:
     jobs:
       - job: Validate
         pool:
-          vmImage: ubuntu-latest
+          vmImage: ubuntu-24.04
         steps:
-          - task: NodeTool@0
+          - task: UseNode@1
             inputs:
-              versionSpec: $(nodeVersion)
+              version: $(nodeVersion)
           - script: |
               set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
+              node --version
+              npm --version
               npm run typecheck
               npx expo config --type public >/dev/null
               npx expo install --check
-            displayName: Typecheck and validate Expo config
+              npx expo-doctor
+            env:
+              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
+              SENTRY_ORG: $(SENTRY_ORG)
+              SENTRY_PROJECT: $(SENTRY_PROJECT)
+            displayName: Typecheck, Expo compatibility, and doctor
 
   - stage: Build
     displayName: Native iOS and Android builds
@@ -88,9 +95,9 @@ stages:
               PY
             displayName: Validate Xcode 26.4+ toolchain
 
-          - task: NodeTool@0
+          - task: UseNode@1
             inputs:
-              versionSpec: $(nodeVersion)
+              version: $(nodeVersion)
 
           - task: InstallAppleCertificate@2
             name: installAppleCertificate
@@ -391,18 +398,22 @@ stages:
         pool:
           name: theouthaven-android-build
         steps:
-          - task: NodeTool@0
+          - task: UseNode@1
             inputs:
-              versionSpec: $(nodeVersion)
+              version: $(nodeVersion)
 
           - script: |
               set -euo pipefail
 
               sudo apt-get update
               sudo apt-get install -y --no-install-recommends \
+                build-essential \
                 ca-certificates \
                 curl \
+                git \
+                python3 \
                 unzip \
+                zip \
                 openjdk-17-jdk
 
               JAVA_HOME_VALUE="/usr/lib/jvm/java-17-openjdk-amd64"
@@ -434,8 +445,8 @@ stages:
               yes | sdkmanager --licenses >/dev/null || true
               sdkmanager \
                 "platform-tools" \
-                "platforms;android-35" \
-                "build-tools;35.0.0" \
+                "platforms;android-36" \
+                "build-tools;36.0.0" \
                 "ndk;27.1.12297006" \
                 "cmake;3.22.1"
 
@@ -606,11 +617,13 @@ stages:
                   if not line.startswith('org.gradle.jvmargs=')
                   and not line.startswith('org.gradle.workers.max=')
                   and not line.startswith('org.gradle.parallel=')
+                  and not line.startswith('org.gradle.caching=')
               ]
               lines.extend([
                   'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1536m -Dfile.encoding=UTF-8',
                   'org.gradle.workers.max=2',
                   'org.gradle.parallel=false',
+                  'org.gradle.caching=true',
               ])
               path.write_text('\n'.join(lines) + '\n')
               PY
@@ -631,7 +644,7 @@ stages:
               echo "Android release build diagnostics:"
               ./gradlew --version
               echo "Gradle properties:"
-              grep -E '^(org\.gradle\.(jvmargs|workers\.max|parallel))=' gradle.properties || true
+              grep -E '^(org\.gradle\.(jvmargs|workers\.max|parallel|caching))=' gradle.properties || true
               echo "Disk usage immediately before bundleRelease:"
               df -h
 
