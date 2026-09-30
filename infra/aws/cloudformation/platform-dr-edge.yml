@@ -81,7 +81,7 @@ Resources:
               statusCode: 308,
               statusDescription: 'Permanent Redirect',
               headers: {
-                location: { value: 'https://${WwwDomainName}' + request.uri },
+                location: { value: 'https://${WwwDomainName}' + request.uri + (request.querystring ? '?' + Object.keys(request.querystring).map(function(k) { return k + '=' + request.querystring[k].value; }).join('&') : '') },
                 'cache-control': { value: 'public, max-age=300' }
               }
             };
