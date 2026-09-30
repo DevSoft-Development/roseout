@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven apex redirect edge used after the consumer moves to Azure Front Door.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  DomainName:
+    Type: String
+    Default: theouthaven.com
+  WwwDomainName:
+    Type: String
+    Default: www.theouthaven.com
+  CertificateArn:
+    Type: String
+  FrontDoorHost:
+    Type: String
+
+Resources:
+  ApexRedirectFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub toh-${Environment}-apex-to-www
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirect bare TheOutHaven apex to the Azure-backed www hostname.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub |
+        function handler(event) {
+          var request = event.request;
+          return {
+            statusCode: 308,
+            statusDescription: 'Permanent Redirect',
+            headers: {
+              location: { value: 'https://${WwwDomainName}' + request.uri },
+              'cache-control': { value: 'public, max-age=300' }
+            }
+          };
+        }
+
+  ApexRedirectDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub TheOutHaven ${Environment} apex redirect to Azure-backed www
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref DomainName
+        Origins:
+          - Id: azure-frontdoor-unused-origin
+            DomainName: !Ref FrontDoorHost
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: azure-frontdoor-unused-origin
+          ViewerProtocolPolicy: allow-all
+          Compress: true
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt ApexRedirectFunction.FunctionARN
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: Service, Value: AzureConsumerApexRedirect }
+
+Outputs:
+  DistributionId:
+    Value: !Ref ApexRedirectDistribution
+  DistributionDomainName:
+    Value: !GetAtt ApexRedirectDistribution.DomainName
