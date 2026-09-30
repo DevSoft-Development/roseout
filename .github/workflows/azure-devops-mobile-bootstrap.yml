@@ -60,6 +60,7 @@ jobs:
             (.appStoreConnectIssuerId | length > 0) and
             (.appStoreConnectPrivateKey | length > 0) and
             (.appStoreConnectAppId | length > 0) and
+            (.appStoreConnectAppleId | length > 0) and
             (.androidKeystoreBase64 | length > 0) and
             (.androidKeystorePassword | length > 0) and
             (.androidKeyAlias | length > 0) and
@@ -85,6 +86,7 @@ jobs:
               appStoreConnectIssuerId
               appStoreConnectPrivateKey
               appStoreConnectAppId
+              appStoreConnectAppleId
               androidKeystoreBase64
               androidKeystorePassword
               androidKeyAlias
