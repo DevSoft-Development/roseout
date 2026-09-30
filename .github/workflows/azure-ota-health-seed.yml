@@ -76,13 +76,16 @@ jobs:
             EDGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaFrontDoorEndpointHostName.value -o tsv)"
             test -n "$STORAGE" && test "$STORAGE" != None
             test -n "$EDGE" && test "$EDGE" != None
-            az storage blob service-properties update               --account-name "$STORAGE" --auth-mode login               --static-website true --index-document health.json --404-document health.json               --only-show-errors >/dev/null
+            STORAGE_KEY="$(az storage account keys list --resource-group rg-toh-consumer-production --account-name "$STORAGE" --query '[0].value' -o tsv)"
+            test -n "$STORAGE_KEY" && test "$STORAGE_KEY" != None
+            echo "::add-mask::$STORAGE_KEY"
+            az storage blob service-properties update               --account-name "$STORAGE" --account-key "$STORAGE_KEY"               --static-website true --index-document health.json --404-document health.json               --only-show-errors >/dev/null
             jq -n --arg status healthy --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"               '{ok:true,status:$status,updatedAt:$updatedAt}' > "$RUNNER_TEMP/health.json"
             cp "$RUNNER_TEMP/public.pem" "$RUNNER_TEMP/current.pem"
             cp "$RUNNER_TEMP/public.pem" "$RUNNER_TEMP/$KEY_ID.pem"
             for spec in               "$RUNNER_TEMP/health.json:health.json:application/json"               "$RUNNER_TEMP/current.pem:keys/current.pem:application/x-pem-file"               "$RUNNER_TEMP/$KEY_ID.pem:keys/$KEY_ID.pem:application/x-pem-file"; do
               src="${spec%%:*}"; rest="${spec#*:}"; dst="${rest%%:*}"; type="${rest#*:}"
-              az storage blob upload                 --account-name "$STORAGE" --auth-mode login --container-name '$web'                 --file "$src" --name "$dst" --content-type "$type" --overwrite true                 --only-show-errors >/dev/null
+              az storage blob upload                 --account-name "$STORAGE" --account-key "$STORAGE_KEY" --container-name '$web'                 --file "$src" --name "$dst" --content-type "$type" --overwrite true                 --only-show-errors >/dev/null
             done
             echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
             echo "Azure OTA health and signing public keys seeded."
