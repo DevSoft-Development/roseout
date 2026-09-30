@@ -28,7 +28,7 @@ variables:
   - name: androidArtifactName
     value: 'theouthaven-android'
   - name: storeSubmissionEnabled
-    value: 'false'
+    value: 'true'
   - name: npmCacheFolder
     value: '$(Pipeline.Workspace)/.npm'
   - name: gradleUserHome
@@ -68,6 +68,7 @@ stages:
     jobs:
       - job: iOS
         displayName: Build signed iOS IPA
+        timeoutInMinutes: 90
         pool:
           vmImage: macOS-26
         steps:
@@ -323,7 +324,7 @@ stages:
               cp "$(appStoreKey.secureFilePath)" "$HOME/.appstoreconnect/private_keys/AuthKey_$(APP_STORE_CONNECT_KEY_ID).p8"
               xcrun iTMSTransporter                 -m upload                 -assetFile "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa"                 -apiKey "$(APP_STORE_CONNECT_KEY_ID)"                 -apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
             displayName: Submit IPA to TestFlight via App Store Connect
-            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'))
+            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
           - script: |
               set -euo pipefail
@@ -355,7 +356,7 @@ stages:
                   'limit': '1',
                 });
 
-                for (let attempt = 1; attempt <= 40; attempt++) {
+                for (let attempt = 1; attempt <= 120; attempt++) {
                   const response = await fetch('https://api.appstoreconnect.apple.com/v1/builds?' + params, {
                     headers: { Authorization: 'Bearer ' + token() },
                   });
@@ -391,7 +392,7 @@ stages:
               ASC_APP_ID: $(APP_STORE_CONNECT_APP_ID)
               ASC_BUILD_NUMBER: $(Build.BuildId)
             displayName: Verify TestFlight build is processed
-            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'))
+            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
       - job: Android
         displayName: Build signed Android AAB
@@ -785,4 +786,4 @@ stages:
               AAB_PATH: $(Build.ArtifactStagingDirectory)/TheOutHaven.aab
               GOOGLE_APPLICATION_CREDENTIALS: $(googlePlayServiceAccount.secureFilePath)
             displayName: Submit AAB to Google Play internal testing
-            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'))
+            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
