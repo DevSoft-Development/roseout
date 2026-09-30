@@ -322,7 +322,12 @@ stages:
               set -euo pipefail
               mkdir -p "$HOME/.appstoreconnect/private_keys"
               cp "$(appStoreKey.secureFilePath)" "$HOME/.appstoreconnect/private_keys/AuthKey_$(APP_STORE_CONNECT_KEY_ID).p8"
-              xcrun iTMSTransporter                 -m upload                 -assetFile "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa"                 -apiKey "$(APP_STORE_CONNECT_KEY_ID)"                 -apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
+              xcrun altool \
+                --upload-app \
+                -f "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa" \
+                -t ios \
+                --apiKey "$(APP_STORE_CONNECT_KEY_ID)" \
+                --apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
             displayName: Submit IPA to TestFlight via App Store Connect
             condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
