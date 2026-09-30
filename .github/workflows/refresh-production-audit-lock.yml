@@ -1,0 +1,42 @@
+name: Refresh production audit lockfile
+
+on:
+  push:
+    branches: [fix/production-audit-next-2026-09]
+    paths:
+      - package.json
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-audit-next-2026-09
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Refresh lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Verify production audit
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
+
+      - name: Commit refreshed lockfile
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "Refresh lockfile for production audit patches"
+          git push origin HEAD:fix/production-audit-next-2026-09
