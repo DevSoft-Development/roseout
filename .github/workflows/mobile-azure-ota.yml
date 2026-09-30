@@ -121,9 +121,12 @@ jobs:
             set -euo pipefail
             az deployment sub create               --name toh-ota-foundation-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               otaEnabled=true               consumerRuntimeEnabled=false               consumerEdgeEnabled=false               aiModelDeploymentEnabled=false               otaApiOriginHostName="$(az deployment sub show --name toh-consumer-runtime-production --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"               otaApiOriginHostName="$CONSUMER_EDGE"
 
+            STORAGE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaStorageAccountName.value               -o tsv)"
             OTA_EDGE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaFrontDoorEndpointHostName.value               -o tsv)"
             PROFILE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaFrontDoorProfileName.value               -o tsv)"
-            test -n "$OTA_EDGE" && test -n "$PROFILE"
+            test -n "$STORAGE" && test -n "$OTA_EDGE" && test -n "$PROFILE"
+
+            az storage blob service-properties update               --account-name "$STORAGE"               --auth-mode login               --static-website true               --index-document health.json               --404-document health.json               --only-show-errors >/dev/null
 
             {
               echo "## Azure OTA foundation"
