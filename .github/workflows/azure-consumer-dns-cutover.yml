@@ -4,12 +4,12 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'infra/aws/cloudformation/azure-consumer-apex-redirect.yml'
+      - 'infra/aws/cloudformation/platform-dr-edge.yml'
       - '.github/workflows/azure-consumer-dns-cutover.yml'
   push:
     branches: [main]
     paths:
-      - 'infra/aws/cloudformation/azure-consumer-apex-redirect.yml'
+      - 'infra/aws/cloudformation/platform-dr-edge.yml'
       - '.github/workflows/azure-consumer-dns-cutover.yml'
 
 permissions:
@@ -27,10 +27,8 @@ env:
   WWW_DOMAIN_NAME: www.theouthaven.com
   AZURE_RESOURCE_GROUP: rg-toh-consumer-production
   AZURE_DEPLOYMENT: toh-consumer-runtime-production
-  APEX_REDIRECT_STACK: theouthaven-azure-consumer-apex-redirect-production
   DR_EDGE_STACK: theouthaven-platform-dr-edge-production
   EXTERNAL_MONITOR_STACK: theouthaven-azure-frontdoor-external-monitor-production
-  CERT_PARAMETER: /theouthaven/production/platform-dr/acm-certificate-arn
   SNAPSHOT_SECRET: theouthaven/production/azure-consumer/dns-cutover-last-snapshot
 
 jobs:
@@ -40,8 +38,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install CloudFormation linter
         run: python -m pip install --disable-pip-version-check cfn-lint
-      - name: Validate apex redirect stack
-        run: cfn-lint infra/aws/cloudformation/azure-consumer-apex-redirect.yml
+      - name: Validate DR edge apex redirect
+        run: cfn-lint infra/aws/cloudformation/platform-dr-edge.yml
 
   execute:
     if: github.event_name == 'push'
@@ -127,17 +125,27 @@ jobs:
           aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenAzureConsumerDnsCutoverBootstrap             --policy-document "file://$RUNNER_TEMP/cutover-policy.json"
           sleep 8
 
-      - name: Deploy apex redirect edge
+      - name: Wait for AWS DR edge apex redirect deployment
         id: redirect
-        env:
-          FRONT_DOOR_HOST: ${{ steps.azure.outputs.edge }}
         run: |
           set -euo pipefail
-          CERT_ARN="$(aws ssm get-parameter --name "$CERT_PARAMETER" --query Parameter.Value --output text)"
-          test -n "$CERT_ARN" && test "$CERT_ARN" != None
-          aws cloudformation deploy             --stack-name "$APEX_REDIRECT_STACK"             --template-file infra/aws/cloudformation/azure-consumer-apex-redirect.yml             --no-fail-on-empty-changeset             --parameter-overrides               Environment=production               DomainName="$DOMAIN_NAME"               WwwDomainName="$WWW_DOMAIN_NAME"               CertificateArn="$CERT_ARN"               FrontDoorHost="$FRONT_DOOR_HOST"             --tags Project=TheOutHaven Environment=production Service=AzureConsumerApexRedirect ManagedBy=CloudFormation
-          REDIRECT_DOMAIN="$(aws cloudformation describe-stacks --stack-name "$APEX_REDIRECT_STACK" --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue | [0]" --output text)"
+          REDIRECT_DOMAIN="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$DR_EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformDrDistributionDomainName'].OutputValue | [0]" --output text)"
+          DISTRIBUTION_ID="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$DR_EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformDrDistributionId'].OutputValue | [0]" --output text)"
           test -n "$REDIRECT_DOMAIN" && test "$REDIRECT_DOMAIN" != None
+          test -n "$DISTRIBUTION_ID" && test "$DISTRIBUTION_ID" != None
+          ready=false
+          for attempt in $(seq 1 40); do
+            aws cloudfront get-distribution-config --id "$DISTRIBUTION_ID" > "$RUNNER_TEMP/dr-distribution.json"
+            STATUS="$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" --query Distribution.Status --output text)"
+            ASSOCIATIONS="$(jq '[.DistributionConfig.DefaultCacheBehavior.FunctionAssociations.Items[]? | select(.EventType=="viewer-request")] | length' "$RUNNER_TEMP/dr-distribution.json")"
+            if [ "$STATUS" = "Deployed" ] && [ "$ASSOCIATIONS" -ge 1 ]; then
+              ready=true
+              break
+            fi
+            echo "Waiting for DR apex redirect association (status=$STATUS associations=$ASSOCIATIONS attempt=$attempt/40)."
+            sleep 15
+          done
+          test "$ready" = true
           echo "domain=$REDIRECT_DOMAIN" >> "$GITHUB_OUTPUT"
 
       - name: Resolve DNS failover targets and capture rollback snapshot
