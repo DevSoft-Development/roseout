@@ -1,0 +1,71 @@
+name: Seed Azure OTA health
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/azure-ota-health-seed.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/azure-ota-health-seed.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Azure OTA health seed workflow validated."
+
+  seed:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve OTA public signing key
+        id: signing
+        run: |
+          set -euo pipefail
+          SECRET_ID="/theouthaven/credential-vault/production/ota"
+          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text > "$RUNNER_TEMP/ota.json"
+          jq -e '(.signingPublicKeyPem | type=="string" and length>0) and (.keyId | type=="string" and length>0)' "$RUNNER_TEMP/ota.json" >/dev/null
+          jq -r '.signingPublicKeyPem' "$RUNNER_TEMP/ota.json" > "$RUNNER_TEMP/public.pem"
+          echo "key_id=$(jq -r '.keyId' "$RUNNER_TEMP/ota.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publish static health and public signing keys
+        uses: azure/CLI@v2
+        env:
+          KEY_ID: ${{ steps.signing.outputs.key_id }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            STORAGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaStorageAccountName.value -o tsv)"
+            test -n "$STORAGE" && test "$STORAGE" != None
+            az storage blob service-properties update               --account-name "$STORAGE" --auth-mode login               --static-website true --index-document health.json --404-document health.json               --only-show-errors >/dev/null
+            jq -n --arg status healthy --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"               '{ok:true,status:$status,updatedAt:$updatedAt}' > "$RUNNER_TEMP/health.json"
+            cp "$RUNNER_TEMP/public.pem" "$RUNNER_TEMP/current.pem"
+            cp "$RUNNER_TEMP/public.pem" "$RUNNER_TEMP/$KEY_ID.pem"
+            for spec in               "$RUNNER_TEMP/health.json:health.json:application/json"               "$RUNNER_TEMP/current.pem:keys/current.pem:application/x-pem-file"               "$RUNNER_TEMP/$KEY_ID.pem:keys/$KEY_ID.pem:application/x-pem-file"; do
+              src="${spec%%:*}"; rest="${spec#*:}"; dst="${rest%%:*}"; type="${rest#*:}"
+              az storage blob upload                 --account-name "$STORAGE" --auth-mode login --container-name '$web'                 --file "$src" --name "$dst" --content-type "$type" --overwrite true                 --only-show-errors >/dev/null
+            done
+            echo "Azure OTA health and signing public keys seeded."
