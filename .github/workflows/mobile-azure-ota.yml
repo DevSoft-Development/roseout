@@ -1,6 +1,14 @@
 name: Mobile Azure OTA release
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/azure/modules/ota-foundation.bicep'
+      - 'infra/azure/main.bicep'
+      - 'infra/azure/parameters/production.bicepparam'
+      - '.github/workflows/mobile-azure-ota.yml'
   pull_request:
     branches:
       - main
@@ -76,6 +84,56 @@ jobs:
             az bicep build --file infra/azure/main.bicep
             test -f infra/azure/main.json
             rm infra/azure/main.json
+
+  foundation:
+    name: Deploy Azure OTA foundation
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve existing consumer edge
+        id: consumer
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            EDGE="$(az deployment sub show               --name toh-consumer-runtime-production               --query properties.outputs.consumerFrontDoorEndpointHostName.value               -o tsv)"
+            test -n "$EDGE" && test "$EDGE" != None
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+            echo "Consumer edge origin: $EDGE"
+
+      - name: Deploy production OTA foundation and custom domain
+        uses: azure/CLI@v2
+        env:
+          CONSUMER_EDGE: ${{ steps.consumer.outputs.edge }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create               --name toh-ota-foundation-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               otaEnabled=true               consumerRuntimeEnabled=false               consumerEdgeEnabled=false               aiModelDeploymentEnabled=false               otaApiOriginHostName="$(az deployment sub show --name toh-consumer-runtime-production --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"               otaApiOriginHostName="$CONSUMER_EDGE"
+
+            OTA_EDGE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaFrontDoorEndpointHostName.value               -o tsv)"
+            PROFILE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaFrontDoorProfileName.value               -o tsv)"
+            test -n "$OTA_EDGE" && test -n "$PROFILE"
+
+            {
+              echo "## Azure OTA foundation"
+              echo
+              echo "- Front Door: $OTA_EDGE"
+              echo "- Profile: $PROFILE"
+              echo "- Custom domain: updates.theouthaven.com"
+              echo "- API origin: $CONSUMER_EDGE"
+              echo "- Route 53 status: pending OTA DNS cutover workflow"
+            } >> "$GITHUB_STEP_SUMMARY"
 
   release:
     name: Publish or rollback signed Azure OTA
