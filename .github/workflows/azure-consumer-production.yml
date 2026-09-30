@@ -492,5 +492,5 @@ IMAGE_SHA=%s
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label 'Front Door restoration to primary'
       - name: Record failover drill success
         run: |
-          echo 'Front Door regional failover drill passed.' >> "DOLLGITHUB_STEP_SUMMARY"
-          echo 'Front Door primary restoration verified.' >> "DOLLGITHUB_STEP_SUMMARY"
+          echo 'Front Door regional failover drill passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Front Door primary restoration verified.' >> "$GITHUB_STEP_SUMMARY"
