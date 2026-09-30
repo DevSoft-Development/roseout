@@ -9,20 +9,14 @@ export default function TheOutHavenFooter() {
       <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
         <div>
           <Link href="/" className="group inline-flex items-center">
-            <span className="flex flex-col items-center">
+            <span className="flex items-center">
               <Image
                 src="/toh_logo_wordmark_dark.png"
                 alt="TheOutHaven"
-                width={900}
-                height={120}
+                width={1200}
+                height={372}
                 className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
               />
-              <span
-                aria-hidden="true"
-                className="mt-1 whitespace-nowrap text-[6px] font-black uppercase leading-none tracking-[0.08em] text-white/70"
-              >
-                ACTIVITIES • ENTERTAINMENT • EXPERIENCES • RESTAURANTS
-              </span>
             </span>
           </Link>
 
