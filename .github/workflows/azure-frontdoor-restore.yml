@@ -1,0 +1,49 @@
+name: Restore Azure Front Door primary
+
+on:
+  push:
+    branches:
+      - ops/frontdoor-failover-drill
+    paths:
+      - '.github/workflows/azure-frontdoor-restore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-frontdoor-primary-restore
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Restore primary Front Door origin
+        run: |
+          set -euo pipefail
+          DEPLOYMENT=toh-consumer-runtime-production
+          PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
+          test -n "$PRIMARY_ORIGIN_RESOURCE_ID"
+          API_VERSION=2024-02-01
+          az rest --method patch --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --headers 'Content-Type=application/json' --body '{"properties":{"enabledState":"Enabled"}}' --output none
+          for _ in $(seq 1 60); do
+            state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.enabledState -o tsv)"
+            provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.provisioningState -o tsv)"
+            echo "state=$state provisioning=$provisioning"
+            if [ "$state" = Enabled ] && [ "$provisioning" = Succeeded ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
