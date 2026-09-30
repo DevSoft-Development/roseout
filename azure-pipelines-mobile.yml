@@ -236,15 +236,42 @@ stages:
           - script: |
               set -euo pipefail
               cd mobile
+
+              python3 - <<'PY'
+              import json
+              import os
+              from pathlib import Path
+
+              path = Path('app.json')
+              data = json.loads(path.read_text())
+              expo = data.setdefault('expo', {})
+              ios = expo.setdefault('ios', {})
+              build_number = os.environ['IOS_BUILD_NUMBER']
+
+              if not build_number.isdigit() or int(build_number) <= 0:
+                  raise SystemExit(f'Invalid IOS_BUILD_NUMBER: {build_number!r}')
+
+              ios['buildNumber'] = build_number
+              path.write_text(json.dumps(data, indent=2) + '\n')
+              print(f'Injected Expo iOS buildNumber: {build_number}')
+              PY
+
               npm ci --no-audit --no-fund
+              npx expo config --type public | grep -E '"buildNumber"|com.theouthaven.app' || true
               npx expo prebuild --clean --platform ios --no-install
+
+              PBXPROJ="ios/TheOutHaven.xcodeproj/project.pbxproj"
+              test -f "$PBXPROJ"
+              grep -E 'CURRENT_PROJECT_VERSION = ' "$PBXPROJ" | sort -u
+
               cd ios
               pod install --repo-update
             env:
+              IOS_BUILD_NUMBER: $(IOS_BUILD_NUMBER)
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
-            displayName: Generate iOS native project
+            displayName: Generate iOS native project with resolved build number
 
           - script: |
               set -euo pipefail
