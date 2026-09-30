@@ -170,3 +170,5 @@ jobs:
           set -euo pipefail
           ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
           aws iam delete-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenOtaDnsCaaBootstrap || true
+
+# CI retry marker for stalled runner
