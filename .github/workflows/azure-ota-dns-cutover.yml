@@ -71,16 +71,16 @@ jobs:
             test -n "$PROFILE" && test "$PROFILE" != None
             test -n "$EDGE" && test "$EDGE" != None
 
-            az afd custom-domain show               --resource-group "$AZURE_RESOURCE_GROUP"               --profile-name "$PROFILE"               --custom-domain-name "$AZURE_CUSTOM_DOMAIN_NAME"               -o json > "$RUNNER_TEMP/custom-domain.json"
+            az afd custom-domain show               --resource-group "$AZURE_RESOURCE_GROUP"               --profile-name "$PROFILE"               --custom-domain-name "$AZURE_CUSTOM_DOMAIN_NAME"               -o json > /tmp/custom-domain.json
 
-            TOKEN="$(jq -r '.validationProperties.validationToken // empty' "$RUNNER_TEMP/custom-domain.json")"
-            STATE="$(jq -r '.domainValidationState // empty' "$RUNNER_TEMP/custom-domain.json")"
-            HOST="$(jq -r '.hostName // empty' "$RUNNER_TEMP/custom-domain.json")"
+            TOKEN="$(jq -r '.validationProperties.validationToken // empty' /tmp/custom-domain.json)"
+            STATE="$(jq -r '.domainValidationState // empty' /tmp/custom-domain.json)"
+            HOST="$(jq -r '.hostName // empty' /tmp/custom-domain.json)"
 
             test "$HOST" = "$OTA_HOST"
             test -n "$TOKEN" || {
               echo "::error::Azure Front Door did not return a domain validation token."
-              cat "$RUNNER_TEMP/custom-domain.json"
+              cat /tmp/custom-domain.json
               exit 1
             }
 
@@ -203,10 +203,10 @@ jobs:
           inlineScript: |
             set -euo pipefail
             for attempt in $(seq 1 60); do
-              az afd custom-domain show                 --resource-group "$AZURE_RESOURCE_GROUP"                 --profile-name "$PROFILE"                 --custom-domain-name "$AZURE_CUSTOM_DOMAIN_NAME"                 -o json > "$RUNNER_TEMP/custom-domain-wait.json"
+              az afd custom-domain show                 --resource-group "$AZURE_RESOURCE_GROUP"                 --profile-name "$PROFILE"                 --custom-domain-name "$AZURE_CUSTOM_DOMAIN_NAME"                 -o json > /tmp/custom-domain-wait.json
 
-              STATE="$(jq -r '.domainValidationState // empty' "$RUNNER_TEMP/custom-domain-wait.json")"
-              PROVISIONING="$(jq -r '.provisioningState // empty' "$RUNNER_TEMP/custom-domain-wait.json")"
+              STATE="$(jq -r '.domainValidationState // empty' /tmp/custom-domain-wait.json)"
+              PROVISIONING="$(jq -r '.provisioningState // empty' /tmp/custom-domain-wait.json)"
               echo "Attempt $attempt: domainValidationState=$STATE provisioningState=$PROVISIONING"
 
               if [ "$STATE" = "Approved" ] && [ "$PROVISIONING" = "Succeeded" ]; then
@@ -214,14 +214,14 @@ jobs:
               fi
               case "$STATE" in
                 Rejected|Timeout)
-                  cat "$RUNNER_TEMP/custom-domain-wait.json"
+                  cat /tmp/custom-domain-wait.json
                   exit 1
                   ;;
               esac
               sleep 15
             done
             echo "::error::Azure Front Door custom-domain validation did not reach Approved."
-            cat "$RUNNER_TEMP/custom-domain-wait.json"
+            cat /tmp/custom-domain-wait.json
             exit 1
 
       - name: Cut over OTA hostname to Azure Front Door
@@ -322,7 +322,7 @@ jobs:
           fi
 
       - name: Remove temporary OTA DNS permissions
-        if: always()
+        if: always() && steps.aws_credentials.outcome == 'success'
         env:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
         run: |
