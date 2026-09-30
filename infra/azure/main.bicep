@@ -21,6 +21,8 @@ param consumerRuntimeEnabled bool = false
 param consumerRegionalFailoverEnabled bool = false
 param consumerEdgeEnabled bool = false
 param otaEnabled bool = false
+param otaCustomDomainHostName string = ''
+param otaApiOriginHostName string = ''
 param consumerImage string = ''
 param consumerGitSha string = ''
 param consumerNextPublicSiteUrl string = ''
@@ -147,9 +149,10 @@ module otaFoundation './modules/ota-foundation.bicep' = if (otaEnabled) {
     location: location
     secondaryLocation: secondaryLocation
     tags: tags
-    apiEnabled: consumerRuntimeEnabled && consumerRegionalFailoverEnabled
-    primaryApiHostName: consumerRuntimeEnabled ? consumerRuntime.outputs.fqdn : ''
-    secondaryApiHostName: consumerRuntimeEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryRuntime.outputs.fqdn : ''
+    apiEnabled: !empty(otaApiOriginHostName) || (consumerRuntimeEnabled && consumerRegionalFailoverEnabled)
+    primaryApiHostName: !empty(otaApiOriginHostName) ? otaApiOriginHostName : (consumerRuntimeEnabled ? consumerRuntime.outputs.fqdn : '')
+    secondaryApiHostName: !empty(otaApiOriginHostName) ? '' : (consumerRuntimeEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryRuntime.outputs.fqdn : '')
+    customDomainHostName: otaCustomDomainHostName
   }
 }
 
@@ -185,3 +188,5 @@ output otaPrimaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.primar
 output otaSecondaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.secondaryWebEndpoint : ''
 output otaFrontDoorProfileName string = otaEnabled ? otaFoundation!.outputs.frontDoorProfileName : ''
 output otaFrontDoorEndpointHostName string = otaEnabled ? otaFoundation!.outputs.frontDoorEndpointHostName : ''
+output otaCustomDomainResourceId string = otaEnabled ? otaFoundation!.outputs.customDomainResourceId : ''
+output otaCustomDomainHostName string = otaEnabled ? otaFoundation!.outputs.customDomainHostName : ''
