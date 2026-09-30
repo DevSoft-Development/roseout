@@ -220,24 +220,36 @@ jobs:
           aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
 
       - name: Wait for Azure Front Door domain approval
-        uses: azure/CLI@v2
         env:
           PROFILE: ${{ steps.azure.outputs.profile }}
-        with:
-          inlineScript: |
-            set -euo pipefail
-            for attempt in $(seq 1 60); do
-              all_ready=true
-              for name in apex www; do
-                state="$(az afd custom-domain show --resource-group "$AZURE_RESOURCE_GROUP" --profile-name "$PROFILE" --custom-domain-name "$name" --query domainValidationState -o tsv)"
-                provisioning="$(az afd custom-domain show --resource-group "$AZURE_RESOURCE_GROUP" --profile-name "$PROFILE" --custom-domain-name "$name" --query provisioningState -o tsv)"
-                echo "$name: validation=$state provisioning=$provisioning"
-                if [ "$state" != Approved ] || [ "$provisioning" != Succeeded ]; then all_ready=false; fi
-              done
-              [ "$all_ready" = true ] && exit 0
-              sleep 15
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            all_ready=true
+            for name in apex www; do
+              domain_json="$RUNNER_TEMP/afd-${name}-approval.json"
+              if ! timeout 30s az afd custom-domain show \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --profile-name "$PROFILE" \
+                --custom-domain-name "$name" \
+                -o json > "$domain_json"; then
+                echo "::warning::$name Front Door status query timed out or failed on attempt $attempt."
+                all_ready=false
+                continue
+              fi
+              state="$(jq -r '.domainValidationState // "Unknown"' "$domain_json")"
+              provisioning="$(jq -r '.provisioningState // "Unknown"' "$domain_json")"
+              expiration="$(jq -r '.validationProperties.expirationDate // empty' "$domain_json")"
+              echo "$name: validation=$state provisioning=$provisioning expiration=${expiration:-n/a} attempt=$attempt/60"
+              if [ "$state" != Approved ] || [ "$provisioning" != Succeeded ]; then
+                all_ready=false
+              fi
             done
-            exit 1
+            [ "$all_ready" = true ] && exit 0
+            sleep 15
+          done
+          echo "Azure Front Door custom domains did not become Approved/Succeeded within the bounded approval window." >&2
+          exit 1
 
       - name: Cut production consumer DNS to Azure Front Door with AWS DR failover
         id: cutover
