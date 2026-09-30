@@ -32,11 +32,6 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   parent: storage
   name: 'default'
   properties: {
-    staticWebsite: {
-      enabled: true
-      indexDocument: 'health.json'
-      error404Document: 'health.json'
-    }
     deleteRetentionPolicy: {
       enabled: true
       days: 14

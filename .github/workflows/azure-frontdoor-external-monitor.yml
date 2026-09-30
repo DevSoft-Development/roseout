@@ -1,0 +1,112 @@
+name: Azure Front Door external monitor
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/azure-frontdoor-external-monitor.yml'
+      - '.github/workflows/azure-frontdoor-external-monitor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/azure-frontdoor-external-monitor.yml'
+      - '.github/workflows/azure-frontdoor-external-monitor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-frontdoor-external-monitor-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  STACK_NAME: theouthaven-azure-frontdoor-external-monitor-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Validate external monitor
+        run: cfn-lint infra/aws/cloudformation/azure-frontdoor-external-monitor.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure consumer proof targets
+        id: azure
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            DEPLOYMENT=toh-consumer-runtime-production
+            PRIMARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+            SECONDARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerSecondaryRuntimeFqdn.value -o tsv)"
+            EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$PRIMARY" && test "$PRIMARY" != None
+            test -n "$SECONDARY" && test "$SECONDARY" != None
+            test -n "$EDGE" && test "$EDGE" != None
+            echo "primary=$PRIMARY" >> "$GITHUB_OUTPUT"
+            echo "secondary=$SECONDARY" >> "$GITHUB_OUTPUT"
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Deploy independent Front Door monitor
+        env:
+          FRONT_DOOR_HOST: ${{ steps.azure.outputs.edge }}
+          PRIMARY_HOST: ${{ steps.azure.outputs.primary }}
+          SECONDARY_HOST: ${{ steps.azure.outputs.secondary }}
+        run: |
+          set -euo pipefail
+          ALERT_TOPIC="$(aws cloudformation describe-stacks             --stack-name theouthaven-platform-production             --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue | [0]"             --output text)"
+          test -n "$ALERT_TOPIC" && test "$ALERT_TOPIC" != None
+
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/azure-frontdoor-external-monitor.yml             --no-fail-on-empty-changeset             --parameter-overrides               Environment=production               FrontDoorHost="$FRONT_DOOR_HOST"               PrimaryRegionHost="$PRIMARY_HOST"               SecondaryRegionHost="$SECONDARY_HOST"               PlatformAlertsTopicArn="$ALERT_TOPIC"             --tags Project=TheOutHaven Environment=production Service=AzureConsumerExternalMonitor ManagedBy=CloudFormation
+
+      - name: Prove monitor is independent and active
+        env:
+          FRONT_DOOR_HOST: ${{ steps.azure.outputs.edge }}
+          PRIMARY_HOST: ${{ steps.azure.outputs.primary }}
+          SECONDARY_HOST: ${{ steps.azure.outputs.secondary }}
+        run: |
+          set -euo pipefail
+          for host in "$FRONT_DOOR_HOST" "$PRIMARY_HOST" "$SECONDARY_HOST"; do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/health.json" --write-out '%{http_code}'               --connect-timeout 10 --max-time 20 "https://$host/api/health/azure" || true)"
+            test "$code" = 200
+            jq -e '.ok == true' "$RUNNER_TEMP/health.json" >/dev/null
+          done
+          aws cloudformation describe-stacks --stack-name "$STACK_NAME"             --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' --output table
+          {
+            echo "## External Azure Front Door monitoring"
+            echo
+            echo "- Monitor plane: AWS Route 53 + CloudWatch"
+            echo "- Front Door target: $FRONT_DOOR_HOST"
+            echo "- Primary origin: $PRIMARY_HOST"
+            echo "- Secondary origin: $SECONDARY_HOST"
+            echo "- Front Door-only outage alarm: active"
+            echo "- Full consumer outage alarm: active"
+          } >> "$GITHUB_STEP_SUMMARY"
