@@ -5,6 +5,7 @@ param tags object
 param apiEnabled bool = false
 param primaryApiHostName string = ''
 param secondaryApiHostName string = ''
+param customDomainHostName string = ''
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
@@ -56,6 +57,18 @@ resource profile 'Microsoft.Cdn/profiles@2024-02-01' = {
   tags: tags
   sku: {
     name: 'Standard_AzureFrontDoor'
+  }
+}
+
+resource customDomain 'Microsoft.Cdn/profiles/customDomains@2024-02-01' = if (!empty(customDomainHostName)) {
+  parent: profile
+  name: 'updates'
+  properties: {
+    hostName: customDomainHostName
+    tlsSettings: {
+      certificateType: 'ManagedCertificate'
+      minimumTlsVersion: 'TLS12'
+    }
   }
 }
 
@@ -186,6 +199,11 @@ resource assetRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
     patternsToMatch: [
       '/*'
     ]
+    customDomains: !empty(customDomainHostName) ? [
+      {
+        id: customDomain.id
+      }
+    ] : []
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
@@ -213,6 +231,11 @@ resource apiRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = if (
     patternsToMatch: [
       '/api/*'
     ]
+    customDomains: !empty(customDomainHostName) ? [
+      {
+        id: customDomain.id
+      }
+    ] : []
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
@@ -232,3 +255,6 @@ output secondaryWebEndpoint string = environment == 'production' ? storage.prope
 output frontDoorProfileName string = profile.name
 output frontDoorEndpointHostName string = endpoint.properties.hostName
 output webContainerName string = webContainer.name
+
+output customDomainResourceId string = !empty(customDomainHostName) ? customDomain.id : ''
+output customDomainHostName string = customDomainHostName
