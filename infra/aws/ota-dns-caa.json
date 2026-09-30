@@ -1,5 +1,5 @@
 {
-  "host": "updates.theouthaven.com",
+  "host": "theouthaven.com",
   "records": [
     {
       "type": "CAA",

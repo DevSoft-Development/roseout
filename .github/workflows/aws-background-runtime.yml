@@ -52,8 +52,22 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials for ECR Public
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Authenticate Docker to ECR Public
+        run: |
+          set -euo pipefail
+          aws ecr-public get-login-password --region us-east-1 \
+            | docker login --username AWS --password-stdin public.ecr.aws
 
       - name: Validate CloudFormation
         run: |
@@ -66,7 +80,16 @@ jobs:
           set -euo pipefail
           test -f infra/aws/background-runtime/Dockerfile
           test -f infra/aws/background-runtime/bootstrap.mjs
-          docker build --check -f infra/aws/background-runtime/Dockerfile .
+          for attempt in 1 2 3 4 5; do
+            if docker build --check -f infra/aws/background-runtime/Dockerfile .; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Container definition validation failed after 5 attempts." >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
 
       - name: Validate private managed-dispatch guard
         run: |

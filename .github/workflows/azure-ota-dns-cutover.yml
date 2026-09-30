@@ -236,7 +236,7 @@ jobs:
           import json, os
           current=json.load(open(os.environ['RUNNER_TEMP']+'/pre-cname.json'))['ResourceRecordSets']
           host=os.environ['OTA_HOST'].rstrip('.')+'.'
-          rows=[r for r in current if r.get('Name')==host and r.get('Type') in {'A','AAAA','CNAME'}]
+          rows=[r for r in current if r.get('Name')==host and r.get('Type') in {'A','AAAA','CNAME','CAA'}]
           changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in rows]
           changes.append({
             'Action':'CREATE',

@@ -41,7 +41,7 @@ env:
 jobs:
   schema-drift:
     runs-on: ubuntu-latest
-    environment: production
+    environment: Production
     timeout-minutes: 20
     steps:
       - name: Checkout
