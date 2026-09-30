@@ -22,6 +22,7 @@ param consumerRegionalFailoverEnabled bool = false
 param consumerEdgeEnabled bool = false
 param otaEnabled bool = false
 param otaCustomDomainHostName string = ''
+param otaApiOriginHostName string = ''
 param consumerImage string = ''
 param consumerGitSha string = ''
 param consumerNextPublicSiteUrl string = ''
@@ -148,9 +149,9 @@ module otaFoundation './modules/ota-foundation.bicep' = if (otaEnabled) {
     location: location
     secondaryLocation: secondaryLocation
     tags: tags
-    apiEnabled: consumerRuntimeEnabled && consumerRegionalFailoverEnabled
-    primaryApiHostName: consumerRuntimeEnabled ? consumerRuntime.outputs.fqdn : ''
-    secondaryApiHostName: consumerRuntimeEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryRuntime.outputs.fqdn : ''
+    apiEnabled: !empty(otaApiOriginHostName) || (consumerRuntimeEnabled && consumerRegionalFailoverEnabled)
+    primaryApiHostName: !empty(otaApiOriginHostName) ? otaApiOriginHostName : (consumerRuntimeEnabled ? consumerRuntime.outputs.fqdn : '')
+    secondaryApiHostName: !empty(otaApiOriginHostName) ? '' : (consumerRuntimeEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryRuntime.outputs.fqdn : '')
     customDomainHostName: otaCustomDomainHostName
   }
 }
