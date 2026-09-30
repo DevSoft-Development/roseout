@@ -12,3 +12,4 @@ param consumerRegionalFailoverEnabled = true
 param consumerEdgeEnabled = false
 
 param otaEnabled = true
+param otaCustomDomainHostName = 'updates.theouthaven.com'
