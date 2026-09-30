@@ -68,12 +68,10 @@ jobs:
 
       - name: Publish static health and public signing keys
         id: publish
-        uses: azure/CLI@v2
         env:
           KEY_ID: ${{ steps.signing.outputs.key_id }}
-        with:
-          inlineScript: |
-            set -euo pipefail
+        run: |
+          set -euo pipefail
             STORAGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaStorageAccountName.value -o tsv)"
             EDGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaFrontDoorEndpointHostName.value -o tsv)"
             test -n "$STORAGE" && test "$STORAGE" != None
