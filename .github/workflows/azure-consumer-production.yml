@@ -341,7 +341,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Disable primary Front Door origin for regional failover drill
-        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
+        if: >-
+        github.event_name == 'workflow_dispatch' && inputs.run_failover_drill ||
+        (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -367,7 +369,9 @@ jobs:
             exit 1
 
       - name: Prove secondary routing through Front Door
-        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
+        if: >-
+        github.event_name == 'workflow_dispatch' && inputs.run_failover_drill ||
+        (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
@@ -376,7 +380,7 @@ jobs:
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 120 --interval 10 --label "Front Door failover to secondary"
 
       - name: Restore primary Front Door origin
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        if: ${{ always() && (github.event_name == 'workflow_dispatch' && inputs.run_failover_drill || (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))) }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -402,7 +406,7 @@ jobs:
             exit 1
 
       - name: Prove primary restoration through Front Door
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        if: ${{ always() && (github.event_name == 'workflow_dispatch' && inputs.run_failover_drill || (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))) }}
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
