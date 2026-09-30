@@ -66,7 +66,16 @@ jobs:
           set -euo pipefail
           test -f infra/aws/background-runtime/Dockerfile
           test -f infra/aws/background-runtime/bootstrap.mjs
-          docker build --check -f infra/aws/background-runtime/Dockerfile .
+          for attempt in 1 2 3 4 5; do
+            if docker build --check -f infra/aws/background-runtime/Dockerfile .; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "Container definition validation failed after 5 attempts." >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
 
       - name: Validate private managed-dispatch guard
         run: |
