@@ -89,7 +89,7 @@
     "dotenv": "^17.4.2",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.14.0",
-    "next": "16.3.3",
+    "next": "16.3.7",
     "openai": "^6.37.0",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
@@ -105,10 +105,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.3.7",
     "postcss": "^8.5.12",
     "tailwindcss": "^4.2.4",
     "typescript": "^5",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "baseline-browser-mapping": "2.11.21",
+    "qs": "6.16.0"
   }
 }
