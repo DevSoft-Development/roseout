@@ -1,0 +1,155 @@
+name: Azure DevOps mobile dispatch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'azure-pipelines-mobile.yml'
+      - '.github/workflows/azure-devops-mobile-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-devops-mobile-dispatch-main
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  MOBILE_SIGNING_SECRET_ID: /theouthaven/credential-vault/production/mobile
+  PIPELINE_NAME: TheOutHaven Mobile Production
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS access to Admin Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Azure DevOps mobile configuration
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_FILE="$RUNNER_TEMP/mobile-release-signing.json"
+          aws secretsmanager get-secret-value \
+            --secret-id "$MOBILE_SIGNING_SECRET_ID" \
+            --query SecretString \
+            --output text > "$SECRET_FILE"
+
+          jq -e '
+            (.azureDevOpsOrg | type == "string" and length > 0) and
+            (.azureDevOpsProject | type == "string" and length > 0) and
+            (.azureDevOpsPat | type == "string" and length > 0)
+          ' "$SECRET_FILE" >/dev/null
+
+          AZDO_ORG="$(jq -r '.azureDevOpsOrg' "$SECRET_FILE")"
+          AZDO_PROJECT="$(jq -r '.azureDevOpsProject' "$SECRET_FILE")"
+          AZDO_PAT="$(jq -r '.azureDevOpsPat' "$SECRET_FILE")"
+
+          echo "::add-mask::$AZDO_PAT"
+          echo "org=$AZDO_ORG" >> "$GITHUB_OUTPUT"
+          echo "project=$AZDO_PROJECT" >> "$GITHUB_OUTPUT"
+
+          printf '%s' "$AZDO_PAT" > "$RUNNER_TEMP/azdo-pat"
+          chmod 600 "$RUNNER_TEMP/azdo-pat"
+          rm -f "$SECRET_FILE"
+
+      - name: Queue mobile pipeline if needed
+        env:
+          AZDO_ORG: ${{ steps.config.outputs.org }}
+          AZDO_PROJECT: ${{ steps.config.outputs.project }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          AZDO_PAT="$(cat "$RUNNER_TEMP/azdo-pat")"
+          AUTH_HEADER="Authorization: Basic $(printf ':%s' "$AZDO_PAT" | base64 | tr -d '\n')"
+
+          urlencode() {
+            python3 - "$1" <<'PY'
+          import sys
+          from urllib.parse import quote
+          print(quote(sys.argv[1], safe=''))
+          PY
+          }
+
+          API_ROOT="https://dev.azure.com/$AZDO_ORG"
+          PROJECT_ENCODED="$(urlencode "$AZDO_PROJECT")"
+          PIPELINE_ENCODED="$(urlencode "$PIPELINE_NAME")"
+
+          DEFINITIONS="$(
+            curl --fail --silent --show-error \
+              -H "$AUTH_HEADER" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/build/definitions?name=$PIPELINE_ENCODED&api-version=7.1"
+          )"
+
+          PIPELINE_ID="$(printf '%s' "$DEFINITIONS" | jq -r --arg name "$PIPELINE_NAME" '.value[]? | select(.name == $name) | .id' | head -1)"
+          test -n "$PIPELINE_ID" || {
+            echo "Azure DevOps pipeline not found: $PIPELINE_NAME" >&2
+            exit 1
+          }
+
+          RECENT_BUILDS="$(
+            curl --fail --silent --show-error \
+              -H "$AUTH_HEADER" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/build/builds?definitions=$PIPELINE_ID&queryOrder=queueTimeDescending&%24top=20&api-version=7.1"
+          )"
+
+          EXISTING_ID="$(
+            printf '%s' "$RECENT_BUILDS" |
+              jq -r --arg sha "$GITHUB_SHA" '.value[]? | select(.sourceVersion == $sha and (.status == "notStarted" or .status == "inProgress" or .status == "completed")) | .id' |
+              head -1
+          )"
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Azure DevOps mobile build already exists for $GITHUB_SHA: $EXISTING_ID"
+            exit 0
+          fi
+
+          BODY="$(
+            jq -n \
+              --argjson definitionId "$PIPELINE_ID" \
+              --arg sourceBranch "refs/heads/main" \
+              --arg sourceVersion "$GITHUB_SHA" \
+              '{
+                definition: { id: $definitionId },
+                sourceBranch: $sourceBranch,
+                sourceVersion: $sourceVersion
+              }'
+          )"
+
+          RESPONSE_FILE="$RUNNER_TEMP/azdo-mobile-queue.json"
+          STATUS="$(
+            curl --silent --show-error \
+              -o "$RESPONSE_FILE" \
+              -w '%{http_code}' \
+              -X POST \
+              -H "$AUTH_HEADER" \
+              -H 'Content-Type: application/json' \
+              --data "$BODY" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/build/builds?api-version=7.1"
+          )"
+
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+            echo "Failed to queue Azure DevOps mobile build (HTTP $STATUS)." >&2
+            jq -c '{message,typeName,errorCode,eventId}' "$RESPONSE_FILE" 2>/dev/null >&2 || cat "$RESPONSE_FILE" >&2
+            exit 1
+          fi
+
+          BUILD_ID="$(jq -r '.id // empty' "$RESPONSE_FILE")"
+          BUILD_NUMBER="$(jq -r '.buildNumber // empty' "$RESPONSE_FILE")"
+          test -n "$BUILD_ID"
+
+          echo "Queued Azure DevOps mobile build: id=$BUILD_ID build=$BUILD_NUMBER commit=$GITHUB_SHA"
