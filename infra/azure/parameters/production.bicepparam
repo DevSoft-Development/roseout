@@ -10,6 +10,8 @@ param aiModelDeploymentEnabled = false
 param consumerContainerAppsEnvironmentEnabled = true
 param consumerRegionalFailoverEnabled = true
 param consumerEdgeEnabled = false
+param consumerCustomDomainHostName = 'theouthaven.com'
+param consumerWwwCustomDomainHostName = 'www.theouthaven.com'
 
 param otaEnabled = true
 param otaCustomDomainHostName = 'updates.theouthaven.com'
