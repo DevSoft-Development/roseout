@@ -66,6 +66,10 @@ jobs:
           chmod 600 "$RUNNER_TEMP/azdo-pat"
           rm -f "$SECRET_FILE"
 
+      - name: Synchronize Azure DevOps mobile release configuration
+        shell: bash
+        run: bash scripts/azure-devops-mobile-bootstrap.sh
+
       - name: Queue mobile pipeline if needed
         env:
           AZDO_ORG: ${{ steps.config.outputs.org }}

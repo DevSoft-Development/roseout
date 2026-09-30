@@ -17,6 +17,12 @@ pr:
       - mobile/*
       - azure-pipelines-mobile.yml
 
+parameters:
+  - name: iosOnly
+    displayName: Run iOS only
+    type: boolean
+    default: false
+
 variables:
   - group: theouthaven-mobile-production
   - name: nodeVersion
