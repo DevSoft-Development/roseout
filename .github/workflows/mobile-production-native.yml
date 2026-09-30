@@ -26,6 +26,6 @@ jobs:
           grep -F 'InstallAppleCertificate@2' azure-pipelines-mobile.yml >/dev/null
           grep -F 'InstallAppleProvisioningProfile@1' azure-pipelines-mobile.yml >/dev/null
           grep -F 'bundleRelease' azure-pipelines-mobile.yml >/dev/null
-          grep -F 'iTMSTransporter' azure-pipelines-mobile.yml >/dev/null
+          grep -F 'xcrun altool' azure-pipelines-mobile.yml >/dev/null
           grep -F 'androidpublisher' azure-pipelines-mobile.yml >/dev/null
           echo "Production native build authority: Azure Pipelines."
