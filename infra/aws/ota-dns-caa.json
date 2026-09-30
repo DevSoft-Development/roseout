@@ -1,0 +1,10 @@
+{
+  "host": "updates.theouthaven.com",
+  "records": [
+    {
+      "type": "CAA",
+      "ttl": 300,
+      "value": "0 issue \"digicert.com\""
+    }
+  ]
+}
