@@ -8,6 +8,16 @@ on:
       - 'azure-pipelines-mobile.yml'
       - '.github/workflows/azure-devops-mobile-dispatch.yml'
   workflow_dispatch:
+    inputs:
+      releasePlatform:
+        description: Mobile release lane
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - ios
+          - android
 
 permissions:
   contents: read
@@ -74,6 +84,7 @@ jobs:
         env:
           AZDO_ORG: ${{ steps.config.outputs.org }}
           AZDO_PROJECT: ${{ steps.config.outputs.project }}
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -123,13 +134,35 @@ jobs:
           fi
 
           RELEASE_PLATFORM="both"
-          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
-          if printf '%s' "$COMMIT_MESSAGE" | grep -Fqi '[ios-only]'; then
-            RELEASE_PLATFORM="ios"
-          elif printf '%s' "$COMMIT_MESSAGE" | grep -Fqi '[android-only]'; then
-            RELEASE_PLATFORM="android"
+          REQUESTED_PLATFORM="${{ github.event.inputs.releasePlatform || '' }}"
+
+          if [ -n "$REQUESTED_PLATFORM" ]; then
+            RELEASE_PLATFORM="$REQUESTED_PLATFORM"
+            echo "Using manually requested mobile release platform: $RELEASE_PLATFORM"
+          else
+            PR_TITLE="$(
+              curl --fail --silent --show-error \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" |
+                jq -r '.[0].title // empty'
+            )"
+            COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+
+            if printf '%s\n%s' "$PR_TITLE" "$COMMIT_MESSAGE" | grep -Fqi '[ios-only]'; then
+              RELEASE_PLATFORM="ios"
+            elif printf '%s\n%s' "$PR_TITLE" "$COMMIT_MESSAGE" | grep -Fqi '[android-only]'; then
+              RELEASE_PLATFORM="android"
+            fi
+
+            echo "Associated PR title: ${PR_TITLE:-none}"
+            echo "Selected mobile release platform: $RELEASE_PLATFORM"
           fi
-          echo "Selected mobile release platform: $RELEASE_PLATFORM"
+
+          case "$RELEASE_PLATFORM" in
+            both|ios|android) ;;
+            *) echo "Invalid mobile release platform: $RELEASE_PLATFORM" >&2; exit 1 ;;
+          esac
 
           BODY="$(
             jq -n \
