@@ -58,6 +58,7 @@ jobs:
             (.iosTeamId | length > 0) and
             (.appStoreConnectKeyId | length > 0) and
             (.appStoreConnectIssuerId | length > 0) and
+            (.appStoreConnectAppleId | length > 0) and
             (.appStoreConnectPrivateKey | length > 0) and
             (.appStoreConnectAppId | length > 0) and
             (.androidKeystoreBase64 | length > 0) and
@@ -83,6 +84,7 @@ jobs:
               iosTeamId
               appStoreConnectKeyId
               appStoreConnectIssuerId
+              appStoreConnectAppleId
               appStoreConnectPrivateKey
               appStoreConnectAppId
               androidKeystoreBase64
