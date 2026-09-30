@@ -2,10 +2,13 @@ param environment string
 param tags object
 param primaryOriginHostName string
 param secondaryOriginHostName string
+param customDomainHostName string = ''
+param wwwCustomDomainHostName string = ''
 param healthProbePath string = '/api/health/azure/probe'
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var suffix = substring(uniqueString(resourceGroup().id), 0, 8)
+var customDomainsEnabled = !empty(customDomainHostName) && !empty(wwwCustomDomainHostName)
 
 resource profile 'Microsoft.Cdn/profiles@2024-02-01' = {
   name: 'afd-toh-consumer-${envShort}-v2'
@@ -13,6 +16,30 @@ resource profile 'Microsoft.Cdn/profiles@2024-02-01' = {
   tags: tags
   sku: {
     name: 'Standard_AzureFrontDoor'
+  }
+}
+
+resource apexCustomDomain 'Microsoft.Cdn/profiles/customDomains@2024-02-01' = if (customDomainsEnabled) {
+  parent: profile
+  name: 'apex'
+  properties: {
+    hostName: customDomainHostName
+    tlsSettings: {
+      certificateType: 'ManagedCertificate'
+      minimumTlsVersion: 'TLS12'
+    }
+  }
+}
+
+resource wwwCustomDomain 'Microsoft.Cdn/profiles/customDomains@2024-02-01' = if (customDomainsEnabled) {
+  parent: profile
+  name: 'www'
+  properties: {
+    hostName: wwwCustomDomainHostName
+    tlsSettings: {
+      certificateType: 'ManagedCertificate'
+      minimumTlsVersion: 'TLS12'
+    }
   }
 }
 
@@ -89,6 +116,10 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = {
     patternsToMatch: [
       '/*'
     ]
+    customDomains: customDomainsEnabled ? [
+      { id: apexCustomDomain.id }
+      { id: wwwCustomDomain.id }
+    ] : []
     forwardingProtocol: 'HttpsOnly'
     linkToDefaultDomain: 'Enabled'
     httpsRedirect: 'Enabled'
@@ -108,3 +139,8 @@ output routeResourceId string = route.id
 output primaryOriginResourceId string = primaryOrigin.id
 output primaryOriginHostName string = primaryOriginHostName
 output secondaryOriginHostName string = secondaryOriginHostName
+
+output customDomainHostName string = customDomainHostName
+output wwwCustomDomainHostName string = wwwCustomDomainHostName
+output apexCustomDomainResourceId string = customDomainsEnabled ? apexCustomDomain.id : ''
+output wwwCustomDomainResourceId string = customDomainsEnabled ? wwwCustomDomain.id : ''

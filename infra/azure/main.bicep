@@ -20,6 +20,8 @@ param consumerContainerAppsEnvironmentEnabled bool = false
 param consumerRuntimeEnabled bool = false
 param consumerRegionalFailoverEnabled bool = false
 param consumerEdgeEnabled bool = false
+param consumerCustomDomainHostName string = ''
+param consumerWwwCustomDomainHostName string = ''
 param otaEnabled bool = false
 param otaCustomDomainHostName string = ''
 param otaApiOriginHostName string = ''
@@ -137,6 +139,8 @@ module consumerEdge './modules/consumer-edge.bicep' = if (consumerRuntimeEnabled
     tags: tags
     primaryOriginHostName: consumerRuntime.outputs.fqdn
     secondaryOriginHostName: consumerSecondaryRuntime.outputs.fqdn
+    customDomainHostName: consumerCustomDomainHostName
+    wwwCustomDomainHostName: consumerWwwCustomDomainHostName
   }
 }
 
@@ -182,6 +186,8 @@ output consumerFrontDoorEndpointHostName string = consumerRuntimeEnabled && cons
 output consumerFrontDoorEndpointResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.endpointResourceId : ''
 output consumerFrontDoorRouteResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.routeResourceId : ''
 output consumerFrontDoorPrimaryOriginResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.primaryOriginResourceId : ''
+output consumerCustomDomainResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.apexCustomDomainResourceId : ''
+output consumerWwwCustomDomainResourceId string = consumerRuntimeEnabled && consumerRegionalFailoverEnabled && consumerEdgeEnabled ? consumerEdge!.outputs.wwwCustomDomainResourceId : ''
 
 output otaStorageAccountName string = otaEnabled ? otaFoundation!.outputs.storageAccountName : ''
 output otaPrimaryWebEndpoint string = otaEnabled ? otaFoundation!.outputs.primaryWebEndpoint : ''
