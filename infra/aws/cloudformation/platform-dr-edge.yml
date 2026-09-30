@@ -19,12 +19,6 @@ Parameters:
   PlatformDrCertificateArn:
     Type: String
     Description: Pre-issued us-east-1 ACM certificate covering the apex and wildcard domain.
-  GatewayHealthHost:
-    Type: String
-    Description: Platform DR Lambda Function URL hostname without scheme or path.
-  GatewayHealthPath:
-    Type: String
-    Default: /v1/health/primary
   DrAlbDomainName:
     Type: String
     Description: us-west-2 platform DR ALB DNS name.
@@ -134,33 +128,12 @@ Resources:
         - { Key: Environment, Value: !Ref Environment }
         - { Key: Service, Value: PlatformDR }
 
-  VercelPrimaryHealthCheck:
-    Type: AWS::Route53::HealthCheck
-    Properties:
-      HealthCheckConfig:
-        Type: HTTPS
-        FullyQualifiedDomainName: !Ref GatewayHealthHost
-        Port: 443
-        ResourcePath: !Ref GatewayHealthPath
-        RequestInterval: 30
-        FailureThreshold: 2
-        MeasureLatency: true
-        EnableSNI: true
-      HealthCheckTags:
-        - Key: Name
-          Value: !Sub toh-${Environment}-vercel-primary
-        - Key: Project
-          Value: TheOutHaven
-        - Key: Service
-          Value: PlatformDR
 
 Outputs:
   PlatformDrDistributionId:
     Value: !Ref PlatformDrDistribution
   PlatformDrDistributionDomainName:
     Value: !GetAtt PlatformDrDistribution.DomainName
-  VercelPrimaryHealthCheckId:
-    Value: !Ref VercelPrimaryHealthCheck
   PlatformDrCertificateArn:
     Value: !Ref PlatformDrCertificateArn
   ApexRedirectFunctionArn:
