@@ -170,7 +170,7 @@ resource primaryApiOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-0
   }
 }
 
-resource secondaryApiOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = if (apiEnabled && environment == 'production') {
+resource secondaryApiOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = if (apiEnabled && environment == 'production' && !empty(secondaryApiHostName) && secondaryApiHostName != primaryApiHostName) {
   parent: apiOriginGroup
   name: 'secondary'
   properties: {
@@ -241,7 +241,7 @@ resource apiRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-02-01' = if (
     httpsRedirect: 'Enabled'
     enabledState: 'Enabled'
   }
-  dependsOn: environment == 'production' ? [
+  dependsOn: environment == 'production' && !empty(secondaryApiHostName) && secondaryApiHostName != primaryApiHostName ? [
     primaryApiOrigin
     secondaryApiOrigin
   ] : [
