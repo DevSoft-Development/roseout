@@ -129,6 +129,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "iosTeamId", label: "Apple Team ID" },
     { key: "appStoreConnectKeyId", label: "App Store Connect Key ID" },
     { key: "appStoreConnectIssuerId", label: "App Store Connect Issuer ID" },
+    { key: "appStoreConnectAppleId", label: "App Store Connect Apple ID", placeholder: "release@theouthaven.com" },
     { key: "appStoreConnectPrivateKey", label: "App Store Connect private key (.p8)", secret: true, multiline: true, placeholder: "-----BEGIN PRIVATE KEY-----" },
     { key: "appStoreConnectAppId", label: "App Store Connect app ID", placeholder: "6811955108" },
     { key: "androidKeystoreBase64", label: "Android upload keystore (.jks / .keystore)", secret: true, file: true, accept: ".jks,.keystore,application/octet-stream" },
