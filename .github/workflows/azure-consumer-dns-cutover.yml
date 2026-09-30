@@ -1,0 +1,332 @@
+name: Azure consumer DNS cutover
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/azure-consumer-apex-redirect.yml'
+      - '.github/workflows/azure-consumer-dns-cutover.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/azure-consumer-apex-redirect.yml'
+      - '.github/workflows/azure-consumer-dns-cutover.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-consumer-dns-cutover-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: theouthaven.com
+  WWW_DOMAIN_NAME: www.theouthaven.com
+  AZURE_RESOURCE_GROUP: rg-toh-consumer-production
+  AZURE_DEPLOYMENT: toh-consumer-runtime-production
+  APEX_REDIRECT_STACK: theouthaven-azure-consumer-apex-redirect-production
+  DR_EDGE_STACK: theouthaven-platform-dr-edge-production
+  EXTERNAL_MONITOR_STACK: theouthaven-azure-frontdoor-external-monitor-production
+  CERT_PARAMETER: /theouthaven/production/platform-dr/acm-certificate-arn
+  SNAPSHOT_SECRET: theouthaven/production/azure-consumer/dns-cutover-last-snapshot
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CloudFormation linter
+        run: python -m pip install --disable-pip-version-check cfn-lint
+      - name: Validate apex redirect stack
+        run: cfn-lint infra/aws/cloudformation/azure-consumer-apex-redirect.yml
+
+  execute:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve and verify Azure Front Door consumer domains
+        id: azure
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            PROFILE="$(az deployment sub show --name "$AZURE_DEPLOYMENT" --query properties.outputs.consumerFrontDoorProfileName.value -o tsv)"
+            EDGE="$(az deployment sub show --name "$AZURE_DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            IMAGE="$(az deployment sub show --name "$AZURE_DEPLOYMENT" --query properties.outputs.consumerRuntimeImage.value -o tsv)"
+            test -n "$PROFILE" && test "$PROFILE" != None
+            test -n "$EDGE" && test "$EDGE" != None
+            test -n "$IMAGE" && test "$IMAGE" != None
+            EXPECTED_SHA="${IMAGE##*:}"
+            printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+            for pair in apex:theouthaven.com www:www.theouthaven.com; do
+              name="${pair%%:*}"
+              host="${pair#*:}"
+              az afd custom-domain show                 --resource-group "$AZURE_RESOURCE_GROUP"                 --profile-name "$PROFILE"                 --custom-domain-name "$name" -o json > "/tmp/${name}-domain.json"
+              test "$(jq -r '.hostName' "/tmp/${name}-domain.json")" = "$host"
+              token="$(jq -r '.validationProperties.validationToken // empty' "/tmp/${name}-domain.json")"
+              test -n "$token"
+              echo "::add-mask::$token"
+              echo "${name}_token=$token" >> "$GITHUB_OUTPUT"
+            done
+
+            echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+            echo "expected_sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        id: aws
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Bootstrap narrowly scoped consumer cutover permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/cutover-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "cloudformation:*",
+                  "cloudfront:*",
+                  "route53:*",
+                  "ssm:GetParameter",
+                  "secretsmanager:CreateSecret",
+                  "secretsmanager:DescribeSecret",
+                  "secretsmanager:GetSecretValue",
+                  "secretsmanager:PutSecretValue"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenAzureConsumerDnsCutoverBootstrap             --policy-document "file://$RUNNER_TEMP/cutover-policy.json"
+          sleep 8
+
+      - name: Deploy apex redirect edge
+        id: redirect
+        env:
+          FRONT_DOOR_HOST: ${{ steps.azure.outputs.edge }}
+        run: |
+          set -euo pipefail
+          CERT_ARN="$(aws ssm get-parameter --name "$CERT_PARAMETER" --query Parameter.Value --output text)"
+          test -n "$CERT_ARN" && test "$CERT_ARN" != None
+          aws cloudformation deploy             --stack-name "$APEX_REDIRECT_STACK"             --template-file infra/aws/cloudformation/azure-consumer-apex-redirect.yml             --no-fail-on-empty-changeset             --parameter-overrides               Environment=production               DomainName="$DOMAIN_NAME"               WwwDomainName="$WWW_DOMAIN_NAME"               CertificateArn="$CERT_ARN"               FrontDoorHost="$FRONT_DOOR_HOST"             --tags Project=TheOutHaven Environment=production Service=AzureConsumerApexRedirect ManagedBy=CloudFormation
+          REDIRECT_DOMAIN="$(aws cloudformation describe-stacks --stack-name "$APEX_REDIRECT_STACK" --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue | [0]" --output text)"
+          test -n "$REDIRECT_DOMAIN" && test "$REDIRECT_DOMAIN" != None
+          echo "domain=$REDIRECT_DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve DNS failover targets and capture rollback snapshot
+        id: dns
+        env:
+          APEX_TOKEN: ${{ steps.azure.outputs.apex_token }}
+          WWW_TOKEN: ${{ steps.azure.outputs.www_token }}
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${DOMAIN_NAME}." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID"
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
+
+          DR_DOMAIN="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$DR_EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='PlatformDrDistributionDomainName'].OutputValue | [0]" --output text)"
+          FRONTDOOR_HEALTH_ID="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$EXTERNAL_MONITOR_STACK" --query "Stacks[0].Outputs[?OutputKey=='FrontDoorHealthCheckId'].OutputValue | [0]" --output text)"
+          test -n "$DR_DOMAIN" && test "$DR_DOMAIN" != None
+          test -n "$FRONTDOOR_HEALTH_ID" && test "$FRONTDOOR_HEALTH_ID" != None
+          echo "dr_domain=$DR_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "frontdoor_health_id=$FRONTDOOR_HEALTH_ID" >> "$GITHUB_OUTPUT"
+
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/current.json"
+          python3 - <<'PY'
+          import json, os
+          current=json.load(open(os.environ['RUNNER_TEMP']+'/current.json'))['ResourceRecordSets']
+          names={
+            os.environ['DOMAIN_NAME'].rstrip('.')+'.',
+            os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.',
+            '_dnsauth.'+os.environ['DOMAIN_NAME'].rstrip('.')+'.',
+            '_dnsauth.'+os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.',
+          }
+          rows=[r for r in current if r.get('Name') in names]
+          raw=json.dumps({'records':rows},separators=(',',':'))
+          if len(raw.encode()) > 60000:
+              raise SystemExit('Consumer DNS rollback snapshot is unexpectedly large.')
+          open(os.environ['RUNNER_TEMP']+'/snapshot.json','w').write(raw)
+          PY
+
+          SNAPSHOT_VALUE="$(cat "$RUNNER_TEMP/snapshot.json")"
+          if aws secretsmanager describe-secret --secret-id "$SNAPSHOT_SECRET" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value --secret-id "$SNAPSHOT_SECRET" --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          else
+            aws secretsmanager create-secret --name "$SNAPSHOT_SECRET" --description 'TheOutHaven pre-Azure consumer DNS cutover snapshot' --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          fi
+
+      - name: Publish Azure Front Door validation TXT records
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+          APEX_TOKEN: ${{ steps.azure.outputs.apex_token }}
+          WWW_TOKEN: ${{ steps.azure.outputs.www_token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          changes=[]
+          for host,token in [
+              (os.environ['DOMAIN_NAME'],os.environ['APEX_TOKEN']),
+              (os.environ['WWW_DOMAIN_NAME'],os.environ['WWW_TOKEN'])
+          ]:
+              changes.append({
+                'Action':'UPSERT',
+                'ResourceRecordSet':{
+                  'Name':'_dnsauth.'+host.rstrip('.')+'.',
+                  'Type':'TXT',
+                  'TTL':60,
+                  'ResourceRecords':[{'Value':json.dumps(token)}]
+                }
+              })
+          json.dump({'Comment':'Validate TheOutHaven consumer domains with Azure Front Door','Changes':changes},open(os.environ['RUNNER_TEMP']+'/domain-validation.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/domain-validation.json" --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+
+      - name: Wait for Azure Front Door domain approval
+        uses: azure/CLI@v2
+        env:
+          PROFILE: ${{ steps.azure.outputs.profile }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            for attempt in $(seq 1 60); do
+              all_ready=true
+              for name in apex www; do
+                state="$(az afd custom-domain show --resource-group "$AZURE_RESOURCE_GROUP" --profile-name "$PROFILE" --custom-domain-name "$name" --query domainValidationState -o tsv)"
+                provisioning="$(az afd custom-domain show --resource-group "$AZURE_RESOURCE_GROUP" --profile-name "$PROFILE" --custom-domain-name "$name" --query provisioningState -o tsv)"
+                echo "$name: validation=$state provisioning=$provisioning"
+                if [ "$state" != Approved ] || [ "$provisioning" != Succeeded ]; then all_ready=false; fi
+              done
+              [ "$all_ready" = true ] && exit 0
+              sleep 15
+            done
+            exit 1
+
+      - name: Cut production consumer DNS to Azure Front Door with AWS DR failover
+        id: cutover
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+          EDGE: ${{ steps.azure.outputs.edge }}
+          REDIRECT_DOMAIN: ${{ steps.redirect.outputs.domain }}
+          DR_DOMAIN: ${{ steps.dns.outputs.dr_domain }}
+          FRONTDOOR_HEALTH_ID: ${{ steps.dns.outputs.frontdoor_health_id }}
+        run: |
+          set -euo pipefail
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/pre-cutover.json"
+          python3 - <<'PY'
+          import json, os
+          current=json.load(open(os.environ['RUNNER_TEMP']+'/pre-cutover.json'))['ResourceRecordSets']
+          apex=os.environ['DOMAIN_NAME'].rstrip('.')+'.'
+          www=os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.'
+          selected=[r for r in current if r.get('Name') in {apex,www} and r.get('Type') in {'A','AAAA','CNAME'}]
+          changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in selected]
+          redirect=os.environ['REDIRECT_DOMAIN'].rstrip('.')+'.'
+          edge=os.environ['EDGE'].rstrip('.')+'.'
+          dr=os.environ['DR_DOMAIN'].rstrip('.')+'.'
+          for typ in ('A','AAAA'):
+              changes.append({'Action':'CREATE','ResourceRecordSet':{
+                'Name':apex,'Type':typ,
+                'AliasTarget':{'HostedZoneId':'Z2FDTNDATAQYW2','DNSName':redirect,'EvaluateTargetHealth':False}
+              }})
+          changes += [
+            {'Action':'CREATE','ResourceRecordSet':{
+              'Name':www,'Type':'CNAME','TTL':60,
+              'SetIdentifier':'azure-frontdoor-primary','Failover':'PRIMARY',
+              'HealthCheckId':os.environ['FRONTDOOR_HEALTH_ID'],
+              'ResourceRecords':[{'Value':edge}]
+            }},
+            {'Action':'CREATE','ResourceRecordSet':{
+              'Name':www,'Type':'CNAME','TTL':60,
+              'SetIdentifier':'aws-dr-secondary','Failover':'SECONDARY',
+              'ResourceRecords':[{'Value':dr}]
+            }}
+          ]
+          json.dump({'Comment':'Cut TheOutHaven consumer traffic from Vercel to Azure Front Door with AWS DR failover','Changes':changes},open(os.environ['RUNNER_TEMP']+'/cutover.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/cutover.json" --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify live Azure consumer traffic
+        id: verify
+        env:
+          EXPECTED_SHA: ${{ steps.azure.outputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 60); do
+            APEX_CODE="$(curl --silent --show-error --output /dev/null --dump-header "$RUNNER_TEMP/apex.headers" --write-out '%{http_code}' --max-time 20 "https://${DOMAIN_NAME}/?cb=$(date +%s)" || true)"
+            WWW_CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/www-health.json" --write-out '%{http_code}' --max-time 20 "https://${WWW_DOMAIN_NAME}/api/health/azure?cb=$(date +%s)" || true)"
+            LOCATION="$(tr -d '\r' < "$RUNNER_TEMP/apex.headers" | awk -F': ' 'tolower($1)=="location" {print $2}' | tail -1)"
+            if { [ "$APEX_CODE" = 308 ] || [ "$APEX_CODE" = 301 ] || [ "$APEX_CODE" = 302 ] || [ "$APEX_CODE" = 307 ]; }               && printf '%s' "$LOCATION" | grep -q '^https://www\.theouthaven\.com/'               && [ "$WWW_CODE" = 200 ]               && jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .revision==$sha and (.region=="primary" or .region=="secondary")' "$RUNNER_TEMP/www-health.json" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            echo "Attempt $attempt: apex=$APEX_CODE location=$LOCATION www=$WWW_CODE"
+            sleep 15
+          done
+          test "$ready" = true
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Automatic DNS rollback after failed live verification
+        if: failure() && steps.aws.outcome == 'success' && steps.dns.outcome == 'success' && steps.cutover.outputs.changed == 'true' && steps.verify.outputs.verified != 'true'
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SNAPSHOT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/rollback.json"
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/rollback-current.json"
+          python3 - <<'PY'
+          import json, os
+          snap=json.load(open(os.environ['RUNNER_TEMP']+'/rollback.json'))
+          current=json.load(open(os.environ['RUNNER_TEMP']+'/rollback-current.json'))['ResourceRecordSets']
+          names={
+            os.environ['DOMAIN_NAME'].rstrip('.')+'.',
+            os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.',
+            '_dnsauth.'+os.environ['DOMAIN_NAME'].rstrip('.')+'.',
+            '_dnsauth.'+os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.'
+          }
+          selected=[r for r in current if r.get('Name') in names]
+          changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in selected]
+          changes += [{'Action':'CREATE','ResourceRecordSet':r} for r in snap['records']]
+          json.dump({'Comment':'Automatic rollback after failed TheOutHaven Azure consumer DNS verification','Changes':changes},open(os.environ['RUNNER_TEMP']+'/rollback-change.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/rollback-change.json" --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+
+      - name: Remove temporary consumer cutover permissions
+        if: always() && steps.aws.outcome == 'success'
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name TheOutHavenAzureConsumerDnsCutoverBootstrap 2>/dev/null || true
