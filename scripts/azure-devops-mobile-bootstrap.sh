@@ -28,6 +28,7 @@ jq -e '
   (.iosTeamId | type == "string" and length > 0) and
   (.appStoreConnectKeyId | type == "string" and length > 0) and
   (.appStoreConnectIssuerId | type == "string" and length > 0) and
+  (.appStoreConnectAppleId | type == "string" and length > 0) and
   (.appStoreConnectPrivateKey | type == "string" and contains("BEGIN PRIVATE KEY")) and
   (.appStoreConnectAppId | type == "string" and length > 0) and
   (.androidKeystoreBase64 | type == "string" and length > 0) and
@@ -51,6 +52,7 @@ IOS_CERTIFICATE_PASSWORD="$(jq -r '.iosCertificatePassword' "$WORK/mobile.json")
 IOS_TEAM_ID="$(jq -r '.iosTeamId' "$WORK/mobile.json")"
 APP_STORE_CONNECT_KEY_ID="$(jq -r '.appStoreConnectKeyId' "$WORK/mobile.json")"
 APP_STORE_CONNECT_ISSUER_ID="$(jq -r '.appStoreConnectIssuerId' "$WORK/mobile.json")"
+APP_STORE_CONNECT_APPLE_ID="$(jq -r '.appStoreConnectAppleId' "$WORK/mobile.json")"
 APP_STORE_CONNECT_APP_ID="$(jq -r '.appStoreConnectAppId' "$WORK/mobile.json")"
 ANDROID_KEYSTORE_PASSWORD="$(jq -r '.androidKeystorePassword' "$WORK/mobile.json")"
 ANDROID_KEY_ALIAS="$(jq -r '.androidKeyAlias' "$WORK/mobile.json")"
@@ -151,7 +153,7 @@ VARIABLE_GROUPS_JSON="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variabl
 GROUP_ID="$(printf '%s' "$VARIABLE_GROUPS_JSON" | jq -r '.value[0].id // empty')"
 
 GROUP_BODY="$(
-  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     --arg sentryAuthToken "$SENTRY_AUTH_TOKEN"     --arg sentryOrg "$SENTRY_ORG"     --arg sentryProject "$SENTRY_PROJECT"     '{
+  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppleId "$APP_STORE_CONNECT_APPLE_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     --arg sentryAuthToken "$SENTRY_AUTH_TOKEN"     --arg sentryOrg "$SENTRY_ORG"     --arg sentryProject "$SENTRY_PROJECT"     '{
       name: $name,
       description: "TheOutHaven production mobile signing and store submission configuration. Source of truth: Admin Credential Vault.",
       type: "Vsts",
@@ -170,6 +172,7 @@ GROUP_BODY="$(
         IOS_TEAM_ID: { value: $iosTeam },
         APP_STORE_CONNECT_KEY_ID: { value: $appStoreKeyId },
         APP_STORE_CONNECT_ISSUER_ID: { value: $appStoreIssuer },
+        APP_STORE_CONNECT_APPLE_ID: { value: $appStoreAppleId },
         APP_STORE_CONNECT_APP_ID: { value: $appStoreAppId },
         ANDROID_KEYSTORE_PASSWORD: { value: $androidStorePassword, isSecret: true },
         ANDROID_KEY_ALIAS: { value: $androidAlias },
@@ -329,6 +332,7 @@ printf '%s' "$VERIFY_GROUP" | jq -e '
   .value[0].variables.IOS_CERTIFICATE_SECURE_FILE.value == "theouthaven-ios-distribution.p12" and
   .value[0].variables.IOS_PROFILE_SECURE_FILE.value == "theouthaven-appstore.mobileprovision" and
   .value[0].variables.APP_STORE_CONNECT_KEY_SECURE_FILE.value == "theouthaven-appstore-connect.p8" and
+  (.value[0].variables.APP_STORE_CONNECT_APPLE_ID.value | length > 0) and
   .value[0].variables.ANDROID_KEYSTORE_SECURE_FILE.value == "theouthaven-android-upload.jks" and
   .value[0].variables.GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE.value == "theouthaven-google-play-service-account.json" and
   (.value[0].variables.SENTRY_AUTH_TOKEN.isSecret == true) and
