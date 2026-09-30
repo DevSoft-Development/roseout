@@ -122,15 +122,32 @@ jobs:
             exit 0
           fi
 
+          RELEASE_PLATFORM="both"
+          COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+          if printf '%s' "$COMMIT_MESSAGE" | grep -Fqi '[ios-only]'; then
+            RELEASE_PLATFORM="ios"
+          elif printf '%s' "$COMMIT_MESSAGE" | grep -Fqi '[android-only]'; then
+            RELEASE_PLATFORM="android"
+          fi
+          echo "Selected mobile release platform: $RELEASE_PLATFORM"
+
           BODY="$(
             jq -n \
-              --argjson definitionId "$PIPELINE_ID" \
               --arg sourceBranch "refs/heads/main" \
               --arg sourceVersion "$GITHUB_SHA" \
+              --arg releasePlatform "$RELEASE_PLATFORM" \
               '{
-                definition: { id: $definitionId },
-                sourceBranch: $sourceBranch,
-                sourceVersion: $sourceVersion
+                resources: {
+                  repositories: {
+                    self: {
+                      refName: $sourceBranch,
+                      version: $sourceVersion
+                    }
+                  }
+                },
+                templateParameters: {
+                  releasePlatform: $releasePlatform
+                }
               }'
           )"
 
@@ -143,7 +160,7 @@ jobs:
               -H "$AUTH_HEADER" \
               -H 'Content-Type: application/json' \
               --data "$BODY" \
-              "$API_ROOT/$PROJECT_ENCODED/_apis/build/builds?api-version=7.1"
+              "$API_ROOT/$PROJECT_ENCODED/_apis/pipelines/$PIPELINE_ID/runs?api-version=7.1"
           )"
 
           if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
@@ -153,7 +170,7 @@ jobs:
           fi
 
           BUILD_ID="$(jq -r '.id // empty' "$RESPONSE_FILE")"
-          BUILD_NUMBER="$(jq -r '.buildNumber // empty' "$RESPONSE_FILE")"
+          BUILD_NUMBER="$(jq -r '.name // .buildNumber // empty' "$RESPONSE_FILE")"
           test -n "$BUILD_ID"
 
           echo "Queued Azure DevOps mobile build: id=$BUILD_ID build=$BUILD_NUMBER commit=$GITHUB_SHA"
