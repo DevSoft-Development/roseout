@@ -1,27 +1,17 @@
 # Mobile production pipeline
-trigger:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - mobile/*
-      - azure-pipelines-mobile.yml
+trigger: none
 
-pr:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - mobile/*
-      - azure-pipelines-mobile.yml
+pr: none
 
 parameters:
-  - name: iosOnly
-    displayName: Run iOS only
-    type: boolean
-    default: false
+  - name: releasePlatform
+    displayName: Release platform
+    type: string
+    default: both
+    values:
+      - both
+      - ios
+      - android
 
 variables:
   - group: theouthaven-mobile-production
@@ -74,6 +64,7 @@ stages:
     jobs:
       - job: iOS
         displayName: Build signed iOS IPA
+        condition: and(succeeded(), ne('${{ parameters.releasePlatform }}', 'android'))
         timeoutInMinutes: 120
         pool:
           vmImage: macOS-26
@@ -504,6 +495,7 @@ stages:
 
       - job: Android
         displayName: Build signed Android AAB
+        condition: and(succeeded(), ne('${{ parameters.releasePlatform }}', 'ios'))
         pool:
           name: theouthaven-android-build
         steps:
