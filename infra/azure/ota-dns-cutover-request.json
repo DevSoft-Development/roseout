@@ -1,0 +1,4 @@
+{
+  "operation": "cutover",
+  "confirmation": "CUTOVER_OTA"
+}
