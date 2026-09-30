@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Independent AWS external monitoring for TheOutHaven Azure Front Door and both consumer regions.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  FrontDoorHost:
+    Type: String
+  PrimaryRegionHost:
+    Type: String
+  SecondaryRegionHost:
+    Type: String
+  PlatformAlertsTopicArn:
+    Type: String
+
+Resources:
+  FrontDoorHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS_STR_MATCH
+        FullyQualifiedDomainName: !Ref FrontDoorHost
+        Port: 443
+        ResourcePath: /api/health/azure
+        SearchString: '"ok":true'
+        RequestInterval: 30
+        FailureThreshold: 2
+        MeasureLatency: true
+        EnableSNI: true
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-azure-frontdoor-external
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: AzureConsumerExternalMonitor
+
+  PrimaryRegionHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS_STR_MATCH
+        FullyQualifiedDomainName: !Ref PrimaryRegionHost
+        Port: 443
+        ResourcePath: /api/health/azure
+        SearchString: '"ok":true'
+        RequestInterval: 30
+        FailureThreshold: 2
+        MeasureLatency: true
+        EnableSNI: true
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-azure-primary-external
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: AzureConsumerExternalMonitor
+
+  SecondaryRegionHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS_STR_MATCH
+        FullyQualifiedDomainName: !Ref SecondaryRegionHost
+        Port: 443
+        ResourcePath: /api/health/azure
+        SearchString: '"ok":true'
+        RequestInterval: 30
+        FailureThreshold: 2
+        MeasureLatency: true
+        EnableSNI: true
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub toh-${Environment}-azure-secondary-external
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Service
+          Value: AzureConsumerExternalMonitor
+
+  FrontDoorOutageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-azure-frontdoor-external-outage
+      AlarmDescription: Azure Front Door is externally unhealthy while at least one direct Azure consumer region remains healthy.
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      TreatMissingData: breaching
+      Metrics:
+        - Id: fd
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref FrontDoorHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: primary
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref PrimaryRegionHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: secondary
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref SecondaryRegionHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: frontdooroutage
+          Label: Front Door outage with healthy Azure origin
+          Expression: IF((fd<1) AND ((primary>=1) OR (secondary>=1)),1,0)
+          ReturnData: true
+      AlarmActions:
+        - !Ref PlatformAlertsTopicArn
+      OKActions:
+        - !Ref PlatformAlertsTopicArn
+
+  ConsumerExternalOutageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-azure-consumer-external-outage
+      AlarmDescription: Front Door and both Azure consumer regions are externally unhealthy.
+      ComparisonOperator: GreaterThanThreshold
+      Threshold: 0
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      TreatMissingData: breaching
+      Metrics:
+        - Id: fd
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref FrontDoorHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: primary
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref PrimaryRegionHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: secondary
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Route53
+              MetricName: HealthCheckStatus
+              Dimensions:
+                - Name: HealthCheckId
+                  Value: !Ref SecondaryRegionHealthCheck
+            Period: 60
+            Stat: Minimum
+        - Id: totaloutage
+          Label: Consumer edge and both Azure origins unavailable
+          Expression: IF((fd<1) AND (primary<1) AND (secondary<1),1,0)
+          ReturnData: true
+      AlarmActions:
+        - !Ref PlatformAlertsTopicArn
+      OKActions:
+        - !Ref PlatformAlertsTopicArn
+
+Outputs:
+  FrontDoorHealthCheckId:
+    Value: !Ref FrontDoorHealthCheck
+  PrimaryRegionHealthCheckId:
+    Value: !Ref PrimaryRegionHealthCheck
+  SecondaryRegionHealthCheckId:
+    Value: !Ref SecondaryRegionHealthCheck
+  FrontDoorOutageAlarmName:
+    Value: !Ref FrontDoorOutageAlarm
+  ConsumerExternalOutageAlarmName:
+    Value: !Ref ConsumerExternalOutageAlarm
