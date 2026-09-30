@@ -43,7 +43,8 @@ permissions:
 
 concurrency:
   group: aws-platform-dr-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'production' }}
-  cancel-in-progress: true
+  # PR validation may supersede stale runs, but production DR deploys must finish atomically.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   AWS_ACCOUNT_ID: '742020474738'
