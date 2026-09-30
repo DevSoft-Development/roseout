@@ -91,5 +91,5 @@ jobs:
           test -f azure-pipelines-mobile.yml
           grep -F 'InstallAppleCertificate@2' azure-pipelines-mobile.yml >/dev/null
           grep -F 'bundleRelease' azure-pipelines-mobile.yml >/dev/null
-          grep -F 'iTMSTransporter' azure-pipelines-mobile.yml >/dev/null
+          grep -F 'xcrun altool' azure-pipelines-mobile.yml >/dev/null
           grep -F 'androidpublisher' azure-pipelines-mobile.yml >/dev/null
