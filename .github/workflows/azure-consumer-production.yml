@@ -341,9 +341,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Disable primary Front Door origin for regional failover drill
-        if: >-
-        github.event_name == 'workflow_dispatch' && inputs.run_failover_drill ||
-        (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -369,9 +367,7 @@ jobs:
             exit 1
 
       - name: Prove secondary routing through Front Door
-        if: >-
-        github.event_name == 'workflow_dispatch' && inputs.run_failover_drill ||
-        (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
@@ -380,7 +376,7 @@ jobs:
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 120 --interval 10 --label "Front Door failover to secondary"
 
       - name: Restore primary Front Door origin
-        if: ${{ always() && (github.event_name == 'workflow_dispatch' && inputs.run_failover_drill || (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))) }}
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
@@ -406,12 +402,21 @@ jobs:
             exit 1
 
       - name: Prove primary restoration through Front Door
-        if: ${{ always() && (github.event_name == 'workflow_dispatch' && inputs.run_failover_drill || (github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]'))) }}
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
         run: |
           set -euo pipefail
           source .azure-frontdoor-proof.env
           # Restoration is another global Front Door update; allow the same convergence window.
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label "Front Door restoration to primary"
+
+      - name: Record regional failover drill success
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        run: |
+          {
+            echo "Front Door regional failover drill passed."
+            echo "Front Door primary restoration verified."
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
   failover_drill:
     name: Execute Front Door regional failover drill
@@ -438,7 +443,12 @@ jobs:
           PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
           IMAGE_SHA="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeImage.value -o tsv | sed 's#^.*consumer:##')"
           test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID" && test -n "$IMAGE_SHA"
-          printf 'PRIMARY_HOST=%s\nSECONDARY_HOST=%s\nEDGE_HOST=%s\nPRIMARY_ORIGIN_RESOURCE_ID=%s\nIMAGE_SHA=%s\n' "$PRIMARY" "$SECONDARY" "$EDGE" "$PRIMARY_ORIGIN_RESOURCE_ID" "$IMAGE_SHA" > "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+          printf 'PRIMARY_HOST=%s
+SECONDARY_HOST=%s
+EDGE_HOST=%s
+PRIMARY_ORIGIN_RESOURCE_ID=%s
+IMAGE_SHA=%s
+' "$PRIMARY" "$SECONDARY" "$EDGE" "$PRIMARY_ORIGIN_RESOURCE_ID" "$IMAGE_SHA" > "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
       - name: Disable primary Front Door origin
         uses: azure/CLI@v2
         with:
@@ -482,12 +492,5 @@ jobs:
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label 'Front Door restoration to primary'
       - name: Record failover drill success
         run: |
-          echo 'Front Door regional failover drill passed.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Front Door primary restoration verified.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Record regional failover drill success
-        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
-        run: |
-          {
-            echo "Front Door regional failover drill passed."
-            echo "Front Door primary restoration verified."
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'Front Door regional failover drill passed.' >> "DOLLGITHUB_STEP_SUMMARY"
+          echo 'Front Door primary restoration verified.' >> "DOLLGITHUB_STEP_SUMMARY"
