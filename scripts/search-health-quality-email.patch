@@ -1,0 +1,189 @@
+--- a/lib/search/enterprise/searchHealthLogger.ts	2026-07-07 19:31:06.000000000 +0000
++++ b/lib/search/enterprise/searchHealthLogger.ts	2026-07-13 00:29:35.962040784 +0000
+@@ -780,6 +780,61 @@
+   });
+ }
+ 
++
++function detectExpectedAudience(query: unknown): string | null {
++  const text = String(query ?? "").toLowerCase();
++  if (/\b(teen|teens|teenage|teenager|teenagers|teenage son|teenage daughter|my son|my daughter)\b/.test(text)) return "teen";
++  if (/\b(kid|kids|child|children)\b/.test(text)) return "kids";
++  if (/\b(family|family friendly|all ages)\b/.test(text)) return "family";
++  return null;
++}
++
++function deriveQualityEvaluation(args: LoggerArgs, result: any, debug: any, rawQuery: unknown) {
++  const explicit = debug?.qualityEvaluation ?? result?.qualityEvaluation ?? {};
++  const expectedAudience = explicit.expectedAudience ?? detectExpectedAudience(rawQuery);
++  const detectedAudience = explicit.detectedAudience ?? debug?.normalizedIntent?.audience?.type ?? result?.normalizedIntent?.audience?.type ?? null;
++  const locations = [
++    ...(Array.isArray(result?.activities) ? result.activities : []),
++    ...(Array.isArray(result?.matched_locations) ? result.matched_locations : []),
++  ].filter(Boolean);
++  const unique = Array.from(new Map(locations.map((row: any) => [String(row?.id ?? row?.name ?? Math.random()), row])).values());
++  const topFive = unique.slice(0, 5);
++  const topThree = unique.slice(0, 3);
++  const recordText = (row: any) => [row?.name, row?.activity_name, row?.activity_type, row?.primary_category, ...(Array.isArray(row?.tags) ? row.tags : []), ...(Array.isArray(row?.intent_tags) ? row.intent_tags : []), row?.search_document].filter(Boolean).join(" ").toLowerCase();
++  const isAdult = (row: any) => /\b(21\+|adults only|nightclub|night club|hookah|shisha|late night|bar|nightlife|club)\b/.test(recordText(row));
++  const isRelevant = (row: any) => /\b(arcade|games?|bowling|museum|mini golf|escape room|interactive|workshop|diy|park|all ages|family)\b/.test(recordText(row));
++  const adultTopFive = topFive.filter(isAdult);
++  const adultTopThree = topThree.filter(isAdult);
++  const relevantTopFive = topFive.filter(isRelevant);
++  const genericIntentCount = topFive.filter((row: any) => String(row?.primary_intent ?? "general") === "general" && Number(row?.intent_boost ?? 0) === 0).length;
++  const conflictingBoostCount = topFive.filter((row: any) => Array.isArray(row?.activityQualityReasons) && row.activityQualityReasons.some((reason: unknown) => /nightlife signal|drinks\/lounge/i.test(String(reason)))).length;
++  const flags = safeStringArray(explicit.suspiciousFlags, 50);
++  if (expectedAudience && !detectedAudience) flags.push("minor_audience_not_applied");
++  if (expectedAudience && adultTopThree.length) flags.push("adult_oriented_result_in_top_three");
++  else if (expectedAudience && adultTopFive.length) flags.push("adult_oriented_result_in_top_five");
++  if (expectedAudience && topFive.length > 0 && genericIntentCount === topFive.length) flags.push("generic_intent_used_for_specific_audience");
++  if (expectedAudience && conflictingBoostCount > 0) flags.push("nightlife_reward_applied_to_minor_query");
++  const suspiciousFlags = Array.from(new Set(flags));
++  const critical = suspiciousFlags.some((flag) => ["adult_oriented_result_in_top_three", "nightlife_reward_applied_to_minor_query", "adult_only_result_returned"].includes(flag));
++  const high = suspiciousFlags.some((flag) => ["minor_audience_not_applied", "generic_intent_used_for_specific_audience", "adult_oriented_result_in_top_five"].includes(flag));
++  const severity = explicit.severity ?? (critical ? "critical" : high ? "high" : suspiciousFlags.length ? "medium" : "none");
++  const qualitySuccess = explicit.qualitySuccess ?? !["high", "critical"].includes(String(severity));
++  return {
++    technicalSuccess: explicit.technicalSuccess ?? true,
++    qualitySuccess,
++    hadIssue: explicit.hadIssue ?? suspiciousFlags.length > 0,
++    severity,
++    issueType: explicit.issueType ?? (expectedAudience && suspiciousFlags.length ? "audience_safety_mismatch" : null),
++    issueLabel: explicit.issueLabel ?? (expectedAudience && suspiciousFlags.length ? "Minor-focused search returned conflicting results" : null),
++    suspiciousFlags, expectedAudience, detectedAudience,
++    adultOrientedTopFiveCount: adultTopFive.length,
++    relevantTopFiveCount: relevantTopFive.length,
++    genericIntentResultCount: genericIntentCount,
++    conflictingPositiveBoostCount: conflictingBoostCount,
++    topResultCategories: topFive.map((row: any) => row?.primary_category ?? row?.activity_type ?? null).filter(Boolean),
++  };
++}
++
+ function classifyWithReason(args: LoggerArgs, payload: any) {
+@@ -815,6 +870,13 @@
+       eventLabel: "Search error",
+       noPairsReason: payload.no_pairs_reason,
+     };
++  if (payload.quality_success === false && payload.quality_issue_type)
++    return {
++      eventType: String(payload.quality_issue_type),
++      severity: payload.quality_severity === "critical" ? "critical" as const : "error" as const,
++      eventLabel: String(payload.quality_issue_label || "Search quality issue"),
++      noPairsReason: payload.no_pairs_reason,
++    };
+@@ -1023,6 +1085,12 @@
+     restaurantCount,
+     activityCount,
+   );
++  const quality = deriveQualityEvaluation(
++    args,
++    result,
++    debug,
++    args.rawQuery ?? args.raw_query ?? debug?.rawQuery ?? normalizedIntent?.rawQuery,
++  );
+@@ -1084,6 +1152,20 @@
+     no_results_reason: noResultsReason,
+     no_pairs_reason: noPairsReason ? String(noPairsReason) : null,
++    technical_success: quality.technicalSuccess,
++    quality_success: quality.qualitySuccess,
++    quality_severity: quality.severity,
++    quality_issue_type: quality.issueType,
++    quality_issue_label: quality.issueLabel,
++    suspicious_flags: quality.suspiciousFlags,
++    expected_audience: quality.expectedAudience,
++    detected_audience: quality.detectedAudience,
++    adult_oriented_top_five_count: quality.adultOrientedTopFiveCount,
++    relevant_top_five_count: quality.relevantTopFiveCount,
++    generic_intent_result_count: quality.genericIntentResultCount,
++    conflicting_positive_boost_count: quality.conflictingPositiveBoostCount,
++    top_result_categories: quality.topResultCategories,
++    quality_evaluated_at: new Date().toISOString(),
+@@ -1149,6 +1231,8 @@
+     Boolean(payload.no_results_reason) ||
+     Boolean(payload.no_pairs_reason) ||
++    payload.quality_success === false ||
++    (Array.isArray(payload.suspicious_flags) && payload.suspicious_flags.length > 0) ||
+--- a/supabase/functions/admin-search-health-digest/index.ts	2026-07-07 19:31:06.000000000 +0000
++++ b/supabase/functions/admin-search-health-digest/index.ts	2026-07-13 00:29:53.928311009 +0000
+@@ -125,6 +125,10 @@
+     betaTesterEventCount: rows.filter((row) => row.source === "beta_tester_search" || row.beta_tester_id).length,
++    qualityFailureCount: rows.filter((row) => row.quality_success === false).length,
++    criticalQualityCount: rows.filter((row) => row.quality_severity === "critical").length,
++    highQualityCount: rows.filter((row) => row.quality_severity === "high").length,
++    audienceMismatchCount: rows.filter((row) => row.quality_issue_type === "audience_safety_mismatch").length,
+@@ -133,6 +137,10 @@
+ }
++
++function qualityFlagList(row: EventRow) {
++  return Array.isArray(row.suspicious_flags) ? row.suspicious_flags.map(String).filter(Boolean) : [];
++}
+@@ -140,8 +148,14 @@
+   const recent = rows.slice(0, 10);
++  const qualityFailures = rows.filter((row) => row.quality_success === false || qualityFlagList(row).length > 0).slice(0, 10);
++  const topQualityIssues = countBy(rows, "quality_issue_type");
++  const topQualityFlags = Array.from(rows.reduce((map, row) => {
++    for (const flag of qualityFlagList(row)) map.set(flag, (map.get(flag) ?? 0) + 1);
++    return map;
++  }, new Map<string, number>()), ([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 10);
+   const cards = [
+-    ["Total Events", summary.totalEvents], ["Errors", summary.errorCount], ["Warnings", summary.warningCount], ["No Valid Pairs", summary.noPairCount], ["No Results", summary.noResultCount], ["Slow Searches", summary.slowCount], ["Unresolved", summary.unresolvedCount],
++    ["Total Events", summary.totalEvents], ["Quality Failures", summary.qualityFailureCount], ["Critical Quality", summary.criticalQualityCount], ["Audience Mismatches", summary.audienceMismatchCount], ["Errors", summary.errorCount], ["Warnings", summary.warningCount], ["No Valid Pairs", summary.noPairCount], ["No Results", summary.noResultCount], ["Slow Searches", summary.slowCount], ["Unresolved", summary.unresolvedCount],
+@@ -149,6 +163,9 @@
+     ${table("Top Event Types", topEventTypes)}
++    ${table("Top Quality Issue Types", topQualityIssues)}
++    ${table("Top Suspicious Flags", topQualityFlags)}
++    <h2>Searches That Returned Results but Failed Quality</h2>${qualityFailures.length ? qualityFailures.map((row) => `<div style="border:1px solid #fecaca;background:#fff7f7;border-radius:14px;padding:12px;margin:10px 0"><b>${escapeHtml(row.raw_query || "—")}</b><br/><span style="color:#991b1b;font-weight:700">${escapeHtml(row.quality_severity || row.severity || "warning")} · ${escapeHtml(row.quality_issue_label || row.quality_issue_type || "Search quality issue")}</span><br/><small>Technical: ${row.technical_success === false ? "Failed" : "Success"} · Quality: ${row.quality_success === false ? "Failed" : "Warning"} · Expected audience: ${escapeHtml(row.expected_audience || "—")} · Detected: ${escapeHtml(row.detected_audience || "—")}</small><br/><small>Adult-oriented top 5: ${escapeHtml(row.adult_oriented_top_five_count ?? 0)} · Relevant top 5: ${escapeHtml(row.relevant_top_five_count ?? 0)} · Generic intent results: ${escapeHtml(row.generic_intent_result_count ?? 0)} · Conflicting boosts: ${escapeHtml(row.conflicting_positive_boost_count ?? 0)}</small><br/><small>Flags: ${escapeHtml(qualityFlagList(row).join(", ") || "—")}</small></div>`).join("") : "<p>No quality failures were detected.</p>"}
+@@ -162,6 +179,9 @@
+     `Warnings: ${summary.warningCount}`,
++    `Quality Failures: ${summary.qualityFailureCount}`,
++    `Critical Quality: ${summary.criticalQualityCount}`,
++    `Audience Mismatches: ${summary.audienceMismatchCount}`,
+@@ -170,6 +190,15 @@
+     "",
++    "Top Quality Issue Types:",
++    ...(topQualityIssues.length ? topQualityIssues.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
++    "",
++    "Top Suspicious Flags:",
++    ...(topQualityFlags.length ? topQualityFlags.map((row) => `- ${row.value}: ${row.count}`) : ["- No data."]),
++    "",
++    "Quality Failures:",
++    ...(qualityFailures.length ? qualityFailures.map((row) => `- ${String(row.raw_query || "—")} | ${String(row.quality_severity || row.severity || "warning")} | ${String(row.quality_issue_label || row.quality_issue_type || "quality issue")} | expected=${String(row.expected_audience || "—")} detected=${String(row.detected_audience || "—")} | flags=${qualityFlagList(row).join(", ") || "—"}`) : ["- None detected."]),
++    "",
+@@ -247,7 +276,7 @@
+-        .select("id,created_at,source,raw_query,event_type,severity,event_label,restaurant_count,activity_count,pair_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,review_status,beta_tester_id")
++        .select("id,created_at,source,raw_query,event_type,severity,event_label,restaurant_count,activity_count,pair_count,no_results_reason,no_pairs_reason,timing_ms,speed_status,review_status,beta_tester_id,technical_success,quality_success,quality_severity,quality_issue_type,quality_issue_label,suspicious_flags,expected_audience,detected_audience,top_result_categories,adult_oriented_top_five_count,relevant_top_five_count,generic_intent_result_count,conflicting_positive_boost_count")
+@@ -302,7 +331,7 @@
+-    const issueCount = summary.warningCount + summary.errorCount;
++    const issueCount = summary.warningCount + summary.errorCount + summary.qualityFailureCount;
+--- a/lib/search/enterprise/__tests__/search-health.test.ts	2026-07-07 19:31:06.000000000 +0000
++++ b/lib/search/enterprise/__tests__/search-health.test.ts	2026-07-13 00:29:54.056642793 +0000
+@@ -314,3 +314,66 @@
+ });
++
++describe("Search Health quality mismatch detection", () => {
++  it("flags a technically successful teen search that ranks adult nightlife", () => {
++    const input = {
++      source: "public_create_search",
++      rawQuery: "Fun activities with my teenage son in queens",
++      needsActivity: true,
++      result: {
++        activities: [
++          { id: "nightlife-1", name: "Singing Karaoke Club", primary_category: "nightlife", activity_type: "nightlife", tags: ["club", "karaoke"], primary_intent: "general", intent_boost: 0, activityQualityReasons: ["drinks/lounge/nightlife signal +20"] },
++          { id: "arcade-1", name: "Gatcha", primary_category: "games", tags: ["arcade"], primary_intent: "general", intent_boost: 0 },
++        ],
++        restaurants: [], pairs: [],
++      },
++      debug: { normalizedIntent: { rawQuery: "Fun activities with my teenage son in queens", searchType: "activity", primaryDomain: "activity", needsActivity: true, activityIntent: { activityTerms: ["activity"] } } },
++    };
++    expect(shouldLogSearchHealthEvent(input)).toBe(true);
++    const payload = buildSearchHealthEventPayload(input);
++    expect(payload.technical_success).toBe(true);
++    expect(payload.quality_success).toBe(false);
++    expect(payload.quality_severity).toBe("critical");
++    expect(payload.quality_issue_type).toBe("audience_safety_mismatch");
++    expect(payload.expected_audience).toBe("teen");
++    expect(payload.detected_audience).toBeNull();
++    expect(payload.suspicious_flags).toEqual(expect.arrayContaining(["minor_audience_not_applied", "adult_oriented_result_in_top_three", "generic_intent_used_for_specific_audience", "nightlife_reward_applied_to_minor_query"]));
++    expect(classifySearchHealthEvent(input)).toEqual({ eventType: "audience_safety_mismatch", severity: "critical", eventLabel: "Minor-focused search returned conflicting results" });
++  });
++});
