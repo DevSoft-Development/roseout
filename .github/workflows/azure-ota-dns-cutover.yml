@@ -48,7 +48,7 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
-    environment: production
+    environment: Production
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +92,7 @@ jobs:
             echo "Front Door domain state before DNS: $STATE"
 
       - name: Configure temporary AWS credentials
+        id: aws_credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
@@ -290,7 +291,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Automatic DNS rollback after failed public verification
-        if: failure() && steps.verify.outputs.verified != 'true'
+        if: failure() && steps.aws_credentials.outcome == 'success' && steps.dns.outcome == 'success' && steps.verify.outputs.verified != 'true'
         env:
           HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
         run: |
