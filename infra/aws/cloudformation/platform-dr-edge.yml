@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
+  Final Azure consumer DNS cutover trigger.
   TheOutHaven platform DR edge in us-east-1: CloudFront front for the us-west-2 ECS warm standby,
   pre-issued ACM certificate, and fast Route 53 health checks. Production DNS record conversion
   is applied atomically by the deployment workflow after the standby is verified healthy.
@@ -80,7 +81,7 @@ Resources:
               statusCode: 308,
               statusDescription: 'Permanent Redirect',
               headers: {
-                location: { value: 'https://${WwwDomainName}' + request.uri },
+                location: { value: 'https://${WwwDomainName}' + request.uri + (request.querystring ? '?' + Object.keys(request.querystring).map(function(k) { return k + '=' + request.querystring[k].value; }).join('&') : '') },
                 'cache-control': { value: 'public, max-age=300' }
               }
             };

@@ -177,7 +177,7 @@ jobs:
             '_dnsauth.'+os.environ['DOMAIN_NAME'].rstrip('.')+'.',
             '_dnsauth.'+os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.',
           }
-          rows=[r for r in current if r.get('Name') in names]
+          rows=[r for r in current if r.get('Name') in names and r.get('Type') in {'A','AAAA','CNAME','TXT'}]
           raw=json.dumps({'records':rows},separators=(',',':'))
           if len(raw.encode()) > 60000:
               raise SystemExit('Consumer DNS rollback snapshot is unexpectedly large.')
@@ -295,7 +295,7 @@ jobs:
             APEX_CODE="$(curl --silent --show-error --output /dev/null --dump-header "$RUNNER_TEMP/apex.headers" --write-out '%{http_code}' --max-time 20 "https://${DOMAIN_NAME}/?cb=$(date +%s)" || true)"
             WWW_CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/www-health.json" --write-out '%{http_code}' --max-time 20 "https://${WWW_DOMAIN_NAME}/api/health/azure?cb=$(date +%s)" || true)"
             LOCATION="$(tr -d '\r' < "$RUNNER_TEMP/apex.headers" | awk -F': ' 'tolower($1)=="location" {print $2}' | tail -1)"
-            if { [ "$APEX_CODE" = 308 ] || [ "$APEX_CODE" = 301 ] || [ "$APEX_CODE" = 302 ] || [ "$APEX_CODE" = 307 ]; }               && printf '%s' "$LOCATION" | grep -q '^https://www\.theouthaven\.com/'               && [ "$WWW_CODE" = 200 ]               && jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .revision==$sha and (.region=="primary" or .region=="secondary")' "$RUNNER_TEMP/www-health.json" >/dev/null 2>&1; then
+            if { [ "$APEX_CODE" = 308 ] || [ "$APEX_CODE" = 301 ] || [ "$APEX_CODE" = 302 ] || [ "$APEX_CODE" = 307 ]; }               && printf '%s' "$LOCATION" | grep -q '^https://www\.theouthaven\.com/'               && [ "$WWW_CODE" = 200 ]               && jq -e --arg sha "$EXPECTED_SHA" '.ok==true and .revision==$sha and (.regionRole=="primary" or .regionRole=="secondary")' "$RUNNER_TEMP/www-health.json" >/dev/null 2>&1; then
               ready=true
               break
             fi
@@ -323,7 +323,7 @@ jobs:
             '_dnsauth.'+os.environ['DOMAIN_NAME'].rstrip('.')+'.',
             '_dnsauth.'+os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.'
           }
-          selected=[r for r in current if r.get('Name') in names]
+          selected=[r for r in current if r.get('Name') in names and r.get('Type') in {'A','AAAA','CNAME','TXT'}]
           changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in selected]
           changes += [{'Action':'CREATE','ResourceRecordSet':r} for r in snap['records']]
           json.dump({'Comment':'Automatic rollback after failed TheOutHaven Azure consumer DNS verification','Changes':changes},open(os.environ['RUNNER_TEMP']+'/rollback-change.json','w'))
