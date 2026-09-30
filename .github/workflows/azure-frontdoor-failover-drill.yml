@@ -3,6 +3,7 @@ name: Azure Front Door regional failover drill
 on:
   push:
     branches:
+      - main
       - ops/frontdoor-failover-drill
     paths:
       - '.github/workflows/azure-frontdoor-failover-drill.yml'
