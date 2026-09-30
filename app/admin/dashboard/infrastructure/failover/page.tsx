@@ -24,7 +24,7 @@ export default async function PlatformFailoverPage() {
       <AdminPageHeader
         eyebrow="Cloud Infrastructure"
         title="Failover & DR"
-        subtitle="Keep the public site, admin, and location dashboard on one shared failover path: Vercel primary, AWS warm standby, Route 53 health routing, and the current Virginia → Oregon Supabase DR topology."
+        subtitle="Keep the consumer site on an Azure Front Door primary with AWS warm standby, Route 53 failover routing, and the current Virginia → Oregon Supabase DR topology."
         actions={
           <>
             <AdminActionButton href="/admin/dashboard/infrastructure" variant="primary">Cloud Infrastructure</AdminActionButton>
@@ -37,8 +37,8 @@ export default async function PlatformFailoverPage() {
         <div className="grid gap-4 lg:grid-cols-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">Primary app</p>
-            <p className="mt-2 text-xl font-black text-white">Vercel</p>
-            <p className="mt-1 text-sm leading-6 text-white/50">Normal production traffic for all three application surfaces.</p>
+            <p className="mt-2 text-xl font-black text-white">Azure Front Door</p>
+            <p className="mt-1 text-sm leading-6 text-white/50">Normal production traffic for the consumer application.</p>
           </div>
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">Warm standby</p>
@@ -48,7 +48,7 @@ export default async function PlatformFailoverPage() {
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">Traffic switch</p>
             <p className="mt-2 text-xl font-black text-white">Route 53</p>
-            <p className="mt-1 text-sm leading-6 text-white/50">Fast health checks move both apex and www to AWS together.</p>
+            <p className="mt-1 text-sm leading-6 text-white/50">Health-checked www routing fails over from Azure Front Door to AWS while the apex redirects to www.</p>
           </div>
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">Database DR</p>

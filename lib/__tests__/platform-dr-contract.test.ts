@@ -44,7 +44,7 @@ describe("platform cross-cloud DR contract", () => {
     expect(infrastructure).toContain('/admin/dashboard/infrastructure/failover');
     expect(infrastructure).toContain('Failover & DR');
     expect(failoverPage).toContain('<PlatformDrPanel />');
-    expect(failoverPage).toContain('Vercel');
+    expect(failoverPage).toContain('Azure');
     expect(failoverPage).toContain('AWS us-west-2');
     expect(failoverPage).toContain('Virginia → Oregon');
   });
@@ -80,9 +80,12 @@ describe("platform cross-cloud DR contract", () => {
     expect(compute).toContain('AWS::ECR::Repository');
     expect(compute).toContain('x-toh-edge-secret');
     expect(edge).toContain('AWS::CloudFront::Distribution');
-    expect(edge).toContain('AWS::Route53::HealthCheck');
-    expect(edge).toContain('RequestInterval: 30');
-    expect(edge).toContain('FailureThreshold: 2');
+    const monitor = source("infra/aws/cloudformation/azure-frontdoor-external-monitor.yml");
+    expect(edge).not.toContain('VercelPrimaryHealthCheck');
+    expect(monitor).toContain('AWS::Route53::HealthCheck');
+    expect(monitor).toContain('ResourcePath: /api/health/azure');
+    expect(monitor).toContain('RequestInterval: 30');
+    expect(monitor).toContain('FailureThreshold: 2');
   });
 
   it("builds the same Next.js application as a standalone non-root AWS image", () => {
@@ -116,38 +119,23 @@ describe("platform cross-cloud DR contract", () => {
     expect(workflow).toContain("'infra/aws/background-runtime/**'");
   });
 
-  it("uses one dedicated project-scoped Vercel DR authority from Credential Vault", () => {
+  it("uses Azure Front Door as primary and keeps DNS ownership outside the DR deploy", () => {
     const workflow = source(".github/workflows/aws-platform-dr.yml");
-    const guard = source(".github/workflows/vercel-dr-control-credential-health.yml");
-    const catalog = source("lib/admin/credential-vault-catalog.ts");
-    expect(workflow).toContain("Resolve Vercel control-plane credential");
-    expect(workflow).toContain("CREDENTIAL_VAULT_PREFIX");
-    expect(workflow).toContain("CREDENTIAL_VAULT_REGION: us-east-1");
-    expect(workflow).toContain('--region "$CREDENTIAL_VAULT_REGION"');
-    expect(workflow).toContain(".drControlToken // empty");
-    expect(workflow).toContain("VERCEL_CONTROL_TOKEN");
-    expect(workflow).toContain("VERCEL_CONTROL_TEAM_ID");
-    expect(workflow).toContain("team_*) ;;");
-    expect(workflow).toContain('*) TEAM_ID="$VERCEL_TEAM_ID" ;;');
-    expect(workflow).toContain("VERCEL_CONTROL_SCOPE_QUERY=$SCOPE_QUERY");
-    expect(workflow).toContain("VERCEL_CONTROL_AVAILABLE=false");
-    expect(workflow).toContain("/api/health/platform-dr/control-proof");
-    expect(workflow).toContain("Vercel server-side DR control configuration already matches the canonical AWS gateway secret.");
-    expect(workflow).toContain("no authorized Vercel write credential is available to repair it");
-    expect(workflow).toContain("https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}");
-    expect(workflow).not.toContain("GITHUB_VERCEL_TOKEN");
-    expect(workflow).not.toContain('validate_candidate "authoritative-runtime"');
-    expect(workflow).not.toContain('validate_candidate "github-actions"');
-    expect(workflow).toContain("https://api.vercel.com/v7/deployments?projectId=${VERCEL_PROJECT_ID}");
-    expect(workflow).not.toContain("https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}");
-    expect(workflow).toContain("scope_query=${SCOPE_QUERY:-}");
-    expect(workflow).toContain("VERCEL_SCOPE_QUERY: ${{ steps.vercel_primary.outputs.scope_query }}");
-    expect(workflow).toContain("gitSource:{type:\"github\",org:\"DevSoft-Development\",repo:\"roseout\",ref:\"main\",sha:$sha}");
-    expect(workflow).toContain("Vercel DR control environment upsert failed with HTTP $ENV_CODE.");
-    expect(catalog).toContain('key: "drControlToken"');
-    expect(guard).toContain("workflow_run:");
-    expect(guard).not.toContain("cron:");
-    expect(guard).toContain("Vercel DR control credential is healthy.");
+    const compute = source("infra/aws/cloudformation/platform-dr-compute.yml");
+    const gateway = source("infra/aws/lambda/platform_dr_gateway.py");
+    const monitor = source("infra/aws/cloudformation/azure-frontdoor-external-monitor.yml");
+
+    expect(workflow).toContain("EXTERNAL_MONITOR_STACK");
+    expect(workflow).toContain("Resolve Azure Front Door primary probe from AWS external monitor");
+    expect(workflow).toContain("PRIMARY_EXPECTED_ORIGIN: azure-consumer");
+    expect(workflow).toContain("Load production runtime environment from AWS authority");
+    expect(workflow).not.toContain("Resolve Vercel control-plane credential");
+    expect(workflow).not.toContain("Wait for the matching Vercel production deployment");
+    expect(workflow).not.toContain("Install Route 53 failover records atomically");
+    expect(compute).toContain("PrimaryExpectedOrigin");
+    expect(gateway).toContain('PRIMARY_EXPECTED_ORIGIN = os.environ.get("PRIMARY_EXPECTED_ORIGIN", "azure-consumer")');
+    expect(monitor).toContain("FrontDoorHealthCheck");
+    expect(monitor).toContain("AzureConsumerExternalMonitor");
   });
 
   it("rejects conflicting dynamic slug names that break the standalone router", () => {
@@ -158,7 +146,7 @@ describe("platform cross-cloud DR contract", () => {
     const panel = source("components/admin/PlatformDrPanel.tsx");
     expect(panel).toContain('["/", "/admin/login", "/locations/dashboard"]');
     expect(panel).toContain('waitForOrigin("aws-dr")');
-    expect(panel).toContain('waitForOrigin("vercel")');
+    expect(panel).toContain('waitForOrigin("azure-consumer")');
     expect(panel).toContain('durationSeconds: 180');
   });
 });

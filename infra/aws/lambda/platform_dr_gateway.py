@@ -16,6 +16,7 @@ ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 SHARED_SECRET_ARN = os.environ["SHARED_SECRET_ARN"]
 STATE_TABLE = os.environ["STATE_TABLE"]
 PRIMARY_PROBE_URL = os.environ["PRIMARY_PROBE_URL"]
+PRIMARY_EXPECTED_ORIGIN = os.environ.get("PRIMARY_EXPECTED_ORIGIN", "azure-consumer")
 STANDBY_PROBE_URL = os.environ["STANDBY_PROBE_URL"]
 PUBLIC_PROBE_URL = os.environ.get("PUBLIC_PROBE_URL", "https://www.theouthaven.com/api/health/platform-dr")
 ECS_CLUSTER = os.environ["ECS_CLUSTER"]
@@ -214,7 +215,7 @@ def _compute_status():
 
 def _status():
     state = _load_state()
-    primary = _probe(PRIMARY_PROBE_URL, "vercel")
+    primary = _probe(PRIMARY_PROBE_URL, PRIMARY_EXPECTED_ORIGIN)
     standby = _probe(STANDBY_PROBE_URL, "aws-dr")
     routed_probe = _probe(PUBLIC_PROBE_URL)
     primary_base = _base_url(PRIMARY_PROBE_URL)
@@ -250,7 +251,7 @@ def _public_health():
             "reason": "manual_drill_override",
         }, {"x-toh-dr-mode": "forced_failover"})
 
-    primary = _probe(PRIMARY_PROBE_URL, "vercel")
+    primary = _probe(PRIMARY_PROBE_URL, PRIMARY_EXPECTED_ORIGIN)
     if primary["healthy"]:
         return _json_response(200, {
             "ok": True,

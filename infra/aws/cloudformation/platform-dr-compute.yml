@@ -20,7 +20,10 @@ Parameters:
     MinLength: 32
   PrimaryProbeUrl:
     Type: String
-    Default: https://roseout-roseout-ventures-projects.vercel.app/api/health/platform-dr
+    Default: https://example.invalid/api/health/azure
+  PrimaryExpectedOrigin:
+    Type: String
+    Default: azure-consumer
 
 Resources:
   PlatformDrVpc:
@@ -270,7 +273,7 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       Name: !Sub /theouthaven/${Environment}/platform-dr/app-env
-      Description: Production app environment synchronized from Vercel for the AWS warm standby.
+      Description: Production app environment synchronized from the authoritative AWS runtime secret for the AWS warm standby.
       SecretString: '{}'
       Tags:
         - Key: Project
@@ -423,6 +426,7 @@ Resources:
           SHARED_SECRET_ARN: !Ref DrGatewaySecretArn
           STATE_TABLE: !Ref PlatformDrStateTable
           PRIMARY_PROBE_URL: !Ref PrimaryProbeUrl
+          PRIMARY_EXPECTED_ORIGIN: !Ref PrimaryExpectedOrigin
           STANDBY_PROBE_URL: https://example.invalid/api/health/platform-dr
           ECS_CLUSTER: !Ref PlatformDrCluster
           ECS_SERVICE: !Sub toh-${Environment}-platform-dr
