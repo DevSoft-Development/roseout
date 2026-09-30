@@ -34,15 +34,30 @@ jobs:
           aws-region: us-east-1
           allowed-account-ids: '742020474738'
 
-      - name: Resolve OTA public signing key
+      - name: Ensure OTA signing authority exists in central Credential Vault
         id: signing
         run: |
           set -euo pipefail
           SECRET_ID="/theouthaven/credential-vault/production/ota"
-          aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text > "$RUNNER_TEMP/ota.json"
-          jq -e '(.signingPublicKeyPem | type=="string" and length>0) and (.keyId | type=="string" and length>0)' "$RUNNER_TEMP/ota.json" >/dev/null
-          jq -r '.signingPublicKeyPem' "$RUNNER_TEMP/ota.json" > "$RUNNER_TEMP/public.pem"
-          echo "key_id=$(jq -r '.keyId' "$RUNNER_TEMP/ota.json")" >> "$GITHUB_OUTPUT"
+          WORK="$RUNNER_TEMP/ota-signing"
+          mkdir -p "$WORK"
+
+          if aws secretsmanager get-secret-value             --secret-id "$SECRET_ID"             --query SecretString             --output text > "$WORK/vault.json" 2>/dev/null; then
+            jq -e '
+              (.signingPrivateKeyPem | type == "string" and length > 0) and
+              (.signingPublicKeyPem | type == "string" and length > 0) and
+              (.keyId | type == "string" and length > 0)
+            ' "$WORK/vault.json" >/dev/null
+          else
+            openssl genpkey -algorithm ED25519 -out "$WORK/private.pem"
+            openssl pkey -in "$WORK/private.pem" -pubout -out "$WORK/public.pem"
+            KEY_ID="ota-ed25519-$(date -u +%Y%m%d)"
+            jq -n               --rawfile private "$WORK/private.pem"               --rawfile public "$WORK/public.pem"               --arg keyId "$KEY_ID"               '{signingPrivateKeyPem:$private,signingPublicKeyPem:$public,keyId:$keyId}'               > "$WORK/vault.json"
+            aws secretsmanager create-secret               --name "$SECRET_ID"               --secret-string "file://$WORK/vault.json"               --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=CredentialVault               >/dev/null
+          fi
+
+          jq -r '.signingPublicKeyPem' "$WORK/vault.json" > "$RUNNER_TEMP/public.pem"
+          echo "key_id=$(jq -r '.keyId' "$WORK/vault.json")" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
@@ -52,6 +67,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Publish static health and public signing keys
+        id: publish
         uses: azure/CLI@v2
         env:
           KEY_ID: ${{ steps.signing.outputs.key_id }}
@@ -59,7 +75,9 @@ jobs:
           inlineScript: |
             set -euo pipefail
             STORAGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaStorageAccountName.value -o tsv)"
+            EDGE="$(az deployment sub show --name toh-ota-foundation-production --query properties.outputs.otaFrontDoorEndpointHostName.value -o tsv)"
             test -n "$STORAGE" && test "$STORAGE" != None
+            test -n "$EDGE" && test "$EDGE" != None
             az storage blob service-properties update               --account-name "$STORAGE" --auth-mode login               --static-website true --index-document health.json --404-document health.json               --only-show-errors >/dev/null
             jq -n --arg status healthy --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"               '{ok:true,status:$status,updatedAt:$updatedAt}' > "$RUNNER_TEMP/health.json"
             cp "$RUNNER_TEMP/public.pem" "$RUNNER_TEMP/current.pem"
@@ -68,4 +86,25 @@ jobs:
               src="${spec%%:*}"; rest="${spec#*:}"; dst="${rest%%:*}"; type="${rest#*:}"
               az storage blob upload                 --account-name "$STORAGE" --auth-mode login --container-name '$web'                 --file "$src" --name "$dst" --content-type "$type" --overwrite true                 --only-show-errors >/dev/null
             done
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
             echo "Azure OTA health and signing public keys seeded."
+
+      - name: Verify OTA health through Azure Front Door
+        env:
+          EDGE: ${{ steps.publish.outputs.edge }}
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 24); do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/health-verify.json" --write-out '%{http_code}'               --connect-timeout 10 --max-time 20               "https://$EDGE/health.json?cb=$(date +%s)" || true)"
+            if [ "$code" = "200" ] && jq -e '.ok == true and .status == "healthy"' "$RUNNER_TEMP/health-verify.json" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            echo "Attempt $attempt: health=$code"
+            sleep 5
+          done
+          test "$ready" = true || {
+            cat "$RUNNER_TEMP/health-verify.json" >&2 || true
+            exit 1
+          }
