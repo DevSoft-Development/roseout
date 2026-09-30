@@ -320,6 +320,56 @@ stages:
 
           - script: |
               set -euo pipefail
+              node - <<'NODE'
+              const fs = require('fs');
+              const crypto = require('crypto');
+
+              const keyPath = process.env.ASC_KEY_FILE;
+              const keyId = process.env.ASC_KEY_ID;
+              const issuerId = process.env.ASC_ISSUER_ID;
+
+              for (const [name, value] of Object.entries({ keyPath, keyId, issuerId })) {
+                if (!value || /^\$\(.+\)$/.test(value)) {
+                  throw new Error('Missing or unresolved App Store Connect credential: ' + name);
+                }
+              }
+
+              const key = fs.readFileSync(keyPath, 'utf8');
+              const now = Math.floor(Date.now() / 1000);
+              const b64url = (value) => Buffer.from(value).toString('base64url');
+              const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
+              const payload = { iss: issuerId, iat: now - 30, exp: now + 600, aud: 'appstoreconnect-v1' };
+              const input = b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload));
+              const signature = crypto.sign(null, Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' });
+              const token = input + '.' + signature.toString('base64url');
+
+              (async () => {
+                const response = await fetch('https://api.appstoreconnect.apple.com/v1/apps?limit=1', {
+                  headers: { Authorization: 'Bearer ' + token },
+                });
+                if (!response.ok) {
+                  const body = await response.text();
+                  throw new Error(
+                    'App Store Connect credential preflight failed: HTTP ' +
+                    response.status + ' ' + body +
+                    '. Verify that the .p8 file, Key ID, and Issuer ID belong to the same active App Store Connect API key.'
+                  );
+                }
+                console.log('App Store Connect API credentials validated.');
+              })().catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+              NODE
+            env:
+              ASC_KEY_FILE: $(appStoreKey.secureFilePath)
+              ASC_KEY_ID: $(APP_STORE_CONNECT_KEY_ID)
+              ASC_ISSUER_ID: $(APP_STORE_CONNECT_ISSUER_ID)
+            displayName: Validate App Store Connect API credentials
+            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+          - script: |
+              set -euo pipefail
               mkdir -p "$HOME/.appstoreconnect/private_keys"
               cp "$(appStoreKey.secureFilePath)" "$HOME/.appstoreconnect/private_keys/AuthKey_$(APP_STORE_CONNECT_KEY_ID).p8"
               xcrun altool \
@@ -556,6 +606,61 @@ stages:
           - script: |
               set -euo pipefail
               cd mobile
+              npm install --no-save --no-audit --no-fund googleapis
+              node - <<'NODE'
+              const { google } = require('googleapis');
+
+              const packageName = 'com.theouthaven.app';
+              (async () => {
+                const auth = new google.auth.GoogleAuth({
+                  keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+                  scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+                });
+                const androidpublisher = google.androidpublisher({ version: 'v3', auth });
+                const edit = await androidpublisher.edits.insert({ packageName });
+                const editId = edit.data.id;
+                if (!editId) throw new Error('Google Play edit ID was not returned');
+
+                try {
+                  const tracks = await androidpublisher.edits.tracks.list({ packageName, editId });
+                  const versionCodes = [];
+                  for (const track of tracks.data.tracks || []) {
+                    for (const release of track.releases || []) {
+                      for (const code of release.versionCodes || []) {
+                        const parsed = Number(code);
+                        if (Number.isSafeInteger(parsed)) versionCodes.push(parsed);
+                      }
+                    }
+                  }
+
+                  const highestPublished = versionCodes.length ? Math.max(...versionCodes) : 0;
+                  const buildId = Number(process.env.BUILD_BUILDID || 0);
+                  const nextVersionCode = Math.max(highestPublished + 1, buildId);
+
+                  if (!Number.isSafeInteger(nextVersionCode) || nextVersionCode <= 0) {
+                    throw new Error('Unable to determine a valid Android versionCode');
+                  }
+
+                  console.log('Highest Google Play versionCode:', highestPublished);
+                  console.log('Azure Build.BuildId:', buildId);
+                  console.log('Selected Android versionCode:', nextVersionCode);
+                  console.log('##vso[task.setvariable variable=ANDROID_VERSION_CODE]' + nextVersionCode);
+                } finally {
+                  await androidpublisher.edits.delete({ packageName, editId }).catch(() => undefined);
+                }
+              })().catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+              NODE
+            env:
+              GOOGLE_APPLICATION_CREDENTIALS: $(googlePlayServiceAccount.secureFilePath)
+            displayName: Resolve next Google Play versionCode
+            condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+          - script: |
+              set -euo pipefail
+              cd mobile
               npm ci --no-audit --no-fund
               npx expo prebuild --clean --platform android --no-install
 
@@ -569,7 +674,7 @@ stages:
               signing_gradle = app_dir / 'theouthaven-signing.gradle'
 
               text = build_gradle.read_text()
-              version_code = int(os.environ['BUILD_BUILDID'])
+              version_code = int(os.environ.get('ANDROID_VERSION_CODE') or os.environ['BUILD_BUILDID'])
               version_name = os.environ['TOH_APP_VERSION']
 
               text, code_count = re.subn(
@@ -635,6 +740,7 @@ stages:
               PY
             env:
               TOH_APP_VERSION: $(appVersion)
+              ANDROID_VERSION_CODE: $(ANDROID_VERSION_CODE)
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
