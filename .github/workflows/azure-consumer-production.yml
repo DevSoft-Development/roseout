@@ -60,7 +60,7 @@ jobs:
   deploy:
     name: Deploy dual-region production consumer
     if: >-
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && !contains(github.event.head_commit.message, '[FAILOVER_DRILL]')) ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy)
     needs: validate
     runs-on: ubuntu-latest
@@ -413,6 +413,77 @@ jobs:
           # Restoration is another global Front Door update; allow the same convergence window.
           python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label "Front Door restoration to primary"
 
+  failover_drill:
+    name: Execute Front Door regional failover drill
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[FAILOVER_DRILL]')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve deployed Front Door targets
+        run: |
+          set -euo pipefail
+          DEPLOYMENT=toh-consumer-runtime-production
+          PRIMARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+          SECONDARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerSecondaryRuntimeFqdn.value -o tsv)"
+          EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+          PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
+          IMAGE_SHA="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeImage.value -o tsv | sed 's#^.*consumer:##')"
+          test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID" && test -n "$IMAGE_SHA"
+          printf 'PRIMARY_HOST=%s\nSECONDARY_HOST=%s\nEDGE_HOST=%s\nPRIMARY_ORIGIN_RESOURCE_ID=%s\nIMAGE_SHA=%s\n' "$PRIMARY" "$SECONDARY" "$EDGE" "$PRIMARY_ORIGIN_RESOURCE_ID" "$IMAGE_SHA" > "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+      - name: Disable primary Front Door origin
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+            API_VERSION=2024-02-01
+            az rest --method patch --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --headers 'Content-Type=application/json' --body '{"properties":{"enabledState":"Disabled"}}' --output none
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Disabled ] && [ "$provisioning" = Succeeded ]; then exit 0; fi
+              sleep 10
+            done
+            exit 1
+      - name: Prove secondary routing
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 120 --interval 10 --label 'Front Door failover to secondary'
+      - name: Restore primary Front Door origin
+        if: always()
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+            API_VERSION=2024-02-01
+            az rest --method patch --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --headers 'Content-Type=application/json' --body '{"properties":{"enabledState":"Enabled"}}' --output none
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=${API_VERSION}" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Enabled ] && [ "$provisioning" = Succeeded ]; then exit 0; fi
+              sleep 10
+            done
+            exit 1
+      - name: Prove primary restoration
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label 'Front Door restoration to primary'
+      - name: Record failover drill success
+        run: |
+          echo 'Front Door regional failover drill passed.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Front Door primary restoration verified.' >> "$GITHUB_STEP_SUMMARY"
       - name: Record regional failover drill success
         if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
         run: |
