@@ -63,6 +63,31 @@ Resources:
             IncludeSubdomains: true
             Override: true
 
+  ApexRedirectFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub toh-${Environment}-apex-to-www
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Redirect bare TheOutHaven apex to the canonical www hostname.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub |
+        function handler(event) {
+          var request = event.request;
+          var host = request.headers.host && request.headers.host.value;
+          if (host === '${DomainName}') {
+            return {
+              statusCode: 308,
+              statusDescription: 'Permanent Redirect',
+              headers: {
+                location: { value: 'https://${WwwDomainName}' + request.uri },
+                'cache-control': { value: 'public, max-age=300' }
+              }
+            };
+          }
+          return request;
+        }
+
   PlatformDrDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -96,6 +121,9 @@ Resources:
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
           OriginRequestPolicyId: !Ref PlatformDrOriginRequestPolicy
           ResponseHeadersPolicyId: !Ref PlatformDrResponseHeadersPolicy
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt ApexRedirectFunction.FunctionARN
         ViewerCertificate:
           AcmCertificateArn: !Ref PlatformDrCertificateArn
           SslSupportMethod: sni-only
@@ -134,3 +162,5 @@ Outputs:
     Value: !Ref VercelPrimaryHealthCheck
   PlatformDrCertificateArn:
     Value: !Ref PlatformDrCertificateArn
+  ApexRedirectFunctionArn:
+    Value: !GetAtt ApexRedirectFunction.FunctionARN
