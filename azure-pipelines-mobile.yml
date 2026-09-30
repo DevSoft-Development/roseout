@@ -43,86 +43,6 @@ stages:
               version: $(nodeVersion)
           - script: |
               set -euo pipefail
-              node - <<'NODE'
-              const fs = require('fs');
-              const crypto = require('crypto');
-
-              const key = fs.readFileSync(process.env.ASC_KEY_FILE, 'utf8');
-              const keyId = process.env.ASC_KEY_ID;
-              const issuerId = process.env.ASC_ISSUER_ID;
-              const azureBuildId = Number(process.env.BUILD_BUILDID || 0);
-
-              for (const [name, value] of Object.entries({ keyId, issuerId })) {
-                if (!value || /^\$\(.+\)$/.test(value)) {
-                  throw new Error('Missing or unresolved App Store Connect credential: ' + name);
-                }
-              }
-
-              const b64url = (value) => Buffer.from(value).toString('base64url');
-              function token() {
-                const now = Math.floor(Date.now() / 1000);
-                const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
-                const payload = { iss: issuerId, iat: now - 30, exp: now + 1200, aud: 'appstoreconnect-v1' };
-                const input = b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload));
-                const signature = crypto.sign(null, Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' });
-                return input + '.' + signature.toString('base64url');
-              }
-
-              async function request(path) {
-                const response = await fetch('https://api.appstoreconnect.apple.com' + path, {
-                  headers: { Authorization: 'Bearer ' + token() },
-                });
-                if (!response.ok) {
-                  throw new Error('App Store Connect request failed: HTTP ' + response.status + ' ' + await response.text());
-                }
-                return response.json();
-              }
-
-              (async () => {
-                const appParams = new URLSearchParams({
-                  'filter[bundleId]': 'com.theouthaven.app',
-                  'fields[apps]': 'bundleId,name',
-                  'limit': '1',
-                });
-                const apps = await request('/v1/apps?' + appParams);
-                const app = apps.data?.[0];
-                if (!app?.id) throw new Error('Unable to resolve com.theouthaven.app in App Store Connect');
-
-                const buildParams = new URLSearchParams({
-                  'filter[app]': app.id,
-                  'fields[builds]': 'version,uploadedDate',
-                  'sort': '-uploadedDate',
-                  'limit': '200',
-                });
-                const builds = await request('/v1/builds?' + buildParams);
-                const numericBuilds = (builds.data || [])
-                  .map((item) => Number(item.attributes?.version))
-                  .filter((value) => Number.isSafeInteger(value) && value > 0);
-
-                const highestUploaded = numericBuilds.length ? Math.max(...numericBuilds) : 0;
-                const nextBuildNumber = Math.max(highestUploaded + 1, azureBuildId);
-
-                if (!Number.isSafeInteger(nextBuildNumber) || nextBuildNumber <= 0) {
-                  throw new Error('Unable to determine a valid iOS CFBundleVersion');
-                }
-
-                console.log('Highest App Store Connect build number:', highestUploaded);
-                console.log('Azure Build.BuildId:', azureBuildId);
-                console.log('Selected iOS CFBundleVersion:', nextBuildNumber);
-                console.log('##vso[task.setvariable variable=IOS_BUILD_NUMBER]' + nextBuildNumber);
-              })().catch((error) => {
-                console.error(error);
-                process.exit(1);
-              });
-              NODE
-            env:
-              ASC_KEY_FILE: $(appStoreKey.secureFilePath)
-              ASC_KEY_ID: $(APP_STORE_CONNECT_KEY_ID)
-              ASC_ISSUER_ID: $(APP_STORE_CONNECT_ISSUER_ID)
-            displayName: Resolve next App Store Connect build number
-
-          - script: |
-              set -euo pipefail
               cd mobile
               npm ci --no-audit --no-fund
               node --version
@@ -196,6 +116,91 @@ stages:
             name: appStoreKey
             inputs:
               secureFile: $(APP_STORE_CONNECT_KEY_SECURE_FILE)
+
+          - script: |
+              set -euo pipefail
+              node - <<'NODE'
+              const fs = require('fs');
+              const crypto = require('crypto');
+
+              const keyPath = process.env.ASC_KEY_FILE;
+              const keyId = process.env.ASC_KEY_ID;
+              const issuerId = process.env.ASC_ISSUER_ID;
+
+              if (!keyPath || /^\$\(.+\)$/.test(keyPath) || !fs.existsSync(keyPath)) {
+                throw new Error('App Store Connect secure-file path is missing, unresolved, or not downloaded: ' + keyPath);
+              }
+              const key = fs.readFileSync(keyPath, 'utf8');
+              const azureBuildId = Number(process.env.BUILD_BUILDID || 0);
+
+              for (const [name, value] of Object.entries({ keyId, issuerId })) {
+                if (!value || /^\$\(.+\)$/.test(value)) {
+                  throw new Error('Missing or unresolved App Store Connect credential: ' + name);
+                }
+              }
+
+              const b64url = (value) => Buffer.from(value).toString('base64url');
+              function token() {
+                const now = Math.floor(Date.now() / 1000);
+                const header = { alg: 'ES256', kid: keyId, typ: 'JWT' };
+                const payload = { iss: issuerId, iat: now - 30, exp: now + 1200, aud: 'appstoreconnect-v1' };
+                const input = b64url(JSON.stringify(header)) + '.' + b64url(JSON.stringify(payload));
+                const signature = crypto.sign(null, Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' });
+                return input + '.' + signature.toString('base64url');
+              }
+
+              async function request(path) {
+                const response = await fetch('https://api.appstoreconnect.apple.com' + path, {
+                  headers: { Authorization: 'Bearer ' + token() },
+                });
+                if (!response.ok) {
+                  throw new Error('App Store Connect request failed: HTTP ' + response.status + ' ' + await response.text());
+                }
+                return response.json();
+              }
+
+              (async () => {
+                const appParams = new URLSearchParams({
+                  'filter[bundleId]': 'com.theouthaven.app',
+                  'fields[apps]': 'bundleId,name',
+                  'limit': '1',
+                });
+                const apps = await request('/v1/apps?' + appParams);
+                const app = apps.data?.[0];
+                if (!app?.id) throw new Error('Unable to resolve com.theouthaven.app in App Store Connect');
+
+                const buildParams = new URLSearchParams({
+                  'filter[app]': app.id,
+                  'fields[builds]': 'version,uploadedDate',
+                  'sort': '-uploadedDate',
+                  'limit': '200',
+                });
+                const builds = await request('/v1/builds?' + buildParams);
+                const numericBuilds = (builds.data || [])
+                  .map((item) => Number(item.attributes?.version))
+                  .filter((value) => Number.isSafeInteger(value) && value > 0);
+
+                const highestUploaded = numericBuilds.length ? Math.max(...numericBuilds) : 0;
+                const nextBuildNumber = Math.max(highestUploaded + 1, azureBuildId);
+
+                if (!Number.isSafeInteger(nextBuildNumber) || nextBuildNumber <= 0) {
+                  throw new Error('Unable to determine a valid iOS CFBundleVersion');
+                }
+
+                console.log('Highest App Store Connect build number:', highestUploaded);
+                console.log('Azure Build.BuildId:', azureBuildId);
+                console.log('Selected iOS CFBundleVersion:', nextBuildNumber);
+                console.log('##vso[task.setvariable variable=IOS_BUILD_NUMBER]' + nextBuildNumber);
+              })().catch((error) => {
+                console.error(error);
+                process.exit(1);
+              });
+              NODE
+            env:
+              ASC_KEY_FILE: $(appStoreKey.secureFilePath)
+              ASC_KEY_ID: $(APP_STORE_CONNECT_KEY_ID)
+              ASC_ISSUER_ID: $(APP_STORE_CONNECT_ISSUER_ID)
+            displayName: Resolve next App Store Connect build number
 
           - script: |
               set -euo pipefail
@@ -679,6 +684,17 @@ stages:
             name: googlePlayServiceAccount
             inputs:
               secureFile: $(GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE)
+
+          - script: |
+              set -euo pipefail
+              for value in "$(androidKeystore.secureFilePath)" "$(googlePlayServiceAccount.secureFilePath)"; do
+                test -n "$value" || { echo "Android secure-file path is empty." >&2; exit 1; }
+                case "$value" in
+                  '\$('*) echo "Android secure-file path is unresolved: $value" >&2; exit 1 ;;
+                esac
+                test -f "$value" || { echo "Android secure file not found: $value" >&2; exit 1; }
+              done
+            displayName: Validate Android secure files
 
           - script: |
               set -euo pipefail
