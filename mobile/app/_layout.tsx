@@ -8,12 +8,17 @@ import { AppBottomTabs } from "@/components/navigation/AppBottomTabs";
 import { ThemeProvider, useAppTheme } from "@/providers/ThemeProvider";
 import { trackMobileEvent } from "@/lib/analytics";
 import { initializeObservability, setObservabilityUser } from "@/lib/observability";
+import { reportUpdateDiagnostics } from "@/lib/updateDiagnostics";
 
 initializeObservability();
 
 function RuntimeBridge() {
   const router = useRouter();
   const { user } = useAuth();
+
+  useEffect(() => {
+    void reportUpdateDiagnostics();
+  }, []);
 
   useEffect(() => {
     setObservabilityUser(user?.id || null);
