@@ -361,7 +361,7 @@ jobs:
           BEFORE_COUNT="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {split($0,a,"/"); gsub("\r","",a[2]); print a[2]}' "$RUNNER_TEMP/before-headers.txt" | tail -1)"
           BEFORE_COUNT="${BEFORE_COUNT:-0}"
 
-          LOCATION="$(curl --silent --show-error --head --output /dev/null --write-out '%{redirect_url}'             --connect-timeout 10 --max-time 20             -H 'User-Agent: TheOutHaven-Azure-ShortLink-Probe/1.0'             "https://$DOMAIN_NAME/$VERIFY_CODE?utm_source=azure-cutover")"
+          LOCATION="$(curl --silent --show-error --output /dev/null --write-out '%{redirect_url}'             --connect-timeout 10 --max-time 20             -H 'User-Agent: TheOutHaven-Azure-ShortLink-Probe/1.0'             "https://$DOMAIN_NAME/$VERIFY_CODE?utm_source=azure-cutover")"
           test "$LOCATION" = "$VERIFY_DESTINATION"
 
           recorded=false
