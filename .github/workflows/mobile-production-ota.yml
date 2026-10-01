@@ -41,4 +41,16 @@ jobs:
           test -f .github/workflows/mobile-azure-ota.yml
           grep -F 'name: Mobile production OTA migration guard' .github/workflows/mobile-production-ota.yml >/dev/null
           grep -F 'name: Mobile Azure OTA release' .github/workflows/mobile-azure-ota.yml >/dev/null
+          node - <<'NODE'
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          const files = execSync('git grep -l "https://exp.host/--/api/v2/push/send" -- ":!node_modules"', { encoding: 'utf8' })
+            .trim().split(/\n/).filter(Boolean);
+          const allowed = ['lib/mobile/push.ts'];
+          if (JSON.stringify(files.sort()) !== JSON.stringify(allowed)) {
+            throw new Error('Expo Push endpoint must remain isolated to lib/mobile/push.ts: ' + files.join(', '));
+          }
+          const forbidden = execSync('git grep -n -E "eas (build|submit|update)|u\\.expo\\.dev" -- . ":!node_modules" || true', { encoding: 'utf8' }).trim();
+          if (forbidden) throw new Error('Expo/EAS control-plane reference detected:\n' + forbidden);
+          NODE
           echo "Production OTA publication authority: Azure self-hosted workflow."
