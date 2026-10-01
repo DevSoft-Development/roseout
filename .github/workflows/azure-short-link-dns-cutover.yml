@@ -199,8 +199,8 @@ jobs:
           EXPECTED_TEXT="$(printf '%s\n' "${EXPECTED_NS[@]}")"
 
           if [ "$PUBLIC_NS" != "$EXPECTED_TEXT" ]; then
-            python3 - <<'PY'
-          import json, os, subprocess
+            HOSTED_ZONE_ID="$HOSTED_ZONE_ID" PUBLIC_A="$PUBLIC_A" python3 - <<'PY'
+          import json, os
           zone=os.environ['HOSTED_ZONE_ID']
           domain=os.environ['DOMAIN_NAME']
           ips=[x for x in os.environ['PUBLIC_A'].splitlines() if x.strip()]
