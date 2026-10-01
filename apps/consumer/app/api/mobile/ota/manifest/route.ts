@@ -5,6 +5,30 @@ export const dynamic = "force-dynamic";
 
 const OTA_BASE_URL = "https://updates.theouthaven.com";
 
+type ExpoAsset = {
+  hash?: string;
+  key: string;
+  contentType: string;
+  fileExtension?: string;
+  url: string;
+};
+
+type ExpoManifest = {
+  id: string;
+  createdAt: string;
+  runtimeVersion: string;
+  launchAsset: ExpoAsset;
+  assets: ExpoAsset[];
+  metadata: Record<string, string>;
+  extra: Record<string, unknown>;
+};
+
+type MultipartPart = {
+  name: "manifest" | "extensions" | "directive";
+  contentType: "application/json" | "application/expo+json";
+  body: string;
+};
+
 function responseHeaders(bucket: number) {
   return {
     "expo-protocol-version": "1",
@@ -25,20 +49,30 @@ function parseBucket(value: string | null) {
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 99 ? parsed : null;
 }
 
-function directiveResponse(
-  directive: Record<string, unknown>,
-  bucket: number,
-) {
-  const boundary = `toh-ota-${createHash("sha256")
-    .update(JSON.stringify(directive))
+function multipartResponse(parts: MultipartPart[], bucket: number) {
+  if (parts.length === 0) {
+    return new Response(null, {
+      status: 204,
+      headers: responseHeaders(bucket),
+    });
+  }
+
+  const boundarySeed = parts
+    .map((part) => `${part.name}:${part.body}`)
+    .join("|");
+  const boundary = `expo-${createHash("sha256")
+    .update(boundarySeed)
     .digest("hex")
     .slice(0, 24)}`;
+
   const body = [
-    `--${boundary}`,
-    'content-disposition: form-data; name="directive"',
-    "content-type: application/json; charset=utf-8",
-    "",
-    JSON.stringify(directive),
+    ...parts.flatMap((part) => [
+      `--${boundary}`,
+      `content-disposition: form-data; name="${part.name}"`,
+      `content-type: ${part.contentType}; charset=utf-8`,
+      "",
+      part.body,
+    ]),
     `--${boundary}--`,
     "",
   ].join("\r\n");
@@ -52,8 +86,49 @@ function directiveResponse(
   });
 }
 
+function directiveResponse(
+  directive: Record<string, unknown>,
+  bucket: number,
+) {
+  return multipartResponse(
+    [
+      {
+        name: "directive",
+        contentType: "application/json",
+        body: JSON.stringify(directive),
+      },
+    ],
+    bucket,
+  );
+}
+
+function updateResponse(manifest: ExpoManifest, bucket: number) {
+  const assetRequestHeaders: Record<string, Record<string, string>> = {};
+
+  for (const asset of [manifest.launchAsset, ...(manifest.assets || [])]) {
+    assetRequestHeaders[asset.key] = {};
+  }
+
+  return multipartResponse(
+    [
+      {
+        name: "manifest",
+        contentType: "application/json",
+        body: JSON.stringify(manifest),
+      },
+      {
+        name: "extensions",
+        contentType: "application/json",
+        body: JSON.stringify({ assetRequestHeaders }),
+      },
+    ],
+    bucket,
+  );
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const protocolVersion = request.headers.get("expo-protocol-version") || "1";
   const platform = request.headers.get("expo-platform") || url.searchParams.get("platform");
   const runtimeVersion =
     request.headers.get("expo-runtime-version") ||
@@ -63,6 +138,13 @@ export async function GET(request: Request) {
     request.headers.get("expo-channel-name") ||
     url.searchParams.get("channel") ||
     "production";
+
+  if (protocolVersion !== "1") {
+    return Response.json(
+      { error: "unsupported_protocol_version", expected: "1" },
+      { status: 406 },
+    );
+  }
 
   if (platform !== "ios" && platform !== "android") {
     return Response.json({ error: "unsupported_platform" }, { status: 400 });
@@ -88,10 +170,7 @@ export async function GET(request: Request) {
     { cache: "no-store" },
   );
   if (!pointerResponse.ok) {
-    return new Response(null, {
-      status: 204,
-      headers: responseHeaders(bucket),
-    });
+    return multipartResponse([], bucket);
   }
 
   const pointer = (await pointerResponse.json()) as {
@@ -104,10 +183,7 @@ export async function GET(request: Request) {
   };
 
   if (pointer.runtimeVersion !== runtimeVersion) {
-    return new Response(null, {
-      status: 204,
-      headers: responseHeaders(bucket),
-    });
+    return multipartResponse([], bucket);
   }
 
   if (pointer.rollbackToEmbedded === true) {
@@ -134,10 +210,7 @@ export async function GET(request: Request) {
     bucket >= pointer.rolloutPercentage ||
     !pointer.expoManifestPath
   ) {
-    return new Response(null, {
-      status: 204,
-      headers: responseHeaders(bucket),
-    });
+    return multipartResponse([], bucket);
   }
 
   const manifestResponse = await fetch(
@@ -151,12 +224,34 @@ export async function GET(request: Request) {
     );
   }
 
-  const manifest = await manifestResponse.text();
-  return new Response(manifest, {
-    status: 200,
-    headers: {
-      ...responseHeaders(bucket),
-      "content-type": "application/expo+json",
-    },
-  });
+  let manifest: ExpoManifest;
+  try {
+    manifest = (await manifestResponse.json()) as ExpoManifest;
+  } catch {
+    return Response.json(
+      { error: "manifest_invalid_json", releaseSha: pointer.releaseSha || null },
+      { status: 503, headers: responseHeaders(bucket) },
+    );
+  }
+
+  if (
+    !manifest.id ||
+    !manifest.createdAt ||
+    manifest.runtimeVersion !== runtimeVersion ||
+    !manifest.launchAsset?.key ||
+    !manifest.launchAsset?.url ||
+    !Array.isArray(manifest.assets)
+  ) {
+    return Response.json(
+      { error: "manifest_invalid", releaseSha: pointer.releaseSha || null },
+      { status: 503, headers: responseHeaders(bucket) },
+    );
+  }
+
+  const currentUpdateId = request.headers.get("expo-current-update-id");
+  if (currentUpdateId && currentUpdateId === manifest.id) {
+    return directiveResponse({ type: "noUpdateAvailable" }, bucket);
+  }
+
+  return updateResponse(manifest, bucket);
 }
