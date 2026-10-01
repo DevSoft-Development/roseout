@@ -36,7 +36,7 @@ stages:
     jobs:
       - job: Validate
         pool:
-          vmImage: ubuntu-24.04
+          name: theouthaven-android-build
         steps:
           - task: UseNode@1
             inputs:
