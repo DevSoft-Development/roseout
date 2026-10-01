@@ -27,6 +27,7 @@ on:
         options:
           - publish
           - rollback
+          - rollback_embedded
         default: publish
       channel:
         description: OTA channel
@@ -179,12 +180,366 @@ jobs:
               echo "::error::release_sha must be on main."
               exit 1
             }
-          else
+          elif [ "$ACTION" = rollback ]; then
             test -n "$ROLLBACK_RELEASE_SHA" || { echo "::error::rollback_release_sha is required for rollback."; exit 1; }
-            printf '%s' "$ROLLBACK_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$' || {
+            printf '%s' "$ROLLBACK_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Ensure OTA signing authority exists in central Credential Vault
+        id: signing
+        run: |
+          set -euo pipefail
+          SECRET_ID="/theouthaven/credential-vault/production/ota"
+          WORK="$RUNNER_TEMP/ota-signing"
+          mkdir -p "$WORK"
+
+          if aws secretsmanager get-secret-value             --secret-id "$SECRET_ID"             --query SecretString --output text > "$WORK/vault.json" 2>/dev/null; then
+            jq -e '
+              (.signingPrivateKeyPem | type == "string" and length > 0) and
+              (.signingPublicKeyPem | type == "string" and length > 0) and
+              (.keyId | type == "string" and length > 0)
+            ' "$WORK/vault.json" >/dev/null
+          else
+            openssl genpkey -algorithm ED25519 -out "$WORK/private.pem"
+            openssl pkey -in "$WORK/private.pem" -pubout -out "$WORK/public.pem"
+            KEY_ID="ota-ed25519-$(date -u +%Y%m%d)"
+            jq -n               --rawfile private "$WORK/private.pem"               --rawfile public "$WORK/public.pem"               --arg keyId "$KEY_ID"               '{signingPrivateKeyPem:$private,signingPublicKeyPem:$public,keyId:$keyId}'               > "$WORK/vault.json"
+            aws secretsmanager create-secret               --name "$SECRET_ID"               --secret-string "file://$WORK/vault.json"               --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production Key=Service,Value=CredentialVault >/dev/null
+          fi
+
+          jq -r '.signingPrivateKeyPem' "$WORK/vault.json" > "$WORK/private.pem"
+          jq -r '.signingPublicKeyPem' "$WORK/vault.json" > "$WORK/public.pem"
+          KEY_ID="$(jq -r '.keyId' "$WORK/vault.json")"
+          chmod 600 "$WORK/private.pem"
+          echo "work=$WORK" >> "$GITHUB_OUTPUT"
+          echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure production OTA Azure foundation
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create               --name toh-ota-foundation-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               otaEnabled=true               consumerRuntimeEnabled=false               consumerEdgeEnabled=false               aiModelDeploymentEnabled=false
+
+      - name: Resolve OTA storage authority
+        id: azure
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            STORAGE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaStorageAccountName.value -o tsv)"
+            EDGE="$(az deployment sub show               --name toh-ota-foundation-production               --query properties.outputs.otaFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$STORAGE" && test -n "$EDGE"
+            KEY="$(az storage account keys list               --resource-group rg-toh-consumer-production               --account-name "$STORAGE"               --query '[0].value' -o tsv)"
+            test -n "$KEY"
+            echo "::add-mask::$KEY"
+            echo "storage=$STORAGE" >> "$GITHUB_OUTPUT"
+            echo "storage_key=$KEY" >> "$GITHUB_OUTPUT"
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish OTA signing public key and health probe
+        env:
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+          SIGNING_WORK: ${{ steps.signing.outputs.work }}
+          KEY_ID: ${{ steps.signing.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          cp "$SIGNING_WORK/public.pem" "$RUNNER_TEMP/$KEY_ID.pem"
+          cp "$SIGNING_WORK/public.pem" "$RUNNER_TEMP/current.pem"
+          jq -n             --arg status healthy             --arg updatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"             '{ok:true,status:$status,updatedAt:$updatedAt}' > "$RUNNER_TEMP/health.json"
+
+          for spec in             "$RUNNER_TEMP/$KEY_ID.pem:keys/$KEY_ID.pem:application/x-pem-file"             "$RUNNER_TEMP/current.pem:keys/current.pem:application/x-pem-file"             "$RUNNER_TEMP/health.json:health.json:application/json"; do
+            src="${spec%%:*}"
+            rest="${spec#*:}"
+            dst="${rest%%:*}"
+            type="${rest#*:}"
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$src"               --name "$dst"               --content-type "$type"               --overwrite true >/dev/null
+          done
+
+      - name: Build immutable iOS and Android OTA archives
+        if: inputs.action == 'publish'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "$RELEASE_SHA"
+          cd mobile
+          npm install --no-audit --no-fund
+          npm run typecheck
+
+          ROOT="$RUNNER_TEMP/ota-release"
+          mkdir -p "$ROOT/ios" "$ROOT/android"
+          CI=1 npx expo export --platform ios --output-dir "$ROOT/ios/export"
+          CI=1 npx expo export --platform android --output-dir "$ROOT/android/export"
+          npx expo config --type public --json > "$ROOT/expoConfig.json"
+
+          tar -C "$ROOT/ios/export" -czf "$ROOT/ios/archive.tgz" .
+          tar -C "$ROOT/android/export" -czf "$ROOT/android/archive.tgz" .
+
+      - name: Upload immutable OTA release and signed manifests
+        if: inputs.action == 'publish'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          CHANNEL: ${{ inputs.channel }}
+          ROLLOUT: ${{ inputs.rollout_percentage }}
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+          SIGNING_WORK: ${{ steps.signing.outputs.work }}
+          KEY_ID: ${{ steps.signing.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
+          ROOT="$RUNNER_TEMP/ota-release"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for platform in ios android; do
+            archive="$ROOT/$platform/archive.tgz"
+            archive_sha="$(sha256sum "$archive" | awk '{print $1}')"
+            archive_bytes="$(wc -c < "$archive" | tr -d ' ')"
+            base="releases/$RELEASE_SHA/$platform"
+
+            jq -n               --argjson schemaVersion 1               --arg runtimeVersion "$RUNTIME_VERSION"               --arg releaseSha "$RELEASE_SHA"               --arg platform "$platform"               --arg publishedAt "$PUBLISHED_AT"               --arg archivePath "$base/archive.tgz"               --arg archiveSha256 "$archive_sha"               --argjson archiveBytes "$archive_bytes"               --arg keyId "$KEY_ID"               '{
+                schemaVersion:$schemaVersion,
+                runtimeVersion:$runtimeVersion,
+                releaseSha:$releaseSha,
+                platform:$platform,
+                publishedAt:$publishedAt,
+                archivePath:$archivePath,
+                archiveSha256:$archiveSha256,
+                archiveBytes:$archiveBytes,
+                keyId:$keyId
+              }' > "$ROOT/$platform/manifest.json"
+
+            openssl pkeyutl -sign -rawin               -inkey "$SIGNING_WORK/private.pem"               -in "$ROOT/$platform/manifest.json"               -out "$ROOT/$platform/manifest.sig"
+            base64 -w 0 "$ROOT/$platform/manifest.sig" > "$ROOT/$platform/manifest.sig.b64"
+
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$archive"               --name "$base/archive.tgz"               --content-type application/gzip               --overwrite false >/dev/null
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$ROOT/$platform/manifest.json"               --name "$base/manifest.json"               --content-type application/json               --overwrite false >/dev/null
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$ROOT/$platform/manifest.sig.b64"               --name "$base/manifest.sig"               --content-type text/plain               --overwrite false >/dev/null
+          done
+
+      - name: Publish Expo-protocol assets and manifests for compatibility clients
+        if: inputs.action == 'publish'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ota-release"
+          RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for platform in ios android; do
+            export_dir="$ROOT/$platform/export"
+            test -f "$export_dir/metadata.json"
+
+            RELEASE_SHA="$RELEASE_SHA"             PLATFORM="$platform"             RUNTIME_VERSION="$RUNTIME_VERSION"             PUBLISHED_AT="$PUBLISHED_AT"             EXPORT_DIR="$export_dir"             EXPO_CONFIG="$ROOT/expoConfig.json"             node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+
+          const exportDir = process.env.EXPORT_DIR;
+          const platform = process.env.PLATFORM;
+          const releaseSha = process.env.RELEASE_SHA;
+          const runtimeVersion = process.env.RUNTIME_VERSION;
+          const publishedAt = process.env.PUBLISHED_AT;
+          const metadata = JSON.parse(fs.readFileSync(path.join(exportDir, 'metadata.json'), 'utf8'));
+          const expoClient = JSON.parse(fs.readFileSync(process.env.EXPO_CONFIG, 'utf8'));
+          const platformMetadata = metadata.fileMetadata?.[platform];
+          if (!platformMetadata?.bundle) throw new Error('Expo export bundle metadata is missing');
+
+          function normalized(relativePath) {
+            return String(relativePath).replaceAll('\\\\', '/').replace(/^\.\//, '');
+          }
+
+          function asset(relativePath, ext, launch) {
+            const rel = normalized(relativePath);
+            const bytes = fs.readFileSync(path.join(exportDir, rel));
+            const sha = crypto.createHash('sha256').update(bytes).digest('base64url');
+            const md5 = crypto.createHash('md5').update(bytes).digest('hex');
+            const suffix = ext ? (String(ext).startsWith('.') ? String(ext) : '.' + String(ext)) : undefined;
+            const contentType = launch
+              ? 'application/javascript'
+              : ({
+                  '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif',
+                  '.webp':'image/webp','.svg':'image/svg+xml','.json':'application/json',
+                  '.ttf':'font/ttf','.otf':'font/otf','.woff':'font/woff','.woff2':'font/woff2',
+                  '.mp3':'audio/mpeg','.mp4':'video/mp4'
+                }[suffix || ''] || 'application/octet-stream');
+            return {
+              hash: sha,
+              key: md5,
+              ...(suffix ? { fileExtension: suffix } : {}),
+              contentType,
+              url: 'https://updates.theouthaven.com/releases/' + releaseSha + '/expo/' + platform + '/' + rel,
+            };
+          }
+
+          const digest = crypto.createHash('sha256').update(releaseSha + ':' + platform + ':' + runtimeVersion).digest();
+          const uuid = Buffer.from(digest.subarray(0, 16));
+          uuid[6] = (uuid[6] & 0x0f) | 0x40;
+          uuid[8] = (uuid[8] & 0x3f) | 0x80;
+          const hex = uuid.toString('hex');
+          const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
+
+          const manifest = {
+            id,
+            createdAt: publishedAt,
+            runtimeVersion,
+            launchAsset: asset(platformMetadata.bundle, null, true),
+            assets: (platformMetadata.assets || []).map((entry) => asset(entry.path, entry.ext, false)),
+            metadata: { releaseSha },
+            extra: {
+              expoClient,
+              theOutHaven: { releaseSha, source: 'azure-self-hosted' },
+            },
+          };
+          fs.writeFileSync(path.join(exportDir, 'toh-expo-manifest.json'), JSON.stringify(manifest));
+          NODE
+
+            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite false >/dev/null
+
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --overwrite false >/dev/null
+          done
+
+      - name: Resolve rollback release compatibility
+        if: inputs.action == 'rollback'
+        env:
+          TARGET_SHA: ${{ inputs.rollback_release_sha }}
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ota-rollback"
+          for platform in ios android; do
+            az storage blob download               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --name "releases/$TARGET_SHA/$platform/manifest.json"               --file "$RUNNER_TEMP/ota-rollback/$platform.json"               --overwrite true >/dev/null
+            jq -e --arg sha "$TARGET_SHA" --arg platform "$platform"               '.releaseSha==$sha and .platform==$platform and (.runtimeVersion|length>0)'               "$RUNNER_TEMP/ota-rollback/$platform.json" >/dev/null
+          done
+
+      - name: Atomically update signed channel pointers
+        env:
+          ACTION: ${{ inputs.action }}
+          PUBLISH_SHA: ${{ inputs.release_sha }}
+          ROLLBACK_SHA: ${{ inputs.rollback_release_sha }}
+          CHANNEL: ${{ inputs.channel }}
+          ROLLOUT: ${{ inputs.rollout_percentage }}
+          STORAGE: ${{ steps.azure.outputs.storage }}
+          STORAGE_KEY: ${{ steps.azure.outputs.storage_key }}
+          SIGNING_WORK: ${{ steps.signing.outputs.work }}
+          KEY_ID: ${{ steps.signing.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = publish ]; then
+            TARGET_SHA="$PUBLISH_SHA"
+          elif [ "$ACTION" = rollback ]; then
+            TARGET_SHA="$ROLLBACK_SHA"
+          else
+            TARGET_SHA="embedded"
+          fi
+          UPDATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for platform in ios android; do
+            if [ "$ACTION" = rollback ]; then
+              RUNTIME_VERSION="$(jq -r '.runtimeVersion' "$RUNNER_TEMP/ota-rollback/$platform.json")"
+            else
+              RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
+            fi
+
+            pointer="$RUNNER_TEMP/channel-$platform.json"
+            if [ "$ACTION" = rollback_embedded ]; then
+              jq -n                 --argjson schemaVersion 1                 --arg channel "$CHANNEL"                 --arg platform "$platform"                 --arg runtimeVersion "$RUNTIME_VERSION"                 --arg updatedAt "$UPDATED_AT"                 '{
+                  schemaVersion:$schemaVersion,
+                  channel:$channel,
+                  platform:$platform,
+                  runtimeVersion:$runtimeVersion,
+                  rollbackToEmbedded:true,
+                  rollbackCommitTime:$updatedAt,
+                  updatedAt:$updatedAt
+                }' > "$pointer"
+            else
+              jq -n                 --argjson schemaVersion 1                 --arg channel "$CHANNEL"                 --arg platform "$platform"                 --arg runtimeVersion "$RUNTIME_VERSION"                 --arg releaseSha "$TARGET_SHA"                 --arg manifestPath "releases/$TARGET_SHA/$platform/manifest.json"                 --arg manifestSignaturePath "releases/$TARGET_SHA/$platform/manifest.sig"                 --arg expoManifestPath "releases/$TARGET_SHA/expo/$platform/manifest.json"                 --arg keyId "$KEY_ID"                 --arg updatedAt "$UPDATED_AT"                 --argjson rolloutPercentage "$ROLLOUT"                 '{
+                  schemaVersion:$schemaVersion,
+                  channel:$channel,
+                  platform:$platform,
+                  runtimeVersion:$runtimeVersion,
+                  releaseSha:$releaseSha,
+                  manifestPath:$manifestPath,
+                  manifestSignaturePath:$manifestSignaturePath,
+                  expoManifestPath:$expoManifestPath,
+                  keyId:$keyId,
+                  rolloutPercentage:$rolloutPercentage,
+                  updatedAt:$updatedAt
+                }' > "$pointer"
+            fi
+
+            openssl pkeyutl -sign -rawin               -inkey "$SIGNING_WORK/private.pem"               -in "$pointer"               -out "$RUNNER_TEMP/channel-$platform.sig"
+            base64 -w 0 "$RUNNER_TEMP/channel-$platform.sig" > "$RUNNER_TEMP/channel-$platform.sig.b64"
+
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$pointer"               --name "channels/$CHANNEL/$platform.json"               --content-type application/json               --overwrite true >/dev/null
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$RUNNER_TEMP/channel-$platform.sig.b64"               --name "channels/$CHANNEL/$platform.sig"               --content-type text/plain               --overwrite true >/dev/null
+          done
+
+      - name: Verify OTA release through Azure Front Door
+        env:
+          EDGE: ${{ steps.azure.outputs.edge }}
+          CHANNEL: ${{ inputs.channel }}
+          ACTION: ${{ inputs.action }}
+          PUBLISH_SHA: ${{ inputs.release_sha }}
+          ROLLBACK_SHA: ${{ inputs.rollback_release_sha }}
+        run: |
+          set -euo pipefail
+          TARGET_SHA="$PUBLISH_SHA"
+          [ "$ACTION" = rollback ] && TARGET_SHA="$ROLLBACK_SHA"
+
+          for platform in ios android; do
+            ready=false
+            for _ in $(seq 1 24); do
+              code="$(curl --silent --show-error --output pointer.json --write-out '%{http_code}'                 --connect-timeout 10 --max-time 20                 "https://$EDGE/channels/$CHANNEL/$platform.json?cb=$(date +%s)" || true)"
+              if [ "$code" = 200 ]; then
+                if [ "$ACTION" = rollback_embedded ]; then
+                  jq -e '.rollbackToEmbedded == true' pointer.json >/dev/null 2>&1 && ready=true
+                else
+                  jq -e --arg sha "$TARGET_SHA" '.releaseSha==$sha' pointer.json >/dev/null 2>&1 && ready=true
+                fi
+              fi
+              [ "$ready" = true ] && break
+              sleep 5
+            done
+            test "$ready" = true || { cat pointer.json >&2 || true; exit 1; }
+          done
+
+          {
+            echo "## Azure OTA release"
+            echo
+            echo "- Action: $ACTION"
+            echo "- Channel: $CHANNEL"
+            echo "- Release: $TARGET_SHA"
+            echo "- Edge: https://$EDGE"
+            echo "- Custom domain target: updates.theouthaven.com"
+            echo "- Route 53 cutover: not performed"
+          } >> "$GITHUB_STEP_SUMMARY"
+ || {
               echo "::error::rollback_release_sha must be a full Git SHA."
               exit 1
             }
+          elif [ "$ACTION" != rollback_embedded ]; then
+            echo "::error::Unsupported OTA action: $ACTION"
+            exit 1
           fi
 
       - name: Configure AWS access to central Credential Vault
