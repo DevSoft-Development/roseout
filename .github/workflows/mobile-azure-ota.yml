@@ -56,7 +56,9 @@ permissions:
   id-token: write
 
 concurrency:
-  group: mobile-azure-ota-${{ inputs.channel || 'validate' }}
+  # Serialize all production Azure infrastructure writers so shared Bicep module
+  # deployments cannot race each other. Keep PR validation isolated per PR.
+  group: ${{ github.event_name == 'pull_request' && format('azure-consumer-infra-pr-{0}', github.event.pull_request.number) || 'azure-consumer-infra-production' }}
   cancel-in-progress: false
 
 jobs:
