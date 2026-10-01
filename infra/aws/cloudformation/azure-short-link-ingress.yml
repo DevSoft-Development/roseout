@@ -9,25 +9,12 @@ Parameters:
   DomainName:
     Type: String
     Default: outhvn.com
-  HostedZoneId:
-    Type: String
   FrontDoorHost:
+    Type: String
+  CertificateArn:
     Type: String
 
 Resources:
-  ShortLinkCertificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName: !Ref DomainName
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref DomainName
-          HostedZoneId: !Ref HostedZoneId
-      Tags:
-        - { Key: Project, Value: TheOutHaven }
-        - { Key: Environment, Value: !Ref Environment }
-        - { Key: Service, Value: ShortLinkIngress }
-
   ShortLinkOriginRequestPolicy:
     Type: AWS::CloudFront::OriginRequestPolicy
     Properties:
@@ -76,7 +63,7 @@ Resources:
           CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
           OriginRequestPolicyId: !Ref ShortLinkOriginRequestPolicy
         ViewerCertificate:
-          AcmCertificateArn: !Ref ShortLinkCertificate
+          AcmCertificateArn: !Ref CertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
       Tags:
@@ -84,32 +71,8 @@ Resources:
         - { Key: Environment, Value: !Ref Environment }
         - { Key: Service, Value: ShortLinkIngress }
 
-  ShortLinkARecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: A
-      AliasTarget:
-        DNSName: !GetAtt ShortLinkDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
-        EvaluateTargetHealth: false
-
-  ShortLinkAaaaRecord:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneId: !Ref HostedZoneId
-      Name: !Ref DomainName
-      Type: AAAA
-      AliasTarget:
-        DNSName: !GetAtt ShortLinkDistribution.DomainName
-        HostedZoneId: Z2FDTNDATAQYW2
-        EvaluateTargetHealth: false
-
 Outputs:
   DistributionId:
     Value: !Ref ShortLinkDistribution
   DistributionDomainName:
     Value: !GetAtt ShortLinkDistribution.DomainName
-  CertificateArn:
-    Value: !Ref ShortLinkCertificate
