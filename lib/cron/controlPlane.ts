@@ -1,7 +1,6 @@
 import cronRegistry from "@/config/cron-jobs.json";
 import awsActivationManifest from "@/infra/aws/edge-runtime/activation.json";
 import awsScheduleManifest from "@/infra/aws/edge-runtime/schedules.json";
-import vercelConfig from "@/vercel.json";
 
 export type CronDelivery = "managed" | "direct";
 
@@ -58,25 +57,9 @@ export function awsCronSchedules() {
 }
 
 export function vercelCronSchedules() {
-  const entries = ((vercelConfig as { crons?: VercelCronSchedule[] }).crons ?? []);
-  const schedules = new Map<string, VercelCronSchedule>();
-
-  for (const entry of entries) {
-    try {
-      const url = new URL(entry.path, "https://theouthaven.com");
-      const managedJob = url.pathname === "/api/cron/managed" ? url.searchParams.get("job") : null;
-      if (managedJob) {
-        schedules.set(managedJob, entry);
-        continue;
-      }
-      const definition = definitions.find((item) => item.targetPath === entry.path);
-      if (definition) schedules.set(definition.jobKey, entry);
-    } catch {
-      // Invalid deployment config is surfaced by Vercel at build time.
-    }
-  }
-
-  return schedules;
+  // Vercel cron ownership is retired. Keep the compatibility surface empty
+  // while callers transition fully to AWS scheduler metadata.
+  return new Map<string, VercelCronSchedule>();
 }
 
 export function scheduleHintFor(jobKey: string) {

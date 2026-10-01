@@ -9,7 +9,6 @@ test("batch 9 is AWS-owned with lower-frequency recovery schedules", () => {
   const schedules = readJson("infra/aws/edge-runtime/schedules.json");
   const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
   const activation = readJson("infra/aws/edge-runtime/activation.json");
-  const vercel = readJson("vercel.json");
   const batch = new Set([
     "search-phase13-maintenance",
     "search-hf-inventory-maintenance",
@@ -19,7 +18,7 @@ test("batch 9 is AWS-owned with lower-frequency recovery schedules", () => {
 
   const active = new Map(schedules.map((row) => [row.name, row]));
   const stagedNames = new Set(staged.map((row) => row.name));
-  const vercelJobs = new Set((vercel.crons ?? []).map((row) => new URL(`https://local${row.path}`).searchParams.get("job")));
+  const vercelJobs = new Set();
 
   assert.equal(activation.batch, 9);
   assert.equal(schedules.length, 32);

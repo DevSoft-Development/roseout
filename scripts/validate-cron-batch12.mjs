@@ -4,7 +4,6 @@ const readJson = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 
 const batch12 = [
   "curated-location-discovery-restaurant",
@@ -55,11 +54,7 @@ const rollback = new Set(activation.rollback_enabled);
 const enabled = new Set(activation.enabled);
 const probes = [...activation.probe].sort();
 const delta = activation.enabled.filter((name) => !rollback.has(name)).sort();
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch < 12) throw new Error(`Batch 12 ownership cannot be validated from older batch ${activation.batch}`);
 

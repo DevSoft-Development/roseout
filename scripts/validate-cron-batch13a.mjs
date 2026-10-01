@@ -6,7 +6,6 @@ const readText = (path) => fs.readFileSync(path, "utf8");
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 const managedRoute = readText("app/api/cron/managed/route.ts");
 const trackedCron = readText("lib/cron/runTrackedCron.ts");
 
@@ -29,6 +28,7 @@ const expected = new Map([
 ]);
 
 const deferred = ["microsoft-365-sync", "marketing-social-publish", "website-failover"].sort();
+const retiredAfterBatch13a = new Set(["daily-admin-digest", "search-quality-digest"]);
 const activeNames = new Set(schedules.map((row) => row.name));
 const stagedNames = new Set(staged.map((row) => row.name));
 const enabled = new Set(activation.enabled);
@@ -39,14 +39,16 @@ const enabledSorted = [...enabled].sort();
 const rollbackExpected = activeSorted.filter((name) => !batch13a.includes(name)).sort();
 const rollbackSorted = [...rollback].sort();
 const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch > 13) {
   for (const name of batch13a) {
+    if (retiredAfterBatch13a.has(name)) {
+      if (activeNames.has(name) || enabled.has(name) || stagedNames.has(name)) {
+        throw new Error(`Retired Batch 13A schedule unexpectedly returned: ${name}`);
+      }
+      continue;
+    }
     if (!activeNames.has(name) || !enabled.has(name)) throw new Error(`Batch 13A AWS ownership regressed: ${name}`);
     if (stagedNames.has(name)) throw new Error(`Batch 13A returned to staged inventory: ${name}`);
     if (vercelJobs.has(name)) throw new Error(`Batch 13A returned to Vercel ownership: ${name}`);

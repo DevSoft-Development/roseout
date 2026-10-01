@@ -23,10 +23,8 @@ describe("profile backfill live progress contract", () => {
     expect(signalMigration).toContain("trg_signal_location_search_profile_run_item_work");
     expect(signalMigration).toContain("location-search-profile-worker");
 
-    const vercel = JSON.parse(read("vercel.json")) as {
-      crons: Array<{ path: string; schedule: string }>;
-    };
-    expect(vercel.crons.some((cron) => cron.path.includes("location-search-profile-worker"))).toBe(false);
+    const activation = JSON.parse(read("infra/aws/edge-runtime/activation.json")) as { enabled: string[] };
+    expect(activation.enabled).toContain("location-search-profile-worker");
 
     const route = read("app/api/cron/location-search-profile-worker/route.ts");
     expect(route).toContain("export async function GET");

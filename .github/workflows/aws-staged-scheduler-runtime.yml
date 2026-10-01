@@ -6,7 +6,6 @@ on:
       - 'infra/aws/edge-runtime/staged-schedules.json'
       - 'infra/aws/edge-runtime/schedules.json'
       - 'infra/aws/edge-runtime/activation.json'
-      - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   push:
     branches: [main]
@@ -14,7 +13,6 @@ on:
       - 'infra/aws/edge-runtime/staged-schedules.json'
       - 'infra/aws/edge-runtime/schedules.json'
       - 'infra/aws/edge-runtime/activation.json'
-      - 'vercel.json'
       - '.github/workflows/aws-staged-scheduler-runtime.yml'
   workflow_dispatch:
 
@@ -44,7 +42,6 @@ jobs:
           STAGED='infra/aws/edge-runtime/staged-schedules.json'
           ACTIVE='infra/aws/edge-runtime/schedules.json'
           ACTIVATION='infra/aws/edge-runtime/activation.json'
-          VERCEL='vercel.json'
 
           jq -e 'type == "array"' "$STAGED" >/dev/null
           jq -e 'all(.[]; (.name|type)=="string" and (.name|length)>0 and (.expression|type)=="string" and (.function|type)=="string" and (.body|type)=="object")' "$STAGED" >/dev/null
@@ -69,12 +66,9 @@ jobs:
             comm -12 "$RUNNER_TEMP/enabled-names.txt" "$RUNNER_TEMP/staged-names.txt" >&2
             exit 1
           }
-
-          # The Vercel cron cutover is complete. Vercel now runs the web app only;
-          # all periodic/background ownership belongs to AWS.
-          test "$(jq '.crons | length' "$VERCEL")" = '0' || {
-            echo 'Vercel cron inventory regressed from the web-only target state.' >&2
-            jq -c '.crons' "$VERCEL" >&2
+          # Vercel scheduler ownership is retired; the deployment manifest is intentionally absent.
+          test ! -e vercel.json || {
+            echo 'Root vercel.json unexpectedly returned after Azure cutover.' >&2
             exit 1
           }
 

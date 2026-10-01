@@ -4,7 +4,6 @@ const readJson = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 
 const batch9 = [
   "cron-alert-dispatcher",
@@ -18,9 +17,7 @@ const stagedNames = new Set(names(staged));
 const enabled = new Set(activation.enabled);
 const rollback = new Set(activation.rollback_enabled);
 const probes = new Set(activation.probe);
-const vercelJobs = new Set(
-  (vercel.crons ?? []).map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job")).filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch !== 9) throw new Error(`expected batch 9, got ${activation.batch}`);
 if (schedules.length !== 32) throw new Error(`expected 32 active schedules, got ${schedules.length}`);

@@ -49,9 +49,7 @@ describe("Launch catalog factual description backfill", () => {
       body: Record<string, unknown>;
     }>;
     const signalMigration = source("supabase/migrations/20260902180000_event_driven_background_work_signals.sql");
-    const vercel = JSON.parse(source("vercel.json")) as {
-      crons: Array<{ path: string; schedule: string }>;
-    };
+    const activation = JSON.parse(source("infra/aws/edge-runtime/activation.json")) as { enabled: string[] };
 
     expect(cron).toContain('phase: "public"');
     expect(cron).not.toContain('phase: "hidden"');
@@ -62,7 +60,7 @@ describe("Launch catalog factual description backfill", () => {
       body: { target: "/api/cron/managed?job=location-description-backfill" },
     }));
     expect(signalMigration).toContain("trg_signal_location_description_backfill_work");
-    expect(vercel.crons.some((entry) => entry.path.includes("location-description-backfill"))).toBe(false);
+    expect(activation.enabled).toContain("location-description-backfill");
     expect(health).toContain("if (!health.descriptions.publicPhaseComplete)");
   });
 

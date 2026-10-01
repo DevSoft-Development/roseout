@@ -6,7 +6,6 @@ const readText = (path) => fs.readFileSync(path, "utf8");
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 const managedRoute = readText("app/api/cron/managed/route.ts");
 const microsoftSync = readText("lib/microsoft-365/sync-with-crm.ts");
 const socialClaims = readText("lib/marketing/social-publish-claims.ts");
@@ -35,11 +34,7 @@ const rollbackSorted = [...rollback].sort();
 const rollbackExpected = activeSorted.filter((name) => !batch14.includes(name)).sort();
 const delta = (activation.enabled ?? []).filter((name) => !rollback.has(name)).sort();
 const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch > 14) {
   for (const name of batch14) {

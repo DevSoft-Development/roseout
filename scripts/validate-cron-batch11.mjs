@@ -4,7 +4,6 @@ const readJson = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 
 const batch11a = [
   "backfill-review-counts",
@@ -41,11 +40,7 @@ const activeNames = new Set(schedules.map((row) => row.name));
 const stagedNames = new Set(staged.map((row) => row.name));
 const enabled = new Set(activation.enabled);
 const rollback = new Set(activation.rollback_enabled);
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch < 11) throw new Error(`expected Batch 11 or later, got ${activation.batch}`);
 if (schedules.length < 45) throw new Error(`Batch 11 requires at least 45 active schedules, got ${schedules.length}`);
