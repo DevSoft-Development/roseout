@@ -143,7 +143,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "turnstile", label: "Cloudflare Turnstile", category: "Security", description: "Turnstile server-side verification credential.", fields: [
     { key: "secretKey", label: "Secret key", secret: true },
   ] },
-  { id: "expo", label: "Expo", category: "Communications", description: "Expo access token used for authenticated mobile push delivery.", fields: [
+  { id: "expo", label: "Expo Push (Temporary)", category: "Communications", description: "Temporary Expo Push credential retained only for existing mobile push delivery while native APNs/FCM is not yet configured.", note: "Expo is not a build, submit, OTA, or hosting control plane. Remove this provider after native APNs/FCM delivery is proven.", fields: [
     { key: "accessToken", label: "Access token", secret: true },
   ] },
   { id: "domains", label: "Domain Provider", category: "Domains", description: "Wholesale registrar and domain gateway credentials.", fields: [
