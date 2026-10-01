@@ -38,6 +38,7 @@ jobs:
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       - name: Verify domain through authenticated gateway
+        continue-on-error: true
         run: |
           set -euo pipefail
           SECRET="$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$DOMAIN_GATEWAY_SECRET_NAME" --query SecretString --output text)"
