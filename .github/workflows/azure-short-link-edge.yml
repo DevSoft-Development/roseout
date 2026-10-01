@@ -1,0 +1,214 @@
+name: Azure short-link edge
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/short-link-edge.yml'
+      - '.github/workflows/azure-short-link-edge.yml'
+      - '.env.example'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/short-link-edge.yml'
+      - '.github/workflows/azure-short-link-edge.yml'
+      - '.env.example'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-short-link-edge-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: outhvn.com
+  WWW_DOMAIN_NAME: www.outhvn.com
+  AZURE_DEPLOYMENT: toh-consumer-runtime-production
+  STACK_NAME: theouthaven-short-link-edge-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate short-link edge template
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/short-link-edge.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure consumer Front Door
+        id: azure
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            EDGE="$(az deployment sub show --name "$AZURE_DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$EDGE" && test "$EDGE" != None
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        id: aws
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Bootstrap narrowly scoped short-link edge permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/short-link-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "acm:DescribeCertificate",
+                  "acm:ListCertificates",
+                  "acm:RequestCertificate",
+                  "cloudformation:*",
+                  "cloudfront:*",
+                  "route53:*"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenShortLinkEdgeBootstrap             --policy-document "file://$RUNNER_TEMP/short-link-policy.json"
+          sleep 8
+
+      - name: Resolve Route 53 zone and ACM certificate
+        id: tls
+        run: |
+          set -euo pipefail
+          ZONE_ID="$(aws route53 list-hosted-zones-by-name             --dns-name "$DOMAIN_NAME"             --query "HostedZones[?Name=='${DOMAIN_NAME}.' && Config.PrivateZone==\`false\`] | [0].Id"             --output text | sed 's#^/hostedzone/##')"
+          test -n "$ZONE_ID" && test "$ZONE_ID" != None
+
+          CERT_ARN="$(aws acm list-certificates             --region us-east-1             --certificate-statuses ISSUED PENDING_VALIDATION             --query "CertificateSummaryList[?DomainName=='${DOMAIN_NAME}'] | [0].CertificateArn"             --output text)"
+          if [ -z "$CERT_ARN" ] || [ "$CERT_ARN" = None ]; then
+            CERT_ARN="$(aws acm request-certificate               --region us-east-1               --domain-name "$DOMAIN_NAME"               --subject-alternative-names "$WWW_DOMAIN_NAME"               --validation-method DNS               --idempotency-token outhvn2026               --query CertificateArn --output text)"
+          fi
+
+          for attempt in $(seq 1 30); do
+            aws acm describe-certificate --region us-east-1 --certificate-arn "$CERT_ARN" > "$RUNNER_TEMP/cert.json"
+            COUNT="$(jq '[.Certificate.DomainValidationOptions[]? | select(.ResourceRecord.Name and .ResourceRecord.Value)] | length' "$RUNNER_TEMP/cert.json")"
+            [ "$COUNT" -ge 1 ] && break
+            sleep 5
+          done
+
+          python3 - <<'PY'
+          import json, os
+          cert=json.load(open(os.environ['RUNNER_TEMP']+'/cert.json'))['Certificate']
+          changes=[]
+          seen=set()
+          for option in cert.get('DomainValidationOptions',[]):
+              rec=option.get('ResourceRecord') or {}
+              name=rec.get('Name'); value=rec.get('Value'); typ=rec.get('Type','CNAME')
+              if not name or not value or (name,typ,value) in seen: continue
+              seen.add((name,typ,value))
+              changes.append({'Action':'UPSERT','ResourceRecordSet':{
+                  'Name':name,'Type':typ,'TTL':60,'ResourceRecords':[{'Value':value}]
+              }})
+          if not changes: raise SystemExit('ACM DNS validation records were not available.')
+          json.dump({'Comment':'Validate outhvn.com CloudFront certificate','Changes':changes},open(os.environ['RUNNER_TEMP']+'/acm-validation.json','w'))
+          PY
+
+          CHANGE_ID="$(aws route53 change-resource-record-sets             --hosted-zone-id "$ZONE_ID"             --change-batch "file://$RUNNER_TEMP/acm-validation.json"             --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          aws acm wait certificate-validated --region us-east-1 --certificate-arn "$CERT_ARN"
+
+          echo "zone_id=$ZONE_ID" >> "$GITHUB_OUTPUT"
+          echo "certificate_arn=$CERT_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy CloudFront short-link edge
+        id: edge
+        env:
+          CERTIFICATE_ARN: ${{ steps.tls.outputs.certificate_arn }}
+          AZURE_EDGE: ${{ steps.azure.outputs.edge }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --region us-east-1             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/short-link-edge.yml             --parameter-overrides               DomainName="$DOMAIN_NAME"               WwwDomainName="$WWW_DOMAIN_NAME"               CertificateArn="$CERTIFICATE_ARN"               AzureFrontDoorHostName="$AZURE_EDGE"             --no-fail-on-empty-changeset
+
+          DISTRIBUTION_ID="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text)"
+          DISTRIBUTION_DOMAIN="$(aws cloudformation describe-stacks --region us-east-1 --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue | [0]" --output text)"
+          test -n "$DISTRIBUTION_ID" && test "$DISTRIBUTION_ID" != None
+          test -n "$DISTRIBUTION_DOMAIN" && test "$DISTRIBUTION_DOMAIN" != None
+          aws cloudfront wait distribution-deployed --id "$DISTRIBUTION_ID"
+          echo "distribution_id=$DISTRIBUTION_ID" >> "$GITHUB_OUTPUT"
+          echo "distribution_domain=$DISTRIBUTION_DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Cut outhvn.com DNS to the Azure-backed short-link edge
+        env:
+          HOSTED_ZONE_ID: ${{ steps.tls.outputs.zone_id }}
+          DISTRIBUTION_DOMAIN: ${{ steps.edge.outputs.distribution_domain }}
+        run: |
+          set -euo pipefail
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/current.json"
+          python3 - <<'PY'
+          import json, os
+          current=json.load(open(os.environ['RUNNER_TEMP']+'/current.json'))['ResourceRecordSets']
+          names={os.environ['DOMAIN_NAME'].rstrip('.')+'.',os.environ['WWW_DOMAIN_NAME'].rstrip('.')+'.'}
+          existing=[r for r in current if r.get('Name') in names and r.get('Type') in {'A','AAAA','CNAME'}]
+          changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in existing]
+          target=os.environ['DISTRIBUTION_DOMAIN'].rstrip('.')+'.'
+          for name in names:
+              for typ in ('A','AAAA'):
+                  changes.append({'Action':'CREATE','ResourceRecordSet':{
+                      'Name':name,'Type':typ,
+                      'AliasTarget':{'HostedZoneId':'Z2FDTNDATAQYW2','DNSName':target,'EvaluateTargetHealth':False}
+                  }})
+          json.dump({'Comment':'Route outhvn.com to the Azure-backed CloudFront short-link edge','Changes':changes},open(os.environ['RUNNER_TEMP']+'/cutover.json','w'))
+          PY
+          CHANGE_ID="$(aws route53 change-resource-record-sets             --hosted-zone-id "$HOSTED_ZONE_ID"             --change-batch "file://$RUNNER_TEMP/cutover.json"             --query ChangeInfo.Id --output text)"
+          aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+
+      - name: Verify branded short-link routing
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 60); do
+            CODE="$(curl --silent --show-error --output /dev/null --dump-header "$RUNNER_TEMP/outhvn.headers" --write-out '%{http_code}' --max-time 20 "https://outhvn.com/TOH-ABCD-EFGH?cb=$(date +%s)" || true)"
+            LOCATION="$(tr -d '\r' < "$RUNNER_TEMP/outhvn.headers" | awk -F': ' 'tolower($1)=="location" {print $2}' | tail -1)"
+            if [ "$CODE" = 302 ] && printf '%s' "$LOCATION" | grep -q '^https://theouthaven\.com/business/claim?code=TOH-ABCD-EFGH'; then
+              ready=true
+              break
+            fi
+            echo "Attempt $attempt: status=$CODE location=$LOCATION"
+            sleep 15
+          done
+          test "$ready" = true
+
+      - name: Remove temporary short-link edge permissions
+        if: always() && steps.aws.outcome == 'success'
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenShortLinkEdgeBootstrap 2>/dev/null || true
