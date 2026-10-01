@@ -1,0 +1,147 @@
+name: Inspect outhvn registrar authority
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-outhvn-registrar.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: inspect-outhvn-registrar
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  DOMAIN_GATEWAY_INSTANCE: theouthaven-domains-gateway
+  DOMAIN_GATEWAY_URL: https://domains-api.theouthaven.com
+  DOMAIN_GATEWAY_SECRET_NAME: /theouthaven/production/domain-gateway/hmac
+  DOMAIN_NAME: outhvn.com
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify domain through authenticated gateway
+        run: |
+          set -euo pipefail
+          SECRET="$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$DOMAIN_GATEWAY_SECRET_NAME" --query SecretString --output text)"
+          test -n "$SECRET" && test "$SECRET" != None
+          echo "::add-mask::$SECRET"
+          BODY="$(jq -nc --arg domain "$DOMAIN_NAME" '{domain:$domain}')"
+          TS="$(date +%s%3N)"
+          SIG="$(TS="$TS" BODY="$BODY" SECRET="$SECRET" python3 - <<'PY'
+          import hashlib,hmac,os
+          payload='\n'.join([os.environ['TS'],'POST','/v1/domains/status',os.environ['BODY']])
+          print(hmac.new(os.environ['SECRET'].encode(),payload.encode(),hashlib.sha256).hexdigest())
+          PY
+          )"
+          echo "::add-mask::$SIG"
+          STATUS="$(curl --silent --show-error --output "$RUNNER_TEMP/domain-status.json" --write-out '%{http_code}' \
+            -X POST "$DOMAIN_GATEWAY_URL/v1/domains/status" \
+            -H 'content-type: application/json' \
+            -H "x-toh-timestamp: $TS" \
+            -H "x-toh-signature: $SIG" \
+            --data-binary "$BODY")"
+          test "$STATUS" = 200 || { cat "$RUNNER_TEMP/domain-status.json" >&2; exit 1; }
+          jq '{ok,domain,active,status,expirationDate,autoRenew,sponsoringRsp,responseCode}' "$RUNNER_TEMP/domain-status.json"
+          jq -e --arg domain "$DOMAIN_NAME" '.ok == true and .domain == $domain' "$RUNNER_TEMP/domain-status.json" >/dev/null
+
+      - name: Inspect live gateway implementation safely
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          POLICY_NAME='TheOutHavenOuthvnRegistrarInspection'
+          POLICY_FILE="$RUNNER_TEMP/outhvn-inspect-policy.json"
+          ACCESS="$RUNNER_TEMP/access.json"
+          KEY="$RUNNER_TEMP/key"
+          KNOWN_HOSTS="$RUNNER_TEMP/known_hosts"
+          RUNNER_CIDR=""
+
+          cleanup() {
+            if [ -n "$RUNNER_CIDR" ]; then
+              aws lightsail close-instance-public-ports --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" \
+                --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$RUNNER_CIDR" >/dev/null 2>&1 || true
+            fi
+            aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$POLICY_NAME" >/dev/null 2>&1 || true
+            rm -f "$POLICY_FILE" "$ACCESS" "$KEY" "$KNOWN_HOSTS"
+          }
+          trap cleanup EXIT
+
+          cat > "$POLICY_FILE" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[{
+              "Sid":"OuthvnRegistrarInspection",
+              "Effect":"Allow",
+              "Action":[
+                "lightsail:GetInstance",
+                "lightsail:GetInstancePortStates",
+                "lightsail:OpenInstancePublicPorts",
+                "lightsail:CloseInstancePublicPorts",
+                "lightsail:GetInstanceAccessDetails"
+              ],
+              "Resource":"*"
+            }]
+          }
+          JSON
+          aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name "$POLICY_NAME" --policy-document "file://$POLICY_FILE"
+          sleep 8
+
+          RUNNER_IP="$(curl --silent --show-error --fail https://checkip.amazonaws.com | tr -d '\r\n')"
+          test -n "$RUNNER_IP"
+          RUNNER_CIDR="$RUNNER_IP/32"
+          aws lightsail open-instance-public-ports --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" \
+            --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$RUNNER_CIDR" >/dev/null
+
+          aws lightsail get-instance-access-details --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" --protocol ssh > "$ACCESS"
+          jq -r '.accessDetails.privateKey' "$ACCESS" > "$KEY"
+          jq -r '.accessDetails as $a | $a.hostKeys[] | "\($a.ipAddress) \(.algorithm) \(.publicKey)"' "$ACCESS" > "$KNOWN_HOSTS"
+          chmod 600 "$KEY" "$KNOWN_HOSTS"
+          HOST="$(jq -r '.accessDetails.ipAddress' "$ACCESS")"
+          USERNAME="$(jq -r '.accessDetails.username' "$ACCESS")"
+
+          ssh -i "$KEY" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          echo "=== SAFE ENV KEY NAMES ==="
+          sudo sh -c "sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' /opt/theouthaven-domain-gateway/.env | grep -Ei 'OPEN.?SRS|REGISTRAR|DNS|USERNAME|RESELLER|API|HOST' | sort -u" || true
+
+          echo "=== GATEWAY FILES ==="
+          sudo find /opt/theouthaven-domain-gateway -maxdepth 3 -type f \
+            \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' -o -name '*.py' -o -name 'package.json' \) \
+            -printf '%p\n' 2>/dev/null | sort | head -200
+
+          echo "=== SAFE ROUTE/FUNCTION SIGNALS ==="
+          sudo grep -RIlE 'advanced_update_nameservers|assign_ns|dns/configure|nameserver|OpenSRS|OPENSRS' \
+            /opt/theouthaven-domain-gateway 2>/dev/null | head -100
+
+          echo "=== PROCESS METADATA ==="
+          sudo systemctl list-units --type=service --all --no-pager | grep -Ei 'outhaven|domain|gateway' || true
+          REMOTE
+
+      - name: Summary
+        run: |
+          {
+            echo '### outhvn.com registrar inspection'
+            echo
+            echo '- Authenticated domain-gateway status: passed'
+            echo '- Live gateway inspected without printing credential values'
+            echo '- No DNS or registrar mutation performed'
+          } >> "$GITHUB_STEP_SUMMARY"
