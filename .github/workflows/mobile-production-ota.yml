@@ -35,6 +35,9 @@ jobs:
             throw new Error('EAS project ID must not be required by the production runtime');
           }
           NODE
+          test ! -f mobile/eas.json
+          ! grep -F '"expo-dev-client"' mobile/package.json >/dev/null
+          node -e "const p=require('./mobile/package-lock.json'); if(p.packages?.['']?.dependencies?.['expo-dev-client'] || p.packages?.['node_modules/expo-dev-client']) process.exit(1)"
           test -f .github/workflows/mobile-azure-ota.yml
           grep -F 'name: Mobile production OTA migration guard' .github/workflows/mobile-production-ota.yml >/dev/null
           grep -F 'name: Mobile Azure OTA release' .github/workflows/mobile-azure-ota.yml >/dev/null
