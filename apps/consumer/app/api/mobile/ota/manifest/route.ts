@@ -25,6 +25,33 @@ function parseBucket(value: string | null) {
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 99 ? parsed : null;
 }
 
+function directiveResponse(
+  directive: Record<string, unknown>,
+  bucket: number,
+) {
+  const boundary = `toh-ota-${createHash("sha256")
+    .update(JSON.stringify(directive))
+    .digest("hex")
+    .slice(0, 24)}`;
+  const body = [
+    `--${boundary}`,
+    'content-disposition: form-data; name="directive"',
+    "content-type: application/json; charset=utf-8",
+    "",
+    JSON.stringify(directive),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      ...responseHeaders(bucket),
+      "content-type": `multipart/mixed; boundary=${boundary}`,
+    },
+  });
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const platform = request.headers.get("expo-platform") || url.searchParams.get("platform");
@@ -72,10 +99,37 @@ export async function GET(request: Request) {
     releaseSha?: string;
     rolloutPercentage?: number;
     expoManifestPath?: string;
+    rollbackToEmbedded?: boolean;
+    rollbackCommitTime?: string;
   };
 
+  if (pointer.runtimeVersion !== runtimeVersion) {
+    return new Response(null, {
+      status: 204,
+      headers: responseHeaders(bucket),
+    });
+  }
+
+  if (pointer.rollbackToEmbedded === true) {
+    const currentUpdateId = request.headers.get("expo-current-update-id");
+    const embeddedUpdateId = request.headers.get("expo-embedded-update-id");
+
+    if (currentUpdateId && embeddedUpdateId && currentUpdateId === embeddedUpdateId) {
+      return directiveResponse({ type: "noUpdateAvailable" }, bucket);
+    }
+
+    return directiveResponse(
+      {
+        type: "rollBackToEmbedded",
+        parameters: {
+          commitTime: pointer.rollbackCommitTime || new Date(0).toISOString(),
+        },
+      },
+      bucket,
+    );
+  }
+
   if (
-    pointer.runtimeVersion !== runtimeVersion ||
     typeof pointer.rolloutPercentage !== "number" ||
     bucket >= pointer.rolloutPercentage ||
     !pointer.expoManifestPath
