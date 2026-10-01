@@ -22,6 +22,10 @@ param huggingFaceAiEndpoint string
 @secure()
 param huggingFaceAiToken string
 param huggingFaceAiModel string
+param shortLinkBaseUrl string = ''
+param shortLinkHost string = ''
+param iosTeamId string = ''
+param androidAppLinkSha256Fingerprints string = ''
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var acrPullRoleDefinitionId = subscriptionResourceId(
@@ -187,6 +191,22 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_AI_MODEL'
               value: azureAiModel
+            }
+            {
+              name: 'SHORT_LINK_BASE_URL'
+              value: shortLinkBaseUrl
+            }
+            {
+              name: 'SHORT_LINK_HOST'
+              value: shortLinkHost
+            }
+            {
+              name: 'IOS_TEAM_ID'
+              value: iosTeamId
+            }
+            {
+              name: 'ANDROID_APP_LINK_SHA256_FINGERPRINTS'
+              value: androidAppLinkSha256Fingerprints
             }
           ], huggingFaceEnabled ? [
             {
