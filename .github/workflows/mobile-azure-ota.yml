@@ -290,9 +290,32 @@ jobs:
 
           ROOT="$RUNNER_TEMP/ota-release"
           mkdir -p "$ROOT/ios" "$ROOT/android"
-          CI=1 npx expo export --platform ios --output-dir "$ROOT/ios/export"
-          CI=1 npx expo export --platform android --output-dir "$ROOT/android/export"
+          # Keep OTA launch bundles on the same serialized-JS path used before
+          # native export:embed/Hermes compilation. Expo SDK 57 currently has an
+          # accepted bug where expo export can corrupt compiled Hermes bytecode
+          # while rewriting DOM component asset references. Publishing source JS
+          # avoids that bytecode mutation while preserving Expo/Metro transforms.
+          CI=1 npx expo export --no-bytecode --platform ios --output-dir "$ROOT/ios/export"
+          CI=1 npx expo export --no-bytecode --platform android --output-dir "$ROOT/android/export"
           npx expo config --type public --json > "$ROOT/expoConfig.json"
+
+          # Safety gate: production OTA must remain serialized JS until the Expo
+          # Hermes export corruption bug is fixed upstream and deliberately removed.
+          for platform in ios android; do
+            bundle="$(jq -r --arg platform "$platform" '.fileMetadata[$platform].bundle // empty' "$ROOT/$platform/export/metadata.json")"
+            test -n "$bundle" || { echo "::error::Expo export metadata is missing the $platform launch bundle."; exit 1; }
+            case "$bundle" in
+              *.hbc)
+                echo "::error::Refusing to publish Hermes bytecode OTA launch bundle while embedded-parity source mode is required: $bundle"
+                exit 1
+                ;;
+            esac
+            test -f "$ROOT/$platform/export/$bundle" || {
+              echo "::error::Expo export launch bundle does not exist: $platform/$bundle"
+              exit 1
+            }
+            echo "$platform OTA launch bundle: $bundle (serialized JS)"
+          done
 
           tar -C "$ROOT/ios/export" -czf "$ROOT/ios/archive.tgz" .
           tar -C "$ROOT/android/export" -czf "$ROOT/android/archive.tgz" .
