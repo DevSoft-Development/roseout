@@ -1,0 +1,214 @@
+name: Azure short-link DNS cutover
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/aws/cloudformation/azure-short-link-ingress.yml'
+      - '.github/workflows/azure-short-link-dns-cutover.yml'
+  workflow_run:
+    workflows: ['Azure consumer production']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-short-link-dns-cutover-production
+  cancel-in-progress: false
+
+env:
+  AWS_ACCOUNT_ID: '742020474738'
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: outhvn.com
+  STACK_NAME: theouthaven-azure-short-link-ingress-production
+  SNAPSHOT_SECRET: theouthaven/production/short-link/dns-cutover-last-snapshot
+  AZURE_DEPLOYMENT: toh-consumer-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate CloudFormation
+        run: |
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/azure-short-link-ingress.yml
+
+  execute:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure Front Door endpoint
+        id: azure
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            EDGE="$(az deployment sub show --name "$AZURE_DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            test -n "$EDGE" && test "$EDGE" != None
+            curl --silent --show-error --fail --max-time 30 "https://$EDGE/api/health/azure/probe" >/dev/null
+            echo "edge=$EDGE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve Route53 zone and snapshot old short-link DNS
+        id: dns
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/zones.json"
+          HOSTED_ZONE_ID="$(jq -r --arg name "${DOMAIN_NAME}." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/zones.json" | sed 's#^/hostedzone/##')"
+          test -n "$HOSTED_ZONE_ID" || { echo "::error::Public Route53 zone for $DOMAIN_NAME was not found."; exit 1; }
+          echo "hosted_zone_id=$HOSTED_ZONE_ID" >> "$GITHUB_OUTPUT"
+
+          aws route53 list-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" > "$RUNNER_TEMP/current.json"
+          python3 - <<'PY'
+          import json, os
+          current=json.load(open(os.environ['RUNNER_TEMP']+'/current.json'))['ResourceRecordSets']
+          host=os.environ['DOMAIN_NAME'].rstrip('.')+'.'
+          rows=[r for r in current if r.get('Name')==host and r.get('Type') in {'A','AAAA','CNAME'}]
+          raw=json.dumps({'records':rows},separators=(',',':'))
+          if len(raw.encode()) > 60000:
+              raise SystemExit('Short-link DNS rollback snapshot is unexpectedly large.')
+          open(os.environ['RUNNER_TEMP']+'/snapshot.json','w').write(raw)
+          print(json.dumps({'records':rows},indent=2))
+          PY
+
+          SNAPSHOT_VALUE="$(cat "$RUNNER_TEMP/snapshot.json")"
+          if aws secretsmanager describe-secret --secret-id "$SNAPSHOT_SECRET" >/dev/null 2>&1; then
+            aws secretsmanager put-secret-value --secret-id "$SNAPSHOT_SECRET" --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          else
+            aws secretsmanager create-secret --name "$SNAPSHOT_SECRET" --description 'TheOutHaven pre-Azure outhvn.com DNS cutover snapshot' --secret-string "$SNAPSHOT_VALUE" >/dev/null
+          fi
+
+      - name: Remove conflicting legacy apex records
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          snap=json.load(open(os.environ['RUNNER_TEMP']+'/snapshot.json'))['records']
+          changes=[{'Action':'DELETE','ResourceRecordSet':r} for r in snap]
+          json.dump({'Comment':'Remove legacy outhvn.com records before managed Azure ingress cutover','Changes':changes},open(os.environ['RUNNER_TEMP']+'/delete-old.json','w'))
+          PY
+          if [ "$(jq '.Changes | length' "$RUNNER_TEMP/delete-old.json")" -gt 0 ]; then
+            CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch "file://$RUNNER_TEMP/delete-old.json" --query ChangeInfo.Id --output text)"
+            aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          fi
+
+      - name: Deploy short-link apex ingress
+        id: deploy
+        env:
+          HOSTED_ZONE_ID: ${{ steps.dns.outputs.hosted_zone_id }}
+          FRONTDOOR_HOST: ${{ steps.azure.outputs.edge }}
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/azure-short-link-ingress.yml             --parameter-overrides               Environment=production               DomainName="$DOMAIN_NAME"               HostedZoneId="$HOSTED_ZONE_ID"               FrontDoorHost="$FRONTDOOR_HOST"             --no-fail-on-empty-changeset
+
+      - name: Resolve production short-link verification data
+        run: |
+          set -euo pipefail
+          PREFIX="/theouthaven/credential-vault/production"
+          aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$RUNNER_TEMP/supabase.json"
+          SUPABASE_URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase.json")"
+          SERVICE_KEY="$(jq -r '.serviceRoleKey // empty' "$RUNNER_TEMP/supabase.json")"
+          test -n "$SUPABASE_URL" && test -n "$SERVICE_KEY"
+          echo "::add-mask::$SERVICE_KEY"
+
+          RESPONSE="$(curl --silent --show-error --fail             -H "apikey: $SERVICE_KEY"             -H "Authorization: Bearer $SERVICE_KEY"             "$SUPABASE_URL/rest/v1/short_links?select=id,code,destination_url&is_active=eq.true&order=updated_at.desc&limit=1")"
+          CODE="$(printf '%s' "$RESPONSE" | jq -r '.[0].code // empty')"
+          DESTINATION="$(printf '%s' "$RESPONSE" | jq -r '.[0].destination_url // empty')"
+          LINK_ID="$(printf '%s' "$RESPONSE" | jq -r '.[0].id // empty')"
+          test -n "$CODE" && test -n "$DESTINATION" && test -n "$LINK_ID" || {
+            echo "::error::No active registered short link is available for production verification."
+            exit 1
+          }
+          {
+            echo "VERIFY_CODE=$CODE"
+            echo "VERIFY_DESTINATION=$DESTINATION"
+            echo "VERIFY_LINK_ID=$LINK_ID"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify public short-link surface
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 40); do
+            ROOT_CODE="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$DOMAIN_NAME/" || true)"
+            AASA_CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/aasa.json" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$DOMAIN_NAME/.well-known/apple-app-site-association" || true)"
+            ASSET_CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/assetlinks.json" --write-out '%{http_code}' --connect-timeout 10 --max-time 20 "https://$DOMAIN_NAME/.well-known/assetlinks.json" || true)"
+            if [ "$ROOT_CODE" = "302" ] && [ "$AASA_CODE" = "200" ] && [ "$ASSET_CODE" = "200" ]; then
+              ready=true
+              break
+            fi
+            echo "Waiting for outhvn.com edge convergence (root=$ROOT_CODE aasa=$AASA_CODE assetlinks=$ASSET_CODE attempt=$attempt/40)."
+            sleep 15
+          done
+          test "$ready" = true
+
+          jq -e '.applinks.details[0].appID | endswith(".com.theouthaven.app")' "$RUNNER_TEMP/aasa.json" >/dev/null
+          jq -e '.[0].target.package_name == "com.theouthaven.app" and (.[0].target.sha256_cert_fingerprints | length) > 0' "$RUNNER_TEMP/assetlinks.json" >/dev/null
+
+          INVALID_LOCATION="$(curl --silent --show-error --head --output /dev/null --write-out '%{redirect_url}' --connect-timeout 10 --max-time 20 "https://$DOMAIN_NAME/not-a-valid-short-code" || true)"
+          test "$INVALID_LOCATION" = "https://theouthaven.com/" || test "$INVALID_LOCATION" = "https://theouthaven.com"
+
+      - name: Verify existing short code and click recording
+        run: |
+          set -euo pipefail
+          before="$(curl --silent --show-error --fail             -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"             -H 'Prefer: count=exact'             -D "$RUNNER_TEMP/before-headers.txt"             -o /dev/null             "$SUPABASE_URL/rest/v1/short_link_clicks?select=id&short_link_id=eq.$VERIFY_LINK_ID")"
+          BEFORE_COUNT="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {split($0,a,"/"); gsub("\r","",a[2]); print a[2]}' "$RUNNER_TEMP/before-headers.txt" | tail -1)"
+          BEFORE_COUNT="${BEFORE_COUNT:-0}"
+
+          LOCATION="$(curl --silent --show-error --head --output /dev/null --write-out '%{redirect_url}'             --connect-timeout 10 --max-time 20             -H 'User-Agent: TheOutHaven-Azure-ShortLink-Probe/1.0'             "https://$DOMAIN_NAME/$VERIFY_CODE?utm_source=azure-cutover")"
+          test "$LOCATION" = "$VERIFY_DESTINATION"
+
+          recorded=false
+          for attempt in $(seq 1 12); do
+            curl --silent --show-error --fail               -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"               -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY"               -H 'Prefer: count=exact'               -D "$RUNNER_TEMP/after-headers.txt"               -o /dev/null               "$SUPABASE_URL/rest/v1/short_link_clicks?select=id&short_link_id=eq.$VERIFY_LINK_ID"
+            AFTER_COUNT="$(awk 'BEGIN{IGNORECASE=1} /^content-range:/ {split($0,a,"/"); gsub("\r","",a[2]); print a[2]}' "$RUNNER_TEMP/after-headers.txt" | tail -1)"
+            AFTER_COUNT="${AFTER_COUNT:-0}"
+            if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
+              recorded=true
+              break
+            fi
+            sleep 2
+          done
+          test "$recorded" = true
+
+          {
+            echo "## outhvn.com Azure cutover"
+            echo
+            echo "- Apex HTTPS ingress: CloudFront -> Azure Front Door"
+            echo "- Azure short-link runtime: passed"
+            echo "- Existing short code redirect: passed"
+            echo "- Supabase click recording: passed"
+            echo "- iOS association: passed"
+            echo "- Android association: passed"
+            echo "- Existing short-link data: preserved"
+          } >> "$GITHUB_STEP_SUMMARY"
