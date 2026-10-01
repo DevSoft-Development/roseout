@@ -528,7 +528,7 @@ jobs:
             }
             git fetch origin main --no-tags
             git merge-base --is-ancestor "$RELEASE_SHA" origin/main || {
-              echo "::error::release_sha must be on main." >&2
+              echo "::error::release_sha must be on main."
               exit 1
             }
           elif [ "$ACTION" = rollback ]; then
