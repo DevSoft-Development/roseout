@@ -63,7 +63,34 @@ jobs:
           jq '{ok,domain,active,status,expirationDate,autoRenew,sponsoringRsp,responseCode}' "$RUNNER_TEMP/domain-status.json"
           jq -e --arg domain "$DOMAIN_NAME" '.ok == true and .domain == $domain' "$RUNNER_TEMP/domain-status.json" >/dev/null
 
+      - name: Inventory public DNS safely
+        run: |
+          set -euo pipefail
+          command -v dig >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq dnsutils
+          }
+          echo "=== AUTHORITATIVE DNS ==="
+          echo "NS:"
+          dig +short NS "$DOMAIN_NAME" | sort
+          echo "SOA:"
+          dig +short SOA "$DOMAIN_NAME"
+          for type in A AAAA CNAME MX TXT CAA; do
+            echo "=== APEX $type ==="
+            dig +short "$type" "$DOMAIN_NAME" | sort
+          done
+          for host in www _dmarc _acme-challenge; do
+            echo "=== $host ==="
+            for type in A AAAA CNAME TXT; do
+              values="$(dig +short "$type" "$host.$DOMAIN_NAME" | sort || true)"
+              if [ -n "$values" ]; then
+                printf '%s %s\n%s\n' "$host" "$type" "$values"
+              fi
+            done
+          done
+
       - name: Inspect live gateway implementation safely
+        continue-on-error: true
         env:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
         run: |
