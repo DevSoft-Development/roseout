@@ -32,6 +32,11 @@ function shortLinkHostResponse(request: NextRequest) {
 
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
 
+  const directCode = pathname.replace(/^\/+|\/+$/g, "");
+  if (SHORT_CODE_PATTERN.test(directCode) && !directCode.includes("/")) {
+    return null;
+  }
+
   const code = pathname.replace(/^\/+|\/+$/g, "");
   if (SHORT_CODE_PATTERN.test(code) && !code.includes("/")) {
     const rewriteUrl = request.nextUrl.clone();
