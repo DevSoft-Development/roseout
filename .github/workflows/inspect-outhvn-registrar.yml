@@ -106,11 +106,17 @@ jobs:
           aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name "$POLICY_NAME" --policy-document "file://$POLICY_FILE"
           sleep 8
 
-          RUNNER_IP="$(curl --silent --show-error --fail https://checkip.amazonaws.com | tr -d '\r\n')"
-          test -n "$RUNNER_IP"
-          RUNNER_CIDR="$RUNNER_IP/32"
-          aws lightsail open-instance-public-ports --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" \
-            --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$RUNNER_CIDR" >/dev/null
+          aws lightsail get-instance-port-states --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" > "$RUNNER_TEMP/ports.json"
+          SSH_OPEN="$(jq -r 'any(.portStates[]?; .fromPort <= 22 and .toPort >= 22 and (.protocol|ascii_downcase) == "tcp" and .state == "open")' "$RUNNER_TEMP/ports.json")"
+          if [ "$SSH_OPEN" != "true" ]; then
+            RUNNER_IP="$(curl --silent --show-error --fail https://checkip.amazonaws.com | tr -d '\r\n')"
+            test -n "$RUNNER_IP"
+            RUNNER_CIDR="$RUNNER_IP/32"
+            aws lightsail open-instance-public-ports --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" \
+              --port-info "fromPort=22,toPort=22,protocol=TCP,cidrs=$RUNNER_CIDR" >/dev/null
+          else
+            echo "ssh_port=already_open"
+          fi
 
           aws lightsail get-instance-access-details --region "$AWS_REGION" --instance-name "$DOMAIN_GATEWAY_INSTANCE" --protocol ssh > "$ACCESS"
           jq -r '.accessDetails.privateKey' "$ACCESS" > "$KEY"
