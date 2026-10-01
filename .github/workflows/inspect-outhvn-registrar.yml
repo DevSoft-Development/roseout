@@ -89,6 +89,48 @@ jobs:
             done
           done
 
+      - name: Inspect registrar and Vercel domain metadata safely
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: team_TzlwC4vdLZiT8kFGuXSoj1em
+        run: |
+          set -euo pipefail
+          command -v whois >/dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq whois
+          }
+
+          echo "=== PUBLIC WHOIS LIFECYCLE ==="
+          whois "$DOMAIN_NAME" 2>/dev/null | grep -Ei '^(Registrar:|Registrar WHOIS Server:|Registrar URL:|Creation Date:|Registry Expiry Date:|Updated Date:|Domain Status:|Name Server:|DNSSEC:)' | head -100 || true
+
+          echo "=== VERCEL DOMAIN METADATA ==="
+          if [ -n "${VERCEL_TOKEN:-}" ]; then
+            echo "::add-mask::$VERCEL_TOKEN"
+            CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/vercel-domain.json" --write-out '%{http_code}' \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v5/domains/$DOMAIN_NAME?teamId=$VERCEL_TEAM_ID")"
+            echo "vercel_domain_http_status=$CODE"
+            if [ "$CODE" = 200 ]; then
+              jq '{
+                name,
+                verified,
+                renew,
+                serviceType,
+                boughtAt,
+                createdAt,
+                transferredAt,
+                transferStartedAt,
+                nameservers,
+                intendedNameservers,
+                customNameservers
+              }' "$RUNNER_TEMP/vercel-domain.json"
+            else
+              jq '{error,code,message}' "$RUNNER_TEMP/vercel-domain.json" 2>/dev/null || true
+            fi
+          else
+            echo "vercel_token=unavailable"
+          fi
+
       - name: Inspect live gateway implementation safely
         continue-on-error: true
         env:
