@@ -312,6 +312,7 @@ jobs:
           RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
           ROOT="$RUNNER_TEMP/ota-release"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PUBLICATION_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           for platform in ios android; do
             archive="$ROOT/$platform/archive.tgz"
@@ -368,7 +369,7 @@ jobs:
             export_dir="$ROOT/$platform/export"
             test -f "$export_dir/metadata.json"
 
-            RELEASE_SHA="$RELEASE_SHA"             PLATFORM="$platform"             RUNTIME_VERSION="$RUNTIME_VERSION"             PUBLISHED_AT="$PUBLISHED_AT"             EXPORT_DIR="$export_dir"             EXPO_CONFIG="$ROOT/expoConfig.json"             node <<'NODE'
+            RELEASE_SHA="$RELEASE_SHA"             PLATFORM="$platform"             RUNTIME_VERSION="$RUNTIME_VERSION"             PUBLISHED_AT="$PUBLISHED_AT"             PUBLICATION_ID="$PUBLICATION_ID"             EXPORT_DIR="$export_dir"             EXPO_CONFIG="$ROOT/expoConfig.json"             node <<'NODE'
           const fs = require('fs');
           const path = require('path');
           const crypto = require('crypto');
@@ -378,6 +379,8 @@ jobs:
           const releaseSha = process.env.RELEASE_SHA;
           const runtimeVersion = process.env.RUNTIME_VERSION;
           const publishedAt = process.env.PUBLISHED_AT;
+          const publicationId = process.env.PUBLICATION_ID;
+          if (!publicationId) throw new Error('OTA publication identity is missing');
           const metadata = JSON.parse(fs.readFileSync(path.join(exportDir, 'metadata.json'), 'utf8'));
           const expoClient = JSON.parse(fs.readFileSync(process.env.EXPO_CONFIG, 'utf8'));
           const platformMetadata = metadata.fileMetadata?.[platform];
@@ -406,11 +409,11 @@ jobs:
               key: md5,
               ...(suffix ? { fileExtension: suffix } : {}),
               contentType,
-              url: 'https://updates.theouthaven.com/releases/' + releaseSha + '/expo/' + platform + '/' + rel,
+              url: 'https://updates.theouthaven.com/releases/' + releaseSha + '/expo/publications/' + publicationId + '/' + platform + '/' + rel,
             };
           }
 
-          const digest = crypto.createHash('sha256').update(releaseSha + ':' + platform + ':' + runtimeVersion).digest();
+          const digest = crypto.createHash('sha256').update(releaseSha + ':' + platform + ':' + runtimeVersion + ':' + publicationId).digest();
           const uuid = Buffer.from(digest.subarray(0, 16));
           uuid[6] = (uuid[6] & 0x0f) | 0x40;
           uuid[8] = (uuid[8] & 0x3f) | 0x80;
@@ -426,16 +429,15 @@ jobs:
             metadata: { releaseSha },
             extra: {
               expoClient,
-              theOutHaven: { releaseSha, source: 'azure-self-hosted' },
+              theOutHaven: { releaseSha, publicationId, source: 'azure-self-hosted' },
             },
           };
           fs.writeFileSync(path.join(exportDir, 'toh-expo-manifest.json'), JSON.stringify(manifest));
           NODE
 
-            # Expo compatibility artifacts are derived from the immutable signed release.
-            # Refresh them in place for the same source SHA so protocol/header fixes can be repaired
-            # without mutating the signed core archive or signed manifest.
-            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite true >/dev/null
+            # Each Expo publication gets a unique immutable asset namespace. Never mutate
+            # asset URLs that may already be cached by an expo-updates client.
+            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/publications/$PUBLICATION_ID/$platform"               --source "$export_dir"               --overwrite false >/dev/null
 
             az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --content-cache-control 'no-cache'               --overwrite true >/dev/null
 
@@ -462,11 +464,11 @@ jobs:
 
             while IFS=$'\t' read -r rel mime; do
               test -n "$rel" && test -n "$mime"
-              blob="releases/$RELEASE_SHA/expo/$platform/$rel"
+              blob="releases/$RELEASE_SHA/expo/publications/$PUBLICATION_ID/$platform/$rel"
               az storage blob update                 --account-name "$STORAGE"                 --account-key "$STORAGE_KEY"                 --container-name '$web'                 --name "$blob"                 --content-type "$mime"                 --content-cache-control 'public, max-age=31536000, immutable'                 >/dev/null
             done < "$ROOT/$platform/asset-content-types.tsv"
 
-            RELEASE_SHA="$RELEASE_SHA" PLATFORM="$platform" EXPORT_DIR="$export_dir" MANIFEST="$export_dir/toh-expo-manifest.json" node <<'NODE'
+            RELEASE_SHA="$RELEASE_SHA" PLATFORM="$platform" PUBLICATION_ID="$PUBLICATION_ID" EXPORT_DIR="$export_dir" MANIFEST="$export_dir/toh-expo-manifest.json" node <<'NODE'
           const fs = require('fs');
           const crypto = require('crypto');
           const path = require('path');
@@ -478,7 +480,7 @@ jobs:
             if (!asset?.url || !asset?.key || !asset?.contentType || !asset?.hash) {
               throw new Error('OTA asset metadata is incomplete');
             }
-            const prefix = `https://updates.theouthaven.com/releases/${process.env.RELEASE_SHA}/expo/${process.env.PLATFORM}/`;
+            const prefix = `https://updates.theouthaven.com/releases/${process.env.RELEASE_SHA}/expo/publications/${process.env.PUBLICATION_ID}/${process.env.PLATFORM}/`;
             if (!asset.url.startsWith(prefix)) throw new Error('OTA asset URL escaped immutable release prefix');
             const rel = decodeURI(asset.url.slice(prefix.length));
             const bytes = fs.readFileSync(path.join(exportDir, rel));
