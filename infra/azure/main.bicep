@@ -44,6 +44,10 @@ param consumerHuggingFaceAiEndpoint string = 'https://router.huggingface.co/v1'
 @secure()
 param consumerHuggingFaceAiToken string = ''
 param consumerHuggingFaceAiModel string = ''
+param consumerShortLinkBaseUrl string = ''
+param consumerShortLinkHost string = ''
+param consumerIosTeamId string = ''
+param consumerAndroidAppLinkSha256Fingerprints string = ''
 
 param tags object = {
   application: 'theouthaven'
@@ -101,6 +105,10 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
+    shortLinkBaseUrl: consumerShortLinkBaseUrl
+    shortLinkHost: consumerShortLinkHost
+    iosTeamId: consumerIosTeamId
+    androidAppLinkSha256Fingerprints: consumerAndroidAppLinkSha256Fingerprints
   }
 }
 
@@ -128,6 +136,10 @@ module consumerSecondaryRuntime './modules/consumer-runtime.bicep' = if (consume
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
+    shortLinkBaseUrl: consumerShortLinkBaseUrl
+    shortLinkHost: consumerShortLinkHost
+    iosTeamId: consumerIosTeamId
+    androidAppLinkSha256Fingerprints: consumerAndroidAppLinkSha256Fingerprints
   }
 }
 
