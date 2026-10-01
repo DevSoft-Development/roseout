@@ -1,4 +1,4 @@
-import * as Updates from "expo-updates";
+// Expo wire-format verification publication: no runtime behavior change.\nimport * as Updates from "expo-updates";
 import { trackMobileEvent } from "@/lib/analytics";
 import { captureMobileError } from "@/lib/observability";
 
