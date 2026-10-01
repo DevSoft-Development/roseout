@@ -15,3 +15,6 @@ param consumerWwwCustomDomainHostName = 'www.theouthaven.com'
 
 param otaEnabled = true
 param otaCustomDomainHostName = 'updates.theouthaven.com'
+
+param consumerShortLinkBaseUrl = 'https://outhvn.com'
+param consumerShortLinkHost = 'outhvn.com'
