@@ -97,6 +97,7 @@ jobs:
           allowed-account-ids: '742020474738'
 
       - name: Resolve production consumer configuration from Admin Credential Vault
+        id: config
         run: |
           set -euo pipefail
           PREFIX="/theouthaven/credential-vault/production"
@@ -168,6 +169,11 @@ jobs:
             echo "IOS_TEAM_ID=$IOS_TEAM_ID"
             echo "ANDROID_APP_LINK_SHA256_FINGERPRINTS=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
           } >> "$GITHUB_ENV"
+
+          {
+            echo "ios_team_id=$IOS_TEAM_ID"
+            echo "android_app_link_sha256_fingerprints=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
+          } >> "$GITHUB_OUTPUT"
 
           rm -rf "$WORK"
 
@@ -255,6 +261,8 @@ jobs:
           PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
           SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
           SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+          IOS_TEAM_ID: ${{ steps.config.outputs.ios_team_id }}
+          ANDROID_APP_LINK_SHA256_FINGERPRINTS: ${{ steps.config.outputs.android_app_link_sha256_fingerprints }}
         with:
           inlineScript: |
             set -euo pipefail
@@ -272,6 +280,8 @@ jobs:
           PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
           SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
           SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+          IOS_TEAM_ID: ${{ steps.config.outputs.ios_team_id }}
+          ANDROID_APP_LINK_SHA256_FINGERPRINTS: ${{ steps.config.outputs.android_app_link_sha256_fingerprints }}
         with:
           inlineScript: |
             set -euo pipefail
