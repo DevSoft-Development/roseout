@@ -34,7 +34,7 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
-          if (rows.length !== 65) throw new Error(`expected 65 schedules, got ${rows.length}`);
+          if (rows.length !== 63) throw new Error(`expected 63 schedules, got ${rows.length}`);
           const domain = rows.find((row) => row.name === 'domain-lifecycle');
           if (domain?.expression !== 'cron(0 * * * ? *)') throw new Error('domain lifecycle recovery must be hourly');
           if (domain?.function !== 'sqs:background-cron') throw new Error('domain lifecycle must remain durable');
