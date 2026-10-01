@@ -620,6 +620,7 @@ stages:
       - job: Android
         displayName: Build signed Android AAB
         condition: and(succeeded(), ne('${{ parameters.releasePlatform }}', 'ios'))
+        timeoutInMinutes: 120
         pool:
           name: theouthaven-android-build
         steps:
