@@ -256,6 +256,7 @@ export default function HomeScreen() {
 
         <View style={styles.footerSpace}>
           <AppText variant="caption" muted>TheOutHaven · Plan better OUTings.</AppText>
+          <AppText variant="caption" muted>ota</AppText>
         </View>
       </ScrollView>
     </SafeAreaView>
