@@ -88,6 +88,9 @@ jobs:
         working-directory: .
         run: |
           set -euo pipefail
+          test ! -f mobile/eas.json
+          ! grep -F '"expo-dev-client"' mobile/package.json >/dev/null
+          ! grep -F '"expo-dev-client"' mobile/package-lock.json >/dev/null
           test -f azure-pipelines-mobile.yml
           grep -F 'InstallAppleCertificate@2' azure-pipelines-mobile.yml >/dev/null
           grep -F 'bundleRelease' azure-pipelines-mobile.yml >/dev/null
