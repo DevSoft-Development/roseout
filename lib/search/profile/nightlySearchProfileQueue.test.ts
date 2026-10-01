@@ -13,7 +13,7 @@ const cronRouteSource = readFileSync(
   "app/api/cron/nightly-search-profile-queue/route.ts",
   "utf8",
 );
-const vercelConfig = readFileSync("vercel.json", "utf8");
+const awsSchedules = JSON.parse(readFileSync("infra/aws/edge-runtime/schedules.json", "utf8")) as Array<{ name: string; expression: string; function: string; body: { target?: string } }>;
 
 describe("nightly search profile edge queue", () => {
   it("runs classification queue creation inside a Supabase Edge Function", () => {
@@ -33,12 +33,20 @@ describe("nightly search profile edge queue", () => {
     expect(migrationSource).toContain("limit v_limit");
   });
 
-  it("schedules the edge queue nightly while preserving the every-minute worker", () => {
+  it("keeps the nightly queue and profile worker under AWS scheduler ownership", () => {
     expect(cronRouteSource).toContain("/functions/v1/nightly-search-profile-queue");
     expect(cronRouteSource).toContain("limit: 1500");
-    expect(vercelConfig).toContain('"path": "/api/cron/nightly-search-profile-queue"');
-    expect(vercelConfig).toContain('"schedule": "30 6 * * *"');
-    expect(vercelConfig).toContain('"path": "/api/cron/location-search-profile-worker"');
-    expect(vercelConfig).toContain('"schedule": "* * * * *"');
+    expect(awsSchedules).toContainEqual(expect.objectContaining({
+      name: "nightly-search-profile-queue",
+      expression: "cron(45 7 * * ? *)",
+      function: "sqs:background-cron",
+      body: { target: "/api/cron/managed?job=nightly-search-profile-queue" },
+    }));
+    expect(awsSchedules).toContainEqual(expect.objectContaining({
+      name: "location-search-profile-worker",
+      expression: "cron(0 * * * ? *)",
+      function: "sqs:background-cron",
+      body: { target: "/api/cron/managed?job=location-search-profile-worker" },
+    }));
   });
 });
