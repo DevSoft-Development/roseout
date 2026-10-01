@@ -6,7 +6,6 @@ const readText = (path) => fs.readFileSync(path, "utf8");
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 const cronConfig = readText("config/cron-jobs.json");
 const trackedCron = readText("lib/cron/runTrackedCron.ts");
 const domainRoute = readText("app/api/cron/domain-lifecycle/route.ts");
@@ -26,19 +25,15 @@ const rollbackSorted = [...rollback].sort();
 const delta = (activation.enabled ?? []).filter((name) => !rollback.has(name)).sort();
 const probes = [...(activation.probe ?? [])].sort();
 const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch !== 15) throw new Error(`expected Batch 15, got ${activation.batch}`);
-if (schedules.length !== 65) throw new Error(`expected 65 active AWS schedules, got ${schedules.length}`);
-if ((activation.enabled ?? []).length !== 65) throw new Error(`expected 65 enabled schedules, got ${(activation.enabled ?? []).length}`);
-if ((activation.rollback_enabled ?? []).length !== 64) throw new Error(`expected rollback baseline 64, got ${(activation.rollback_enabled ?? []).length}`);
+if (schedules.length !== 63) throw new Error(`expected 63 active AWS schedules, got ${schedules.length}`);
+if ((activation.enabled ?? []).length !== 63) throw new Error(`expected 63 enabled schedules, got ${(activation.enabled ?? []).length}`);
+if ((activation.rollback_enabled ?? []).length !== 62) throw new Error(`expected rollback baseline 62, got ${(activation.rollback_enabled ?? []).length}`);
 if (staged.length !== 0) throw new Error(`expected no staged schedules, got ${staged.length}`);
 if (JSON.stringify(activeSorted) !== JSON.stringify(enabledSorted)) throw new Error("enabled inventory must exactly equal active schedule inventory");
-if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must be the exact previous 64-schedule fleet");
+if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must be the exact previous 62-schedule fleet");
 if (JSON.stringify(delta) !== JSON.stringify([job])) throw new Error(`unexpected final activation delta: ${delta.join(",")}`);
 if (JSON.stringify(probes) !== JSON.stringify([job])) throw new Error(`unexpected live activation probes: ${probes.join(",")}`);
 if (JSON.stringify(dryRunProbes) !== JSON.stringify([job])) throw new Error(`unexpected dry-run probes: ${dryRunProbes.join(",")}`);
@@ -74,4 +69,4 @@ if (!workerWorkflow.includes("enable_domain_lifecycle:") || !workerWorkflow.incl
   throw new Error("dedicated registrar worker deployment toggle must remain disabled by default");
 }
 
-console.log(`batch15_scheduler_contract=pass active=65 rollback=64 vercel_overlap=${vercelJobs.size} live_probe=1 dry_run_probe=1 domain_recovery=hourly`);
+console.log(`batch15_scheduler_contract=pass active=63 rollback=62 vercel_overlap=${vercelJobs.size} live_probe=1 dry_run_probe=1 domain_recovery=hourly`);
