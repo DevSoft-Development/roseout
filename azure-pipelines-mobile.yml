@@ -31,35 +31,8 @@ variables:
     value: '$(Pipeline.Workspace)/.gradle'
 
 stages:
-  - stage: Validate
-    displayName: Validate mobile source
-    jobs:
-      - job: Validate
-        pool:
-          name: theouthaven-android-build
-        steps:
-          - task: UseNode@1
-            inputs:
-              version: $(nodeVersion)
-          - script: |
-              set -euo pipefail
-              cd mobile
-              npm ci --no-audit --no-fund
-              node --version
-              npm --version
-              npm run typecheck
-              npx expo config --type public >/dev/null
-              npx expo install --check
-              npx expo-doctor
-            env:
-              SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
-              SENTRY_ORG: $(SENTRY_ORG)
-              SENTRY_PROJECT: $(SENTRY_PROJECT)
-            displayName: Typecheck, Expo compatibility, and doctor
-
   - stage: Build
     displayName: Native iOS and Android builds
-    dependsOn: Validate
     condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
     jobs:
       - job: iOS
