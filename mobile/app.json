@@ -69,6 +69,9 @@
     "experiments": {
       "typedRoutes": true
     },
-    "backgroundColor": "#070303"
+    "backgroundColor": "#070303",
+    "extra": {
+      "otaDiagnosticsEmbedded": true
+    }
   }
 }
