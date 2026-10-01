@@ -25,6 +25,11 @@ function shortLinkHostResponse(request: NextRequest) {
   // Universal/app-link association files must be served directly by this runtime.
   if (pathname.startsWith("/.well-known/")) return null;
 
+  // Internal short-link resolution must be allowed to reach the route handler
+  // after the public /{code} rewrite. Do not expose unrelated /p/* paths.
+  const internalMatch = pathname.match(/^\/p\/([A-Za-z0-9_-]{8,20})$/);
+  if (internalMatch) return null;
+
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
 
   const code = pathname.replace(/^\/+|\/+$/g, "");
