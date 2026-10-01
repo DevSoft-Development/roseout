@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven branded short-link edge for outhvn.com backed by Azure Front Door.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: outhvn.com
+  WwwDomainName:
+    Type: String
+    Default: www.outhvn.com
+  CertificateArn:
+    Type: String
+  AzureFrontDoorHostName:
+    Type: String
+
+Resources:
+  ShortLinkRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: theouthaven-outhvn-short-link-rewrite
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Rewrite branded outhvn.com codes to the Azure consumer short-link route.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri || '/';
+
+          if (uri === '/') {
+            return {
+              statusCode: 302,
+              statusDescription: 'Found',
+              headers: {
+                location: { value: 'https://theouthaven.com/' },
+                'cache-control': { value: 'no-store' }
+              }
+            };
+          }
+
+          if (uri.indexOf('/.well-known/') === 0 || uri.indexOf('/p/') === 0) {
+            return request;
+          }
+
+          var code = uri.replace(/^\\/+|\\/+$/g, '');
+          if (/^[A-Za-z0-9_-]{8,20}$/.test(code) && code.indexOf('/') === -1) {
+            request.uri = '/p/' + code;
+            return request;
+          }
+
+          return {
+            statusCode: 302,
+            statusDescription: 'Found',
+            headers: {
+              location: { value: 'https://theouthaven.com/' },
+              'cache-control': { value: 'no-store' }
+            }
+          };
+        }
+
+  ShortLinkDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref DomainName
+          - !Ref WwwDomainName
+        Origins:
+          - Id: AzureConsumerFrontDoor
+            DomainName: !Ref AzureFrontDoorHostName
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              HTTPSPort: 443
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: AzureConsumerFrontDoor
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt ShortLinkRewriteFunction.FunctionARN
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+Outputs:
+  DistributionId:
+    Value: !Ref ShortLinkDistribution
+  DistributionDomainName:
+    Value: !GetAtt ShortLinkDistribution.DomainName
