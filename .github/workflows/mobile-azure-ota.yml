@@ -364,6 +364,7 @@ jobs:
           ROOT="$RUNNER_TEMP/ota-release"
           RUNTIME_VERSION="$(jq -r '.runtimeVersion' mobile/ota.config.json)"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          PUBLICATION_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           for platform in ios android; do
             export_dir="$ROOT/$platform/export"
