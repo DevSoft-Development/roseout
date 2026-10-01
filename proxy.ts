@@ -25,7 +25,12 @@ const STATIC_FILE_PATTERN = /\.[A-Za-z0-9]{1,8}$/;
 type AwsWebSurface = "admin" | "business";
 
 function normalizedHostname(request: NextRequest) {
-  return (request.headers.get("host") || request.nextUrl.hostname || "")
+  return (
+    request.headers.get("x-theouthaven-original-host") ||
+    request.headers.get("host") ||
+    request.nextUrl.hostname ||
+    ""
+  )
     .split(":")[0]
     .trim()
     .toLowerCase();
