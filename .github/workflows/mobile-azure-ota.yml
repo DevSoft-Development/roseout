@@ -285,7 +285,7 @@ jobs:
           set -euo pipefail
           git checkout --detach "$RELEASE_SHA"
           cd mobile
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run typecheck
 
           ROOT="$RUNNER_TEMP/ota-release"
@@ -422,6 +422,84 @@ jobs:
             az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite false >/dev/null
 
             az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --overwrite false >/dev/null
+
+            RELEASE_SHA="$RELEASE_SHA" PLATFORM="$platform" EXPORT_DIR="$export_dir" node <<'NODE' > "$ROOT/$platform/asset-content-types.tsv"
+          const fs = require('fs');
+          const path = require('path');
+          const metadata = JSON.parse(fs.readFileSync(path.join(process.env.EXPORT_DIR, 'metadata.json'), 'utf8'));
+          const platformMetadata = metadata.fileMetadata?.[process.env.PLATFORM];
+          if (!platformMetadata?.bundle) throw new Error('Expo export bundle metadata is missing');
+
+          const mimeByExt = {
+            png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+            webp:'image/webp', svg:'image/svg+xml', json:'application/json',
+            ttf:'font/ttf', otf:'font/otf', woff:'font/woff', woff2:'font/woff2',
+            mp3:'audio/mpeg', mp4:'video/mp4'
+          };
+          const norm = (value) => String(value).replaceAll('\\\\','/').replace(/^\.\//,'');
+          console.log(norm(platformMetadata.bundle) + '\tapplication/javascript');
+          for (const asset of platformMetadata.assets || []) {
+            const ext = String(asset.ext || '').replace(/^\./,'').toLowerCase();
+            console.log(norm(asset.path) + '\t' + (mimeByExt[ext] || 'application/octet-stream'));
+          }
+          NODE
+
+            while IFS=$'\t' read -r rel mime; do
+              test -n "$rel" && test -n "$mime"
+              blob="releases/$RELEASE_SHA/expo/$platform/$rel"
+              az storage blob update                 --account-name "$STORAGE"                 --account-key "$STORAGE_KEY"                 --container-name '$web'                 --name "$blob"                 --content-type "$mime"                 --content-cache-control 'public, max-age=31536000, immutable'                 >/dev/null
+            done < "$ROOT/$platform/asset-content-types.tsv"
+
+            RELEASE_SHA="$RELEASE_SHA" PLATFORM="$platform" EXPORT_DIR="$export_dir" MANIFEST="$export_dir/toh-expo-manifest.json" node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const path = require('path');
+          const manifest = JSON.parse(fs.readFileSync(process.env.MANIFEST, 'utf8'));
+          const exportDir = process.env.EXPORT_DIR;
+          const assets = [manifest.launchAsset, ...(manifest.assets || [])];
+          if (!assets.length) throw new Error('OTA manifest has no launch asset');
+          for (const asset of assets) {
+            if (!asset?.url || !asset?.key || !asset?.contentType || !asset?.hash) {
+              throw new Error('OTA asset metadata is incomplete');
+            }
+            const prefix = `https://updates.theouthaven.com/releases/${process.env.RELEASE_SHA}/expo/${process.env.PLATFORM}/`;
+            if (!asset.url.startsWith(prefix)) throw new Error('OTA asset URL escaped immutable release prefix');
+            const rel = decodeURI(asset.url.slice(prefix.length));
+            const bytes = fs.readFileSync(path.join(exportDir, rel));
+            const hash = crypto.createHash('sha256').update(bytes).digest('base64url');
+            if (hash !== asset.hash) throw new Error(`OTA asset hash mismatch: ${rel}`);
+          }
+          NODE
+          done
+
+      - name: Verify Expo asset response contract through Azure Front Door
+        if: inputs.action == 'publish'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ota-release"
+          for platform in ios android; do
+            manifest="$ROOT/$platform/export/toh-expo-manifest.json"
+            test -f "$manifest"
+            node -e '
+              const fs=require("fs");
+              const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+              console.log(m.launchAsset.url+"\t"+m.launchAsset.contentType);
+              for(const a of m.assets||[]) console.log(a.url+"\t"+a.contentType);
+            ' "$manifest" > "$ROOT/$platform/live-assets.tsv"
+
+            while IFS=$'\t' read -r url expected; do
+              headers="$(mktemp)"
+              body="$(mktemp)"
+              curl --fail --silent --show-error --location                 --connect-timeout 10 --max-time 30                 --dump-header "$headers" --output "$body" "$url"
+              actual="$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ {gsub("\\r",""); sub(/^[^:]+:[[:space:]]*/,""); print; exit}' "$headers")"
+              case "$actual" in
+                "$expected"|"$expected;"*) ;;
+                *) echo "::error::OTA asset content-type mismatch for $url: expected $expected, got $actual"; exit 1 ;;
+              esac
+              rm -f "$headers" "$body"
+            done < "$ROOT/$platform/live-assets.tsv"
           done
 
       - name: Resolve rollback release compatibility
