@@ -117,6 +117,22 @@ stages:
             inputs:
               secureFile: $(APP_STORE_CONNECT_KEY_SECURE_FILE)
 
+          - task: Cache@2
+            displayName: Restore iOS npm download cache
+            inputs:
+              key: 'npm | "$(Agent.OS)" | mobile/package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)"
+              path: $(npmCacheFolder)
+
+          - task: Cache@2
+            displayName: Restore CocoaPods download cache
+            inputs:
+              key: 'cocoapods | "$(Agent.OS)" | mobile/package-lock.json'
+              restoreKeys: |
+                cocoapods | "$(Agent.OS)"
+              path: $(HOME)/Library/Caches/CocoaPods
+
           - script: |
               set -euo pipefail
               node - <<'NODE'
@@ -231,6 +247,7 @@ stages:
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
               SENTRY_ORG: $(SENTRY_ORG)
               SENTRY_PROJECT: $(SENTRY_PROJECT)
+              npm_config_cache: $(npmCacheFolder)
             displayName: Validate Sentry CI credentials
 
           - script: |
@@ -256,7 +273,6 @@ stages:
               print(f'Injected Expo iOS buildNumber: {build_number}')
               PY
 
-              npm ci --no-audit --no-fund
               npx expo config --type public | grep -E '"buildNumber"|com.theouthaven.app' || true
               npx expo prebuild --clean --platform ios --no-install
 
@@ -265,7 +281,7 @@ stages:
               grep -E 'CURRENT_PROJECT_VERSION = ' "$PBXPROJ" | sort -u
 
               cd ios
-              pod install --repo-update
+              pod install
             env:
               IOS_BUILD_NUMBER: $(IOS_BUILD_NUMBER)
               SENTRY_AUTH_TOKEN: $(SENTRY_AUTH_TOKEN)
@@ -360,7 +376,7 @@ stages:
                 PROVISIONING_PROFILE="$(APPLE_PROV_PROFILE_UUID)" \
                 CURRENT_PROJECT_VERSION="$(IOS_BUILD_NUMBER)" \
                 MARKETING_VERSION="$(appVersion)" \
-                clean archive 2>&1 | tee "$ARCHIVE_LOG"
+                archive 2>&1 | tee "$ARCHIVE_LOG"
               XCODE_STATUS=${PIPESTATUS[0]}
               set -e
 
@@ -631,18 +647,21 @@ stages:
           - script: |
               set -euo pipefail
 
-              sudo apt-get update
-              sudo apt-get install -y --no-install-recommends \
-                build-essential \
-                ca-certificates \
-                curl \
-                git \
-                python3 \
-                unzip \
-                zip \
-                openjdk-17-jdk
-
               JAVA_HOME_VALUE="/usr/lib/jvm/java-17-openjdk-amd64"
+              if [ ! -x "$JAVA_HOME_VALUE/bin/java" ]; then
+                sudo apt-get update
+                sudo apt-get install -y --no-install-recommends \
+                  build-essential \
+                  ca-certificates \
+                  curl \
+                  git \
+                  python3 \
+                  unzip \
+                  zip \
+                  openjdk-17-jdk
+              else
+                echo "Reusing preinstalled Java/toolchain packages."
+              fi
               test -x "$JAVA_HOME_VALUE/bin/java"
               echo "##vso[task.setvariable variable=JAVA_HOME]$JAVA_HOME_VALUE"
               echo "##vso[task.prependpath]$JAVA_HOME_VALUE/bin"
@@ -669,12 +688,30 @@ stages:
               export PATH="$JAVA_HOME/bin:$CMDLINE_BIN:$ANDROID_SDK_ROOT_VALUE/platform-tools:$PATH"
 
               yes | sdkmanager --licenses >/dev/null || true
-              sdkmanager \
-                "platform-tools" \
-                "platforms;android-36" \
-                "build-tools;36.0.0" \
-                "ndk;27.1.12297006" \
-                "cmake;3.22.1"
+              REQUIRED_SDK_PATHS=(
+                "$ANDROID_SDK_ROOT_VALUE/platform-tools"
+                "$ANDROID_SDK_ROOT_VALUE/platforms/android-36"
+                "$ANDROID_SDK_ROOT_VALUE/build-tools/36.0.0"
+                "$ANDROID_SDK_ROOT_VALUE/ndk/27.1.12297006"
+                "$ANDROID_SDK_ROOT_VALUE/cmake/3.22.1"
+              )
+              NEED_SDK_INSTALL=false
+              for path in "${REQUIRED_SDK_PATHS[@]}"; do
+                if [ ! -e "$path" ]; then
+                  NEED_SDK_INSTALL=true
+                  break
+                fi
+              done
+              if [ "$NEED_SDK_INSTALL" = true ]; then
+                sdkmanager \
+                  "platform-tools" \
+                  "platforms;android-36" \
+                  "build-tools;36.0.0" \
+                  "ndk;27.1.12297006" \
+                  "cmake;3.22.1"
+              else
+                echo "Reusing installed Android SDK/NDK/CMake toolchain."
+              fi
 
               echo "##vso[task.setvariable variable=ANDROID_HOME]$ANDROID_SDK_ROOT_VALUE"
               echo "##vso[task.setvariable variable=ANDROID_SDK_ROOT]$ANDROID_SDK_ROOT_VALUE"
@@ -842,7 +879,6 @@ stages:
           - script: |
               set -euo pipefail
               cd mobile
-              npm ci --no-audit --no-fund
               npx expo prebuild --clean --platform android --no-install
 
               python3 - <<'PY'
@@ -948,7 +984,6 @@ stages:
               (
                 set -o pipefail
                 ./gradlew \
-                  --no-daemon \
                   --max-workers=2 \
                   --console=plain \
                   --info \
@@ -1007,7 +1042,6 @@ stages:
           - script: |
               set -euo pipefail
               cd mobile
-              npm install --no-save --no-audit --no-fund googleapis
               node - <<'NODE'
               const fs = require('fs');
               const { google } = require('googleapis');
