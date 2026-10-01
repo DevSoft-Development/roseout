@@ -127,6 +127,7 @@ function shortLinkHostResponse(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://theouthaven.com").replace(/\/$/, "");
+  if (pathname.startsWith("/.well-known/")) return null;
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
   if (isApplicationInfrastructurePath(pathname)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
