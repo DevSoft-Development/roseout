@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireCronRequest } from "@/lib/cron-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
-import { sendExpoPush } from "@/lib/mobile/push";
+import { sendMobilePush } from "@/lib/mobile/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ async function deliver(kind: "two_hour" | "thirty_minute", minMinutes: number, m
         : "About 30 minutes to go. Open TheOutHaven for your NOW / NEXT plan.";
 
       try {
-        const ticket = await sendExpoPush({
+        const ticket = await sendMobilePush({
           to: device.expo_push_token,
           title,
           body,
