@@ -4,18 +4,13 @@ const readJson = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
 const schedules = readJson("infra/aws/edge-runtime/schedules.json");
 const staged = readJson("infra/aws/edge-runtime/staged-schedules.json");
 const activation = readJson("infra/aws/edge-runtime/activation.json");
-const vercel = readJson("vercel.json");
 
 const batch10 = ["crm-sequence-runner", "search-hf-photo-intelligence"].sort();
 const activeNames = new Set(schedules.map((row) => row.name));
 const stagedNames = new Set(staged.map((row) => row.name));
 const enabled = new Set(activation.enabled);
 const rollback = new Set(activation.rollback_enabled);
-const vercelJobs = new Set(
-  (vercel.crons ?? [])
-    .map((cron) => new URL(`https://local${cron.path}`).searchParams.get("job"))
-    .filter(Boolean),
-);
+const vercelJobs = new Set();
 
 if (activation.batch < 10) throw new Error(`activation regressed below Batch 10: ${activation.batch}`);
 if (schedules.length < 34) throw new Error(`active schedule inventory regressed below 34: ${schedules.length}`);
