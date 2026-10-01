@@ -5,6 +5,7 @@ import { BrandHeader } from "@/components/brand/BrandHeader";
 import { AppText } from "@/components/ui/AppText";
 import { Button } from "@/components/ui/Button";
 import { mobileApi } from "@/lib/api";
+import { fetchRuntimePatch, patchString } from "@/lib/runtimePatch";
 import { useAppTheme } from "@/providers/ThemeProvider";
 
 const TYPEWRITER_PROMPTS = [
@@ -35,7 +36,19 @@ export default function HomeScreen() {
   const [focused, setFocused] = useState(false);
   const [typedPlaceholder, setTypedPlaceholder] = useState("");
   const [openingPlanner, setOpeningPlanner] = useState(false);
+  const [footerBadge, setFooterBadge] = useState("embedded");
   const searchRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    let active = true;
+    void fetchRuntimePatch().then((patch) => {
+      if (!active) return;
+      setFooterBadge(patchString(patch, "home.footerBadge", "embedded"));
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (query || focused) return;
@@ -256,7 +269,7 @@ export default function HomeScreen() {
 
         <View style={styles.footerSpace}>
           <AppText variant="caption" muted>TheOutHaven · Plan better OUTings.</AppText>
-          <AppText variant="caption" muted>ota</AppText>
+          <AppText variant="caption" muted>{footerBadge}</AppText>
         </View>
       </ScrollView>
     </SafeAreaView>
