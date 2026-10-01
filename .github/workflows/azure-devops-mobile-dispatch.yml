@@ -1,12 +1,6 @@
 name: Azure DevOps mobile dispatch
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'mobile/**'
-      - 'azure-pipelines-mobile.yml'
-      - '.github/workflows/azure-devops-mobile-dispatch.yml'
   workflow_dispatch:
     inputs:
       releasePlatform:
@@ -18,6 +12,10 @@ on:
           - both
           - ios
           - android
+      releaseSha:
+        description: Exact main-branch commit SHA to build
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -91,7 +89,8 @@ jobs:
 
           AZDO_PAT="$(cat "$RUNNER_TEMP/azdo-pat")"
           AUTH_HEADER="Authorization: Basic $(printf ':%s' "$AZDO_PAT" | base64 | tr -d '\n')"
-
+          TARGET_SHA="${{ github.event.inputs.releaseSha || github.sha }}"
+          printf '%s' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}
           urlencode() {
             python3 - "$1" <<'PY'
           import sys
@@ -124,12 +123,12 @@ jobs:
 
           EXISTING_ID="$(
             printf '%s' "$RECENT_BUILDS" |
-              jq -r --arg sha "$GITHUB_SHA" '.value[]? | select(.sourceVersion == $sha and (.status == "notStarted" or .status == "inProgress" or .status == "completed")) | .id' |
+              jq -r --arg sha "$TARGET_SHA" '.value[]? | select(.sourceVersion == $sha and (.status == "notStarted" or .status == "inProgress" or .status == "completed")) | .id' |
               head -1
           )"
 
           if [ -n "$EXISTING_ID" ]; then
-            echo "Azure DevOps mobile build already exists for $GITHUB_SHA: $EXISTING_ID"
+            echo "Azure DevOps mobile build already exists for $TARGET_SHA: $EXISTING_ID"
             exit 0
           fi
 
@@ -144,7 +143,7 @@ jobs:
               curl --fail --silent --show-error \
                 -H "Authorization: Bearer $GITHUB_TOKEN" \
                 -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" |
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/pulls" |
                 jq -r '.[0].title // empty'
             )"
             COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
@@ -167,7 +166,7 @@ jobs:
           BODY="$(
             jq -n \
               --arg sourceBranch "refs/heads/main" \
-              --arg sourceVersion "$GITHUB_SHA" \
+              --arg sourceVersion "$TARGET_SHA" \
               --arg releasePlatform "$RELEASE_PLATFORM" \
               '{
                 resources: {
@@ -206,4 +205,129 @@ jobs:
           BUILD_NUMBER="$(jq -r '.name // .buildNumber // empty' "$RESPONSE_FILE")"
           test -n "$BUILD_ID"
 
-          echo "Queued Azure DevOps mobile build: id=$BUILD_ID build=$BUILD_NUMBER commit=$GITHUB_SHA"
+          echo "Queued Azure DevOps mobile build: id=$BUILD_ID build=$BUILD_NUMBER commit=$TARGET_SHA"
+ || {
+            echo "releaseSha must be a full Git SHA." >&2
+            exit 1
+          }
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main || {
+            echo "releaseSha must be on main." >&2
+            exit 1
+          }
+
+          urlencode() {
+            python3 - "$1" <<'PY'
+          import sys
+          from urllib.parse import quote
+          print(quote(sys.argv[1], safe=''))
+          PY
+          }
+
+          API_ROOT="https://dev.azure.com/$AZDO_ORG"
+          PROJECT_ENCODED="$(urlencode "$AZDO_PROJECT")"
+          PIPELINE_ENCODED="$(urlencode "$PIPELINE_NAME")"
+
+          DEFINITIONS="$(
+            curl --fail --silent --show-error \
+              -H "$AUTH_HEADER" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/build/definitions?name=$PIPELINE_ENCODED&api-version=7.1"
+          )"
+
+          PIPELINE_ID="$(printf '%s' "$DEFINITIONS" | jq -r --arg name "$PIPELINE_NAME" '.value[]? | select(.name == $name) | .id' | head -1)"
+          test -n "$PIPELINE_ID" || {
+            echo "Azure DevOps pipeline not found: $PIPELINE_NAME" >&2
+            exit 1
+          }
+
+          RECENT_BUILDS="$(
+            curl --fail --silent --show-error \
+              -H "$AUTH_HEADER" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/build/builds?definitions=$PIPELINE_ID&queryOrder=queueTimeDescending&%24top=20&api-version=7.1"
+          )"
+
+          EXISTING_ID="$(
+            printf '%s' "$RECENT_BUILDS" |
+              jq -r --arg sha "$TARGET_SHA" '.value[]? | select(.sourceVersion == $sha and (.status == "notStarted" or .status == "inProgress" or .status == "completed")) | .id' |
+              head -1
+          )"
+
+          if [ -n "$EXISTING_ID" ]; then
+            echo "Azure DevOps mobile build already exists for $TARGET_SHA: $EXISTING_ID"
+            exit 0
+          fi
+
+          RELEASE_PLATFORM="both"
+          REQUESTED_PLATFORM="${{ github.event.inputs.releasePlatform || '' }}"
+
+          if [ -n "$REQUESTED_PLATFORM" ]; then
+            RELEASE_PLATFORM="$REQUESTED_PLATFORM"
+            echo "Using manually requested mobile release platform: $RELEASE_PLATFORM"
+          else
+            PR_TITLE="$(
+              curl --fail --silent --show-error \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$TARGET_SHA/pulls" |
+                jq -r '.[0].title // empty'
+            )"
+            COMMIT_MESSAGE="$(git log -1 --pretty=%B)"
+
+            if printf '%s\n%s' "$PR_TITLE" "$COMMIT_MESSAGE" | grep -Fqi '[ios-only]'; then
+              RELEASE_PLATFORM="ios"
+            elif printf '%s\n%s' "$PR_TITLE" "$COMMIT_MESSAGE" | grep -Fqi '[android-only]'; then
+              RELEASE_PLATFORM="android"
+            fi
+
+            echo "Associated PR title: ${PR_TITLE:-none}"
+            echo "Selected mobile release platform: $RELEASE_PLATFORM"
+          fi
+
+          case "$RELEASE_PLATFORM" in
+            both|ios|android) ;;
+            *) echo "Invalid mobile release platform: $RELEASE_PLATFORM" >&2; exit 1 ;;
+          esac
+
+          BODY="$(
+            jq -n \
+              --arg sourceBranch "refs/heads/main" \
+              --arg sourceVersion "$TARGET_SHA" \
+              --arg releasePlatform "$RELEASE_PLATFORM" \
+              '{
+                resources: {
+                  repositories: {
+                    self: {
+                      refName: $sourceBranch,
+                      version: $sourceVersion
+                    }
+                  }
+                },
+                templateParameters: {
+                  releasePlatform: $releasePlatform
+                }
+              }'
+          )"
+
+          RESPONSE_FILE="$RUNNER_TEMP/azdo-mobile-queue.json"
+          STATUS="$(
+            curl --silent --show-error \
+              -o "$RESPONSE_FILE" \
+              -w '%{http_code}' \
+              -X POST \
+              -H "$AUTH_HEADER" \
+              -H 'Content-Type: application/json' \
+              --data "$BODY" \
+              "$API_ROOT/$PROJECT_ENCODED/_apis/pipelines/$PIPELINE_ID/runs?api-version=7.1"
+          )"
+
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+            echo "Failed to queue Azure DevOps mobile build (HTTP $STATUS)." >&2
+            jq -c '{message,typeName,errorCode,eventId}' "$RESPONSE_FILE" 2>/dev/null >&2 || cat "$RESPONSE_FILE" >&2
+            exit 1
+          fi
+
+          BUILD_ID="$(jq -r '.id // empty' "$RESPONSE_FILE")"
+          BUILD_NUMBER="$(jq -r '.name // .buildNumber // empty' "$RESPONSE_FILE")"
+          test -n "$BUILD_ID"
+
+          echo "Queued Azure DevOps mobile build: id=$BUILD_ID build=$BUILD_NUMBER commit=$TARGET_SHA"
