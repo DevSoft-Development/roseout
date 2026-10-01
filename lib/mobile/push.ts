@@ -16,7 +16,7 @@ export type MobilePushProvider = "expo";
  * credentials are available. Do not add EAS Build, Submit, or Update
  * dependencies here.
  */
-async function sendExpoPush(message: MobilePushMessage) {
+async function deliverExpoPush(message: MobilePushMessage) {
   const headers: Record<string, string> = {
     Accept: "application/json",
     "Content-Type": "application/json",
@@ -44,7 +44,11 @@ async function sendExpoPush(message: MobilePushMessage) {
 export async function sendMobilePush(message: MobilePushMessage & { provider?: MobilePushProvider }) {
   const provider = message.provider || "expo";
   if (provider !== "expo") throw new Error(`Unsupported mobile push provider: ${provider}`);
+  return deliverExpoPush(message);
+}
 
-  const { provider: _provider, ...providerMessage } = message;
-  return sendExpoPush(providerMessage);
+// Backward-compatible export for existing call sites while Expo remains the
+// temporary transport. New provider-aware code should use sendMobilePush.
+export async function sendExpoPush(message: MobilePushMessage) {
+  return sendMobilePush({ ...message, provider: "expo" });
 }
