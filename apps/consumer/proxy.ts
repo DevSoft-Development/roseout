@@ -32,11 +32,9 @@ function shortLinkHostResponse(request: NextRequest) {
 
   if (pathname === "/") return NextResponse.redirect(siteUrl, 302);
 
-  const code = pathname.replace(/^\/+|\/+$/g, "");
-  if (SHORT_CODE_PATTERN.test(code) && !code.includes("/")) {
-    const rewriteUrl = request.nextUrl.clone();
-    rewriteUrl.pathname = `/p/${code}`;
-    return NextResponse.rewrite(rewriteUrl);
+  const directCode = pathname.replace(/^\/+|\/+$/g, "");
+  if (SHORT_CODE_PATTERN.test(directCode) && !directCode.includes("/")) {
+    return null;
   }
 
   // Keep application/admin/API routes off the branded short-link host.
