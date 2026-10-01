@@ -317,10 +317,19 @@ jobs:
           test -n "$SUPABASE_URL" && test -n "$SERVICE_KEY"
           echo "::add-mask::$SERVICE_KEY"
 
-          RESPONSE="$(curl --silent --show-error --fail             -H "apikey: $SERVICE_KEY"             -H "Authorization: Bearer $SERVICE_KEY"             "$SUPABASE_URL/rest/v1/short_links?select=id,code,destination_url&is_active=eq.true&order=updated_at.desc&limit=1")"
-          CODE="$(printf '%s' "$RESPONSE" | jq -r '.[0].code // empty')"
-          DESTINATION="$(printf '%s' "$RESPONSE" | jq -r '.[0].destination_url // empty')"
-          LINK_ID="$(printf '%s' "$RESPONSE" | jq -r '.[0].id // empty')"
+          RESPONSE="$(curl --silent --show-error --fail             -H "apikey: $SERVICE_KEY"             -H "Authorization: Bearer $SERVICE_KEY"             "$SUPABASE_URL/rest/v1/short_links?select=id,code,destination_url,expires_at,max_clicks,click_count&is_active=eq.true&order=updated_at.desc&limit=25")"
+          NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          CANDIDATE="$(printf '%s' "$RESPONSE" | jq -c --arg now "$NOW_ISO" '
+            map(select(
+              (.expires_at == null or .expires_at > $now)
+              and
+              (.max_clicks == null or ((.click_count // 0) < .max_clicks))
+            )) | .[0] // empty
+          ')"
+          test -n "$CANDIDATE" || { echo "::error::No currently usable active short link is available for production verification."; exit 1; }
+          CODE="$(printf '%s' "$CANDIDATE" | jq -r '.code // empty')"
+          DESTINATION="$(printf '%s' "$CANDIDATE" | jq -r '.destination_url // empty')"
+          LINK_ID="$(printf '%s' "$CANDIDATE" | jq -r '.id // empty')"
           test -n "$CODE" && test -n "$DESTINATION" && test -n "$LINK_ID"
           {
             echo "VERIFY_CODE=$CODE"
@@ -362,7 +371,10 @@ jobs:
           BEFORE_COUNT="${BEFORE_COUNT:-0}"
 
           LOCATION="$(curl --silent --show-error --output /dev/null --write-out '%{redirect_url}'             --connect-timeout 10 --max-time 20             -H 'User-Agent: TheOutHaven-Azure-ShortLink-Probe/1.0'             "https://$DOMAIN_NAME/$VERIFY_CODE?utm_source=azure-cutover")"
-          test "$LOCATION" = "$VERIFY_DESTINATION"
+          if [ "$LOCATION" != "$VERIFY_DESTINATION" ]; then
+            echo "::error::Short-link redirect mismatch. expected=$VERIFY_DESTINATION observed=$LOCATION"
+            exit 1
+          fi
 
           recorded=false
           for attempt in $(seq 1 12); do
