@@ -334,9 +334,22 @@ jobs:
             openssl pkeyutl -sign -rawin               -inkey "$SIGNING_WORK/private.pem"               -in "$ROOT/$platform/manifest.json"               -out "$ROOT/$platform/manifest.sig"
             base64 -w 0 "$ROOT/$platform/manifest.sig" > "$ROOT/$platform/manifest.sig.b64"
 
-            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$archive"               --name "$base/archive.tgz"               --content-type application/gzip               --overwrite false >/dev/null
-            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$ROOT/$platform/manifest.json"               --name "$base/manifest.json"               --content-type application/json               --overwrite false >/dev/null
-            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$ROOT/$platform/manifest.sig.b64"               --name "$base/manifest.sig"               --content-type text/plain               --overwrite false >/dev/null
+            upload_if_missing() {
+              local src="$1"
+              local dst="$2"
+              local type="$3"
+              local exists
+              exists="$(az storage blob exists                 --account-name "$STORAGE"                 --account-key "$STORAGE_KEY"                 --container-name '$web'                 --name "$dst"                 --query exists -o tsv)"
+              if [ "$exists" = "true" ]; then
+                echo "Preserving existing immutable OTA blob: $dst"
+                return 0
+              fi
+              az storage blob upload                 --account-name "$STORAGE"                 --account-key "$STORAGE_KEY"                 --container-name '$web'                 --file "$src"                 --name "$dst"                 --content-type "$type"                 --overwrite false >/dev/null
+            }
+
+            upload_if_missing "$archive" "$base/archive.tgz" application/gzip
+            upload_if_missing "$ROOT/$platform/manifest.json" "$base/manifest.json" application/json
+            upload_if_missing "$ROOT/$platform/manifest.sig.b64" "$base/manifest.sig" text/plain
           done
 
       - name: Publish Expo-protocol assets and manifests for compatibility clients
