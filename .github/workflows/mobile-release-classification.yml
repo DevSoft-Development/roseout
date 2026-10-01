@@ -1,0 +1,82 @@
+name: Mobile release classification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'azure-pipelines-mobile.yml'
+      - 'scripts/mobile-release-classifier.mjs'
+      - '.github/workflows/mobile-release-classification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'azure-pipelines-mobile.yml'
+      - 'scripts/mobile-release-classifier.mjs'
+      - '.github/workflows/mobile-release-classification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Self-test classifier
+        run: node scripts/mobile-release-classifier.mjs --self-test
+
+      - name: Resolve diff range
+        id: range
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE_SHA="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            BASE_SHA="$PUSH_BEFORE_SHA"
+          else
+            git fetch origin main --no-tags
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+          test -n "$BASE_SHA"
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Classify mobile release
+        id: classify
+        env:
+          BASE_SHA: ${{ steps.range.outputs.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/mobile-release-classifier.mjs
+
+      - name: Summarize release decision
+        shell: bash
+        env:
+          CLASSIFICATION: ${{ steps.classify.outputs.classification }}
+        run: |
+          {
+            echo "## Mobile release classification"
+            echo
+            case "$CLASSIFICATION" in
+              native)
+                echo "**Native binary required.** Queue Azure DevOps iOS/Android build after merge."
+                ;;
+              ota)
+                echo "**OTA-safe.** Publish through TheOutHaven Azure OTA after merge."
+                ;;
+              none)
+                echo "**No mobile release required.**"
+                ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
