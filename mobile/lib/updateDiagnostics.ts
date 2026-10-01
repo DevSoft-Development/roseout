@@ -71,3 +71,5 @@ export async function reportUpdateDiagnostics() {
     captureMobileError(error, { operation: "read_expo_updates_native_logs" });
   }
 }
+
+// no-bytecode OTA proof: harmless source-only change to exercise signed Azure production OTA.
