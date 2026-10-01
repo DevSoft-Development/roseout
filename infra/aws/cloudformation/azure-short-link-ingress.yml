@@ -59,7 +59,7 @@ Resources:
         Origins:
           - Id: azure-frontdoor
             DomainName: !Ref FrontDoorHost
-            CustomHeaders:
+            OriginCustomHeaders:
               - HeaderName: x-theouthaven-original-host
                 HeaderValue: !Ref DomainName
             CustomOriginConfig:
