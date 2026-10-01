@@ -432,9 +432,12 @@ jobs:
           fs.writeFileSync(path.join(exportDir, 'toh-expo-manifest.json'), JSON.stringify(manifest));
           NODE
 
-            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite false >/dev/null
+            # Expo compatibility artifacts are derived from the immutable signed release.
+            # Refresh them in place for the same source SHA so protocol/header fixes can be repaired
+            # without mutating the signed core archive or signed manifest.
+            az storage blob upload-batch               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --destination '$web'               --destination-path "releases/$RELEASE_SHA/expo/$platform"               --source "$export_dir"               --overwrite true >/dev/null
 
-            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --overwrite false >/dev/null
+            az storage blob upload               --account-name "$STORAGE"               --account-key "$STORAGE_KEY"               --container-name '$web'               --file "$export_dir/toh-expo-manifest.json"               --name "releases/$RELEASE_SHA/expo/$platform/manifest.json"               --content-type application/json               --content-cache-control 'no-cache'               --overwrite true >/dev/null
 
             RELEASE_SHA="$RELEASE_SHA" PLATFORM="$platform" EXPORT_DIR="$export_dir" node <<'NODE' > "$ROOT/$platform/asset-content-types.tsv"
           const fs = require('fs');
