@@ -487,7 +487,8 @@ stages:
                 -f "$(Build.ArtifactStagingDirectory)/TheOutHaven.ipa" \
                 -t ios \
                 --apiKey "$(APP_STORE_CONNECT_KEY_ID)" \
-                --apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)"
+                --apiIssuer "$(APP_STORE_CONNECT_ISSUER_ID)" \
+                --username "$(APP_STORE_CONNECT_APPLE_ID)"
             displayName: Submit IPA to TestFlight via App Store Connect
             condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
