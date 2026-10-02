@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven AWS-owned recurring security resilience drill scheduler.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  GitHubRepository:
+    Type: String
+    Default: DevSoft-Development/roseout
+  DrillScheduleExpression:
+    Type: String
+    Default: cron(0 14 ? * SUN *)
+  PlatformAlertsTopicArn:
+    Type: String
+    Default: ''
+
+Conditions:
+  HasAlertsTopic: !Not [!Equals [!Ref PlatformAlertsTopicArn, '']]
+
+Resources:
+  SecurityDrillDispatcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSecurityDrillDispatcher-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: security-drill-dispatcher
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-security-drill-dispatcher:*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/github-*
+
+  SecurityDrillDispatcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-security-drill-dispatcher
+      RetentionInDays: 30
+
+  SecurityDrillDispatcherFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SecurityDrillDispatcherLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-security-drill-dispatcher
+      Role: !GetAtt SecurityDrillDispatcherRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 20
+      MemorySize: 128
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          GITHUB_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/github
+          GITHUB_REPOSITORY: !Ref GitHubRepository
+          EVENT_TYPE: security-resilience-drill
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError('security_drill_dispatcher_code_not_deployed')
+
+  SecurityDrillSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSecurityDrillScheduler-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: invoke-security-drill-dispatcher
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt SecurityDrillDispatcherFunction.Arn
+
+  SecurityDrillSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub toh-${Environment}-security-resilience-drill
+      ScheduleExpression: !Ref DrillScheduleExpression
+      ScheduleExpressionTimezone: UTC
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt SecurityDrillDispatcherFunction.Arn
+        RoleArn: !GetAtt SecurityDrillSchedulerRole.Arn
+        Input: '{"source":"aws-scheduler"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
+
+  SecurityDrillDispatcherErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub toh-${Environment}-security-drill-dispatch-errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SecurityDrillDispatcherFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasAlertsTopic
+        - [!Ref PlatformAlertsTopicArn]
+        - !Ref AWS::NoValue
+
+Outputs:
+  DispatcherFunctionName:
+    Value: !Ref SecurityDrillDispatcherFunction
+  ScheduleName:
+    Value: !Ref SecurityDrillSchedule
