@@ -215,7 +215,7 @@ function buildAuthReplaceSql(snapshot: any, metadata: any[]): string {
   }
   const lastValue = String(snapshot.sequence?.last_value || "1");
   if (!/^\d+$/.test(lastValue)) throw new Error("invalid_auth_sequence_value");
-  statements.push(`select setval('auth.refresh_tokens_id_seq', ${lastValue}, ${Boolean(snapshot.sequence?.is_called) ? "true" : "false"});`);
+  statements.push(`select setval('auth.refresh_tokens_id_seq', greatest(${lastValue}, coalesce((select max(id) from auth.refresh_tokens), 1)), true);`);
   statements.push("commit;");
   return statements.join("\n");
 }

@@ -367,20 +367,23 @@ for (const marker of [
   'destination.searchParams.set("auto", "1")',
   'destination.searchParams.set("next", next)',
   "microsoft365LookupSucceeded",
+  "microsoft365ConnectionExists",
+  "microsoft365ConnectionStatus",
   "ADMIN_MICROSOFT_365_CONNECTION_LOOKUP_FAILED",
+  "ADMIN_MICROSOFT_365_REAUTH_DEFERRED",
 ]) {
   if (!adminCallback.includes(marker)) {
-    throw new Error(`Admin sign-in must preserve automatic first-run Microsoft 365 connection behavior: ${marker}`);
+    throw new Error(`Admin sign-in must preserve safe Microsoft 365 handoff behavior: ${marker}`);
   }
 }
 if (
   !adminCallback.includes(
-    "microsoft365LookupSucceeded && !microsoft365Connected",
+    "microsoft365LookupSucceeded && !microsoft365ConnectionExists",
   ) ||
   !adminCallback.includes(": new URL(next, origin)")
 ) {
   throw new Error(
-    "Admin sign-in must auto-connect Microsoft 365 only after a successful status lookup and must fail open to Admin access.",
+    "Admin sign-in may auto-connect Microsoft 365 only when no connection record exists and must fail open to Admin access for existing reauthorization/error states.",
   );
 }
 
