@@ -34,44 +34,65 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Load Supabase management token from central vault
+      - name: Load vaulted Supabase runtime credentials
         run: |
           set -euo pipefail
           aws secretsmanager get-secret-value \
             --secret-id /theouthaven/credential-vault/production/supabase \
             --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
-          SUPABASE_ACCESS_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            aws secretsmanager get-secret-value \
-              --secret-id /theouthaven/production/dr-reconciler/env \
-              --query SecretString --output text > "$RUNNER_TEMP/dr-runtime.json"
-            SUPABASE_ACCESS_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr-runtime.json")"
-          fi
-          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Supabase management token unavailable in central vault." >&2; exit 1; }
-          echo "::add-mask::$SUPABASE_ACCESS_TOKEN"
-          echo "SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN" >> "$GITHUB_ENV"
+          aws secretsmanager get-secret-value \
+            --secret-id /theouthaven/production/dr-reconciler/env \
+            --query SecretString --output text > "$RUNNER_TEMP/dr-runtime.json"
+
+          VIRGINIA_URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          VIRGINIA_SERVER_KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          VIRGINIA_PUBLIC_KEY="$(jq -r '.publishableKey // empty' "$RUNNER_TEMP/supabase-vault.json")"
+
+          OREGON_URL="$(jq -r '.DR_OREGON_URL // empty' "$RUNNER_TEMP/dr-runtime.json")"
+          OREGON_SERVER_KEY="$(jq -r '.DR_OREGON_SERVICE_ROLE_KEY // empty' "$RUNNER_TEMP/dr-runtime.json")"
+          OREGON_PUBLIC_KEY="$(jq -r '.DR_OREGON_ANON_KEY // empty' "$RUNNER_TEMP/dr-runtime.json")"
+
+          test -n "$VIRGINIA_URL" && test -n "$VIRGINIA_SERVER_KEY" && test -n "$VIRGINIA_PUBLIC_KEY"
+          test -n "$OREGON_URL" && test -n "$OREGON_SERVER_KEY" && test -n "$OREGON_PUBLIC_KEY"
+
+          for value in "$VIRGINIA_SERVER_KEY" "$VIRGINIA_PUBLIC_KEY" "$OREGON_SERVER_KEY" "$OREGON_PUBLIC_KEY"; do
+            echo "::add-mask::$value"
+          done
+
+          {
+            echo "VIRGINIA_URL=$VIRGINIA_URL"
+            echo "VIRGINIA_SERVER_KEY=$VIRGINIA_SERVER_KEY"
+            echo "VIRGINIA_PUBLIC_KEY=$VIRGINIA_PUBLIC_KEY"
+            echo "OREGON_URL=$OREGON_URL"
+            echo "OREGON_SERVER_KEY=$OREGON_SERVER_KEY"
+            echo "OREGON_PUBLIC_KEY=$OREGON_PUBLIC_KEY"
+          } >> "$GITHUB_ENV"
 
       - name: Validate both Supabase worker targets without printing keys
         run: |
           set -euo pipefail
-          for ref in "$OREGON_SUPABASE_REF" "$VIRGINIA_SUPABASE_REF"; do
-            keys="$RUNNER_TEMP/keys-${ref}.json"
-            curl --fail --silent --show-error \
-              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-              "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$keys"
-            jq -e '([.[] | select(.type=="secret" and (.disabled != true))] | length >= 1) or ([.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))] | length == 1)' "$keys" >/dev/null
-            rm -f "$keys"
-          done
 
-          auth="$RUNNER_TEMP/virginia-auth.json"
+          validate_target() {
+            local name="$1" url="$2" server_key="$3"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/${name}-rest.json" --write-out '%{http_code}' \
+              -H "apikey: $server_key" \
+              -H "Authorization: Bearer $server_key" \
+              "${url%/}/rest/v1/")"
+            test "$code" = "200" || { echo "$name Supabase runtime key validation failed: HTTP $code" >&2; exit 1; }
+          }
+
+          validate_target virginia "$VIRGINIA_URL" "$VIRGINIA_SERVER_KEY"
+          validate_target oregon "$OREGON_URL" "$OREGON_SERVER_KEY"
+
+          auth="$RUNNER_TEMP/virginia-auth-settings.json"
           curl --fail --silent --show-error \
-            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/config/auth" > "$auth"
-          jq -e '.external_azure_enabled == true' "$auth" >/dev/null || {
+            --header "apikey: $VIRGINIA_PUBLIC_KEY" \
+            "${VIRGINIA_URL%/}/auth/v1/settings" > "$auth"
+          jq -e '.external.azure == true' "$auth" >/dev/null || {
             echo "Virginia Microsoft Auth is not ready for worker cutover." >&2
             exit 1
           }
-          rm -f "$auth"
+
           echo "supabase_worker_targets_ready=true"
           echo "virginia_auth_ready=true"
 
