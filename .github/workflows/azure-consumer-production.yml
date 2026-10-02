@@ -9,6 +9,7 @@ on:
       - 'apps/consumer/**'
       - '.github/workflows/azure-consumer-production.yml'
       - '.github/scripts/prove-azure-frontdoor.py'
+      - '.github/scripts/write-platform-release.sh'
   push:
     branches:
       - main
@@ -17,6 +18,7 @@ on:
       - 'apps/consumer/**'
       - '.github/workflows/azure-consumer-production.yml'
       - '.github/scripts/prove-azure-frontdoor.py'
+      - '.github/scripts/write-platform-release.sh'
   workflow_dispatch:
     inputs:
       image_sha:
@@ -252,6 +254,17 @@ jobs:
             docker push "$IMAGE"
           fi
 
+      - name: Record Azure release candidate
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: CANDIDATE
+          RELEASE_EVENT_TYPE: image_ready
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"image_ready"}
+        run: bash .github/scripts/write-platform-release.sh
+
       - name: What-if dual-region production runtime
         uses: azure/CLI@v2
         env:
@@ -289,6 +302,17 @@ jobs:
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'
+
+      - name: Record Azure release validation
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: VALIDATING
+          RELEASE_EVENT_TYPE: dual_region_deployed
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"dual_region_deployed"}
+        run: bash .github/scripts/write-platform-release.sh
 
       - name: Resolve Azure production proof targets
         env:
@@ -374,6 +398,17 @@ jobs:
             echo "- Route 53 cutover: not performed"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Record Azure stable release
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: STABLE
+          RELEASE_EVENT_TYPE: production_proven
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"frontdoor_proven","primary":"eastus2","secondary":"centralus"}
+        run: bash .github/scripts/write-platform-release.sh
+
       - name: Disable primary Front Door origin for regional failover drill
         if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
         uses: azure/CLI@v2
@@ -450,3 +485,33 @@ jobs:
             echo "Front Door regional failover drill passed."
             echo "Front Door primary restoration verified."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record regional failover drill event
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        env:
+          GIT_SHA: ${{ inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ inputs.image_sha }}
+          RELEASE_STATE: STABLE
+          RELEASE_EVENT_TYPE: regional_failover_drill_passed
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"regional_failover_drill","result":"passed"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed Azure release
+        if: ${{ failure() }}
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'DEGRADED' || 'FAILED' }}
+          RELEASE_EVENT_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'regional_failover_drill_failed' || 'workflow_failed' }}
+          RELEASE_REASON: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'azure_regional_failover_drill_failed' || 'azure_consumer_production_workflow_failed' }}
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"workflow","result":"failed"}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Release registry credentials were not resolved before workflow failure; skipping registry failure write."
+            exit 0
+          fi
+          bash .github/scripts/write-platform-release.sh
