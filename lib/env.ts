@@ -35,6 +35,8 @@ export function requireSupabaseUrl(): string {
 }
 
 export function requireSupabaseServiceRoleKey(): string {
+  const modern = String(process.env.SUPABASE_SECRET_KEY || "").trim();
+  if (modern) return modern;
   return requireServerEnv("SUPABASE_SERVICE_ROLE_KEY");
 }
 
