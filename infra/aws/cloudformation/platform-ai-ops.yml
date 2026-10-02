@@ -14,6 +14,9 @@ Parameters:
   ScheduleExpression:
     Type: String
     Default: rate(15 minutes)
+  SecurityIntelligenceScheduleExpression:
+    Type: String
+    Default: rate(1 hour)
   PlatformAlertsTopicArn:
     Type: String
     Default: ''
@@ -46,6 +49,12 @@ Resources:
                   - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/supabase-*
                   - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/github-*
                   - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/${Environment}/assistant-api/hmac-*
+              - !If
+                - HasAlertsTopic
+                - Effect: Allow
+                  Action: sns:Publish
+                  Resource: !Ref PlatformAlertsTopicArn
+                - !Ref AWS::NoValue
 
   AiOpsLogGroup:
     Type: AWS::Logs::LogGroup
@@ -74,6 +83,7 @@ Resources:
           GITHUB_REPOSITORY: !Ref GitHubRepository
           AI_MODEL: gpt-5.4-mini
           AUTO_RECOVERY_EVENT: platform-auto-recovery
+          PLATFORM_ALERTS_TOPIC_ARN: !Ref PlatformAlertsTopicArn
       Code:
         ZipFile: |
           def handler(event, context):
@@ -113,6 +123,21 @@ Resources:
           MaximumEventAgeInSeconds: 1800
           MaximumRetryAttempts: 1
 
+  SecurityIntelligenceSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub toh-${Environment}-security-intelligence
+      ScheduleExpression: !Ref SecurityIntelligenceScheduleExpression
+      FlexibleTimeWindow: {Mode: 'OFF'}
+      State: ENABLED
+      Target:
+        Arn: !GetAtt AiOpsFunction.Arn
+        RoleArn: !GetAtt AiOpsSchedulerRole.Arn
+        Input: '{"source":"aws-scheduler","mode":"security_intelligence"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 1800
+          MaximumRetryAttempts: 2
+
   AiOpsErrorsAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -138,3 +163,5 @@ Outputs:
     Value: !Ref AiOpsFunction
   AiOpsScheduleName:
     Value: !Ref AiOpsSchedule
+  SecurityIntelligenceScheduleName:
+    Value: !Ref SecurityIntelligenceSchedule
