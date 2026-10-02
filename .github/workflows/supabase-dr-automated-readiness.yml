@@ -1,0 +1,91 @@
+name: Supabase DR automated readiness
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: supabase-dr-automated-readiness
+  cancel-in-progress: false
+
+env:
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_PUBLICATION: theouthaven_dr_publication
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve Supabase management token
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash .github/scripts/load-supabase-management-token.sh
+
+      - name: Verify project health, cron safety, replication, and schema parity
+        run: |
+          set -euo pipefail
+
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+
+          for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
+            side="${pair%%:*}"
+            ref="${pair##*:}"
+            curl --fail --silent --show-error               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref" > "$RUNNER_TEMP/${side}-project.json"
+            test "$(jq -r '.status // empty' "$RUNNER_TEMP/${side}-project.json")" = "ACTIVE_HEALTHY"
+          done
+
+          state_sql="select current_setting('wal_level') as wal_level, (select count(*) from cron.job) as cron_jobs, (select count(*) from cron.job where active) as active_cron_jobs;"
+          query_ref "$VIRGINIA_REF" "$state_sql" "$RUNNER_TEMP/virginia-state.json"
+          query_ref "$OREGON_REF" "$state_sql" "$RUNNER_TEMP/oregon-state.json"
+          jq -e '.[0].wal_level == "logical" and .[0].cron_jobs == 0' "$RUNNER_TEMP/virginia-state.json" >/dev/null
+          jq -e '.[0].wal_level == "logical" and .[0].active_cron_jobs == 0' "$RUNNER_TEMP/oregon-state.json" >/dev/null
+
+          source_sql="select (select count(*) from pg_publication where pubname='${EXPECTED_PUBLICATION}') as publication_count, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as slot_count, (select count(*) from pg_replication_slots where slot_name='${EXPECTED_SLOT}' and active) as active_slots, (select coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn),0)::bigint from pg_replication_slots where slot_name='${EXPECTED_SLOT}') as lag_bytes;"
+          target_sql="select (select count(*) from pg_subscription where subname='${EXPECTED_SUBSCRIPTION}') as subscription_count, (select count(*) from pg_subscription s join pg_stat_subscription st on st.subid=s.oid where s.subname='${EXPECTED_SUBSCRIPTION}' and st.pid is not null) as connected_workers, (select count(*) from pg_subscription_rel sr join pg_subscription s on s.oid=sr.srsubid where s.subname='${EXPECTED_SUBSCRIPTION}' and sr.srsubstate <> 'r') as pending_tables;"
+          query_ref "$VIRGINIA_REF" "$source_sql" "$RUNNER_TEMP/source.json"
+          query_ref "$OREGON_REF" "$target_sql" "$RUNNER_TEMP/target.json"
+          jq -e '.[0].publication_count == 1 and .[0].slot_count == 1 and .[0].active_slots == 1' "$RUNNER_TEMP/source.json" >/dev/null
+          jq -e '.[0].subscription_count == 1 and .[0].connected_workers == 1 and .[0].pending_tables == 0' "$RUNNER_TEMP/target.json" >/dev/null
+
+          catalog_sql="$(cat scripts/dr/writable-catalog.sql)"
+          query_ref "$VIRGINIA_REF" "$catalog_sql" "$RUNNER_TEMP/virginia-catalog.json"
+          query_ref "$OREGON_REF" "$catalog_sql" "$RUNNER_TEMP/oregon-catalog.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/virginia-catalog.json" > "$RUNNER_TEMP/virginia-catalog-normalized.json"
+          jq -S 'sort_by(.kind,.object_name,.item_name)' "$RUNNER_TEMP/oregon-catalog.json" > "$RUNNER_TEMP/oregon-catalog-normalized.json"
+          cmp -s "$RUNNER_TEMP/virginia-catalog-normalized.json" "$RUNNER_TEMP/oregon-catalog-normalized.json"
+
+          {
+            echo "## Supabase DR automated readiness"
+            echo
+            echo "- Virginia: ACTIVE_HEALTHY"
+            echo "- Oregon: ACTIVE_HEALTHY"
+            echo "- Forward replication: connected"
+            echo "- Pending tables: 0"
+            echo "- WAL lag bytes: $(jq -r '.[0].lag_bytes // "unknown"' "$RUNNER_TEMP/source.json")"
+            echo "- Writable schema parity: exact"
+            echo "- pg_cron application ownership: external/AWS only"
+            echo "- Promotion/failback: not performed"
+          } >> "$GITHUB_STEP_SUMMARY"
