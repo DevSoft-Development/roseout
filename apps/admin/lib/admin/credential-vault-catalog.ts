@@ -55,7 +55,8 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true },
     { key: "secretKey", label: "Secret key (recommended)", secret: true, multiline: true },
     { key: "serviceRoleKey", label: "Legacy service role key (transition only)", secret: true, multiline: true },
-    { key: "managementAccessToken", label: "Management access token", secret: true, multiline: true },\n    { key: "edgeFunctionsManagementToken", label: "Edge Functions retirement token", secret: true, multiline: true, placeholder: "Scoped token: both projects + Edge Functions read-write only" },
+    { key: "managementAccessToken", label: "Management access token", secret: true, multiline: true },
+    { key: "edgeFunctionsManagementToken", label: "Edge Functions retirement token", secret: true, multiline: true, placeholder: "Scoped token: both projects + Edge Functions read-write only" },
   ] },
   { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
     { key: "token", label: "Runtime sync access token", secret: true },
