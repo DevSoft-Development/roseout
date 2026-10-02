@@ -16,6 +16,9 @@ EMAIL_QUEUE_URL = os.environ["EMAIL_QUEUE_URL"]
 SHARED_SECRET_ARN = os.environ["SHARED_SECRET_ARN"]
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 CREDENTIAL_VAULT_PREFIX = os.environ.get("CREDENTIAL_VAULT_PREFIX", "/theouthaven/credential-vault")
+SECURITY_EVENT_HANDLER_FUNCTION = os.environ.get("SECURITY_EVENT_HANDLER_FUNCTION", f"toh-{ENVIRONMENT}-security-event-handler")
+AUTO_CONTAIN_TAG_KEY = os.environ.get("AUTO_CONTAIN_TAG_KEY", "TheOutHavenAutoContain")
+AUTO_CONTAIN_TAG_VALUE = os.environ.get("AUTO_CONTAIN_TAG_VALUE", "enabled")
 MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
@@ -53,6 +56,8 @@ ALLOWED_PROVIDERS = {
 
 sqs = boto3.client("sqs")
 secrets = boto3.client("secretsmanager")
+iam = boto3.client("iam")
+lambda_client = boto3.client("lambda")
 _secret_cache = None
 
 
@@ -491,6 +496,110 @@ def _credential_route(event, method, path, body):
     return _response(405, {"ok": False, "error": "method_not_allowed"})
 
 
+
+def _iam_user_tags(user_name):
+    result = iam.list_user_tags(UserName=user_name)
+    return {str(item.get("Key") or ""): str(item.get("Value") or "") for item in result.get("Tags") or []}
+
+
+def _security_identities():
+    identities = []
+    marker = None
+    while True:
+        kwargs = {}
+        if marker:
+            kwargs["Marker"] = marker
+        result = iam.list_users(**kwargs)
+        for user in result.get("Users") or []:
+            name = str(user.get("UserName") or "")
+            tags = _iam_user_tags(name)
+            if tags.get(AUTO_CONTAIN_TAG_KEY) != AUTO_CONTAIN_TAG_VALUE:
+                continue
+            keys = iam.list_access_keys(UserName=name).get("AccessKeyMetadata") or []
+            identities.append({
+                "userName": name,
+                "autoContainEnabled": True,
+                "accessKeys": [
+                    {
+                        "suffix": str(item.get("AccessKeyId") or "")[-4:],
+                        "status": item.get("Status"),
+                        "createdAt": item.get("CreateDate").isoformat() if item.get("CreateDate") else None,
+                    }
+                    for item in keys
+                ],
+            })
+        if not result.get("IsTruncated"):
+            break
+        marker = result.get("Marker")
+        if not marker:
+            break
+    return {"ok": True, "identities": identities}
+
+
+def _find_access_key(user_name, suffix):
+    keys = iam.list_access_keys(UserName=user_name).get("AccessKeyMetadata") or []
+    matches = [item for item in keys if str(item.get("AccessKeyId") or "").endswith(suffix)]
+    if len(matches) != 1:
+        raise ValueError("access_key_suffix_not_unique")
+    return str(matches[0].get("AccessKeyId") or "")
+
+
+def _audit_manual_security_action(user_name, suffix, action, contained, actor):
+    detail = {
+        "action": action,
+        "title": "Manual IAM access-key containment action",
+        "description": f"{action} access key for protected machine identity {user_name}",
+        "identity": user_name,
+        "accessKeyIdSuffix": suffix,
+        "actor": actor or "admin",
+        "contained": contained,
+        "reason": "manual_operator_action",
+        "severity": "high",
+    }
+    payload = {
+        "source": "toh.admin.security",
+        "detail-type": "Manual Containment Action",
+        "detail": detail,
+    }
+    lambda_client.invoke(
+        FunctionName=SECURITY_EVENT_HANDLER_FUNCTION,
+        InvocationType="Event",
+        Payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+    )
+
+
+def _security_access_key_action(payload):
+    user_name = str(payload.get("userName") or "").strip()
+    suffix = str(payload.get("keySuffix") or "").strip()
+    action = str(payload.get("action") or "").strip().lower()
+    actor = str(payload.get("actor") or "admin").strip()
+    if not user_name or len(suffix) != 4 or action not in {"contain", "restore"}:
+        raise ValueError("invalid_security_action")
+    tags = _iam_user_tags(user_name)
+    if tags.get(AUTO_CONTAIN_TAG_KEY) != AUTO_CONTAIN_TAG_VALUE:
+        raise ValueError("identity_not_auto_contain_protected")
+    access_key_id = _find_access_key(user_name, suffix)
+    status = "Inactive" if action == "contain" else "Active"
+    iam.update_access_key(UserName=user_name, AccessKeyId=access_key_id, Status=status)
+    _audit_manual_security_action(user_name, suffix, action, action == "contain", actor)
+    return {
+        "ok": True,
+        "userName": user_name,
+        "keySuffix": suffix,
+        "status": status,
+        "action": action,
+    }
+
+
+def _security_route(method, path, body):
+    if method == "GET" and path == "/v1/security/identities":
+        return _response(200, _security_identities())
+    if method == "POST" and path == "/v1/security/access-key":
+        payload = json.loads(body or "{}")
+        return _response(200, _security_access_key_action(payload))
+    return None
+
+
 def handler(event, context):
     try:
         body = _body(event)
@@ -504,6 +613,9 @@ def handler(event, context):
         credential_response = _credential_route(event, method, path, body)
         if credential_response is not None:
             return credential_response
+        security_response = _security_route(method, path, body)
+        if security_response is not None:
+            return security_response
         if method == "POST" and path == "/v1/jobs/enqueue-batch":
             payload = json.loads(body or "{}")
             result = _send_batch(payload.get("jobs"))
