@@ -2,6 +2,8 @@ import json
 import os
 
 import boto3
+import urllib.error
+import urllib.request
 from botocore.exceptions import ClientError
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
@@ -9,9 +11,15 @@ ALERT_TOPIC_ARN = os.environ["ALERT_TOPIC_ARN"]
 AUTO_CONTAIN_TAG_KEY = os.environ.get("AUTO_CONTAIN_TAG_KEY", "TheOutHavenAutoContain")
 AUTO_CONTAIN_TAG_VALUE = os.environ.get("AUTO_CONTAIN_TAG_VALUE", "enabled")
 GUARDDUTY_CONTAIN_SEVERITY = float(os.environ.get("GUARDDUTY_CONTAIN_SEVERITY", "7.0"))
+SUPABASE_SECRET_ID = os.environ.get(
+    "SUPABASE_SECRET_ID",
+    f"/theouthaven/credential-vault/{ENVIRONMENT}/supabase",
+)
 
 sns = boto3.client("sns")
 iam = boto3.client("iam")
+secrets = boto3.client("secretsmanager")
+_supabase_config = None
 
 
 def _publish(subject, payload):
@@ -25,6 +33,61 @@ def _publish(subject, payload):
         Subject=subject[:100],
         Message=json.dumps(message, separators=(",", ":"), default=str),
     )
+
+
+def _supabase():
+    global _supabase_config
+    if _supabase_config:
+        return _supabase_config
+    raw = secrets.get_secret_value(SecretId=SUPABASE_SECRET_ID).get("SecretString") or "{}"
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise RuntimeError("supabase_credential_vault_invalid")
+    url = str(value.get("url") or "").strip().rstrip("/")
+    key = str(value.get("secretKey") or value.get("serviceRoleKey") or "").strip()
+    if not url or not key:
+        raise RuntimeError("supabase_server_credential_missing")
+    _supabase_config = (url, key)
+    return _supabase_config
+
+
+def _persist_security_event(subject, payload):
+    url, key = _supabase()
+    containment = payload.get("containment") or {}
+    level = "critical"
+    body = json.dumps({
+        "category": "security_incident",
+        "level": level,
+        "message": subject,
+        "source": "aws-security-event-handler",
+        "metadata": {
+            **payload,
+            "incident_key": payload.get("findingId") or ":".join([
+                str(payload.get("source") or "aws"),
+                str(payload.get("eventName") or payload.get("findingType") or "security_event"),
+                str(payload.get("userIdentityArn") or payload.get("account") or "account"),
+            ]),
+            "state": "open",
+            "containment_attempted": bool(containment.get("attempted")),
+            "contained": bool(containment.get("contained")),
+        },
+    }, separators=(",", ":"), default=str).encode("utf-8")
+
+    request = urllib.request.Request(
+        f"{url}/rest/v1/admin_system_logs",
+        method="POST",
+        data=body,
+        headers={
+            "apikey": key,
+            "authorization": f"Bearer {key}",
+            "content-type": "application/json",
+            "prefer": "return=minimal",
+            "user-agent": "TheOutHaven-Security-Event-Handler/1.0",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if int(response.status) not in (200, 201, 204):
+            raise RuntimeError(f"security_event_persist_http_{response.status}")
 
 
 def _tags_for_user(user_name):
@@ -103,6 +166,10 @@ def _guardduty_event(event):
         "containment": containment,
     }
     _publish("TheOutHaven AWS security finding", payload)
+    try:
+        _persist_security_event("TheOutHaven AWS security finding", payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
     return payload
 
 
@@ -134,6 +201,10 @@ def _cloudtrail_event(event):
     elif event_name in {"AttachUserPolicy", "AttachRolePolicy", "PutUserPolicy", "PutRolePolicy", "CreatePolicyVersion", "SetDefaultPolicyVersion"}:
         subject = "TheOutHaven AWS privilege change"
     _publish(subject, payload)
+    try:
+        _persist_security_event(subject, payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
     return payload
 
 
