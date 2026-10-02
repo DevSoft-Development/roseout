@@ -503,9 +503,9 @@ jobs:
         env:
           GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
           RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
-          RELEASE_STATE: FAILED
-          RELEASE_EVENT_TYPE: workflow_failed
-          RELEASE_REASON: azure_consumer_production_workflow_failed
+          RELEASE_STATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'DEGRADED' || 'FAILED' }}
+          RELEASE_EVENT_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'regional_failover_drill_failed' || 'workflow_failed' }}
+          RELEASE_REASON: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'azure_regional_failover_drill_failed' || 'azure_consumer_production_workflow_failed' }}
           RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
           RELEASE_EVIDENCE: >-
             {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"workflow","result":"failed"}
