@@ -1,0 +1,126 @@
+name: AWS security takeover containment
+
+on:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - 'infra/aws/cloudformation/platform-security-containment.yml'
+      - '.github/workflows/aws-security-takeover-containment.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - 'infra/aws/cloudformation/platform-security-containment.yml'
+      - '.github/workflows/aws-security-takeover-containment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-security-takeover-containment-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-security-containment-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate security handler
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_security_event_handler.py
+          grep -F 'TheOutHavenAutoContain' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'iam.update_access_key' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'user_not_opted_in' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'GuardDuty Finding' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'alert_only_event' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+
+      - name: Validate CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-security-containment.yml
+          grep -F 'AWS::GuardDuty::Detector' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
+          grep -F 'AWS API Call via CloudTrail' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
+          grep -F 'StopLogging' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
+          grep -F 'iam:UpdateAccessKey' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve platform alerts topic
+        id: config
+        run: |
+          set -euo pipefail
+          TOPIC_ARN="$(aws cloudformation describe-stacks             --stack-name theouthaven-platform-production             --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue"             --output text)"
+          test -n "$TOPIC_ARN" && test "$TOPIC_ARN" != None
+          echo "topic_arn=$TOPIC_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy security containment stack
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-security-containment.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides               Environment=production               PlatformAlertsTopicArn='${{ steps.config.outputs.topic_arn }}'               GuardDutyContainSeverity=7               AutoContainTagKey=TheOutHavenAutoContain               AutoContainTagValue=enabled             --tags Project=TheOutHaven Environment=production Service=SecurityContainment
+
+      - name: Deploy security handler code
+        id: security
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SecurityEventFunctionName'].OutputValue" --output text)"
+          DETECTOR_ID="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='GuardDutyDetectorId'].OutputValue" --output text)"
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          test -n "$DETECTOR_ID" && test "$DETECTOR_ID" != None
+
+          BUILD="$RUNNER_TEMP/platform-security-event-handler"
+          ZIP="$RUNNER_TEMP/platform-security-event-handler.zip"
+          rm -rf "$BUILD" "$ZIP"
+          mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_security_event_handler.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+          test "$(aws guardduty get-detector --detector-id "$DETECTOR_ID" --query Status --output text)" = "ENABLED"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "detector_id=$DETECTOR_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify EventBridge security rules
+        run: |
+          set -euo pipefail
+          for rule in toh-production-guardduty-security-events toh-production-iam-security-events; do
+            test "$(aws events describe-rule --name "$rule" --query State --output text)" = "ENABLED"
+            COUNT="$(aws events list-targets-by-rule --rule "$rule" --query 'length(Targets)' --output text)"
+            test "$COUNT" -ge 1
+          done
+
+      - name: Write deployment summary
+        run: |
+          {
+            echo '### AWS security takeover containment'
+            echo "- GuardDuty detector: ${{ steps.security.outputs.detector_id }}"
+            echo "- Security event handler: ${{ steps.security.outputs.function_name }}"
+            echo '- Root login/activity: immediate alert'
+            echo '- IAM privilege and access-key changes: immediate alert'
+            echo '- CloudTrail tampering: immediate alert'
+            echo '- High-severity GuardDuty credential findings: automatic containment only for IAM users tagged TheOutHavenAutoContain=enabled'
+            echo '- Human/root credentials: alert only; no automatic lockout'
+          } >> "$GITHUB_STEP_SUMMARY"
