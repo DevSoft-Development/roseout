@@ -1,0 +1,237 @@
+name: Platform job gateway key rotation
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to rotate
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+  repository_dispatch:
+    types:
+      - platform-job-gateway-rotate
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: platform-job-gateway-rotation-${{ inputs.environment || github.event.client_payload.environment || 'production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve rotation environment
+        id: config
+        env:
+          INPUT_ENV: ${{ inputs.environment }}
+          EVENT_ENV: ${{ github.event.client_payload.environment }}
+        run: |
+          set -euo pipefail
+          TARGET_ENV="${INPUT_ENV:-${EVENT_ENV:-production}}"
+          case "$TARGET_ENV" in production|staging) ;; *) echo "::error::Unsupported environment: $TARGET_ENV"; exit 1 ;; esac
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Snapshot current authority and generate next key
+        id: rotation
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          PLATFORM_SECRET="/theouthaven/credential-vault/$TARGET_ENV/platform"
+          GATEWAY_SECRET="/theouthaven/$TARGET_ENV/platform-job-gateway/hmac"
+          aws secretsmanager get-secret-value --secret-id "$PLATFORM_SECRET" --query SecretString --output text > "$RUNNER_TEMP/platform-before.json"
+          aws secretsmanager get-secret-value --secret-id "$GATEWAY_SECRET" --query SecretString --output text > "$RUNNER_TEMP/gateway-before.txt"
+
+          OLD_KEY="$(jq -r '.jobGatewaySecret // empty' "$RUNNER_TEMP/platform-before.json")"
+          test "${#OLD_KEY}" -ge 32 || { echo "::error::Current vault jobGatewaySecret is missing or too short."; exit 1; }
+
+          GATEWAY_CURRENT="$(python3 - "$RUNNER_TEMP/gateway-before.txt" <<'PY'
+          import json,sys
+          raw=open(sys.argv[1]).read().strip()
+          try:
+              value=json.loads(raw)
+          except Exception:
+              value=raw
+          if isinstance(value,dict):
+              print(str(value.get("current") or ""))
+          else:
+              print(str(value))
+          PY
+          )"
+          test "$GATEWAY_CURRENT" = "$OLD_KEY" || {
+            echo "::error::Gateway HMAC authority and central Credential Vault do not match; refusing rotation."
+            exit 1
+          }
+
+          NEW_KEY="$(openssl rand -hex 32)"
+          test "${#NEW_KEY}" -ge 64
+          echo "::add-mask::$OLD_KEY"
+          echo "::add-mask::$NEW_KEY"
+          printf '%s' "$OLD_KEY" > "$RUNNER_TEMP/old-key"
+          printf '%s' "$NEW_KEY" > "$RUNNER_TEMP/new-key"
+          echo "platform_secret=$PLATFORM_SECRET" >> "$GITHUB_OUTPUT"
+          echo "gateway_secret=$GATEWAY_SECRET" >> "$GITHUB_OUTPUT"
+
+      - name: Install overlap keyset
+        env:
+          PLATFORM_SECRET: ${{ steps.rotation.outputs.platform_secret }}
+          GATEWAY_SECRET: ${{ steps.rotation.outputs.gateway_secret }}
+        run: |
+          set -euo pipefail
+          OLD_KEY="$(cat "$RUNNER_TEMP/old-key")"
+          NEW_KEY="$(cat "$RUNNER_TEMP/new-key")"
+          jq -n --arg current "$NEW_KEY" --arg previous "$OLD_KEY" '{current:$current,previous:$previous}' > "$RUNNER_TEMP/gateway-overlap.json"
+          aws secretsmanager put-secret-value --secret-id "$GATEWAY_SECRET" --secret-string "file://$RUNNER_TEMP/gateway-overlap.json" >/dev/null
+
+          jq --arg key "$NEW_KEY" '.jobGatewaySecret=$key' "$RUNNER_TEMP/platform-before.json" > "$RUNNER_TEMP/platform-next.json"
+          aws secretsmanager put-secret-value --secret-id "$PLATFORM_SECRET" --secret-string "file://$RUNNER_TEMP/platform-next.json" >/dev/null
+          echo "Installed current+previous gateway overlap and advanced central vault authority." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch Credential Vault runtime sync
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run aws-credential-vault-runtime-sync.yml --ref main -f "environment=$TARGET_ENV"
+
+          RUN_ID=""
+          for _ in $(seq 1 24); do
+            RUN_ID="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,status --jq "[.[] | select(.createdAt >= \"$STARTED_AT\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
+            [ -n "$RUN_ID" ] && break
+            sleep 5
+          done
+          test -n "$RUN_ID" || { echo "::error::Credential Vault runtime sync run was not created."; exit 1; }
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          gh run watch "$RUN_ID" --exit-status
+
+      - name: Verify new key end to end
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          NEW_KEY="$(cat "$RUNNER_TEMP/new-key")"
+          RUNTIME_SECRET="/theouthaven/$TARGET_ENV/edge-runtime/env"
+          aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET" --query SecretString --output text > "$RUNNER_TEMP/runtime-after.json"
+          test "$(jq -r '.AWS_PLATFORM_JOB_GATEWAY_SECRET // empty' "$RUNNER_TEMP/runtime-after.json")" = "$NEW_KEY" || {
+            echo "::error::Runtime compatibility store did not receive the new gateway key."
+            exit 1
+          }
+
+          STACK="theouthaven-workers-$TARGET_ENV"
+          JOB_URL="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
+          test -n "$JOB_URL" && test "$JOB_URL" != "None"
+
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" KEY="$NEW_KEY" python3 - <<'PY'
+          import hashlib,hmac,os
+          payload='\n'.join([os.environ['TIMESTAMP'],'GET','/v1/status',''])
+          print(hmac.new(os.environ['KEY'].encode(),payload.encode(),hashlib.sha256).hexdigest())
+          PY
+          )"
+          RESPONSE="$(curl --fail --silent --show-error             -H "x-toh-timestamp: $TIMESTAMP"             -H "x-toh-signature: $SIGNATURE"             "${JOB_URL%/}/v1/status")"
+          jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 3' <<<"$RESPONSE" >/dev/null
+          echo "New HMAC key authenticated against the live gateway after runtime propagation." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retire previous key
+        env:
+          GATEWAY_SECRET: ${{ steps.rotation.outputs.gateway_secret }}
+        run: |
+          set -euo pipefail
+          NEW_KEY="$(cat "$RUNNER_TEMP/new-key")"
+          aws secretsmanager put-secret-value --secret-id "$GATEWAY_SECRET" --secret-string "$NEW_KEY" >/dev/null
+          echo "Previous HMAC key retired after successful propagation and live authentication." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Final new-key verification
+        env:
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+        run: |
+          set -euo pipefail
+          NEW_KEY="$(cat "$RUNNER_TEMP/new-key")"
+          JOB_URL="$(aws cloudformation describe-stacks --stack-name "theouthaven-workers-$TARGET_ENV" --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
+          TIMESTAMP="$(date +%s%3N)"
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" KEY="$NEW_KEY" python3 - <<'PY'
+          import hashlib,hmac,os
+          payload='\n'.join([os.environ['TIMESTAMP'],'GET','/v1/status',''])
+          print(hmac.new(os.environ['KEY'].encode(),payload.encode(),hashlib.sha256).hexdigest())
+          PY
+          )"
+          curl --fail --silent --show-error             -H "x-toh-timestamp: $TIMESTAMP"             -H "x-toh-signature: $SIGNATURE"             "${JOB_URL%/}/v1/status" | jq -e '.ok == true and .authenticated == true' >/dev/null
+
+      - name: Roll back rotation on failure
+        if: ${{ failure() }}
+        env:
+          PLATFORM_SECRET: ${{ steps.rotation.outputs.platform_secret }}
+          GATEWAY_SECRET: ${{ steps.rotation.outputs.gateway_secret }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          RESTORED=false
+          if [ -s "$RUNNER_TEMP/platform-before.json" ] && [ -n "${PLATFORM_SECRET:-}" ]; then
+            aws secretsmanager put-secret-value --secret-id "$PLATFORM_SECRET" --secret-string "file://$RUNNER_TEMP/platform-before.json" >/dev/null && RESTORED=true
+          fi
+          if [ -s "$RUNNER_TEMP/gateway-before.txt" ] && [ -n "${GATEWAY_SECRET:-}" ]; then
+            aws secretsmanager put-secret-value --secret-id "$GATEWAY_SECRET" --secret-string "file://$RUNNER_TEMP/gateway-before.txt" >/dev/null
+          fi
+
+          RESYNC="not_required"
+          if [ "$RESTORED" = true ] && [ -n "${TARGET_ENV:-}" ]; then
+            RESYNC="requested"
+            STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            if gh workflow run aws-credential-vault-runtime-sync.yml --ref main -f "environment=$TARGET_ENV"; then
+              ROLLBACK_RUN=""
+              for _ in $(seq 1 24); do
+                ROLLBACK_RUN="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,status --jq "[.[] | select(.createdAt >= \"$STARTED_AT\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
+                [ -n "$ROLLBACK_RUN" ] && break
+                sleep 5
+              done
+              if [ -n "$ROLLBACK_RUN" ] && gh run watch "$ROLLBACK_RUN" --exit-status; then
+                RESYNC="succeeded"
+              else
+                RESYNC="failed"
+              fi
+            else
+              RESYNC="dispatch_failed"
+            fi
+          fi
+
+          {
+            echo "## Rotation rolled back"
+            echo
+            echo "- Central platform vault: restored"
+            echo "- Gateway HMAC authority: restored"
+            echo "- Runtime rollback sync: $RESYNC"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$RESYNC" != "failed" ] && [ "$RESYNC" != "dispatch_failed" ]
+
+      - name: Remove transient key files
+        if: ${{ always() }}
+        run: |
+          rm -f "$RUNNER_TEMP/old-key" "$RUNNER_TEMP/new-key" "$RUNNER_TEMP/platform-before.json" "$RUNNER_TEMP/platform-next.json" "$RUNNER_TEMP/gateway-before.txt" "$RUNNER_TEMP/gateway-overlap.json" "$RUNNER_TEMP/runtime-after.json"
