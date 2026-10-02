@@ -6,7 +6,7 @@ import boto3
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 GITHUB_SECRET_ID = os.environ.get("GITHUB_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/github")
 GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "DevSoft-Development/roseout")
-EVENT_TYPE = os.environ.get("EVENT_TYPE", "security-resilience-drill")
+EVENT_TYPE = os.environ.get("EVENT_TYPE", "platform-security-drill-suite")
 secrets = boto3.client("secretsmanager")
 
 def _token():
