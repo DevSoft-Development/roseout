@@ -10,6 +10,7 @@ on:
       - '.github/workflows/azure-consumer-production.yml'
       - '.github/scripts/prove-azure-frontdoor.py'
       - '.github/scripts/write-platform-release.sh'
+      - '.github/scripts/rollout-azure-consumer-canary.sh'
   push:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - '.github/workflows/azure-consumer-production.yml'
       - '.github/scripts/prove-azure-frontdoor.py'
       - '.github/scripts/write-platform-release.sh'
+      - '.github/scripts/rollout-azure-consumer-canary.sh'
   workflow_dispatch:
     inputs:
       image_sha:
@@ -225,6 +227,25 @@ jobs:
             echo "secondary_ai_key=$SECONDARY_AI_KEY" >> "$GITHUB_OUTPUT"
             echo "image=$ACR.azurecr.io/consumer:$IMAGE_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve previous good Azure revisions
+        id: stable
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            PRIMARY_APP="ca-toh-consumer-prod-primary"
+            SECONDARY_APP="ca-toh-consumer-prod-secondary"
+
+            PRIMARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$PRIMARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
+            SECONDARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$SECONDARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
+
+            test -n "$PRIMARY_REVISION" || { echo "::error::No active primary revision found."; exit 1; }
+            test -n "$SECONDARY_REVISION" || { echo "::error::No active secondary revision found."; exit 1; }
+
+            echo "primary_revision=$PRIMARY_REVISION" >> "$GITHUB_OUTPUT"
+            echo "secondary_revision=$SECONDARY_REVISION" >> "$GITHUB_OUTPUT"
+
       - name: Check out exact release SHA
         env:
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
@@ -282,7 +303,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'
+            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
 
       - name: Deploy dual-region production runtime
         uses: azure/CLI@v2
@@ -301,7 +322,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'
+            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
 
       - name: Record Azure release validation
         env:
@@ -313,6 +334,60 @@ jobs:
           RELEASE_EVIDENCE: >-
             {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"dual_region_deployed"}
         run: bash .github/scripts/write-platform-release.sh
+
+      - name: Resolve Azure canary revisions
+        id: canary
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            PRIMARY_APP="ca-toh-consumer-prod-primary"
+            SECONDARY_APP="ca-toh-consumer-prod-secondary"
+
+            PRIMARY_CANDIDATE="$(az containerapp revision list --resource-group "$RG" --name "$PRIMARY_APP" --all --query "sort_by([?properties.template.containers[0].image=='$IMAGE'], &properties.createdTime)[-1].name" -o tsv)"
+            SECONDARY_CANDIDATE="$(az containerapp revision list --resource-group "$RG" --name "$SECONDARY_APP" --all --query "sort_by([?properties.template.containers[0].image=='$IMAGE'], &properties.createdTime)[-1].name" -o tsv)"
+
+            test -n "$PRIMARY_CANDIDATE" || { echo "::error::Primary candidate revision not found."; exit 1; }
+            test -n "$SECONDARY_CANDIDATE" || { echo "::error::Secondary candidate revision not found."; exit 1; }
+            test "$PRIMARY_CANDIDATE" != "${{ steps.stable.outputs.primary_revision }}" || { echo "::error::Primary candidate did not create a new revision."; exit 1; }
+            test "$SECONDARY_CANDIDATE" != "${{ steps.stable.outputs.secondary_revision }}" || { echo "::error::Secondary candidate did not create a new revision."; exit 1; }
+
+            PRIMARY_CANDIDATE_FQDN="$(az containerapp revision show --resource-group "$RG" --name "$PRIMARY_APP" --revision "$PRIMARY_CANDIDATE" --query properties.fqdn -o tsv)"
+            SECONDARY_CANDIDATE_FQDN="$(az containerapp revision show --resource-group "$RG" --name "$SECONDARY_APP" --revision "$SECONDARY_CANDIDATE" --query properties.fqdn -o tsv)"
+            PRIMARY_APP_FQDN="$(az containerapp show --resource-group "$RG" --name "$PRIMARY_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+            SECONDARY_APP_FQDN="$(az containerapp show --resource-group "$RG" --name "$SECONDARY_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+
+            for value in "$PRIMARY_CANDIDATE_FQDN" "$SECONDARY_CANDIDATE_FQDN" "$PRIMARY_APP_FQDN" "$SECONDARY_APP_FQDN"; do
+              test -n "$value" || { echo "::error::Azure canary FQDN resolution failed."; exit 1; }
+            done
+
+            echo "primary_revision=$PRIMARY_CANDIDATE" >> "$GITHUB_OUTPUT"
+            echo "secondary_revision=$SECONDARY_CANDIDATE" >> "$GITHUB_OUTPUT"
+            echo "primary_fqdn=$PRIMARY_CANDIDATE_FQDN" >> "$GITHUB_OUTPUT"
+            echo "secondary_fqdn=$SECONDARY_CANDIDATE_FQDN" >> "$GITHUB_OUTPUT"
+            echo "primary_app_fqdn=$PRIMARY_APP_FQDN" >> "$GITHUB_OUTPUT"
+            echo "secondary_app_fqdn=$SECONDARY_APP_FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Promote Azure consumer canary 0 to 10 to 50 to 100
+        env:
+          AZURE_RESOURCE_GROUP: rg-toh-consumer-production
+          PRIMARY_APP: ca-toh-consumer-prod-primary
+          SECONDARY_APP: ca-toh-consumer-prod-secondary
+          PRIMARY_PREVIOUS_REVISION: ${{ steps.stable.outputs.primary_revision }}
+          SECONDARY_PREVIOUS_REVISION: ${{ steps.stable.outputs.secondary_revision }}
+          PRIMARY_CANDIDATE_REVISION: ${{ steps.canary.outputs.primary_revision }}
+          SECONDARY_CANDIDATE_REVISION: ${{ steps.canary.outputs.secondary_revision }}
+          PRIMARY_CANDIDATE_FQDN: ${{ steps.canary.outputs.primary_fqdn }}
+          SECONDARY_CANDIDATE_FQDN: ${{ steps.canary.outputs.secondary_fqdn }}
+          PRIMARY_APP_FQDN: ${{ steps.canary.outputs.primary_app_fqdn }}
+          SECONDARY_APP_FQDN: ${{ steps.canary.outputs.secondary_app_fqdn }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+        run: bash .github/scripts/rollout-azure-consumer-canary.sh
 
       - name: Resolve Azure production proof targets
         env:
