@@ -56,6 +56,9 @@ Resources:
               - Effect: Allow
                 Action: iam:UpdateAccessKey
                 Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/supabase-*
 
   SecurityEventLogGroup:
     Type: AWS::Logs::LogGroup
@@ -82,6 +85,7 @@ Resources:
           GUARDDUTY_CONTAIN_SEVERITY: !Ref GuardDutyContainSeverity
           AUTO_CONTAIN_TAG_KEY: !Ref AutoContainTagKey
           AUTO_CONTAIN_TAG_VALUE: !Ref AutoContainTagValue
+          SUPABASE_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/supabase
       Code:
         ZipFile: |
           def handler(event, context):
