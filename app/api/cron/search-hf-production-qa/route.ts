@@ -426,7 +426,7 @@ export async function GET(request: Request) {
 
   const requestUrl = new URL(request.url);
   const expectedCommit = requestUrl.searchParams.get("expectedCommit")?.trim() || null;
-  const deploymentCommit = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim() || null;
+  const deploymentCommit = String(process.env.PLATFORM_RUNTIME_GIT_SHA || process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "").trim() || null;
   if (expectedCommit && deploymentCommit !== expectedCommit) {
     return NextResponse.json(
       {
