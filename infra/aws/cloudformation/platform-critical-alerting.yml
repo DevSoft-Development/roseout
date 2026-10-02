@@ -282,23 +282,6 @@ Resources:
       AlarmActions: [!Ref PlatformAlertsTopicArn]
       OKActions: [!Ref PlatformAlertsTopicArn]
 
-  VercelProductionAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub toh-${Environment}-critical-vercel-production
-      AlarmDescription: Latest Automatic recovery dispatch is failed or production deployment status cannot be verified.
-      Namespace: TheOutHaven/Critical
-      MetricName: AutoRecoveryDispatched
-      Statistic: Minimum
-      Period: 300
-      EvaluationPeriods: 2
-      DatapointsToAlarm: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref PlatformAlertsTopicArn]
-      OKActions: [!Ref PlatformAlertsTopicArn]
-
   CriticalCronFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
