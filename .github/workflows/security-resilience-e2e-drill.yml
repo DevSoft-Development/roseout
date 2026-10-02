@@ -1,0 +1,147 @@
+name: Security resilience E2E drill
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - security-resilience-drill
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_security_drill_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-security-drill.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/security-resilience-e2e-drill.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_security_drill_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-security-drill.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/security-resilience-e2e-drill.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-security-drill-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate drill contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_security_drill_dispatcher.py
+          python -m py_compile infra/aws/lambda/platform_security_event_handler.py
+          python -m py_compile infra/aws/lambda/platform_job_gateway.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-security-drill.yml
+          grep -F 'security-resilience-drill' infra/aws/lambda/platform_security_drill_dispatcher.py >/dev/null
+          grep -F 'Security Drill Probe' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F '/v1/security/identities' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/security-resilience-e2e-drill.yml
+
+  drill:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve alerts topic and deploy drill scheduler
+        id: deploy
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-security-drill.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn="$TOPIC"
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          SCHEDULE_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ScheduleName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/security-drill-dispatcher"; ZIP="$RUNNER_TEMP/security-drill-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_security_drill_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+          test "$(aws scheduler get-schedule --name "$SCHEDULE_NAME" --query State --output text)" = ENABLED
+
+      - name: Verify all security monitor schedules are enabled
+        run: |
+          set -euo pipefail
+          for name in             toh-production-azure-security-monitor             toh-production-supabase-security-monitor             toh-production-github-security-monitor             toh-production-platform-job-gateway-rotation             toh-production-security-resilience-drill; do
+            test "$(aws scheduler get-schedule --name "$name" --query State --output text)" = ENABLED
+          done
+
+      - name: Invoke non-alerting end-to-end persistence probe
+        id: probe
+        run: |
+          set -euo pipefail
+          DRILL_ID="security-drill-$(date -u +%Y%m%dT%H%M%SZ)-$GITHUB_RUN_ID"
+          PAYLOAD="$(jq -n --arg id "$DRILL_ID" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
+            source:"toh.security.drill",
+            "detail-type":"Security Drill Probe",
+            detail:{drillId:$id,eventTimestamp:$ts,description:"Scheduled end-to-end security persistence probe"}
+          }')"
+          aws lambda invoke --function-name toh-production-security-event-handler             --payload "$(printf '%s' "$PAYLOAD" | base64 -w0)"             --cli-binary-format base64 --output json "$RUNNER_TEMP/probe.json" >/dev/null
+          echo "drill_id=$DRILL_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify probe reached durable Admin history
+        env:
+          DRILL_ID: ${{ steps.probe.outputs.drill_id }}
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/supabase.json"
+          URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase.json")"
+          KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/supabase.json")"
+          test -n "$URL" && test -n "$KEY"
+          echo "::add-mask::$KEY"
+          FOUND=false
+          for _ in $(seq 1 12); do
+            BODY="$(curl --fail --silent --show-error               -H "apikey: $KEY" -H "Authorization: Bearer $KEY"               --get --data-urlencode "category=eq.security_drill"               --data-urlencode "metadata->>drillId=eq.$DRILL_ID"               --data-urlencode "select=id,metadata,created_at"               --data-urlencode "limit=1"               "$URL/rest/v1/admin_system_logs")"
+            if [ "$(jq length <<<"$BODY")" -eq 1 ]; then FOUND=true; break; fi
+            sleep 5
+          done
+          test "$FOUND" = true
+          rm -f "$RUNNER_TEMP/supabase.json"
+
+      - name: Verify protected-identity gateway route
+        run: |
+          set -euo pipefail
+          PLATFORM_SECRET="$(aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/platform --query SecretString --output text)"
+          JOB_URL="$(aws cloudformation describe-stacks --stack-name theouthaven-workers-production --query "Stacks[0].Outputs[?OutputKey=='JobGatewayUrl'].OutputValue" --output text)"
+          KEY="$(jq -r '.jobGatewaySecret // empty' <<<"$PLATFORM_SECRET")"
+          test -n "$JOB_URL" && test -n "$KEY"
+          TIMESTAMP="$(date +%s%3N)"
+          PATH='/v1/security/identities'
+          SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PATH="$PATH" KEY="$KEY" python3 - <<'PY'
+import hashlib,hmac,os
+payload='\n'.join([os.environ['TIMESTAMP'],'GET',os.environ['PATH'],''])
+print(hmac.new(os.environ['KEY'].encode(),payload.encode(),hashlib.sha256).hexdigest())
+PY
+)"
+          curl --fail --silent --show-error             -H "x-toh-timestamp: $TIMESTAMP"             -H "x-toh-signature: $SIGNATURE"             "${JOB_URL%/}$PATH" | jq -e '.ok == true and (.identities | type == "array")' >/dev/null
+
+      - name: Write drill summary
+        run: |
+          {
+            echo '### Security resilience drill passed'
+            echo '- AWS owns recurring monitor and drill cadence'
+            echo '- Azure/Supabase/GitHub security schedules enabled'
+            echo '- Security event handler invocation succeeded'
+            echo '- Durable Admin security-drill persistence verified'
+            echo '- Protected machine-identity gateway route authenticated'
+          } >> "$GITHUB_STEP_SUMMARY"
