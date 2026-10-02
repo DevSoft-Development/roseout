@@ -28,6 +28,8 @@ on:
       - 'infra/aws/cloudformation/web-surfaces-services.yml'
       - 'scripts/web-surfaces-services-regression.mjs'
       - '.github/workflows/aws-web-surfaces-services.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   push:
     branches: [main]
     paths:
@@ -55,6 +57,8 @@ on:
       - 'infra/aws/web-surfaces/**'
       - 'infra/aws/cloudformation/web-surfaces-services.yml'
       - '.github/workflows/aws-web-surfaces-services.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   workflow_dispatch:
     inputs:
       environment:
@@ -411,6 +415,19 @@ jobs:
           set -euo pipefail
           aws ecs wait services-stable --cluster "$CLUSTER" --services "toh-${TARGET_ENV}-admin-web" "toh-${TARGET_ENV}-business-web"
 
+      - name: Load platform release registry credentials
+        if: steps.config.outputs.target_env == 'production'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Record Admin and Business candidates
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
+          BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
+        run: |
+          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="ecs_deployed" AWS_ADMIN_IMAGE="$ADMIN_IMAGE_URI" RELEASE_ARTIFACT_REF="$ADMIN_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"ecs_deployed"}' bash .github/scripts/write-platform-release.sh
+          RELEASE_ID="aws-business-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="business" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="ecs_deployed" AWS_BUSINESS_IMAGE="$BUSINESS_IMAGE_URI" RELEASE_ARTIFACT_REF="$BUSINESS_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"ecs_deployed"}' bash .github/scripts/write-platform-release.sh
+
       - name: Direct-origin smoke test
         if: steps.config.outputs.desired_count != '0'
         env:
@@ -423,3 +440,22 @@ jobs:
             printf '%s' "$BODY" | jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' >/dev/null
           done
           echo 'Admin and Business AWS origins are healthy. DNS/public routing has not been changed by this workflow.'
+
+      - name: Record stable Admin and Business releases
+        if: steps.config.outputs.target_env == 'production' && steps.config.outputs.desired_count != '0'
+        env:
+          ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
+          BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
+        run: |
+          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="STABLE" RELEASE_EVENT_TYPE="origin_smoke_passed" AWS_ADMIN_IMAGE="$ADMIN_IMAGE_URI" RELEASE_ARTIFACT_REF="$ADMIN_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"origin_smoke","result":"passed"}' bash .github/scripts/write-platform-release.sh
+          RELEASE_ID="aws-business-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="business" RELEASE_PROVIDER="aws" RELEASE_STATE="STABLE" RELEASE_EVENT_TYPE="origin_smoke_passed" AWS_BUSINESS_IMAGE="$BUSINESS_IMAGE_URI" RELEASE_ARTIFACT_REF="$BUSINESS_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"origin_smoke","result":"passed"}' bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed Admin and Business release
+        if: ${{ failure() && steps.config.outputs.target_env == 'production' }}
+        env:
+          ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
+          BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then exit 0; fi
+          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="FAILED" RELEASE_EVENT_TYPE="deployment_failed" RELEASE_REASON="aws_admin_deployment_failed" AWS_ADMIN_IMAGE="${ADMIN_IMAGE_URI:-}" RELEASE_ARTIFACT_REF="${ADMIN_IMAGE_URI:-}" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","result":"failed"}' bash .github/scripts/write-platform-release.sh
+          RELEASE_ID="aws-business-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="business" RELEASE_PROVIDER="aws" RELEASE_STATE="FAILED" RELEASE_EVENT_TYPE="deployment_failed" RELEASE_REASON="aws_business_deployment_failed" AWS_BUSINESS_IMAGE="${BUSINESS_IMAGE_URI:-}" RELEASE_ARTIFACT_REF="${BUSINESS_IMAGE_URI:-}" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","result":"failed"}' bash .github/scripts/write-platform-release.sh
