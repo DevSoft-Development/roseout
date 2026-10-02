@@ -237,6 +237,31 @@ def _azure_security_event(event):
     return payload
 
 
+def _supabase_security_event(event):
+    detail = event.get("detail") or {}
+    payload = {
+        "source": "supabase_security",
+        "environment": ENVIRONMENT,
+        "projectRef": detail.get("projectRef"),
+        "regionRole": detail.get("regionRole"),
+        "eventName": detail.get("eventName") or "supabase_security_signal",
+        "severity": detail.get("severity") or "high",
+        "title": detail.get("title") or "Supabase security signal",
+        "description": detail.get("description"),
+        "eventTimestamp": detail.get("eventTimestamp"),
+        "signalCount": detail.get("signalCount"),
+        "logSource": detail.get("logSource"),
+        "containment": {"attempted": False, "reason": "alert_only_event"},
+    }
+    subject = "TheOutHaven Supabase security signal"
+    _publish(subject, payload)
+    try:
+        _persist_security_event(subject, payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
+    return payload
+
+
 def handler(event, context):
     source = str(event.get("source") or "")
     detail_type = str(event.get("detail-type") or "")
@@ -246,6 +271,8 @@ def handler(event, context):
         result = _cloudtrail_event(event)
     elif source == "toh.azure.security" and detail_type == "Azure Activity Log Security Signal":
         result = _azure_security_event(event)
+    elif source == "toh.supabase.security" and detail_type == "Supabase Security Signal":
+        result = _supabase_security_event(event)
     else:
         result = {
             "source": source,
