@@ -4,6 +4,22 @@ function withoutStandaloneDistance<T extends Record<string, any>>(item: T): T {
   return { ...item, distance_miles: null };
 }
 
+function withResolvedGeoFallback<T extends Record<string, any>>(
+  item: T,
+  v2: PublicSearchResponseV2,
+): T {
+  const market = String(item.market ?? "").trim().toUpperCase();
+  const state = String(item.state ?? "").trim();
+  return {
+    ...item,
+    market:
+      !market || market === "UNKNOWN"
+        ? v2.searchPlan.geo.market ?? item.market ?? null
+        : item.market,
+    state: !state ? v2.searchPlan.geo.state ?? item.state ?? null : item.state,
+  };
+}
+
 function roundedPairDistance(value: unknown) {
   const distance = Number(value);
   return Number.isFinite(distance) ? Math.round(distance * 100) / 100 : null;
@@ -55,8 +71,12 @@ function hasExplicitPairConstraint(v2: PublicSearchResponseV2) {
 }
 
 export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV2) {
-  const publicRestaurants = v2.restaurants.map((restaurant) => withoutStandaloneDistance(restaurant as any));
-  const publicActivities = v2.activities.map((activity) => withoutStandaloneDistance(activity as any));
+  const publicRestaurants = v2.restaurants.map((restaurant) =>
+    withResolvedGeoFallback(withoutStandaloneDistance(restaurant as any), v2),
+  );
+  const publicActivities = v2.activities.map((activity) =>
+    withResolvedGeoFallback(withoutStandaloneDistance(activity as any), v2),
+  );
   const promotedPairs = v2.pairs.map((pair) => {
     const normalized = pair.isFallbackPair ? { ...pair, isFallbackPair: false } : { ...pair };
     return {
@@ -225,6 +245,7 @@ export function adaptV2ResponseToCurrentPublicContract(v2: PublicSearchResponseV
     restaurantTerms: [
       ...(v2.searchPlan.restaurant.cuisines ?? []),
       ...(v2.searchPlan.restaurant.foods ?? []),
+      ...(v2.searchPlan.restaurant.mealPeriods ?? []),
       ...(v2.searchPlan.restaurant.features ?? []),
     ],
     activityTerms: [
