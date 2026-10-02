@@ -13,6 +13,27 @@ function expectMode(query: string, expected: { searchType: string; sameLocationR
   return intent;
 }
 
+const globalRestaurantOnlyQueries = [
+  "Queens dinner",
+  "dinner in Queens",
+  "Brooklyn lunch",
+  "brunch in Hoboken",
+  "breakfast in Stamford",
+  "restaurant in Jersey City",
+];
+
+for (const query of globalRestaurantOnlyQueries) {
+  const intent = expectMode(query, {
+    searchType: "restaurant",
+    sameLocationRequired: false,
+    wantsPairing: false,
+    needsRestaurant: true,
+    needsActivity: false,
+  });
+  assert.equal(String(intent.normalizedIntent), "restaurant_only", `${query} normalizedIntent`);
+  assert.equal(Boolean(intent.fallbackPairAllowed), false, `${query} fallbackPairAllowed`);
+}
+
 const combo = expectMode("dinner with hookah in manhattan", {
   searchType: "same_location_combo",
   sameLocationRequired: true,
