@@ -103,7 +103,7 @@ export default async function PlatformOperationsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine);
 
   const db = await getAdminDatabaseClient();
-  const [releaseResult, eventResult, incidentResult] = await Promise.all([
+  const [releaseResult, eventResult, incidentResult, aiOpsResult] = await Promise.all([
     db
       .from("platform_releases")
       .select("release_id,git_sha,surface,provider,artifact_ref,environment,state,previous_good_release_id,runtime_version,azure_revision,aws_admin_image,aws_business_image,aws_reserve_image,worker_release,ios_build,android_build,ota_release,created_at,deployed_at,promoted_at,updated_at,rollback_reason")
@@ -121,11 +121,25 @@ export default async function PlatformOperationsPage() {
       .eq("category", "critical_alert")
       .order("created_at", { ascending: false })
       .limit(100),
+    db
+      .from("admin_system_logs")
+      .select("id,level,message,metadata,created_at")
+      .eq("category", "ai_ops_analysis")
+      .order("created_at", { ascending: false })
+      .limit(25),
   ]);
 
   const releases = (releaseResult.data || []) as ReleaseRow[];
   const events = (eventResult.data || []) as EventRow[];
   const incidents = (incidentResult.data || []) as IncidentRow[];
+  const aiOps = (aiOpsResult.data || []) as IncidentRow[];
+  const latestAiOps = aiOps[0] || null;
+  const aiDecision = latestAiOps?.metadata?.decision && typeof latestAiOps.metadata.decision === "object"
+    ? latestAiOps.metadata.decision as Record<string, unknown>
+    : {};
+  const aiAnalysis = latestAiOps?.metadata?.analysis && typeof latestAiOps.metadata.analysis === "object"
+    ? latestAiOps.metadata.analysis as Record<string, unknown>
+    : {};
 
   const latestBySurface = new Map<string, ReleaseRow>();
   for (const release of releases) {
@@ -188,6 +202,51 @@ export default async function PlatformOperationsPage() {
             <p className="mt-1 text-xs text-white/45">{helper}</p>
           </article>
         ))}
+      </section>
+
+      <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-rose-200">AI-assisted operations</p>
+            <h2 className="mt-1 text-2xl font-black text-white">Self-healing controller</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
+              AWS evaluates production state every 15 minutes. Deterministic policy controls remediation; AI supplies diagnosis and recommendations only.
+            </p>
+          </div>
+          <AdminStatusBadge tone={latestAiOps ? (aiDecision.auto_allowed ? "amber" : "green") : "muted"}>
+            {latestAiOps ? String(aiDecision.action || "observe").toUpperCase() : "NO EVALUATION YET"}
+          </AdminStatusBadge>
+        </div>
+
+        {aiOpsResult.error ? (
+          <p className="mt-4 text-sm font-bold text-amber-100">AI operations history could not be loaded: {aiOpsResult.error.message}</p>
+        ) : latestAiOps ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Deterministic decision</p>
+              <p className="mt-2 text-sm font-black text-white">{String(aiDecision.action || "observe")}</p>
+              <p className="mt-2 text-xs leading-5 text-white/45">{String(aiDecision.reason || "No reason recorded.")}</p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-white/40">AI diagnosis</p>
+              <p className="mt-2 text-sm font-black text-white">{String(aiAnalysis.source || "rules")}</p>
+              <p className="mt-2 text-xs leading-5 text-white/45">{String(aiAnalysis.summary || "No AI summary recorded.")}</p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Last evaluation</p>
+              <p className="mt-2 text-sm font-black text-white">{formatDate(latestAiOps.created_at)}</p>
+              <p className="mt-2 text-xs leading-5 text-white/45">
+                Auto action: {latestAiOps.metadata?.auto_recovery_dispatched === true ? "dispatched" : "not dispatched"}
+              </p>
+            </article>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-white/45">No AI operations evaluation has been recorded yet.</p>
+        )}
+
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-5 text-white/50">
+          Autonomous actions are limited to Azure consumer rollback to a proven previous-good release. Database promotion/failback, root or human credential lockout, and arbitrary code execution remain operator-only.
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-black/25">
@@ -307,8 +366,7 @@ export default async function PlatformOperationsPage() {
           <div>
             <h2 className="text-xl font-black">Recovery safety policy</h2>
             <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
-              Automatic recovery is restricted to recent Azure consumer release failures with a proven previous-good release.
-              Database promotion and failback remain guarded operator actions to prevent split-brain.
+              Automatic recovery is restricted to Azure consumer failures with a proven previous-good release and one dispatch per failed release. AI never expands the allowlist. Database promotion/failback, human or root lockout, and arbitrary code execution remain guarded operator actions.
             </p>
           </div>
           <AdminActionButton href="/admin/dashboard/infrastructure/incidents">View incident history</AdminActionButton>
