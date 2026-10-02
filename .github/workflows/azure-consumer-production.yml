@@ -7,6 +7,8 @@ on:
     paths:
       - 'infra/azure/**'
       - 'apps/consumer/**'
+      - 'components/**'
+      - 'public/**'
       - 'lib/**'
       - 'packages/**'
       - 'package.json'
@@ -22,6 +24,8 @@ on:
     paths:
       - 'infra/azure/**'
       - 'apps/consumer/**'
+      - 'components/**'
+      - 'public/**'
       - 'lib/**'
       - 'packages/**'
       - 'package.json'
