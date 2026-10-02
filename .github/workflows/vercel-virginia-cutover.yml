@@ -92,8 +92,8 @@ jobs:
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$RUNNER_TEMP/virginia-keys.json"
-          anon="$(jq -r '([.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty)' "$RUNNER_TEMP/virginia-keys.json")"
-          service_role="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$RUNNER_TEMP/virginia-keys.json")"
+          anon="$(jq -r '[.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/virginia-keys.json")"
+          service_role="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/virginia-keys.json")"
           test -n "$anon" || { echo "Virginia anon key unavailable" >&2; exit 1; }
           test -n "$service_role" || { echo "Virginia service-role key unavailable" >&2; exit 1; }
           echo "::add-mask::$anon"
