@@ -144,7 +144,10 @@ def _probe(url, expected_origin=None):
                     pass
             healthy = 200 <= status < 500
             if expected_origin:
-                healthy = healthy and origin == expected_origin
+                origin_matches = origin == expected_origin
+                if expected_origin == "azure-consumer" and isinstance(origin, str):
+                    origin_matches = origin_matches or origin.startswith("azure-consumer-")
+                healthy = healthy and origin_matches
             return {
                 "healthy": healthy,
                 "status": status,
