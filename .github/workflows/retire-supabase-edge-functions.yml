@@ -1,27 +1,29 @@
-name: Retire Supabase Edge Functions
+name: Finalize Supabase Edge Functions retirement
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/retire-supabase-edge-functions.yml'
-      - 'infra/aws/edge-runtime/**'
-      - 'supabase/functions/**'
-      - '.github/scripts/load-supabase-management-token.sh'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'apps/admin/lib/admin/credential-vault-catalog.ts'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/aws-admin-credential-vault.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/retire-supabase-edge-functions.yml'
-      - 'infra/aws/edge-runtime/**'
-      - 'supabase/functions/**'
-      - '.github/scripts/load-supabase-management-token.sh'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'apps/admin/lib/admin/credential-vault-catalog.ts'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - '.github/workflows/aws-admin-credential-vault.yml'
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: retire-supabase-edge-functions-production
+  group: finalize-supabase-edge-functions-retirement-production
   cancel-in-progress: false
 
 env:
@@ -29,30 +31,24 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   VIRGINIA_REF: ftdsltatyqhtllyyefzp
   OREGON_REF: hnhbzynoyrhjndefbwkh
-  EDGE_STACK: theouthaven-edge-runtime-production
+  VAULT_SECRET: /theouthaven/credential-vault/production/supabase
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify AWS owns the complete Edge Function source tree
+      - name: Validate post-retirement credential contract
         run: |
           set -euo pipefail
-          grep -F 'COPY supabase/functions /home/deno/functions' infra/aws/edge-runtime/Dockerfile >/dev/null
-          grep -F 'EdgeRuntime.userWorkers.create' infra/aws/edge-runtime/main/index.ts >/dev/null
-          test -d supabase/functions
-          COUNT="$(find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts | wc -l | tr -d ' ')"
-          test "$COUNT" -gt 0
-          echo "aws_packaged_function_sources=$COUNT"
-      - name: Verify retirement uses current Supabase Management API contract
-        run: |
-          set -euo pipefail
-          grep -F 'DELETE' .github/workflows/retire-supabase-edge-functions.yml >/dev/null
-          grep -F '/v1/projects/$ref/functions/$slug' .github/workflows/retire-supabase-edge-functions.yml >/dev/null
-          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/retire-supabase-edge-functions.yml
+          grep -F '"supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"}' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F '{ key: "managementAccessToken", label: "Management access token"' lib/admin/credential-vault-catalog.ts >/dev/null
+          grep -F '{ key: "managementAccessToken", label: "Management access token"' apps/admin/lib/admin/credential-vault-catalog.ts >/dev/null
+          ! grep -F 'edgeFunctionsManagementToken' lib/admin/credential-vault-catalog.ts
+          ! grep -F 'edgeFunctionsManagementToken' apps/admin/lib/admin/credential-vault-catalog.ts
+          ! grep -F 'edgeFunctionsManagementToken' infra/aws/lambda/platform_job_gateway.py
 
-  retire:
+  finalize:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
@@ -67,108 +63,65 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Load dedicated Supabase Edge Functions retirement token
+      - name: Prove zero Edge Functions and destroy one-time vault credential
         run: |
           set -euo pipefail
-          VAULT=/theouthaven/credential-vault/production/supabase
-          aws secretsmanager get-secret-value --secret-id "$VAULT" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
+          aws secretsmanager get-secret-value             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/supabase-vault-before.json"
 
-          TOKEN="$(jq -r '.edgeFunctionsManagementToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
-          test -n "$TOKEN" || {
-            echo "::error::Missing dedicated Supabase Edge Functions retirement token in Admin Credential Vault."
+          GENERAL_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault-before.json")"
+          RETIREMENT_TOKEN="$(jq -r '.edgeFunctionsManagementToken // empty' "$RUNNER_TEMP/supabase-vault-before.json")"
+
+          test -n "$GENERAL_TOKEN" || {
+            echo "::error::General Supabase managementAccessToken is missing; refusing credential cleanup."
             exit 1
           }
+          echo "::add-mask::$GENERAL_TOKEN"
 
-          echo "::add-mask::$TOKEN"
-          CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/edge-token-probe.json" --write-out '%{http_code}'             -H "Authorization: Bearer $TOKEN"             "https://api.supabase.com/v1/projects/$VIRGINIA_REF/functions")"
-          test "$CODE" = 200 || {
-            echo "::error::Dedicated Edge Functions retirement token cannot read Edge Functions (HTTP $CODE). Grant both TheOutHaven projects and Edge Functions read-write."
-            exit 1
-          }
-
-          echo "SUPABASE_ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          rm -f "$RUNNER_TEMP/supabase-vault.json" "$RUNNER_TEMP/edge-token-probe.json"
-
-      - name: Prove AWS Edge runtime is healthy
-        run: |
-          set -euo pipefail
-          FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
-          test -n "$FN" && test "$FN" != None
-          cat > "$RUNNER_TEMP/health-event.json" <<'JSON'
-          {"version":"2.0","routeKey":"GET /healthz","rawPath":"/healthz","rawQueryString":"","headers":{},"requestContext":{"accountId":"retirement","apiId":"retirement","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/healthz","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions-retirement"},"requestId":"retirement","routeKey":"GET /healthz","stage":"$default","time":"02/Oct/2026:00:00:00 +0000","timeEpoch":1790908800000},"isBase64Encoded":false}
-          JSON
-          aws lambda invoke             --function-name "$FN"             --cli-binary-format raw-in-base64-out             --payload "fileb://$RUNNER_TEMP/health-event.json"             "$RUNNER_TEMP/aws-health.json" > "$RUNNER_TEMP/aws-health-meta.json"
-          test "$(jq -r '.FunctionError // empty' "$RUNNER_TEMP/aws-health-meta.json")" = ""
-          jq -e '.statusCode == 200 and ((.body | fromjson).ok == true)' "$RUNNER_TEMP/aws-health.json" >/dev/null
-
-      - name: Inventory deployed Supabase Edge Functions and prove AWS source parity
-        run: |
-          set -euo pipefail
-          : > "$RUNNER_TEMP/functions.tsv"
-          for ref in "$VIRGINIA_REF" "$OREGON_REF"; do
-            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref/functions" > "$RUNNER_TEMP/$ref-functions.json"
-            jq -r '.[]?.slug // empty' "$RUNNER_TEMP/$ref-functions.json" | while IFS= read -r slug; do
-              [ -n "$slug" ] || continue
-              if [ ! -f "supabase/functions/$slug/index.ts" ]; then
-                case "$slug" in
-                  region-storage-migration-control|toh-storage-migrate-2e25c262319dc607a4fc16ac|reservation-follow-up-email|reservation-location-alert|photo-metadata-repair|worker-scheduler|worker-e2e-trigger)
-                    echo "::notice::Retiring verified cloud-only legacy function $slug on $ref."
-                    ;;
-                  *)
-                    echo "::error::Supabase function $slug on $ref has no AWS-packaged source equivalent."
-                    exit 1
-                    ;;
-                esac
-              fi
-              printf '%s\t%s\n' "$ref" "$slug" >> "$RUNNER_TEMP/functions.tsv"
+          if [ -n "$RETIREMENT_TOKEN" ]; then
+            echo "::add-mask::$RETIREMENT_TOKEN"
+            for ref in "$VIRGINIA_REF" "$OREGON_REF"; do
+              CODE="$(curl --silent --show-error                 --output "$RUNNER_TEMP/$ref-functions.json"                 --write-out '%{http_code}'                 -H "Authorization: Bearer $RETIREMENT_TOKEN"                 "https://api.supabase.com/v1/projects/$ref/functions")"
+              test "$CODE" = 200 || {
+                echo "::error::Retirement token cannot prove Edge Functions state for $ref (HTTP $CODE)."
+                exit 1
+              }
+              COUNT="$(jq 'length' "$RUNNER_TEMP/$ref-functions.json")"
+              test "$COUNT" = 0 || {
+                echo "::error::$ref still has $COUNT deployed Supabase Edge Functions; refusing token destruction."
+                exit 1
+              }
             done
-          done
-          echo "deployed_edge_function_count=$(wc -l < "$RUNNER_TEMP/functions.tsv" | tr -d ' ')" >> "$GITHUB_ENV"
 
-      - name: Retire deployed Supabase Edge Functions
-        run: |
-          set -euo pipefail
-          while IFS=$'\t' read -r ref slug; do
-            [ -n "$ref" ] && [ -n "$slug" ] || continue
-            CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/delete.json" --write-out '%{http_code}'               --request DELETE               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref/functions/$slug")"
-            case "$CODE" in
-              200|204) ;;
-              404) echo "already_absent=$ref/$slug" ;;
-              403) echo "::error::Supabase token needs Edge Functions read-write permission to retire $ref/$slug."; exit 1 ;;
-              *) echo "::error::Failed to retire $ref/$slug: HTTP $CODE"; cat "$RUNNER_TEMP/delete.json"; exit 1 ;;
-            esac
-            echo "retired=$ref/$slug"
-          done < "$RUNNER_TEMP/functions.tsv"
+            jq 'del(.edgeFunctionsManagementToken)'               "$RUNNER_TEMP/supabase-vault-before.json"               > "$RUNNER_TEMP/supabase-vault-after.json"
 
-      - name: Require zero deployed Supabase Edge Functions
-        run: |
-          set -euo pipefail
-          for ref in "$VIRGINIA_REF" "$OREGON_REF"; do
-            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref/functions" > "$RUNNER_TEMP/$ref-after.json"
-            COUNT="$(jq 'length' "$RUNNER_TEMP/$ref-after.json")"
-            test "$COUNT" = 0 || {
-              echo "::error::$ref still has $COUNT deployed Supabase Edge Functions."
-              jq -r '.[].slug' "$RUNNER_TEMP/$ref-after.json"
-              exit 1
-            }
-          done
+            test "$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault-after.json")" = "$GENERAL_TOKEN"
+            aws secretsmanager put-secret-value               --secret-id "$VAULT_SECRET"               --secret-string "file://$RUNNER_TEMP/supabase-vault-after.json"               >/dev/null
+          else
+            cp "$RUNNER_TEMP/supabase-vault-before.json" "$RUNNER_TEMP/supabase-vault-after.json"
+            echo "retirement_token_already_absent=true"
+          fi
 
-      - name: Re-prove AWS runtime after retirement
-        run: |
-          set -euo pipefail
-          FN="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK" --query "Stacks[0].Outputs[?OutputKey=='EdgeRuntimeFunctionName'].OutputValue" --output text)"
-          aws lambda invoke             --function-name "$FN"             --cli-binary-format raw-in-base64-out             --payload "fileb://$RUNNER_TEMP/health-event.json"             "$RUNNER_TEMP/aws-health-after.json" > "$RUNNER_TEMP/aws-health-after-meta.json"
-          test "$(jq -r '.FunctionError // empty' "$RUNNER_TEMP/aws-health-after-meta.json")" = ""
-          jq -e '.statusCode == 200 and ((.body | fromjson).ok == true)' "$RUNNER_TEMP/aws-health-after.json" >/dev/null
+          aws secretsmanager get-secret-value             --secret-id "$VAULT_SECRET"             --query SecretString             --output text > "$RUNNER_TEMP/supabase-vault-verified.json"
 
-      - name: Write readiness evidence
+          test "$(jq -r '.edgeFunctionsManagementToken // empty' "$RUNNER_TEMP/supabase-vault-verified.json")" = ""
+          test "$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault-verified.json")" = "$GENERAL_TOKEN"
+
+          jq -S 'del(.edgeFunctionsManagementToken)' "$RUNNER_TEMP/supabase-vault-before.json" > "$RUNNER_TEMP/expected.json"
+          jq -S . "$RUNNER_TEMP/supabase-vault-verified.json" > "$RUNNER_TEMP/actual.json"
+          cmp -s "$RUNNER_TEMP/expected.json" "$RUNNER_TEMP/actual.json" || {
+            echo "::error::Vault changed beyond removal of edgeFunctionsManagementToken."
+            exit 1
+          }
+
+          rm -f "$RUNNER_TEMP"/*.json
+
+      - name: Write retirement evidence
         run: |
           {
-            echo '### Supabase Edge Function retirement'
-            echo "- Retired deployed functions: $deployed_edge_function_count"
+            echo '### Supabase Edge Functions retirement credential finalized'
             echo '- Virginia deployed Supabase Edge Functions: 0'
             echo '- Oregon deployed Supabase Edge Functions: 0'
-            echo '- AWS Edge runtime health before retirement: passed'
-            echo '- AWS Edge runtime health after retirement: passed'
-            echo '- Supabase role: Database/Auth/Realtime/Storage only'
+            echo '- edgeFunctionsManagementToken removed from AWS Credential Vault'
+            echo '- managementAccessToken preserved unchanged'
+            echo '- Credential gateway no longer accepts the retired field'
           } >> "$GITHUB_STEP_SUMMARY"
