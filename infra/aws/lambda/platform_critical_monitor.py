@@ -16,8 +16,9 @@ PRODUCTION_PROBE_URL = os.environ.get("PRODUCTION_PROBE_URL", "https://theouthav
 HTTP_TIMEOUT_SECONDS = float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10"))
 CREDENTIAL_VAULT_GATEWAY_URL = os.environ.get("CREDENTIAL_VAULT_GATEWAY_URL", "").rstrip("/")
 CREDENTIAL_VAULT_GATEWAY_SECRET = os.environ.get("CREDENTIAL_VAULT_GATEWAY_SECRET", "")
-VERCEL_SECRET_ID = os.environ.get("VERCEL_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/vercel")
-VERCEL_PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN")
+GITHUB_SECRET_ID = os.environ.get("GITHUB_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/github")
+GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "DevSoft-Development/roseout")
+AUTO_RECOVERY_WINDOW_MINUTES = int(os.environ.get("AUTO_RECOVERY_WINDOW_MINUTES", "30"))
 STORAGE_DRIFT_CRITICAL_BYTES = int(os.environ.get("STORAGE_DRIFT_CRITICAL_BYTES", "5368709120"))
 WAL_LAG_CRITICAL_BYTES = int(os.environ.get("WAL_LAG_CRITICAL_BYTES", "536870912"))
 
@@ -99,37 +100,86 @@ def _credential_vault_healthy():
         return 0
 
 
-def _vercel_production_healthy():
-    try:
-        cfg = _secret_json(VERCEL_SECRET_ID)
-        token = str(cfg.get("token") or "").strip()
-        team_id = str(cfg.get("teamId") or "").strip()
-        if not token:
-            return 0, "missing_token"
-        query = {
-            "projectId": VERCEL_PROJECT_ID,
-            "target": "production",
-            "limit": "1",
-        }
-        if team_id:
-            query["teamId"] = team_id
-        url = "https://api.vercel.com/v6/deployments?" + urllib.parse.urlencode(query)
-        request = urllib.request.Request(
-            url,
-            headers={
-                "authorization": f"Bearer {token}",
-                "user-agent": "TheOutHaven-Critical-Monitor/1.2",
-            },
-        )
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        deployments = payload.get("deployments") or [] if isinstance(payload, dict) else []
-        if not deployments:
-            return 0, "no_production_deployment"
-        state = str(deployments[0].get("state") or deployments[0].get("readyState") or "UNKNOWN").upper()
-        return (0 if state in {"ERROR", "CANCELED", "CANCELLED"} else 1), state
-    except Exception:
-        return 0, "probe_failed"
+def _github_token():
+    cfg = _secret_json(GITHUB_SECRET_ID)
+    token = str(cfg.get("token") or "").strip()
+    if not token:
+        raise RuntimeError("github_recovery_token_missing")
+    return token
+
+
+def _dispatch_auto_recovery(token, release_id):
+    body = json.dumps({
+        "event_type": "platform-auto-recovery",
+        "client_payload": {
+            "scope": "azure-consumer",
+            "release_id": release_id,
+            "source": "critical-platform-monitor",
+        },
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/dispatches",
+        method="POST",
+        data=body,
+        headers={
+            "authorization": f"Bearer {token}",
+            "accept": "application/vnd.github+json",
+            "content-type": "application/json",
+            "user-agent": "TheOutHaven-Critical-Monitor/1.3",
+            "x-github-api-version": "2022-11-28",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+        if int(response.status) not in (200, 201, 202, 204):
+            raise RuntimeError(f"github_recovery_dispatch_failed:{response.status}")
+
+
+def _auto_recovery_candidate(token, project_ref):
+    sql = f"""
+      with latest as (
+        select release_id, git_sha, previous_good_release_id, state, promoted_at
+        from public.platform_releases
+        where surface = 'consumer'
+          and provider = 'azure'
+          and environment = 'production'
+        order by promoted_at desc nulls last, created_at desc
+        limit 1
+      )
+      select
+        latest.release_id,
+        latest.git_sha,
+        latest.previous_good_release_id,
+        latest.state,
+        latest.promoted_at,
+        latest.promoted_at >= now() - interval '{AUTO_RECOVERY_WINDOW_MINUTES} minutes' as within_window,
+        not exists (
+          select 1
+          from public.platform_release_events e
+          where e.release_id = latest.release_id
+            and e.event_type in ('auto_recovery_requested','auto_recovery_dispatched')
+        ) as not_dispatched
+      from latest;
+    """
+    rows, ok = _safe_management_query(token, project_ref, sql)
+    return (rows[0] if rows else {}), ok
+
+
+def _record_auto_recovery_request(token, project_ref, release_id):
+    sql = f"""
+      insert into public.platform_release_events(
+        release_id, event_type, source, provider, actor, reason, evidence
+      )
+      values (
+        {_sql_literal(release_id)},
+        'auto_recovery_requested',
+        'critical-platform-monitor',
+        'azure',
+        'automation',
+        'recent_release_production_outage',
+        '{{"scope":"azure-consumer","detector":"production-health","window_minutes":{AUTO_RECOVERY_WINDOW_MINUTES}}}'::jsonb
+      );
+    """
+    _management_query(token, project_ref, sql)
 
 
 def _sql_literal(value):
@@ -296,7 +346,24 @@ def handler(event, context):
 
     production_reachable = _production_reachable()
     credential_vault_healthy = _credential_vault_healthy()
-    vercel_healthy, vercel_state = _vercel_production_healthy()
+    recovery_candidate, recovery_query_ok = _auto_recovery_candidate(token, virginia)
+    recovery_dispatched = False
+    recovery_error = ""
+    if (
+        not production_reachable
+        and recovery_query_ok
+        and recovery_candidate.get("release_id")
+        and recovery_candidate.get("previous_good_release_id")
+        and recovery_candidate.get("state") in {"STABLE", "DEGRADED"}
+        and bool(recovery_candidate.get("within_window"))
+        and bool(recovery_candidate.get("not_dispatched"))
+    ):
+        try:
+            _dispatch_auto_recovery(_github_token(), recovery_candidate["release_id"])
+            _record_auto_recovery_request(token, virginia, recovery_candidate["release_id"])
+            recovery_dispatched = True
+        except Exception as exc:
+            recovery_error = str(exc)[:500]
 
     metrics = [
         _metric("MonitorHeartbeat", 1),
@@ -305,7 +372,8 @@ def handler(event, context):
         _metric("SupabaseOregonHealthy", 1 if oregon_healthy else 0),
         _metric("ReplicationHealthy", 1 if replication_healthy else 0),
         _metric("CredentialVaultHealthy", credential_vault_healthy),
-        _metric("VercelProductionHealthy", vercel_healthy),
+        _metric("AutoRecoveryEligible", 1 if recovery_candidate.get("within_window") else 0),
+        _metric("AutoRecoveryDispatched", 1 if recovery_dispatched else 0),
         _metric("CriticalCronFailures", critical_cron_failures),
         _metric("StorageByteDrift", byte_drift, "Bytes"),
         _metric("StorageObjectDrift", object_drift),
@@ -351,12 +419,6 @@ def handler(event, context):
             "detail": "Credential Vault runtime gateway is unavailable, rate limited, or returning errors." if not credential_vault_healthy else "Credential Vault runtime gateway recovered.",
         },
         {
-            "key": "vercel_production",
-            "title": "Vercel production deployment",
-            "active": not bool(vercel_healthy),
-            "detail": f"Latest production deployment state: {vercel_state}." if not vercel_healthy else f"Vercel production recovered; latest state is {vercel_state}.",
-        },
-        {
             "key": "critical_cron_failures",
             "title": "Critical cron jobs",
             "active": critical_cron_failures > 0,
@@ -390,14 +452,19 @@ def handler(event, context):
             and oregon_healthy
             and replication_healthy
             and credential_vault_healthy
-            and vercel_healthy
             and critical_cron_failures == 0
         ),
         "productionReachable": bool(production_reachable),
         "supabase": {"virginiaHealthy": virginia_healthy, "oregonHealthy": oregon_healthy},
         "replicationHealthy": replication_healthy,
         "credentialVaultHealthy": bool(credential_vault_healthy),
-        "vercel": {"healthy": bool(vercel_healthy), "state": vercel_state},
+        "autoRecovery": {
+            "eligible": bool(recovery_candidate.get("within_window")),
+            "releaseId": recovery_candidate.get("release_id"),
+            "previousGoodReleaseId": recovery_candidate.get("previous_good_release_id"),
+            "dispatched": recovery_dispatched,
+            "error": recovery_error,
+        },
         "criticalCronFailures": critical_cron_failures,
         "incidentHistoryRecorded": incident_history_recorded,
         "storage": {
