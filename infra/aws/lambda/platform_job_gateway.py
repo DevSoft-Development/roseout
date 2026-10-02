@@ -30,7 +30,7 @@ ALLOWED_ENVIRONMENTS = {"production", "staging"}
 ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
-    "supabase": {"url", "publishableKey", "serviceRoleKey", "managementAccessToken"},
+    "supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"},
     "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
     "microsoft": {"tenantId", "clientId", "clientSecret", "tokenEncryptionKey"},
@@ -393,8 +393,8 @@ def _test_credential(environment, provider):
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Resend API key verified."}
         raise ValueError("resend_credential_test_failed")
 
-    if provider == "supabase" and values.get("url") and (values.get("serviceRoleKey") or values.get("publishableKey")):
-        key = values.get("serviceRoleKey") or values.get("publishableKey")
+    if provider == "supabase" and values.get("url") and (values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")):
+        key = values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")
         status, _ = _http_json(values["url"].rstrip("/") + "/rest/v1/", headers={"apikey": key, "Authorization": f"Bearer {key}"})
         if 200 <= status < 300:
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Supabase API credentials verified."}
