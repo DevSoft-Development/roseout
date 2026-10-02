@@ -97,7 +97,7 @@ jobs:
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             "https://api.supabase.com/v1/projects/${TARGET_REF}/api-keys?reveal=true" \
             > "$KEYS_FILE"
-          SERVICE_ROLE="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$KEYS_FILE")"
+          SERVICE_ROLE="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // ([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty))' "$KEYS_FILE")"
           test -n "$SERVICE_ROLE" || { echo "Target service_role key was not returned by Supabase Management API" >&2; exit 1; }
           echo "::add-mask::$SERVICE_ROLE"
           printf '%s' "$SERVICE_ROLE" > "$RUNNER_TEMP/target-service-role"
