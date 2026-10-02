@@ -59,6 +59,19 @@ jobs:
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           printf '%s\n' "$CHANGED"
 
+          # Runtime patch payload changes are intentionally data-only. Keep the
+          # required Production CI shell green, but let the dedicated Azure
+          # consumer image/production/browser workflows validate deployment.
+          # Any mixed change falls back to the normal/full routing below.
+          if [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -Evq '^apps/consumer/app/api/mobile/runtime-patch/route\.ts$'; then
+            echo "root=false" >> "$GITHUB_OUTPUT"
+            echo "admin=false" >> "$GITHUB_OUTPUT"
+            echo "runtime_patch_only=true" >> "$GITHUB_OUTPUT"
+            echo "scope=runtime-patch-only" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "runtime_patch_only=false" >> "$GITHUB_OUTPUT"
+
           # Workflow-only changes are owned by their dedicated workflow checks.
           # Keep Production CI required, but avoid a full application build unless
           # the Production CI definition itself changed.
@@ -136,6 +149,7 @@ jobs:
           echo "Root quality gate: ${{ steps.quality_scope.outputs.root }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Targeted Admin quality gate: ${{ steps.quality_scope.outputs.admin }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Quality scope mode: ${{ steps.quality_scope.outputs.scope }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Runtime patch fast path: ${{ steps.quality_scope.outputs.runtime_patch_only }}" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.quality_scope.outputs.root }}" != "true" ] && [ "${{ steps.quality_scope.outputs.admin }}" != "true" ]; then
             echo "Production CI mode: lightweight required check; dedicated workflow owns validation for this change set." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -298,7 +312,13 @@ jobs:
           fi
 
           CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-          if printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|apps/consumer/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json)'; then
+
+          # Runtime-patch-only changes are served by the dedicated mobile patch
+          # endpoint and do not change rendered browser code. Mixed changes still
+          # run the normal browser gate.
+          if [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -Evq '^apps/consumer/app/api/mobile/runtime-patch/route\.ts$'; then
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$CHANGED" | grep -Eq '^(app/|components/|public/|apps/consumer/|e2e/|tests/e2e/|playwright\.|package(-lock)?\.json)'; then
             echo 'run=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run=false' >> "$GITHUB_OUTPUT"
