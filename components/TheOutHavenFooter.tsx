@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 export default function TheOutHavenFooter() {
@@ -8,19 +7,7 @@ export default function TheOutHavenFooter() {
 
       <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
         <div>
-          <Link href="/" className="group inline-flex items-center">
-            <span className="flex items-center">
-              <Image
-                src="/toh_logo_wordmark_dark.png"
-                alt="TheOutHaven"
-                width={1200}
-                height={372}
-                className="h-auto w-[220px] max-w-full object-contain transition group-hover:scale-[1.01]"
-              />
-            </span>
-          </Link>
-
-          <p className="mt-5 max-w-md text-sm leading-7 text-white/45">
+          <p className="max-w-md text-sm leading-7 text-white/45">
             TheOutHaven LLC is a New York-based technology company helping people
             plan restaurants, activities, nightlife, and complete outings across
             NYC and Long Island.

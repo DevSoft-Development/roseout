@@ -101,24 +101,18 @@ export default function AdminLoginPage() {
           <div className="relative hidden min-h-[690px] flex-col justify-between overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,6,42,0.22),transparent_34%),linear-gradient(145deg,#120b0d,#080708)] p-10 lg:flex xl:p-14">
             <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[#e1062a]/10 blur-3xl" />
             <div className="relative">
-              <div className="mb-8 flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10 shadow-[0_0_45px_rgba(225,6,42,.16)]">
-                  {/* The isolated Admin app does not ship the consumer public asset bundle. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/api/brand/theouthaven-logo"
-                    alt="TheOutHaven"
-                    width={36}
-                    height={36}
-                    className="h-9 w-9 object-contain"
-                  />
-                </div>
-                <div>
-                  <p className="text-lg font-black tracking-tight">TheOutHaven</p>
-                  <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/40">
-                    Administration
-                  </p>
-                </div>
+              <div className="mb-8">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/api/brand/theouthaven-logo"
+                  alt="TheOutHaven"
+                  width={600}
+                  height={200}
+                  className="h-auto w-[220px] max-w-full object-contain"
+                />
+                <p className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-white/40">
+                  Administration
+                </p>
               </div>
 
               <div className="max-w-xl">
@@ -155,23 +149,18 @@ export default function AdminLoginPage() {
           <div className="flex items-center p-6 sm:p-10 xl:p-14">
             <div className="mx-auto w-full max-w-md">
               <div className="mb-8 lg:hidden">
-                <div className="mb-5 flex items-center justify-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#e1062a]/30 bg-[#e1062a]/10">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/api/brand/theouthaven-logo"
-                      alt="TheOutHaven"
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 object-contain"
-                    />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-base font-black tracking-tight">TheOutHaven</p>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
-                      Administration
-                    </p>
-                  </div>
+                <div className="mb-5 text-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/api/brand/theouthaven-logo"
+                    alt="TheOutHaven"
+                    width={600}
+                    height={200}
+                    className="mx-auto h-auto w-[185px] max-w-[72vw] object-contain"
+                  />
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
+                    Administration
+                  </p>
                 </div>
                 <div className="flex justify-center">
                   <span className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">

@@ -9,18 +9,16 @@ export default function BetaLaunchHeader({ launchListHref = "#launch-list" }: Be
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-black/90 px-4 py-4 text-white backdrop-blur-xl sm:px-6 lg:px-8">
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4" aria-label="Prelaunch header">
-        <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="TheOutHaven home">
+        <Link href="/" className="flex min-w-0 items-center" aria-label="TheOutHaven home">
           <Image
-            src="/toh_logo.png"
-            alt="TheOutHaven logo"
-            width={46}
-            height={46}
-            className="h-11 w-11 shrink-0 rounded-full object-contain"
+            src="/toh_logo_wordmark_white.webp"
+            alt="TheOutHaven"
+            width={600}
+            height={200}
+            className="h-auto w-[170px] max-w-[46vw] object-contain sm:w-[205px]"
             priority
+            unoptimized
           />
-          <span className="truncate text-xl font-black tracking-tight text-white sm:text-2xl">
-            TheOutHaven
-          </span>
         </Link>
 
         <div className="hidden items-center gap-8 text-sm font-bold text-white/75 md:flex">

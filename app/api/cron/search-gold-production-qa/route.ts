@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
+import { resolveProductionDeploymentCommit } from "@/lib/search/runtimeDeploymentCommit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -167,7 +168,7 @@ export async function GET(request: Request) {
 
   const requestUrl = new URL(request.url);
   const expectedCommit = requestUrl.searchParams.get("expectedCommit")?.trim() || null;
-  const deploymentCommit = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim() || null;
+  const deploymentCommit = resolveProductionDeploymentCommit();
   if (expectedCommit && deploymentCommit !== expectedCommit) {
     return NextResponse.json({ ok: false, deploymentPending: true, expectedCommit, deploymentCommit }, { status: 409 });
   }
