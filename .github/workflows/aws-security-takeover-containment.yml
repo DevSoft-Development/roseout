@@ -6,6 +6,8 @@ on:
       - 'infra/aws/lambda/platform_security_event_handler.py'
       - 'infra/aws/cloudformation/platform-security-containment.yml'
       - '.github/workflows/aws-security-takeover-containment.yml'
+      - 'apps/admin/app/admin/dashboard/infrastructure/security-incidents/**'
+      - 'apps/admin/app/admin/dashboard/admin-navigation.ts'
   push:
     branches: [main]
     paths:
@@ -42,6 +44,9 @@ jobs:
           grep -F 'user_not_opted_in' infra/aws/lambda/platform_security_event_handler.py >/dev/null
           grep -F 'GuardDuty Finding' infra/aws/lambda/platform_security_event_handler.py >/dev/null
           grep -F 'alert_only_event' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'admin_system_logs' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'security_incident' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'value.get("secretKey") or value.get("serviceRoleKey")' infra/aws/lambda/platform_security_event_handler.py >/dev/null
 
       - name: Validate CloudFormation
         run: |
@@ -52,6 +57,7 @@ jobs:
           grep -F 'AWS API Call via CloudTrail' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
           grep -F 'StopLogging' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
           grep -F 'iam:UpdateAccessKey' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
+          grep -F '/theouthaven/credential-vault/${Environment}/supabase' infra/aws/cloudformation/platform-security-containment.yml >/dev/null
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

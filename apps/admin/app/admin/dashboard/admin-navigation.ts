@@ -379,6 +379,13 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
         roles: ["superadmin", "admin"],
       },
       {
+        label: "Security Incidents",
+        href: "/admin/dashboard/infrastructure/security-incidents",
+        icon: ShieldCheck,
+        migrated: true,
+        roles: ["superadmin", "admin"],
+      },
+      {
         label: "Critical Incidents",
         href: "/admin/dashboard/infrastructure/incidents",
         icon: ShieldAlert,
