@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: oregon-dr-readiness-production
@@ -33,16 +34,26 @@ jobs:
       - name: Checkout DR catalog contract
         uses: actions/checkout@v4
 
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve Supabase management token from Credential Vault
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash .github/scripts/load-supabase-management-token.sh
+
       - name: Require Supabase management credential
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
 
       - name: Inspect project and cron safety
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -78,7 +89,6 @@ jobs:
 
       - name: Inspect public logical replication lane
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -115,7 +125,6 @@ jobs:
 
       - name: Enforce writable application schema parity
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -153,7 +162,6 @@ jobs:
 
       - name: Compare full public application data fingerprint
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -173,7 +181,6 @@ jobs:
 
       - name: Verify Auth configuration and exact Auth data parity
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -202,7 +209,6 @@ jobs:
 
       - name: Verify Storage bucket and exact physical-manifest metadata parity
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           MODE: ${{ github.event.inputs.mode }}
         run: |
           set -euo pipefail
@@ -222,7 +228,6 @@ jobs:
 
       - name: Verify API keys exist without revealing them
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           for pair in "virginia:$VIRGINIA_REF" "oregon:$OREGON_REF"; do
