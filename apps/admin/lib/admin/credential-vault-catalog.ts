@@ -171,6 +171,14 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "jobGatewaySecret", label: "Job gateway secret", secret: true },
     { key: "integrationApiSecret", label: "Integration API secret", secret: true },
     { key: "assistantApiSecret", label: "Assistant API secret", secret: true },
+    { key: "criticalAlertSmsEnabled", label: "Critical alert SMS enabled", placeholder: "true" },
+    { key: "criticalAlertSmsRecoveryEnabled", label: "Recovery SMS enabled", placeholder: "true" },
+    { key: "criticalAlertSmsFrom", label: "Critical alert SMS from", placeholder: "+1..." },
+    { key: "criticalAlertSmsTo", label: "Critical alert SMS to", placeholder: "+1..." },
+    { key: "criticalAlertTimezone", label: "Critical alert timezone", placeholder: "America/New_York" },
+    { key: "criticalAlertQuietHoursStart", label: "Quiet hours start", placeholder: "22:00" },
+    { key: "criticalAlertQuietHoursEnd", label: "Quiet hours end", placeholder: "07:00" },
+    { key: "criticalAlertQuietHoursMode", label: "Quiet hours mode", placeholder: "off | recoveries_only | all" },
   ] },
 ] as const;
 
