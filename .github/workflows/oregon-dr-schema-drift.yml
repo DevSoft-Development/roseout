@@ -63,26 +63,26 @@ jobs:
 
             if [ "$ref" = "$OREGON_REF" ]; then
               cat > "$wrapper" <<SQL
-select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
-from (
-$sql
-) q;
-SQL
+          select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
+          from (
+          $sql
+          ) q;
+          SQL
             elif [ "$ref" = "$VIRGINIA_REF" ]; then
               cat > "$wrapper" <<SQL
-select remote.payload
-from pg_subscription s
-cross join lateral extensions.dblink(
-  s.subconninfo,
-  \$toh_remote\$
-    select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
-    from (
-$sql
-    ) q
-  \$toh_remote\$
-) as remote(payload text)
-where s.subname = '${EXPECTED_SUBSCRIPTION}';
-SQL
+          select remote.payload
+          from pg_subscription s
+          cross join lateral extensions.dblink(
+            s.subconninfo,
+            \$toh_remote\$
+              select coalesce(json_agg(row_to_json(q)), '[]'::json)::text
+              from (
+          $sql
+              ) q
+            \$toh_remote\$
+          ) as remote(payload text)
+          where s.subname = '${EXPECTED_SUBSCRIPTION}';
+          SQL
             else
               echo "Unsupported Supabase project ref: $ref" >&2
               exit 1
