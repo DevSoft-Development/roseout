@@ -77,6 +77,20 @@ export function hasExplicitCafeDessertIntent(intent: SearchIntent): boolean {
   );
 }
 
+function hasExplicitMainMealIntent(intent: SearchIntent): boolean {
+  const text = [
+    intent.rawQuery,
+    intent.timeContext,
+    intent.restaurantIntent?.mealTerms,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /\b(dinner|lunch)\b/.test(text);
+}
+
 export function isCafeBakeryDessertQuickBiteOnly(
   r: EnterpriseLocation,
 ): boolean {
@@ -1859,6 +1873,15 @@ export function explainRejection(
     isHardNightlifeRecord(record)
   ) {
     return "hard_nightlife_not_relaxed";
+  }
+
+  if (
+    domain === "restaurant" &&
+    hasExplicitMainMealIntent(intent) &&
+    !hasExplicitCafeDessertIntent(intent) &&
+    isCafeBakeryDessertQuickBiteOnly(record)
+  ) {
+    return "cafe_bakery_quick_bite_not_main_meal";
   }
 
   if (domain === "restaurant" && isSportsWatchFoodSameVenueIntent(intent.rawQuery)) {
