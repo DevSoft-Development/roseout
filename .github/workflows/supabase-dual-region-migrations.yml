@@ -17,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: supabase-dual-region-migrations-production
@@ -39,6 +40,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Configure AWS access to Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Resolve Supabase management token
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          secret_id="/theouthaven/credential-vault/production/supabase"
+          token=""
+          if aws secretsmanager get-secret-value --secret-id "$secret_id" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json" 2>/dev/null; then
+            token="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          fi
+          if [ -z "$token" ]; then
+            token="$LEGACY_SUPABASE_ACCESS_TOKEN"
+            echo "Supabase management token is not yet in Credential Vault; using legacy GitHub secret fallback." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Supabase management token resolved from Credential Vault." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          test -n "$token" || { echo "Missing Supabase management access token." >&2; exit 1; }
+          echo "::add-mask::$token"
+          echo "SUPABASE_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
       - name: Detect migration files
         id: migrations
         env:
@@ -70,13 +96,9 @@ jobs:
           done < "$RUNNER_TEMP/migrations.txt"
       - name: Require healthy starting DR state
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: bash scripts/dr/require-production-dr-healthy.sh
       - name: Prove each migration applies to Oregon and Virginia
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -114,6 +136,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+      - name: Configure AWS access to Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Resolve Supabase management token
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          secret_id="/theouthaven/credential-vault/production/supabase"
+          token=""
+          if aws secretsmanager get-secret-value --secret-id "$secret_id" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json" 2>/dev/null; then
+            token="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          fi
+          if [ -z "$token" ]; then token="$LEGACY_SUPABASE_ACCESS_TOKEN"; fi
+          test -n "$token" || { echo "Missing Supabase management access token." >&2; exit 1; }
+          echo "::add-mask::$token"
+          echo "SUPABASE_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
       - name: Detect migration files
         id: migrations
         env:
@@ -127,13 +169,9 @@ jobs:
           if [ -s "$RUNNER_TEMP/migrations.txt" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
       - name: Require recoverable DR topology before safe auto-repair
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: bash scripts/dr/require-production-dr-recoverable.sh
       - name: Apply changed migrations with per-region ledger
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -176,8 +214,6 @@ jobs:
           done < "$RUNNER_TEMP/migrations.txt"
       - name: Reconcile publication and subscription membership
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -217,6 +253,4 @@ jobs:
           exit 1
       - name: Require healthy DR after migration
         if: steps.migrations.outputs.changed == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: bash scripts/dr/require-production-dr-healthy.sh
