@@ -1,0 +1,161 @@
+name: Supabase modern API key migration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/supabase-modern-api-key-migration.yml'
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
+      - '.github/workflows/aws-edge-runtime.yml'
+      - '.github/workflows/aws-worker-supabase-target.yml'
+      - '.github/workflows/aws-worker-virginia-cutover.yml'
+      - '.github/workflows/aws-worker-virginia-postverify.yml'
+      - '.github/workflows/aws-supabase-service-role-sync.yml'
+      - '.github/workflows/aws-background-runtime-key-recovery.yml'
+      - '.github/workflows/aws-worker-supabase-target-preflight.yml'
+      - '.github/workflows/oregon-dr-storage-sync.yml'
+      - '.github/workflows/restore-east-storage-from-aws.yml'
+      - '.github/workflows/repair-east-storage-final-delta.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - 'apps/admin/lib/admin/credential-vault-catalog.ts'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-modern-api-key-migration.yml'
+      - '.github/workflows/aws-dr-scheduler-activation.yml'
+      - '.github/workflows/aws-edge-runtime.yml'
+      - '.github/workflows/aws-worker-supabase-target.yml'
+      - '.github/workflows/aws-worker-virginia-cutover.yml'
+      - '.github/workflows/aws-worker-virginia-postverify.yml'
+      - '.github/workflows/aws-supabase-service-role-sync.yml'
+      - '.github/workflows/aws-background-runtime-key-recovery.yml'
+      - '.github/workflows/aws-worker-supabase-target-preflight.yml'
+      - '.github/workflows/oregon-dr-storage-sync.yml'
+      - '.github/workflows/restore-east-storage-from-aws.yml'
+      - '.github/workflows/repair-east-storage-final-delta.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - 'infra/aws/lambda/platform_job_gateway.py'
+      - 'apps/admin/lib/admin/credential-vault-catalog.ts'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  DR_SECRET: /theouthaven/production/dr-reconciler/env
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate migration contracts
+        run: |
+          set -euo pipefail
+          grep -F '.type=="secret"' .github/workflows/aws-dr-scheduler-activation.yml >/dev/null
+          grep -F '.type=="publishable"' .github/workflows/aws-dr-scheduler-activation.yml >/dev/null
+          grep -F 'secretKey' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F 'SUPABASE_SECRET_KEY' .github/scripts/load-platform-release-registry-env.sh >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/supabase-modern-api-key-migration.yml
+
+  migrate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load management token
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          if [ -z "$TOKEN" ]; then TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"; fi
+          test -n "$TOKEN" || { echo "::error::Supabase management token is unavailable in central vault/DR secret."; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "SUPABASE_ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Resolve and validate modern Virginia/Oregon keys
+        run: |
+          set -euo pipefail
+          resolve() {
+            local ref="$1" side="$2"
+            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/${side}-keys.json"
+            SECRET="$(jq -r '[.[] | select(.type=="secret" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${side}-keys.json")"
+            PUB="$(jq -r '[.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${side}-keys.json")"
+            test -n "$SECRET" || { echo "::error::Modern secret key is unavailable for $side ($ref). Create Supabase publishable/secret API keys first."; exit 1; }
+            test -n "$PUB" || { echo "::error::Modern publishable key is unavailable for $side ($ref)."; exit 1; }
+            [[ "$SECRET" == sb_secret_* ]]
+            [[ "$PUB" == sb_publishable_* ]]
+            echo "::add-mask::$SECRET"; echo "::add-mask::$PUB"
+            printf '%s' "$SECRET" > "$RUNNER_TEMP/${side}-secret"
+            printf '%s' "$PUB" > "$RUNNER_TEMP/${side}-publishable"
+            URL="https://${ref}.supabase.co/rest/v1/"
+            CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/${side}-verify.json" --write-out '%{http_code}'               -H "apikey: $SECRET" -H "Authorization: Bearer $SECRET" "$URL")"
+            test "$CODE" = 200 || { echo "::error::$side secret key validation failed: HTTP $CODE"; exit 1; }
+          }
+          resolve "$VIRGINIA_REF" virginia
+          resolve "$OREGON_REF" oregon
+
+      - name: Update central Virginia Supabase vault without removing legacy key
+        run: |
+          set -euo pipefail
+          jq             --arg secret "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg publishable "$(cat "$RUNNER_TEMP/virginia-publishable")"             '.secretKey=$secret | .publishableKey=$publishable'             "$RUNNER_TEMP/supabase-vault.json" > "$RUNNER_TEMP/supabase-next.json"
+          aws secretsmanager put-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --secret-string "file://$RUNNER_TEMP/supabase-next.json" >/dev/null
+
+      - name: Update isolated dual-region DR runtime secret
+        run: |
+          set -euo pipefail
+          jq             --arg vs "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg vp "$(cat "$RUNNER_TEMP/virginia-publishable")"             --arg os "$(cat "$RUNNER_TEMP/oregon-secret")"             --arg op "$(cat "$RUNNER_TEMP/oregon-publishable")"             '.DR_VIRGINIA_SERVICE_ROLE_KEY=$vs |
+             .DR_VIRGINIA_ANON_KEY=$vp |
+             .DR_OREGON_SERVICE_ROLE_KEY=$os |
+             .DR_OREGON_ANON_KEY=$op |
+             .DR_API_KEY_MODE="modern"'             "$RUNNER_TEMP/dr.json" > "$RUNNER_TEMP/dr-next.json"
+          aws secretsmanager put-secret-value --secret-id "$DR_SECRET" --secret-string "file://$RUNNER_TEMP/dr-next.json" >/dev/null
+
+      - name: Verify persisted key mode without printing secrets
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/supabase-after.json"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr-after.json"
+          jq -e '.secretKey | startswith("sb_secret_")' "$RUNNER_TEMP/supabase-after.json" >/dev/null
+          jq -e '.publishableKey | startswith("sb_publishable_")' "$RUNNER_TEMP/supabase-after.json" >/dev/null
+          jq -e '.DR_API_KEY_MODE == "modern"' "$RUNNER_TEMP/dr-after.json" >/dev/null
+          jq -e '.DR_VIRGINIA_SERVICE_ROLE_KEY | startswith("sb_secret_")' "$RUNNER_TEMP/dr-after.json" >/dev/null
+          jq -e '.DR_OREGON_SERVICE_ROLE_KEY | startswith("sb_secret_")' "$RUNNER_TEMP/dr-after.json" >/dev/null
+
+      - name: Run DR read-only health proof
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name toh-production-critical-platform-monitor --payload '{}' "$RUNNER_TEMP/monitor.json" >/dev/null
+          jq -e '.supabase.healthy == true and .replicationHealthy == true' "$RUNNER_TEMP/monitor.json" >/dev/null
+
+      - name: Summary
+        run: |
+          {
+            echo '### Supabase API key migration'
+            echo '- Virginia: modern secret + publishable keys validated and written to central vault'
+            echo '- Oregon: modern secret + publishable keys validated and written to isolated DR secret'
+            echo '- Legacy service_role value retained in central vault for rollback compatibility'
+            echo '- DR field names retained for compatibility; their values are modern sb_ keys'
+            echo '- Read-only DR health proof passed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/supabase-*.json "$RUNNER_TEMP"/dr*.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/*-publishable "$RUNNER_TEMP"/*-verify.json
