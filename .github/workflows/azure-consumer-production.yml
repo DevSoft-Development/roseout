@@ -18,6 +18,7 @@ on:
       - '.github/scripts/prove-azure-frontdoor.py'
       - '.github/scripts/write-platform-release.sh'
       - '.github/scripts/rollout-azure-consumer-canary.sh'
+      - '.github/scripts/classify-azure-consumer-release-risk.sh'
   push:
     branches:
       - main
@@ -35,6 +36,7 @@ on:
       - '.github/scripts/prove-azure-frontdoor.py'
       - '.github/scripts/write-platform-release.sh'
       - '.github/scripts/rollout-azure-consumer-canary.sh'
+      - '.github/scripts/classify-azure-consumer-release-risk.sh'
   workflow_dispatch:
     inputs:
       image_sha:
@@ -106,6 +108,536 @@ jobs:
             echo "::error::Requested image SHA is not on main."
             exit 1
           }
+
+      - name: Classify production rollout risk
+        id: rollout_risk
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "push" ] || [ -z "${BASE_SHA:-}" ] || printf '%s' "$BASE_SHA" | grep -Eq '^0{40}
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve production consumer configuration from Admin Credential Vault
+        id: config
+        run: |
+          set -euo pipefail
+          PREFIX="/theouthaven/credential-vault/production"
+          WORK="$RUNNER_TEMP/azure-consumer-production-vault"
+          mkdir -p "$WORK"
+
+          aws secretsmanager get-secret-value             --secret-id "$PREFIX/supabase"             --query SecretString --output text > "$WORK/supabase.json"
+          aws secretsmanager get-secret-value             --secret-id "$PREFIX/mobile"             --query SecretString --output text > "$WORK/mobile.json"
+
+          if aws secretsmanager get-secret-value             --secret-id "$PREFIX/huggingface"             --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
+            jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
+          else
+            printf '{}' > "$WORK/huggingface.json"
+          fi
+
+          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+          jq -e 'type == "object"' "$WORK/mobile.json" >/dev/null
+
+          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
+          HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
+          IOS_TEAM_ID="$(jq -r '.iosTeamId // empty' "$WORK/mobile.json")"
+          ANDROID_KEYSTORE_PASSWORD="$(jq -r '.androidKeystorePassword // empty' "$WORK/mobile.json")"
+          ANDROID_KEY_ALIAS="$(jq -r '.androidKeyAlias // empty' "$WORK/mobile.json")"
+          ANDROID_APP_SIGNING_SHA256="$(jq -r '.androidAppSigningSha256Fingerprint // empty' "$WORK/mobile.json")"
+          SITE_URL="https://theouthaven.com"
+
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$IOS_TEAM_ID" || { echo "::error::Mobile vault iosTeamId is missing."; exit 1; }
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Mobile vault Android keystore password is missing."; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Mobile vault Android key alias is missing."; exit 1; }
+
+          jq -r '.androidKeystoreBase64 // empty' "$WORK/mobile.json" | base64 --decode > "$WORK/android-upload.jks"
+          test -s "$WORK/android-upload.jks" || { echo "::error::Mobile vault Android keystore is missing."; exit 1; }
+          UPLOAD_SHA256="$(keytool -list -v -keystore "$WORK/android-upload.jks" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null | awk -F'SHA256: ' '/SHA256:/{print $2; exit}' | tr -d '\r')"
+          test -n "$UPLOAD_SHA256" || { echo "::error::Unable to derive Android upload certificate SHA256 fingerprint."; exit 1; }
+          if [ -n "$ANDROID_APP_SIGNING_SHA256" ]; then
+            ANDROID_APP_LINK_SHA256_FINGERPRINTS="$ANDROID_APP_SIGNING_SHA256,$UPLOAD_SHA256"
+          else
+            ANDROID_APP_LINK_SHA256_FINGERPRINTS="$UPLOAD_SHA256"
+            echo "::warning::androidAppSigningSha256Fingerprint is not present in the mobile vault; assetlinks.json will include the upload certificate until the Play app-signing fingerprint is added."
+          fi
+
+          if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
+            test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face token is missing."; exit 1; }
+            test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face model is missing."; exit 1; }
+            echo "::add-mask::$HUGGINGFACE_AI_TOKEN"
+          else
+            HUGGINGFACE_AI_ENDPOINT=""
+          fi
+
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$ANDROID_KEYSTORE_PASSWORD"; do
+            echo "::add-mask::$value"
+          done
+
+          {
+            echo "SITE_URL=$SITE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
+            echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
+            echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
+            echo "IOS_TEAM_ID=$IOS_TEAM_ID"
+            echo "ANDROID_APP_LINK_SHA256_FINGERPRINTS=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "ios_team_id=$IOS_TEAM_ID"
+            echo "android_app_link_sha256_fingerprints=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
+          } >> "$GITHUB_OUTPUT"
+
+          rm -rf "$WORK"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure production dual-region foundation
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az deployment sub create               --name toh-consumer-foundation-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=false               consumerEdgeEnabled=false
+
+      - name: Resolve production Azure dependencies
+        id: azure
+        env:
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            ACR="$(az acr list --resource-group "$RG" --query '[0].name' -o tsv)"
+            test -n "$ACR" || { echo "::error::No production ACR found."; exit 1; }
+
+            PRIMARY_AI="$(az cognitiveservices account list --resource-group "$RG" --query "[?kind=='AIServices' && location=='eastus2'] | [0].name" -o tsv)"
+            SECONDARY_AI="$(az cognitiveservices account list --resource-group "$RG" --query "[?kind=='AIServices' && location=='centralus'] | [0].name" -o tsv)"
+            test -n "$PRIMARY_AI" || { echo "::error::Primary Azure AI account is missing."; exit 1; }
+            test -n "$SECONDARY_AI" || { echo "::error::Secondary Azure AI account is missing."; exit 1; }
+
+            PRIMARY_AI_ENDPOINT="$(az cognitiveservices account show --resource-group "$RG" --name "$PRIMARY_AI" --query properties.endpoint -o tsv)"
+            SECONDARY_AI_ENDPOINT="$(az cognitiveservices account show --resource-group "$RG" --name "$SECONDARY_AI" --query properties.endpoint -o tsv)"
+            PRIMARY_AI_KEY="$(az cognitiveservices account keys list --resource-group "$RG" --name "$PRIMARY_AI" --query key1 -o tsv)"
+            SECONDARY_AI_KEY="$(az cognitiveservices account keys list --resource-group "$RG" --name "$SECONDARY_AI" --query key1 -o tsv)"
+
+            for value in "$PRIMARY_AI_KEY" "$SECONDARY_AI_KEY"; do echo "::add-mask::$value"; done
+
+            echo "registry=$ACR" >> "$GITHUB_OUTPUT"
+            echo "login_server=$ACR.azurecr.io" >> "$GITHUB_OUTPUT"
+            echo "primary_ai_endpoint=$PRIMARY_AI_ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "primary_ai_key=$PRIMARY_AI_KEY" >> "$GITHUB_OUTPUT"
+            echo "secondary_ai_endpoint=$SECONDARY_AI_ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "secondary_ai_key=$SECONDARY_AI_KEY" >> "$GITHUB_OUTPUT"
+            echo "image=$ACR.azurecr.io/consumer:$IMAGE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve previous good Azure revisions
+        id: stable
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            PRIMARY_APP="ca-toh-consumer-prod-primary"
+            SECONDARY_APP="ca-toh-consumer-prod-secondary"
+
+            PRIMARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$PRIMARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
+            SECONDARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$SECONDARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
+
+            test -n "$PRIMARY_REVISION" || { echo "::error::No active primary revision found."; exit 1; }
+            test -n "$SECONDARY_REVISION" || { echo "::error::No active secondary revision found."; exit 1; }
+
+            echo "primary_revision=$PRIMARY_REVISION" >> "$GITHUB_OUTPUT"
+            echo "secondary_revision=$SECONDARY_REVISION" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact release SHA
+        env:
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        run: |
+          set -euo pipefail
+          git checkout --detach "$IMAGE_SHA"
+
+      - name: Refresh Azure OIDC before ACR login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to production ACR
+        run: az acr login --name "${{ steps.azure.outputs.registry }}"
+
+      - name: Build and push immutable production image
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+        run: |
+          set -euo pipefail
+          if az acr repository show-tags             --name "${{ steps.azure.outputs.registry }}"             --repository consumer             --query "[?@=='${{ github.event_name == 'push' && github.sha || inputs.image_sha }}'] | [0]" -o tsv | grep -qx "${{ github.event_name == 'push' && github.sha || inputs.image_sha }}"; then
+            echo "Production image already exists; reusing immutable tag."
+          else
+            docker build               --file infra/azure/consumer-runtime/Dockerfile               --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"               --tag "$IMAGE"               .
+            docker push "$IMAGE"
+          fi
+
+      - name: Record Azure release candidate
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: CANDIDATE
+          RELEASE_EVENT_TYPE: image_ready
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"image_ready"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: What-if dual-region production runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          PRIMARY_AI_ENDPOINT: ${{ steps.azure.outputs.primary_ai_endpoint }}
+          PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
+          SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
+          SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+          IOS_TEAM_ID: ${{ steps.config.outputs.ios_team_id }}
+          ANDROID_APP_LINK_SHA256_FINGERPRINTS: ${{ steps.config.outputs.android_app_link_sha256_fingerprints }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
+            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+
+      - name: Deploy dual-region production runtime
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          PRIMARY_AI_ENDPOINT: ${{ steps.azure.outputs.primary_ai_endpoint }}
+          PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
+          SECONDARY_AI_ENDPOINT: ${{ steps.azure.outputs.secondary_ai_endpoint }}
+          SECONDARY_AI_KEY: ${{ steps.azure.outputs.secondary_ai_key }}
+          IOS_TEAM_ID: ${{ steps.config.outputs.ios_team_id }}
+          ANDROID_APP_LINK_SHA256_FINGERPRINTS: ${{ steps.config.outputs.android_app_link_sha256_fingerprints }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
+            HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
+            HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
+            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+
+      - name: Record Azure release validation
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: VALIDATING
+          RELEASE_EVENT_TYPE: dual_region_deployed
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"dual_region_deployed"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: Resolve Azure canary revisions
+        id: canary
+        uses: azure/CLI@v2
+        env:
+          IMAGE: ${{ steps.azure.outputs.image }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            PRIMARY_APP="ca-toh-consumer-prod-primary"
+            SECONDARY_APP="ca-toh-consumer-prod-secondary"
+
+            PRIMARY_CANDIDATE="$(az containerapp revision list --resource-group "$RG" --name "$PRIMARY_APP" --all --query "sort_by([?properties.template.containers[0].image=='$IMAGE'], &properties.createdTime)[-1].name" -o tsv)"
+            SECONDARY_CANDIDATE="$(az containerapp revision list --resource-group "$RG" --name "$SECONDARY_APP" --all --query "sort_by([?properties.template.containers[0].image=='$IMAGE'], &properties.createdTime)[-1].name" -o tsv)"
+
+            test -n "$PRIMARY_CANDIDATE" || { echo "::error::Primary candidate revision not found."; exit 1; }
+            test -n "$SECONDARY_CANDIDATE" || { echo "::error::Secondary candidate revision not found."; exit 1; }
+            test "$PRIMARY_CANDIDATE" != "${{ steps.stable.outputs.primary_revision }}" || { echo "::error::Primary candidate did not create a new revision."; exit 1; }
+            test "$SECONDARY_CANDIDATE" != "${{ steps.stable.outputs.secondary_revision }}" || { echo "::error::Secondary candidate did not create a new revision."; exit 1; }
+
+            PRIMARY_CANDIDATE_FQDN="$(az containerapp revision show --resource-group "$RG" --name "$PRIMARY_APP" --revision "$PRIMARY_CANDIDATE" --query properties.fqdn -o tsv)"
+            SECONDARY_CANDIDATE_FQDN="$(az containerapp revision show --resource-group "$RG" --name "$SECONDARY_APP" --revision "$SECONDARY_CANDIDATE" --query properties.fqdn -o tsv)"
+            PRIMARY_APP_FQDN="$(az containerapp show --resource-group "$RG" --name "$PRIMARY_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+            SECONDARY_APP_FQDN="$(az containerapp show --resource-group "$RG" --name "$SECONDARY_APP" --query properties.configuration.ingress.fqdn -o tsv)"
+
+            for value in "$PRIMARY_CANDIDATE_FQDN" "$SECONDARY_CANDIDATE_FQDN" "$PRIMARY_APP_FQDN" "$SECONDARY_APP_FQDN"; do
+              test -n "$value" || { echo "::error::Azure canary FQDN resolution failed."; exit 1; }
+            done
+
+            echo "primary_revision=$PRIMARY_CANDIDATE" >> "$GITHUB_OUTPUT"
+            echo "secondary_revision=$SECONDARY_CANDIDATE" >> "$GITHUB_OUTPUT"
+            echo "primary_fqdn=$PRIMARY_CANDIDATE_FQDN" >> "$GITHUB_OUTPUT"
+            echo "secondary_fqdn=$SECONDARY_CANDIDATE_FQDN" >> "$GITHUB_OUTPUT"
+            echo "primary_app_fqdn=$PRIMARY_APP_FQDN" >> "$GITHUB_OUTPUT"
+            echo "secondary_app_fqdn=$SECONDARY_APP_FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Promote Azure consumer canary 0 to 10 to 50 to 100
+        env:
+          AZURE_RESOURCE_GROUP: rg-toh-consumer-production
+          PRIMARY_APP: ca-toh-consumer-prod-primary
+          SECONDARY_APP: ca-toh-consumer-prod-secondary
+          PRIMARY_PREVIOUS_REVISION: ${{ steps.stable.outputs.primary_revision }}
+          SECONDARY_PREVIOUS_REVISION: ${{ steps.stable.outputs.secondary_revision }}
+          PRIMARY_CANDIDATE_REVISION: ${{ steps.canary.outputs.primary_revision }}
+          SECONDARY_CANDIDATE_REVISION: ${{ steps.canary.outputs.secondary_revision }}
+          PRIMARY_CANDIDATE_FQDN: ${{ steps.canary.outputs.primary_fqdn }}
+          SECONDARY_CANDIDATE_FQDN: ${{ steps.canary.outputs.secondary_fqdn }}
+          PRIMARY_APP_FQDN: ${{ steps.canary.outputs.primary_app_fqdn }}
+          SECONDARY_APP_FQDN: ${{ steps.canary.outputs.secondary_app_fqdn }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          ROLLOUT_RISK: ${{ steps.rollout_risk.outputs.risk }}
+        run: bash .github/scripts/rollout-azure-consumer-canary.sh
+
+      - name: Resolve Azure production proof targets
+        env:
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            DEPLOYMENT=toh-consumer-runtime-production
+            PRIMARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerRuntimeFqdn.value -o tsv)"
+            SECONDARY="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerSecondaryRuntimeFqdn.value -o tsv)"
+            EDGE="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointHostName.value -o tsv)"
+            ENDPOINT_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorEndpointResourceId.value -o tsv)"
+            ROUTE_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorRouteResourceId.value -o tsv)"
+            PRIMARY_ORIGIN_RESOURCE_ID="$(az deployment sub show --name "$DEPLOYMENT" --query properties.outputs.consumerFrontDoorPrimaryOriginResourceId.value -o tsv)"
+            API_VERSION=2024-02-01
+
+            test -n "$PRIMARY" && test -n "$SECONDARY" && test -n "$EDGE"
+            test -n "$ENDPOINT_RESOURCE_ID" && test -n "$ROUTE_RESOURCE_ID" && test -n "$PRIMARY_ORIGIN_RESOURCE_ID"
+
+            rest_get() {
+              resource_id="$1"
+              body_file="$2"
+              error_file="$3"
+              if ! az rest --method get --url "https://management.azure.com${resource_id}?api-version=$API_VERSION" >"$body_file" 2>"$error_file"; then
+                echo "::error::Azure ARM GET failed for $resource_id"
+                cat "$error_file" >&2 || true
+                cat "$body_file" >&2 || true
+                return 1
+              fi
+            }
+
+            for _ in $(seq 1 30); do
+              rest_get "$ENDPOINT_RESOURCE_ID" endpoint-arm.json endpoint-arm.err
+              rest_get "$ROUTE_RESOURCE_ID" route-arm.json route-arm.err
+              endpoint_state="$(jq -r '.properties.provisioningState // empty' endpoint-arm.json)"
+              endpoint_deployment="$(jq -r '.properties.deploymentStatus // empty' endpoint-arm.json)"
+              endpoint_enabled="$(jq -r '.properties.enabledState // empty' endpoint-arm.json)"
+              route_state="$(jq -r '.properties.provisioningState // empty' route-arm.json)"
+              route_deployment="$(jq -r '.properties.deploymentStatus // empty' route-arm.json)"
+              route_enabled="$(jq -r '.properties.enabledState // empty' route-arm.json)"
+              if [ "$endpoint_state" = Succeeded ] && [ "$route_state" = Succeeded ] && [ "$endpoint_enabled" = Enabled ] && [ "$route_enabled" = Enabled ]; then
+                break
+              fi
+              sleep 10
+            done
+
+            echo "Front Door endpoint provisioning state: ${endpoint_state:-unknown}"
+            echo "Front Door endpoint deployment status (informational): ${endpoint_deployment:-unknown}"
+            echo "Front Door endpoint enabled state: ${endpoint_enabled:-unknown}"
+            echo "Front Door route provisioning state: ${route_state:-unknown}"
+            echo "Front Door route deployment status (informational): ${route_deployment:-unknown}"
+            echo "Front Door route enabled state: ${route_enabled:-unknown}"
+            test "$endpoint_state" = Succeeded
+            test "$route_state" = Succeeded
+            test "$endpoint_enabled" = Enabled
+            test "$route_enabled" = Enabled
+
+            {
+              printf 'PRIMARY_HOST=%s\n' "$PRIMARY"
+              printf 'SECONDARY_HOST=%s\n' "$SECONDARY"
+              printf 'EDGE_HOST=%s\n' "$EDGE"
+              printf 'PRIMARY_ORIGIN_RESOURCE_ID=%s\n' "$PRIMARY_ORIGIN_RESOURCE_ID"
+              printf 'IMAGE_SHA=%s\n' "$IMAGE_SHA"
+            } > "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+
+      - name: Prove both production regions and Front Door from runner
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$PRIMARY_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 24 --interval 10 --label "direct primary"
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$SECONDARY_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 24 --interval 10 --label "direct secondary"
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary,secondary --attempts 90 --interval 10 --label "Front Door"
+
+          {
+            echo "## Azure production consumer readiness"
+            echo
+            echo "- Primary: https://$PRIMARY_HOST"
+            echo "- Secondary: https://$SECONDARY_HOST"
+            echo "- Front Door: https://$EDGE_HOST"
+            echo "- Release SHA: $IMAGE_SHA"
+            echo "- Strict JSON/SHA/region proof: passed"
+            echo "- Route 53 cutover: not performed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record Azure stable release
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: STABLE
+          RELEASE_EVENT_TYPE: production_proven
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"frontdoor_proven","primary":"eastus2","secondary":"centralus"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: Disable primary Front Door origin for regional failover drill
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+            API_VERSION=2024-02-01
+            az rest \
+              --method patch \
+              --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" \
+              --headers 'Content-Type=application/json' \
+              --body '{"properties":{"enabledState":"Disabled"}}' \
+              --output none
+
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Disabled ] && [ "$provisioning" = Succeeded ]; then
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::Primary Front Door origin did not reach Disabled/Succeeded."
+            exit 1
+
+      - name: Prove secondary routing through Front Door
+        if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          # Front Door origin updates are global operations. ARM can report Disabled/Succeeded
+          # before the edge configuration has converged, so edge behavior is the authority.
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles secondary --attempts 120 --interval 10 --label "Front Door failover to secondary"
+
+      - name: Restore primary Front Door origin
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            source "$GITHUB_WORKSPACE/.azure-frontdoor-proof.env"
+            API_VERSION=2024-02-01
+            az rest \
+              --method patch \
+              --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" \
+              --headers 'Content-Type=application/json' \
+              --body '{"properties":{"enabledState":"Enabled"}}' \
+              --output none
+
+            for _ in $(seq 1 60); do
+              state="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.enabledState -o tsv)"
+              provisioning="$(az rest --method get --url "https://management.azure.com${PRIMARY_ORIGIN_RESOURCE_ID}?api-version=$API_VERSION" --query properties.provisioningState -o tsv)"
+              if [ "$state" = Enabled ] && [ "$provisioning" = Succeeded ]; then
+                exit 0
+              fi
+              sleep 10
+            done
+            echo "::error::Primary Front Door origin did not return to Enabled/Succeeded."
+            exit 1
+
+      - name: Prove primary restoration through Front Door
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        run: |
+          set -euo pipefail
+          source .azure-frontdoor-proof.env
+          # Restoration is another global Front Door update; allow the same convergence window.
+          python3 .github/scripts/prove-azure-frontdoor.py --host "$EDGE_HOST" --sha "$IMAGE_SHA" --roles primary --attempts 120 --interval 10 --label "Front Door restoration to primary"
+
+      - name: Record regional failover drill success
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        run: |
+          {
+            echo "Front Door regional failover drill passed."
+            echo "Front Door primary restoration verified."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record regional failover drill event
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
+        env:
+          GIT_SHA: ${{ inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ inputs.image_sha }}
+          RELEASE_STATE: STABLE
+          RELEASE_EVENT_TYPE: regional_failover_drill_passed
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"regional_failover_drill","result":"passed"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed Azure release
+        if: ${{ failure() }}
+        env:
+          GIT_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_ID: azure-consumer-production-${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          RELEASE_STATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'DEGRADED' || 'FAILED' }}
+          RELEASE_EVENT_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'regional_failover_drill_failed' || 'workflow_failed' }}
+          RELEASE_REASON: ${{ github.event_name == 'workflow_dispatch' && inputs.run_failover_drill && 'azure_regional_failover_drill_failed' || 'azure_consumer_production_workflow_failed' }}
+          RELEASE_ARTIFACT_REF: ${{ steps.azure.outputs.image }}
+          RELEASE_EVIDENCE: >-
+            {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"workflow","result":"failed"}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Release registry credentials were not resolved before workflow failure; skipping registry failure write."
+            exit 0
+          fi
+          bash .github/scripts/write-platform-release.sh
+; then
+            RISK=high
+            REASON=manual_or_unresolved_base
+          else
+            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
+            CLASSIFICATION="$(bash .github/scripts/classify-azure-consumer-release-risk.sh "$BASE_SHA" "$IMAGE_SHA")"
+            printf '%s\n' "$CLASSIFICATION"
+            RISK="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="risk"{print $2; exit}')"
+            REASON="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="reason"{sub(/^reason=/,""); print; exit}')"
+          fi
+
+          case "$RISK" in
+            low|medium|high) ;;
+            *) echo "::error::Invalid rollout risk classification: ${RISK:-empty}"; exit 1 ;;
+          esac
+
+          echo "risk=$RISK" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Azure rollout risk"
+            echo
+            echo "- Risk: $RISK"
+            echo "- Reason: $REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS access to central Credential Vault
         uses: aws-actions/configure-aws-credentials@v6.2.3
