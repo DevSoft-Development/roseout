@@ -159,6 +159,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
+      - name: Resolve Supabase management token from Credential Vault
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash .github/scripts/load-supabase-management-token.sh
+
       - name: Harden final failback runtime script
         if: github.event.inputs.action == 'failback'
         run: |
