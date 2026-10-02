@@ -1,0 +1,123 @@
+name: Platform automatic recovery
+
+on:
+  repository_dispatch:
+    types:
+      - platform-auto-recovery
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Allowlisted recovery scope
+        required: true
+        type: choice
+        options:
+          - azure-consumer
+      release_id:
+        description: Current unhealthy release ID
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: platform-auto-recovery-production
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve allowlisted recovery request
+        id: request
+        env:
+          EVENT_SCOPE: ${{ github.event.client_payload.scope }}
+          EVENT_RELEASE_ID: ${{ github.event.client_payload.release_id }}
+          INPUT_SCOPE: ${{ inputs.scope }}
+          INPUT_RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          set -euo pipefail
+          SCOPE="${EVENT_SCOPE:-${INPUT_SCOPE:-}}"
+          RELEASE_ID="${EVENT_RELEASE_ID:-${INPUT_RELEASE_ID:-}}"
+          test "$SCOPE" = "azure-consumer" || {
+            echo "::error::Recovery scope is not allowlisted: $SCOPE"
+            exit 1
+          }
+          echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Load platform release registry credentials
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Resolve unhealthy and previous-good releases
+        id: release
+        env:
+          REQUESTED_RELEASE_ID: ${{ steps.request.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          api() {
+            curl --fail-with-body --silent --show-error               -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"               -H "authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" "$@"
+          }
+          BASE="${SUPABASE_URL%/}/rest/v1"
+          if [ -n "$REQUESTED_RELEASE_ID" ]; then
+            CURRENT="$(api "$BASE/platform_releases?release_id=eq.$REQUESTED_RELEASE_ID&surface=eq.consumer&provider=eq.azure&environment=eq.production&select=release_id,git_sha,state,previous_good_release_id&limit=1")"
+          else
+            CURRENT="$(api "$BASE/platform_releases?surface=eq.consumer&provider=eq.azure&environment=eq.production&select=release_id,git_sha,state,previous_good_release_id&order=promoted_at.desc.nullslast,created_at.desc&limit=1")"
+          fi
+          RELEASE_ID="$(jq -r '.[0].release_id // empty' <<<"$CURRENT")"
+          CURRENT_SHA="$(jq -r '.[0].git_sha // empty' <<<"$CURRENT")"
+          PREVIOUS_ID="$(jq -r '.[0].previous_good_release_id // empty' <<<"$CURRENT")"
+          test -n "$RELEASE_ID" && test -n "$CURRENT_SHA" && test -n "$PREVIOUS_ID" || {
+            echo "::error::Current release or previous-good pointer is unavailable."
+            exit 1
+          }
+          PREVIOUS="$(api "$BASE/platform_releases?release_id=eq.$PREVIOUS_ID&select=release_id,git_sha,state&limit=1")"
+          PREVIOUS_SHA="$(jq -r '.[0].git_sha // empty' <<<"$PREVIOUS")"
+          PREVIOUS_STATE="$(jq -r '.[0].state // empty' <<<"$PREVIOUS")"
+          test -n "$PREVIOUS_SHA" || { echo "::error::Previous-good SHA is unavailable."; exit 1; }
+          case "$PREVIOUS_STATE" in STABLE|ROLLED_BACK) ;; *) echo "::error::Previous-good release is not a proven state: $PREVIOUS_STATE"; exit 1 ;; esac
+
+          EVENTS="$(api "$BASE/platform_release_events?release_id=eq.$RELEASE_ID&event_type=eq.auto_recovery_dispatched&select=event_id,created_at&order=created_at.desc&limit=1")"
+          if [ "$(jq 'length' <<<"$EVENTS")" -gt 0 ]; then
+            echo "::error::Automatic recovery has already been dispatched for $RELEASE_ID."
+            exit 1
+          fi
+
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+          echo "current_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          echo "previous_id=$PREVIOUS_ID" >> "$GITHUB_OUTPUT"
+          echo "previous_sha=$PREVIOUS_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Record automatic recovery dispatch
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+          GIT_SHA: ${{ steps.release.outputs.current_sha }}
+          RELEASE_SURFACE: consumer
+          RELEASE_PROVIDER: azure
+          RELEASE_STATE: ROLLING_BACK
+          RELEASE_EVENT_TYPE: auto_recovery_dispatched
+          RELEASE_REASON: production_health_gate_failed
+          RELEASE_EVIDENCE: >-
+            {"workflow":"platform-auto-recovery","scope":"azure-consumer","previous_good_release_id":"${{ steps.release.outputs.previous_id }}","previous_good_sha":"${{ steps.release.outputs.previous_sha }}"}
+        run: bash .github/scripts/write-platform-release.sh
+
+      - name: Dispatch previous-good Azure release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS_SHA: ${{ steps.release.outputs.previous_sha }}
+        run: |
+          set -euo pipefail
+          gh api             --method POST             "repos/$GITHUB_REPOSITORY/actions/workflows/azure-consumer-production.yml/dispatches"             -f ref=main             -f "inputs[image_sha]=$PREVIOUS_SHA"             -F "inputs[deploy]=true"             -F "inputs[run_failover_drill]=false"
+          echo "Dispatched previous-good Azure SHA: $PREVIOUS_SHA" >> "$GITHUB_STEP_SUMMARY"
