@@ -1,0 +1,150 @@
+name: Azure security compromise monitor
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - azure-security-monitor
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_azure_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-azure-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/azure-security-compromise-monitor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_azure_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-azure-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/azure-security-compromise-monitor.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-security-compromise-monitor-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-azure-security-monitor-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate monitor contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_azure_security_dispatcher.py
+          python -m py_compile infra/aws/lambda/platform_security_event_handler.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-azure-security-monitor.yml
+          grep -F 'azure-security-monitor' infra/aws/lambda/platform_azure_security_dispatcher.py >/dev/null
+          grep -F 'Azure Activity Log Security Signal' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-azure-security-monitor.yml >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/azure-security-compromise-monitor.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve alerts topic
+        id: aws
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy AWS-owned Azure security scheduler
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-azure-security-monitor.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.aws.outputs.topic }}'
+
+      - name: Deploy dispatcher code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/azure-security-dispatcher"
+          ZIP="$RUNNER_TEMP/azure-security-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_azure_security_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Inspect Azure privileged control-plane activity
+        id: scan
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            START="$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+            az monitor activity-log list --start-time "$START" --status Succeeded -o json > "$RUNNER_TEMP/activity.json"
+            jq '[.[] | select(
+              (.authorization.action // "") |
+              test("Microsoft.Authorization/roleAssignments/(write|delete)|Microsoft.Authorization/policyAssignments/(write|delete)|Microsoft.ManagedIdentity/userAssignedIdentities/(write|delete)|Microsoft.Resources/subscriptions/resourceGroups/(write|delete)|Microsoft.KeyVault/vaults/(write|delete)|Microsoft.ContainerRegistry/registries/(write|delete)|Microsoft.App/containerApps/(write|delete)|Microsoft.Cdn/profiles/(write|delete)"; "i")
+            )]' "$RUNNER_TEMP/activity.json" > "$RUNNER_TEMP/security.json"
+            echo "count=$(jq length "$RUNNER_TEMP/security.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Forward Azure security signals to existing AWS security plane
+        if: steps.scan.outputs.count != '0'
+        env:
+          FUNCTION_NAME: toh-production-security-event-handler
+        run: |
+          set -euo pipefail
+          jq -c '.[]' "$RUNNER_TEMP/security.json" | while IFS= read -r row; do
+            DETAIL="$(jq -n --argjson r "$row" '{
+              eventDataId: $r.eventDataId,
+              operationName: ($r.authorization.action // $r.operationName.value // $r.operationName.localizedValue),
+              title: "Azure privileged control-plane change",
+              description: ($r.properties.statusMessage // ""),
+              resourceId: $r.resourceId,
+              caller: $r.caller,
+              status: ($r.status.value // ""),
+              eventTimestamp: $r.eventTimestamp,
+              correlationId: $r.correlationId,
+              subscriptionId: ($r.subscriptionId // ""),
+              severity: "high"
+            }')"
+            PAYLOAD="$(jq -n --argjson d "$DETAIL" '{
+              source:"toh.azure.security",
+              "detail-type":"Azure Activity Log Security Signal",
+              detail:$d
+            }')"
+            aws lambda invoke --function-name "$FUNCTION_NAME" --payload "$(printf '%s' "$PAYLOAD" | base64 -w0)" --cli-binary-format base64 --output json "$RUNNER_TEMP/invoke.json" >/dev/null
+          done
+
+      - name: Write summary
+        run: |
+          {
+            echo '### Azure compromise monitoring'
+            echo "- Suspicious privileged changes found: ${{ steps.scan.outputs.count }}"
+            echo '- Monitor cadence owner: AWS EventBridge Scheduler'
+            echo '- Azure authentication: GitHub OIDC; no Azure client secret'
+            echo '- Containment mode: alert-only'
+            echo '- Persistence: existing Admin security incident history'
+          } >> "$GITHUB_STEP_SUMMARY"
