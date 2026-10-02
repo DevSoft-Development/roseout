@@ -1,13 +1,12 @@
 import json
 import os
 import urllib.request
-
 import boto3
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 GITHUB_SECRET_ID = os.environ.get("GITHUB_SECRET_ID", f"/theouthaven/credential-vault/{ENVIRONMENT}/github")
 GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "DevSoft-Development/roseout")
-EVENT_TYPE = os.environ.get("EVENT_TYPE", "platform-security-drill-suite")
+EVENT_TYPE = os.environ.get("EVENT_TYPE", "security-resilience-drill")
 secrets = boto3.client("secretsmanager")
 
 def _token():
@@ -21,12 +20,9 @@ def _token():
 def handler(event, context):
     body = json.dumps({
         "event_type": EVENT_TYPE,
-        "client_payload": {
-            "environment": ENVIRONMENT,
-            "source": "aws-eventbridge-scheduler"
-        }
+        "client_payload": {"environment": ENVIRONMENT, "source": "aws-eventbridge-scheduler"}
     }).encode("utf-8")
-    request = urllib.request.Request(
+    req = urllib.request.Request(
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/dispatches",
         method="POST",
         data=body,
@@ -35,10 +31,10 @@ def handler(event, context):
             "accept": "application/vnd.github+json",
             "content-type": "application/json",
             "user-agent": "TheOutHaven-Security-Drill-Scheduler/1.0",
-            "x-github-api-version": "2026-03-10"
-        }
+            "x-github-api-version": "2022-11-28",
+        },
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(req, timeout=15) as response:
         status = int(response.status)
         if status not in (200, 201, 202, 204):
             raise RuntimeError(f"github_dispatch_http_{status}")
