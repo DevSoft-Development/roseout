@@ -21,6 +21,33 @@ import { geoTierRank } from "../geo/geoPolicy";
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 const searchableText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.activity_name,location.primary_category,location.cuisine,location.cuisine_type,location.activity_type,location.tags,location.vibe_tags,location.best_for_tags,location.date_style_tags,location.semantic_tags,location.intent_tags,location.search_keywords,location.search_document,location.semantic_search_text,location.description,location.price_level,location.price_range,location.restaurant_categories,location.cuisines,location.foods,location.activity_categories,location.nightlife_categories,location.meal_periods,location.features,location.special_features].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
 const categoryIdentityText = (location: Record<string, unknown>) => [location.name,location.restaurant_name,location.primary_category,location.cuisine,location.cuisine_type,location.restaurant_categories,location.cuisines,location.categories].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
+const trustedDinnerIdentityText = (location: Record<string, unknown>) => [
+  location.name,
+  location.restaurant_name,
+  location.primary_category,
+  location.category,
+  location.cuisine,
+  location.cuisine_type,
+  location.food_type,
+  location.google_primary_type,
+  location.google_types,
+  location.google_meal_periods,
+  location.meal_periods,
+  location.restaurant_categories,
+  location.cuisines,
+  location.signature_items,
+  location.exact_menu_inventory_items,
+].flatMap((value) => Array.isArray(value) ? value : [value]).filter(Boolean).join(" ").toLowerCase();
+
+function isCoffeeBakeryDessertFirstVenue(location: Record<string, unknown>) {
+  const text = trustedDinnerIdentityText(location);
+  return /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|pastry shop|dessert shop|ice cream|bagel shop|donut|doughnut|tea house|juice bar|smoothie/i.test(text);
+}
+
+function hasTrustedDinnerEvidence(location: Record<string, unknown>) {
+  const text = trustedDinnerIdentityText(location);
+  return /\bdinner\b|dinner service|full[- ]service|table service|entree|entrée|steak|seafood|pasta|supper|evening dining|dinner menu|prix fixe|tasting menu|restaurant$|_restaurant\b|restaurant\b|meal_periods?.{0,20}dinner/i.test(text);
+}
 
 function normalizedDish(value: unknown) {
   return String(value ?? "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9\s]+/g, " ").replace(/\s+/g, " ").trim();
@@ -214,8 +241,8 @@ export async function scoreCandidates({ plan, candidates, trace }: { plan: Searc
     const highEnergyActivity = /nightlife|nightclub|club|dance floor|loud|party|bowling|arcade|sports bar|hookah/i.test(rankingText);
     const fineDiningRestaurant = /fine[_ -]?dining|tasting menu|michelin|prix fixe|white tablecloth|luxury dining/i.test(text);
     const casualRestaurant = /casual|laid-back|low-key|neighborhood|family style|counter service|cafe|bistro|taqueria|diner|gastropub|brunch/i.test(text);
-    const coffeeFirstVenue = /coffee shop|coffeehouse|\bcafe\b|\bcafé\b|bakery|tea house|dessert shop|juice bar/i.test(text);
-    const dinnerEvidence = /\bdinner\b|full[- ]service|table service|entree|entrée|steak|seafood|pasta|supper|evening dining|dinner menu|prix fixe|tasting menu|meal_periods?.{0,20}dinner/i.test(rankingText);
+    const coffeeFirstVenue = isCoffeeBakeryDessertFirstVenue(l as Record<string, unknown>);
+    const dinnerEvidence = hasTrustedDinnerEvidence(l as Record<string, unknown>);
     const dishCoverage = hasDishRequest ? dishEvidenceCount / Math.max(1, requestedDishTerms.length) : 0;
     const categoryComplete = requestedCategoryTerms.length > 0 && matchedCategoryTerms.length === requestedCategoryTerms.length;
     const restaurantIntent = categoryComplete || exactMenuPhraseMatch || structuredCoverage.complete ? 100 : hasDishRequest && dishEvidenceCount > 0 ? clamp(70 + dishCoverage * 22) : hasDishRequest && hasExplicitRestaurantMatch ? 48 : hasExplicitRestaurantMatch ? 100 : 20;

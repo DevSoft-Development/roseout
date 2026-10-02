@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { scoreCandidates } from "../scoreCandidates";
 
-function plan(rawQuery: string, options: { activity?: boolean; foods?: string[] } = {}) {
+function plan(rawQuery: string, options: { activity?: boolean; foods?: string[]; mealPeriods?: string[] } = {}) {
   const activity = options.activity === true;
   return {
     version: "search-plan-v1",
@@ -12,7 +12,7 @@ function plan(rawQuery: string, options: { activity?: boolean; foods?: string[] 
       required: !activity,
       cuisines: [],
       foods: options.foods ?? [],
-      mealPeriods: [],
+      mealPeriods: options.mealPeriods ?? [],
       features: [],
       exclusions: [],
     },
@@ -145,6 +145,34 @@ function activity(id: string, name: string, extra: Record<string, unknown> = {})
 }
 
 describe("occasion-aware candidate eligibility", () => {
+  it("rejects bakery-first venues for dinner even when generated search text contains dinner/date-night words", async () => {
+    const scored = await scoreCandidates({
+      plan: plan("dinner in queens", { mealPeriods: ["dinner"] }),
+      candidates: [
+        restaurant("bakery", "SWEET TREATS PASTRY SHOPPE", {
+          primary_category: "bakery",
+          cuisine: "bakery",
+          cuisine_type: "bakery",
+          google_primary_type: "bakery",
+          google_types: ["bakery", "pastry_shop", "dessert_shop", "food_store", "store"],
+          search_document: "bakery restaurant dinner date night nyc restaurant dessert",
+        }),
+        restaurant("thai", "When in Bangkok", {
+          primary_category: "thai",
+          cuisine: "thai",
+          cuisine_type: "thai",
+          google_primary_type: "thai_restaurant",
+          google_types: ["thai_restaurant", "restaurant", "food"],
+          search_document: "Thai restaurant in Flushing",
+        }),
+      ],
+    });
+
+    const ids = scored.restaurants.map((item) => item.candidate.candidate.location.id);
+    expect(ids).toContain("thai");
+    expect(ids).not.toContain("bakery");
+  });
+
   beforeEach(() => {
     process.env.ML_ENABLED = "false";
   });

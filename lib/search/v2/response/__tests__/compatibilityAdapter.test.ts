@@ -10,7 +10,7 @@ function baseV2(overrides: Record<string, unknown> = {}) {
     pairs: [],
     sameVenueResults: [],
     searchPlan: {
-      restaurant: { required: true, cuisines: [], foods: [], features: [], exclusions: [] },
+      restaurant: { required: true, cuisines: [], foods: [], mealPeriods: [], features: [], exclusions: [] },
       activity: { required: true, categories: ["bowling"], features: [], exclusions: [] },
       pairing: { required: true, requireWalkable: true, maxWalkingMinutes: 60 },
       travel: { mode: "walking", explicit: true },
@@ -68,7 +68,7 @@ describe("adaptV2ResponseToCurrentPublicContract", () => {
         outcome: "no_results",
         fallback: { used: true, reason: null },
         searchPlan: {
-          restaurant: { required: true, cuisines: [], foods: [], features: [], exclusions: [] },
+          restaurant: { required: true, cuisines: [], foods: [], mealPeriods: [], features: [], exclusions: [] },
           activity: { required: true, categories: ["bowling"], features: [], exclusions: [] },
           pairing: { required: true },
           travel: { mode: "driving", explicit: false },
@@ -83,4 +83,33 @@ describe("adaptV2ResponseToCurrentPublicContract", () => {
     expect(result.partialResults).toBe(true);
     expect(result.no_pairs_reason).toBe("no_compatible_pair");
   });
+
+  it("includes meal periods in normalized restaurant terms and replaces UNKNOWN market from resolved geo", () => {
+    const result = adaptV2ResponseToCurrentPublicContract(
+      baseV2({
+        restaurants: [{ id: "r1", name: "Reef Restaurant & Bar", market: "UNKNOWN", state: null }],
+        activities: [],
+        searchPlan: {
+          restaurant: { required: true, cuisines: [], foods: [], mealPeriods: ["dinner"], features: [], exclusions: [] },
+          activity: { required: false, categories: [], features: [], exclusions: [] },
+          pairing: { required: false },
+          travel: { mode: "unspecified", explicit: false },
+          geo: { market: "NYC_CORE", state: "NY", borough: "Queens" },
+        },
+        requestedMode: "restaurant_only",
+        resolvedMode: "restaurant_only",
+        primaryDomain: "restaurant",
+        primary_domain: "restaurant",
+        requestFulfilled: true,
+        partialResults: false,
+        fallback: { used: false, reason: null },
+        debug: { pairingDebug: null },
+      }),
+    );
+
+    expect(result.restaurants[0].market).toBe("NYC_CORE");
+    expect(result.restaurants[0].state).toBe("NY");
+    expect(result.normalizedIntent.restaurantTerms).toContain("dinner");
+  });
+
 });
