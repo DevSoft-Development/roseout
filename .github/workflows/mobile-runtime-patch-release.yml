@@ -1,0 +1,102 @@
+name: Mobile runtime patch release
+
+on:
+  workflow_run:
+    workflows:
+      - Azure consumer production
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact main-branch SHA to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: mobile-runtime-patch-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Resolve release SHA and patch relevance
+        id: release
+        env:
+          REQUESTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$REQUESTED_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$REQUESTED_SHA" origin/main
+          RELEVANT=true
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if ! git diff-tree --no-commit-id --name-only -r "$REQUESTED_SHA" | grep -qx 'apps/consumer/app/api/mobile/runtime-patch/route.ts'; then
+              RELEVANT=false
+            fi
+          fi
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+          echo "relevant=$RELEVANT" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS access to central Credential Vault
+        if: steps.release.outputs.relevant == 'true'
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Load platform release registry credentials
+        if: steps.release.outputs.relevant == 'true'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Verify live runtime patch contract
+        if: steps.release.outputs.relevant == 'true'
+        id: patch
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 30             -H 'accept: application/json'             https://theouthaven.com/api/mobile/runtime-patch > "$RUNNER_TEMP/runtime-patch.json"
+          jq -e '
+            .schemaVersion == 1 and
+            (.runtimeVersion | type == "string" and length > 0) and
+            (.patchVersion | type == "string" and length > 0) and
+            (.enabled | type == "boolean") and
+            (.values | type == "object")
+          ' "$RUNNER_TEMP/runtime-patch.json" >/dev/null
+          RUNTIME_VERSION="$(jq -r '.runtimeVersion' "$RUNNER_TEMP/runtime-patch.json")"
+          PATCH_VERSION="$(jq -r '.patchVersion' "$RUNNER_TEMP/runtime-patch.json")"
+          ENABLED="$(jq -r '.enabled' "$RUNNER_TEMP/runtime-patch.json")"
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+          echo "patch_version=$PATCH_VERSION" >> "$GITHUB_OUTPUT"
+          echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
+
+      - name: Record stable runtime patch
+        if: steps.release.outputs.relevant == 'true'
+        env:
+          GIT_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_ID: mobile-runtime-patch-${{ steps.release.outputs.sha }}
+          RELEASE_SURFACE: mobile-runtime-patch
+          RELEASE_PROVIDER: azure
+          RELEASE_STATE: STABLE
+          RELEASE_EVENT_TYPE: runtime_patch_live_verified
+          RUNTIME_VERSION: ${{ steps.patch.outputs.runtime_version }}
+          OTA_RELEASE: ${{ steps.patch.outputs.patch_version }}
+          RELEASE_ARTIFACT_REF: https://theouthaven.com/api/mobile/runtime-patch
+          RELEASE_EVIDENCE: >-
+            {"workflow":"mobile-runtime-patch-release","live_verified":true,"enabled":"${{ steps.patch.outputs.enabled }}"}
+        run: bash .github/scripts/write-platform-release.sh

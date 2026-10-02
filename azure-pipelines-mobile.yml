@@ -606,6 +606,41 @@ stages:
             displayName: Verify TestFlight build is processed
             condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 
+          - script: |
+              set -euo pipefail
+              RELEASE_ID="mobile-ios-production-$(Build.SourceVersion)" \
+              GIT_SHA="$(Build.SourceVersion)" \
+              RELEASE_SURFACE="mobile-ios" \
+              RELEASE_PROVIDER="azure-devops" \
+              RELEASE_STATE="STABLE" \
+              RELEASE_EVENT_TYPE="testflight_build_verified" \
+              IOS_BUILD="$(IOS_BUILD_NUMBER)" \
+              RELEASE_ARTIFACT_REF="azure-devops://$(Build.BuildId)/ios" \
+              RELEASE_EVIDENCE='{"pipeline":"TheOutHaven Mobile Production","platform":"ios","store":"testflight","result":"verified"}' \
+              SUPABASE_URL="$(PLATFORM_RELEASE_SUPABASE_URL)" \
+              SUPABASE_SERVICE_ROLE_KEY="$(PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY)" \
+              bash .github/scripts/write-platform-release.sh
+            displayName: Record stable iOS release
+            condition: succeeded()
+
+          - script: |
+              set +e
+              RELEASE_ID="mobile-ios-production-$(Build.SourceVersion)" \
+              GIT_SHA="$(Build.SourceVersion)" \
+              RELEASE_SURFACE="mobile-ios" \
+              RELEASE_PROVIDER="azure-devops" \
+              RELEASE_STATE="FAILED" \
+              RELEASE_EVENT_TYPE="native_build_failed" \
+              RELEASE_REASON="ios_native_release_failed" \
+              IOS_BUILD="$(IOS_BUILD_NUMBER)" \
+              RELEASE_ARTIFACT_REF="azure-devops://$(Build.BuildId)/ios" \
+              RELEASE_EVIDENCE='{"pipeline":"TheOutHaven Mobile Production","platform":"ios","result":"failed"}' \
+              SUPABASE_URL="$(PLATFORM_RELEASE_SUPABASE_URL)" \
+              SUPABASE_SERVICE_ROLE_KEY="$(PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY)" \
+              bash .github/scripts/write-platform-release.sh || true
+            displayName: Record failed iOS release
+            condition: failed()
+
       - job: Android
         displayName: Build signed Android AAB
         condition: and(succeeded(), ne('${{ parameters.releasePlatform }}', 'ios'))
@@ -1086,3 +1121,38 @@ stages:
               GOOGLE_APPLICATION_CREDENTIALS: $(googlePlayServiceAccount.secureFilePath)
             displayName: Submit AAB to Google Play internal testing
             condition: and(succeeded(), eq(variables['storeSubmissionEnabled'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+          - script: |
+              set -euo pipefail
+              RELEASE_ID="mobile-android-production-$(Build.SourceVersion)" \
+              GIT_SHA="$(Build.SourceVersion)" \
+              RELEASE_SURFACE="mobile-android" \
+              RELEASE_PROVIDER="azure-devops" \
+              RELEASE_STATE="STABLE" \
+              RELEASE_EVENT_TYPE="play_internal_build_verified" \
+              ANDROID_BUILD="$(Build.BuildId)" \
+              RELEASE_ARTIFACT_REF="azure-devops://$(Build.BuildId)/android" \
+              RELEASE_EVIDENCE='{"pipeline":"TheOutHaven Mobile Production","platform":"android","store":"play-internal","result":"verified"}' \
+              SUPABASE_URL="$(PLATFORM_RELEASE_SUPABASE_URL)" \
+              SUPABASE_SERVICE_ROLE_KEY="$(PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY)" \
+              bash .github/scripts/write-platform-release.sh
+            displayName: Record stable Android release
+            condition: succeeded()
+
+          - script: |
+              set +e
+              RELEASE_ID="mobile-android-production-$(Build.SourceVersion)" \
+              GIT_SHA="$(Build.SourceVersion)" \
+              RELEASE_SURFACE="mobile-android" \
+              RELEASE_PROVIDER="azure-devops" \
+              RELEASE_STATE="FAILED" \
+              RELEASE_EVENT_TYPE="native_build_failed" \
+              RELEASE_REASON="android_native_release_failed" \
+              ANDROID_BUILD="$(Build.BuildId)" \
+              RELEASE_ARTIFACT_REF="azure-devops://$(Build.BuildId)/android" \
+              RELEASE_EVIDENCE='{"pipeline":"TheOutHaven Mobile Production","platform":"android","result":"failed"}' \
+              SUPABASE_URL="$(PLATFORM_RELEASE_SUPABASE_URL)" \
+              SUPABASE_SERVICE_ROLE_KEY="$(PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY)" \
+              bash .github/scripts/write-platform-release.sh || true
+            displayName: Record failed Android release
+            condition: failed()

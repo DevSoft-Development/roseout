@@ -10,6 +10,7 @@ on:
       - '.github/workflows/mobile-release-router.yml'
       - '.github/workflows/azure-devops-mobile-dispatch.yml'
       - '.github/workflows/mobile-azure-ota.yml'
+      - '.github/workflows/mobile-runtime-patch-release.yml'
   push:
     branches: [main]
     paths:
@@ -78,9 +79,6 @@ jobs:
               native)
                 echo "**Native binary required.** Android/iOS native release will be dispatched after main validation."
                 ;;
-              ota)
-                echo "**OTA-safe.** Signed Azure production OTA will be dispatched after main validation."
-                ;;
               none)
                 echo "**No mobile runtime release required.**"
                 ;;
@@ -125,18 +123,3 @@ jobs:
           set -euo pipefail
           gh api             --method POST             "repos/$GITHUB_REPOSITORY/actions/workflows/azure-devops-mobile-dispatch.yml/dispatches"             -f ref=main             -f "inputs[releasePlatform]=both"             -f "inputs[releaseSha]=$RELEASE_SHA"
           echo "Queued exact-SHA native release for $RELEASE_SHA" >> "$GITHUB_STEP_SUMMARY"
-
-  dispatch-ota:
-    name: Dispatch signed production OTA
-    needs: [classify, validate]
-    if: github.event_name == 'push' && needs.classify.outputs.classification == 'ota'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Publish exact-SHA production OTA
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          gh api             --method POST             "repos/$GITHUB_REPOSITORY/actions/workflows/mobile-azure-ota.yml/dispatches"             -f ref=main             -f "inputs[action]=publish"             -f "inputs[channel]=production"             -f "inputs[release_sha]=$RELEASE_SHA"             -f "inputs[rollback_release_sha]="             -f "inputs[rollout_percentage]=100"
-          echo "Queued signed production OTA for $RELEASE_SHA" >> "$GITHUB_STEP_SUMMARY"

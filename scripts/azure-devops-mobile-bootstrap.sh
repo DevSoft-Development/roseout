@@ -16,6 +16,7 @@ for tool in aws jq curl python3 base64; do
 done
 
 aws secretsmanager get-secret-value   --secret-id "$MOBILE_SIGNING_SECRET_ID"   --query SecretString   --output text > "$WORK/mobile.json"
+aws secretsmanager get-secret-value   --secret-id "/theouthaven/credential-vault/production/supabase"   --query SecretString   --output text > "$WORK/supabase.json"
 
 jq -e '
   type == "object" and
@@ -58,6 +59,10 @@ ANDROID_KEY_PASSWORD="$(jq -r '.androidKeyPassword' "$WORK/mobile.json")"
 SENTRY_AUTH_TOKEN="$(jq -r '.sentryAuthToken' "$WORK/mobile.json")"
 SENTRY_ORG="$(jq -r '.sentryOrg' "$WORK/mobile.json")"
 SENTRY_PROJECT="$(jq -r '.sentryProject' "$WORK/mobile.json")"
+SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+test -n "$SUPABASE_URL" || { echo "Supabase URL is missing from the Admin Credential Vault." >&2; exit 1; }
+test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Supabase service-role key is missing from the Admin Credential Vault." >&2; exit 1; }
 
 urlencode() {
   python3 - "$1" <<'PY'
@@ -90,7 +95,7 @@ if [ "$SENTRY_PROBE_STATUS" != "200" ]; then
 fi
 
 for value in   "$AZDO_PAT"   "$IOS_CERTIFICATE_PASSWORD"   "$ANDROID_KEYSTORE_PASSWORD"   "$ANDROID_KEY_PASSWORD" \
-  "$SENTRY_AUTH_TOKEN"; do
+  "$SENTRY_AUTH_TOKEN" "$SUPABASE_SERVICE_ROLE_KEY"; do
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$value"; fi
 done
 
@@ -151,7 +156,7 @@ VARIABLE_GROUPS_JSON="$(api "$API_ROOT/$PROJECT_ID/_apis/distributedtask/variabl
 GROUP_ID="$(printf '%s' "$VARIABLE_GROUPS_JSON" | jq -r '.value[0].id // empty')"
 
 GROUP_BODY="$(
-  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     --arg sentryAuthToken "$SENTRY_AUTH_TOKEN"     --arg sentryOrg "$SENTRY_ORG"     --arg sentryProject "$SENTRY_PROJECT"     '{
+  jq -n     --arg projectId "$PROJECT_ID"     --arg projectName "$PROJECT_NAME"     --arg name "$GROUP_NAME"     --arg iosCert "$IOS_CERTIFICATE_SECURE_FILE"     --arg iosProfile "$IOS_PROFILE_SECURE_FILE"     --arg appStoreKey "$APP_STORE_CONNECT_KEY_SECURE_FILE"     --arg androidKeystore "$ANDROID_KEYSTORE_SECURE_FILE"     --arg googlePlay "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"     --arg iosCertPassword "$IOS_CERTIFICATE_PASSWORD"     --arg iosTeam "$IOS_TEAM_ID"     --arg appStoreKeyId "$APP_STORE_CONNECT_KEY_ID"     --arg appStoreIssuer "$APP_STORE_CONNECT_ISSUER_ID"     --arg appStoreAppId "$APP_STORE_CONNECT_APP_ID"     --arg androidStorePassword "$ANDROID_KEYSTORE_PASSWORD"     --arg androidAlias "$ANDROID_KEY_ALIAS"     --arg androidKeyPassword "$ANDROID_KEY_PASSWORD"     --arg sentryAuthToken "$SENTRY_AUTH_TOKEN"     --arg sentryOrg "$SENTRY_ORG"     --arg sentryProject "$SENTRY_PROJECT"     --arg supabaseUrl "$SUPABASE_URL"     --arg supabaseServiceRoleKey "$SUPABASE_SERVICE_ROLE_KEY"     '{
       name: $name,
       description: "TheOutHaven production mobile signing and store submission configuration. Source of truth: Admin Credential Vault.",
       type: "Vsts",
@@ -176,7 +181,9 @@ GROUP_BODY="$(
         ANDROID_KEY_PASSWORD: { value: $androidKeyPassword, isSecret: true },
         SENTRY_AUTH_TOKEN: { value: $sentryAuthToken, isSecret: true },
         SENTRY_ORG: { value: $sentryOrg },
-        SENTRY_PROJECT: { value: $sentryProject }
+        SENTRY_PROJECT: { value: $sentryProject },
+        PLATFORM_RELEASE_SUPABASE_URL: { value: $supabaseUrl },
+        PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY: { value: $supabaseServiceRoleKey, isSecret: true }
       }
     }'
 )"
@@ -333,7 +340,9 @@ printf '%s' "$VERIFY_GROUP" | jq -e '
   .value[0].variables.GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE.value == "theouthaven-google-play-service-account.json" and
   (.value[0].variables.SENTRY_AUTH_TOKEN.isSecret == true) and
   (.value[0].variables.SENTRY_ORG.value | length > 0) and
-  (.value[0].variables.SENTRY_PROJECT.value | length > 0)
+  (.value[0].variables.SENTRY_PROJECT.value | length > 0) and
+  (.value[0].variables.PLATFORM_RELEASE_SUPABASE_URL.value | length > 0) and
+  (.value[0].variables.PLATFORM_RELEASE_SUPABASE_SERVICE_ROLE_KEY.isSecret == true)
 ' >/dev/null
 
 for name in   "$IOS_CERTIFICATE_SECURE_FILE"   "$IOS_PROFILE_SECURE_FILE"   "$APP_STORE_CONNECT_KEY_SECURE_FILE"   "$ANDROID_KEYSTORE_SECURE_FILE"   "$GOOGLE_PLAY_SERVICE_ACCOUNT_SECURE_FILE"; do

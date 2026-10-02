@@ -8,6 +8,8 @@ on:
       - 'infra/aws/lambda/domain_lifecycle_worker.py'
       - 'infra/aws/cloudformation/worker-runtime.yml'
       - '.github/workflows/aws-worker-runtime.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   push:
     branches:
       - main
@@ -17,6 +19,8 @@ on:
       - 'infra/aws/lambda/domain_lifecycle_worker.py'
       - 'infra/aws/cloudformation/worker-runtime.yml'
       - '.github/workflows/aws-worker-runtime.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   workflow_dispatch:
     inputs:
       environment:
@@ -367,6 +371,15 @@ jobs:
           echo "email_fn=$EMAIL_FN" >> "$GITHUB_OUTPUT"
           echo "domain_fn=$DOMAIN_FN" >> "$GITHUB_OUTPUT"
 
+      - name: Load platform release registry credentials
+        if: steps.config.outputs.target_env == 'production'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Record worker candidate
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          RELEASE_ID="aws-workers-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="workers" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="lambda_deployed" WORKER_RELEASE="$GITHUB_SHA" RELEASE_ARTIFACT_REF="$GITHUB_SHA" RELEASE_EVIDENCE='{"workflow":"aws-worker-runtime","stage":"lambda_deployed"}' bash .github/scripts/write-platform-release.sh
+
       - name: Authenticated job gateway smoke test
         env:
           JOB_URL: ${{ steps.runtime.outputs.job_url }}
@@ -385,6 +398,17 @@ jobs:
             -H "x-toh-signature: $SIGNATURE" \
             "${JOB_URL%/}/v1/status")"
           echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 3' >/dev/null
+
+      - name: Record stable worker release
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          RELEASE_ID="aws-workers-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="workers" RELEASE_PROVIDER="aws" RELEASE_STATE="STABLE" RELEASE_EVENT_TYPE="authenticated_smoke_passed" WORKER_RELEASE="$GITHUB_SHA" RELEASE_ARTIFACT_REF="$GITHUB_SHA" RELEASE_EVIDENCE='{"workflow":"aws-worker-runtime","stage":"authenticated_smoke","result":"passed"}' bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed worker release
+        if: ${{ failure() && steps.config.outputs.target_env == 'production' }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then exit 0; fi
+          RELEASE_ID="aws-workers-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="workers" RELEASE_PROVIDER="aws" RELEASE_STATE="FAILED" RELEASE_EVENT_TYPE="deployment_failed" RELEASE_REASON="aws_worker_deployment_failed" WORKER_RELEASE="$GITHUB_SHA" RELEASE_ARTIFACT_REF="$GITHUB_SHA" RELEASE_EVIDENCE='{"workflow":"aws-worker-runtime","result":"failed"}' bash .github/scripts/write-platform-release.sh
 
       - name: Worker deployment summary
         env:

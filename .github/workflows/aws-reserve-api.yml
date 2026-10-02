@@ -8,6 +8,8 @@ on:
       - 'lib/aws/reserve-api.ts'
       - 'app/api/v1/reserve/**'
       - '.github/workflows/aws-reserve-api.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   push:
     branches:
       - main
@@ -17,6 +19,8 @@ on:
       - 'lib/aws/reserve-api.ts'
       - 'app/api/v1/reserve/**'
       - '.github/workflows/aws-reserve-api.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
   workflow_dispatch:
     inputs:
       environment:
@@ -226,6 +230,17 @@ jobs:
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+      - name: Load platform release registry credentials
+        if: steps.config.outputs.target_env == 'production'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Record Reserve API candidate
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+        run: |
+          RELEASE_ID="aws-reserve-api-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve-api" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="lambda_deployed" RELEASE_ARTIFACT_REF="$FUNCTION_NAME" RELEASE_EVIDENCE='{"workflow":"aws-reserve-api","stage":"lambda_deployed"}' bash .github/scripts/write-platform-release.sh
+
       - name: Verify Reserve API health
         env:
           API_URL: ${{ steps.runtime.outputs.api_url }}
@@ -245,6 +260,21 @@ jobs:
               payload = json.loads(resp.read().decode())
           assert payload.get('ok') is True and payload.get('service') == 'reserve-api', payload
           PY
+
+      - name: Record stable Reserve API release
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+        run: |
+          RELEASE_ID="aws-reserve-api-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve-api" RELEASE_PROVIDER="aws" RELEASE_STATE="STABLE" RELEASE_EVENT_TYPE="authenticated_health_passed" RELEASE_ARTIFACT_REF="$FUNCTION_NAME" RELEASE_EVIDENCE='{"workflow":"aws-reserve-api","stage":"health","result":"passed"}' bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed Reserve API release
+        if: ${{ failure() && steps.config.outputs.target_env == 'production' }}
+        env:
+          FUNCTION_NAME: ${{ steps.runtime.outputs.function_name }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then exit 0; fi
+          RELEASE_ID="aws-reserve-api-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve-api" RELEASE_PROVIDER="aws" RELEASE_STATE="FAILED" RELEASE_EVENT_TYPE="deployment_failed" RELEASE_REASON="aws_reserve_api_deployment_failed" RELEASE_ARTIFACT_REF="${FUNCTION_NAME:-}" RELEASE_EVIDENCE='{"workflow":"aws-reserve-api","result":"failed"}' bash .github/scripts/write-platform-release.sh
       - name: Activate Reserve API in Vercel production
         if: steps.config.outputs.target_env == 'production'
         id: vercel
