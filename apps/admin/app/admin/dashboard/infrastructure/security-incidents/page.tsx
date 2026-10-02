@@ -68,7 +68,7 @@ export default async function SecurityIncidentsPage() {
         subtitle="Durable GuardDuty, root/IAM, CloudTrail-tampering, and containment events from the AWS production security plane."
         badge={
           <AdminStatusBadge tone={incidents.length ? "amber" : "green"}>
-            {incidents.length ? \`\${incidents.length} recorded events\` : "No security events recorded"}
+            {incidents.length ? `${incidents.length} recorded events` : "No security events recorded"}
           </AdminStatusBadge>
         }
         actions={
@@ -150,7 +150,7 @@ export default async function SecurityIncidentsPage() {
                       <td className="px-5 py-4 text-xs text-white/60">
                         <p>{valueText(meta.userIdentityArn || contain.userName)}</p>
                         <p className="mt-1 text-white/35">
-                          {keySuffix === "—" ? "—" : \`key ••••\${keySuffix}\`}
+                          {keySuffix === "—" ? "—" : `key ••••${keySuffix}`}
                         </p>
                       </td>
                       <td className="px-5 py-4">
