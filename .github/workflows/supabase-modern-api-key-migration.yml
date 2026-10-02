@@ -121,7 +121,8 @@ jobs:
       - name: Update isolated dual-region DR runtime secret
         run: |
           set -euo pipefail
-          jq             --arg vs "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg vp "$(cat "$RUNNER_TEMP/virginia-publishable")"             --arg os "$(cat "$RUNNER_TEMP/oregon-secret")"             --arg op "$(cat "$RUNNER_TEMP/oregon-publishable")"             '.DR_VIRGINIA_SERVICE_ROLE_KEY=$vs |
+          jq             --arg token "$SUPABASE_ACCESS_TOKEN"             --arg vs "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg vp "$(cat "$RUNNER_TEMP/virginia-publishable")"             --arg os "$(cat "$RUNNER_TEMP/oregon-secret")"             --arg op "$(cat "$RUNNER_TEMP/oregon-publishable")"             '.DR_SUPABASE_ACCESS_TOKEN=$token |
+             .DR_VIRGINIA_SERVICE_ROLE_KEY=$vs |
              .DR_VIRGINIA_ANON_KEY=$vp |
              .DR_OREGON_SERVICE_ROLE_KEY=$os |
              .DR_OREGON_ANON_KEY=$op |
@@ -136,6 +137,7 @@ jobs:
           jq -e '.secretKey | startswith("sb_secret_")' "$RUNNER_TEMP/supabase-after.json" >/dev/null
           jq -e '.publishableKey | startswith("sb_publishable_")' "$RUNNER_TEMP/supabase-after.json" >/dev/null
           jq -e '.DR_API_KEY_MODE == "modern"' "$RUNNER_TEMP/dr-after.json" >/dev/null
+          jq -e '.DR_SUPABASE_ACCESS_TOKEN == env.SUPABASE_ACCESS_TOKEN' "$RUNNER_TEMP/dr-after.json" >/dev/null
           jq -e '.DR_VIRGINIA_SERVICE_ROLE_KEY | startswith("sb_secret_")' "$RUNNER_TEMP/dr-after.json" >/dev/null
           jq -e '.DR_OREGON_SERVICE_ROLE_KEY | startswith("sb_secret_")' "$RUNNER_TEMP/dr-after.json" >/dev/null
 
