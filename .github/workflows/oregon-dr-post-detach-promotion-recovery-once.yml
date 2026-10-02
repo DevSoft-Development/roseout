@@ -181,8 +181,8 @@ jobs:
           test "$(jq -r '.[0].fence' "$RUNNER_TEMP/or-fence-after.json")" = '0'
 
           curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${OREGON_REF}/api-keys?reveal=true" > "$RUNNER_TEMP/or-keys.json"
-          service="$(jq -r '([.[]|select(.type=="secret" and (.disabled!=true))][0].api_key // [.[]|select(.type=="legacy" and .name=="service_role" and (.disabled!=true))][0].api_key // empty)' "$RUNNER_TEMP/or-keys.json")"
-          anon="$(jq -r '([.[]|select(.type=="publishable" and (.disabled!=true))][0].api_key // [.[]|select(.type=="legacy" and .name=="anon" and (.disabled!=true))][0].api_key // empty)' "$RUNNER_TEMP/or-keys.json")"
+          service="$(jq -r '([.[]|select(.type=="secret" and (.disabled!=true))][0].api_key // ([.[]|select(.type=="secret" and (.disabled!=true))][0].api_key // [.[]|select(.type=="legacy" and .name=="service_role" and (.disabled!=true))][0].api_key // empty))' "$RUNNER_TEMP/or-keys.json")"
+          anon="$(jq -r '([.[]|select(.type=="publishable" and (.disabled!=true))][0].api_key // ([.[]|select(.type=="publishable" and (.disabled!=true))][0].api_key // [.[]|select(.type=="legacy" and .name=="anon" and (.disabled!=true))][0].api_key // empty))' "$RUNNER_TEMP/or-keys.json")"
           test -n "$service" && test -n "$anon"
           echo "::add-mask::$service"; echo "::add-mask::$anon"
           status="$(curl --silent --show-error --output "$RUNNER_TEMP/or-write.json" --write-out '%{http_code}' --request PATCH --header "apikey: $service" --header "Authorization: Bearer $service" --header 'Content-Type: application/json' --header 'Prefer: return=minimal' --data '{"name":"__dr_oregon_write_probe__"}' "${OREGON_URL}/rest/v1/locations?id=eq.00000000-0000-0000-0000-000000000000")"
