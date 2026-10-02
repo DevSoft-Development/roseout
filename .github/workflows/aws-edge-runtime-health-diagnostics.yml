@@ -1,0 +1,76 @@
+name: AWS edge runtime health diagnostics
+
+on:
+  push:
+    branches: [diagnostics/aws-edge-health]
+    paths:
+      - '.github/workflows/aws-edge-runtime-health-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  FUNCTION_NAME: toh-production-edge-runtime
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Show Lambda state and image status
+        run: |
+          set -euo pipefail
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --query '{State:State,StateReason:StateReason,LastUpdateStatus:LastUpdateStatus,LastUpdateStatusReason:LastUpdateStatusReason,PackageType:PackageType,Timeout:Timeout,MemorySize:MemorySize,ImageConfigError:ImageConfigResponse.Error}' \
+            --output json
+
+      - name: Invoke health route with log tail
+        run: |
+          set -euo pipefail
+          EVENT="$RUNNER_TEMP/health-event.json"
+          RESPONSE="$RUNNER_TEMP/health-response.json"
+          META="$RUNNER_TEMP/invoke-meta.json"
+          cat > "$EVENT" <<'JSON'
+          {"version":"2.0","routeKey":"GET /healthz","rawPath":"/healthz","rawQueryString":"","headers":{},"requestContext":{"accountId":"diagnostic","apiId":"diagnostic","domainName":"internal","domainPrefix":"internal","http":{"method":"GET","path":"/healthz","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"github-actions-diagnostic"},"requestId":"diagnostic","routeKey":"GET /healthz","stage":"$default","time":"29/Aug/2026:00:00:00 +0000","timeEpoch":1787961600000},"isBase64Encoded":false}
+          JSON
+
+          set +e
+          aws --cli-read-timeout 180 lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --invocation-type RequestResponse \
+            --log-type Tail \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$EVENT" \
+            "$RESPONSE" > "$META"
+          RC=$?
+          set -e
+
+          echo "invoke_exit_code=$RC"
+          if [ -s "$META" ]; then
+            jq '{StatusCode,FunctionError,ExecutedVersion}' "$META"
+            LOG_RESULT="$(jq -r '.LogResult // empty' "$META")"
+            if [ -n "$LOG_RESULT" ]; then
+              echo '--- Lambda log tail ---'
+              printf '%s' "$LOG_RESULT" | base64 --decode || true
+              echo
+              echo '--- End log tail ---'
+            fi
+          fi
+          if [ -s "$RESPONSE" ]; then
+            echo '--- Lambda response ---'
+            jq . "$RESPONSE" 2>/dev/null || cat "$RESPONSE"
+            echo '--- End response ---'
+          fi
+          exit "$RC"
