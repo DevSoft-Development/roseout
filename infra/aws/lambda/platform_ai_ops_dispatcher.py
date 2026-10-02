@@ -35,7 +35,7 @@ def handler(event, context):
             "accept": "application/vnd.github+json",
             "content-type": "application/json",
             "user-agent": "TheOutHaven-AiOps-Scheduler/1.0",
-            "x-github-api-version": "2026-03-10"
+            "x-github-api-version": "2022-11-28"
         }
     )
     with urllib.request.urlopen(request, timeout=15) as response:
