@@ -612,8 +612,10 @@ jobs:
           PY
           )"
           curl --fail --silent --show-error -H "x-toh-timestamp: $TIMESTAMP" -H "x-toh-signature: $SIGNATURE" "${GATEWAY_URL%/}/v1/status" > "$RUNNER_TEMP/platform-dr-status.json"
+          jq '{ok,state:{mode:.state.mode},primary:{healthy:.primary.healthy,origin:.primary.origin},standby:{healthy:.standby.healthy},compute:{desiredTasks:.compute.desiredTasks,runningTasks:.compute.runningTasks,healthyTargets:.compute.healthyTargets},surfaces:[.surfaces[]? | {name:(.name // .surface // .key // "unknown"),primaryHealthy:.primary.healthy,standbyHealthy:.standby.healthy}]}' "$RUNNER_TEMP/platform-dr-status.json" | tee "$RUNNER_TEMP/platform-dr-status-sanitized.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '.ok==true and .state.mode=="normal" and .primary.healthy==true and .primary.origin=="azure-consumer" and .standby.healthy==true and .compute.desiredTasks==2 and .compute.runningTasks==2 and .compute.healthyTargets>=2 and all(.surfaces[]; .primary.healthy==true and .standby.healthy==true)' "$RUNNER_TEMP/platform-dr-status.json" >/dev/null
           curl --fail --silent --show-error "https://www.theouthaven.com/api/health/azure" > "$RUNNER_TEMP/live-azure-health.json"
+          jq '{ok,provider,regionRole,region,revision}' "$RUNNER_TEMP/live-azure-health.json" | tee "$RUNNER_TEMP/live-azure-health-sanitized.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '.ok==true and .provider=="azure-consumer" and (.regionRole=="primary" or .regionRole=="secondary")' "$RUNNER_TEMP/live-azure-health.json" >/dev/null
           {
             echo '### TheOutHaven platform DR ready'
