@@ -16,6 +16,14 @@ RELEASE_ACTOR="${RELEASE_ACTOR:-github}"
 RELEASE_ARTIFACT_REF="${RELEASE_ARTIFACT_REF:-}"
 RELEASE_REASON="${RELEASE_REASON:-}"
 RELEASE_EVIDENCE="${RELEASE_EVIDENCE:-{}}"
+AWS_ADMIN_IMAGE="${AWS_ADMIN_IMAGE:-}"
+AWS_BUSINESS_IMAGE="${AWS_BUSINESS_IMAGE:-}"
+AWS_RESERVE_IMAGE="${AWS_RESERVE_IMAGE:-}"
+WORKER_RELEASE="${WORKER_RELEASE:-}"
+IOS_BUILD="${IOS_BUILD:-}"
+ANDROID_BUILD="${ANDROID_BUILD:-}"
+RUNTIME_VERSION="${RUNTIME_VERSION:-}"
+OTA_RELEASE="${OTA_RELEASE:-}"
 
 case "$RELEASE_STATE" in
   BUILDING|VALIDATING|CANDIDATE|CANARY|PROMOTING|STABLE|DEGRADED|ROLLING_BACK|ROLLED_BACK|FAILED) ;;
@@ -58,6 +66,14 @@ release_payload="$(jq -n \
   --arg previous_good_release_id "$previous_good" \
   --arg artifact_ref "$RELEASE_ARTIFACT_REF" \
   --arg rollback_reason "$RELEASE_REASON" \
+  --arg aws_admin_image "$AWS_ADMIN_IMAGE" \
+  --arg aws_business_image "$AWS_BUSINESS_IMAGE" \
+  --arg aws_reserve_image "$AWS_RESERVE_IMAGE" \
+  --arg worker_release "$WORKER_RELEASE" \
+  --arg ios_build "$IOS_BUILD" \
+  --arg android_build "$ANDROID_BUILD" \
+  --arg runtime_version "$RUNTIME_VERSION" \
+  --arg ota_release "$OTA_RELEASE" \
   --argjson deployed_at "$deployed_at" \
   --argjson promoted_at "$promoted_at" \
   --argjson metadata "$(jq -c . <<<"$RELEASE_EVIDENCE")" \
@@ -74,6 +90,14 @@ release_payload="$(jq -n \
   + (if $previous_good_release_id != "" then {previous_good_release_id:$previous_good_release_id} else {} end)
   + (if $artifact_ref != "" then {artifact_ref:$artifact_ref} else {} end)
   + (if $rollback_reason != "" then {rollback_reason:$rollback_reason} else {} end)
+  + (if $aws_admin_image != "" then {aws_admin_image:$aws_admin_image} else {} end)
+  + (if $aws_business_image != "" then {aws_business_image:$aws_business_image} else {} end)
+  + (if $aws_reserve_image != "" then {aws_reserve_image:$aws_reserve_image} else {} end)
+  + (if $worker_release != "" then {worker_release:$worker_release} else {} end)
+  + (if $ios_build != "" then {ios_build:$ios_build} else {} end)
+  + (if $android_build != "" then {android_build:$android_build} else {} end)
+  + (if $runtime_version != "" then {runtime_version:$runtime_version} else {} end)
+  + (if $ota_release != "" then {ota_release:$ota_release} else {} end)
   + (if $deployed_at != null then {deployed_at:$deployed_at} else {} end)
   + (if $promoted_at != null then {promoted_at:$promoted_at} else {} end)')"
 
