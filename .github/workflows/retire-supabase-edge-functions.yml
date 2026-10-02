@@ -67,44 +67,27 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Resolve Supabase token with Edge Functions permission
-        env:
-          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      - name: Load dedicated Supabase Edge Functions retirement token
         run: |
           set -euo pipefail
           VAULT=/theouthaven/credential-vault/production/supabase
-          DR=/theouthaven/production/dr-reconciler/env
           aws secretsmanager get-secret-value --secret-id "$VAULT" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
-          aws secretsmanager get-secret-value --secret-id "$DR" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
 
-          CENTRAL="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
-          DR_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
-          LEGACY="${LEGACY_SUPABASE_ACCESS_TOKEN:-}"
-          TOKEN=""
-
-          probe() {
-            local candidate="$1" source="$2"
-            [ -n "$candidate" ] || return 1
-            echo "::add-mask::$candidate"
-            local code
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/edge-token-probe.json" --write-out '%{http_code}'               -H "Authorization: Bearer $candidate"               "https://api.supabase.com/v1/projects/$VIRGINIA_REF/functions")"
-            if [ "$code" = 200 ]; then
-              TOKEN="$candidate"
-              echo "supabase_edge_token_source=$source" >> "$GITHUB_ENV"
-              return 0
-            fi
-            echo "$source token cannot manage Edge Functions (HTTP $code); trying next protected source."
-            return 1
-          }
-
-          probe "$CENTRAL" central_vault ||           probe "$DR_TOKEN" isolated_dr_secret ||           probe "$LEGACY" legacy_ci_secret || {
-            echo "::error::No protected Supabase token has Edge Functions read/write permission. Grant Edge Functions read-write to the dedicated retirement token and store it in the Admin Credential Vault."
+          TOKEN="$(jq -r '.edgeFunctionsManagementToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          test -n "$TOKEN" || {
+            echo "::error::Missing dedicated Supabase Edge Functions retirement token in Admin Credential Vault."
             exit 1
           }
 
           echo "::add-mask::$TOKEN"
+          CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/edge-token-probe.json" --write-out '%{http_code}'             -H "Authorization: Bearer $TOKEN"             "https://api.supabase.com/v1/projects/$VIRGINIA_REF/functions")"
+          test "$CODE" = 200 || {
+            echo "::error::Dedicated Edge Functions retirement token cannot read Edge Functions (HTTP $CODE). Grant both TheOutHaven projects and Edge Functions read-write."
+            exit 1
+          }
+
           echo "SUPABASE_ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          rm -f "$RUNNER_TEMP/supabase-vault.json" "$RUNNER_TEMP/dr.json" "$RUNNER_TEMP/edge-token-probe.json"
+          rm -f "$RUNNER_TEMP/supabase-vault.json" "$RUNNER_TEMP/edge-token-probe.json"
 
       - name: Prove AWS Edge runtime is healthy
         run: |
