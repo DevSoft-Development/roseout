@@ -63,6 +63,13 @@ type IncidentRow = {
   created_at: string;
 };
 
+type AiOpsRow = {
+  id: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -103,7 +110,7 @@ export default async function PlatformOperationsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine);
 
   const db = await getAdminDatabaseClient();
-  const [releaseResult, eventResult, incidentResult] = await Promise.all([
+  const [releaseResult, eventResult, incidentResult, aiOpsResult] = await Promise.all([
     db
       .from("platform_releases")
       .select("release_id,git_sha,surface,provider,artifact_ref,environment,state,previous_good_release_id,runtime_version,azure_revision,aws_admin_image,aws_business_image,aws_reserve_image,worker_release,ios_build,android_build,ota_release,created_at,deployed_at,promoted_at,updated_at,rollback_reason")
@@ -121,11 +128,18 @@ export default async function PlatformOperationsPage() {
       .eq("category", "critical_alert")
       .order("created_at", { ascending: false })
       .limit(100),
+    db
+      .from("admin_system_logs")
+      .select("id,message,metadata,created_at")
+      .eq("category", "ai_ops_analysis")
+      .order("created_at", { ascending: false })
+      .limit(1),
   ]);
 
   const releases = (releaseResult.data || []) as ReleaseRow[];
   const events = (eventResult.data || []) as EventRow[];
   const incidents = (incidentResult.data || []) as IncidentRow[];
+  const latestAiOps = ((aiOpsResult.data || []) as AiOpsRow[])[0] || null;
 
   const latestBySurface = new Map<string, ReleaseRow>();
   for (const release of releases) {
@@ -300,6 +314,54 @@ export default async function PlatformOperationsPage() {
         ) : (
           <div className="p-8 text-center text-sm text-white/50">No release events have been recorded yet.</div>
         )}
+      </section>
+
+
+      <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/40">AI Operations</p>
+            <h2 className="mt-2 text-xl font-black">Evidence-based analysis</h2>
+            <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
+              Azure AI correlates sanitized release and security evidence and can only recommend deterministic allowlisted actions. It has no unrestricted provider credentials and does not execute its own recommendations.
+            </p>
+          </div>
+          <AdminStatusBadge tone={latestAiOps ? "green" : "muted"}>
+            {latestAiOps ? "ANALYSIS AVAILABLE" : "AWAITING FIRST ANALYSIS"}
+          </AdminStatusBadge>
+        </div>
+        {latestAiOps ? (
+          <div className="mt-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-sm font-black text-white">Latest assessment</p>
+              <p className="mt-2 text-sm leading-6 text-white/65">
+                {String(latestAiOps.metadata?.summary || latestAiOps.message)}
+              </p>
+              <p className="mt-3 text-xs text-white/35">{formatDate(latestAiOps.created_at)}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-sm font-black text-white">Recommended actions</p>
+              <div className="mt-3 grid gap-2">
+                {Array.isArray(latestAiOps.metadata?.recommended_actions) && latestAiOps.metadata.recommended_actions.length ? (
+                  latestAiOps.metadata.recommended_actions.slice(0, 5).map((raw, index) => {
+                    const action = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+                    return (
+                      <div key={index} className="rounded-xl border border-white/10 px-3 py-2">
+                        <p className="text-xs font-black text-white">{String(action.action_id || "observe")}</p>
+                        <p className="mt-1 text-xs text-white/45">{String(action.reason || "No reason supplied")}</p>
+                        {action.requires_approval === true ? (
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-wide text-amber-200">Manual approval required</p>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-white/45">No action recommended.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
