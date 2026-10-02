@@ -2,6 +2,18 @@ name: Supabase modern server key migration
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-modern-key-migration.yml'
+      - '.github/workflows/aws-credential-vault-runtime-sync.yml'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'lib/admin/credential-vault-runtime-source.ts'
+      - 'lib/admin/credential-runtime-inventory.ts'
+      - 'lib/env.ts'
+      - 'packages/config/server-env.ts'
+      - 'infra/azure/main.bicep'
+      - 'infra/azure/modules/consumer-runtime.bicep'
   push:
     branches: [main]
     paths:
@@ -32,7 +44,24 @@ env:
   SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate modern-key migration contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/supabase-modern-key-migration.yml'
+          grep -F 'type:"secret"' "$FILE" >/dev/null
+          grep -F 'role:"service_role"' "$FILE" >/dev/null
+          grep -F 'SUPABASE_SECRET_KEY' "$FILE" >/dev/null
+          grep -F 'legacy_service_role_retained:true' "$FILE" >/dev/null
+          ! grep -F 'DELETE https://api.supabase.com' "$FILE" >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' "$FILE"
+
   migrate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
     runs-on: ubuntu-latest
     environment: Production
     timeout-minutes: 30
@@ -50,8 +79,6 @@ jobs:
         run: bash .github/scripts/load-supabase-management-token.sh
 
       - name: Ensure modern secret keys exist in both regions
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           ensure_secret_key() {
