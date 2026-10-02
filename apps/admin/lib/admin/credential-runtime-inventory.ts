@@ -14,7 +14,8 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
   ] },
   supabase: { source: "Runtime environment", fields: [
     { field: "url", env: ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"] },
-    { field: "publishableKey", env: ["NEXT_PUBLIC_SUPABASE_ANON_KEY"] },
+    { field: "publishableKey", env: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] },
+    { field: "secretKey", env: ["SUPABASE_SECRET_KEY"] },
     { field: "serviceRoleKey", env: ["SUPABASE_SERVICE_ROLE_KEY"] },
   ] },
   microsoft: { source: "Runtime environment", fields: [
