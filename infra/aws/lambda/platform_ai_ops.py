@@ -123,7 +123,6 @@ def _assistant_analysis(context):
                 "content": [{"type": "input_text", "text": json.dumps(context, separators=(",", ":"), default=str)[:12000]}],
             },
         ],
-        "text": {"format": {"type": "json_object"}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     timestamp = str(int(time.time() * 1000))
