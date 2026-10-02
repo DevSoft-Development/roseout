@@ -122,7 +122,7 @@ jobs:
 
           SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
           SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
-          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVER_KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$WORK/supabase.json")"
           HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
@@ -134,7 +134,7 @@ jobs:
 
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_ANON_KEY"
-          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_SERVER_KEY"
           test -n "$IOS_TEAM_ID" || { echo "::error::Mobile vault iosTeamId is missing."; exit 1; }
           test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Mobile vault Android keystore password is missing."; exit 1; }
           test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Mobile vault Android key alias is missing."; exit 1; }
@@ -158,7 +158,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT=""
           fi
 
-          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$ANDROID_KEYSTORE_PASSWORD"; do
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVER_KEY" "$ANDROID_KEYSTORE_PASSWORD"; do
             echo "::add-mask::$value"
           done
 
@@ -166,7 +166,7 @@ jobs:
             echo "SITE_URL=$SITE_URL"
             echo "SUPABASE_URL=$SUPABASE_URL"
             echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "SUPABASE_SERVER_KEY=$SUPABASE_SERVER_KEY"
             echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
             echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
             echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
@@ -303,7 +303,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServerKey="$SUPABASE_SERVER_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
 
       - name: Deploy dual-region production runtime
         uses: azure/CLI@v2
@@ -322,7 +322,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+            az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServerKey="$SUPABASE_SERVER_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
 
       - name: Record Azure release validation
         env:
@@ -585,7 +585,7 @@ jobs:
           RELEASE_EVIDENCE: >-
             {"github_run_id":"${{ github.run_id }}","github_run_attempt":"${{ github.run_attempt }}","workflow":"azure-consumer-production","stage":"workflow","result":"failed"}
         run: |
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVER_KEY:-}" ]; then
             echo "::warning::Release registry credentials were not resolved before workflow failure; skipping registry failure write."
             exit 0
           fi
