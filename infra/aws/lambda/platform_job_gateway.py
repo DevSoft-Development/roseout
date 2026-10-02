@@ -85,7 +85,7 @@ def _query(event):
     return urllib.parse.parse_qs(str(event.get("rawQueryString") or ""), keep_blank_values=False)
 
 
-def _secret():
+def _secrets():
     global _secret_cache
     if _secret_cache:
         return _secret_cache
@@ -93,8 +93,27 @@ def _secret():
     value = result.get("SecretString")
     if not value:
         raise RuntimeError("platform_job_gateway_secret_missing")
-    _secret_cache = value
-    return value
+
+    candidates = []
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        parsed = None
+
+    if isinstance(parsed, dict):
+        for key in ("current", "previous"):
+            candidate = str(parsed.get(key) or "").strip()
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+    else:
+        candidate = str(value).strip()
+        if candidate:
+            candidates.append(candidate)
+
+    if not candidates:
+        raise RuntimeError("platform_job_gateway_secret_missing")
+    _secret_cache = tuple(candidates)
+    return _secret_cache
 
 
 def _authorized(event, body):
@@ -112,8 +131,11 @@ def _authorized(event, body):
     http = (event.get("requestContext") or {}).get("http") or {}
     method = str(http.get("method") or "POST").upper()
     signed = "\n".join([timestamp, method, _signed_path(event), body])
-    expected = hmac.new(_secret().encode(), signed.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    for secret in _secrets():
+        expected = hmac.new(secret.encode(), signed.encode(), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(expected, signature):
+            return True
+    return False
 
 
 def _validate_job(raw):

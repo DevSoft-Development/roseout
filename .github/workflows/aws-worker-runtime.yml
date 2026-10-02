@@ -66,6 +66,9 @@ jobs:
       - name: Validate Python worker syntax
         run: |
           python -m py_compile infra/aws/lambda/platform_job_gateway.py
+          grep -F 'def _secrets():' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F 'for key in ("current", "previous"):' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F 'for secret in _secrets():' infra/aws/lambda/platform_job_gateway.py >/dev/null
           python -m py_compile infra/aws/lambda/ses_email_worker.py
           python -m py_compile infra/aws/lambda/domain_lifecycle_worker.py
 
