@@ -1,0 +1,129 @@
+name: Post-cutover Virginia live verification
+
+on:
+  push:
+    branches:
+      - migration/post-cutover-live-verify
+    paths:
+      - '.github/workflows/post-cutover-live-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  VIRGINIA_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  PROBE_QUERY: migration probe 2087 date night in Brooklyn
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Require Supabase management credential
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "SUPABASE_ACCESS_TOKEN is not configured" >&2; exit 1; }
+          echo "supabase_management_credential_present=true"
+
+      - name: Verify live production pages
+        run: |
+          set -euo pipefail
+          for path in / /create /business; do
+            code="$(curl --location --silent --show-error --output "$RUNNER_TEMP/page.html" --write-out '%{http_code}' "https://theouthaven.com${path}")"
+            echo "production_page=${path} http_status=${code}"
+            [[ "$code" == 2* ]] || { echo "Production page failed: $path" >&2; exit 1; }
+          done
+
+      - name: Confirm probe is absent before request
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query="select count(*)::int as matches from public.search_events where raw_query = 'migration probe 2087 date night in Brooklyn'"
+          for side in oregon virginia; do
+            if [ "$side" = oregon ]; then ref="$OREGON_SUPABASE_REF"; else ref="$VIRGINIA_SUPABASE_REF"; fi
+            jq -n --arg query "$query" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-before.json"
+            count="$(jq -r '.[0].matches' "$RUNNER_TEMP/${side}-before.json")"
+            echo "probe_before_${side}=${count}"
+            test "$count" = "0" || { echo "Probe already exists in $side; refusing ambiguous test" >&2; exit 1; }
+          done
+
+      - name: Run live production search probe
+        run: |
+          set -euo pipefail
+          jq -n --arg input "$PROBE_QUERY" '{input:$input,selectedSearchLane:"restaurant",timezone:"America/New_York"}' > "$RUNNER_TEMP/probe-body.json"
+          code="$(curl --location --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --header 'X-Request-ID: migration-2087-live-write-proof' \
+            --data-binary "@$RUNNER_TEMP/probe-body.json" \
+            --output "$RUNNER_TEMP/probe-response.json" \
+            --write-out '%{http_code}' \
+            'https://theouthaven.com/api/generate')"
+          echo "production_search_probe_http_status=${code}"
+          [[ "$code" == 2* ]] || { echo "Live production search probe failed" >&2; jq -r '.error.code // .error // .message // "unknown"' "$RUNNER_TEMP/probe-response.json" 2>/dev/null || true; exit 1; }
+          jq -e 'type == "object"' "$RUNNER_TEMP/probe-response.json" >/dev/null
+          echo "production_search_probe_response=json"
+
+      - name: Prove production telemetry wrote only to Virginia
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query="select count(*)::int as matches from public.search_events where raw_query = 'migration probe 2087 date night in Brooklyn'"
+          virginia=0
+          for attempt in 1 2 3 4 5 6; do
+            jq -n --arg query "$query" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/database/query" > "$RUNNER_TEMP/virginia-after.json"
+            virginia="$(jq -r '.[0].matches' "$RUNNER_TEMP/virginia-after.json")"
+            [ "$virginia" -gt 0 ] && break
+            sleep 2
+          done
+
+          jq -n --arg query "$query" '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/${OREGON_SUPABASE_REF}/database/query" > "$RUNNER_TEMP/oregon-after.json"
+          oregon="$(jq -r '.[0].matches' "$RUNNER_TEMP/oregon-after.json")"
+
+          echo "probe_after_virginia=${virginia}"
+          echo "probe_after_oregon=${oregon}"
+          [ "$virginia" -gt 0 ] || { echo "Production telemetry did not land in Virginia" >&2; exit 1; }
+          test "$oregon" = "0" || { echo "Production telemetry unexpectedly landed in Oregon" >&2; exit 1; }
+          echo "production_write_target=virginia_verified"
+
+      - name: Verification summary
+        run: |
+          {
+            echo '### Post-cutover live verification'
+            echo ''
+            echo '- Production homepage/create/business: HTTP 2xx.'
+            echo '- Production /api/generate probe: HTTP 2xx.'
+            echo '- Probe telemetry appeared in Virginia.'
+            echo '- Probe telemetry remained absent from Oregon.'
+            echo '- Production write target: Virginia verified.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.html
+
+# Trigger a branch-push execution after this workflow exists on the branch.
