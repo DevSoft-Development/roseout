@@ -32,7 +32,7 @@ param consumerNextPublicSupabaseUrl string = ''
 @secure()
 param consumerNextPublicSupabaseAnonKey string = ''
 @secure()
-param consumerSupabaseServiceRoleKey string = ''
+param consumerSupabaseServerKey string = ''
 param consumerAzureAiEndpoint string = ''
 @secure()
 param consumerAzureAiApiKey string = ''
@@ -103,7 +103,7 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     nextPublicSiteUrl: consumerNextPublicSiteUrl
     nextPublicSupabaseUrl: consumerNextPublicSupabaseUrl
     nextPublicSupabaseAnonKey: consumerNextPublicSupabaseAnonKey
-    supabaseServiceRoleKey: consumerSupabaseServiceRoleKey
+    supabaseServerKey: consumerSupabaseServerKey
     azureAiEndpoint: consumerAzureAiEndpoint
     azureAiApiKey: consumerAzureAiApiKey
     azureAiModel: consumerAzureAiModel
@@ -136,7 +136,7 @@ module consumerSecondaryRuntime './modules/consumer-runtime.bicep' = if (consume
     nextPublicSiteUrl: consumerNextPublicSiteUrl
     nextPublicSupabaseUrl: consumerNextPublicSupabaseUrl
     nextPublicSupabaseAnonKey: consumerNextPublicSupabaseAnonKey
-    supabaseServiceRoleKey: consumerSupabaseServiceRoleKey
+    supabaseServerKey: consumerSupabaseServerKey
     azureAiEndpoint: consumerSecondaryAzureAiEndpoint
     azureAiApiKey: consumerSecondaryAzureAiApiKey
     azureAiModel: consumerAzureAiModel
