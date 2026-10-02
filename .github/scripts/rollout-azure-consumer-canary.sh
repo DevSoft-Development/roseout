@@ -19,7 +19,10 @@ record_state() {
   local state="$1"
   local event="$2"
   local reason="${3:-}"
-  local evidence="${4:-{}}"
+  local evidence="${4:-}"
+  if [ -z "$evidence" ]; then
+    evidence='{}'
+  fi
   RELEASE_STATE="$state" \
   RELEASE_EVENT_TYPE="$event" \
   RELEASE_REASON="$reason" \
