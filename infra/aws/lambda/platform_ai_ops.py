@@ -18,9 +18,13 @@ GITHUB_SECRET_ID = os.environ.get("GITHUB_SECRET_ID", f"/theouthaven/credential-
 GITHUB_REPOSITORY = os.environ.get("GITHUB_REPOSITORY", "DevSoft-Development/roseout")
 AI_MODEL = os.environ.get("AI_MODEL", "gpt-5.4-mini")
 AUTO_RECOVERY_EVENT = os.environ.get("AUTO_RECOVERY_EVENT", "platform-auto-recovery")
+PLATFORM_ALERTS_TOPIC_ARN = os.environ.get("PLATFORM_ALERTS_TOPIC_ARN", "")
+CISA_KEV_URL = os.environ.get("CISA_KEV_URL", "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json")
 MAX_INCIDENTS = 12
+MAX_SECURITY_ALERTS = 100
 
 secrets = boto3.client("secretsmanager")
+sns = boto3.client("sns")
 
 
 def _secret_json(secret_id):
@@ -163,6 +167,184 @@ def _assistant_analysis(context):
         }
 
 
+
+def _github_headers():
+    value = _secret_json(GITHUB_SECRET_ID)
+    token = str(value.get("token") or "").strip()
+    if not token:
+        raise RuntimeError("github_runtime_token_missing")
+    return {
+        "authorization": f"Bearer {token}",
+        "accept": "application/vnd.github+json",
+        "user-agent": "TheOutHaven-Security-Intelligence/1.0",
+        "x-github-api-version": "2022-11-28",
+    }
+
+
+def _github_dependabot_alerts():
+    status, data = _request_json(
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/dependabot/alerts?state=open&per_page={MAX_SECURITY_ALERTS}",
+        headers=_github_headers(),
+        timeout=30,
+    )
+    if status != 200 or not isinstance(data, list):
+        raise RuntimeError(f"github_dependabot_http_{status}")
+    return data
+
+
+def _cisa_kev():
+    status, data = _request_json(
+        CISA_KEV_URL,
+        headers={"user-agent": "TheOutHaven-Security-Intelligence/1.0"},
+        timeout=30,
+    )
+    if status != 200 or not isinstance(data, dict):
+        raise RuntimeError(f"cisa_kev_http_{status}")
+    vulnerabilities = data.get("vulnerabilities") or []
+    return {
+        str(row.get("cveID") or "").upper(): row
+        for row in vulnerabilities
+        if isinstance(row, dict) and row.get("cveID")
+    }
+
+
+def _recent_security_advisory_ids():
+    rows = _supabase_get(
+        "admin_system_logs",
+        {
+            "category": "eq.security_intelligence",
+            "select": "metadata,created_at",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+    )
+    known = set()
+    for row in rows:
+        metadata = row.get("metadata") or {}
+        for finding in metadata.get("findings") or []:
+            advisory_id = str((finding or {}).get("advisory_id") or "").strip()
+            if advisory_id:
+                known.add(advisory_id)
+    return known
+
+
+def _security_findings():
+    alerts = _github_dependabot_alerts()
+    kev = _cisa_kev()
+    findings = []
+    for alert in alerts:
+        advisory = alert.get("security_advisory") or {}
+        dependency = alert.get("dependency") or {}
+        package = dependency.get("package") or {}
+        cve = str(advisory.get("cve_id") or "").upper()
+        cvss = advisory.get("cvss") or {}
+        score = float(cvss.get("score") or 0)
+        severity = str(advisory.get("severity") or "unknown").lower()
+        exploited = cve in kev if cve else False
+        deterministic_priority = "critical" if exploited or severity == "critical" or score >= 9 else "high" if severity == "high" or score >= 7 else "medium"
+        first_patched = (alert.get("security_vulnerability") or {}).get("first_patched_version") or {}
+        findings.append(
+            {
+                "advisory_id": str(advisory.get("ghsa_id") or cve or alert.get("number") or ""),
+                "cve": cve or None,
+                "package": package.get("name"),
+                "ecosystem": package.get("ecosystem"),
+                "manifest_path": dependency.get("manifest_path"),
+                "scope": dependency.get("scope"),
+                "severity": severity,
+                "cvss_score": score,
+                "known_exploited": exploited,
+                "cisa_due_date": (kev.get(cve) or {}).get("dueDate") if exploited else None,
+                "cisa_required_action": (kev.get(cve) or {}).get("requiredAction") if exploited else None,
+                "patched_version": first_patched.get("identifier"),
+                "summary": advisory.get("summary"),
+                "html_url": alert.get("html_url"),
+                "priority": deterministic_priority,
+                "auto_patch_policy": "dependabot_pr_only",
+            }
+        )
+    findings.sort(key=lambda row: (row["priority"] != "critical", row["priority"] != "high", -(row.get("cvss_score") or 0)))
+    return findings
+
+
+def _notify_security_intelligence(findings, new_ids):
+    if not PLATFORM_ALERTS_TOPIC_ARN or not new_ids:
+        return False
+    urgent = [row for row in findings if row.get("advisory_id") in new_ids and row.get("priority") in {"critical", "high"}]
+    if not urgent:
+        return False
+    lines = [
+        f"{row.get('priority','unknown').upper()} {row.get('advisory_id')} {row.get('package') or 'unknown package'}"
+        + (" [CISA KEV]" if row.get("known_exploited") else "")
+        for row in urgent[:10]
+    ]
+    sns.publish(
+        TopicArn=PLATFORM_ALERTS_TOPIC_ARN,
+        Subject="TheOutHaven security intelligence alert"[:100],
+        Message="New affected dependency vulnerabilities detected:\n" + "\n".join(lines),
+    )
+    return True
+
+
+def _security_intelligence():
+    evaluated_at = datetime.now(timezone.utc).isoformat()
+    try:
+        findings = _security_findings()
+        known = _recent_security_advisory_ids()
+        current_ids = {row.get("advisory_id") for row in findings if row.get("advisory_id")}
+        new_ids = sorted(current_ids - known)
+        urgent = [row for row in findings if row.get("priority") in {"critical", "high"}]
+        exploited = [row for row in findings if row.get("known_exploited")]
+        analysis = _assistant_analysis(
+            {
+                "mode": "security_intelligence",
+                "policy": {
+                    "ai_role": "diagnosis_and_recommendation_only",
+                    "automatic_patch": "dependabot_pr_only",
+                    "iam_changes": "operator_only",
+                    "database_failover": "operator_only",
+                    "credential_rotation": "guarded_workflow_only",
+                },
+                "findings": findings[:25],
+            }
+        )
+        notified = _notify_security_intelligence(findings, set(new_ids))
+        metadata = {
+            "evaluated_at": evaluated_at,
+            "policy_version": 1,
+            "source": "github_dependabot+cisa_kev",
+            "affected_open_alerts": len(findings),
+            "urgent_count": len(urgent),
+            "known_exploited_count": len(exploited),
+            "new_advisory_ids": new_ids,
+            "findings": findings[:50],
+            "analysis": analysis,
+            "notification_sent": notified,
+            "guardrails": {
+                "ai_can_patch_directly": False,
+                "automatic_patch_path": "dependabot_pr_then_existing_ci_canary_rollback",
+                "database_failover": "operator_only",
+                "iam_trust_changes": "operator_only",
+                "human_root_lockout": "operator_only",
+                "arbitrary_code_execution": "disabled",
+            },
+        }
+        level = "critical" if exploited else "warning" if urgent else "info"
+        _persist("security_intelligence", level, "AI security intelligence evaluation", metadata)
+        return {"ok": True, "mode": "security_intelligence", **metadata}
+    except Exception as error:
+        metadata = {
+            "evaluated_at": evaluated_at,
+            "policy_version": 1,
+            "source": "github_dependabot+cisa_kev",
+            "error": type(error).__name__,
+            "guardrails": {"security_feed_failure": "alert_and_retry", "ai_can_patch_directly": False},
+        }
+        _persist("security_intelligence", "warning", "Security intelligence feed evaluation failed", metadata)
+        return {"ok": False, "mode": "security_intelligence", **metadata}
+
+
+
 def _latest_context():
     incidents = _supabase_get(
         "admin_system_logs",
@@ -252,6 +434,10 @@ def _dispatch_recovery(release_id):
 
 
 def handler(event, context):
+    mode = str((event or {}).get("mode") or "operations").strip().lower()
+    if mode == "security_intelligence":
+        return _security_intelligence()
+
     incidents, releases = _latest_context()
     decision = _deterministic_decision(incidents, releases)
     analysis = _assistant_analysis({"decision": decision, "incidents": incidents, "releases": releases})
