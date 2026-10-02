@@ -26,6 +26,10 @@ param shortLinkBaseUrl string = ''
 param shortLinkHost string = ''
 param iosTeamId string = ''
 param androidAppLinkSha256Fingerprints string = ''
+param stableRevisionName string = ''
+@minValue(0)
+@maxValue(100)
+param latestRevisionWeight int = 100
 
 var envShort = environment == 'production' ? 'prod' : 'stg'
 var acrPullRoleDefinitionId = subscriptionResourceId(
@@ -114,12 +118,27 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
-      activeRevisionsMode: 'Single'
+      activeRevisionsMode: environment == 'production' ? 'Multiple' : 'Single'
       ingress: {
         external: true
         allowInsecure: false
         targetPort: 3000
         transport: 'auto'
+        traffic: environment == 'production' && !empty(stableRevisionName) ? [
+          {
+            revisionName: stableRevisionName
+            weight: 100 - latestRevisionWeight
+          }
+          {
+            latestRevision: true
+            weight: latestRevisionWeight
+          }
+        ] : [
+          {
+            latestRevision: true
+            weight: 100
+          }
+        ]
       }
       registries: [
         {
