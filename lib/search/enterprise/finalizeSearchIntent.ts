@@ -1,5 +1,8 @@
 import type { SearchIntent } from "./types";
-import { reconcileExplicitActivityIntent } from "./activityIntentContract";
+import {
+  detectCanonicalActivityEvidence,
+  reconcileExplicitActivityIntent,
+} from "./activityIntentContract";
 
 export type FinalizeSearchIntentInput = Readonly<{
   query: string;
@@ -90,7 +93,34 @@ function hasExplicitRestaurantOnlyLanguage(query: string) {
 
 function hasExplicitActivityOnlyLanguage(query: string) {
   const q = normalizeQuery(query);
-  return /\b(activity|activities|things? to do|date ideas?|date activities|bowling|karaoke|museum|arcade|comedy|escape room|mini golf|paint and sip|spa|theater|theatre)\b/.test(q);
+  return (
+    detectCanonicalActivityEvidence(q).matched ||
+    /\b(activity|activities|things? to do|date ideas?|date activities|something fun|fun activity|bowling|karaoke|museum|arcade|comedy|escape room|mini golf|paint and sip|spa|theater|theatre)\b/.test(q)
+  );
+}
+
+function applyExplicitRestaurantOnlyFallback(
+  query: string,
+  intent: SearchIntent,
+): SearchIntent {
+  const explicitRestaurant = hasExplicitRestaurantOnlyLanguage(query);
+  const explicitActivity = hasExplicitActivityOnlyLanguage(query);
+
+  if (!explicitRestaurant || explicitActivity) return intent;
+
+  return {
+    ...intent,
+    searchType: "restaurant",
+    primaryDomain: "restaurant",
+    needsRestaurant: true,
+    needsActivity: false,
+    wantsPairing: false,
+    pairRequested: false,
+    sameLocationRequired: false,
+    fallbackPairAllowed: false,
+    normalizedIntent: "restaurant_only",
+    pairingPreference: completePairingPreference(intent, false),
+  };
 }
 
 function hasNaturalBroadDateLanguage(query: string) {
@@ -234,6 +264,13 @@ export function finalizeSearchIntent(
   }
 
   const reconciled = reconcileExplicitActivityIntent(input.query, laneAdjusted);
-  const broadDateAdjusted = applyBroadDateOutingFallback(input.query, reconciled);
+  const explicitRestaurantAdjusted = applyExplicitRestaurantOnlyFallback(
+    input.query,
+    reconciled,
+  );
+  const broadDateAdjusted = applyBroadDateOutingFallback(
+    input.query,
+    explicitRestaurantAdjusted,
+  );
   return enforceFinalLaneInvariants(broadDateAdjusted);
 }
