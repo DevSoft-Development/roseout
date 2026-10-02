@@ -632,6 +632,29 @@ if (!adminNavigation.includes("/admin/dashboard/infrastructure/operations")) {
   throw new Error("Platform Operations navigation must be present in the isolated Admin shell.");
 }
 
+const platformNotificationsPage = read("apps/admin/app/admin/dashboard/infrastructure/notifications/page.tsx");
+for (const marker of [
+  "Platform Notifications",
+  "criticalAlertSmsEnabled",
+  "criticalAlertQuietHoursMode",
+  "Save notification policy",
+  "updateCredentialVaultProvider",
+]) {
+  if (!platformNotificationsPage.includes(marker)) {
+    throw new Error(`Platform Notifications must preserve marker: ${marker}`);
+  }
+}
+if (
+  !platformNotificationsPage.includes("@theouthaven/auth/admin-session") ||
+  platformNotificationsPage.includes("@/lib/admin-auth") ||
+  platformNotificationsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Platform Notifications must preserve isolated Admin auth boundaries.");
+}
+if (!adminNavigation.includes("/admin/dashboard/infrastructure/notifications")) {
+  throw new Error("Platform Notifications navigation must be present in the isolated Admin shell.");
+}
+
 const platformLogsPage = read("apps/admin/app/admin/dashboard/logs/page.tsx");
 if (!platformLogsPage.includes("@theouthaven/auth/admin-session") || !platformLogsPage.includes("@/lib/admin-logs")) {
   throw new Error("Platform Logs page must use isolated Admin auth and data loader.");
