@@ -7,10 +7,16 @@ import { normalizeRole } from "@/lib/users/roles";
 export const INTERNAL_DEMO_ROLES = new Set([
   "superadmin",
   "admin",
+  "manager",
+  "editor",
+  "reviewer",
   "ambassador",
   "partner_ambassador",
   "experience",
   "experience_team",
+  "marketing_intern",
+  "marketing_specialist",
+  "marketing_manager",
 ]);
 
 export function isInternalDemoRole(role: string | null | undefined) {
