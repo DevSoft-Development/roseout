@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 
 type SecurityIncident = {
   id: string;
+  category?: string | null;
   level: string;
   message: string;
   source: string | null;
@@ -68,12 +69,14 @@ export default async function SecurityIncidentsPage() {
   const db = await getAdminDatabaseClient();
   const { data, error } = await db
     .from("admin_system_logs")
-    .select("id,level,message,source,metadata,created_at")
-    .eq("category", "security_incident")
+    .select("id,category,level,message,source,metadata,created_at")
+    .in("category", ["security_incident", "platform_drill"])
     .order("created_at", { ascending: false })
     .limit(250);
 
-  const incidents = (data || []) as SecurityIncident[];
+  const rows = (data || []) as SecurityIncident[];
+  const incidents = rows.filter((row) => row.category !== "platform_drill");
+  const drillResults = rows.filter((row) => row.category === "platform_drill");
   let protectedIdentities: Awaited<ReturnType<typeof getProtectedMachineIdentities>>["identities"] = [];
   let identityLoadError = "";
   try {
@@ -91,7 +94,7 @@ export default async function SecurityIncidentsPage() {
       <AdminPageHeader
         eyebrow="Cloud & Platform · Security"
         title="Security Incidents"
-        subtitle="Durable GuardDuty, root/IAM, CloudTrail-tampering, and containment events from the AWS production security plane."
+        subtitle="Durable AWS, Azure, Supabase, GitHub, containment, and recurring security/DR drill evidence."
         badge={
           <AdminStatusBadge tone={incidents.length ? "amber" : "green"}>
             {incidents.length ? `${incidents.length} recorded events` : "No security events recorded"}
@@ -264,6 +267,23 @@ export default async function SecurityIncidentsPage() {
         )}
       </section>
 
+      <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black">Scheduled security & DR drills</h2>
+            <p className="mt-1 text-sm text-white/50">AWS-owned monthly drills for Azure failover, Supabase DR readiness, gateway rotation, and containment simulation.</p>
+          </div>
+          <AdminStatusBadge tone={drillResults.length ? "green" : "muted"}>
+            {drillResults.length ? "EVIDENCE AVAILABLE" : "AWAITING FIRST RUN"}
+          </AdminStatusBadge>
+        </div>
+        {drillResults[0] ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/60">
+            <p className="font-bold text-white">{drillResults[0].message}</p>
+            <p className="mt-1 text-xs text-white/40">{formatDate(drillResults[0].created_at)}</p>
+          </div>
+        ) : null}
+      </section>
       <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
         <h2 className="text-lg font-black">Containment policy</h2>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">
