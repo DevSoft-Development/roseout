@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - '.github/workflows/oregon-dr-failback-preflight.yml'
-      - '.github/scripts/load-supabase-management-token.sh'
       - '.github/workflows/aws-dr-failback-reconcile.yml'
       - 'scripts/dr/promotion-sequence-state.sql'
       - 'scripts/dr/writable-catalog.sql'
@@ -79,20 +78,9 @@ jobs:
       - name: Checkout DR contracts
         uses: actions/checkout@v4
 
-      - name: Configure AWS access to central Credential Vault
-        uses: aws-actions/configure-aws-credentials@v6.2.3
-        with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
-          aws-region: us-east-1
-          allowed-account-ids: '742020474738'
-
-      - name: Resolve Supabase management token from Credential Vault
-        env:
-          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: bash .github/scripts/load-supabase-management-token.sh
-
       - name: Require Supabase management credential
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$SUPABASE_ACCESS_TOKEN" || { echo 'Missing SUPABASE_ACCESS_TOKEN' >&2; exit 1; }
@@ -100,6 +88,7 @@ jobs:
 
       - name: Inspect forward and reverse replication topology
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -186,6 +175,7 @@ jobs:
 
       - name: Verify writable schema and public data parity
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -220,6 +210,7 @@ jobs:
       - name: Prove Oregon quiesce window when failback is requested
         if: env.MODE == 'failback_preflight'
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
@@ -238,6 +229,7 @@ jobs:
 
       - name: Build Oregon to Virginia sequence safety plan
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -277,6 +269,7 @@ jobs:
 
       - name: Verify reverse Auth readiness and session strategy
         env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           add_blocker() { printf '%s\n' "$1" >> "$RUNNER_TEMP/failback-blockers.txt"; }
