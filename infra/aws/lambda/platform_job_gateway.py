@@ -48,7 +48,7 @@ ALLOWED_PROVIDERS = {
     "turnstile": {"secretKey"},
     "expo": {"accessToken"},
     "domains": {"apiKey", "apiSecret", "accountId", "gatewaySecret"},
-    "platform": {"cronSecret", "importSecret", "internalImportSecret", "outingReminderCronSecret", "googleLocationEnrichmentCronSecret", "adminApiSecret", "adminDigestSecret", "notificationSecret", "supportEmailWebhookSecret", "supportInboundSecret", "websiteHostingGatewaySecret", "drGatewaySecret", "jobGatewaySecret", "integrationApiSecret", "assistantApiSecret"},
+    "platform": {"cronSecret", "importSecret", "internalImportSecret", "outingReminderCronSecret", "googleLocationEnrichmentCronSecret", "adminApiSecret", "adminDigestSecret", "notificationSecret", "supportEmailWebhookSecret", "supportInboundSecret", "websiteHostingGatewaySecret", "drGatewaySecret", "jobGatewaySecret", "integrationApiSecret", "assistantApiSecret", "criticalAlertSmsEnabled", "criticalAlertSmsRecoveryEnabled", "criticalAlertSmsFrom", "criticalAlertSmsTo", "criticalAlertTimezone", "criticalAlertQuietHoursStart", "criticalAlertQuietHoursEnd", "criticalAlertQuietHoursMode"},
 }
 
 sqs = boto3.client("sqs")
