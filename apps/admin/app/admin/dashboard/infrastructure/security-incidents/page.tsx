@@ -13,7 +13,7 @@ import {
 
 export const metadata: Metadata = {
   title: "Security Incidents | Admin",
-  description: "AWS security findings, takeover signals, and containment history.",
+  description: "Cross-cloud security findings, takeover signals, and containment history.",
 };
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,7 @@ async function securityKeyAction(formData: FormData) {
   await setProtectedAccessKeyStatus({
     userName,
     keySuffix,
-    action,
+    action: action as "contain" | "restore",
     actor: admin.email || admin.user_id,
   });
   revalidatePath("/admin/dashboard/infrastructure/security-incidents");
@@ -194,7 +194,7 @@ export default async function SecurityIncidentsPage() {
         <div className="border-b border-white/10 px-5 py-4">
           <h2 className="text-xl font-black">Security event history</h2>
           <p className="mt-1 text-sm text-white/50">
-            GuardDuty and CloudTrail security events persisted by the AWS security handler.
+            Cross-cloud security events persisted by the AWS security handler.
           </p>
         </div>
 
