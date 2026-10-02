@@ -6,9 +6,9 @@ export async function GET() {
     {
       schemaVersion: 1,
       runtimeVersion: "2",
-      patchVersion: "embedded-patch-proof-1",
+      patchVersion: "embedded-patch-proof-2",
       values: {
-        "home.footerBadge": "patch-layer active",
+        "home.footerBadge": "patch-layer v2",
       },
     },
     {
