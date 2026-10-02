@@ -35,7 +35,7 @@ jobs:
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true" \
             > "$RUNNER_TEMP/east-api-keys.json"
-          SERVICE_ROLE="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/east-api-keys.json")"
+          SERVICE_ROLE="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$RUNNER_TEMP/east-api-keys.json")"
           test -n "$SERVICE_ROLE" || { echo "East legacy service_role key unavailable" >&2; exit 1; }
           echo "::add-mask::$SERVICE_ROLE"
           printf '%s' "$SERVICE_ROLE" > "$RUNNER_TEMP/east-service-role"
