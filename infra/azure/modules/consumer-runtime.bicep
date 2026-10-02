@@ -13,7 +13,7 @@ param nextPublicSupabaseUrl string
 @secure()
 param nextPublicSupabaseAnonKey string
 @secure()
-param supabaseServiceRoleKey string
+param supabaseServerKey string
 param azureAiEndpoint string
 @secure()
 param azureAiApiKey string
@@ -79,11 +79,11 @@ resource keyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01
   }
 }
 
-resource supabaseServiceRoleSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+resource supabaseServerSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: vault
-  name: 'consumer-supabase-service-role-key-${secretSuffix}'
+  name: 'consumer-supabase-server-key-${secretSuffix}'
   properties: {
-    value: supabaseServiceRoleKey
+    value: supabaseServerKey
   }
 }
 
@@ -148,8 +148,8 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
       ]
       secrets: concat([
         {
-          name: 'supabase-service-role-key'
-          keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${supabaseServiceRoleSecret.name}'
+          name: 'supabase-server-key'
+          keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${supabaseServerSecret.name}'
           identity: identity.id
         }
         {
@@ -196,8 +196,12 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
               value: nextPublicSupabaseAnonKey
             }
             {
+              name: 'SUPABASE_SECRET_KEY'
+              secretRef: 'supabase-server-key'
+            }
+            {
               name: 'SUPABASE_SERVICE_ROLE_KEY'
-              secretRef: 'supabase-service-role-key'
+              secretRef: 'supabase-server-key'
             }
             {
               name: 'AZURE_AI_ENDPOINT'
