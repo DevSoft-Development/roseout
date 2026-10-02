@@ -1,0 +1,103 @@
+name: AWS AI-assisted self healing
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_ai_ops.py'
+      - 'infra/aws/cloudformation/platform-ai-ops.yml'
+      - '.github/workflows/aws-ai-self-healing.yml'
+      - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_ai_ops.py'
+      - 'infra/aws/cloudformation/platform-ai-ops.yml'
+      - '.github/workflows/aws-ai-self-healing.yml'
+      - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ai-self-healing-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-ai-ops-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate controller contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_ai_ops.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-ai-ops.yml
+          grep -F 'rollback_azure_consumer' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'database_failover' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'operator_only' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-ai-ops.yml >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/aws-ai-self-healing.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve production dependencies
+        id: config
+        run: |
+          set -euo pipefail
+          ASSISTANT_URL="$(aws cloudformation describe-stacks --stack-name theouthaven-assistant-api-production --query "Stacks[0].Outputs[?OutputKey=='AssistantApiUrl'].OutputValue" --output text)"
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$ASSISTANT_URL" && test "$ASSISTANT_URL" != None
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "assistant_url=$ASSISTANT_URL" >> "$GITHUB_OUTPUT"
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy AI operations stack
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-ai-ops.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production AssistantApiUrl='${{ steps.config.outputs.assistant_url }}' GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.config.outputs.topic }}'
+
+      - name: Deploy controller code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/ai-ops"; ZIP="$RUNNER_TEMP/ai-ops.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_ai_ops.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Run production-safe controller probe
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsFunctionName'].OutputValue" --output text)"
+          aws lambda invoke --function-name "$FUNCTION_NAME" --payload '{}' "$RUNNER_TEMP/result.json" >/dev/null
+          jq -e '.ok == true or .ok == false' "$RUNNER_TEMP/result.json" >/dev/null
+          jq '{ok,decision,analysis,auto_recovery_dispatched,dispatch_error,guardrails}' "$RUNNER_TEMP/result.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify scheduler
+        run: |
+          set -euo pipefail
+          NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsScheduleName'].OutputValue" --output text)"
+          test "$(aws scheduler get-schedule --name "$NAME" --query State --output text)" = ENABLED
