@@ -74,13 +74,17 @@ async function saveAlertPolicy(formData: FormData) {
     values: {
       criticalAlertSmsEnabled: smsEnabled ? "true" : "false",
       criticalAlertSmsRecoveryEnabled: recoverySmsEnabled ? "true" : "false",
-      criticalAlertSmsFrom: from,
-      criticalAlertSmsTo: to,
+      ...(from ? { criticalAlertSmsFrom: from } : {}),
+      ...(to ? { criticalAlertSmsTo: to } : {}),
       criticalAlertTimezone: timezone,
       criticalAlertQuietHoursStart: quietStart,
       criticalAlertQuietHoursEnd: quietEnd,
       criticalAlertQuietHoursMode: quietMode,
     },
+    clearFields: [
+      ...(!from ? ["criticalAlertSmsFrom"] : []),
+      ...(!to ? ["criticalAlertSmsTo"] : []),
+    ],
   });
 
   revalidatePath("/admin/dashboard/infrastructure/notifications");
