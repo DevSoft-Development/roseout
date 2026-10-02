@@ -36,6 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate rotation dependencies
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/aws-credential-vault-runtime-sync.yml
+          grep -F 'def _secrets():' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F 'for key in ("current", "previous"):' infra/aws/lambda/platform_job_gateway.py >/dev/null
+
       - name: Resolve rotation environment
         id: config
         env:
