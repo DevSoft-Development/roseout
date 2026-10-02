@@ -608,6 +608,30 @@ if (!adminNavigation.includes("/admin/dashboard/platform-errors") || !adminNavig
   throw new Error("Platform Errors navigation must remain migrated and superadmin-only.");
 }
 
+const platformOperationsPage = read("apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx");
+for (const marker of [
+  "Platform Operations",
+  'from("platform_releases")',
+  'from("platform_release_events")',
+  'from("admin_system_logs")',
+  "Recovery safety policy",
+]) {
+  if (!platformOperationsPage.includes(marker)) {
+    throw new Error(`Platform Operations must preserve marker: ${marker}`);
+  }
+}
+if (
+  !platformOperationsPage.includes("@theouthaven/auth/admin-session") ||
+  !platformOperationsPage.includes("@theouthaven/db/admin-client") ||
+  platformOperationsPage.includes("@/lib/admin-auth") ||
+  platformOperationsPage.includes("@/lib/supabase-admin")
+) {
+  throw new Error("Platform Operations must use isolated Admin auth and shared DB.");
+}
+if (!adminNavigation.includes("/admin/dashboard/infrastructure/operations")) {
+  throw new Error("Platform Operations navigation must be present in the isolated Admin shell.");
+}
+
 const platformLogsPage = read("apps/admin/app/admin/dashboard/logs/page.tsx");
 if (!platformLogsPage.includes("@theouthaven/auth/admin-session") || !platformLogsPage.includes("@/lib/admin-logs")) {
   throw new Error("Platform Logs page must use isolated Admin auth and data loader.");
