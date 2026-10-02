@@ -41,6 +41,14 @@ function formatDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function objectRows(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
+}
+
 function containment(meta: Record<string, unknown> | null) {
   const raw = meta?.containment;
   return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -70,13 +78,18 @@ export default async function SecurityIncidentsPage() {
   const { data, error } = await db
     .from("admin_system_logs")
     .select("id,category,level,message,source,metadata,created_at")
-    .in("category", ["security_incident", "platform_drill"])
+    .in("category", ["security_incident", "security_intelligence", "platform_drill"])
     .order("created_at", { ascending: false })
     .limit(250);
 
   const rows = (data || []) as SecurityIncident[];
-  const incidents = rows.filter((row) => row.category !== "platform_drill");
+  const incidents = rows.filter((row) => row.category === "security_incident");
+  const intelligence = rows.filter((row) => row.category === "security_intelligence");
   const drillResults = rows.filter((row) => row.category === "platform_drill");
+  const latestIntelligence = intelligence[0] || null;
+  const intelligenceMeta = latestIntelligence?.metadata || {};
+  const intelligenceFindings = objectRows(intelligenceMeta.findings);
+  const intelligenceAnalysis = objectValue(intelligenceMeta.analysis);
   let protectedIdentities: Awaited<ReturnType<typeof getProtectedMachineIdentities>>["identities"] = [];
   let identityLoadError = "";
   try {
@@ -94,7 +107,7 @@ export default async function SecurityIncidentsPage() {
       <AdminPageHeader
         eyebrow="Cloud & Platform · Security"
         title="Security Incidents"
-        subtitle="Durable AWS, Azure, Supabase, GitHub, containment, and recurring security/DR drill evidence."
+        subtitle="Cross-cloud incidents plus AI-correlated dependency intelligence from GitHub Dependabot and CISA Known Exploited Vulnerabilities."
         badge={
           <AdminStatusBadge tone={incidents.length ? "amber" : "green"}>
             {incidents.length ? `${incidents.length} recorded events` : "No security events recorded"}
@@ -112,10 +125,12 @@ export default async function SecurityIncidentsPage() {
         }
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
-          ["Events", incidents.length, "Most recent 250 security events"],
+          ["Events", incidents.length, "Cross-cloud security events"],
           ["GuardDuty", guardDuty.length, "Managed AWS threat findings"],
+          ["Affected dependencies", Number(intelligenceMeta.affected_open_alerts || 0), "Open Dependabot alerts"],
+          ["Known exploited", Number(intelligenceMeta.known_exploited_count || 0), "Matched against CISA KEV"],
           ["Containment attempts", containmentAttempts.length, "Allowlisted automated actions"],
           ["Contained", contained.length, "Access keys successfully inactivated"],
         ].map(([label, value, helper]) => (
@@ -125,6 +140,84 @@ export default async function SecurityIncidentsPage() {
             <p className="mt-1 text-xs text-white/45">{helper}</p>
           </article>
         ))}
+      </section>
+
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-black/25">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+          <div>
+            <h2 className="text-xl font-black">AI security intelligence</h2>
+            <p className="mt-1 max-w-4xl text-sm text-white/50">
+              Hourly AWS-owned correlation of this repository&apos;s open Dependabot alerts with CISA KEV. AI explains confirmed findings; deterministic guardrails control actions.
+            </p>
+          </div>
+          <AdminStatusBadge tone={Number(intelligenceMeta.known_exploited_count || 0) > 0 ? "red" : Number(intelligenceMeta.urgent_count || 0) > 0 ? "amber" : latestIntelligence ? "green" : "muted"}>
+            {latestIntelligence ? (Number(intelligenceMeta.known_exploited_count || 0) > 0 ? "KNOWN EXPLOITATION" : Number(intelligenceMeta.urgent_count || 0) > 0 ? "ACTION NEEDED" : "MONITORING") : "AWAITING FIRST SCAN"}
+          </AdminStatusBadge>
+        </div>
+        {latestIntelligence ? (
+          <div className="p-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-white/40">AI assessment</p>
+                <p className="mt-2 text-sm leading-6 text-white/65">{valueText(intelligenceAnalysis.summary)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Automatic action boundary</p>
+                <p className="mt-2 text-sm leading-6 text-white/65">AI cannot patch directly. Dependency remediation stays on the existing Dependabot PR → CI → canary/rollback path.</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="text-[10px] font-black uppercase tracking-wider text-white/40">Last evaluation</p>
+                <p className="mt-2 text-sm font-bold text-white/65">{formatDate(latestIntelligence.created_at)}</p>
+                <p className="mt-1 text-xs text-white/40">{valueText(intelligenceMeta.source)}</p>
+              </div>
+            </div>
+            {intelligenceFindings.length ? (
+              <div className="mt-5 overflow-x-auto rounded-2xl border border-white/10">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-white/[0.04] text-[10px] font-black uppercase tracking-wider text-white/40">
+                    <tr>
+                      <th className="px-4 py-3">Advisory</th>
+                      <th className="px-4 py-3">Package</th>
+                      <th className="px-4 py-3">Priority</th>
+                      <th className="px-4 py-3">CISA KEV</th>
+                      <th className="px-4 py-3">Patched version</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {intelligenceFindings.slice(0, 25).map((finding, index) => (
+                      <tr key={String(finding.advisory_id || index)}>
+                        <td className="px-4 py-3">
+                          <p className="font-black text-white">{valueText(finding.advisory_id)}</p>
+                          <p className="mt-1 text-xs text-white/40">{valueText(finding.cve)}</p>
+                        </td>
+                        <td className="px-4 py-3 text-white/65">
+                          <p className="font-bold">{valueText(finding.package)}</p>
+                          <p className="mt-1 text-xs text-white/35">{valueText(finding.manifest_path)}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <AdminStatusBadge tone={String(finding.priority) === "critical" ? "red" : String(finding.priority) === "high" ? "amber" : "muted"}>
+                            {valueText(finding.priority).toUpperCase()}
+                          </AdminStatusBadge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <AdminStatusBadge tone={yes(finding.known_exploited) ? "red" : "muted"}>
+                            {yes(finding.known_exploited) ? "EXPLOITED" : "NO"}
+                          </AdminStatusBadge>
+                          {finding.cisa_due_date ? <p className="mt-1 text-xs text-white/40">Due {valueText(finding.cisa_due_date)}</p> : null}
+                        </td>
+                        <td className="px-4 py-3 text-xs font-bold text-white/55">{valueText(finding.patched_version)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="mt-5 text-sm text-white/45">No affected open dependency advisories were returned by the latest scan.</p>
+            )}
+          </div>
+        ) : (
+          <div className="p-8 text-center text-sm text-white/50">The hourly security intelligence watcher has not recorded its first scan yet.</div>
+        )}
       </section>
 
       {rootEvents.length ? (

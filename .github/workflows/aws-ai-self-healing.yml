@@ -8,6 +8,7 @@ on:
       - 'infra/aws/cloudformation/platform-ai-ops.yml'
       - '.github/workflows/aws-ai-self-healing.yml'
       - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+      - 'apps/admin/app/admin/dashboard/infrastructure/security-incidents/page.tsx'
   push:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'infra/aws/cloudformation/platform-ai-ops.yml'
       - '.github/workflows/aws-ai-self-healing.yml'
       - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+      - 'apps/admin/app/admin/dashboard/infrastructure/security-incidents/page.tsx'
 
 permissions:
   contents: read
@@ -44,6 +46,11 @@ jobs:
           grep -F 'database_failover' infra/aws/lambda/platform_ai_ops.py >/dev/null
           grep -F 'operator_only' infra/aws/lambda/platform_ai_ops.py >/dev/null
           grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-ai-ops.yml >/dev/null
+          grep -F 'security_intelligence' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'dependabot/alerts' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'known_exploited_vulnerabilities.json' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'ai_can_patch_directly' infra/aws/lambda/platform_ai_ops.py >/dev/null
+          grep -F 'SecurityIntelligenceSchedule' infra/aws/cloudformation/platform-ai-ops.yml >/dev/null
           ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/aws-ai-self-healing.yml
 
   deploy:
@@ -96,8 +103,19 @@ jobs:
           jq -e '.ok == true or .ok == false' "$RUNNER_TEMP/result.json" >/dev/null
           jq '{ok,decision,analysis,auto_recovery_dispatched,dispatch_error,guardrails}' "$RUNNER_TEMP/result.json" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Verify scheduler
+      - name: Run security intelligence probe
         run: |
           set -euo pipefail
-          NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsScheduleName'].OutputValue" --output text)"
-          test "$(aws scheduler get-schedule --name "$NAME" --query State --output text)" = ENABLED
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsFunctionName'].OutputValue" --output text)"
+          printf '{"mode":"security_intelligence","source":"github-actions-probe"}' > "$RUNNER_TEMP/security-payload.json"
+          aws lambda invoke --function-name "$FUNCTION_NAME" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/security-payload.json" "$RUNNER_TEMP/security-result.json" >/dev/null
+          jq -e '.mode == "security_intelligence"' "$RUNNER_TEMP/security-result.json" >/dev/null
+          jq '{ok,mode,affected_open_alerts,urgent_count,known_exploited_count,new_advisory_ids,notification_sent,guardrails,error}' "$RUNNER_TEMP/security-result.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify schedulers
+        run: |
+          set -euo pipefail
+          OPS_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='AiOpsScheduleName'].OutputValue" --output text)"
+          SECURITY_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SecurityIntelligenceScheduleName'].OutputValue" --output text)"
+          test "$(aws scheduler get-schedule --name "$OPS_NAME" --query State --output text)" = ENABLED
+          test "$(aws scheduler get-schedule --name "$SECURITY_NAME" --query State --output text)" = ENABLED
