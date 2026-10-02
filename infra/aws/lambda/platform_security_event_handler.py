@@ -208,6 +208,35 @@ def _cloudtrail_event(event):
     return payload
 
 
+def _azure_security_event(event):
+    detail = event.get("detail") or {}
+    payload = {
+        "source": "azure_activity_log",
+        "environment": ENVIRONMENT,
+        "eventDataId": detail.get("eventDataId"),
+        "eventName": detail.get("operationName"),
+        "severity": detail.get("severity") or "high",
+        "title": detail.get("title") or "Azure privileged control-plane change",
+        "description": detail.get("description"),
+        "resourceId": detail.get("resourceId"),
+        "caller": detail.get("caller"),
+        "status": detail.get("status"),
+        "eventTimestamp": detail.get("eventTimestamp"),
+        "correlationId": detail.get("correlationId"),
+        "subscriptionId": detail.get("subscriptionId"),
+        "containment": {"attempted": False, "reason": "alert_only_event"},
+    }
+    subject = "TheOutHaven Azure security change"
+    if str(payload.get("severity") or "").lower() == "critical":
+        subject = "TheOutHaven Azure CRITICAL security change"
+    _publish(subject, payload)
+    try:
+        _persist_security_event(subject, payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
+    return payload
+
+
 def handler(event, context):
     source = str(event.get("source") or "")
     detail_type = str(event.get("detail-type") or "")
@@ -215,6 +244,8 @@ def handler(event, context):
         result = _guardduty_event(event)
     elif detail_type == "AWS API Call via CloudTrail":
         result = _cloudtrail_event(event)
+    elif source == "toh.azure.security" and detail_type == "Azure Activity Log Security Signal":
+        result = _azure_security_event(event)
     else:
         result = {
             "source": source,
