@@ -111,7 +111,7 @@ jobs:
               [ -n "$slug" ] || continue
               if [ ! -f "supabase/functions/$slug/index.ts" ]; then
                 case "$slug" in
-                  region-storage-migration-control)
+                  region-storage-migration-control|toh-storage-migrate-2e25c262319dc607a4fc16ac)
                     echo "::notice::Retiring verified legacy storage-migration function $slug on $ref (migration manifest has no unfinished items)."
                     ;;
                   *)
