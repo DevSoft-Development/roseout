@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven AWS security detection and guarded containment.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  PlatformAlertsTopicArn:
+    Type: String
+  GuardDutyContainSeverity:
+    Type: Number
+    Default: 7
+  AutoContainTagKey:
+    Type: String
+    Default: TheOutHavenAutoContain
+  AutoContainTagValue:
+    Type: String
+    Default: enabled
+
+Resources:
+  GuardDutyDetector:
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+
+  SecurityEventRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenSecurityEventHandler-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: security-event-handler
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-security-event-handler:*
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref PlatformAlertsTopicArn
+              - Effect: Allow
+                Action: iam:ListUserTags
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/*
+              - Effect: Allow
+                Action: iam:UpdateAccessKey
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/*
+
+  SecurityEventLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-security-event-handler
+      RetentionInDays: 90
+
+  SecurityEventFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SecurityEventLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-security-event-handler
+      Description: Detects GuardDuty and CloudTrail security events and applies opt-in containment.
+      Role: !GetAtt SecurityEventRole.Arn
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Environment
+          ALERT_TOPIC_ARN: !Ref PlatformAlertsTopicArn
+          GUARDDUTY_CONTAIN_SEVERITY: !Ref GuardDutyContainSeverity
+          AUTO_CONTAIN_TAG_KEY: !Ref AutoContainTagKey
+          AUTO_CONTAIN_TAG_VALUE: !Ref AutoContainTagValue
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError('security_event_handler_code_not_deployed')
+
+  GuardDutyRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub toh-${Environment}-guardduty-security-events
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+      Targets:
+        - Arn: !GetAtt SecurityEventFunction.Arn
+          Id: security-handler
+
+  RootAndIamRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub toh-${Environment}-iam-security-events
+      EventPattern:
+        detail-type:
+          - AWS API Call via CloudTrail
+        detail:
+          eventSource:
+            - signin.amazonaws.com
+            - iam.amazonaws.com
+            - cloudtrail.amazonaws.com
+          eventName:
+            - ConsoleLogin
+            - CreateAccessKey
+            - UpdateAccessKey
+            - DeleteAccessKey
+            - AttachUserPolicy
+            - AttachRolePolicy
+            - PutUserPolicy
+            - PutRolePolicy
+            - CreatePolicyVersion
+            - SetDefaultPolicyVersion
+            - StopLogging
+            - DeleteTrail
+            - UpdateTrail
+      Targets:
+        - Arn: !GetAtt SecurityEventFunction.Arn
+          Id: security-handler
+
+  GuardDutyInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SecurityEventFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GuardDutyRule.Arn
+
+  RootAndIamInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SecurityEventFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt RootAndIamRule.Arn
+
+Outputs:
+  GuardDutyDetectorId:
+    Value: !Ref GuardDutyDetector
+  SecurityEventFunctionName:
+    Value: !Ref SecurityEventFunction
