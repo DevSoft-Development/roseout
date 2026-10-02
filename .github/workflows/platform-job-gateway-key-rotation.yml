@@ -122,7 +122,7 @@ jobs:
 
           RUN_ID=""
           for _ in $(seq 1 24); do
-            RUN_ID="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,status --jq --arg started "$STARTED_AT" '[.[] | select(.createdAt >= $started)] | sort_by(.createdAt) | reverse | .[0].databaseId // empty')"
+            RUN_ID="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,status --jq "[.[] | select(.createdAt >= \"$STARTED_AT\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
             [ -n "$RUN_ID" ] && break
             sleep 5
           done
@@ -188,20 +188,48 @@ jobs:
         env:
           PLATFORM_SECRET: ${{ steps.rotation.outputs.platform_secret }}
           GATEWAY_SECRET: ${{ steps.rotation.outputs.gateway_secret }}
+          TARGET_ENV: ${{ steps.config.outputs.target_env }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
+          RESTORED=false
           if [ -s "$RUNNER_TEMP/platform-before.json" ] && [ -n "${PLATFORM_SECRET:-}" ]; then
-            aws secretsmanager put-secret-value --secret-id "$PLATFORM_SECRET" --secret-string "file://$RUNNER_TEMP/platform-before.json" >/dev/null
+            aws secretsmanager put-secret-value --secret-id "$PLATFORM_SECRET" --secret-string "file://$RUNNER_TEMP/platform-before.json" >/dev/null && RESTORED=true
           fi
           if [ -s "$RUNNER_TEMP/gateway-before.txt" ] && [ -n "${GATEWAY_SECRET:-}" ]; then
             aws secretsmanager put-secret-value --secret-id "$GATEWAY_SECRET" --secret-string "file://$RUNNER_TEMP/gateway-before.txt" >/dev/null
           fi
+
+          RESYNC="not_required"
+          if [ "$RESTORED" = true ] && [ -n "${TARGET_ENV:-}" ]; then
+            RESYNC="requested"
+            STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            if gh workflow run aws-credential-vault-runtime-sync.yml --ref main -f "environment=$TARGET_ENV"; then
+              ROLLBACK_RUN=""
+              for _ in $(seq 1 24); do
+                ROLLBACK_RUN="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,status --jq "[.[] | select(.createdAt >= \"$STARTED_AT\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
+                [ -n "$ROLLBACK_RUN" ] && break
+                sleep 5
+              done
+              if [ -n "$ROLLBACK_RUN" ] && gh run watch "$ROLLBACK_RUN" --exit-status; then
+                RESYNC="succeeded"
+              else
+                RESYNC="failed"
+              fi
+            else
+              RESYNC="dispatch_failed"
+            fi
+          fi
+
           {
             echo "## Rotation rolled back"
             echo
-            echo "The central platform vault and gateway HMAC authority were restored to their pre-rotation values."
-            echo "A follow-up runtime sync is required only if failure occurred after runtime propagation began."
+            echo "- Central platform vault: restored"
+            echo "- Gateway HMAC authority: restored"
+            echo "- Runtime rollback sync: $RESYNC"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$RESYNC" != "failed" ] && [ "$RESYNC" != "dispatch_failed" ]
 
       - name: Remove transient key files
         if: ${{ always() }}
