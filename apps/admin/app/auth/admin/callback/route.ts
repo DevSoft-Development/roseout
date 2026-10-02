@@ -113,8 +113,9 @@ export async function GET(request: NextRequest) {
     request,
   });
 
-  let microsoft365Connected = false;
+  let microsoft365ConnectionStatus: string | null = null;
   let microsoft365LookupSucceeded = false;
+  let microsoft365ConnectionExists = false;
   try {
     const { data: microsoft365Connection, error: microsoft365LookupError } =
       await supabaseAdmin
@@ -130,7 +131,8 @@ export async function GET(request: NextRequest) {
       );
     } else {
       microsoft365LookupSucceeded = true;
-      microsoft365Connected = microsoft365Connection?.status === "active";
+      microsoft365ConnectionExists = Boolean(microsoft365Connection);
+      microsoft365ConnectionStatus = microsoft365Connection?.status ?? null;
     }
   } catch (microsoft365LookupException) {
     console.error(
@@ -140,7 +142,7 @@ export async function GET(request: NextRequest) {
   }
 
   const shouldAutoConnectMicrosoft365 =
-    microsoft365LookupSucceeded && !microsoft365Connected;
+    microsoft365LookupSucceeded && !microsoft365ConnectionExists;
   const destination = shouldAutoConnectMicrosoft365
     ? new URL("/api/admin/integrations/microsoft-365/connect", origin)
     : new URL(next, origin);
@@ -151,10 +153,19 @@ export async function GET(request: NextRequest) {
   }
 
   // Microsoft Entra authentication and the active Admin role remain the login gate.
-  // On the first successful sign-in, automatically continue into the Microsoft 365
-  // Graph authorization flow. Once an active Graph connection exists, future sign-ins
-  // go directly to the intended Admin page. Integration lookup failures fail open to
-  // the Admin page so an optional integration can never lock out an administrator.
+  // Auto-connect Microsoft 365 only when no integration record exists yet. Existing
+  // reauthorization_required/error states must never force Graph/Intune consent during
+  // Admin login; administrators can reconnect explicitly from Settings. Integration
+  // lookup failures also fail open so this optional integration cannot lock out Admin.
+  if (
+    microsoft365ConnectionExists &&
+    microsoft365ConnectionStatus !== "active"
+  ) {
+    console.info(
+      "ADMIN_MICROSOFT_365_REAUTH_DEFERRED",
+      JSON.stringify({ status: microsoft365ConnectionStatus }),
+    );
+  }
   const response = NextResponse.redirect(destination);
   response.cookies.set("toh_admin_next", "", {
     httpOnly: true,
