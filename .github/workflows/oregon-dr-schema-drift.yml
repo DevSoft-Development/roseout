@@ -36,7 +36,6 @@ env:
   EXPECTED_PUBLICATION: theouthaven_dr_publication
   EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
   EXPECTED_SLOT: theouthaven_va_to_or_dr_slot
-  MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'enforce' }}
 
 jobs:
   schema-drift:
@@ -46,6 +45,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve drift mode
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          MODE="${REQUESTED_MODE:-enforce}"
+          case "$MODE" in
+            assess|enforce) ;;
+            *) echo "::error::Unsupported drift mode: $MODE"; exit 1 ;;
+          esac
+          echo "MODE=$MODE" >> "$GITHUB_ENV"
 
       - name: Enforce writable schema and replication membership parity
         env:
