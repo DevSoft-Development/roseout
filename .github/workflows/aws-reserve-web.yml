@@ -13,6 +13,8 @@ on:
       - 'infra/aws/web-surfaces/**'
       - 'scripts/reserve-web-isolation-regression.mjs'
       - '.github/workflows/aws-reserve-web.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
       - 'package.json'
       - 'package-lock.json'
   push:
@@ -28,6 +30,8 @@ on:
       - 'infra/aws/web-surfaces/**'
       - 'scripts/reserve-web-isolation-regression.mjs'
       - '.github/workflows/aws-reserve-web.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
+      - '.github/scripts/write-platform-release.sh'
       - 'package.json'
       - 'package-lock.json'
   workflow_dispatch:
@@ -224,6 +228,17 @@ jobs:
           set -euo pipefail
           aws ecs wait services-stable --cluster "$CLUSTER" --services "toh-${TARGET_ENV}-reserve-web"
 
+      - name: Load platform release registry credentials
+        if: steps.config.outputs.target_env == 'production'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Record Reserve candidate
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          RELEASE_ID="aws-reserve-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="ecs_deployed" AWS_RESERVE_IMAGE="$IMAGE_URI" RELEASE_ARTIFACT_REF="$IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-reserve-web","stage":"ecs_deployed"}' bash .github/scripts/write-platform-release.sh
+
       - name: Verify isolated Reserve origin
         if: steps.config.outputs.desired_count != '0'
         env:
@@ -233,3 +248,18 @@ jobs:
           BODY="$(curl --fail --silent --show-error --max-time 20 -H 'Host: reserve.theouthaven.com' "http://$ORIGIN/api/health/platform-dr")"
           printf '%s' "$BODY" | jq -e '.ok == true and .service == "reserve-web" and .provider == "aws-reserve"' >/dev/null
           echo 'Reserve AWS origin is healthy. DNS/public cutover is intentionally separate.'
+
+      - name: Record stable Reserve release
+        if: steps.config.outputs.target_env == 'production' && steps.config.outputs.desired_count != '0'
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          RELEASE_ID="aws-reserve-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve" RELEASE_PROVIDER="aws" RELEASE_STATE="STABLE" RELEASE_EVENT_TYPE="origin_smoke_passed" AWS_RESERVE_IMAGE="$IMAGE_URI" RELEASE_ARTIFACT_REF="$IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-reserve-web","stage":"origin_smoke","result":"passed"}' bash .github/scripts/write-platform-release.sh
+
+      - name: Record failed Reserve release
+        if: ${{ failure() && steps.config.outputs.target_env == 'production' }}
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then exit 0; fi
+          RELEASE_ID="aws-reserve-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="reserve" RELEASE_PROVIDER="aws" RELEASE_STATE="FAILED" RELEASE_EVENT_TYPE="deployment_failed" RELEASE_REASON="aws_reserve_deployment_failed" AWS_RESERVE_IMAGE="${IMAGE_URI:-}" RELEASE_ARTIFACT_REF="${IMAGE_URI:-}" RELEASE_EVIDENCE='{"workflow":"aws-reserve-web","result":"failed"}' bash .github/scripts/write-platform-release.sh
