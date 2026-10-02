@@ -27,6 +27,12 @@ type DiscoverSection = {
 };
 
 type DiscoverResponse = { ok: true; sections: DiscoverSection[] };
+type PlannerIntentResponse = {
+  ok: true;
+  detectedLocation: { area: string; geoType: string; requestedMarket: string | null } | null;
+  resolvedPlanType: "outing" | "restaurant" | "activity";
+  canonicalSearchType: string | null;
+};
 
 export default function ExploreScreen() {
   const { theme } = useAppTheme();
@@ -61,15 +67,31 @@ export default function ExploreScreen() {
 
   const visible = useMemo(() => sections.filter((section) => section.items?.length), [sections]);
 
-  const openItem = (item: DiscoverItem) => {
+  const openItem = async (item: DiscoverItem) => {
     const prompt = (item.query || item.title).trim();
+    let resolvedPlanType: PlannerIntentResponse["resolvedPlanType"] = "outing";
+    let detectedArea = "";
+
+    try {
+      const intent = await mobileApi<PlannerIntentResponse>("/search/intent", {
+        method: "POST",
+        body: JSON.stringify({ query: prompt }),
+      });
+      resolvedPlanType = intent.resolvedPlanType;
+      detectedArea = intent.detectedLocation?.area?.trim() || "";
+    } catch {
+      // Search itself will still use the canonical auto lane at the API boundary.
+    }
+
     router.push({
       pathname: "/(tabs)/plan",
       params: {
         prompt,
-        planType: "outing",
+        planType: resolvedPlanType,
         startAt: "2",
         source: "discover",
+        area: detectedArea,
+        areaSource: detectedArea ? "search" : "default",
       },
     });
   };
@@ -116,7 +138,7 @@ export default function ExploreScreen() {
             {section.id === "popular-searches" ? (
               <View style={styles.chips}>
                 {section.items.map((item) => (
-                  <Pressable key={item.id} onPress={() => openItem(item)} style={({ pressed }) => [styles.chip, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }, pressed && { opacity: 0.72 }]}>
+                  <Pressable key={item.id} onPress={() => void openItem(item)} style={({ pressed }) => [styles.chip, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface }, pressed && { opacity: 0.72 }]}>
                     <AppText variant="caption">{item.title}</AppText>
                   </Pressable>
                 ))}
@@ -124,7 +146,7 @@ export default function ExploreScreen() {
             ) : (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalRow}>
                 {section.items.map((item) => (
-                  <Pressable key={item.id} onPress={() => openItem(item)} style={({ pressed }) => [styles.card, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }, pressed && { opacity: 0.78 }]}>
+                  <Pressable key={item.id} onPress={() => void openItem(item)} style={({ pressed }) => [styles.card, { borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceElevated }, pressed && { opacity: 0.78 }]}>
                     <View style={styles.badgeRow}>
                       {item.badge ? <AppText variant="caption" accent>{item.badge}</AppText> : <View />}
                       {item.sponsored ? <AppText variant="caption" muted>{item.sponsor_label || "Sponsored"}</AppText> : null}

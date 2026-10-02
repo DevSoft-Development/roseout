@@ -1,4 +1,5 @@
 import { detectRequestedGeo } from "@/lib/search/geo-matching";
+import { normalizeIntent } from "@/lib/search/enterprise/normalize-intent";
 import { mobileError, mobileJson } from "../../_lib/response";
 
 export const runtime = "nodejs";
@@ -50,8 +51,18 @@ export async function POST(request: Request) {
     return mobileError("QUERY_REQUIRED", "Tell TheOutHaven what you want to do.", 400);
   }
 
+  const intent = normalizeIntent(query);
+  const resolvedPlanType =
+    intent.needsRestaurant === true && intent.needsActivity !== true
+      ? "restaurant"
+      : intent.needsActivity === true && intent.needsRestaurant !== true
+        ? "activity"
+        : "outing";
+
   return mobileJson({
     ok: true,
     detectedLocation: detectedArea(query),
+    resolvedPlanType,
+    canonicalSearchType: intent.normalizedIntent || intent.searchType || null,
   });
 }

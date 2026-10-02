@@ -28,6 +28,8 @@ const OCCASIONS = [
 type PlannerIntentResponse = {
   ok: true;
   detectedLocation: { area: string; geoType: string; requestedMarket: string | null } | null;
+  resolvedPlanType: "outing" | "restaurant" | "activity";
+  canonicalSearchType: string | null;
 };
 
 export default function HomeScreen() {
@@ -94,6 +96,7 @@ export default function HomeScreen() {
 
     setOpeningPlanner(true);
     let detectedArea = "";
+    let resolvedPlanType: PlannerIntentResponse["resolvedPlanType"] = "outing";
 
     try {
       const intent = await mobileApi<PlannerIntentResponse>("/search/intent", {
@@ -101,6 +104,7 @@ export default function HomeScreen() {
         body: JSON.stringify({ query: prompt }),
       });
       detectedArea = intent.detectedLocation?.area?.trim() || "";
+      resolvedPlanType = intent.resolvedPlanType;
     } catch {
       // Step 2 can collect a location if intent parsing cannot resolve one.
     }
@@ -109,7 +113,7 @@ export default function HomeScreen() {
       pathname: "/(tabs)/plan",
       params: {
         prompt,
-        planType: "outing",
+        planType: resolvedPlanType,
         startAt: "2",
         source,
         area: detectedArea,

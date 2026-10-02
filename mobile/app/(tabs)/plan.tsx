@@ -38,6 +38,8 @@ const PREFERENCES: Array<{ label: string; icon: string }> = [
 type PlannerIntentResponse = {
   ok: true;
   detectedLocation: { area: string; geoType: string; requestedMarket: string | null } | null;
+  resolvedPlanType: MobilePlanType;
+  canonicalSearchType: string | null;
 };
 
 type ActivePicker = "date" | "time" | null;
@@ -167,12 +169,14 @@ export default function PlanScreen() {
     })
       .then((response) => {
         const area = response.detectedLocation?.area?.trim();
-        setDraft((current) => area
-          ? { ...current, area, areaSource: "search", latitude: null, longitude: null }
-          : current.areaSource === "search"
-            ? { ...current, area: "Near me", areaSource: "default", latitude: null, longitude: null }
-            : current,
-        );
+        setDraft((current) => ({
+          ...(area
+            ? { ...current, area, areaSource: "search" as const, latitude: null, longitude: null }
+            : current.areaSource === "search"
+              ? { ...current, area: "Near me", areaSource: "default" as const, latitude: null, longitude: null }
+              : current),
+          planType: response.resolvedPlanType,
+        }));
       })
       .catch((intentError) => {
         setError(intentError instanceof MobileApiError ? intentError.message : "We could not automatically read the location. You can enter it below.");
