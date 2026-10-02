@@ -131,8 +131,12 @@ jobs:
             local ref="$1" name="$2" out="$3"
             curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/keys.json"
             local value
-            value="$(jq -r --arg name "$name" '[.[] | select(.type=="legacy" and .name==$name and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/keys.json")"
-            test -n "$value" || { echo "Missing active $name key for $ref" >&2; exit 1; }
+            if [ "$name" = service_role ]; then
+              value="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$RUNNER_TEMP/keys.json")"
+            else
+              value="$(jq -r '([.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty)' "$RUNNER_TEMP/keys.json")"
+            fi
+            test -n "$value" || { echo "Missing active $name-compatible key for $ref" >&2; exit 1; }
             echo "::add-mask::$value"
             printf '%s' "$value" > "$out"
             chmod 600 "$out"
