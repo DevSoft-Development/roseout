@@ -1,8 +1,6 @@
-name: Supabase DR automated readiness
+name: Supabase DR deep readiness
 
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -10,7 +8,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: supabase-dr-automated-readiness
+  group: supabase-dr-deep-readiness
   cancel-in-progress: false
 
 env:
@@ -78,7 +76,7 @@ jobs:
           cmp -s "$RUNNER_TEMP/virginia-catalog-normalized.json" "$RUNNER_TEMP/oregon-catalog-normalized.json"
 
           {
-            echo "## Supabase DR automated readiness"
+            echo "## Supabase DR deep readiness"
             echo
             echo "- Virginia: ACTIVE_HEALTHY"
             echo "- Oregon: ACTIVE_HEALTHY"
