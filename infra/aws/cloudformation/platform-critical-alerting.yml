@@ -26,9 +26,12 @@ Parameters:
     Type: String
     NoEcho: true
     Default: ''
-  VercelProjectId:
+  GitHubRepository:
     Type: String
-    Default: prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN
+    Default: DevSoft-Development/roseout
+  AutoRecoveryWindowMinutes:
+    Type: Number
+    Default: 30
   StorageDriftCriticalBytes:
     Type: Number
     Default: 5368709120
@@ -67,7 +70,7 @@ Resources:
                 Action: secretsmanager:GetSecretValue
                 Resource:
                   - !Ref DrSecretArn
-                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/vercel-*
+                  - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:/theouthaven/credential-vault/${Environment}/github-*
               - Effect: Allow
                 Action: cloudwatch:PutMetricData
                 Resource: '*'
@@ -92,8 +95,9 @@ Resources:
           PRODUCTION_PROBE_URL: !Ref ProductionProbeUrl
           CREDENTIAL_VAULT_GATEWAY_URL: !Ref CredentialVaultGatewayUrl
           CREDENTIAL_VAULT_GATEWAY_SECRET: !Ref CredentialVaultGatewaySecret
-          VERCEL_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/vercel
-          VERCEL_PROJECT_ID: !Ref VercelProjectId
+          GITHUB_SECRET_ID: !Sub /theouthaven/credential-vault/${Environment}/github
+          GITHUB_REPOSITORY: !Ref GitHubRepository
+          AUTO_RECOVERY_WINDOW_MINUTES: !Ref AutoRecoveryWindowMinutes
       Code:
         ZipFile: |
           def handler(event, context):
@@ -268,23 +272,6 @@ Resources:
       AlarmDescription: Credential Vault runtime gateway is unavailable, rate limited, or returning errors.
       Namespace: TheOutHaven/Critical
       MetricName: CredentialVaultHealthy
-      Statistic: Minimum
-      Period: 300
-      EvaluationPeriods: 2
-      DatapointsToAlarm: 2
-      Threshold: 1
-      ComparisonOperator: LessThanThreshold
-      TreatMissingData: breaching
-      AlarmActions: [!Ref PlatformAlertsTopicArn]
-      OKActions: [!Ref PlatformAlertsTopicArn]
-
-  VercelProductionAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub toh-${Environment}-critical-vercel-production
-      AlarmDescription: Latest Vercel production deployment is failed or production deployment status cannot be verified.
-      Namespace: TheOutHaven/Critical
-      MetricName: VercelProductionHealthy
       Statistic: Minimum
       Period: 300
       EvaluationPeriods: 2
