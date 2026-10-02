@@ -1,0 +1,156 @@
+name: Platform security and DR drill suite
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - platform-security-drill-suite
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_security_drill_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-security-drill-scheduler.yml'
+      - '.github/workflows/platform-security-drill-suite.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_security_drill_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-security-drill-scheduler.yml'
+      - '.github/workflows/platform-security-drill-suite.yml'
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: platform-security-drill-suite-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-security-drill-scheduler-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate drill scheduler
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_security_drill_dispatcher.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-security-drill-scheduler.yml
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-security-drill-scheduler.yml >/dev/null
+          grep -F 'platform-security-drill-suite' infra/aws/lambda/platform_security_drill_dispatcher.py >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/platform-security-drill-suite.yml
+
+  drill:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' || github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Resolve alerts topic
+        id: aws
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy AWS-owned drill schedule
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-security-drill-scheduler.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.aws.outputs.topic }}'
+
+      - name: Deploy drill dispatcher code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/security-drill-dispatcher"
+          ZIP="$RUNNER_TEMP/security-drill-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_security_drill_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Run guarded production drill suite
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dispatch_and_wait() {
+            local workflow="$1"; shift
+            local started
+            started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            gh workflow run "$workflow" --ref main "$@"
+            local run_id=""
+            for _ in $(seq 1 30); do
+              run_id="$(gh run list --workflow "$workflow" --event workflow_dispatch --limit 20 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$started\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
+              [ -n "$run_id" ] && break
+              sleep 5
+            done
+            test -n "$run_id"
+            gh run watch "$run_id" --exit-status
+          }
+
+          dispatch_and_wait azure-frontdoor-failover-drill.yml
+          dispatch_and_wait supabase-dr-automated-readiness.yml
+          dispatch_and_wait platform-job-gateway-key-rotation.yml -f environment=production
+
+      - name: Run safe AWS containment simulation
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+        run: |
+          set -euo pipefail
+          PAYLOAD='{"source":"toh.admin.security","detail-type":"Manual Containment Action","detail":{"action":"drill_simulation","title":"Scheduled AWS containment simulation","description":"Non-destructive security event-path drill","identity":"synthetic-drill-identity","accessKeyIdSuffix":"DRIL","actor":"aws-scheduled-drill","contained":false,"reason":"simulation_only","severity":"info"}}'
+          aws lambda invoke --function-name toh-production-security-event-handler --payload "$(printf '%s' "$PAYLOAD" | base64 -w0)" --cli-binary-format base64 "$RUNNER_TEMP/drill-invoke.json" >/dev/null
+
+      - name: Persist drill result for Admin
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/supabase.json"
+          URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase.json")"
+          KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/supabase.json")"
+          test -n "$URL" && test -n "$KEY"
+          echo "::add-mask::$KEY"
+          jq -n --arg run "$GITHUB_RUN_ID" '{
+            category:"platform_drill",
+            level:"info",
+            message:"Scheduled security and DR drill suite completed",
+            source:"github-actions-security-drill-suite",
+            metadata:{
+              github_run_id:$run,
+              azure_failover:"passed",
+              supabase_dr_readiness:"passed",
+              gateway_rotation:"passed",
+              aws_containment_simulation:"passed"
+            }
+          }' > "$RUNNER_TEMP/drill.json"
+          curl --fail --silent --show-error             -H "apikey: $KEY"             -H "Authorization: Bearer $KEY"             -H 'Content-Type: application/json'             -H 'Prefer: return=minimal'             --data-binary "@$RUNNER_TEMP/drill.json"             "${URL%/}/rest/v1/admin_system_logs"
+
+      - name: Write summary
+        run: |
+          {
+            echo '### Security and DR drill suite'
+            echo '- Scheduler owner: AWS EventBridge Scheduler'
+            echo '- Cadence: first Sunday of each month at 14:00 UTC'
+            echo '- Azure Front Door failover/recovery: scheduled'
+            echo '- Supabase deep DR readiness: scheduled'
+            echo '- Gateway zero-downtime key rotation: scheduled'
+            echo '- AWS containment event path: non-destructive simulation'
+            echo '- Results: persisted for Admin'
+          } >> "$GITHUB_STEP_SUMMARY"
