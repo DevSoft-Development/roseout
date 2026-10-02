@@ -121,7 +121,8 @@ jobs:
       - name: Update isolated dual-region DR runtime secret
         run: |
           set -euo pipefail
-          jq             --arg vs "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg vp "$(cat "$RUNNER_TEMP/virginia-publishable")"             --arg os "$(cat "$RUNNER_TEMP/oregon-secret")"             --arg op "$(cat "$RUNNER_TEMP/oregon-publishable")"             '.DR_VIRGINIA_SERVICE_ROLE_KEY=$vs |
+          jq             --arg mt "$SUPABASE_ACCESS_TOKEN"             --arg vs "$(cat "$RUNNER_TEMP/virginia-secret")"             --arg vp "$(cat "$RUNNER_TEMP/virginia-publishable")"             --arg os "$(cat "$RUNNER_TEMP/oregon-secret")"             --arg op "$(cat "$RUNNER_TEMP/oregon-publishable")"             '.DR_SUPABASE_ACCESS_TOKEN=$mt |
+             .DR_VIRGINIA_SERVICE_ROLE_KEY=$vs |
              .DR_VIRGINIA_ANON_KEY=$vp |
              .DR_OREGON_SERVICE_ROLE_KEY=$os |
              .DR_OREGON_ANON_KEY=$op |
