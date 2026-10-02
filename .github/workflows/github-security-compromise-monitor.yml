@@ -1,0 +1,160 @@
+name: GitHub security compromise monitor
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - github-security-monitor
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_github_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-github-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/github-security-compromise-monitor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_github_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-github-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/github-security-compromise-monitor.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: github-security-compromise-monitor-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-github-security-monitor-production
+  GITHUB_ORG: DevSoft-Development
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate monitor contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_github_security_dispatcher.py
+          python -m py_compile infra/aws/lambda/platform_security_event_handler.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-github-security-monitor.yml
+          grep -F 'github-security-monitor' infra/aws/lambda/platform_github_security_dispatcher.py >/dev/null
+          grep -F 'GitHub Audit Security Signal' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-github-security-monitor.yml >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/github-security-compromise-monitor.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load GitHub runtime token from central vault
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/github --query SecretString --output text > "$RUNNER_TEMP/github.json"
+          TOKEN="$(jq -r '.token // empty' "$RUNNER_TEMP/github.json")"
+          test -n "$TOKEN" || { echo "::error::GitHub runtime token missing from central vault."; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "GH_AUDIT_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/github.json"
+
+      - name: Resolve alerts topic
+        id: aws
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy AWS-owned GitHub security scheduler
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-github-security-monitor.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.aws.outputs.topic }}'
+
+      - name: Deploy dispatcher code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/github-security-dispatcher"
+          ZIP="$RUNNER_TEMP/github-security-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_github_security_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Query organization audit log
+        id: scan
+        env:
+          TOKEN: ${{ env.GH_AUDIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          CUTOFF="$(date -u -d '20 minutes ago' +%s)"
+          CODE="$(curl --silent --show-error --output "$RUNNER_TEMP/audit.json" --write-out '%{http_code}'             -H "Authorization: Bearer $TOKEN"             -H 'Accept: application/vnd.github+json'             -H 'X-GitHub-Api-Version: 2026-03-10'             "https://api.github.com/orgs/$GITHUB_ORG/audit-log?include=all&per_page=100")"
+          if [ "$CODE" = 403 ]; then
+            echo "::error::GitHub audit token lacks organization Administration read / read:audit_log permission."
+            exit 1
+          fi
+          test "$CODE" = 200
+          jq --argjson cutoff "$CUTOFF" '
+            [.[] |
+              select((.created_at | tonumber) >= $cutoff) |
+              select((.action // "") | test(
+                "^(org\.(remove_member|add_member|disable_two_factor_requirement|update_member)|repo\.(destroy|change_visibility|add_member|remove_member|transfer)|protected_branch\.(destroy|update)|hook\.(create|update|destroy)|integration\.(install|remove)|oauth_application\.(create|destroy)|secret_scanning\.|repository_ruleset\.)"
+              ))
+            ]' "$RUNNER_TEMP/audit.json" > "$RUNNER_TEMP/security.json"
+          echo "count=$(jq length "$RUNNER_TEMP/security.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Forward GitHub security signals to existing AWS security plane
+        if: steps.scan.outputs.count != '0'
+        env:
+          FUNCTION_NAME: toh-production-security-event-handler
+        run: |
+          set -euo pipefail
+          jq -c '.[]' "$RUNNER_TEMP/security.json" | while IFS= read -r row; do
+            DETAIL="$(jq -n --argjson r "$row" '{
+              action:$r.action,
+              title:"GitHub privileged organization/repository change",
+              description:($r.action // ""),
+              actor:$r.actor,
+              actorIp:$r.actor_ip,
+              repository:($r.repo // ""),
+              organization:($r.org // ""),
+              eventTimestamp:($r.created_at | tostring),
+              severity:"high"
+            }')"
+            PAYLOAD="$(jq -n --argjson d "$DETAIL" '{
+              source:"toh.github.security",
+              "detail-type":"GitHub Audit Security Signal",
+              detail:$d
+            }')"
+            aws lambda invoke --function-name "$FUNCTION_NAME" --payload "$(printf '%s' "$PAYLOAD" | base64 -w0)" --cli-binary-format base64 --output json "$RUNNER_TEMP/invoke.json" >/dev/null
+          done
+
+      - name: Write summary
+        run: |
+          {
+            echo '### GitHub compromise monitoring'
+            echo "- Privileged audit signals found: ${{ steps.scan.outputs.count }}"
+            echo '- Scope: DevSoft-Development organization + repository changes'
+            echo '- Monitor cadence owner: AWS EventBridge Scheduler'
+            echo '- Containment mode: alert-only'
+            echo '- Persistence: existing Admin security incident history'
+          } >> "$GITHUB_STEP_SUMMARY"
