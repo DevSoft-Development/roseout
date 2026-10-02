@@ -1,0 +1,207 @@
+name: Platform AI operations analysis
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - platform-ai-ops-analysis
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_ai_ops_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-ai-ops-scheduler.yml'
+      - '.github/workflows/platform-ai-ops-analysis.yml'
+      - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_ai_ops_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-ai-ops-scheduler.yml'
+      - '.github/workflows/platform-ai-ops-analysis.yml'
+      - 'apps/admin/app/admin/dashboard/infrastructure/operations/page.tsx'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: platform-ai-ops-analysis-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-ai-ops-scheduler-production
+  AZURE_RG: rg-toh-consumer-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate AI operations contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_ai_ops_dispatcher.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-ai-ops-scheduler.yml
+          grep -F 'platform-ai-ops-analysis' infra/aws/lambda/platform_ai_ops_dispatcher.py >/dev/null
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-ai-ops-scheduler.yml >/dev/null
+          grep -F 'ALLOWED_ACTION_IDS' .github/workflows/platform-ai-ops-analysis.yml >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/platform-ai-ops-analysis.yml
+
+  deploy-schedule:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Resolve alerts topic
+        id: aws
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+      - name: Deploy AWS-owned AI operations schedule
+        run: |
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-ai-ops-scheduler.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.aws.outputs.topic }}'
+      - name: Deploy dispatcher code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/ai-ops-dispatcher"; ZIP="$RUNNER_TEMP/ai-ops-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_ai_ops_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+  analyze:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load sanitized operations evidence
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/supabase.json"
+          SUPABASE_URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase.json")"
+          SUPABASE_KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/supabase.json")"
+          test -n "$SUPABASE_URL" && test -n "$SUPABASE_KEY"
+          echo "::add-mask::$SUPABASE_KEY"
+
+          rest_get() {
+            local path="$1" out="$2"
+            curl --fail --silent --show-error               -H "apikey: $SUPABASE_KEY"               -H "Authorization: Bearer $SUPABASE_KEY"               "${SUPABASE_URL%/}/rest/v1/$path" > "$out"
+          }
+
+          rest_get 'admin_system_logs?select=id,category,level,message,source,created_at&category=in.(security_incident,critical_alert,platform_drill,security_migration)&order=created_at.desc&limit=60' "$RUNNER_TEMP/incidents.json"
+          rest_get 'platform_releases?select=release_id,git_sha,surface,provider,state,previous_good_release_id,rollback_reason,updated_at&environment=eq.production&order=updated_at.desc&limit=40' "$RUNNER_TEMP/releases.json"
+          rest_get 'platform_release_events?select=event_id,release_id,event_type,prior_state,new_state,source,provider,actor,reason,created_at&order=created_at.desc&limit=60' "$RUNNER_TEMP/release-events.json"
+
+          jq -n             --slurpfile incidents "$RUNNER_TEMP/incidents.json"             --slurpfile releases "$RUNNER_TEMP/releases.json"             --slurpfile events "$RUNNER_TEMP/release-events.json"             '{incidents:$incidents[0],releases:$releases[0],release_events:$events[0]}' > "$RUNNER_TEMP/evidence.json"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure AI endpoint and ephemeral API key
+        id: ai
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            ACCOUNT="$(az cognitiveservices account list --resource-group "$AZURE_RG" --query "[?kind=='AIServices' && location=='eastus2'] | [0].name" -o tsv)"
+            test -n "$ACCOUNT"
+            ENDPOINT="$(az cognitiveservices account show --resource-group "$AZURE_RG" --name "$ACCOUNT" --query properties.endpoint -o tsv)"
+            KEY="$(az cognitiveservices account keys list --resource-group "$AZURE_RG" --name "$ACCOUNT" --query key1 -o tsv)"
+            test -n "$ENDPOINT" && test -n "$KEY"
+            echo "::add-mask::$KEY"
+            echo "endpoint=$ENDPOINT" >> "$GITHUB_OUTPUT"
+            echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Analyze evidence with constrained AI
+        env:
+          AZURE_AI_ENDPOINT: ${{ steps.ai.outputs.endpoint }}
+          AZURE_AI_API_KEY: ${{ steps.ai.outputs.key }}
+          AZURE_AI_MODEL: toh-primary
+          ALLOWED_ACTION_IDS: observe,run_azure_failover_drill,run_supabase_dr_readiness,run_gateway_rotation_drill,review_security_incident,manual_contain_machine_identity,review_release_rollback
+        run: |
+          set -euo pipefail
+          SYSTEM_PROMPT='You are TheOutHaven operations analysis assistant. Analyze only the supplied sanitized evidence. Do not invent provider state. Return strict JSON only with keys summary (string), likely_causes (array of strings), recommended_actions (array of objects with action_id, reason, risk, requires_approval), confidence (number 0..1), evidence_refs (array of strings). Every action_id MUST be from the allowlist. You do not execute actions. Set requires_approval=true for manual_contain_machine_identity and review_release_rollback.'
+          EVIDENCE="$(cat "$RUNNER_TEMP/evidence.json")"
+          jq -n --arg model "$AZURE_AI_MODEL" --arg system "$SYSTEM_PROMPT" --arg evidence "$EVIDENCE" --arg allowed "$ALLOWED_ACTION_IDS" '{
+            model:$model,
+            messages:[
+              {role:"system",content:$system},
+              {role:"user",content:("Allowed action IDs: "+$allowed+"\nEvidence:\n"+$evidence)}
+            ],
+            temperature:0
+          }' > "$RUNNER_TEMP/request.json"
+
+          curl --fail --silent --show-error             -H "api-key: $AZURE_AI_API_KEY"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/request.json"             "${AZURE_AI_ENDPOINT%/}/openai/v1/chat/completions" > "$RUNNER_TEMP/response.json"
+
+          jq -r '.choices[0].message.content // empty' "$RUNNER_TEMP/response.json" > "$RUNNER_TEMP/analysis-raw.txt"
+          python3 - "$RUNNER_TEMP/analysis-raw.txt" "$RUNNER_TEMP/analysis.json" <<'PY'
+          import json, re, sys
+          raw=open(sys.argv[1], encoding="utf-8").read().strip()
+          raw=re.sub(r"^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$", "", raw, flags=re.I|re.S)
+          value=json.loads(raw)
+          allowed={"observe","run_azure_failover_drill","run_supabase_dr_readiness","run_gateway_rotation_drill","review_security_incident","manual_contain_machine_identity","review_release_rollback"}
+          if not isinstance(value, dict) or not isinstance(value.get("summary"), str):
+              raise SystemExit("invalid_ai_ops_analysis")
+          actions=value.get("recommended_actions") or []
+          if not isinstance(actions, list):
+              raise SystemExit("invalid_ai_ops_actions")
+          for item in actions:
+              if not isinstance(item, dict) or item.get("action_id") not in allowed:
+                  raise SystemExit("non_allowlisted_ai_action")
+              if item.get("action_id") in {"manual_contain_machine_identity","review_release_rollback"} and item.get("requires_approval") is not True:
+                  raise SystemExit("high_risk_action_missing_approval")
+          confidence=float(value.get("confidence",0))
+          if confidence < 0 or confidence > 1:
+              raise SystemExit("invalid_ai_confidence")
+          with open(sys.argv[2],"w",encoding="utf-8") as f:
+              json.dump(value,f,separators=(",",":"))
+          PY
+
+      - name: Persist AI operations analysis
+        run: |
+          set -euo pipefail
+          SUPABASE_URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase.json")"
+          SUPABASE_KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/supabase.json")"
+          jq -n --slurpfile analysis "$RUNNER_TEMP/analysis.json" --arg run "$GITHUB_RUN_ID" '{
+            category:"ai_ops_analysis",
+            level:"info",
+            message:"AI operations analysis completed",
+            source:"azure-ai-ops-analysis",
+            metadata:($analysis[0] + {
+              github_run_id:$run,
+              execution_policy:"recommendations_only",
+              unrestricted_provider_access:false,
+              deterministic_actions_only:true
+            })
+          }' > "$RUNNER_TEMP/persist.json"
+          curl --fail --silent --show-error             -H "apikey: $SUPABASE_KEY"             -H "Authorization: Bearer $SUPABASE_KEY"             -H 'Content-Type: application/json'             -H 'Prefer: return=minimal'             --data-binary "@$RUNNER_TEMP/persist.json"             "${SUPABASE_URL%/}/rest/v1/admin_system_logs"
+          echo 'AI recommendations validated against deterministic action allowlist and persisted. No AI-generated action was executed.' >> "$GITHUB_STEP_SUMMARY"
