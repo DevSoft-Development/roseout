@@ -31,20 +31,6 @@ const nativeAssetExact = new Set([
   "mobile/assets/adaptive-icon-foreground.png",
 ]);
 
-const otaPrefixes = [
-  "mobile/app/",
-  "mobile/components/",
-  "mobile/hooks/",
-  "mobile/lib/",
-  "mobile/providers/",
-  "mobile/assets/",
-];
-
-const otaExact = new Set([
-  "mobile/assets.d.ts",
-  "mobile/expo-env.d.ts",
-]);
-
 function isDocumentationOnly(file) {
   return (
     /^mobile\/[^/]+\.md$/i.test(file) ||
@@ -69,30 +55,13 @@ function classify(files) {
       nativePrefixes.some((prefix) => file.startsWith(prefix)),
   );
 
-  const ota = runtimeFiles.filter(
-    (file) =>
-      !native.includes(file) &&
-      (otaExact.has(file) || otaPrefixes.some((prefix) => file.startsWith(prefix))),
-  );
-
-  const ambiguous = runtimeFiles.filter(
-    (file) => !native.includes(file) && !ota.includes(file),
-  );
-
-  if (native.length || ambiguous.length) {
-    return {
-      classification: "native",
-      reasons: [
-        ...native.map((file) => `native-sensitive: ${file}`),
-        ...ambiguous.map((file) => `ambiguous -> native-safe fallback: ${file}`),
-      ],
-      changed,
-    };
-  }
-
   return {
-    classification: "ota",
-    reasons: ota.map((file) => `ota-safe mobile source: ${file}`),
+    classification: "native",
+    reasons: runtimeFiles.map((file) =>
+      native.includes(file)
+        ? `native-sensitive: ${file}`
+        : `embedded-first policy: ${file} requires a native release`,
+    ),
     changed,
   };
 }
@@ -105,9 +74,9 @@ function assertCase(name, files, expected) {
 }
 
 if (selfTest) {
-  assertCase("screen change", ["mobile/app/index.tsx"], "ota");
-  assertCase("component change", ["mobile/components/Card.tsx"], "ota");
-  assertCase("runtime asset", ["mobile/assets/hero.png"], "ota");
+  assertCase("screen change", ["mobile/app/index.tsx"], "native");
+  assertCase("component change", ["mobile/components/Card.tsx"], "native");
+  assertCase("runtime asset", ["mobile/assets/hero.png"], "native");
   assertCase("native config", ["mobile/app.json"], "native");
   assertCase("dependency change", ["mobile/package.json"], "native");
   assertCase("lockfile change", ["mobile/package-lock.json"], "native");
