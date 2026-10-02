@@ -1,0 +1,177 @@
+name: Supabase modern server key migration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-modern-key-migration.yml'
+      - '.github/workflows/aws-credential-vault-runtime-sync.yml'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'lib/admin/credential-vault-runtime-source.ts'
+      - 'lib/admin/credential-runtime-inventory.ts'
+      - 'lib/env.ts'
+      - 'packages/config/server-env.ts'
+      - 'infra/azure/main.bicep'
+      - 'infra/azure/modules/consumer-runtime.bicep'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-modern-key-migration.yml'
+      - '.github/workflows/aws-credential-vault-runtime-sync.yml'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'lib/admin/credential-vault-runtime-source.ts'
+      - 'lib/admin/credential-runtime-inventory.ts'
+      - 'lib/env.ts'
+      - 'packages/config/server-env.ts'
+      - 'infra/azure/main.bicep'
+      - 'infra/azure/modules/consumer-runtime.bicep'
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: supabase-modern-server-key-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate modern-key migration contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/supabase-modern-key-migration.yml'
+          grep -F 'type:"secret"' "$FILE" >/dev/null
+          grep -F 'role:"service_role"' "$FILE" >/dev/null
+          grep -F 'SUPABASE_SECRET_KEY' "$FILE" >/dev/null
+          grep -F 'legacy_service_role_retained:true' "$FILE" >/dev/null
+          ! grep -F 'DELETE https://api.supabase.com' "$FILE" >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' "$FILE"
+
+  migrate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Supabase management token from central vault
+        run: bash .github/scripts/load-supabase-management-token.sh
+
+      - name: Ensure modern secret keys exist in both regions
+        run: |
+          set -euo pipefail
+          ensure_secret_key() {
+            local ref="$1" out="$2"
+            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref/api-keys?reveal=true" > "$RUNNER_TEMP/keys-$ref.json"
+
+            jq -r '[.[] | select(.type=="secret" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/keys-$ref.json" > "$out"
+            if [ ! -s "$out" ]; then
+              jq -n '{type:"secret",name:"default",secret_jwt_template:{role:"service_role"}}' > "$RUNNER_TEMP/create-$ref.json"
+              curl --fail --silent --show-error --request POST                 -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"                 -H 'Content-Type: application/json'                 --data-binary "@$RUNNER_TEMP/create-$ref.json"                 "https://api.supabase.com/v1/projects/$ref/api-keys?reveal=true" > "$RUNNER_TEMP/created-$ref.json"
+              jq -r '.api_key // empty' "$RUNNER_TEMP/created-$ref.json" > "$out"
+            fi
+
+            test -s "$out" || { echo "::error::Modern secret key unavailable for $ref."; exit 1; }
+            local value
+            value="$(cat "$out")"
+            case "$value" in sb_secret_*) ;; *) echo "::error::Unexpected modern secret-key format for $ref."; exit 1 ;; esac
+            echo "::add-mask::$value"
+          }
+
+          ensure_secret_key "$VIRGINIA_REF" "$RUNNER_TEMP/virginia-secret-key"
+          ensure_secret_key "$OREGON_REF" "$RUNNER_TEMP/oregon-secret-key"
+
+      - name: Verify both modern secret keys against the data plane
+        run: |
+          set -euo pipefail
+          verify_key() {
+            local ref="$1" key_file="$2"
+            local key
+            key="$(cat "$key_file")"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/rest-$ref.json" --write-out '%{http_code}'               -H "apikey: $key"               -H "Authorization: Bearer $key"               "https://$ref.supabase.co/rest/v1/admin_system_logs?select=id&limit=1" || true)"
+            test "$code" = 200 || { echo "::error::Modern secret key data-plane verification failed for $ref (HTTP $code)."; exit 1; }
+          }
+          verify_key "$VIRGINIA_REF" "$RUNNER_TEMP/virginia-secret-key"
+          verify_key "$OREGON_REF" "$RUNNER_TEMP/oregon-secret-key"
+
+      - name: Promote Virginia modern secret into central Credential Vault
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/supabase-before.json"
+          jq -e 'type == "object"' "$RUNNER_TEMP/supabase-before.json" >/dev/null
+          NEW_KEY="$(cat "$RUNNER_TEMP/virginia-secret-key")"
+          jq --arg key "$NEW_KEY" '.secretKey=$key' "$RUNNER_TEMP/supabase-before.json" > "$RUNNER_TEMP/supabase-next.json"
+          aws secretsmanager put-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --secret-string "file://$RUNNER_TEMP/supabase-next.json" >/dev/null
+
+      - name: Dispatch Credential Vault runtime sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run aws-credential-vault-runtime-sync.yml --ref main -f environment=production
+          RUN_ID=""
+          for _ in $(seq 1 30); do
+            RUN_ID="$(gh run list --workflow aws-credential-vault-runtime-sync.yml --event workflow_dispatch --limit 20 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$STARTED_AT\")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty")"
+            [ -n "$RUN_ID" ] && break
+            sleep 5
+          done
+          test -n "$RUN_ID"
+          gh run watch "$RUN_ID" --exit-status
+
+      - name: Verify runtime compatibility store prefers the modern key
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/production/edge-runtime/env --query SecretString --output text > "$RUNNER_TEMP/runtime.json"
+          RUNTIME_KEY="$(jq -r '.SUPABASE_SECRET_KEY // empty' "$RUNNER_TEMP/runtime.json")"
+          VAULT_KEY="$(cat "$RUNNER_TEMP/virginia-secret-key")"
+          test -n "$RUNTIME_KEY"
+          test "$RUNTIME_KEY" = "$VAULT_KEY"
+          jq -e '.SUPABASE_SERVICE_ROLE_KEY | type == "string" and length > 0' "$RUNNER_TEMP/runtime.json" >/dev/null
+          echo 'Modern Supabase server key is primary while legacy service_role remains available as migration fallback.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Persist migration evidence
+        run: |
+          set -euo pipefail
+          VAULT_KEY="$(cat "$RUNNER_TEMP/virginia-secret-key")"
+          URL="$(jq -r '.url // empty' "$RUNNER_TEMP/supabase-next.json")"
+          jq -n --arg sha "$GITHUB_SHA" '{
+            category:"security_migration",
+            level:"info",
+            message:"Supabase modern server-key migration verified",
+            source:"supabase-modern-key-migration",
+            metadata:{
+              git_sha:$sha,
+              virginia_secret_key_verified:true,
+              oregon_secret_key_verified:true,
+              central_vault_secret_key:true,
+              runtime_secret_key:true,
+              legacy_service_role_retained:true
+            }
+          }' > "$RUNNER_TEMP/evidence.json"
+          curl --fail --silent --show-error             -H "apikey: $VAULT_KEY"             -H "Authorization: Bearer $VAULT_KEY"             -H 'Content-Type: application/json'             -H 'Prefer: return=minimal'             --data-binary "@$RUNNER_TEMP/evidence.json"             "${URL%/}/rest/v1/admin_system_logs"
+
+      - name: Clean transient key material
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*secret-key "$RUNNER_TEMP"/keys-*.json "$RUNNER_TEMP"/create-*.json "$RUNNER_TEMP"/created-*.json "$RUNNER_TEMP"/rest-*.json "$RUNNER_TEMP"/supabase-before.json "$RUNNER_TEMP"/supabase-next.json "$RUNNER_TEMP"/runtime.json "$RUNNER_TEMP"/evidence.json
