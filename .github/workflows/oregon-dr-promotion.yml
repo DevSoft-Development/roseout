@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/oregon-dr-promotion.yml'
+      - '.github/scripts/load-supabase-management-token.sh'
       - '.github/workflows/oregon-dr-promotion-preflight.yml'
       - '.github/workflows/aws-dr-scheduler-activation.yml'
       - '.github/workflows/aws-dr-reconciler-bootstrap.yml'
@@ -67,6 +68,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve Supabase management token from Credential Vault
+        env:
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: bash .github/scripts/load-supabase-management-token.sh
       - name: Validate promotion safety contract
         run: |
           set -euo pipefail
@@ -115,7 +128,6 @@ jobs:
         env:
           WRITES_QUIESCED: ${{ github.event.inputs.writes_quiesced }}
           CONFIRMATION: ${{ github.event.inputs.confirmation }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
@@ -134,7 +146,6 @@ jobs:
 
       - name: Prove normal Virginia-primary starting state
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
@@ -215,7 +226,6 @@ jobs:
 
       - name: Resolve both project API keys without logging them
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           resolve_key() {
@@ -236,7 +246,6 @@ jobs:
 
       - name: Disable business schedules and apply Virginia database write fence
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           invoker_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionArn'].OutputValue" --output text)"
@@ -281,7 +290,6 @@ jobs:
 
       - name: Final Auth Storage database and sequence catch-up
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           invoker="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
@@ -332,7 +340,6 @@ jobs:
 
       - name: Verify Oregon re-login readiness
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" "https://api.supabase.com/v1/projects/${OREGON_REF}/config/auth" > "$RUNNER_TEMP/oregon-auth-config.json"
@@ -370,7 +377,6 @@ jobs:
 
       - name: Detach Virginia to Oregon logical replication at irreversible boundary
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           query_ref() {
@@ -451,7 +457,6 @@ jobs:
 
       - name: Re-enable business schedules on Oregon and verify final production state
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
@@ -532,7 +537,6 @@ jobs:
       - name: Fail-safe recovery
         if: failure()
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           detached=false; [ -f "$RUNNER_TEMP/forward-detached" ] && detached=true
