@@ -7,6 +7,8 @@ on:
       - 'infra/aws/lambda/platform_critical_alert_relay.py'
       - 'infra/aws/cloudformation/platform-critical-alerting.yml'
       - '.github/workflows/aws-platform-critical-alerting.yml'
+      - '.github/workflows/platform-auto-recovery.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
       - 'app/admin/dashboard/infrastructure/**'
       - 'infra/aws/lambda/infrastructure_inventory.py'
   push:
@@ -16,6 +18,8 @@ on:
       - 'infra/aws/lambda/platform_critical_alert_relay.py'
       - 'infra/aws/cloudformation/platform-critical-alerting.yml'
       - '.github/workflows/aws-platform-critical-alerting.yml'
+      - '.github/workflows/platform-auto-recovery.yml'
+      - '.github/scripts/load-platform-release-registry-env.sh'
       - 'app/admin/dashboard/infrastructure/**'
       - 'infra/aws/lambda/infrastructure_inventory.py'
   workflow_dispatch:
@@ -161,7 +165,7 @@ jobs:
           set -euo pipefail
           aws lambda invoke --function-name toh-production-critical-platform-monitor --payload '{}' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
           jq -e '.ok == true or .ok == false' "$RUNNER_TEMP/critical-monitor.json" >/dev/null
-          jq '{ok,productionReachable,supabase,replicationHealthy,credentialVaultHealthy,vercel,criticalCronFailures,storage,replication}' "$RUNNER_TEMP/critical-monitor.json" >> "$GITHUB_STEP_SUMMARY"
+          jq '{ok,productionReachable,supabase,replicationHealthy,credentialVaultHealthy,autoRecovery,criticalCronFailures,storage,replication}' "$RUNNER_TEMP/critical-monitor.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify critical alarms and subscriptions
         run: |
