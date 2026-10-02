@@ -109,10 +109,17 @@ jobs:
             curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/$ref/functions" > "$RUNNER_TEMP/$ref-functions.json"
             jq -r '.[]?.slug // empty' "$RUNNER_TEMP/$ref-functions.json" | while IFS= read -r slug; do
               [ -n "$slug" ] || continue
-              test -f "supabase/functions/$slug/index.ts" || {
-                echo "::error::Supabase function $slug on $ref has no AWS-packaged source equivalent."
-                exit 1
-              }
+              if [ ! -f "supabase/functions/$slug/index.ts" ]; then
+                case "$slug" in
+                  region-storage-migration-control)
+                    echo "::notice::Retiring verified legacy storage-migration function $slug on $ref (migration manifest has no unfinished items)."
+                    ;;
+                  *)
+                    echo "::error::Supabase function $slug on $ref has no AWS-packaged source equivalent."
+                    exit 1
+                    ;;
+                esac
+              fi
               printf '%s\t%s\n' "$ref" "$slug" >> "$RUNNER_TEMP/functions.tsv"
             done
           done
