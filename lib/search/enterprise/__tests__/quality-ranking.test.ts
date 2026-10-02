@@ -356,14 +356,7 @@ it("suppresses cafe/bakery/dessert-only records for date-night dinner intent", (
   );
 
   expect(ranked[0].id).toBe("dinner");
-  expect(
-    (
-      (ranked.find((item) => item.id === "cafe") as any)
-        .restaurantQualityPenalties ?? []
-    ).join(" "),
-  ).toMatch(
-    /cafe\/bakery\/dessert-only suppressed for date-night dinner intent/i,
-  );
+  expect(ranked.map((item) => item.id)).not.toContain("cafe");
 });
 
 it("allows explicit coffee, dessert, bakery, and brunch-cafe intents", () => {
