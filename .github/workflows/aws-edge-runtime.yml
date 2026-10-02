@@ -103,8 +103,8 @@ jobs:
             "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/api-keys?reveal=true" \
             > "$KEYS_FILE"
 
-          SERVICE_ROLE="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$KEYS_FILE")"
-          ANON="$(jq -r '([.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty)' "$KEYS_FILE")"
+          SERVICE_ROLE="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // ([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty))' "$KEYS_FILE")"
+          ANON="$(jq -r '([.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // ([.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="anon" and (.disabled != true))][0].api_key // empty))' "$KEYS_FILE")"
           PUBLISHABLE="$(jq -r '[.[] | select(.type=="publishable" and (.disabled != true))][0].api_key // empty' "$KEYS_FILE")"
           test -n "$SERVICE_ROLE" || { echo "East legacy service_role key not returned by Management API" >&2; exit 1; }
           test -n "$ANON" || ANON="$PUBLISHABLE"
