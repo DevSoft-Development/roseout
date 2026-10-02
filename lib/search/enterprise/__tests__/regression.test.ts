@@ -8,6 +8,75 @@ import { names, runFixturePipeline } from "./fixtures";
 
 describe("enterprise search pure fixture regressions", () => {
 
+  it("rejects cafe and bakery-only cards for explicit dinner and lunch searches", () => {
+    const bakery: any = {
+      id: "bakery-only",
+      name: "Sweet Corner Bakery",
+      restaurant_name: "Sweet Corner Bakery",
+      location_type: "restaurant",
+      primary_category: "bakery",
+      google_types: ["bakery", "food", "point_of_interest"],
+      description: "Bakery with pastries, coffee, cakes, and cookies.",
+    };
+    const cafe: any = {
+      id: "cafe-only",
+      name: "Neighborhood Coffee Cafe",
+      restaurant_name: "Neighborhood Coffee Cafe",
+      location_type: "restaurant",
+      primary_category: "cafe",
+      google_types: ["cafe", "coffee_shop", "food"],
+      description: "Coffee, pastries, bagels, and desserts.",
+    };
+    const restaurant: any = {
+      id: "dinner-restaurant",
+      name: "Queens Supper Club",
+      restaurant_name: "Queens Supper Club",
+      location_type: "restaurant",
+      primary_category: "full service restaurant",
+      cuisine: "American",
+      google_types: ["restaurant", "food", "point_of_interest"],
+      description: "Full service restaurant with dining room, dinner menu, and reservations.",
+    };
+
+    const dinner = normalizeIntent("dinner in Queens");
+    const lunch = normalizeIntent("lunch in Queens");
+
+    expect(filterRestaurantResults([bakery, cafe, restaurant], dinner).map((item) => item.id)).toEqual([
+      "dinner-restaurant",
+    ]);
+    expect(filterRestaurantResults([bakery, cafe, restaurant], lunch).map((item) => item.id)).toEqual([
+      "dinner-restaurant",
+    ]);
+  });
+
+  it("keeps cafe or bakery results when the user explicitly asks for them", () => {
+    const bakery: any = {
+      id: "bakery",
+      name: "Sweet Corner Bakery",
+      restaurant_name: "Sweet Corner Bakery",
+      location_type: "restaurant",
+      primary_category: "bakery",
+      google_types: ["bakery", "food"],
+      description: "Bakery with pastries, coffee, cakes, and cookies.",
+    };
+    const cafe: any = {
+      id: "cafe",
+      name: "Neighborhood Coffee Cafe",
+      restaurant_name: "Neighborhood Coffee Cafe",
+      location_type: "restaurant",
+      primary_category: "cafe",
+      google_types: ["cafe", "coffee_shop", "food"],
+      description: "Coffee, pastries, and desserts.",
+    };
+
+    const cafeIntent = normalizeIntent("cafe for lunch in Queens");
+    const bakeryIntent = normalizeIntent("bakery for lunch in Queens");
+
+    expect(filterRestaurantResults([bakery, cafe], cafeIntent).map((item) => item.id)).toContain("cafe");
+    expect(filterRestaurantResults([bakery, cafe], bakeryIntent).map((item) => item.id)).toContain("bakery");
+  });
+
+
   it("normalizes same-location sports-watch combo outputs to one canonical card list", () => {
     const queries = [
       "I want wings and a bar where I can watch the Knicks game, not a restaurant plus a separate activity.",
