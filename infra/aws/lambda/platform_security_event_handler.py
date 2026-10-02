@@ -262,6 +262,59 @@ def _supabase_security_event(event):
     return payload
 
 
+def _github_security_event(event):
+    detail = event.get("detail") or {}
+    payload = {
+        "source": "github_audit_log",
+        "environment": ENVIRONMENT,
+        "eventName": detail.get("action") or "github_security_signal",
+        "severity": detail.get("severity") or "high",
+        "title": detail.get("title") or "GitHub privileged security change",
+        "description": detail.get("description"),
+        "actor": detail.get("actor"),
+        "actorIp": detail.get("actorIp"),
+        "repository": detail.get("repository"),
+        "organization": detail.get("organization"),
+        "eventTimestamp": detail.get("eventTimestamp"),
+        "containment": {"attempted": False, "reason": "alert_only_event"},
+    }
+    subject = "TheOutHaven GitHub security change"
+    _publish(subject, payload)
+    try:
+        _persist_security_event(subject, payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
+    return payload
+
+
+def _manual_security_action(event):
+    detail = event.get("detail") or {}
+    payload = {
+        "source": "admin_security_control",
+        "environment": ENVIRONMENT,
+        "eventName": detail.get("action") or "manual_security_action",
+        "severity": detail.get("severity") or "high",
+        "title": detail.get("title") or "Manual security containment action",
+        "description": detail.get("description"),
+        "identity": detail.get("identity"),
+        "accessKeyIdSuffix": detail.get("accessKeyIdSuffix"),
+        "actor": detail.get("actor") or "admin",
+        "containment": {
+            "attempted": True,
+            "contained": detail.get("contained"),
+            "action": detail.get("action"),
+            "reason": detail.get("reason") or "manual_operator_action",
+        },
+    }
+    subject = "TheOutHaven manual security action"
+    _publish(subject, payload)
+    try:
+        _persist_security_event(subject, payload)
+    except Exception as error:
+        payload["persistenceError"] = type(error).__name__
+    return payload
+
+
 def handler(event, context):
     source = str(event.get("source") or "")
     detail_type = str(event.get("detail-type") or "")
@@ -273,6 +326,10 @@ def handler(event, context):
         result = _azure_security_event(event)
     elif source == "toh.supabase.security" and detail_type == "Supabase Security Signal":
         result = _supabase_security_event(event)
+    elif source == "toh.github.security" and detail_type == "GitHub Audit Security Signal":
+        result = _github_security_event(event)
+    elif source == "toh.admin.security" and detail_type == "Manual Containment Action":
+        result = _manual_security_action(event)
     else:
         result = {
             "source": source,
