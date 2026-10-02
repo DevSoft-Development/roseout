@@ -95,7 +95,7 @@ jobs:
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             "https://api.supabase.com/v1/projects/${VIRGINIA_SUPABASE_REF}/api-keys?reveal=true" > "$keys"
-          service_role="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty)' "$keys")"
+          service_role="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // ([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty))' "$keys")"
           test -n "$service_role" || { echo "Virginia service-role key unavailable" >&2; exit 1; }
           echo "::add-mask::$service_role"
           printf '%s' "$service_role" > "$RUNNER_TEMP/virginia-service-role"
