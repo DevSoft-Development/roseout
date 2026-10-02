@@ -102,7 +102,7 @@ function releaseDetail(row: ReleaseRow) {
 export default async function PlatformOperationsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine);
 
-  const db = getAdminDatabaseClient();
+  const db = await getAdminDatabaseClient();
   const [releaseResult, eventResult, incidentResult] = await Promise.all([
     db
       .from("platform_releases")
