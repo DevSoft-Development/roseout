@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
 import { trackMobileEvent } from "@/lib/analytics";
 
 export type RuntimePatchKey = "home.footerBadge";
@@ -14,6 +15,7 @@ const PATCH_URL = "https://theouthaven.com/api/mobile/runtime-patch";
 const REQUEST_TIMEOUT_MS = 4000;
 const MAX_PATCH_VERSION_LENGTH = 128;
 const MAX_PATCH_KEYS = 16;
+const LAST_KNOWN_GOOD_KEY = "theouthaven.runtime-patch.last-known-good.v1";
 
 const PATCH_VALIDATORS: Record<RuntimePatchKey, (value: unknown) => boolean> = {
   "home.footerBadge": (value) =>
@@ -98,9 +100,38 @@ function validateRuntimePatch(
   return { patch: patch as RuntimePatch, reason: "accepted" };
 }
 
+async function loadLastKnownGoodPatch(runtimeVersion: string): Promise<RuntimePatch | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(LAST_KNOWN_GOOD_KEY);
+    if (!raw) return null;
+    const result = validateRuntimePatch(JSON.parse(raw) as unknown);
+    if (!result.patch || result.patch.runtimeVersion !== runtimeVersion) return null;
+    reportPatchOutcome("last_known_good_loaded", {
+      patch_version: result.patch.patchVersion,
+    });
+    return result.patch;
+  } catch {
+    reportPatchOutcome("last_known_good_invalid");
+    return null;
+  }
+}
+
+async function saveLastKnownGoodPatch(patch: RuntimePatch) {
+  try {
+    await SecureStore.setItemAsync(LAST_KNOWN_GOOD_KEY, JSON.stringify(patch));
+  } catch {
+    reportPatchOutcome("last_known_good_store_failed", {
+      patch_version: patch.patchVersion,
+    });
+  }
+}
+
 export async function fetchRuntimePatch(): Promise<RuntimePatch | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  const runtimeVersion = String(Constants.expoConfig?.runtimeVersion ?? "");
+  const fallback = runtimeVersion ? await loadLastKnownGoodPatch(runtimeVersion) : null;
 
   try {
     const response = await fetch(PATCH_URL, {
@@ -112,7 +143,7 @@ export async function fetchRuntimePatch(): Promise<RuntimePatch | null> {
 
     if (!response.ok) {
       reportPatchOutcome("http_error", { status: response.status });
-      return null;
+      return fallback;
     }
 
     const payload = (await response.json()) as unknown;
@@ -131,19 +162,20 @@ export async function fetchRuntimePatch(): Promise<RuntimePatch | null> {
         reason: result.reason,
         patch_version: patchVersion,
       });
-      return null;
+      return fallback;
     }
 
-    const runtimeVersion = String(Constants.expoConfig?.runtimeVersion ?? "");
+
     if (!runtimeVersion || result.patch.runtimeVersion !== runtimeVersion) {
       reportPatchOutcome("rejected", {
         reason: "runtime_mismatch",
         patch_version: result.patch.patchVersion,
         patch_runtime_version: result.patch.runtimeVersion,
       });
-      return null;
+      return fallback;
     }
 
+    await saveLastKnownGoodPatch(result.patch);
     reportPatchOutcome("accepted", {
       patch_version: result.patch.patchVersion,
       key_count: Object.keys(result.patch.values).length,
@@ -154,7 +186,7 @@ export async function fetchRuntimePatch(): Promise<RuntimePatch | null> {
       error instanceof Error &&
       (error.name === "AbortError" || error.message.includes("aborted"));
     reportPatchOutcome(timedOut ? "timeout" : "network_error");
-    return null;
+    return fallback;
   } finally {
     clearTimeout(timeout);
   }
