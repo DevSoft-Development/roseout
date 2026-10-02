@@ -44,6 +44,59 @@ function baseResult(restaurants: any[], pairs: any[] = []) {
 }
 
 describe("final restaurant eligibility", () => {
+  it("rejects low-level-review restaurants from normal discovery searches", () => {
+    const storefront = restaurant({
+      id: "dosa-hutt",
+      name: "DOSA HUTT",
+      primary_category: "indian",
+      quality_status: "low_level_review",
+      google_types: ["indian_restaurant", "restaurant", "food"],
+    });
+    const dinner = restaurant({
+      id: "dinner",
+      name: "Dinner House",
+      primary_category: "american",
+      quality_status: "publish_ready",
+      reservable: true,
+    });
+
+    const filtered = applyFinalRestaurantEligibility(baseResult([storefront, dinner]), "Queens dinner", new Date("2026-10-02T12:00:00Z"));
+    expect(filtered.restaurants.map((item: any) => item.id)).toEqual(["dinner"]);
+  });
+
+  it("rejects explicitly seasonal restaurants outside their month range", () => {
+    const patio = restaurant({
+      id: "patio",
+      name: "THE PATIO GRILL (June-August only)",
+      restaurant_name: "THE PATIO GRILL (June-August only)",
+      primary_category: "american",
+      quality_status: "publish_ready",
+    });
+    const dinner = restaurant({
+      id: "dinner",
+      name: "Dinner House",
+      primary_category: "american",
+      quality_status: "publish_ready",
+      reservable: true,
+    });
+
+    const filtered = applyFinalRestaurantEligibility(baseResult([patio, dinner]), "Queens dinner", new Date("2026-10-02T12:00:00Z"));
+    expect(filtered.restaurants.map((item: any) => item.id)).toEqual(["dinner"]);
+  });
+
+  it("keeps explicitly seasonal restaurants during their active months", () => {
+    const patio = restaurant({
+      id: "patio",
+      name: "THE PATIO GRILL (June-August only)",
+      restaurant_name: "THE PATIO GRILL (June-August only)",
+      primary_category: "american",
+      quality_status: "publish_ready",
+    });
+
+    const filtered = applyFinalRestaurantEligibility(baseResult([patio]), "Queens dinner", new Date("2026-07-15T12:00:00Z"));
+    expect(filtered.restaurants.map((item: any) => item.id)).toEqual(["patio"]);
+  });
+
   it("removes delis from normal dinner results and from generated pairs", () => {
     const deli = restaurant({ id: "deli", name: "George's Deli", primary_category: "deli" });
     const dinner = restaurant({ id: "dinner", name: "Kokomo Restaurant & Lounge", primary_category: "caribbean", reservable: true });
