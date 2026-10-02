@@ -117,7 +117,33 @@ jobs:
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" != "push" ] || [ -z "${BASE_SHA:-}" ] || printf '%s' "$BASE_SHA" | grep -Eq '^0{40}
+          if [ "$EVENT_NAME" != "push" ] || [ -z "${BASE_SHA:-}" ] || printf '%s' "$BASE_SHA" | grep -Eq '^0{40}$'; then
+            RISK=high
+            REASON=manual_or_unresolved_base
+          else
+            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
+            CLASSIFICATION="$(bash .github/scripts/classify-azure-consumer-release-risk.sh "$BASE_SHA" "$IMAGE_SHA")"
+            printf '%s\n' "$CLASSIFICATION"
+            RISK="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="risk"{print $2; exit}')"
+            REASON="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="reason"{sub(/^reason=/,""); print; exit}')"
+          fi
+
+          case "$RISK" in
+            low|medium|high) ;;
+            *) echo "::error::Invalid rollout risk classification: ${RISK:-empty}"; exit 1 ;;
+          esac
+
+          echo "risk=$RISK" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Azure rollout risk"
+            echo
+            echo "- Risk: $RISK"
+            echo "- Reason: $REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: us-east-1
@@ -614,38 +640,6 @@ jobs:
             exit 0
           fi
           bash .github/scripts/write-platform-release.sh
-; then
-            RISK=high
-            REASON=manual_or_unresolved_base
-          else
-            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
-            CLASSIFICATION="$(bash .github/scripts/classify-azure-consumer-release-risk.sh "$BASE_SHA" "$IMAGE_SHA")"
-            printf '%s\n' "$CLASSIFICATION"
-            RISK="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="risk"{print $2; exit}')"
-            REASON="$(printf '%s\n' "$CLASSIFICATION" | awk -F= '$1=="reason"{sub(/^reason=/,""); print; exit}')"
-          fi
-
-          case "$RISK" in
-            low|medium|high) ;;
-            *) echo "::error::Invalid rollout risk classification: ${RISK:-empty}"; exit 1 ;;
-          esac
-
-          echo "risk=$RISK" >> "$GITHUB_OUTPUT"
-          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Azure rollout risk"
-            echo
-            echo "- Risk: $RISK"
-            echo "- Reason: $REASON"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Configure AWS access to central Credential Vault
-        uses: aws-actions/configure-aws-credentials@v6.2.3
-        with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
-          aws-region: us-east-1
-          allowed-account-ids: '742020474738'
-
       - name: Resolve production consumer configuration from Admin Credential Vault
         id: config
         run: |
