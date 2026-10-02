@@ -65,7 +65,7 @@ jobs:
             curl --fail --silent --show-error \
               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/${side}-keys.json"
-            key="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${side}-keys.json")"
+            key="$(jq -r '([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // ([.[] | select(.type=="secret" and (.disabled != true))][0].api_key // [.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty))' "$RUNNER_TEMP/${side}-keys.json")"
             test -n "$key" || { echo "Active service_role unavailable for $side" >&2; exit 1; }
             echo "::add-mask::$key"
             printf '%s' "$key" > "$RUNNER_TEMP/${side}-service-role"

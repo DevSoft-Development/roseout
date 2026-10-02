@@ -50,10 +50,11 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "google", label: "Google", category: "Cloud", description: "Google Maps, Places, Business Profile, and OAuth credentials.", fields: [
     { key: "apiKey", label: "API key", secret: true }, { key: "clientId", label: "OAuth client ID" }, { key: "clientSecret", label: "OAuth client secret", secret: true },
   ] },
-  { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, and management credential.", note: "The management access token is used only by protected platform automation such as dual-region schema validation and migration. Keep it out of client/runtime bundles.", fields: [
+  { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, and management credential.", note: "Prefer modern sb_publishable_ and sb_secret_ keys. The legacy service_role key remains transition-only until every server runtime is verified on the secret key. The management access token is reserved for protected platform automation.", fields: [
     { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" },
     { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true },
-    { key: "serviceRoleKey", label: "Service role key", secret: true, multiline: true },
+    { key: "secretKey", label: "Secret key (recommended)", secret: true, multiline: true },
+    { key: "serviceRoleKey", label: "Legacy service role key (transition only)", secret: true, multiline: true },
     { key: "managementAccessToken", label: "Management access token", secret: true, multiline: true },
   ] },
   { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
