@@ -47,7 +47,6 @@ jobs:
           ! grep -F 'edgeFunctionsManagementToken' lib/admin/credential-vault-catalog.ts
           ! grep -F 'edgeFunctionsManagementToken' apps/admin/lib/admin/credential-vault-catalog.ts
           ! grep -F 'edgeFunctionsManagementToken' infra/aws/lambda/platform_job_gateway.py
-          ! grep -F '/v1/projects/$ref/functions/$slug' .github/workflows/retire-supabase-edge-functions.yml
 
   finalize:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
