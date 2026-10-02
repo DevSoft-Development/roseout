@@ -143,6 +143,7 @@ jobs:
         run: |
           set -euo pipefail
           aws lambda invoke --function-name toh-production-critical-platform-monitor --payload '{}' "$RUNNER_TEMP/monitor.json" >/dev/null
+          jq '{supabaseHealthy:(.supabase.healthy // null),replicationHealthy:(.replicationHealthy // null),topLevelKeys:(keys | sort)}' "$RUNNER_TEMP/monitor.json" | tee -a "$GITHUB_STEP_SUMMARY"
           jq -e '.supabase.healthy == true and .replicationHealthy == true' "$RUNNER_TEMP/monitor.json" >/dev/null
 
       - name: Summary
