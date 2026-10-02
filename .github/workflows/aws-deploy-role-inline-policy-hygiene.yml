@@ -35,7 +35,11 @@ jobs:
         run: |
           set -euo pipefail
           FILE='.github/workflows/aws-deploy-role-inline-policy-hygiene.yml'
-          grep -F 'TheOutHavenPlatformCloudFormation' "$FILE" >/dev/null
+          grep -F 'TheOutHavenPlatformDeployCore' "$FILE" >/dev/null
+          grep -F 'TheOutHavenPlatformDeployDr' "$FILE" >/dev/null
+          grep -F 'TheOutHavenPlatformDeployServices' "$FILE" >/dev/null
+          grep -F 'TheOutHavenPlatformDeployRuntime' "$FILE" >/dev/null
+          grep -F 'list-attached-role-policies' "$FILE" >/dev/null
           grep -F 'list-role-policies' "$FILE" >/dev/null
           grep -F 'get-role-policy' "$FILE" >/dev/null
           grep -F 'delete-role-policy' "$FILE" >/dev/null
@@ -83,8 +87,13 @@ jobs:
             fi
           fi
 
-          PRESERVE='TheOutHavenPlatformCloudFormation'
           INSPECTION_POLICY='TheOutHavenInlinePolicyHygieneSelfInspection'
+          mapfile -t REQUIRED_MANAGED_POLICIES <<'EOF'
+          TheOutHavenPlatformDeployCore
+          TheOutHavenPlatformDeployDr
+          TheOutHavenPlatformDeployServices
+          TheOutHavenPlatformDeployRuntime
+          EOF
 
           cat > "$RUNNER_TEMP/inline-policy-hygiene-self-inspection.json" <<'JSON'
           {
@@ -127,11 +136,15 @@ jobs:
           TheOutHavenDomainGatewayAuthorityBootstrap
           EOF
 
+          aws iam list-attached-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/managed-policies.json"
+          for policy in "${REQUIRED_MANAGED_POLICIES[@]}"; do
+            jq -e --arg name "$policy" '.AttachedPolicies | any(.PolicyName == $name)' "$RUNNER_TEMP/managed-policies.json" >/dev/null || {
+              echo "Canonical managed policy $policy is missing; refusing inline cleanup." >&2
+              exit 1
+            }
+          done
+
           aws iam list-role-policies --role-name "$ROLE_NAME" --output json > "$RUNNER_TEMP/inline-policies.json"
-          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies.json" >/dev/null || {
-            echo "Canonical inline policy $PRESERVE is missing; refusing cleanup." >&2
-            exit 1
-          }
 
           before=0
           while IFS= read -r policy; do
@@ -144,7 +157,6 @@ jobs:
 
           for policy in "${TEMPORARY_POLICIES[@]}"; do
             if jq -e --arg name "$policy" '.PolicyNames | index($name) != null' "$RUNNER_TEMP/inline-policies.json" >/dev/null; then
-              test "$policy" != "$PRESERVE"
               echo "Removing abandoned temporary inline policy: $policy"
               aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$policy"
             fi
@@ -164,7 +176,9 @@ jobs:
             echo "Deploy role inline policies remain at or above the AWS 10,240-byte limit after bounded cleanup." >&2
             exit 1
           }
-          jq -e --arg preserve "$PRESERVE" '.PolicyNames | index($preserve) != null' "$RUNNER_TEMP/inline-policies-after.json" >/dev/null
+          for policy in "${REQUIRED_MANAGED_POLICIES[@]}"; do
+            jq -e --arg name "$policy" '.AttachedPolicies | any(.PolicyName == $name)' "$RUNNER_TEMP/managed-policies.json" >/dev/null
+          done
 
           aws iam delete-role-policy --role-name "$ROLE_NAME" --policy-name "$INSPECTION_POLICY"
 
