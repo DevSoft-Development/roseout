@@ -27,7 +27,7 @@ ALLOWED_ENVIRONMENTS = {"production", "staging"}
 ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
-    "supabase": {"url", "publishableKey", "serviceRoleKey"},
+    "supabase": {"url", "publishableKey", "serviceRoleKey", "managementAccessToken"},
     "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
     "microsoft": {"tenantId", "clientId", "clientSecret", "tokenEncryptionKey"},
