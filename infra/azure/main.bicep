@@ -48,6 +48,11 @@ param consumerShortLinkBaseUrl string = ''
 param consumerShortLinkHost string = ''
 param consumerIosTeamId string = ''
 param consumerAndroidAppLinkSha256Fingerprints string = ''
+param consumerPrimaryStableRevisionName string = ''
+param consumerSecondaryStableRevisionName string = ''
+@minValue(0)
+@maxValue(100)
+param consumerInitialCanaryWeight int = 100
 
 param tags object = {
   application: 'theouthaven'
@@ -109,6 +114,8 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     shortLinkHost: consumerShortLinkHost
     iosTeamId: consumerIosTeamId
     androidAppLinkSha256Fingerprints: consumerAndroidAppLinkSha256Fingerprints
+    stableRevisionName: consumerPrimaryStableRevisionName
+    latestRevisionWeight: consumerInitialCanaryWeight
   }
 }
 
@@ -140,6 +147,8 @@ module consumerSecondaryRuntime './modules/consumer-runtime.bicep' = if (consume
     shortLinkHost: consumerShortLinkHost
     iosTeamId: consumerIosTeamId
     androidAppLinkSha256Fingerprints: consumerAndroidAppLinkSha256Fingerprints
+    stableRevisionName: consumerSecondaryStableRevisionName
+    latestRevisionWeight: consumerInitialCanaryWeight
   }
 }
 
