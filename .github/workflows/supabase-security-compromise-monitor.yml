@@ -1,0 +1,158 @@
+name: Supabase security compromise monitor
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - supabase-security-monitor
+  pull_request:
+    paths:
+      - 'infra/aws/lambda/platform_supabase_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-supabase-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/supabase-security-compromise-monitor.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/aws/lambda/platform_supabase_security_dispatcher.py'
+      - 'infra/aws/cloudformation/platform-supabase-security-monitor.yml'
+      - 'infra/aws/lambda/platform_security_event_handler.py'
+      - '.github/workflows/supabase-security-compromise-monitor.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: supabase-security-compromise-monitor-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  STACK_NAME: theouthaven-supabase-security-monitor-production
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate monitor contracts
+        run: |
+          set -euo pipefail
+          python -m py_compile infra/aws/lambda/platform_supabase_security_dispatcher.py
+          python -m py_compile infra/aws/lambda/platform_security_event_handler.py
+          python -m pip install --disable-pip-version-check cfn-lint
+          cfn-lint infra/aws/cloudformation/platform-supabase-security-monitor.yml
+          grep -F 'supabase-security-monitor' infra/aws/lambda/platform_supabase_security_dispatcher.py >/dev/null
+          grep -F 'Supabase Security Signal' infra/aws/lambda/platform_security_event_handler.py >/dev/null
+          grep -F 'AWS::Scheduler::Schedule' infra/aws/cloudformation/platform-supabase-security-monitor.yml >/dev/null
+          ! grep -Eq '^[[:space:]]*schedule:' .github/workflows/supabase-security-compromise-monitor.yml
+
+  deploy:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Supabase management token from central vault
+        run: bash .github/scripts/load-supabase-management-token.sh
+
+      - name: Resolve alerts topic
+        id: aws
+        run: |
+          set -euo pipefail
+          TOPIC="$(aws cloudformation describe-stacks --stack-name theouthaven-platform-production --query "Stacks[0].Outputs[?OutputKey=='PlatformAlertsTopicArn'].OutputValue" --output text)"
+          test -n "$TOPIC" && test "$TOPIC" != None
+          echo "topic=$TOPIC" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy AWS-owned Supabase security scheduler
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy             --stack-name "$STACK_NAME"             --template-file infra/aws/cloudformation/platform-supabase-security-monitor.yml             --capabilities CAPABILITY_NAMED_IAM             --no-fail-on-empty-changeset             --parameter-overrides Environment=production GitHubRepository="$GITHUB_REPOSITORY" PlatformAlertsTopicArn='${{ steps.aws.outputs.topic }}'
+
+      - name: Deploy dispatcher code
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='DispatcherFunctionName'].OutputValue" --output text)"
+          BUILD="$RUNNER_TEMP/supabase-security-dispatcher"
+          ZIP="$RUNNER_TEMP/supabase-security-dispatcher.zip"
+          rm -rf "$BUILD" "$ZIP"; mkdir -p "$BUILD"
+          cp infra/aws/lambda/platform_supabase_security_dispatcher.py "$BUILD/index.py"
+          (cd "$BUILD" && zip -q "$ZIP" index.py)
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$ZIP" >/dev/null
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+
+      - name: Query dual-region Supabase security signals
+        id: scan
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ env.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          START="$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+          END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          TOTAL=0
+
+          query_logs() {
+            local ref="$1" role="$2" out="$3"
+            local sql
+            sql="select source, count() as signal_count, max(timestamp) as latest_timestamp, any(event_message) as sample from logs where (source = 'auth_audit_logs' and log_attributes['auth_audit_event.action'] in ('user_deleted','user_created','user_updated','password_recovery_requested','mfa_factor_created','mfa_factor_deleted','identity_linked','identity_unlinked')) or (source = 'postgres_logs' and match(lower(event_message), '(create|alter|drop)[[:space:]]+role|grant[[:space:]].*(superuser|bypassrls)|revoke[[:space:]].*(role|privilege)|alter[[:space:]]+system')) group by source order by signal_count desc"
+            curl --fail --silent --show-error --get               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --data-urlencode "sql=$sql"               --data-urlencode "iso_timestamp_start=$START"               --data-urlencode "iso_timestamp_end=$END"               "https://api.supabase.com/v1/projects/$ref/analytics/endpoints/logs" > "$out"
+            jq -e '.error == null or .error == ""' "$out" >/dev/null
+            jq --arg ref "$ref" --arg role "$role" '.result // [] | map(. + {projectRef:$ref,regionRole:$role})' "$out"
+          }
+
+          query_logs "$VIRGINIA_REF" primary "$RUNNER_TEMP/virginia.json" > "$RUNNER_TEMP/virginia-signals.json"
+          query_logs "$OREGON_REF" dr "$RUNNER_TEMP/oregon.json" > "$RUNNER_TEMP/oregon-signals.json"
+          jq -s 'add' "$RUNNER_TEMP/virginia-signals.json" "$RUNNER_TEMP/oregon-signals.json" > "$RUNNER_TEMP/signals.json"
+          TOTAL="$(jq '[.[].signal_count | tonumber] | add // 0' "$RUNNER_TEMP/signals.json")"
+          echo "count=$TOTAL" >> "$GITHUB_OUTPUT"
+
+      - name: Forward Supabase security signals to existing AWS security plane
+        if: steps.scan.outputs.count != '0'
+        env:
+          FUNCTION_NAME: toh-production-security-event-handler
+        run: |
+          set -euo pipefail
+          jq -c '.[]' "$RUNNER_TEMP/signals.json" | while IFS= read -r row; do
+            DETAIL="$(jq -n --argjson r "$row" '{
+              projectRef:$r.projectRef,
+              regionRole:$r.regionRole,
+              eventName:"supabase_security_signal",
+              severity:"high",
+              title:"Supabase privileged security activity",
+              description:($r.sample // ""),
+              eventTimestamp:$r.latest_timestamp,
+              signalCount:($r.signal_count | tonumber),
+              logSource:$r.source
+            }')"
+            PAYLOAD="$(jq -n --argjson d "$DETAIL" '{
+              source:"toh.supabase.security",
+              "detail-type":"Supabase Security Signal",
+              detail:$d
+            }')"
+            aws lambda invoke --function-name "$FUNCTION_NAME" --payload "$(printf '%s' "$PAYLOAD" | base64 -w0)" --cli-binary-format base64 --output json "$RUNNER_TEMP/invoke.json" >/dev/null
+          done
+
+      - name: Write summary
+        run: |
+          {
+            echo '### Supabase compromise monitoring'
+            echo "- Security signals found: ${{ steps.scan.outputs.count }}"
+            echo '- Projects: Virginia primary + Oregon DR'
+            echo '- Log endpoint: current ClickHouse unified logs API'
+            echo '- Monitor cadence owner: AWS EventBridge Scheduler'
+            echo '- Containment mode: alert-only'
+            echo '- Persistence: existing Admin security incident history'
+          } >> "$GITHUB_STEP_SUMMARY"
