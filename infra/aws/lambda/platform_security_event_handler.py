@@ -51,12 +51,12 @@ def _supabase():
     return _supabase_config
 
 
-def _persist_security_event(subject, payload):
+def _persist_security_event(subject, payload, category="security_incident"):
     url, key = _supabase()
     containment = payload.get("containment") or {}
     level = "critical"
     body = json.dumps({
-        "category": "security_incident",
+        "category": category,
         "level": level,
         "message": subject,
         "source": "aws-security-event-handler",
@@ -315,6 +315,23 @@ def _manual_security_action(event):
     return payload
 
 
+def _security_drill_event(event):
+    detail = event.get("detail") or {}
+    payload = {
+        "source": "security_drill",
+        "environment": ENVIRONMENT,
+        "eventName": "security_resilience_drill",
+        "severity": "info",
+        "title": "Security resilience drill probe",
+        "description": detail.get("description") or "Synthetic non-alerting security control-plane probe.",
+        "drillId": detail.get("drillId"),
+        "eventTimestamp": detail.get("eventTimestamp"),
+        "containment": {"attempted": False, "reason": "synthetic_drill"},
+    }
+    _persist_security_event("TheOutHaven security resilience drill", payload, category="security_drill")
+    return payload
+
+
 def handler(event, context):
     source = str(event.get("source") or "")
     detail_type = str(event.get("detail-type") or "")
@@ -330,6 +347,8 @@ def handler(event, context):
         result = _github_security_event(event)
     elif source == "toh.admin.security" and detail_type == "Manual Containment Action":
         result = _manual_security_action(event)
+    elif source == "toh.security.drill" and detail_type == "Security Drill Probe":
+        result = _security_drill_event(event)
     else:
         result = {
             "source": source,
