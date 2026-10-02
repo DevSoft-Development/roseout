@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
+import { getProtectedMachineIdentities, setProtectedAccessKeyStatus } from "@/lib/aws/platform-jobs";
 import {
   AdminActionButton,
   AdminPageHeader,
@@ -11,13 +13,14 @@ import {
 
 export const metadata: Metadata = {
   title: "Security Incidents | Admin",
-  description: "AWS security findings, takeover signals, and containment history.",
+  description: "Cross-cloud security findings, takeover signals, and containment history.",
 };
 
 export const dynamic = "force-dynamic";
 
 type SecurityIncident = {
   id: string;
+  category?: string | null;
   level: string;
   message: string;
   source: string | null;
@@ -43,18 +46,44 @@ function containment(meta: Record<string, unknown> | null) {
   return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 }
 
+async function securityKeyAction(formData: FormData) {
+  "use server";
+  const admin = await requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine);
+  const userName = String(formData.get("userName") || "").trim();
+  const keySuffix = String(formData.get("keySuffix") || "").trim();
+  const action = String(formData.get("action") || "").trim();
+  if (!userName || keySuffix.length !== 4 || (action !== "contain" && action !== "restore")) {
+    throw new Error("invalid_security_action");
+  }
+  await setProtectedAccessKeyStatus({
+    userName,
+    keySuffix,
+    action: action as "contain" | "restore",
+    actor: admin.email || admin.user_id,
+  });
+  revalidatePath("/admin/dashboard/infrastructure/security-incidents");
+}
 export default async function SecurityIncidentsPage() {
   await requireAdminRole(ADMIN_PAGE_ACCESS.productionFinishLine);
 
   const db = await getAdminDatabaseClient();
   const { data, error } = await db
     .from("admin_system_logs")
-    .select("id,level,message,source,metadata,created_at")
-    .eq("category", "security_incident")
+    .select("id,category,level,message,source,metadata,created_at")
+    .in("category", ["security_incident", "platform_drill"])
     .order("created_at", { ascending: false })
     .limit(250);
 
-  const incidents = (data || []) as SecurityIncident[];
+  const rows = (data || []) as SecurityIncident[];
+  const incidents = rows.filter((row) => row.category !== "platform_drill");
+  const drillResults = rows.filter((row) => row.category === "platform_drill");
+  let protectedIdentities: Awaited<ReturnType<typeof getProtectedMachineIdentities>>["identities"] = [];
+  let identityLoadError = "";
+  try {
+    protectedIdentities = (await getProtectedMachineIdentities()).identities || [];
+  } catch (identityError) {
+    identityLoadError = identityError instanceof Error ? identityError.message : "security_identity_load_failed";
+  }
   const contained = incidents.filter((row) => yes(containment(row.metadata).contained));
   const containmentAttempts = incidents.filter((row) => yes(containment(row.metadata).attempted));
   const guardDuty = incidents.filter((row) => row.metadata?.source === "guardduty");
@@ -65,7 +94,7 @@ export default async function SecurityIncidentsPage() {
       <AdminPageHeader
         eyebrow="Cloud & Platform · Security"
         title="Security Incidents"
-        subtitle="Durable GuardDuty, root/IAM, CloudTrail-tampering, and containment events from the AWS production security plane."
+        subtitle="Durable AWS, Azure, Supabase, GitHub, containment, and recurring security/DR drill evidence."
         badge={
           <AdminStatusBadge tone={incidents.length ? "amber" : "green"}>
             {incidents.length ? `${incidents.length} recorded events` : "No security events recorded"}
@@ -109,9 +138,63 @@ export default async function SecurityIncidentsPage() {
 
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-black/25">
         <div className="border-b border-white/10 px-5 py-4">
+          <h2 className="text-xl font-black">Protected machine identities</h2>
+          <p className="mt-1 text-sm text-white/50">
+            Only IAM users explicitly tagged TheOutHavenAutoContain=enabled appear here. Full access-key IDs are never exposed.
+          </p>
+        </div>
+        {identityLoadError ? (
+          <div className="p-5 text-sm font-bold text-amber-100">
+            Protected identities could not be loaded: {identityLoadError}
+          </div>
+        ) : protectedIdentities.length ? (
+          <div className="divide-y divide-white/10">
+            {protectedIdentities.map((identity) => (
+              <div key={identity.userName} className="p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-black text-white">{identity.userName}</p>
+                    <p className="mt-1 text-xs text-white/40">Auto-containment tag enabled</p>
+                  </div>
+                  <AdminStatusBadge tone="green">PROTECTED</AdminStatusBadge>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {identity.accessKeys.length ? identity.accessKeys.map((key) => (
+                    <div key={key.suffix} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                      <div>
+                        <p className="text-sm font-bold text-white">Access key ••••{key.suffix}</p>
+                        <p className="mt-1 text-xs text-white/40">{key.createdAt ? "Created " + formatDate(key.createdAt) : "Creation time unavailable"}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <AdminStatusBadge tone={key.status === "Active" ? "amber" : "muted"}>{key.status.toUpperCase()}</AdminStatusBadge>
+                        <form action={securityKeyAction}>
+                          <input type="hidden" name="userName" value={identity.userName} />
+                          <input type="hidden" name="keySuffix" value={key.suffix} />
+                          <input type="hidden" name="action" value={key.status === "Active" ? "contain" : "restore"} />
+                          <button type="submit" className="rounded-xl border border-white/15 px-3 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-white/10">
+                            {key.status === "Active" ? "Contain" : "Restore"}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  )) : (
+                    <p className="text-sm text-white/45">No access keys on this protected identity.</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 text-center text-sm text-white/50">
+            No IAM machine identities are currently tagged for automatic containment.
+          </div>
+        )}
+      </section>
+      <section className="overflow-hidden rounded-3xl border border-white/10 bg-black/25">
+        <div className="border-b border-white/10 px-5 py-4">
           <h2 className="text-xl font-black">Security event history</h2>
           <p className="mt-1 text-sm text-white/50">
-            GuardDuty and CloudTrail security events persisted by the AWS security handler.
+            Cross-cloud security events persisted by the AWS security handler.
           </p>
         </div>
 
@@ -184,6 +267,23 @@ export default async function SecurityIncidentsPage() {
         )}
       </section>
 
+      <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black">Scheduled security & DR drills</h2>
+            <p className="mt-1 text-sm text-white/50">AWS-owned monthly drills for Azure failover, Supabase DR readiness, gateway rotation, and containment simulation.</p>
+          </div>
+          <AdminStatusBadge tone={drillResults.length ? "green" : "muted"}>
+            {drillResults.length ? "EVIDENCE AVAILABLE" : "AWAITING FIRST RUN"}
+          </AdminStatusBadge>
+        </div>
+        {drillResults[0] ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/60">
+            <p className="font-bold text-white">{drillResults[0].message}</p>
+            <p className="mt-1 text-xs text-white/40">{formatDate(drillResults[0].created_at)}</p>
+          </div>
+        ) : null}
+      </section>
       <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
         <h2 className="text-lg font-black">Containment policy</h2>
         <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">

@@ -115,3 +115,40 @@ export async function invokePlatformBackground(
     JSON.stringify({ function: target, body }),
   );
 }
+
+
+export type ProtectedMachineIdentity = {
+  userName: string;
+  autoContainEnabled: boolean;
+  accessKeys: Array<{
+    suffix: string;
+    status: "Active" | "Inactive" | string;
+    createdAt?: string | null;
+  }>;
+};
+
+export async function getProtectedMachineIdentities(): Promise<{
+  ok: boolean;
+  identities: ProtectedMachineIdentity[];
+}> {
+  return signedRequest("GET", "/v1/security/identities");
+}
+
+export async function setProtectedAccessKeyStatus(input: {
+  userName: string;
+  keySuffix: string;
+  action: "contain" | "restore";
+  actor: string;
+}): Promise<{
+  ok: boolean;
+  userName: string;
+  keySuffix: string;
+  status: string;
+  action: "contain" | "restore";
+}> {
+  return signedRequest(
+    "POST",
+    "/v1/security/access-key",
+    JSON.stringify(input),
+  );
+}

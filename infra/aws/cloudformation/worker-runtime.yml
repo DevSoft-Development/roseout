@@ -154,7 +154,19 @@ Resources:
                 Resource: !Ref EmailQueueArn
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:toh-${Environment}-edge-scheduler-invoker
+                Resource:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:toh-${Environment}-edge-scheduler-invoker
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:toh-${Environment}-security-event-handler
+              - Effect: Allow
+                Action:
+                  - iam:ListUsers
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - iam:ListUserTags
+                  - iam:ListAccessKeys
+                  - iam:UpdateAccessKey
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/*
       Tags:
         - Key: Project
           Value: TheOutHaven
@@ -180,6 +192,9 @@ Resources:
           EMAIL_QUEUE_URL: !Ref EmailQueueUrl
           SHARED_SECRET_ARN: !Ref JobGatewaySecret
           BACKGROUND_INVOKER_FUNCTION: !Sub toh-${Environment}-edge-scheduler-invoker
+          SECURITY_EVENT_HANDLER_FUNCTION: !Sub toh-${Environment}-security-event-handler
+          AUTO_CONTAIN_TAG_KEY: TheOutHavenAutoContain
+          AUTO_CONTAIN_TAG_VALUE: enabled
       Code:
         ZipFile: |
           import json
