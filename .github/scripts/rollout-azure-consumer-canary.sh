@@ -62,8 +62,16 @@ verify_region_weight() {
     --arg candidate "$candidate" \
     --argjson previous_weight "$previous_weight" \
     --argjson candidate_weight "$candidate_weight" \
-    'any(.[]; .revisionName == $previous and .weight == $previous_weight)
-     and any(.[]; .revisionName == $candidate and .weight == $candidate_weight)' \
+    '
+      def weight_matches($revision; $expected):
+        ([.[] | select(.revisionName == $revision)] | first) as $entry
+        | if $expected == 0
+          then ($entry == null or ($entry.weight // 0) == 0)
+          else ($entry != null and $entry.weight == $expected)
+          end;
+      weight_matches($previous; $previous_weight)
+      and weight_matches($candidate; $candidate_weight)
+    ' \
     <<<"$traffic" >/dev/null
 }
 
