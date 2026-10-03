@@ -56,8 +56,9 @@ export {
 } from "./fusion/reciprocalRankFusionProvider";
 
 export {
-  HuggingFaceQueryEmbeddingProvider,
-} from "./semantic/huggingFaceQueryEmbeddingProvider";
+  AzureQueryEmbeddingProvider,
+  type AzureQueryEmbeddingProviderOptions,
+} from "./semantic/azureQueryEmbeddingProvider";
 
 export {
   SupabaseSemanticRetrievalProvider,
@@ -65,8 +66,3 @@ export {
   type SemanticRetrievalOptions,
   type SemanticRpcClient,
 } from "./semantic/supabaseSemanticRetrievalProvider";
-
-export {
-  SupabaseMenuSemanticRetrievalProvider,
-  type MenuSemanticRetrievalOptions,
-} from "./semantic/supabaseMenuSemanticRetrievalProvider";
