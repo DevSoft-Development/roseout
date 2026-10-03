@@ -245,17 +245,37 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Ensure production dual-region foundation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
+
+            AI_CHANGED=false
+            if [ "$EVENT_NAME" = "push" ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}$'; then
+              git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
+              if git diff --unified=0 "$BASE_SHA" "$IMAGE_SHA" -- \
+                infra/azure/main.bicep \
+                infra/azure/modules/foundation.bicep \
+                infra/azure/parameters/production.bicepparam \
+                .github/workflows/azure-consumer-production.yml \
+                | grep -Eq '^[+-].*(CognitiveServices|aiFoundry|aiModel|aiEmbedding|toh-primary|toh-embedding|consumerAzureAi)'; then
+                AI_CHANGED=true
+              fi
+            fi
+
+            echo "Azure AI infrastructure changed: $AI_CHANGED"
             for attempt in 1 2 3 4 5; do
               if az deployment sub create \
                 --name toh-consumer-foundation-production \
                 --location eastus2 \
                 --template-file infra/azure/main.bicep \
                 --parameters infra/azure/parameters/production.bicepparam \
-                aiModelDeploymentEnabled=true \
+                aiModelDeploymentEnabled="$AI_CHANGED" \
+                aiEmbeddingDeploymentEnabled="$AI_CHANGED" \
                 consumerRuntimeEnabled=false \
                 consumerEdgeEnabled=false 2>"/tmp/azure-foundation.err"; then
                 exit 0
@@ -381,7 +401,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=false               aiEmbeddingDeploymentEnabled=false               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
             }
             for attempt in 1 2 3 4 5; do
               if deploy_runtime 2>"/tmp/azure-runtime.err"; then
@@ -418,7 +438,7 @@ jobs:
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             deploy_runtime() {
-              az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+              az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=false               aiEmbeddingDeploymentEnabled=false               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
 
       - name: Record Azure release validation
         env:
