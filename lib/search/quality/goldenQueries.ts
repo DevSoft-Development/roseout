@@ -8,6 +8,8 @@ export type GoldenQueryExpectation = {
   minimumResults?: number;
   minimumPairs?: number;
   maximumDistanceMiles?: number;
+  maximumTravelMinutes?: number;
+  requireVerifiedRoute?: boolean;
   prohibitedCategories?: string[];
   expectedSequence?: SearchOutingSequence;
 };
@@ -41,7 +43,7 @@ const pair = (
 });
 
 export const GOLDEN_SEARCH_QUERIES: GoldenQueryCase[] = [
-  pair('pair-astoria-bowling', 'paired', 'Dinner and bowling in Astoria within a 20-minute walk', 'bowling', 'Astoria', { maximumDistanceMiles: 1, expectedSequence: 'restaurant_then_activity' }),
+  pair('pair-astoria-bowling', 'paired', 'Dinner and bowling in Astoria within a 20-minute walk', 'bowling', 'Astoria', { maximumTravelMinutes: 20, requireVerifiedRoute: true, expectedSequence: 'restaurant_then_activity' }),
   pair('pair-manhattan-live-music', 'paired', 'Italian dinner with live music nearby in Manhattan', 'live music', 'Manhattan'),
   pair('pair-brooklyn-comedy', 'paired', 'Seafood dinner with a comedy show after in Brooklyn', 'comedy', 'Brooklyn', { expectedSequence: 'restaurant_then_activity' }),
   pair('pair-williamsburg-gallery', 'paired', 'Brunch and an art gallery in Williamsburg', 'art gallery', 'Williamsburg'),
