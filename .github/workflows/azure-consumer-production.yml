@@ -408,24 +408,38 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT="${HUGGINGFACE_AI_ENDPOINT:-}"
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
-            az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=false               aiEmbeddingDeploymentEnabled=false               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
-            }
-            for attempt in 1 2 3 4 5; do
-              if deploy_runtime 2>"/tmp/azure-runtime.err"; then
-                exit 0
-              fi
-              cat "/tmp/azure-runtime.err" >&2
-              if ! grep -q 'RequestConflict\\|Another operation is being performed' "/tmp/azure-runtime.err"; then
-                exit 1
-              fi
-              if [ "$attempt" -eq 5 ]; then
-                echo "::error::Azure AI resource remained locked after 5 runtime deployment attempts."
-                exit 1
-              fi
-              delay=$((attempt * 30))
-              echo "::warning::Azure AI resource is busy; retrying runtime deployment in ${delay}s (attempt ${attempt}/5)."
-              sleep "$delay"
-            done
+            az deployment sub what-if \
+              --name toh-consumer-runtime-production \
+              --location eastus2 \
+              --template-file infra/azure/main.bicep \
+              --parameters infra/azure/parameters/production.bicepparam \
+              aiModelDeploymentEnabled=false \
+              aiEmbeddingDeploymentEnabled=false \
+              consumerRuntimeEnabled=true \
+              consumerRegionalFailoverEnabled=true \
+              consumerEdgeEnabled=true \
+              consumerImage="$IMAGE" \
+              consumerGitSha="$IMAGE_SHA" \
+              consumerNextPublicSiteUrl="$SITE_URL" \
+              consumerNextPublicSupabaseUrl="$SUPABASE_URL" \
+              consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY" \
+              consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+              consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT" \
+              consumerAzureAiApiKey="$PRIMARY_AI_KEY" \
+              consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT" \
+              consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY" \
+              consumerAzureAiModel=toh-primary \
+              consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT" \
+              consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN" \
+              consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL" \
+              consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN" \
+              consumerShortLinkBaseUrl="https://outhvn.com" \
+              consumerShortLinkHost="outhvn.com" \
+              consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}' \
+              consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}' \
+              consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}' \
+              consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}' \
+              consumerInitialCanaryWeight=0
 
       - name: Deploy dual-region production runtime
         uses: azure/CLI@v2
@@ -445,7 +459,56 @@ jobs:
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             deploy_runtime() {
-              az deployment sub create               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=false               aiEmbeddingDeploymentEnabled=false               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
+              az deployment sub create \
+                --name toh-consumer-runtime-production \
+                --location eastus2 \
+                --template-file infra/azure/main.bicep \
+                --parameters infra/azure/parameters/production.bicepparam \
+                aiModelDeploymentEnabled=false \
+                aiEmbeddingDeploymentEnabled=false \
+                consumerRuntimeEnabled=true \
+                consumerRegionalFailoverEnabled=true \
+                consumerEdgeEnabled=true \
+                consumerImage="$IMAGE" \
+                consumerGitSha="$IMAGE_SHA" \
+                consumerNextPublicSiteUrl="$SITE_URL" \
+                consumerNextPublicSupabaseUrl="$SUPABASE_URL" \
+                consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY" \
+                consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
+                consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT" \
+                consumerAzureAiApiKey="$PRIMARY_AI_KEY" \
+                consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT" \
+                consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY" \
+                consumerAzureAiModel=toh-primary \
+                consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT" \
+                consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN" \
+                consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL" \
+                consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN" \
+                consumerShortLinkBaseUrl="https://outhvn.com" \
+                consumerShortLinkHost="outhvn.com" \
+                consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}' \
+                consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}' \
+                consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}' \
+                consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}' \
+                consumerInitialCanaryWeight=0
+            }
+
+            for attempt in 1 2 3 4 5; do
+              if deploy_runtime 2>"/tmp/azure-runtime.err"; then
+                exit 0
+              fi
+              cat "/tmp/azure-runtime.err" >&2
+              if ! grep -q 'RequestConflict\|Another operation is being performed' "/tmp/azure-runtime.err"; then
+                exit 1
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error::Azure runtime deployment remained locked after 5 attempts."
+                exit 1
+              fi
+              delay=$((attempt * 30))
+              echo "::warning::Azure resource is busy; retrying runtime deployment in ${delay}s (attempt ${attempt}/5)."
+              sleep "$delay"
+            done
 
       - name: Record Azure release validation
         env:
