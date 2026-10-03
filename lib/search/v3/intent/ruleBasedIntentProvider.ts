@@ -118,13 +118,13 @@ export class RuleBasedSearchV3IntentProvider implements SearchIntentProvider {
     if (activity) constraints.push(hard("activity_type", activity));
 
     const geo = extractGeo(rawQuery);
-    if (geo) constraints.push(hard(geo.key, geo.value));
+    if (geo?.constraint) constraints.push(hard(geo.constraint.key, geo.constraint.value));
 
     const domains = detectDomains(q, {
       activityDetected: Boolean(activity),
       restaurantSignal: Boolean(cuisine || food || meal),
     });
-    const anchorLabel = extractAnchorLabel(rawQuery);
+    const anchorLabel = extractAnchorLabel(rawQuery) ?? geo?.anchorLabel ?? null;
 
     return {
       contractVersion: "search-intent-v3-alpha.1",
@@ -234,9 +234,32 @@ function detectSequencing(q: string): SearchIntentGraph["sequencing"] {
   return "single";
 }
 
-function extractGeo(query: string): { key: string; value: string } | null {
+function extractGeo(query: string): {
+  constraint: { key: string; value: string } | null;
+  anchorLabel: string | null;
+} | null {
   const zip = query.match(/\b(\d{5})\b/);
-  if (zip) return { key: "zip_code", value: zip[1] };
+  if (zip) {
+    return {
+      constraint: { key: "zip_code", value: zip[1] },
+      anchorLabel: zip[1],
+    };
+  }
+
   const borough = query.match(/\b(?:in|near|around)\s+(Manhattan|Brooklyn|Queens|Bronx|Staten Island)\b/i);
-  return borough ? { key: "borough", value: borough[1] } : null;
+  if (borough) {
+    return {
+      constraint: { key: "borough", value: borough[1] },
+      anchorLabel: borough[1],
+    };
+  }
+
+  const area = query.match(/\b(?:in|near|around)\s+([A-Za-z][A-Za-z .'-]{1,48}?)(?=\s+(?:for|with|and|then|within|under)\b|$)/i);
+  if (!area?.[1]) return null;
+
+  const value = area[1].trim();
+  return {
+    constraint: null,
+    anchorLabel: value,
+  };
 }
