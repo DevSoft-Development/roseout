@@ -237,6 +237,29 @@ jobs:
 
           rm -rf "$WORK"
 
+      - name: Detect Azure AI infrastructure changes
+        id: ai_changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+        run: |
+          set -euo pipefail
+          AI_CHANGED=false
+          if [ "$EVENT_NAME" = "push" ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}$'; then
+            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
+            if git diff --unified=0 "$BASE_SHA" "$IMAGE_SHA" -- \
+              infra/azure/main.bicep \
+              infra/azure/modules/foundation.bicep \
+              infra/azure/parameters/production.bicepparam \
+              .github/workflows/azure-consumer-production.yml \
+              | grep -Eq '^[+-].*(CognitiveServices|aiFoundry|aiModel|aiEmbedding|toh-primary|toh-embedding|consumerAzureAi)'; then
+              AI_CHANGED=true
+            fi
+          fi
+          echo "changed=$AI_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Azure AI infrastructure changed: $AI_CHANGED"
+
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
         with:
@@ -246,27 +269,11 @@ jobs:
 
       - name: Ensure production dual-region foundation
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.before }}
-          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
+          AI_CHANGED: ${{ steps.ai_changes.outputs.changed }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-
-            AI_CHANGED=false
-            if [ "$EVENT_NAME" = "push" ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}$'; then
-              git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
-              if git diff --unified=0 "$BASE_SHA" "$IMAGE_SHA" -- \
-                infra/azure/main.bicep \
-                infra/azure/modules/foundation.bicep \
-                infra/azure/parameters/production.bicepparam \
-                .github/workflows/azure-consumer-production.yml \
-                | grep -Eq '^[+-].*(CognitiveServices|aiFoundry|aiModel|aiEmbedding|toh-primary|toh-embedding|consumerAzureAi)'; then
-                AI_CHANGED=true
-              fi
-            fi
-
             echo "Azure AI infrastructure changed: $AI_CHANGED"
             for attempt in 1 2 3 4 5; do
               if az deployment sub create \
