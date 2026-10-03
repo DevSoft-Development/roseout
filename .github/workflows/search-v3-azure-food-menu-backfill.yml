@@ -189,6 +189,13 @@ jobs:
               exit 1
             fi
 
+            SKU_ENTRIES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model) | .skus[]?.name] | unique'               "$RUNNER_TEMP/models.json")"
+            if [ "$(printf '%s' "$SKU_ENTRIES" | jq 'length')" -gt 0 ] &&                ! printf '%s' "$SKU_ENTRIES" | jq -e 'index("DataZoneStandard") != null' >/dev/null; then
+              echo "::error::$EMBEDDING_MODEL is visible, but DataZoneStandard is not advertised for this production account."
+              printf '%s\n' "$SKU_ENTRIES"
+              exit 1
+            fi
+
             DEPLOYMENT_URL="https://management.azure.com$ACCOUNT_ID/deployments/$EMBEDDING_DEPLOYMENT?api-version=2025-06-01"
             CURRENT="$(az rest --method get --url "$DEPLOYMENT_URL" 2>/dev/null || true)"
 
