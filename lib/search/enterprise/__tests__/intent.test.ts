@@ -175,6 +175,22 @@ describe("enterprise search intent", () => {
     expect(activitySearchTerms(parsed.intent).length).toBeGreaterThan(0);
   });
 
+
+  it.each([
+    "dinner and bowling an easy walk apart",
+    "dinner and bowling a short stroll apart",
+    "dinner and bowling on foot",
+    "dinner and bowling a few blocks away",
+    "dinner and bowling no car needed",
+    "dinner and bowling walkable",
+  ])("treats natural walking phrasing as a walking paired outing: %s", (query) => {
+    const intent = deterministicIntentFromQuery(query);
+    expect(intent.searchType).toBe("mixed_outing");
+    expect(intent.wantsPairing).toBe(true);
+    expect(intent.pairingPreference?.distanceMode).toBe("walking");
+    expect(intent.pairingPreference?.requireWalkablePair).toBe(true);
+  });
+
   it("keeps generic walking activity searches pair-required with a 60-minute cap", () => {
     const intent = deterministicIntentFromQuery(
       "restaurant with activity walking distance",
