@@ -16,6 +16,10 @@ type LocationRow = {
   category: string | null;
   type: string | null;
   name: string | null;
+  active: boolean | null;
+  is_searchable: boolean | null;
+  is_hidden: boolean | null;
+  deleted_at: string | null;
 };
 
 type ProfileRow = {
@@ -60,7 +64,7 @@ export class SupabaseHardEligibilityProvider implements SearchEligibilityProvide
 
     const locationRead = await this.client
       .from("locations")
-      .select("id,location_type,primary_category,category,type,name")
+      .select("id,location_type,primary_category,category,type,name,active,is_searchable,is_hidden,deleted_at")
       .in("id", [...args.locationIds]);
 
     if (locationRead.error) throw new Error(locationRead.error.message);
@@ -99,11 +103,24 @@ function rejectionReasons(
 ): string[] {
   const reasons: string[] = [];
 
+  if (!location) {
+    reasons.push("missing_location");
+  } else if (
+    location.is_searchable === false ||
+    location.is_hidden === true ||
+    location.active === false ||
+    location.deleted_at != null
+  ) {
+    reasons.push("location_not_searchable");
+  }
+
   if (intent.domains.length > 0) {
-    const supported = new Set([
-      row.primary_domain,
-      ...(row.supported_domains ?? []),
-    ].filter(Boolean));
+    const supported = new Set<string>(
+      [
+        row.primary_domain,
+        ...(row.supported_domains ?? []),
+      ].filter((value): value is string => Boolean(value)),
+    );
     if (!intent.domains.some((domain) => supported.has(domain))) {
       reasons.push("domain_mismatch");
     }
