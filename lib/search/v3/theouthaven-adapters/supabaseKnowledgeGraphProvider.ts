@@ -133,6 +133,20 @@ export class SupabaseKnowledgeGraphProvider implements KnowledgeGraphProvider {
     return this.findRelated(entityId, "located_in");
   }
 
+  async searchEntities(query: string, limit = 25): Promise<readonly KnowledgeEntity[]> {
+    const token = query.trim().replace(/[%_,]/g, " ");
+    if (!token) return [];
+
+    const { data, error } = await this.client
+      .from("knowledge_entities")
+      .select("*")
+      .ilike("canonical_name", `%${token}%`)
+      .limit(Math.max(1, Math.min(limit, 100)));
+
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(mapEntity);
+  }
+
   async getEntityContext(entityId: string): Promise<KnowledgeEntityContext | null> {
     const entity = await this.getEntity(entityId);
     if (!entity) return null;
