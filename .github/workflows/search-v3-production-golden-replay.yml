@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - name: Install locked dependencies
@@ -110,6 +110,11 @@ jobs:
               echo "SEARCH_EMBEDDING_MODEL=text-embedding-3-small"
               echo "SEARCH_EMBEDDING_VERSION=azure-location-intelligence:v1"
             } >> "$GITHUB_ENV"
+
+      - name: Prepare standalone server-only shim
+        run: |
+          mkdir -p node_modules/server-only
+          printf "module.exports = {};\n" > node_modules/server-only/index.js
 
       - name: Run production-backed V3 golden replay
         run: npx tsx scripts/run-search-v3-production-golden-replay.ts
