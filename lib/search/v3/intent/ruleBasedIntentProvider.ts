@@ -58,9 +58,6 @@ const ACTIVITIES: Readonly<Record<string, readonly string[]>> = {
   "live music": ["live music", "jazz"],
   nightclub: ["nightclub", "club"],
   hookah: ["hookah", "shisha"],
-  rooftop: ["rooftop", "roof top"],
-  lounge: ["lounge"],
-  bar: ["bar", "drinks", "cocktails"],
   park: ["park"],
   gallery: ["gallery", "art gallery"],
   theater: ["theater", "theatre", "broadway"],
@@ -123,7 +120,10 @@ export class RuleBasedSearchV3IntentProvider implements SearchIntentProvider {
     const geo = extractGeo(rawQuery);
     if (geo) constraints.push(hard(geo.key, geo.value));
 
-    const domains = detectDomains(q, Boolean(activity));
+    const domains = detectDomains(q, {
+      activityDetected: Boolean(activity),
+      restaurantSignal: Boolean(cuisine || food || meal),
+    });
     const anchorLabel = extractAnchorLabel(rawQuery);
 
     return {
@@ -168,9 +168,16 @@ function hard<T>(key: string, value: T): SearchConstraint<T> {
   return { key, value, strength: "hard", source: "explicit", confidence: 1 };
 }
 
-function detectDomains(q: string, activityDetected: boolean): SearchDomain[] {
-  const restaurant = RESTAURANT_TERMS.some((term) => hasPhrase(q, term));
-  const activity = activityDetected || ACTIVITY_TERMS.some((term) => hasPhrase(q, term));
+function detectDomains(
+  q: string,
+  signals: { activityDetected: boolean; restaurantSignal: boolean },
+): SearchDomain[] {
+  const restaurant =
+    signals.restaurantSignal ||
+    RESTAURANT_TERMS.some((term) => hasPhrase(q, term));
+  const activity =
+    signals.activityDetected ||
+    ACTIVITY_TERMS.some((term) => hasPhrase(q, term));
   const nightlife = /\b(nightlife|nightclub|club|hookah|lounge|bar|cocktails?|drinks?)\b/.test(q);
   const domains: SearchDomain[] = [];
   if (restaurant) domains.push("restaurant");
