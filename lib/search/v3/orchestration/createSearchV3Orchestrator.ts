@@ -1,5 +1,6 @@
 import type {
   LocationIntelligenceProvider,
+  RetrievalLaneResult,
   SearchCandidate,
   SearchEligibilityProvider,
   SearchEntityResolutionProvider,
@@ -117,7 +118,7 @@ export function createSearchV3Orchestrator(
           ),
       });
 
-      let fusedLane = null;
+      let fusedLane: RetrievalLaneResult | null = null;
       if (dependencies.fusion && retrievalLanes.length > 1) {
         fusedLane = await runStage({
           stage: "fusion",
