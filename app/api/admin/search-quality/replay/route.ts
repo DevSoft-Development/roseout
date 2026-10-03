@@ -3,7 +3,16 @@ import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { searchV2 } from "@/lib/search/v2";
+import {
+  createTheOutHavenSearchV3,
+  type TheOutHavenSearchV3Client,
+} from "@/lib/search/v3";
 import { GOLDEN_SEARCH_QUERIES } from "@/lib/search/quality/goldenQueries";
+import {
+  buildV3ReplayMetrics,
+  evaluateV3Execution,
+  snapshotV3Execution,
+} from "@/lib/search/quality/v3ReplayEvaluation";
 import { buildLaunchGates, percentile, type SearchQualityMetrics } from "@/lib/search/quality/launchGates";
 import { countResponseResults, responseDomainInventory, type ServedDomain } from "@/lib/search/quality/replayEvaluation";
 
@@ -179,19 +188,57 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? "Unable to create replay run." }, { status: 500 });
   }
 
+  const v3 = createTheOutHavenSearchV3(
+    supabaseAdmin as unknown as TheOutHavenSearchV3Client,
+  );
+
   const rows: any[] = [];
   for (const testCase of cases) {
     try {
       const requestId = `${run.id}:${testCase.id}`;
-      const [legacy, canonical, strictCanonical] = await Promise.all([
-        searchV2({ query: testCase.query, requestId: `${requestId}:legacy`, supabase: supabaseAdmin, rolloutOverride: { mode: "off", canaryPercent: 0 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
+      const v3StartedAt = Date.now();
+      const [v2Results, v3Settled] = await Promise.all([
+        Promise.all([
+          searchV2({ query: testCase.query, requestId: `${requestId}:legacy`, supabase: supabaseAdmin, rolloutOverride: { mode: "off", canaryPercent: 0 } }),
+          searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
+          searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
+        ]),
+        v3.orchestrator.execute({
+          requestId: `${requestId}:v3`,
+          query: testCase.query,
+          limit: 20,
+        }).then((execution) => ({
+          status: "fulfilled" as const,
+          execution,
+          latencyMs: Date.now() - v3StartedAt,
+        })).catch((error) => ({
+          status: "rejected" as const,
+          error: error instanceof Error ? error.message : String(error),
+          latencyMs: Date.now() - v3StartedAt,
+        })),
       ]);
+      const [legacy, canonical, strictCanonical] = v2Results;
       const base = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
+      let v3Result: ReturnType<typeof snapshotV3Execution> | null = null;
+      let v3Comparison: ReturnType<typeof evaluateV3Execution> | null = null;
+      let v3Error: string | null = null;
+
+      if (v3Settled.status === "fulfilled") {
+        v3Comparison = evaluateV3Execution(testCase, v3Settled.execution, {
+          legacyCount: base.legacyCount,
+          latencyMs: v3Settled.latencyMs,
+        });
+        v3Result = snapshotV3Execution(v3Settled.execution);
+      } else {
+        v3Error = v3Settled.error;
+      }
+
       const comparison = {
         ...base,
         failureReport: buildQueryFailureReport(testCase, canonical, strictCanonical, base),
+        v3: v3Comparison,
+        v3Error,
+        v3ContractFailure: Boolean(v3Error),
       };
       rows.push({
         run_id: run.id,
@@ -200,7 +247,11 @@ export async function POST(request: Request) {
         category: testCase.category,
         expectations: testCase.expectations,
         legacy_result: snapshot(legacy),
-        canonical_result: { served: snapshot(canonical), strict: snapshot(strictCanonical) },
+        canonical_result: {
+          served: snapshot(canonical),
+          strict: snapshot(strictCanonical),
+          v3: v3Result,
+        },
         comparison,
         passed: comparison.passed,
       });
@@ -271,6 +322,11 @@ export async function POST(request: Request) {
     contractFailureCount: rows.filter((row) => row.comparison?.contractFailure).length,
   };
   const gates = buildLaunchGates(metrics);
+  const v3Metrics = buildV3ReplayMetrics(rows.map((row) => ({
+    canonicalPassed: Boolean(row.passed),
+    v3: row.comparison?.v3 ?? null,
+    contractFailure: Boolean(row.comparison?.v3ContractFailure),
+  })));
 
   await supabaseAdmin
     .from("search_quality_replay_runs")
@@ -285,6 +341,8 @@ export async function POST(request: Request) {
         persistedRowCount: persisted,
         queryCount: cases.length,
         exactDomainPurity: true,
+        v3Shadow: true,
+        v3: v3Metrics,
       },
       completed_at: new Date().toISOString(),
     })
@@ -298,5 +356,7 @@ export async function POST(request: Request) {
     replayMode: "canonical_strict",
     queryCount: cases.length,
     persistedRowCount: persisted,
+    v3Shadow: true,
+    v3: v3Metrics,
   });
 }

@@ -23,7 +23,7 @@ export default function ReplayRunnerClient() {
   async function run(source: "golden" | "production_replay") {
     const confirmed = confirm(
       source === "golden"
-        ? "Run the full golden query suite now?"
+        ? "Run the full golden query suite through Search V2 and shadow Search V3 now?"
         : "Replay up to 100 recent production searches through normal, canonical, and strict canonical Search V2?",
     );
     if (!confirmed) return;
@@ -63,7 +63,8 @@ export default function ReplayRunnerClient() {
         );
       } else {
         persistMessage(
-          `Completed golden suite. Success ${Number(payload.metrics?.successRate ?? 0).toFixed(1)}%.`,
+          `Completed golden suite. Current search ${Number(payload.metrics?.successRate ?? 0).toFixed(1)}%. `
+          + `V3 shadow ${Number(payload.v3?.successRate ?? 0).toFixed(1)}%.`,
         );
       }
 
@@ -79,7 +80,7 @@ export default function ReplayRunnerClient() {
     <section className="rounded-3xl border border-rose-400/25 bg-gradient-to-br from-[#24100f] via-[#160d0b] to-[#0d0908] p-6 shadow-[0_12px_32px_rgba(225,6,42,0.12)]">
       <h2 className="text-xl font-black">Run quality validation</h2>
       <p className="mt-2 text-sm text-white/60">
-        The golden suite validates fixed benchmark prompts. Production replay uses real search logs and compares normal, canonical, and strict canonical Search V2 before allowing canary traffic.
+        The golden suite validates fixed benchmark prompts against current Search V2 and shadow Search V3. Production replay uses real search logs and compares normal, canonical, and strict canonical Search V2 before allowing canary traffic.
       </p>
       <div className="mt-5 flex flex-wrap gap-3">
         <button
