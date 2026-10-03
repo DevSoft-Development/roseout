@@ -121,8 +121,5 @@ grant select, insert, update, delete on table public.knowledge_graph_versions to
 
 grant usage, select on all sequences in schema public to service_role;
 
-insert into public.knowledge_graph_versions(version, status, metadata)
-values ('kg-v1-bootstrap', 'ready', '{"phase":"search-v3-phase2"}'::jsonb)
-on conflict (version) do nothing;
 
 commit;
