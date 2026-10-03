@@ -130,6 +130,61 @@ describe("Search V3 replay evaluation", () => {
     expect(result.passed).toBe(false);
   });
 
+  it("requires verified routing for true-walkability golden cases", () => {
+    const restaurant = candidate("restaurant", "restaurant", { borough: "Queens" });
+    const activity = candidate("activity", "activity", {
+      borough: "Queens",
+      activityCategories: ["bowling"],
+    });
+    const testCase: GoldenQueryCase = {
+      id: "walk-verified",
+      category: "paired",
+      query: "Dinner and bowling in Queens within a 20-minute walk",
+      expectations: {
+        expectedDomains: ["restaurant", "activity"],
+        expectedActivityCategories: ["bowling"],
+        expectedGeography: ["Queens"],
+        minimumPairs: 1,
+        maximumTravelMinutes: 20,
+        requireVerifiedRoute: true,
+      },
+    };
+
+    const estimated = evaluateV3Execution(
+      testCase,
+      execution(
+        [restaurant, activity],
+        [outing(restaurant, activity, {
+          travelMinutes: 15,
+          routeConfidence: "estimated",
+          travelMode: "walking",
+        })],
+      ),
+      { legacyCount: 2, latencyMs: 100 },
+    );
+
+    expect(estimated.pairTravelTimePass).toBe(true);
+    expect(estimated.pairRouteVerifiedPass).toBe(false);
+    expect(estimated.passed).toBe(false);
+
+    const verified = evaluateV3Execution(
+      testCase,
+      execution(
+        [restaurant, activity],
+        [outing(restaurant, activity, {
+          travelMinutes: 18,
+          routeConfidence: "verified",
+          travelMode: "walking",
+        })],
+      ),
+      { legacyCount: 2, latencyMs: 100 },
+    );
+
+    expect(verified.pairTravelTimePass).toBe(true);
+    expect(verified.pairRouteVerifiedPass).toBe(true);
+    expect(verified.passed).toBe(true);
+  });
+
   it("reports no-result regressions relative to legacy", () => {
     const testCase: GoldenQueryCase = {
       id: "empty-test",
@@ -265,18 +320,23 @@ function outing(
   activity: SearchCandidate,
   overrides: {
     distanceMiles?: number | null;
+    travelMinutes?: number | null;
+    travelMode?: SearchOuting["travelMode"];
+    routeConfidence?: SearchOuting["metadata"]["routeConfidence"];
     sequence?: SearchOuting["sequence"];
   } = {},
 ): SearchOuting {
   const distanceMiles = overrides.distanceMiles ?? 0.5;
+  const travelMinutes = overrides.travelMinutes ?? (distanceMiles == null ? null : Math.round(distanceMiles * 4));
+  const routeConfidence = overrides.routeConfidence ?? "verified";
   return {
     outingId: `${restaurant.locationId}::${activity.locationId}`,
     restaurant,
     activity,
     score: 0.85,
     distanceMiles,
-    travelMinutes: distanceMiles == null ? null : Math.round(distanceMiles * 4),
-    travelMode: "driving",
+    travelMinutes,
+    travelMode: overrides.travelMode ?? "driving",
     sequence: overrides.sequence ?? "restaurant_then_activity",
     reasons: ["test"],
     metadata: {
@@ -296,10 +356,10 @@ function outing(
         diversity: 0.05,
       },
       withinTravelLimit: true,
-      routeSource: "test",
-      routeConfidence: "verified",
+      routeSource: routeConfidence === "verified" ? "mapbox" : "haversine_estimate",
+      routeConfidence,
       straightLineMiles: distanceMiles,
-      routeDistanceMiles: distanceMiles,
+      routeDistanceMiles: routeConfidence === "verified" ? distanceMiles : null,
     },
   };
 }
