@@ -467,7 +467,7 @@ function buildReasons(args: {
 
   const matched = args.intent.constraints
     .filter((constraint) => {
-      const role = constraintRole(constraint.key);
+      const role = constraintRole(constraint.key, constraint.value);
       if (role === "restaurant") {
         return matchesConstraint(
           args.restaurant.intelligence,
