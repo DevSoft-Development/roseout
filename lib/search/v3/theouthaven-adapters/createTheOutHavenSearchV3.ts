@@ -4,6 +4,7 @@ import type {
   SearchEntityResolutionProvider,
   SearchFusionProvider,
   SearchIntentProvider,
+  SearchPairingProvider,
   SearchRetrievalProvider,
   SearchRankingProvider,
 } from "@/lib/search-framework";
@@ -24,6 +25,10 @@ import {
   DeterministicDecisionRankingProvider,
   type DeterministicDecisionRankingOptions,
 } from "../ranking/deterministicDecisionRankingProvider";
+import {
+  DeterministicOutingPairingProvider,
+  type DeterministicOutingPairingOptions,
+} from "../pairing/deterministicOutingPairingProvider";
 import {
   createSearchV3SemanticRetrievalBundle,
   type SearchV3SemanticRetrievalBundleOptions,
@@ -53,14 +58,17 @@ export interface TheOutHavenSearchV3CompositionOptions {
   eligibility?: SearchEligibilityProvider | null;
   fusion?: SearchFusionProvider | null;
   ranking?: SearchRankingProvider | null;
+  pairing?: SearchPairingProvider | null;
   semantic?: SearchV3SemanticRetrievalBundleOptions;
   rrf?: ReciprocalRankFusionOptions;
   decisionRanking?: DeterministicDecisionRankingOptions;
+  outingPairing?: DeterministicOutingPairingOptions;
 }
 
 export interface TheOutHavenSearchV3Composition {
   orchestrator: SearchV3Orchestrator;
   retrievalProviders: readonly SearchRetrievalProvider[];
+  pairingProvider: SearchPairingProvider | null;
 }
 
 export function createTheOutHavenSearchV3(
@@ -96,8 +104,14 @@ export function createTheOutHavenSearchV3(
       ? new DeterministicDecisionRankingProvider(options.decisionRanking)
       : options.ranking;
 
+  const pairing =
+    options.pairing === undefined
+      ? new DeterministicOutingPairingProvider(options.outingPairing)
+      : options.pairing;
+
   return {
     retrievalProviders,
+    pairingProvider: pairing,
     orchestrator: createSearchV3Orchestrator({
       intent: options.intent ?? new RuleBasedSearchV3IntentProvider(),
       entityResolution,
@@ -106,6 +120,7 @@ export function createTheOutHavenSearchV3(
       fusion,
       eligibility,
       ranking,
+      pairing,
     }),
   };
 }
