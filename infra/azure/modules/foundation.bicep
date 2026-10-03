@@ -181,6 +181,9 @@ resource secondaryAiModelDeployment 'Microsoft.CognitiveServices/accounts/deploy
 resource aiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiEmbeddingDeploymentEnabled) {
   parent: aiFoundry
   name: aiEmbeddingDeploymentName
+  dependsOn: [
+    aiModelDeployment
+  ]
   sku: {
     name: aiEmbeddingSkuName
     capacity: aiEmbeddingCapacity
@@ -198,6 +201,9 @@ resource aiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments
 resource secondaryAiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiEmbeddingDeploymentEnabled && consumerRegionalFailoverEnabled) {
   parent: secondaryAiFoundry
   name: aiEmbeddingDeploymentName
+  dependsOn: [
+    secondaryAiModelDeployment
+  ]
   sku: {
     name: aiEmbeddingSkuName
     capacity: aiEmbeddingCapacity
