@@ -54,6 +54,8 @@ param consumerHuggingFaceAiEndpoint string = 'https://router.huggingface.co/v1'
 @secure()
 param consumerHuggingFaceAiToken string = ''
 param consumerHuggingFaceAiModel string = ''
+@secure()
+param consumerMapboxAccessToken string = ''
 param consumerShortLinkBaseUrl string = ''
 param consumerShortLinkHost string = ''
 param consumerIosTeamId string = ''
@@ -130,6 +132,7 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
+    mapboxAccessToken: consumerMapboxAccessToken
     shortLinkBaseUrl: consumerShortLinkBaseUrl
     shortLinkHost: consumerShortLinkHost
     iosTeamId: consumerIosTeamId
@@ -167,6 +170,7 @@ module consumerSecondaryRuntime './modules/consumer-runtime.bicep' = if (consume
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
+    mapboxAccessToken: consumerMapboxAccessToken
     shortLinkBaseUrl: consumerShortLinkBaseUrl
     shortLinkHost: consumerShortLinkHost
     iosTeamId: consumerIosTeamId

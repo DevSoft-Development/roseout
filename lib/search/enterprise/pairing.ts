@@ -10,6 +10,7 @@ import {
   estimateWalkingMinutes,
   getPairDistanceMiles,
   isWalkablePair,
+  userAskedForWalking,
 } from "./distance";
 import { scoreGeoMatch } from "./geo-taxonomy";
 import {
@@ -116,11 +117,17 @@ function distanceBonus(distanceMiles: number | null, mode: PairDistanceMode) {
   if (distanceMiles <= 3 && mode === "same_area") return 5;
   return 0;
 }
-export function buildPairDistanceLabel(distanceMiles: number | null) {
+export function buildPairDistanceLabel(
+  distanceMiles: number | null,
+  preference?: PairingPreference | null,
+) {
   if (distanceMiles == null) return "Distance unavailable";
-  if (distanceMiles <= 3)
-    return `About a ${estimateWalkingMinutes(distanceMiles)}-minute walk`;
-  return "Not walking distance";
+  if (userAskedForWalking(preference)) {
+    if (distanceMiles <= 3)
+      return `About a ${estimateWalkingMinutes(distanceMiles)}-minute walk`;
+    return "Not walking distance";
+  }
+  return `${distanceMiles.toFixed(distanceMiles < 1 ? 1 : 0)} mi apart`;
 }
 export function scorePair(
   pair: Pick<
@@ -361,11 +368,12 @@ export function createSearchPairs(
 
       const walkability = isWalkablePair(restaurant, activity, pref);
       const pairDistanceMiles = walkability.pairDistanceMiles;
-      const pairWalkingMinutes =
-        walkability.pairWalkingMinutes ??
-        (pairDistanceMiles == null
-          ? null
-          : estimateWalkingMinutes(pairDistanceMiles));
+      const pairWalkingMinutes = userAskedForWalking(pref)
+        ? walkability.pairWalkingMinutes ??
+          (pairDistanceMiles == null
+            ? null
+            : estimateWalkingMinutes(pairDistanceMiles))
+        : null;
       const missingCoordinates = walkability.warnings.includes(
         "missing_coordinates",
       );
@@ -415,7 +423,7 @@ export function createSearchPairs(
         distance_miles: pairDistanceMiles,
         pairDistanceMiles,
         pairWalkingMinutes,
-        pairDistanceLabel: buildPairDistanceLabel(pairDistanceMiles),
+        pairDistanceLabel: buildPairDistanceLabel(pairDistanceMiles, pref),
         pairWarnings: walkability.warnings,
         isWalkable,
         title: "",

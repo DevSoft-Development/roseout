@@ -10,6 +10,9 @@ import type {
   SearchCandidate,
   SearchEligibilityResult,
   SearchIntentGraph,
+  SearchOuting,
+  SearchRouteMatrixResult,
+  SearchRoutePoint,
   SearchV3Request,
   SearchV3TraceEvent,
 } from "./search";
@@ -74,6 +77,24 @@ export interface SearchRankingProvider {
     intent: SearchIntentGraph;
     candidates: readonly SearchCandidate[];
   }): Promise<readonly SearchCandidate[]>;
+}
+
+export interface SearchPairingProvider {
+  readonly providerId: string;
+  pair(args: {
+    request: SearchV3Request;
+    intent: SearchIntentGraph;
+    candidates: readonly SearchCandidate[];
+  }): Promise<readonly SearchOuting[]>;
+}
+
+export interface SearchRoutingProvider {
+  readonly providerId: string;
+  routeMatrix(args: {
+    mode: "walking" | "driving";
+    origins: readonly SearchRoutePoint[];
+    destinations: readonly SearchRoutePoint[];
+  }): Promise<SearchRouteMatrixResult>;
 }
 
 export interface SearchRerankingProvider {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type {
+  SearchPairingProvider,
   SearchQueryEmbeddingProvider,
   SearchRetrievalProvider,
+  SearchRoutingProvider,
 } from "@/lib/search-framework";
 import {
   createDefaultRetrievalProviders,
@@ -60,6 +62,7 @@ describe("Search V3 TheOutHaven composition", () => {
       entityResolution: null,
       eligibility: null,
       fusion: null,
+      routing: null,
       locationIntelligence: {
         providerId: "test.location-intelligence",
         async getLocation() {
@@ -75,5 +78,116 @@ describe("Search V3 TheOutHaven composition", () => {
     expect(composition.retrievalProviders[0].providerId).toBe(
       "experiment.alternate-lane.v1",
     );
+    expect(composition.pairingProvider?.providerId).toBe(
+      "search-v3.deterministic-outing-pairer.v1",
+    );
+  });
+
+  it("allows the routing provider to be replaced or disabled", () => {
+    const routing: SearchRoutingProvider = {
+      providerId: "experiment.routing.v1",
+      async routeMatrix({ mode }) {
+        return {
+          providerId: "experiment.routing.v1",
+          mode,
+          entries: [],
+        };
+      },
+    };
+
+    const withRouting = createTheOutHavenSearchV3(client, {
+      routing,
+      retrievalProviders: [{
+        providerId: "test.empty-retrieval",
+        async retrieve() {
+          return { lane: "test", candidates: [], elapsedMs: 0 };
+        },
+      }],
+      entityResolution: null,
+      eligibility: null,
+      fusion: null,
+      ranking: null,
+      locationIntelligence: {
+        providerId: "test.location-intelligence",
+        async getLocation() { return null; },
+        async getLocations() { return []; },
+      },
+    });
+
+    expect(withRouting.routingProvider).toBe(routing);
+
+    const withoutRouting = createTheOutHavenSearchV3(client, {
+      routing: null,
+      retrievalProviders: [{
+        providerId: "test.empty-retrieval",
+        async retrieve() {
+          return { lane: "test", candidates: [], elapsedMs: 0 };
+        },
+      }],
+      entityResolution: null,
+      eligibility: null,
+      fusion: null,
+      ranking: null,
+      locationIntelligence: {
+        providerId: "test.location-intelligence",
+        async getLocation() { return null; },
+        async getLocations() { return []; },
+      },
+    });
+
+    expect(withoutRouting.routingProvider).toBeNull();
+  });
+
+  it("allows the outing pairing provider to be replaced or disabled", () => {
+    const replacement: SearchPairingProvider = {
+      providerId: "experiment.outing-pairer.v1",
+      async pair() {
+        return [];
+      },
+    };
+
+    const withReplacement = createTheOutHavenSearchV3(client, {
+      pairing: replacement,
+      retrievalProviders: [{
+        providerId: "test.empty-retrieval",
+        async retrieve() {
+          return { lane: "test", candidates: [], elapsedMs: 0 };
+        },
+      }],
+      entityResolution: null,
+      eligibility: null,
+      fusion: null,
+      ranking: null,
+      routing: null,
+      locationIntelligence: {
+        providerId: "test.location-intelligence",
+        async getLocation() { return null; },
+        async getLocations() { return []; },
+      },
+    });
+
+    expect(withReplacement.pairingProvider).toBe(replacement);
+
+    const disabled = createTheOutHavenSearchV3(client, {
+      pairing: null,
+      retrievalProviders: [{
+        providerId: "test.empty-retrieval",
+        async retrieve() {
+          return { lane: "test", candidates: [], elapsedMs: 0 };
+        },
+      }],
+      entityResolution: null,
+      eligibility: null,
+      fusion: null,
+      ranking: null,
+      routing: null,
+      locationIntelligence: {
+        providerId: "test.location-intelligence",
+        async getLocation() { return null; },
+        async getLocations() { return []; },
+      },
+    });
+
+    expect(disabled.pairingProvider).toBeNull();
   });
 });

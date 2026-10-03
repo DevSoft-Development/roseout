@@ -7,6 +7,8 @@ import type {
   SearchFusionProvider,
   SearchIntentProvider,
   SearchObservabilityProvider,
+  SearchOuting,
+  SearchPairingProvider,
   SearchRankingProvider,
   SearchRetrievalProvider,
   SearchRerankingProvider,
@@ -15,7 +17,7 @@ import type {
   SearchV3TraceEvent,
 } from "@/lib/search-framework";
 
-export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-semantic-rrf-alpha.1";
+export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-outing-decision-alpha.1";
 
 export interface SearchV3Dependencies {
   intent: SearchIntentProvider;
@@ -26,6 +28,7 @@ export interface SearchV3Dependencies {
   eligibility?: SearchEligibilityProvider | null;
   ranking?: SearchRankingProvider | null;
   reranking?: SearchRerankingProvider | null;
+  pairing?: SearchPairingProvider | null;
   observability?: SearchObservabilityProvider | null;
 }
 
@@ -245,11 +248,35 @@ export function createSearchV3Orchestrator(
         );
       }
 
-      const limit = normalizeLimit(request.limit);
-      const finalCandidates = candidates.slice(0, limit).map((candidate, index) => ({
+      const rankedCandidates = candidates.map((candidate, index) => ({
         ...candidate,
         finalRank: index + 1,
       }));
+
+      let outings: SearchOuting[] = [];
+      if (dependencies.pairing) {
+        outings = [...await runStage({
+          stage: "pairing",
+          requestId: request.requestId,
+          trace,
+          observability: dependencies.observability,
+          work: () => dependencies.pairing!.pair({
+            request,
+            intent,
+            candidates: rankedCandidates,
+          }),
+        })];
+      } else {
+        await recordSkipped(
+          "pairing",
+          request.requestId,
+          trace,
+          dependencies.observability,
+        );
+      }
+
+      const limit = normalizeLimit(request.limit);
+      const finalCandidates = rankedCandidates.slice(0, limit);
 
       return {
         contractVersion: "search-execution-v3-alpha.1",
@@ -258,12 +285,14 @@ export function createSearchV3Orchestrator(
         intent,
         retrieval,
         candidates: finalCandidates,
+        outings,
         trace,
         metadata: {
           candidateCount: retrievedLocationIds.length,
           eligibleCount: locationIds.length,
           rejectedCount,
           hydratedCount: intelligence.length,
+          outingCount: outings.length,
           orchestrationVersion: SEARCH_V3_ORCHESTRATION_VERSION,
         },
       };

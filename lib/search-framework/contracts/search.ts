@@ -87,6 +87,68 @@ export interface SearchCandidate {
   metadata: Readonly<Record<string, unknown>>;
 }
 
+export interface SearchRoutePoint {
+  id: string;
+  latitude: number;
+  longitude: number;
+}
+
+export type SearchRouteConfidence = "verified" | "estimated" | "unknown";
+
+export interface SearchRouteMatrixEntry {
+  originId: string;
+  destinationId: string;
+  distanceMiles: number | null;
+  durationMinutes: number | null;
+  source: string;
+  confidence: SearchRouteConfidence;
+}
+
+export interface SearchRouteMatrixResult {
+  providerId: string;
+  mode: TravelMode;
+  entries: readonly SearchRouteMatrixEntry[];
+}
+
+export type SearchOutingSequence =
+  | "restaurant_then_activity"
+  | "activity_then_restaurant"
+  | "same_venue";
+
+export interface SearchOuting {
+  outingId: string;
+  restaurant: SearchCandidate;
+  activity: SearchCandidate;
+  score: number;
+  distanceMiles: number | null;
+  travelMinutes: number | null;
+  travelMode: TravelMode;
+  sequence: SearchOutingSequence;
+  reasons: readonly string[];
+  metadata: Readonly<{
+    pairingProvider: string;
+    scoreComponents: Readonly<{
+      relevance: number;
+      proximity: number;
+      intent: number;
+      quality: number;
+      diversity: number;
+    }>;
+    scoreWeights: Readonly<{
+      relevance: number;
+      proximity: number;
+      intent: number;
+      quality: number;
+      diversity: number;
+    }>;
+    withinTravelLimit: boolean | null;
+    routeSource: string;
+    routeConfidence: SearchRouteConfidence;
+    straightLineMiles: number | null;
+    routeDistanceMiles: number | null;
+  } & Record<string, unknown>>;
+}
+
 export interface SearchV3TraceEvent {
   stage: string;
   status: "started" | "completed" | "skipped" | "failed";
@@ -101,12 +163,14 @@ export interface SearchV3Execution {
   intent: SearchIntentGraph;
   retrieval: readonly RetrievalLaneResult[];
   candidates: readonly SearchCandidate[];
+  outings: readonly SearchOuting[];
   trace: readonly SearchV3TraceEvent[];
   metadata: {
     candidateCount: number;
     eligibleCount: number;
     rejectedCount: number;
     hydratedCount: number;
+    outingCount: number;
     orchestrationVersion: string;
   };
 }

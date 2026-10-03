@@ -29,6 +29,28 @@ describe("Search V3 Phase 5 intent and eligibility", () => {
     ]));
   });
 
+  it("keeps bar-with-food queries restaurant-only", async () => {
+    const intent = await intentProvider.parse({
+      requestId: "phase5-intent-bar-food",
+      query: "Bar with wings NYC",
+    });
+
+    expect(intent.domains).toEqual(["restaurant"]);
+    expect(intent.constraints).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "food", value: "wings", strength: "hard" }),
+    ]));
+  });
+
+  it("treats a generic fun-tonight query as activity intent", async () => {
+    const intent = await intentProvider.parse({
+      requestId: "phase5-intent-fun",
+      query: "Something fun tonight in Queens",
+    });
+
+    expect(intent.domains).toEqual(["activity"]);
+    expect(intent.primaryDomain).toBe("activity");
+  });
+
   it("extracts a graph-resolvable landmark anchor", async () => {
     const intent = await intentProvider.parse({
       requestId: "phase5-intent-2",

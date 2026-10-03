@@ -12,6 +12,9 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "clientId", env: ["GOOGLE_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID"] },
     { field: "clientSecret", env: ["GOOGLE_CLIENT_SECRET", "GOOGLE_OAUTH_CLIENT_SECRET"] },
   ] },
+  mapbox: { source: "Runtime environment", fields: [
+    { field: "accessToken", env: ["MAPBOX_ACCESS_TOKEN"] },
+  ] },
   supabase: { source: "Runtime environment", fields: [
     { field: "url", env: ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL"] },
     { field: "publishableKey", env: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] },

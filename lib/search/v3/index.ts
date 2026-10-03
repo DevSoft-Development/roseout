@@ -99,3 +99,17 @@ export {
   DeterministicDecisionRankingProvider,
   type DeterministicDecisionRankingOptions,
 } from "./ranking/deterministicDecisionRankingProvider";
+
+export {
+  DeterministicOutingPairingProvider,
+  estimateTravelMinutes,
+  pairDistanceMiles,
+  requiresOutingPair,
+  type DeterministicOutingPairingOptions,
+} from "./pairing/deterministicOutingPairingProvider";
+
+export {
+  MapboxSearchRoutingProvider,
+  createMapboxSearchRoutingProviderFromEnvironment,
+  type MapboxSearchRoutingProviderOptions,
+} from "./routing/mapboxRoutingProvider";
