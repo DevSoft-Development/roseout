@@ -1,6 +1,11 @@
 name: Search V3 Azure food menu backfill
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/search-v3-azure-food-menu-backfill.yml'
+      - 'scripts/search-v3/backfill-azure-food-menu-embeddings.ts'
   workflow_run:
     workflows:
       - Supabase dual-region migrations
@@ -34,6 +39,7 @@ jobs:
     name: Backfill Azure food and menu vectors
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
@@ -49,7 +55,7 @@ jobs:
       - name: Decide whether backfill is required
         id: gate
         env:
-          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || github.event_name == 'push' }}
         run: |
           set -euo pipefail
           should_run=false
