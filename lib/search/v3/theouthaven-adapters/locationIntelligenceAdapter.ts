@@ -46,8 +46,9 @@ export function toLocationIntelligenceProfile(
 ): LocationIntelligenceProfile {
   const primaryDomain = normalizeDomain(profile.primaryDomain);
   const generatedAt = profile.generatedAt;
+  const evidence = normalizeEvidence(profile.evidence);
   const provenance = Object.fromEntries(
-    profile.evidence.map((item, index) => [
+    evidence.map((item, index) => [
       `search_profile.${item.field}.${index}`,
       factEvidence(item.value, "search_profile", {
         confidence: evidenceStrengthConfidence(item.strength),
@@ -166,4 +167,42 @@ function evidenceStrengthConfidence(
   if (strength === "authoritative") return 1;
   if (strength === "strong") return 0.8;
   return 0.55;
+}
+
+
+function normalizeEvidence(value: unknown): Array<{
+  field: string;
+  source: string;
+  value: string;
+  strength: "authoritative" | "strong" | "supporting";
+}> {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is {
+      field: string;
+      source: string;
+      value: string;
+      strength: "authoritative" | "strong" | "supporting";
+    } =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as any).field === "string" &&
+      typeof (item as any).source === "string" &&
+      typeof (item as any).value === "string" &&
+      ["authoritative", "strong", "supporting"].includes(String((item as any).strength))
+    );
+  }
+
+  if (typeof value === "string") {
+    try {
+      return normalizeEvidence(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+
+  if (value && typeof value === "object") {
+    return normalizeEvidence(Object.values(value as Record<string, unknown>));
+  }
+
+  return [];
 }

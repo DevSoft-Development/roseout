@@ -108,18 +108,54 @@ export function createSearchV3Orchestrator(
         );
       }
 
-      const retrievalLanes = await runStage({
+      const retrievalSettled = await runStage({
         stage: "retrieval",
         requestId: request.requestId,
         trace,
         observability: dependencies.observability,
         work: () =>
-          Promise.all(
+          Promise.allSettled(
             dependencies.retrieval.map((provider) =>
               provider.retrieve({ request, intent }),
             ),
           ),
       });
+
+      const retrievalLanes: RetrievalLaneResult[] = [];
+      const retrievalFailures: Array<{ providerId: string; error: string }> = [];
+      retrievalSettled.forEach((result, index) => {
+        if (result.status === "fulfilled") {
+          retrievalLanes.push(result.value);
+          return;
+        }
+        retrievalFailures.push({
+          providerId: dependencies.retrieval[index]?.providerId ?? `retrieval-${index}`,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        });
+      });
+
+      if (retrievalLanes.length === 0) {
+        const detail = retrievalFailures
+          .map((failure) => `${failure.providerId}: ${failure.error}`)
+          .join("; ");
+        throw new Error(`All Search V3 retrieval providers failed.${detail ? ` ${detail}` : ""}`);
+      }
+
+      if (retrievalFailures.length > 0) {
+        await record(
+          {
+            stage: "retrieval_degraded",
+            status: "completed",
+            metadata: {
+              failedProviders: retrievalFailures,
+              successfulLaneCount: retrievalLanes.length,
+            },
+          },
+          request.requestId,
+          trace,
+          dependencies.observability,
+        );
+      }
 
       let fusedLane: RetrievalLaneResult | null = null;
       if (dependencies.fusion && retrievalLanes.length > 1) {
@@ -293,6 +329,7 @@ export function createSearchV3Orchestrator(
           rejectedCount,
           hydratedCount: intelligence.length,
           outingCount: outings.length,
+          retrievalFailureCount: retrievalFailures.length,
           orchestrationVersion: SEARCH_V3_ORCHESTRATION_VERSION,
         },
       };
