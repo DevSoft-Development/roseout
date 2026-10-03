@@ -1,6 +1,7 @@
 import type {
   LocationIntelligenceProvider,
   SearchCandidate,
+  SearchEligibilityProvider,
   SearchEntityResolutionProvider,
   SearchIntentProvider,
   SearchObservabilityProvider,
@@ -12,13 +13,14 @@ import type {
   SearchV3TraceEvent,
 } from "@/lib/search-framework";
 
-export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-entity-resolution-alpha.1";
+export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-structured-retrieval-alpha.1";
 
 export interface SearchV3Dependencies {
   intent: SearchIntentProvider;
   entityResolution?: SearchEntityResolutionProvider | null;
   locationIntelligence: LocationIntelligenceProvider;
   retrieval: readonly SearchRetrievalProvider[];
+  eligibility?: SearchEligibilityProvider | null;
   ranking?: SearchRankingProvider | null;
   reranking?: SearchRerankingProvider | null;
   observability?: SearchObservabilityProvider | null;
@@ -113,7 +115,33 @@ export function createSearchV3Orchestrator(
           ),
       });
 
-      const locationIds = uniqueLocationIds(retrieval);
+      const retrievedLocationIds = uniqueLocationIds(retrieval);
+      let locationIds = retrievedLocationIds;
+      let rejectedCount = 0;
+
+      if (dependencies.eligibility) {
+        const eligibility = await runStage({
+          stage: "hard_eligibility",
+          requestId: request.requestId,
+          trace,
+          observability: dependencies.observability,
+          work: () => dependencies.eligibility!.filter({
+            request,
+            intent,
+            locationIds: retrievedLocationIds,
+          }),
+        });
+        locationIds = [...eligibility.eligibleLocationIds];
+        rejectedCount = eligibility.rejected.length;
+      } else {
+        await recordSkipped(
+          "hard_eligibility",
+          request.requestId,
+          trace,
+          dependencies.observability,
+        );
+      }
+
       const intelligence = await runStage({
         stage: "location_intelligence",
         requestId: request.requestId,
@@ -201,7 +229,9 @@ export function createSearchV3Orchestrator(
         candidates: finalCandidates,
         trace,
         metadata: {
-          candidateCount: locationIds.length,
+          candidateCount: retrievedLocationIds.length,
+          eligibleCount: locationIds.length,
+          rejectedCount,
           hydratedCount: intelligence.length,
           orchestrationVersion: SEARCH_V3_ORCHESTRATION_VERSION,
         },
