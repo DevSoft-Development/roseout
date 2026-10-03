@@ -8,6 +8,12 @@ param aiModelName string
 param aiModelVersion string
 param aiModelSkuName string
 param aiModelCapacity int
+param aiEmbeddingDeploymentEnabled bool
+param aiEmbeddingDeploymentName string
+param aiEmbeddingModelName string
+param aiEmbeddingModelVersion string
+param aiEmbeddingSkuName string
+param aiEmbeddingCapacity int
 param consumerContainerAppsEnvironmentEnabled bool
 param consumerRegionalFailoverEnabled bool = false
 
@@ -172,6 +178,40 @@ resource secondaryAiModelDeployment 'Microsoft.CognitiveServices/accounts/deploy
   }
 }
 
+resource aiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiEmbeddingDeploymentEnabled) {
+  parent: aiFoundry
+  name: aiEmbeddingDeploymentName
+  sku: {
+    name: aiEmbeddingSkuName
+    capacity: aiEmbeddingCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: aiEmbeddingModelName
+      version: aiEmbeddingModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
+resource secondaryAiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (aiEmbeddingDeploymentEnabled && consumerRegionalFailoverEnabled) {
+  parent: secondaryAiFoundry
+  name: aiEmbeddingDeploymentName
+  sku: {
+    name: aiEmbeddingSkuName
+    capacity: aiEmbeddingCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: aiEmbeddingModelName
+      version: aiEmbeddingModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: 'toh-${envShort}-${suffix}-kv'
   location: location
@@ -204,6 +244,9 @@ output secondaryAiFoundryEndpoint string = consumerRegionalFailoverEnabled ? sec
 output aiModelDeploymentName string = aiModelDeploymentEnabled ? aiModelDeployment.name : ''
 output secondaryAiModelDeploymentName string = aiModelDeploymentEnabled && consumerRegionalFailoverEnabled ? secondaryAiModelDeployment.name : ''
 output aiModelName string = aiModelDeploymentEnabled ? aiModelName : ''
+output aiEmbeddingDeploymentName string = aiEmbeddingDeploymentEnabled ? aiEmbeddingDeployment.name : ''
+output secondaryAiEmbeddingDeploymentName string = aiEmbeddingDeploymentEnabled && consumerRegionalFailoverEnabled ? secondaryAiEmbeddingDeployment.name : ''
+output aiEmbeddingModelName string = aiEmbeddingDeploymentEnabled ? aiEmbeddingModelName : ''
 output secondaryLocation string = secondaryLocation
 output consumerContainerAppsEnvironmentName string = consumerContainerAppsEnvironmentEnabled ? consumerContainerAppsEnvironment.name : ''
 output consumerSecondaryContainerAppsEnvironmentName string = consumerContainerAppsEnvironmentEnabled && consumerRegionalFailoverEnabled ? consumerSecondaryContainerAppsEnvironment.name : ''

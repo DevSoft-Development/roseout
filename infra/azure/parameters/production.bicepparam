@@ -7,6 +7,13 @@ param resourceGroupName = 'rg-toh-consumer-production'
 
 param aiModelDeploymentEnabled = false
 
+param aiEmbeddingDeploymentEnabled = true
+param aiEmbeddingDeploymentName = 'toh-embedding'
+param aiEmbeddingModelName = 'text-embedding-3-small'
+param aiEmbeddingModelVersion = '1'
+param aiEmbeddingSkuName = 'DataZoneStandard'
+param aiEmbeddingCapacity = 10
+
 param consumerContainerAppsEnvironmentEnabled = true
 param consumerRegionalFailoverEnabled = true
 param consumerEdgeEnabled = false

@@ -54,3 +54,25 @@ export {
   reciprocalRankFusion,
   type ReciprocalRankFusionOptions,
 } from "./fusion/reciprocalRankFusionProvider";
+
+export {
+  AzureQueryEmbeddingProvider,
+  type AzureQueryEmbeddingProviderOptions,
+} from "./semantic/azureQueryEmbeddingProvider";
+
+export {
+  SupabaseSemanticRetrievalProvider,
+  buildSemanticQueryText,
+  type SemanticRetrievalOptions,
+  type SemanticRpcClient,
+} from "./semantic/supabaseSemanticRetrievalProvider";
+
+export {
+  SupabaseFoodSemanticRetrievalProvider,
+  type FoodSemanticRetrievalOptions,
+} from "./semantic/supabaseFoodSemanticRetrievalProvider";
+
+export {
+  SupabaseMenuSemanticRetrievalProvider,
+  type MenuSemanticRetrievalOptions,
+} from "./semantic/supabaseMenuSemanticRetrievalProvider";

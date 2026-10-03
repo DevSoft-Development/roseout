@@ -16,6 +16,12 @@ param aiModelName string = 'gpt-5.4-mini'
 param aiModelVersion string = '2026-03-17'
 param aiModelSkuName string = 'DataZoneStandard'
 param aiModelCapacity int = 10
+param aiEmbeddingDeploymentEnabled bool = false
+param aiEmbeddingDeploymentName string = 'toh-embedding'
+param aiEmbeddingModelName string = 'text-embedding-3-small'
+param aiEmbeddingModelVersion string = '1'
+param aiEmbeddingSkuName string = 'DataZoneStandard'
+param aiEmbeddingCapacity int = 10
 param consumerContainerAppsEnvironmentEnabled bool = false
 param consumerRuntimeEnabled bool = false
 param consumerRegionalFailoverEnabled bool = false
@@ -40,6 +46,10 @@ param consumerSecondaryAzureAiEndpoint string = ''
 @secure()
 param consumerSecondaryAzureAiApiKey string = ''
 param consumerAzureAiModel string = ''
+param consumerAzureAiEmbeddingModel string = 'toh-embedding'
+param consumerSearchEmbeddingModel string = 'text-embedding-3-small'
+param consumerSearchEmbeddingVersion string = 'search-embedding:v1'
+param consumerSearchFoodMenuEmbeddingVersion string = 'azure-text-embedding-3-small:v1'
 param consumerHuggingFaceAiEndpoint string = 'https://router.huggingface.co/v1'
 @secure()
 param consumerHuggingFaceAiToken string = ''
@@ -81,6 +91,12 @@ module foundation './modules/foundation.bicep' = {
     aiModelVersion: aiModelVersion
     aiModelSkuName: aiModelSkuName
     aiModelCapacity: aiModelCapacity
+    aiEmbeddingDeploymentEnabled: aiEmbeddingDeploymentEnabled
+    aiEmbeddingDeploymentName: aiEmbeddingDeploymentName
+    aiEmbeddingModelName: aiEmbeddingModelName
+    aiEmbeddingModelVersion: aiEmbeddingModelVersion
+    aiEmbeddingSkuName: aiEmbeddingSkuName
+    aiEmbeddingCapacity: aiEmbeddingCapacity
     consumerContainerAppsEnvironmentEnabled: consumerContainerAppsEnvironmentEnabled
     consumerRegionalFailoverEnabled: consumerRegionalFailoverEnabled
   }
@@ -107,6 +123,10 @@ module consumerRuntime './modules/consumer-runtime.bicep' = if (consumerRuntimeE
     azureAiEndpoint: consumerAzureAiEndpoint
     azureAiApiKey: consumerAzureAiApiKey
     azureAiModel: consumerAzureAiModel
+    azureAiEmbeddingModel: consumerAzureAiEmbeddingModel
+    searchEmbeddingModel: consumerSearchEmbeddingModel
+    searchEmbeddingVersion: consumerSearchEmbeddingVersion
+    searchFoodMenuEmbeddingVersion: consumerSearchFoodMenuEmbeddingVersion
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
@@ -140,6 +160,10 @@ module consumerSecondaryRuntime './modules/consumer-runtime.bicep' = if (consume
     azureAiEndpoint: consumerSecondaryAzureAiEndpoint
     azureAiApiKey: consumerSecondaryAzureAiApiKey
     azureAiModel: consumerAzureAiModel
+    azureAiEmbeddingModel: consumerAzureAiEmbeddingModel
+    searchEmbeddingModel: consumerSearchEmbeddingModel
+    searchEmbeddingVersion: consumerSearchEmbeddingVersion
+    searchFoodMenuEmbeddingVersion: consumerSearchFoodMenuEmbeddingVersion
     huggingFaceAiEndpoint: consumerHuggingFaceAiEndpoint
     huggingFaceAiToken: consumerHuggingFaceAiToken
     huggingFaceAiModel: consumerHuggingFaceAiModel
@@ -195,6 +219,9 @@ output secondaryAiFoundryEndpoint string = foundation.outputs.secondaryAiFoundry
 output aiModelDeploymentName string = foundation.outputs.aiModelDeploymentName
 output secondaryAiModelDeploymentName string = foundation.outputs.secondaryAiModelDeploymentName
 output aiModelName string = foundation.outputs.aiModelName
+output aiEmbeddingDeploymentName string = foundation.outputs.aiEmbeddingDeploymentName
+output secondaryAiEmbeddingDeploymentName string = foundation.outputs.secondaryAiEmbeddingDeploymentName
+output aiEmbeddingModelName string = foundation.outputs.aiEmbeddingModelName
 output consumerContainerAppsEnvironmentName string = foundation.outputs.consumerContainerAppsEnvironmentName
 output consumerSecondaryContainerAppsEnvironmentName string = foundation.outputs.consumerSecondaryContainerAppsEnvironmentName
 output consumerRuntimeName string = consumerRuntimeEnabled ? consumerRuntime!.outputs.name : ''

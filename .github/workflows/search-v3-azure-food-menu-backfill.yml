@@ -1,0 +1,290 @@
+name: Search V3 Azure food menu backfill
+
+on:
+  workflow_run:
+    workflows:
+      - Supabase dual-region migrations
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run the resumable backfill even if the triggering commit did not change the Phase 7 migration
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: search-v3-azure-food-menu-backfill-production
+  cancel-in-progress: false
+
+env:
+  EAST_REF: ftdsltatyqhtllyyefzp
+  WEST_REF: hnhbzynoyrhjndefbwkh
+  EMBEDDING_DEPLOYMENT: toh-embedding
+  EMBEDDING_MODEL: text-embedding-3-small
+  EMBEDDING_VERSION: azure-text-embedding-3-small:v1
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+
+jobs:
+  backfill:
+    name: Backfill Azure food and menu vectors
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 180
+    steps:
+      - name: Check out triggering revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Decide whether backfill is required
+        id: gate
+        env:
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+        run: |
+          set -euo pipefail
+          should_run=false
+          if [ "$FORCE" = "true" ]; then
+            should_run=true
+          elif git diff --name-only HEAD^ HEAD | grep -qx 'supabase/migrations/20261003090028_search_v3_azure_food_menu_embeddings.sql'; then
+            should_run=true
+          elif git diff --name-only HEAD^ HEAD | grep -qx 'scripts/search-v3/backfill-azure-food-menu-embeddings.ts'; then
+            should_run=true
+          fi
+          echo "should_run=$should_run" >> "$GITHUB_OUTPUT"
+          echo "Azure food/menu backfill required: $should_run" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        if: steps.gate.outputs.should_run == 'true'
+        run: npm ci
+
+      - name: Configure AWS access to central Credential Vault
+        if: steps.gate.outputs.should_run == 'true'
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve Supabase production credentials
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          secret_id="/theouthaven/credential-vault/production/supabase"
+          service_role=""
+          management_token=""
+
+          if aws secretsmanager get-secret-value             --secret-id "$secret_id"             --query SecretString             --output text > "$RUNNER_TEMP/supabase-vault.json" 2>/dev/null; then
+            service_role="$(jq -r '.serviceRoleKey // empty' "$RUNNER_TEMP/supabase-vault.json")"
+            management_token="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          fi
+
+          if [ -z "$service_role" ]; then service_role="$LEGACY_SUPABASE_SERVICE_ROLE_KEY"; fi
+          if [ -z "$management_token" ]; then management_token="$LEGACY_SUPABASE_ACCESS_TOKEN"; fi
+
+          test -n "$service_role" || { echo "::error::Missing Virginia service role key."; exit 1; }
+          test -n "$management_token" || { echo "::error::Missing Supabase management token."; exit 1; }
+
+          echo "::add-mask::$service_role"
+          echo "::add-mask::$management_token"
+          {
+            echo "SUPABASE_URL=https://$EAST_REF.supabase.co"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service_role"
+            echo "SUPABASE_ACCESS_TOKEN=$management_token"
+          } >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/supabase-vault.json"
+
+      - name: Require replicated tables ready before backfill
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error               --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/$ref/database/query" > "$out"
+          }
+
+          for attempt in $(seq 1 60); do
+            query_ref "$WEST_REF"               "select count(*)::int as pending
+               from pg_subscription_rel sr
+               join pg_subscription s on s.oid=sr.srsubid
+               where s.subname='$EXPECTED_SUBSCRIPTION'
+                 and sr.srsubstate<>'r';"               "$RUNNER_TEMP/pending.json"
+
+            query_ref "$WEST_REF"               "select count(*)::int as subscribed
+               from pg_subscription_rel sr
+               join pg_subscription s on s.oid=sr.srsubid
+               join pg_class c on c.oid=sr.srrelid
+               where s.subname='$EXPECTED_SUBSCRIPTION'
+                 and c.relname in (
+                   'location_menu_items',
+                   'location_food_embeddings',
+                   'location_menu_item_embeddings'
+                 );"               "$RUNNER_TEMP/subscribed.json"
+
+            pending="$(jq -r '.[0].pending' "$RUNNER_TEMP/pending.json")"
+            subscribed="$(jq -r '.[0].subscribed' "$RUNNER_TEMP/subscribed.json")"
+            if [ "$pending" = "0" ] && [ "$subscribed" = "3" ]; then
+              echo "Oregon subscription is ready for all Azure food/menu tables."
+              break
+            fi
+
+            if [ "$attempt" = "60" ]; then
+              echo "::error::Oregon subscription is not ready for the Azure food/menu tables."
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Login to Azure with GitHub OIDC
+        if: steps.gate.outputs.should_run == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Azure embedding deployment
+        if: steps.gate.outputs.should_run == 'true'
+        id: azure
+        uses: azure/CLI@v2
+        env:
+          RG: rg-toh-consumer-production
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            ACCOUNT="$(az cognitiveservices account list               --resource-group "$RG"               --query "[?kind=='AIServices'] | [0].name"               --output tsv)"
+            test -n "$ACCOUNT" || { echo "::error::No production AIServices account found."; exit 1; }
+
+            ACCOUNT_ID="$(az cognitiveservices account show               --resource-group "$RG"               --name "$ACCOUNT"               --query id               --output tsv)"
+            ENDPOINT="$(az cognitiveservices account show               --resource-group "$RG"               --name "$ACCOUNT"               --query properties.endpoint               --output tsv)"
+            test -n "$ACCOUNT_ID" || { echo "::error::Azure AI account resource id is missing."; exit 1; }
+            test -n "$ENDPOINT" || { echo "::error::Azure AI endpoint is missing."; exit 1; }
+
+            az cognitiveservices account list-models               --resource-group "$RG"               --name "$ACCOUNT"               --output json > "$RUNNER_TEMP/models.json"
+
+            MATCHES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model)] | length'               "$RUNNER_TEMP/models.json")"
+            if [ "$MATCHES" -lt 1 ]; then
+              echo "::error::$EMBEDDING_MODEL is not available to production Azure AI account $ACCOUNT."
+              exit 1
+            fi
+
+            SKU_ENTRIES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model) | .skus[]?.name] | unique'               "$RUNNER_TEMP/models.json")"
+            if [ "$(printf '%s' "$SKU_ENTRIES" | jq 'length')" -gt 0 ] &&                ! printf '%s' "$SKU_ENTRIES" | jq -e 'index("DataZoneStandard") != null' >/dev/null; then
+              echo "::error::$EMBEDDING_MODEL is visible, but DataZoneStandard is not advertised for this production account."
+              printf '%s\n' "$SKU_ENTRIES"
+              exit 1
+            fi
+
+            DEPLOYMENT_URL="https://management.azure.com$ACCOUNT_ID/deployments/$EMBEDDING_DEPLOYMENT?api-version=2025-06-01"
+            CURRENT="$(az rest --method get --url "$DEPLOYMENT_URL" 2>/dev/null || true)"
+
+            if [ -n "$CURRENT" ]; then
+              current_model="$(printf '%s' "$CURRENT" | jq -r '.properties.model.name // empty')"
+              current_version="$(printf '%s' "$CURRENT" | jq -r '.properties.model.version // empty')"
+              if [ "$current_model" != "$EMBEDDING_MODEL" ] || [ "$current_version" != "1" ]; then
+                echo "::error::Existing $EMBEDDING_DEPLOYMENT points to $current_model/$current_version instead of $EMBEDDING_MODEL/1."
+                exit 1
+              fi
+              echo "Azure embedding deployment already exists and matches."
+            else
+              body="$(jq -n                 --arg model "$EMBEDDING_MODEL"                 '{
+                  sku:{name:"DataZoneStandard",capacity:10},
+                  properties:{
+                    model:{format:"OpenAI",name:$model,version:"1"},
+                    versionUpgradeOption:"OnceCurrentVersionExpired"
+                  }
+                }')"
+              az rest                 --method put                 --url "$DEPLOYMENT_URL"                 --headers 'Content-Type=application/json'                 --body "$body" > "$RUNNER_TEMP/embedding-deployment.json"
+              echo "Created Azure embedding deployment $EMBEDDING_DEPLOYMENT."
+            fi
+
+            KEY="$(az cognitiveservices account keys list               --resource-group "$RG"               --name "$ACCOUNT"               --query key1               --output tsv)"
+            test -n "$KEY" || { echo "::error::Unable to resolve ephemeral Azure AI account key."; exit 1; }
+            echo "::add-mask::$KEY"
+
+            echo "AZURE_AI_ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+            echo "AZURE_AI_API_KEY=$KEY" >> "$GITHUB_ENV"
+            echo "AZURE_AI_EMBEDDING_MODEL=$EMBEDDING_DEPLOYMENT" >> "$GITHUB_ENV"
+            echo "SEARCH_EMBEDDING_MODEL=$EMBEDDING_MODEL" >> "$GITHUB_ENV"
+            echo "SEARCH_FOOD_MENU_EMBEDDING_VERSION=$EMBEDDING_VERSION" >> "$GITHUB_ENV"
+            echo "account=$ACCOUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Run resumable Azure backfill
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-search-v3-azure-backfill
+          ./node_modules/.bin/tsc             --module commonjs             --target es2022             --moduleResolution node             --esModuleInterop             --skipLibCheck             --outDir .tmp-search-v3-azure-backfill             scripts/search-v3/backfill-azure-food-menu-embeddings.ts
+          node .tmp-search-v3-azure-backfill/backfill-azure-food-menu-embeddings.js
+
+      - name: Verify Virginia and Oregon parity
+        if: steps.gate.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" out="$2"
+            jq -n --arg query "
+              select
+                (select count(*) from public.location_menu_items) as menu_items,
+                (select count(*) from public.location_food_embeddings where embedding_version='$EMBEDDING_VERSION' and status='ready') as food_ready,
+                (select count(*) from public.location_menu_item_embeddings where embedding_version='$EMBEDDING_VERSION' and status='ready') as menu_ready,
+                (select count(*) from public.location_food_embeddings where embedding_version='$EMBEDDING_VERSION' and status='failed') as food_failed,
+                (select count(*) from public.location_menu_item_embeddings where embedding_version='$EMBEDDING_VERSION' and status='failed') as menu_failed;
+            " '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error               --request POST               --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               --header 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json"               "https://api.supabase.com/v1/projects/$ref/database/query" > "$out"
+          }
+
+          for attempt in $(seq 1 60); do
+            query_ref "$EAST_REF" "$RUNNER_TEMP/east.json"
+            query_ref "$WEST_REF" "$RUNNER_TEMP/west.json"
+            if cmp -s               <(jq -S '.[0]' "$RUNNER_TEMP/east.json")               <(jq -S '.[0]' "$RUNNER_TEMP/west.json"); then
+              jq -e '.[0].food_failed == 0 and .[0].menu_failed == 0' "$RUNNER_TEMP/east.json" >/dev/null
+              echo "Virginia/Oregon Azure embedding parity reached."
+              break
+            fi
+            if [ "$attempt" = "60" ]; then
+              echo "::error::Virginia/Oregon embedding counts did not converge."
+              echo "East:"; cat "$RUNNER_TEMP/east.json"
+              echo "West:"; cat "$RUNNER_TEMP/west.json"
+              exit 1
+            fi
+            sleep 5
+          done
+
+          {
+            echo "### Search V3 Azure food/menu backfill"
+            echo ""
+            echo "- Azure account: ${{ steps.azure.outputs.account }}"
+            echo "- Deployment: $EMBEDDING_DEPLOYMENT"
+            echo "- Vector model: $EMBEDDING_MODEL"
+            echo "- Vector namespace: $EMBEDDING_VERSION"
+            echo "- Dimensions: 1536"
+            echo "- Virginia/Oregon parity: passed"
+            echo "- Hugging Face vectors reused: no"
+            echo ""
+            echo "#### Final counts"
+            echo "~~~json"
+            jq '.[0]' "$RUNNER_TEMP/east.json"
+            echo "~~~"
+          } >> "$GITHUB_STEP_SUMMARY"
