@@ -18,6 +18,10 @@ param azureAiEndpoint string
 @secure()
 param azureAiApiKey string
 param azureAiModel string
+param azureAiEmbeddingModel string = 'toh-embedding'
+param searchEmbeddingModel string = 'text-embedding-3-small'
+param searchEmbeddingVersion string = 'search-embedding:v1'
+param searchFoodMenuEmbeddingVersion string = 'azure-text-embedding-3-small:v1'
 param huggingFaceAiEndpoint string
 @secure()
 param huggingFaceAiToken string
@@ -210,6 +214,22 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_AI_MODEL'
               value: azureAiModel
+            }
+            {
+              name: 'AZURE_AI_EMBEDDING_MODEL'
+              value: azureAiEmbeddingModel
+            }
+            {
+              name: 'SEARCH_EMBEDDING_MODEL'
+              value: searchEmbeddingModel
+            }
+            {
+              name: 'SEARCH_EMBEDDING_VERSION'
+              value: searchEmbeddingVersion
+            }
+            {
+              name: 'SEARCH_FOOD_MENU_EMBEDDING_VERSION'
+              value: searchFoodMenuEmbeddingVersion
             }
             {
               name: 'SHORT_LINK_BASE_URL'
