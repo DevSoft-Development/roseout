@@ -39,6 +39,16 @@ describe("Search V3 Phase 5 intent and eligibility", () => {
     expect(intent.anchor?.label).toBe("MSG");
   });
 
+  it("preserves neighborhood text for graph geo resolution", async () => {
+    const intent = await intentProvider.parse({
+      requestId: "phase5-intent-geo",
+      query: "dinner in Astoria",
+    });
+
+    expect(intent.primaryDomain).toBe("restaurant");
+    expect(intent.anchor?.label).toBe("Astoria");
+  });
+
   it("detects activity-only intent", async () => {
     const intent = await intentProvider.parse({
       requestId: "phase5-intent-3",
