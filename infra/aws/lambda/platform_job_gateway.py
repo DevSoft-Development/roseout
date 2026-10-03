@@ -30,6 +30,7 @@ ALLOWED_ENVIRONMENTS = {"production", "staging"}
 ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
+    "mapbox": {"accessToken"},
     "supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"},
     "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
@@ -386,6 +387,18 @@ def _test_credential(environment, provider):
         if status == 200:
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Hugging Face token verified."}
         raise ValueError("huggingface_credential_test_failed")
+
+    if provider == "mapbox" and values.get("accessToken"):
+        token = urllib.parse.quote(values["accessToken"], safe="")
+        url = (
+            "https://api.mapbox.com/directions-matrix/v1/mapbox/walking/"
+            "-73.9857,40.7484;-73.9851,40.7496"
+            f"?sources=0&destinations=1&annotations=duration&access_token={token}"
+        )
+        status, payload = _http_json(url)
+        if status == 200 and isinstance(payload, dict) and payload.get("code") == "Ok":
+            return {"ok": True, "provider": provider, "status": "healthy", "detail": "Mapbox walking Matrix API token verified."}
+        raise ValueError("mapbox_credential_test_failed")
 
     if provider == "resend" and values.get("apiKey"):
         status, _ = _http_json("https://api.resend.com/domains", headers={"Authorization": f"Bearer {values['apiKey']}"})

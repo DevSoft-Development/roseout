@@ -1,6 +1,7 @@
 export type CredentialProviderId =
   | "aws"
   | "google"
+  | "mapbox"
   | "supabase"
   | "vercel"
   | "github"
@@ -49,6 +50,9 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   ] },
   { id: "google", label: "Google", category: "Cloud", description: "Google Maps, Places, Business Profile, and OAuth credentials.", fields: [
     { key: "apiKey", label: "API key", secret: true }, { key: "clientId", label: "OAuth client ID" }, { key: "clientSecret", label: "OAuth client secret", secret: true },
+  ] },
+  { id: "mapbox", label: "Mapbox", category: "Data", description: "Server-side Mapbox routing credentials used by Search V3 to verify real walking routes between outing stops.", note: "Create a dedicated Mapbox access token for Directions/Matrix routing. Keep it server-side; Search V3 reads it from the runtime secret as MAPBOX_ACCESS_TOKEN.", fields: [
+    { key: "accessToken", label: "Access token", secret: true, placeholder: "pk. or sk. Mapbox token" },
   ] },
   { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, and protected management credentials.", note: "Prefer modern sb_publishable_ and sb_secret_ keys. Keep the scoped general management token for approved management automation.", fields: [
     { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" },

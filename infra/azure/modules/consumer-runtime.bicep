@@ -26,6 +26,8 @@ param huggingFaceAiEndpoint string
 @secure()
 param huggingFaceAiToken string
 param huggingFaceAiModel string
+@secure()
+param mapboxAccessToken string = ''
 param shortLinkBaseUrl string = ''
 param shortLinkHost string = ''
 param iosTeamId string = ''
@@ -100,12 +102,21 @@ resource azureAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 var huggingFaceEnabled = !empty(huggingFaceAiToken) && !empty(huggingFaceAiModel)
+var mapboxEnabled = !empty(mapboxAccessToken)
 
 resource huggingFaceAiTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (huggingFaceEnabled) {
   parent: vault
   name: 'consumer-huggingface-ai-token-${secretSuffix}'
   properties: {
     value: huggingFaceAiToken
+  }
+}
+
+resource mapboxAccessTokenSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (mapboxEnabled) {
+  parent: vault
+  name: 'consumer-mapbox-access-token-${secretSuffix}'
+  properties: {
+    value: mapboxAccessToken
   }
 }
 
@@ -165,6 +176,12 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'huggingface-ai-token'
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${huggingFaceAiTokenSecret.name}'
+          identity: identity.id
+        }
+      ] : [], mapboxEnabled ? [
+        {
+          name: 'mapbox-access-token'
+          keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${mapboxAccessTokenSecret.name}'
           identity: identity.id
         }
       ] : [])
@@ -259,6 +276,11 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'HUGGINGFACE_AI_MODEL'
               value: huggingFaceAiModel
+            }
+          ] : [], mapboxEnabled ? [
+            {
+              name: 'MAPBOX_ACCESS_TOKEN'
+              secretRef: 'mapbox-access-token'
             }
           ] : [])
           resources: {

@@ -1,3 +1,5 @@
+import type { SearchOutingSequence } from "@/lib/search-framework";
+
 export type GoldenQueryExpectation = {
   expectedDomains: Array<'restaurant' | 'activity'>;
   expectedActivityCategories?: string[];
@@ -6,7 +8,10 @@ export type GoldenQueryExpectation = {
   minimumResults?: number;
   minimumPairs?: number;
   maximumDistanceMiles?: number;
+  maximumTravelMinutes?: number;
+  requireVerifiedRoute?: boolean;
   prohibitedCategories?: string[];
+  expectedSequence?: SearchOutingSequence;
 };
 
 export type GoldenQueryCase = {
@@ -16,7 +21,14 @@ export type GoldenQueryCase = {
   expectations: GoldenQueryExpectation;
 };
 
-const pair = (id: string, category: string, query: string, activity: string, geography: string): GoldenQueryCase => ({
+const pair = (
+  id: string,
+  category: string,
+  query: string,
+  activity: string,
+  geography: string,
+  extra: Partial<GoldenQueryExpectation> = {},
+): GoldenQueryCase => ({
   id,
   category,
   query,
@@ -26,18 +38,19 @@ const pair = (id: string, category: string, query: string, activity: string, geo
     expectedGeography: [geography],
     minimumResults: 2,
     minimumPairs: 1,
+    ...extra,
   },
 });
 
 export const GOLDEN_SEARCH_QUERIES: GoldenQueryCase[] = [
-  pair('pair-astoria-bowling', 'paired', 'Dinner and bowling in Astoria within a 20-minute walk', 'bowling', 'Astoria'),
+  pair('pair-astoria-bowling', 'paired', 'Dinner and bowling in Astoria within a 20-minute walk', 'bowling', 'Astoria', { maximumTravelMinutes: 20, requireVerifiedRoute: true, expectedSequence: 'restaurant_then_activity' }),
   pair('pair-manhattan-live-music', 'paired', 'Italian dinner with live music nearby in Manhattan', 'live music', 'Manhattan'),
-  pair('pair-brooklyn-comedy', 'paired', 'Seafood dinner with a comedy show after in Brooklyn', 'comedy', 'Brooklyn'),
+  pair('pair-brooklyn-comedy', 'paired', 'Seafood dinner with a comedy show after in Brooklyn', 'comedy', 'Brooklyn', { expectedSequence: 'restaurant_then_activity' }),
   pair('pair-williamsburg-gallery', 'paired', 'Brunch and an art gallery in Williamsburg', 'art gallery', 'Williamsburg'),
   pair('pair-flushing-karaoke', 'paired', 'Halal dinner with karaoke nearby in Flushing', 'karaoke', 'Flushing'),
   pair('pair-queens-arcade', 'paired', 'Casual dinner and an arcade in Queens', 'arcade', 'Queens'),
   pair('pair-midtown-rooftop', 'paired', 'Steak dinner and rooftop drinks in Midtown', 'rooftop', 'Midtown'),
-  pair('pair-forest-hills-movie', 'paired', 'Dinner and a movie in Forest Hills', 'movie', 'Forest Hills'),
+  pair('pair-forest-hills-movie', 'paired', 'Dinner and a movie in Forest Hills', 'movie', 'Forest Hills', { expectedSequence: 'restaurant_then_activity' }),
   pair('pair-garden-city-escape', 'paired', 'Sushi and an escape room in Garden City', 'escape room', 'Garden City'),
   pair('pair-long-island-mini-golf', 'paired', 'Dinner and mini golf on Long Island', 'mini golf', 'Long Island'),
   { id: 'restaurant-astoria-chicken', category: 'restaurant', query: 'Chicken lunch in Astoria', expectations: { expectedDomains: ['restaurant'], expectedGeography: ['Astoria'], minimumResults: 1 } },

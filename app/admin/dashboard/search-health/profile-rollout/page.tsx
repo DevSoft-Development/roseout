@@ -109,10 +109,15 @@ export default async function ProfileRolloutQualityPage() {
               {[
                 ["V3 success", Number(v3.successRate ?? 0).toFixed(1) + "%"],
                 ["Domain coverage", Number(v3.exactDomainCoverageRate ?? 0).toFixed(1) + "%"],
-                ["Paired domain coverage", Number(v3.pairedDomainCoverageRate ?? 0).toFixed(1) + "%"],
+                ["Pair success", Number(v3.pairSuccessRate ?? v3.pairedDomainCoverageRate ?? 0).toFixed(1) + "%"],
                 ["No-result regression", Number(v3.noResultRegressionRate ?? 0).toFixed(1) + "%"],
                 ["Geography pass", Number(v3.geographyPassRate ?? 0).toFixed(1) + "%"],
                 ["P95 latency", Math.round(Number(v3.p95LatencyMs ?? 0)) + " ms"],
+                ["Pair relevance", Number(v3.pairRelevancePassRate ?? 0).toFixed(1) + "%"],
+                ["Sequence pass", Number(v3.pairSequencingPassRate ?? 0).toFixed(1) + "%"],
+                ["Distance leakage", Number(v3.pairDistanceLeakageRate ?? 0).toFixed(1) + "%"],
+                ["Walk-time leakage", Number(v3.pairTravelTimeLeakageRate ?? 0).toFixed(1) + "%"],
+                ["Verified walk routes", Number(v3.pairRouteVerificationRate ?? 0).toFixed(1) + "%"],
                 ["V3-only passes", String(v3.v3OnlyPassCount ?? 0)],
                 ["Canonical-only passes", String(v3.canonicalOnlyPassCount ?? 0)],
               ].map(([label, value]) => (

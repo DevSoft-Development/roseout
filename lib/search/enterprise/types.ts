@@ -218,6 +218,9 @@ export type EnterprisePair = {
   googleWalkingDurationMinutes?: number | null;
   routeDurationMinutes?: number | null;
   walking_route_minutes?: number | null;
+  routeDistanceMiles?: number | null;
+  walkingRouteSource?: string | null;
+  walkingRouteConfidence?: "verified" | "estimated" | "unknown" | null;
   pairDistanceLabel: string;
   pairWarnings: string[];
   pairQualityScore?: number;

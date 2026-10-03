@@ -178,13 +178,18 @@ function detectDomains(
   const activity =
     signals.activityDetected ||
     ACTIVITY_TERMS.some((term) => hasPhrase(q, term));
-  const nightlife = /\b(nightlife|nightclub|club|hookah|lounge|bar|cocktails?|drinks?)\b/.test(q);
+  const strongNightlife = /\b(nightlife|nightclub|club|hookah|lounge|cocktails?|drinks?)\b/.test(q);
+  const barOnlyNightlife = /\bbar\b/.test(q);
+  const nightlife = strongNightlife || (barOnlyNightlife && !restaurant);
   const domains: SearchDomain[] = [];
   if (restaurant) domains.push("restaurant");
   if (activity) domains.push("activity");
   if (nightlife) domains.push("nightlife");
   if (domains.length === 0 && /\b(date night|night out|girls night|outing)\b/.test(q)) {
     return ["restaurant", "activity"];
+  }
+  if (domains.length === 0 && /\b(fun|something fun|things to do|tonight)\b/.test(q)) {
+    return ["activity"];
   }
   return [...new Set(domains)];
 }

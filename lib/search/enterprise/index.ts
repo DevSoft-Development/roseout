@@ -95,6 +95,9 @@ import {
   retrieveSearchCandidates,
   type CandidateRetrievalDebug,
 } from "./candidateRetrieval";
+import {
+  enrichEnterprisePairsWithWalkingRoutes,
+} from "./mapboxWalkingRoutes";
 
 const MIN_RESTAURANT_RESULTS = 6;
 const MIN_ACTIVITY_RESULTS = 4;
@@ -3477,6 +3480,28 @@ export async function runEnterpriseSearch(
     const pairingEligibleActivities = activities.filter((activity) =>
       explainRejection(activity, effectiveIntent, "activity") == null,
     );
+    const explicitWalkingVerificationRequested =
+      effectiveIntent.pairingPreference?.requireWalkablePair === true ||
+      effectiveIntent.pairingPreference?.distanceMode === "walking" ||
+      Number(effectiveIntent.pairingPreference?.maxPairWalkingMinutes ?? 0) > 0;
+    const candidatePairingIntent: SearchIntent =
+      explicitWalkingVerificationRequested
+        ? {
+            ...effectiveIntent,
+            pairingPreference: {
+              ...(effectiveIntent.pairingPreference ?? {
+                requiresPairing: true,
+                distanceMode: "walking",
+                maxPairDistanceMiles: null,
+                maxPairWalkingMinutes: null,
+                requireWalkablePair: true,
+              }),
+              maxPairDistanceMiles: null,
+              maxPairWalkingMinutes: null,
+              requireWalkablePair: false,
+            },
+          }
+        : effectiveIntent;
     const pairedResults =
       effectiveIntent.searchType === "activity_pair"
         ? createActivityActivityPairs(
@@ -3486,7 +3511,7 @@ export async function runEnterpriseSearch(
             secondActivityCandidates.length
               ? secondActivityCandidates
               : activities,
-            effectiveIntent,
+            candidatePairingIntent,
             pairingDebug,
           ).filter(
             (pair) =>
@@ -3497,7 +3522,7 @@ export async function runEnterpriseSearch(
           ? createSearchPairs(
               restaurants,
               pairingEligibleActivities,
-              effectiveIntent,
+              candidatePairingIntent,
               pairingDebug,
             ).filter(
               (pair) =>
@@ -3505,9 +3530,34 @@ export async function runEnterpriseSearch(
                 hasUsableLivePhoto(pair.activity),
             )
           : [];
+    const walkingRouteEnrichment =
+      await enrichEnterprisePairsWithWalkingRoutes(
+        pairedResults,
+        effectiveIntent.pairingPreference,
+      );
+    pairingDebug.pairsRejectedForWalkingMinutes +=
+      walkingRouteEnrichment.rejectedOverLimitCount;
+    pairingDebug.walkingPairsHiddenOverLimit +=
+      walkingRouteEnrichment.rejectedOverLimitCount;
+    pairingDebug.invalidWalkingRoutesHiddenFromDisplay +=
+      walkingRouteEnrichment.unreachablePairCount;
+    (debug as any).walkingRouteProviderConfigured =
+      walkingRouteEnrichment.providerConfigured;
+    (debug as any).walkingRouteProvider =
+      walkingRouteEnrichment.providerId;
+    (debug as any).walkingRouteRequestAttempted =
+      walkingRouteEnrichment.routeRequestAttempted;
+    (debug as any).walkingRouteRequestFailed =
+      walkingRouteEnrichment.routeRequestFailed;
+    (debug as any).verifiedWalkingPairCount =
+      walkingRouteEnrichment.verifiedPairCount;
+    (debug as any).unreachableWalkingPairCount =
+      walkingRouteEnrichment.unreachablePairCount;
+    (debug as any).walkingPairsRejectedOverRouteLimit =
+      walkingRouteEnrichment.rejectedOverLimitCount;
     let pairs = (
       await applyPairBoosts(
-        pairedResults,
+        walkingRouteEnrichment.pairs,
         query,
         requestedMarketForResults,
         resolvedMlFlags,
