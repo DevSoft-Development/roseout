@@ -87,6 +87,29 @@ export interface SearchCandidate {
   metadata: Readonly<Record<string, unknown>>;
 }
 
+export interface SearchRoutePoint {
+  id: string;
+  latitude: number;
+  longitude: number;
+}
+
+export type SearchRouteConfidence = "verified" | "estimated" | "unknown";
+
+export interface SearchRouteMatrixEntry {
+  originId: string;
+  destinationId: string;
+  distanceMiles: number | null;
+  durationMinutes: number | null;
+  source: string;
+  confidence: SearchRouteConfidence;
+}
+
+export interface SearchRouteMatrixResult {
+  providerId: string;
+  mode: TravelMode;
+  entries: readonly SearchRouteMatrixEntry[];
+}
+
 export type SearchOutingSequence =
   | "restaurant_then_activity"
   | "activity_then_restaurant"
@@ -119,6 +142,10 @@ export interface SearchOuting {
       diversity: number;
     }>;
     withinTravelLimit: boolean | null;
+    routeSource: string;
+    routeConfidence: SearchRouteConfidence;
+    straightLineMiles: number | null;
+    routeDistanceMiles: number | null;
   } & Record<string, unknown>>;
 }
 
