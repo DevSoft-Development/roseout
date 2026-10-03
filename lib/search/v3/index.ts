@@ -76,3 +76,9 @@ export {
   SupabaseMenuSemanticRetrievalProvider,
   type MenuSemanticRetrievalOptions,
 } from "./semantic/supabaseMenuSemanticRetrievalProvider";
+export {
+  CoalescingQueryEmbeddingProvider,
+  createSearchV3SemanticRetrievalBundle,
+  type SearchV3SemanticRetrievalBundle,
+  type SearchV3SemanticRetrievalBundleOptions,
+} from "./semantic/createSemanticRetrievalBundle";
