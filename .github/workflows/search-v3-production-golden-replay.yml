@@ -1,0 +1,124 @@
+name: Search V3 production golden replay
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/run-search-v3-production-golden-replay.ts'
+      - '.github/workflows/search-v3-production-golden-replay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: search-v3-production-golden-replay
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    name: Run production-backed Search V3 golden replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Configure AWS access to credential vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Load production search credentials
+        run: |
+          set -euo pipefail
+          PREFIX="/theouthaven/credential-vault/production"
+          WORK="$RUNNER_TEMP/search-v3-replay"
+          mkdir -p "$WORK"
+
+          aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json"
+          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+
+          if aws secretsmanager get-secret-value --secret-id "$PREFIX/mapbox" --query SecretString --output text > "$WORK/mapbox.json" 2>/dev/null; then
+            jq -e 'type == "object"' "$WORK/mapbox.json" >/dev/null
+          else
+            printf '{}\n' > "$WORK/mapbox.json"
+          fi
+
+          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          MAPBOX_ACCESS_TOKEN="$(jq -r '.accessToken // empty' "$WORK/mapbox.json")"
+
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$MAPBOX_ACCESS_TOKEN"; do
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+          done
+
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN"
+          } >> "$GITHUB_ENV"
+
+          rm -rf "$WORK"
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production Azure embedding runtime
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG="rg-toh-consumer-production"
+            AI_ACCOUNT="$(az cognitiveservices account list --resource-group "$RG" --query "[?kind=='AIServices' && location=='eastus2'] | [0].name" -o tsv)"
+            test -n "$AI_ACCOUNT" || { echo "::error::Primary production Azure AI account is missing."; exit 1; }
+
+            AZURE_AI_ENDPOINT="$(az cognitiveservices account show --resource-group "$RG" --name "$AI_ACCOUNT" --query properties.endpoint -o tsv)"
+            AZURE_AI_API_KEY="$(az cognitiveservices account keys list --resource-group "$RG" --name "$AI_ACCOUNT" --query key1 -o tsv)"
+            test -n "$AZURE_AI_ENDPOINT"
+            test -n "$AZURE_AI_API_KEY"
+            echo "::add-mask::$AZURE_AI_API_KEY"
+
+            {
+              echo "AZURE_AI_ENDPOINT=$AZURE_AI_ENDPOINT"
+              echo "AZURE_AI_API_KEY=$AZURE_AI_API_KEY"
+              echo "AZURE_AI_EMBEDDING_MODEL=toh-embedding"
+              echo "SEARCH_EMBEDDING_MODEL=text-embedding-3-small"
+              echo "SEARCH_EMBEDDING_VERSION=azure-location-intelligence:v1"
+            } >> "$GITHUB_ENV"
+
+      - name: Run production-backed V3 golden replay
+        run: npx tsx scripts/run-search-v3-production-golden-replay.ts
+
+      - name: Upload replay diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-v3-production-golden-replay
+          path: artifacts/search-v3-golden-replay.json
+          if-no-files-found: error
+          retention-days: 14
