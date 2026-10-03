@@ -135,11 +135,14 @@ aliases as (
   where nullif(trim(alias), '') is not null
 ),
 normalized as (
-  select distinct
+  select
     location_id,
-    trim(alias) as alias,
+    min(trim(alias)) as alias,
     lower(trim(regexp_replace(trim(alias), '[^[:alnum:]]+', ' ', 'g'))) as normalized_alias
   from aliases
+  group by
+    location_id,
+    lower(trim(regexp_replace(trim(alias), '[^[:alnum:]]+', ' ', 'g')))
 )
 insert into public.knowledge_entity_aliases (
   entity_id,
