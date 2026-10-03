@@ -116,6 +116,8 @@ export default async function ProfileRolloutQualityPage() {
                 ["Pair relevance", Number(v3.pairRelevancePassRate ?? 0).toFixed(1) + "%"],
                 ["Sequence pass", Number(v3.pairSequencingPassRate ?? 0).toFixed(1) + "%"],
                 ["Distance leakage", Number(v3.pairDistanceLeakageRate ?? 0).toFixed(1) + "%"],
+                ["Walk-time leakage", Number(v3.pairTravelTimeLeakageRate ?? 0).toFixed(1) + "%"],
+                ["Verified walk routes", Number(v3.pairRouteVerificationRate ?? 0).toFixed(1) + "%"],
                 ["V3-only passes", String(v3.v3OnlyPassCount ?? 0)],
                 ["Canonical-only passes", String(v3.canonicalOnlyPassCount ?? 0)],
               ].map(([label, value]) => (
