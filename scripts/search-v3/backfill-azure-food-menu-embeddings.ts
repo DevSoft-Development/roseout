@@ -268,7 +268,6 @@ async function migrateMenuSourceText(eligibleLocationIds: Set<string>) {
   const legacyRows = await readAll<LegacyMenuTextRow>(
     "location_menu_item_embeddings_hf",
     "id,location_id,item_name,normalized_item_name,source",
-    (query) => query.eq("status", "ready"),
   );
 
   const rows = legacyRows.flatMap((row) => {
