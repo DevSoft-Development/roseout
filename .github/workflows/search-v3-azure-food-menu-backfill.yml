@@ -67,7 +67,7 @@ jobs:
         if: steps.gate.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install locked dependencies
@@ -181,15 +181,15 @@ jobs:
             test -n "$ACCOUNT_ID" || { echo "::error::Azure AI account resource id is missing."; exit 1; }
             test -n "$ENDPOINT" || { echo "::error::Azure AI endpoint is missing."; exit 1; }
 
-            az cognitiveservices account list-models               --resource-group "$RG"               --name "$ACCOUNT"               --output json > "$RUNNER_TEMP/models.json"
+            az cognitiveservices account list-models               --resource-group "$RG"               --name "$ACCOUNT"               --output json > "/tmp/models.json"
 
-            MATCHES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model)] | length'               "$RUNNER_TEMP/models.json")"
+            MATCHES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model)] | length'               "/tmp/models.json")"
             if [ "$MATCHES" -lt 1 ]; then
               echo "::error::$EMBEDDING_MODEL is not available to production Azure AI account $ACCOUNT."
               exit 1
             fi
 
-            SKU_ENTRIES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model) | .skus[]?.name] | unique'               "$RUNNER_TEMP/models.json")"
+            SKU_ENTRIES="$(jq               --arg model "$EMBEDDING_MODEL"               '[.[] | select((.model.name // .name // "") == $model) | .skus[]?.name] | unique'               "/tmp/models.json")"
             if [ "$(printf '%s' "$SKU_ENTRIES" | jq 'length')" -gt 0 ] &&                ! printf '%s' "$SKU_ENTRIES" | jq -e 'index("DataZoneStandard") != null' >/dev/null; then
               echo "::error::$EMBEDDING_MODEL is visible, but DataZoneStandard is not advertised for this production account."
               printf '%s\n' "$SKU_ENTRIES"
@@ -215,7 +215,7 @@ jobs:
                     versionUpgradeOption:"OnceCurrentVersionExpired"
                   }
                 }')"
-              az rest                 --method put                 --url "$DEPLOYMENT_URL"                 --headers 'Content-Type=application/json'                 --body "$body" > "$RUNNER_TEMP/embedding-deployment.json"
+              az rest                 --method put                 --url "$DEPLOYMENT_URL"                 --headers 'Content-Type=application/json'                 --body "$body" > "/tmp/embedding-deployment.json"
               echo "Created Azure embedding deployment $EMBEDDING_DEPLOYMENT."
             fi
 
