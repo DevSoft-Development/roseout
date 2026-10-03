@@ -66,6 +66,7 @@ async function main() {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack ?? null : null;
       rows.push({
         id: testCase.id,
         query: testCase.query,
@@ -75,7 +76,7 @@ async function main() {
         comparison: null,
         execution: null,
       });
-      console.error(JSON.stringify({ id: testCase.id, error: message }));
+      console.error(JSON.stringify({ id: testCase.id, error: message, stack }));
     }
   }
 
