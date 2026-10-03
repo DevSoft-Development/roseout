@@ -4,6 +4,7 @@ import {
   type LocationDomain,
   type SearchCandidate,
   type SearchIntentGraph,
+  type SearchRoutingProvider,
 } from "@/lib/search-framework";
 import {
   DeterministicOutingPairingProvider,
@@ -64,8 +65,35 @@ describe("DeterministicOutingPairingProvider", () => {
     expect(weights).toBeCloseTo(1, 6);
   });
 
-  it("enforces an explicit 20-minute walking limit as one mile", async () => {
-    const pairer = new DeterministicOutingPairingProvider();
+  it("enforces a 20-minute walk using verified routed duration, not straight-line distance", async () => {
+    const routing: SearchRoutingProvider = {
+      providerId: "test.walking-matrix",
+      async routeMatrix() {
+        return {
+          providerId: "test.walking-matrix",
+          mode: "walking",
+          entries: [
+            {
+              originId: "r1",
+              destinationId: "a-good",
+              distanceMiles: 1.15,
+              durationMinutes: 18,
+              source: "mapbox",
+              confidence: "verified",
+            },
+            {
+              originId: "r1",
+              destinationId: "a-bad",
+              distanceMiles: 0.9,
+              durationMinutes: 27,
+              source: "mapbox",
+              confidence: "verified",
+            },
+          ],
+        };
+      },
+    };
+    const pairer = new DeterministicOutingPairingProvider({}, routing);
     const restaurant = candidate({
       id: "r1",
       domain: "restaurant",
@@ -73,18 +101,18 @@ describe("DeterministicOutingPairingProvider", () => {
       longitude: -73.99,
       score: 0.9,
     });
-    const nearby = candidate({
-      id: "a-near",
+    const good = candidate({
+      id: "a-good",
       domain: "activity",
       latitude: 40.76,
       longitude: -73.99,
       score: 0.8,
       activityCategories: ["bowling"],
     });
-    const far = candidate({
-      id: "a-far",
+    const bad = candidate({
+      id: "a-bad",
       domain: "activity",
-      latitude: 40.78,
+      latitude: 40.755,
       longitude: -73.99,
       score: 0.99,
       activityCategories: ["bowling"],
@@ -99,16 +127,17 @@ describe("DeterministicOutingPairingProvider", () => {
         maxTravelMinutes: 20,
         constraints: [hard("activity_type", "bowling")],
       }),
-      candidates: [restaurant, far, nearby],
+      candidates: [restaurant, bad, good],
     });
 
-    expect(outings.length).toBeGreaterThan(0);
-    expect(outings.every((outing) =>
-      outing.distanceMiles != null && outing.distanceMiles <= 1
-    )).toBe(true);
-    expect(outings.some((outing) => outing.activity.locationId === "a-far")).toBe(false);
-    expect(outings[0].travelMode).toBe("walking");
-    expect(outings[0].travelMinutes).toBeLessThanOrEqual(20);
+    expect(outings).toHaveLength(1);
+    expect(outings[0].activity.locationId).toBe("a-good");
+    expect(outings[0].distanceMiles).toBeCloseTo(1.15);
+    expect(outings[0].travelMinutes).toBe(18);
+    expect(outings[0].metadata.routeSource).toBe("mapbox");
+    expect(outings[0].metadata.routeConfidence).toBe("verified");
+    expect(outings[0].metadata.straightLineMiles).not.toBeNull();
+    expect(outings[0].metadata.routeDistanceMiles).toBeCloseTo(1.15);
   });
 
   it("respects explicit activity-before-dinner sequencing", async () => {
