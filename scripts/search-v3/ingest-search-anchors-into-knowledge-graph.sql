@@ -16,7 +16,7 @@ with approved as (
 mapped as (
   select
     a.*,
-    le.id as location_entity_id
+    le.id as graph_location_entity_id
   from approved a
   left join public.knowledge_entities le
     on le.entity_type = 'location'
@@ -62,7 +62,7 @@ select
   source_updated_at,
   now()
 from mapped
-where location_entity_id is null
+where graph_location_entity_id is null
 on conflict (entity_type, canonical_key) do update set
   canonical_name = excluded.canonical_name,
   attributes = excluded.attributes,
