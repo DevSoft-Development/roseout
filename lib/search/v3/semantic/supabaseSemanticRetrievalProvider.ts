@@ -63,7 +63,9 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
     }
 
     const embeddingVersion =
-      this.options.embeddingVersion ?? embedding.version ?? "search-embedding:v1";
+      this.options.embeddingVersion ??
+      process.env.SEARCH_LOCATION_INTELLIGENCE_EMBEDDING_VERSION ??
+      "azure-location-intelligence:v1";
     const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
     const minSimilarity = this.options.minSimilarity ?? 0.55;
 

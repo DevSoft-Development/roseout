@@ -96,7 +96,9 @@ describe("Search V3 Phase 7 Azure semantic retrieval", () => {
     });
 
     expect(calls[0].fn).toBe("match_location_search_embeddings");
-    expect(calls[0].args.p_embedding_version).toBe("search-embedding:v1");
+    expect(calls[0].args.p_embedding_version).toBe(
+      "azure-location-intelligence:v1",
+    );
     expect(result.lane).toBe("semantic_dense");
     expect(result.candidates.map((candidate) => candidate.locationId)).toEqual(["a", "b"]);
   });
