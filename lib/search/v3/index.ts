@@ -66,3 +66,13 @@ export {
   type SemanticRetrievalOptions,
   type SemanticRpcClient,
 } from "./semantic/supabaseSemanticRetrievalProvider";
+
+export {
+  SupabaseFoodSemanticRetrievalProvider,
+  type FoodSemanticRetrievalOptions,
+} from "./semantic/supabaseFoodSemanticRetrievalProvider";
+
+export {
+  SupabaseMenuSemanticRetrievalProvider,
+  type MenuSemanticRetrievalOptions,
+} from "./semantic/supabaseMenuSemanticRetrievalProvider";
