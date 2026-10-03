@@ -135,7 +135,12 @@ function rejectionReasons(
 
   for (const constraint of intent.constraints) {
     if (constraint.strength !== "hard") continue;
-    if (!constraintAppliesToSupportedDomains(constraint.key, supportedDomains, intent)) continue;
+    if (!constraintAppliesToSupportedDomains(
+      constraint.key,
+      supportedDomains,
+      intent,
+      constraint.value,
+    )) continue;
     const value = String(constraint.value).trim().toLowerCase();
 
     switch (constraint.key) {
@@ -224,6 +229,7 @@ export function constraintAppliesToSupportedDomains(
   key: string,
   supportedDomains: ReadonlySet<string>,
   intent: SearchIntentGraph,
+  value?: unknown,
 ): boolean {
   if (intent.domains.length <= 1) return true;
 
@@ -233,6 +239,16 @@ export function constraintAppliesToSupportedDomains(
 
   if (key === "activity_type") {
     return supportedDomains.has("activity") || supportedDomains.has("nightlife");
+  }
+
+  if (key === "feature") {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (["rooftop", "live music", "hookah"].includes(normalized)) {
+      return supportedDomains.has("activity") || supportedDomains.has("nightlife");
+    }
+    if (["romantic", "outdoor seating", "waterfront", "private room"].includes(normalized)) {
+      return supportedDomains.has("restaurant");
+    }
   }
 
   return true;
