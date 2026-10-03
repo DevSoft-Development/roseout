@@ -8,6 +8,7 @@ import type { LocationIntelligenceProfile } from "./locationIntelligence";
 import type {
   RetrievalLaneResult,
   SearchCandidate,
+  SearchEligibilityResult,
   SearchIntentGraph,
   SearchV3Request,
   SearchV3TraceEvent,
@@ -35,6 +36,15 @@ export interface SearchRetrievalProvider {
     request: SearchV3Request;
     intent: SearchIntentGraph;
   }): Promise<RetrievalLaneResult>;
+}
+
+export interface SearchEligibilityProvider {
+  readonly providerId: string;
+  filter(args: {
+    request: SearchV3Request;
+    intent: SearchIntentGraph;
+    locationIds: readonly string[];
+  }): Promise<SearchEligibilityResult>;
 }
 
 export interface SearchRankingProvider {
