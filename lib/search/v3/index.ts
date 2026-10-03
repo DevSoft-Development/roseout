@@ -41,3 +41,16 @@ export {
   SupabaseHardEligibilityProvider,
   type EligibilitySupabaseClient,
 } from "./eligibility/supabaseHardEligibilityProvider";
+
+export {
+  SupabaseBm25RetrievalProvider,
+  bm25Score,
+  type Bm25RetrievalOptions,
+  type Bm25SupabaseClient,
+} from "./retrieval/supabaseBm25RetrievalProvider";
+
+export {
+  ReciprocalRankFusionProvider,
+  reciprocalRankFusion,
+  type ReciprocalRankFusionOptions,
+} from "./fusion/reciprocalRankFusionProvider";

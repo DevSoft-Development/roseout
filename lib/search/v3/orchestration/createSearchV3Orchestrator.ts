@@ -1,8 +1,10 @@
 import type {
   LocationIntelligenceProvider,
+  RetrievalLaneResult,
   SearchCandidate,
   SearchEligibilityProvider,
   SearchEntityResolutionProvider,
+  SearchFusionProvider,
   SearchIntentProvider,
   SearchObservabilityProvider,
   SearchRankingProvider,
@@ -13,13 +15,14 @@ import type {
   SearchV3TraceEvent,
 } from "@/lib/search-framework";
 
-export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-structured-retrieval-alpha.1";
+export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-bm25-rrf-alpha.1";
 
 export interface SearchV3Dependencies {
   intent: SearchIntentProvider;
   entityResolution?: SearchEntityResolutionProvider | null;
   locationIntelligence: LocationIntelligenceProvider;
   retrieval: readonly SearchRetrievalProvider[];
+  fusion?: SearchFusionProvider | null;
   eligibility?: SearchEligibilityProvider | null;
   ranking?: SearchRankingProvider | null;
   reranking?: SearchRerankingProvider | null;
@@ -102,7 +105,7 @@ export function createSearchV3Orchestrator(
         );
       }
 
-      const retrieval = await runStage({
+      const retrievalLanes = await runStage({
         stage: "retrieval",
         requestId: request.requestId,
         trace,
@@ -115,7 +118,35 @@ export function createSearchV3Orchestrator(
           ),
       });
 
-      const retrievedLocationIds = uniqueLocationIds(retrieval);
+      let fusedLane: RetrievalLaneResult | null = null;
+      if (dependencies.fusion && retrievalLanes.length > 1) {
+        fusedLane = await runStage({
+          stage: "fusion",
+          requestId: request.requestId,
+          trace,
+          observability: dependencies.observability,
+          work: () => dependencies.fusion!.fuse({
+            request,
+            intent,
+            lanes: retrievalLanes,
+          }),
+        });
+      } else {
+        await recordSkipped(
+          "fusion",
+          request.requestId,
+          trace,
+          dependencies.observability,
+        );
+      }
+
+      const retrieval = fusedLane
+        ? [...retrievalLanes, fusedLane]
+        : retrievalLanes;
+
+      const retrievedLocationIds = fusedLane
+        ? fusedLane.candidates.map((candidate) => candidate.locationId)
+        : uniqueLocationIds(retrievalLanes);
       let locationIds = retrievedLocationIds;
       let rejectedCount = 0;
 
