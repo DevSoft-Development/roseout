@@ -386,6 +386,8 @@ function comparison(passed: boolean) {
     pairDistancePass: true,
     pairTravelTimePass: true,
     pairRouteVerifiedPass: true,
+    routeVerificationRequired: false,
+    verifiedRouteCoverage: false,
     pairSequencingPass: true,
     distanceLeakage: false,
     travelTimeLeakage: false,
