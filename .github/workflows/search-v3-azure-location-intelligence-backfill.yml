@@ -1,0 +1,220 @@
+name: Search V3 Azure location intelligence backfill
+
+on:
+  workflow_run:
+    workflows:
+      - Search V3 Azure food menu backfill
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: search-v3-azure-location-intelligence-backfill-production
+  cancel-in-progress: true
+
+env:
+  EAST_REF: ftdsltatyqhtllyyefzp
+  WEST_REF: hnhbzynoyrhjndefbwkh
+  EMBEDDING_DEPLOYMENT: toh-embedding
+  EMBEDDING_MODEL: text-embedding-3-small
+  EMBEDDING_VERSION: azure-location-intelligence:v1
+  SEARCH_EMBEDDING_BATCH_SIZE: '64'
+  SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS: '65000'
+  SEARCH_EMBEDDING_RETRY_SAFETY_BUFFER_MS: '5000'
+  SEARCH_EMBEDDING_MAX_RETRIES: '4'
+
+jobs:
+  backfill:
+    name: Backfill Azure location intelligence vectors
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 180
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Resolve Supabase production credentials
+        env:
+          LEGACY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LEGACY_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          secret_id="/theouthaven/credential-vault/production/supabase"
+          service_role=""
+          management_token=""
+
+          if aws secretsmanager get-secret-value \
+            --secret-id "$secret_id" \
+            --query SecretString \
+            --output text > "$RUNNER_TEMP/supabase-vault.json" 2>/dev/null; then
+            service_role="$(jq -r '.serviceRoleKey // empty' "$RUNNER_TEMP/supabase-vault.json")"
+            management_token="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          fi
+
+          if [ -z "$service_role" ]; then service_role="$LEGACY_SUPABASE_SERVICE_ROLE_KEY"; fi
+          if [ -z "$management_token" ]; then management_token="$LEGACY_SUPABASE_ACCESS_TOKEN"; fi
+
+          test -n "$service_role" || { echo "::error::Missing Virginia service role key."; exit 1; }
+          test -n "$management_token" || { echo "::error::Missing Supabase management token."; exit 1; }
+
+          echo "::add-mask::$service_role"
+          echo "::add-mask::$management_token"
+          {
+            echo "SUPABASE_URL=https://$EAST_REF.supabase.co"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$service_role"
+            echo "SUPABASE_ACCESS_TOKEN=$management_token"
+          } >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/supabase-vault.json"
+
+      - name: Require Virginia/Oregon replication healthy
+        run: |
+          set -euo pipefail
+          jq -n --arg query "
+            select count(*)::int as pending
+            from pg_subscription_rel sr
+            join pg_subscription s on s.oid=sr.srsubid
+            where sr.srsubstate <> 'r';
+          " '{query:$query}' > "$RUNNER_TEMP/query.json"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/query.json" \
+            "https://api.supabase.com/v1/projects/$WEST_REF/database/query" > "$RUNNER_TEMP/pending.json"
+          test "$(jq -r '.[0].pending' "$RUNNER_TEMP/pending.json")" = "0" || {
+            echo "::error::Oregon replication has pending relations."
+            exit 1
+          }
+
+      - name: Login to Azure with GitHub OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve Azure embedding deployment
+        uses: azure/CLI@v2
+        env:
+          RG: rg-toh-consumer-production
+        with:
+          inlineScript: |
+            set -euo pipefail
+            ACCOUNT="$(az cognitiveservices account list \
+              --resource-group "$RG" \
+              --query "[?kind=='AIServices'] | [0].name" \
+              --output tsv)"
+            test -n "$ACCOUNT" || { echo "::error::No production AIServices account found."; exit 1; }
+
+            ENDPOINT="$(az cognitiveservices account show \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query properties.endpoint \
+              --output tsv)"
+            KEY="$(az cognitiveservices account keys list \
+              --resource-group "$RG" \
+              --name "$ACCOUNT" \
+              --query key1 \
+              --output tsv)"
+
+            test -n "$ENDPOINT" || { echo "::error::Azure AI endpoint is missing."; exit 1; }
+            test -n "$KEY" || { echo "::error::Azure AI account key is missing."; exit 1; }
+            echo "::add-mask::$KEY"
+
+            {
+              echo "AZURE_AI_ENDPOINT=$ENDPOINT"
+              echo "AZURE_AI_API_KEY=$KEY"
+              echo "AZURE_AI_EMBEDDING_MODEL=$EMBEDDING_DEPLOYMENT"
+              echo "SEARCH_EMBEDDING_MODEL=$EMBEDDING_MODEL"
+              echo "SEARCH_LOCATION_INTELLIGENCE_EMBEDDING_VERSION=$EMBEDDING_VERSION"
+            } >> "$GITHUB_ENV"
+
+      - name: Run resumable Azure location intelligence backfill
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-search-v3-location-intelligence-backfill
+          ./node_modules/.bin/tsc \
+            --module commonjs \
+            --target es2022 \
+            --moduleResolution node \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp-search-v3-location-intelligence-backfill \
+            scripts/search-v3/backfill-azure-location-intelligence-embeddings.ts
+          node .tmp-search-v3-location-intelligence-backfill/backfill-azure-location-intelligence-embeddings.js
+
+      - name: Verify Virginia and Oregon parity
+        run: |
+          set -euo pipefail
+          query_ref() {
+            local ref="$1" out="$2"
+            jq -n --arg query "
+              select
+                count(*) filter (where embedding_version='$EMBEDDING_VERSION' and status='ready') as ready,
+                count(*) filter (where embedding_version='$EMBEDDING_VERSION' and status='failed') as failed,
+                count(*) filter (where embedding_version='$EMBEDDING_VERSION' and status='pending') as pending
+              from public.location_search_embeddings;
+            " '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/$ref/database/query" > "$out"
+          }
+
+          for attempt in $(seq 1 60); do
+            query_ref "$EAST_REF" "$RUNNER_TEMP/east.json"
+            query_ref "$WEST_REF" "$RUNNER_TEMP/west.json"
+
+            if cmp -s \
+              <(jq -S '.[0]' "$RUNNER_TEMP/east.json") \
+              <(jq -S '.[0]' "$RUNNER_TEMP/west.json"); then
+              jq -e '.[0].failed == 0 and .[0].pending == 0 and .[0].ready > 0' "$RUNNER_TEMP/east.json" >/dev/null
+              {
+                echo "### Search V3 Azure location intelligence backfill"
+                echo ""
+                echo "- Vector model: $EMBEDDING_MODEL"
+                echo "- Vector namespace: $EMBEDDING_VERSION"
+                echo "- Dimensions: 1536"
+                echo "- Virginia/Oregon parity: passed"
+                echo "- Hugging Face vectors reused: no"
+                echo ""
+                echo "#### Final counts"
+                echo '~~~json'
+                jq '.[0]' "$RUNNER_TEMP/east.json"
+                echo '~~~'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "::error::Virginia/Oregon location-intelligence embedding counts did not converge."
+          exit 1
