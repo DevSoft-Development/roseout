@@ -151,6 +151,12 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
           routeDistanceMiles = routeEntry.distanceMiles;
           distanceMiles = routeEntry.distanceMiles;
           travelMinutes = routeEntry.durationMinutes;
+        } else if (
+          travelMode === "walking" &&
+          this.routingProvider &&
+          routingState === "not_requested"
+        ) {
+          return [];
         } else if (travelMode === "walking" && routingState === "failed") {
           routeSource = "haversine_fallback";
           routeConfidence = "estimated";
