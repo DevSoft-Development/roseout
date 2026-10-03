@@ -68,6 +68,16 @@ export interface RetrievalLaneResult {
   truncated?: boolean;
 }
 
+export interface SearchEligibilityRejection {
+  locationId: string;
+  reasons: readonly string[];
+}
+
+export interface SearchEligibilityResult {
+  eligibleLocationIds: readonly string[];
+  rejected: readonly SearchEligibilityRejection[];
+}
+
 export interface SearchCandidate {
   locationId: string;
   intelligence: LocationIntelligenceProfile;
@@ -94,6 +104,8 @@ export interface SearchV3Execution {
   trace: readonly SearchV3TraceEvent[];
   metadata: {
     candidateCount: number;
+    eligibleCount: number;
+    rejectedCount: number;
     hydratedCount: number;
     orchestrationVersion: string;
   };
