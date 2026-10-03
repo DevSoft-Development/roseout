@@ -30,6 +30,17 @@ export interface SearchIntentProvider {
   parse(request: SearchV3Request): Promise<SearchIntentGraph>;
 }
 
+export interface SearchQueryEmbedding {
+  vector: readonly number[];
+  model: string;
+  version: string;
+}
+
+export interface SearchQueryEmbeddingProvider {
+  readonly providerId: string;
+  embed(text: string): Promise<SearchQueryEmbedding>;
+}
+
 export interface SearchRetrievalProvider {
   readonly providerId: string;
   retrieve(args: {
