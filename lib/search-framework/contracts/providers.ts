@@ -38,6 +38,15 @@ export interface SearchRetrievalProvider {
   }): Promise<RetrievalLaneResult>;
 }
 
+export interface SearchFusionProvider {
+  readonly providerId: string;
+  fuse(args: {
+    request: SearchV3Request;
+    intent: SearchIntentGraph;
+    lanes: readonly RetrievalLaneResult[];
+  }): Promise<RetrievalLaneResult>;
+}
+
 export interface SearchEligibilityProvider {
   readonly providerId: string;
   filter(args: {
