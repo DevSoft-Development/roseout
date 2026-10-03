@@ -23,9 +23,14 @@ const PAGE_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_PAGE_SIZE || 500), 1
 const BATCH_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 512), 1, 512);
 const MAX_RETRIES = clamp(Number(process.env.SEARCH_EMBEDDING_MAX_RETRIES || 8), 1, 12);
 const MIN_REQUEST_INTERVAL_MS = clamp(
-  Number(process.env.SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS || 1000),
+  Number(process.env.SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS || 65_000),
   0,
-  60_000,
+  120_000,
+);
+const RETRY_SAFETY_BUFFER_MS = clamp(
+  Number(process.env.SEARCH_EMBEDDING_RETRY_SAFETY_BUFFER_MS || 5_000),
+  0,
+  30_000,
 );
 let lastAzureRequestStartedAt = 0;
 
@@ -282,8 +287,14 @@ async function fetchAzureEmbeddings(inputs: string[]): Promise<number[][]> {
 
       const waitMs =
         retryAfterMs != null
-          ? Math.max(1_000, retryAfterMs + 1_000)
-          : Math.min(60_000, 1_000 * 2 ** (attempt - 1));
+          ? Math.max(
+              MIN_REQUEST_INTERVAL_MS,
+              retryAfterMs + RETRY_SAFETY_BUFFER_MS,
+            )
+          : Math.max(
+              MIN_REQUEST_INTERVAL_MS,
+              Math.min(120_000, 1_000 * 2 ** (attempt - 1)),
+            );
 
       console.warn(
         `Azure embedding attempt ${attempt}/${MAX_RETRIES} failed; retrying in ${Math.ceil(waitMs / 1000)}s.`,
@@ -694,6 +705,8 @@ async function main() {
       embeddingVersion: EMBEDDING_VERSION,
       vectorDimensions: VECTOR_DIMENSIONS,
       batchSize: BATCH_SIZE,
+      minRequestIntervalMs: MIN_REQUEST_INTERVAL_MS,
+      retrySafetyBufferMs: RETRY_SAFETY_BUFFER_MS,
     }),
   );
 
