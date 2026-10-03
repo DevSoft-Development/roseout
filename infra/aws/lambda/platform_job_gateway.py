@@ -30,6 +30,7 @@ ALLOWED_ENVIRONMENTS = {"production", "staging"}
 ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
+    "mapbox": {"accessToken"},
     "supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"},
     "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
