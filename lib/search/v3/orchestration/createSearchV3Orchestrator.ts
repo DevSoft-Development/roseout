@@ -15,7 +15,7 @@ import type {
   SearchV3TraceEvent,
 } from "@/lib/search-framework";
 
-export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-bm25-rrf-alpha.1";
+export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-semantic-rrf-alpha.1";
 
 export interface SearchV3Dependencies {
   intent: SearchIntentProvider;
