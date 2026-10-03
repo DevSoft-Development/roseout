@@ -20,8 +20,14 @@ const EMBEDDING_VERSION = String(
 );
 const VECTOR_DIMENSIONS = 1536;
 const PAGE_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_PAGE_SIZE || 500), 100, 1000);
-const BATCH_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 64), 1, 128);
-const MAX_RETRIES = clamp(Number(process.env.SEARCH_EMBEDDING_MAX_RETRIES || 5), 1, 8);
+const BATCH_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 512), 1, 512);
+const MAX_RETRIES = clamp(Number(process.env.SEARCH_EMBEDDING_MAX_RETRIES || 8), 1, 12);
+const MIN_REQUEST_INTERVAL_MS = clamp(
+  Number(process.env.SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS || 1000),
+  0,
+  60_000,
+);
+let lastAzureRequestStartedAt = 0;
 
 if (!SUPABASE_URL.includes(EAST_REF)) {
   throw new Error(
@@ -187,10 +193,17 @@ async function fetchAzureEmbeddings(inputs: string[]): Promise<number[][]> {
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    const sinceLastRequest = Date.now() - lastAzureRequestStartedAt;
+    if (sinceLastRequest < MIN_REQUEST_INTERVAL_MS) {
+      await sleep(MIN_REQUEST_INTERVAL_MS - sinceLastRequest);
+    }
+
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
+    const timer = setTimeout(() => controller.abort(), 60_000);
 
     try {
+      lastAzureRequestStartedAt = Date.now();
+
       const response = await fetch(
         `${AZURE_AI_ENDPOINT}/openai/v1/embeddings`,
         {
@@ -217,8 +230,14 @@ async function fetchAzureEmbeddings(inputs: string[]): Promise<number[][]> {
           payload?.error?.message ||
           payload?.message ||
           `Azure embeddings failed with HTTP ${response.status}`;
+
         if (!retryable) throw new Error(message);
-        throw Object.assign(new Error(message), { retryable: true });
+
+        throw Object.assign(new Error(message), {
+          retryable: true,
+          retryAfterMs: resolveRetryAfterMs(response, message),
+          status: response.status,
+        });
       }
 
       const ordered = Array.isArray(payload?.data)
@@ -252,8 +271,24 @@ async function fetchAzureEmbeddings(inputs: string[]): Promise<number[][]> {
     } catch (error) {
       lastError = error;
       if (attempt >= MAX_RETRIES) break;
-      const waitMs = Math.min(10_000, 500 * 2 ** (attempt - 1));
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+      const retryAfterMs =
+        typeof error === "object" &&
+        error !== null &&
+        "retryAfterMs" in error &&
+        Number.isFinite(Number((error as any).retryAfterMs))
+          ? Number((error as any).retryAfterMs)
+          : null;
+
+      const waitMs =
+        retryAfterMs != null
+          ? Math.max(1_000, retryAfterMs + 1_000)
+          : Math.min(60_000, 1_000 * 2 ** (attempt - 1));
+
+      console.warn(
+        `Azure embedding attempt ${attempt}/${MAX_RETRIES} failed; retrying in ${Math.ceil(waitMs / 1000)}s.`,
+      );
+      await sleep(waitMs);
     } finally {
       clearTimeout(timer);
     }
@@ -262,6 +297,37 @@ async function fetchAzureEmbeddings(inputs: string[]): Promise<number[][]> {
   throw lastError instanceof Error
     ? lastError
     : new Error("Azure embedding request failed.");
+}
+
+function resolveRetryAfterMs(response: Response, message: string): number {
+  const retryAfterMsHeader = Number(response.headers.get("retry-after-ms"));
+  if (Number.isFinite(retryAfterMsHeader) && retryAfterMsHeader > 0) {
+    return retryAfterMsHeader;
+  }
+
+  const retryAfterHeader = response.headers.get("retry-after");
+  if (retryAfterHeader) {
+    const seconds = Number(retryAfterHeader);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+
+    const dateMs = Date.parse(retryAfterHeader);
+    if (Number.isFinite(dateMs)) {
+      return Math.max(1_000, dateMs - Date.now());
+    }
+  }
+
+  const messageMatch = message.match(/retry after\s+(\d+(?:\.\d+)?)\s*seconds?/i);
+  if (messageMatch) {
+    return Math.ceil(Number(messageMatch[1]) * 1000);
+  }
+
+  return 60_000;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function migrateMenuSourceText(eligibleLocationIds: Set<string>) {
