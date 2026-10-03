@@ -60,7 +60,7 @@ export function createSearchV3Orchestrator(
           requestId: request.requestId,
           trace,
           observability: dependencies.observability,
-          work: () => dependencies.entityResolution!.resolve(intent.anchor!.label),
+          work: () => withTransientSearchRetry(() => dependencies.entityResolution!.resolve(intent.anchor!.label)),
         });
 
         if (resolution.status === "resolved" && resolution.entity) {
@@ -116,7 +116,7 @@ export function createSearchV3Orchestrator(
         work: () =>
           Promise.allSettled(
             dependencies.retrieval.map((provider) =>
-              provider.retrieve({ request, intent }),
+              withTransientSearchRetry(() => provider.retrieve({ request, intent })),
             ),
           ),
       });
@@ -195,11 +195,11 @@ export function createSearchV3Orchestrator(
           requestId: request.requestId,
           trace,
           observability: dependencies.observability,
-          work: () => dependencies.eligibility!.filter({
+          work: () => withTransientSearchRetry(() => dependencies.eligibility!.filter({
             request,
             intent,
             locationIds: retrievedLocationIds,
-          }),
+          })),
         });
         locationIds = [...eligibility.eligibleLocationIds];
         rejectedCount = eligibility.rejected.length;
@@ -217,7 +217,7 @@ export function createSearchV3Orchestrator(
         requestId: request.requestId,
         trace,
         observability: dependencies.observability,
-        work: () => dependencies.locationIntelligence.getLocations(locationIds),
+        work: () => withTransientSearchRetry(() => dependencies.locationIntelligence.getLocations(locationIds)),
       });
 
       const intelligenceById = new Map(
@@ -335,6 +335,31 @@ export function createSearchV3Orchestrator(
       };
     },
   };
+}
+
+async function withTransientSearchRetry<T>(work: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  const delaysMs = [250, 750];
+
+  for (let attempt = 0; attempt <= delaysMs.length; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientSearchError(error) || attempt === delaysMs.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delaysMs[attempt]));
+    }
+  }
+
+  throw lastError;
+}
+
+function isTransientSearchError(error: unknown): boolean {
+  const message = error instanceof Error
+    ? [error.name, error.message, String((error as Error & { cause?: unknown }).cause ?? "")].join(" ")
+    : String(error);
+
+  return /fetch failed|network|socket|timeout|temporar|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENETUNREACH|ETIMEDOUT|provider_unavailable|rate_limited|mapbox_matrix_request_failed/i.test(message);
 }
 
 function validateDependencies(dependencies: SearchV3Dependencies): void {
