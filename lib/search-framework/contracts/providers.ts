@@ -1,3 +1,8 @@
+import type {
+  KnowledgeEdge,
+  KnowledgeEntity,
+  KnowledgeEntityContext,
+} from "./graph";
 import type { LocationIntelligenceProfile } from "./locationIntelligence";
 import type {
   RetrievalLaneResult,
@@ -62,13 +67,13 @@ export interface SearchObservabilityProvider {
 
 export interface KnowledgeGraphProvider {
   readonly providerId: string;
-  resolveEntity(query: string): Promise<unknown | null>;
-  resolveAlias(alias: string): Promise<unknown | null>;
-  getEntity(entityId: string): Promise<unknown | null>;
-  getRelationships(entityId: string): Promise<readonly unknown[]>;
+  resolveEntity(query: string): Promise<KnowledgeEntity | null>;
+  resolveAlias(alias: string): Promise<KnowledgeEntity | null>;
+  getEntity(entityId: string): Promise<KnowledgeEntity | null>;
+  getRelationships(entityId: string): Promise<readonly KnowledgeEdge[]>;
   getFeatures(entityId: string): Promise<Readonly<Record<string, unknown>>>;
-  getEvidence(entityId: string): Promise<readonly unknown[]>;
-  findRelated(entityId: string, relationship?: string): Promise<readonly unknown[]>;
-  resolveHierarchy(entityId: string): Promise<readonly unknown[]>;
-  getEntityContext(entityId: string): Promise<Readonly<Record<string, unknown>> | null>;
+  getEvidence(entityId: string): Promise<readonly Readonly<Record<string, unknown>>[]>;
+  findRelated(entityId: string, relationship?: string): Promise<readonly KnowledgeEntity[]>;
+  resolveHierarchy(entityId: string): Promise<readonly KnowledgeEntity[]>;
+  getEntityContext(entityId: string): Promise<KnowledgeEntityContext | null>;
 }
