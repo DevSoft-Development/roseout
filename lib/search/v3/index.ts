@@ -94,3 +94,8 @@ export {
   type TheOutHavenSearchV3Composition,
   type TheOutHavenSearchV3CompositionOptions,
 } from "./theouthaven-adapters/createTheOutHavenSearchV3";
+
+export {
+  DeterministicDecisionRankingProvider,
+  type DeterministicDecisionRankingOptions,
+} from "./ranking/deterministicDecisionRankingProvider";
