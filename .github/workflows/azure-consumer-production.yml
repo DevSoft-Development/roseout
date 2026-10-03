@@ -257,11 +257,11 @@ jobs:
                 --parameters infra/azure/parameters/production.bicepparam \
                 aiModelDeploymentEnabled=true \
                 consumerRuntimeEnabled=false \
-                consumerEdgeEnabled=false 2>"$RUNNER_TEMP/azure-foundation.err"; then
+                consumerEdgeEnabled=false 2>"/tmp/azure-foundation.err"; then
                 exit 0
               fi
-              cat "$RUNNER_TEMP/azure-foundation.err" >&2
-              if ! grep -q 'RequestConflict\|Another operation is being performed' "$RUNNER_TEMP/azure-foundation.err"; then
+              cat "/tmp/azure-foundation.err" >&2
+              if ! grep -q 'RequestConflict\|Another operation is being performed' "/tmp/azure-foundation.err"; then
                 exit 1
               fi
               if [ "$attempt" -eq 5 ]; then
@@ -384,11 +384,11 @@ jobs:
             az deployment sub what-if               --name toh-consumer-runtime-production               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/production.bicepparam               aiModelDeploymentEnabled=true               consumerRuntimeEnabled=true               consumerRegionalFailoverEnabled=true               consumerEdgeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT"               consumerAzureAiApiKey="$PRIMARY_AI_KEY"               consumerSecondaryAzureAiEndpoint="$SECONDARY_AI_ENDPOINT"               consumerSecondaryAzureAiApiKey="$SECONDARY_AI_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"               consumerShortLinkBaseUrl="https://outhvn.com"               consumerShortLinkHost="outhvn.com"               consumerIosTeamId='${{ steps.config.outputs.ios_team_id }}'               consumerAndroidAppLinkSha256Fingerprints='${{ steps.config.outputs.android_app_link_sha256_fingerprints }}'               consumerPrimaryStableRevisionName='${{ steps.stable.outputs.primary_revision }}'               consumerSecondaryStableRevisionName='${{ steps.stable.outputs.secondary_revision }}'               consumerInitialCanaryWeight=0
             }
             for attempt in 1 2 3 4 5; do
-              if deploy_runtime 2>"$RUNNER_TEMP/azure-runtime.err"; then
+              if deploy_runtime 2>"/tmp/azure-runtime.err"; then
                 exit 0
               fi
-              cat "$RUNNER_TEMP/azure-runtime.err" >&2
-              if ! grep -q 'RequestConflict\\|Another operation is being performed' "$RUNNER_TEMP/azure-runtime.err"; then
+              cat "/tmp/azure-runtime.err" >&2
+              if ! grep -q 'RequestConflict\\|Another operation is being performed' "/tmp/azure-runtime.err"; then
                 exit 1
               fi
               if [ "$attempt" -eq 5 ]; then
