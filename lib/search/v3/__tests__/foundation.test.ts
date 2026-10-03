@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   LocationIntelligenceProvider,
+  SearchEntityResolutionProvider,
   SearchIntentProvider,
   SearchRetrievalProvider,
 } from "@/lib/search-framework";
@@ -90,6 +91,105 @@ describe("Search V3 foundation", () => {
     ]);
     expect(result.metadata.candidateCount).toBe(2);
     expect(result.trace.some((event) => event.stage === "ranking" && event.status === "skipped")).toBe(true);
+  });
+
+  it("resolves an intent anchor before retrieval", async () => {
+    const intent: SearchIntentProvider = {
+      providerId: "test.intent.anchor",
+      async parse(request) {
+        return {
+          contractVersion: "search-intent-v3-alpha.1",
+          rawQuery: request.query,
+          domains: ["restaurant"],
+          primaryDomain: "restaurant",
+          constraints: [],
+          anchor: {
+            entityId: null,
+            label: "MSG",
+            entityType: "landmark",
+            latitude: null,
+            longitude: null,
+            confidence: 0.5,
+          },
+          travelMode: "walking",
+          maxTravelMinutes: 20,
+          occasion: null,
+          partySize: null,
+          sequencing: "single",
+          ambiguity: { requiresClarification: false, unresolved: [] },
+          metadata: {},
+        };
+      },
+    };
+
+    const entityResolution: SearchEntityResolutionProvider = {
+      providerId: "test.entity-resolution",
+      async resolve() {
+        return {
+          status: "resolved",
+          query: "MSG",
+          normalizedQuery: "madison square garden",
+          entity: {
+            id: "msg-entity",
+            entityType: "arena",
+            canonicalKey: "search_anchor:msg",
+            canonicalName: "Madison Square Garden",
+            locationId: null,
+            attributes: {
+              latitude: 40.7505045,
+              longitude: -73.9934387,
+            },
+            confidence: 1,
+            source: "search_anchors",
+            sourceUpdatedAt: null,
+          },
+          candidates: [],
+          confidence: 1,
+          source: "alias_exact",
+          metadata: {},
+        };
+      },
+    };
+
+    let observedEntityId: string | null = null;
+    let observedLatitude: number | null = null;
+    const retrieval: SearchRetrievalProvider = {
+      providerId: "test.retrieval.anchor",
+      async retrieve({ intent: resolvedIntent }) {
+        observedEntityId = resolvedIntent.anchor?.entityId ?? null;
+        observedLatitude = resolvedIntent.anchor?.latitude ?? null;
+        return { lane: "test", elapsedMs: 1, candidates: [] };
+      },
+    };
+
+    const locationIntelligence: LocationIntelligenceProvider = {
+      providerId: "test.intelligence.empty",
+      async getLocation() { return null; },
+      async getLocations() { return []; },
+    };
+
+    const orchestrator = createSearchV3Orchestrator({
+      intent,
+      entityResolution,
+      retrieval: [retrieval],
+      locationIntelligence,
+    });
+
+    const result = await orchestrator.execute({
+      requestId: "req-anchor",
+      query: "dinner near MSG",
+    });
+
+    expect(observedEntityId).toBe("msg-entity");
+    expect(observedLatitude).toBe(40.7505045);
+    expect(result.intent.anchor?.entityType).toBe("arena");
+    expect(result.intent.metadata.entityResolution).toMatchObject({
+      status: "resolved",
+      canonicalName: "Madison Square Garden",
+    });
+    expect(result.trace.some((event) =>
+      event.stage === "entity_resolution" && event.status === "completed"
+    )).toBe(true);
   });
 
   it("rejects an orchestration shell with no retrieval providers", () => {
