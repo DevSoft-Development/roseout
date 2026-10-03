@@ -54,3 +54,19 @@ export {
   reciprocalRankFusion,
   type ReciprocalRankFusionOptions,
 } from "./fusion/reciprocalRankFusionProvider";
+
+export {
+  HuggingFaceQueryEmbeddingProvider,
+} from "./semantic/huggingFaceQueryEmbeddingProvider";
+
+export {
+  SupabaseSemanticRetrievalProvider,
+  buildSemanticQueryText,
+  type SemanticRetrievalOptions,
+  type SemanticRpcClient,
+} from "./semantic/supabaseSemanticRetrievalProvider";
+
+export {
+  SupabaseMenuSemanticRetrievalProvider,
+  type MenuSemanticRetrievalOptions,
+} from "./semantic/supabaseMenuSemanticRetrievalProvider";
