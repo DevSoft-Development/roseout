@@ -270,32 +270,56 @@ async function migrateMenuSourceText(eligibleLocationIds: Set<string>) {
     "id,location_id,item_name,normalized_item_name,source",
   );
 
-  const rows = legacyRows.flatMap((row) => {
-    if (!eligibleLocationIds.has(row.location_id)) return [];
+  const deduped = new Map<string, Record<string, unknown>>();
+
+  for (const row of legacyRows) {
+    if (!eligibleLocationIds.has(row.location_id)) continue;
+
     const itemName = String(row.item_name ?? "").trim();
-    if (!itemName) return [];
+    if (!itemName) continue;
+
     const normalized =
       normalizeText(row.normalized_item_name) || normalizeText(itemName);
-    if (!normalized) return [];
+    if (!normalized) continue;
 
-    return [
-      {
-        location_id: row.location_id,
-        item_name: itemName,
-        normalized_item_name: normalized,
-        source: String(row.source || "legacy_menu_text"),
-        source_record_id: row.id,
-        source_metadata: {
-          migratedFrom: "location_menu_item_embeddings_hf",
-          vectorReuse: false,
-          providerNeutralSource: true,
-        },
-        content_hash: hashText(itemName),
-        status: "active",
-        updated_at: new Date().toISOString(),
+    const source = String(row.source || "legacy_menu_text");
+    const key = [row.location_id, normalized, source].join("::");
+    const existing = deduped.get(key);
+
+    const candidate = {
+      location_id: row.location_id,
+      item_name: itemName,
+      normalized_item_name: normalized,
+      source,
+      source_record_id: row.id,
+      source_metadata: {
+        migratedFrom: "location_menu_item_embeddings_hf",
+        vectorReuse: false,
+        providerNeutralSource: true,
       },
-    ];
-  });
+      content_hash: hashText(itemName),
+      status: "active",
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!existing) {
+      deduped.set(key, candidate);
+      continue;
+    }
+
+    const existingName = String(existing.item_name ?? "");
+    if (
+      itemName.length > existingName.length ||
+      (
+        itemName.length === existingName.length &&
+        String(row.id).localeCompare(String(existing.source_record_id ?? "")) < 0
+      )
+    ) {
+      deduped.set(key, candidate);
+    }
+  }
+
+  const rows = [...deduped.values()];
 
   await upsertInChunks(
     "location_menu_items",
