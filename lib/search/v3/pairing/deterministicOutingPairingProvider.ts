@@ -5,6 +5,10 @@ import type {
   SearchOuting,
   SearchOutingSequence,
   SearchPairingProvider,
+  SearchRouteConfidence,
+  SearchRouteMatrixEntry,
+  SearchRoutePoint,
+  SearchRoutingProvider,
   SearchV3Request,
   TravelMode,
 } from "@/lib/search-framework";
@@ -27,6 +31,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
 
   constructor(
     private readonly options: DeterministicOutingPairingOptions = {},
+    private readonly routingProvider: SearchRoutingProvider | null = null,
   ) {}
 
   async pair(args: {
@@ -50,7 +55,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
     );
     const maxCandidatesPerRole = Math.max(
       5,
-      Math.min(100, Math.floor(this.options.maxCandidatesPerRole ?? 30)),
+      Math.min(100, Math.floor(this.options.maxCandidatesPerRole ?? 10)),
     );
 
     const travelMode = effectiveTravelMode(args.intent);
@@ -83,16 +88,81 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
       }
     }
 
+    const routeLookup = new Map<string, SearchRouteMatrixEntry>();
+    let routingState: "not_requested" | "completed" | "failed" = "not_requested";
+
+    if (
+      travelMode === "walking" &&
+      this.routingProvider &&
+      rawPairs.some(({ restaurant, activity }) => restaurant.locationId !== activity.locationId)
+    ) {
+      const origins = uniqueRoutePoints(restaurants);
+      const destinations = uniqueRoutePoints(activities);
+
+      if (origins.length > 0 && destinations.length > 0) {
+        try {
+          const matrix = await this.routingProvider.routeMatrix({
+            mode: "walking",
+            origins,
+            destinations,
+          });
+          for (const entry of matrix.entries) {
+            routeLookup.set(routeKey(entry.originId, entry.destinationId), entry);
+          }
+          routingState = "completed";
+        } catch {
+          routingState = "failed";
+        }
+      }
+    }
+
     return rawPairs
       .flatMap(({ restaurant, activity }): SearchOuting[] => {
-        const distanceMiles = pairDistanceMiles(restaurant, activity);
-        const travelMinutes = distanceMiles == null
+        const sameVenue = restaurant.locationId === activity.locationId;
+        const straightLineMiles = pairDistanceMiles(restaurant, activity);
+        const routeEntry = routeLookup.get(
+          routeKey(restaurant.locationId, activity.locationId),
+        );
+
+        let routeSource = sameVenue ? "same_venue" : "haversine_estimate";
+        let routeConfidence: SearchRouteConfidence = sameVenue ? "verified" : "estimated";
+        let routeDistanceMiles: number | null = null;
+        let distanceMiles = straightLineMiles;
+        let travelMinutes = distanceMiles == null
           ? null
           : estimateTravelMinutes(distanceMiles, travelMode);
 
-        const withinTravelLimit = travelLimit == null || distanceMiles == null
-          ? null
-          : distanceMiles <= travelLimit.maxDistanceMiles + 1e-9;
+        if (sameVenue) {
+          distanceMiles = 0;
+          routeDistanceMiles = 0;
+          travelMinutes = 0;
+        } else if (travelMode === "walking" && routingState === "completed") {
+          if (
+            !routeEntry ||
+            routeEntry.confidence !== "verified" ||
+            routeEntry.distanceMiles == null ||
+            routeEntry.durationMinutes == null
+          ) {
+            return [];
+          }
+
+          routeSource = routeEntry.source;
+          routeConfidence = routeEntry.confidence;
+          routeDistanceMiles = routeEntry.distanceMiles;
+          distanceMiles = routeEntry.distanceMiles;
+          travelMinutes = routeEntry.durationMinutes;
+        } else if (travelMode === "walking" && routingState === "failed") {
+          routeSource = "haversine_fallback";
+          routeConfidence = "estimated";
+        }
+
+        const withinTravelLimit = isWithinTravelLimit({
+          distanceMiles,
+          travelMinutes,
+          travelMode,
+          routeConfidence,
+          travelLimit,
+        });
 
         if (withinTravelLimit === false) return [];
 
@@ -104,7 +174,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
             candidateQualityScore(restaurant) +
             candidateQualityScore(activity)
           ) / 2,
-          diversity: restaurant.locationId === activity.locationId ? 0.5 : 1,
+          diversity: sameVenue ? 0.5 : 1,
         };
 
         const score =
@@ -132,12 +202,20 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
             travelMinutes,
             travelMode,
             intent: args.intent,
+            routeSource,
+            routeConfidence,
           }),
           metadata: {
             pairingProvider: this.providerId,
             scoreComponents: components,
             scoreWeights: weights,
             withinTravelLimit,
+            routeSource,
+            routeConfidence,
+            straightLineMiles,
+            routeDistanceMiles,
+            routingProvider: this.routingProvider?.providerId ?? null,
+            routingState,
             maxDistanceMiles: travelLimit?.maxDistanceMiles ?? null,
             maxTravelMinutes: travelLimit?.maxTravelMinutes ?? null,
           },
@@ -145,6 +223,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
       })
       .sort((a, b) =>
         b.score - a.score ||
+        nullableAscending(a.travelMinutes, b.travelMinutes) ||
         nullableAscending(a.distanceMiles, b.distanceMiles) ||
         a.restaurant.locationId.localeCompare(b.restaurant.locationId) ||
         a.activity.locationId.localeCompare(b.activity.locationId)
@@ -159,6 +238,26 @@ export function requiresOutingPair(intent: SearchIntentGraph): boolean {
     intent.domains.includes("activity") ||
     intent.domains.includes("nightlife");
   return hasRestaurant && hasActivity;
+}
+
+function uniqueRoutePoints(
+  candidates: readonly SearchCandidate[],
+): SearchRoutePoint[] {
+  const points = new Map<string, SearchRoutePoint>();
+  for (const candidate of candidates) {
+    const point = candidate.intelligence.geo.point;
+    if (!point || points.has(candidate.locationId)) continue;
+    points.set(candidate.locationId, {
+      id: candidate.locationId,
+      latitude: point.latitude,
+      longitude: point.longitude,
+    });
+  }
+  return [...points.values()];
+}
+
+function routeKey(originId: string, destinationId: string): string {
+  return `${originId}::${destinationId}`;
 }
 
 export function pairDistanceMiles(
@@ -229,6 +328,39 @@ function resolveTravelLimit(
     maxDistanceMiles: configuredLimit,
     maxTravelMinutes: null,
   };
+}
+
+function isWithinTravelLimit(args: {
+  distanceMiles: number | null;
+  travelMinutes: number | null;
+  travelMode: TravelMode;
+  routeConfidence: SearchRouteConfidence;
+  travelLimit: { maxDistanceMiles: number; maxTravelMinutes: number | null } | null;
+}): boolean | null {
+  if (!args.travelLimit) return true;
+
+  if (
+    args.travelMode === "walking" &&
+    args.routeConfidence === "verified" &&
+    args.travelLimit.maxTravelMinutes != null
+  ) {
+    return args.travelMinutes != null
+      ? args.travelMinutes <= args.travelLimit.maxTravelMinutes + 1e-9
+      : false;
+  }
+
+  if (args.distanceMiles == null) return null;
+  if (args.distanceMiles > args.travelLimit.maxDistanceMiles + 1e-9) return false;
+
+  if (
+    args.travelLimit.maxTravelMinutes != null &&
+    args.travelMinutes != null &&
+    args.travelMinutes > args.travelLimit.maxTravelMinutes + 1e-9
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function supportsRole(candidate: SearchCandidate, role: PairRole): boolean {
@@ -458,14 +590,19 @@ function buildReasons(args: {
   travelMinutes: number | null;
   travelMode: TravelMode;
   intent: SearchIntentGraph;
+  routeSource: string;
+  routeConfidence: SearchRouteConfidence;
 }): string[] {
   const reasons = ["Restaurant and activity both satisfy the requested outing domains."];
 
   if (args.distanceMiles != null) {
+    const routeLabel = args.routeConfidence === "verified"
+      ? `Verified ${args.routeSource} route`
+      : "Estimated route";
     reasons.push(
-      `${args.distanceMiles.toFixed(1)} miles apart` +
+      `${routeLabel}: ${args.distanceMiles.toFixed(1)} miles` +
       (args.travelMinutes != null
-        ? ` (~${args.travelMinutes} min ${args.travelMode}).`
+        ? ` (~${Math.round(args.travelMinutes)} min ${args.travelMode}).`
         : "."),
     );
   }
