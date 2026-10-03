@@ -18,7 +18,17 @@ const DOCUMENT_VERSION = "location-intelligence-document:v1";
 const VECTOR_DIMENSIONS = 1536;
 const PAGE_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_PAGE_SIZE || 500), 100, 1000);
 const BATCH_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 64), 1, 64);
-const MAX_RETRIES = clamp(Number(process.env.SEARCH_EMBEDDING_MAX_RETRIES || 4), 1, 8);
+const RESUME_TAIL_BATCH_SIZE = clamp(
+  Number(process.env.SEARCH_EMBEDDING_RESUME_TAIL_BATCH_SIZE || 8),
+  1,
+  64,
+);
+const RESUME_TAIL_THRESHOLD = clamp(
+  Number(process.env.SEARCH_EMBEDDING_RESUME_TAIL_THRESHOLD || 128),
+  1,
+  1000,
+);
+const MAX_RETRIES = clamp(Number(process.env.SEARCH_EMBEDDING_MAX_RETRIES || 6), 1, 8);
 const MIN_REQUEST_INTERVAL_MS = clamp(
   Number(process.env.SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS || 65_000),
   0,
@@ -353,6 +363,8 @@ async function main() {
       embeddingVersion: EMBEDDING_VERSION,
       documentVersion: DOCUMENT_VERSION,
       batchSize: BATCH_SIZE,
+      resumeTailBatchSize: RESUME_TAIL_BATCH_SIZE,
+      resumeTailThreshold: RESUME_TAIL_THRESHOLD,
       minRequestIntervalMs: MIN_REQUEST_INTERVAL_MS,
     }),
   );
@@ -392,9 +404,19 @@ async function main() {
 
   let embedded = 0;
   let failed = 0;
+  const effectiveBatchSize =
+    pending.length > 0 && pending.length <= RESUME_TAIL_THRESHOLD
+      ? Math.min(BATCH_SIZE, RESUME_TAIL_BATCH_SIZE)
+      : BATCH_SIZE;
 
-  for (let index = 0; index < pending.length; index += BATCH_SIZE) {
-    const batch = pending.slice(index, index + BATCH_SIZE);
+  if (effectiveBatchSize !== BATCH_SIZE) {
+    console.log(
+      `location-intelligence resume tail detected: ${pending.length} rows; using batch size ${effectiveBatchSize}.`,
+    );
+  }
+
+  for (let index = 0; index < pending.length; index += effectiveBatchSize) {
+    const batch = pending.slice(index, index + effectiveBatchSize);
 
     try {
       const vectors = await fetchAzureEmbeddings(
@@ -427,7 +449,7 @@ async function main() {
     }
 
     console.log(
-      `location-intelligence progress ${Math.min(index + BATCH_SIZE, pending.length)}/${pending.length}`,
+      `location-intelligence progress ${Math.min(index + effectiveBatchSize, pending.length)}/${pending.length}`,
     );
   }
 
