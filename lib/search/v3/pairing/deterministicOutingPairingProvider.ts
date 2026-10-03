@@ -17,6 +17,7 @@ export interface DeterministicOutingPairingOptions {
   diversityWeight?: number;
   maxDistanceMiles?: number;
   maxPairs?: number;
+  maxCandidatesPerRole?: number;
 }
 
 type PairRole = "restaurant" | "activity";
@@ -47,21 +48,25 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
       1,
       Math.min(100, Math.floor(this.options.maxPairs ?? args.request.limit ?? 20)),
     );
+    const maxCandidatesPerRole = Math.max(
+      5,
+      Math.min(100, Math.floor(this.options.maxCandidatesPerRole ?? 30)),
+    );
 
     const travelMode = effectiveTravelMode(args.intent);
     const travelLimit = resolveTravelLimit(args.intent, this.options.maxDistanceMiles);
 
-    const restaurants = args.candidates.filter((candidate) =>
-      supportsRole(candidate, "restaurant")
-    );
-    const activities = args.candidates.filter((candidate) =>
-      supportsRole(candidate, "activity")
-    );
+    const restaurants = args.candidates
+      .filter((candidate) => supportsRole(candidate, "restaurant"))
+      .slice(0, maxCandidatesPerRole);
+    const activities = args.candidates
+      .filter((candidate) => supportsRole(candidate, "activity"))
+      .slice(0, maxCandidatesPerRole);
 
     const rawPairs: Array<{ restaurant: SearchCandidate; activity: SearchCandidate }> = [];
 
     if (args.intent.sequencing === "same_venue") {
-      for (const candidate of args.candidates) {
+      for (const candidate of args.candidates.slice(0, maxCandidatesPerRole * 2)) {
         if (
           supportsRole(candidate, "restaurant") &&
           supportsRole(candidate, "activity")
