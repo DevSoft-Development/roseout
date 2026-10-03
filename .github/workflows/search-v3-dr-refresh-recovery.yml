@@ -1,0 +1,114 @@
+name: Search V3 DR subscription refresh recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20261003090028_search_v3_azure_food_menu_embeddings.sql'
+      - '.github/workflows/search-v3-dr-refresh-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: search-v3-dr-subscription-refresh-production
+  cancel-in-progress: false
+
+env:
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+
+jobs:
+  refresh:
+    name: Refresh Oregon subscription for Search V3 tables
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 15
+    steps:
+      - name: Require Oregon database connection
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || {
+            echo "::error::Missing SUPABASE_DB_URL for Oregon DR recovery."
+            exit 1
+          }
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+
+      - name: Refresh subscription outside a transaction
+        run: |
+          set -euo pipefail
+
+          subscribed="$(psql "$SUPABASE_DB_URL" -X -q -A -t -v ON_ERROR_STOP=1 -c "
+            select count(*)
+            from pg_subscription_rel sr
+            join pg_subscription s on s.oid=sr.srsubid
+            join pg_class c on c.oid=sr.srrelid
+            where s.subname='$EXPECTED_SUBSCRIPTION'
+              and c.relname in (
+                'location_menu_items',
+                'location_food_embeddings',
+                'location_menu_item_embeddings'
+              );
+          " | tr -d '[:space:]')"
+
+          if [ "$subscribed" != "3" ]; then
+            psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1 -c               "alter subscription $EXPECTED_SUBSCRIPTION refresh publication with (copy_data = true);"
+          else
+            echo "All three Search V3 tables are already attached to the Oregon subscription."
+          fi
+
+      - name: Wait for every subscribed relation to become ready
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            read -r subscribed pending connected <<<"$(psql "$SUPABASE_DB_URL" -X -q -A -t -F ' ' -v ON_ERROR_STOP=1 -c "
+              select
+                (
+                  select count(*)
+                  from pg_subscription_rel sr
+                  join pg_subscription s on s.oid=sr.srsubid
+                  join pg_class c on c.oid=sr.srrelid
+                  where s.subname='$EXPECTED_SUBSCRIPTION'
+                    and c.relname in (
+                      'location_menu_items',
+                      'location_food_embeddings',
+                      'location_menu_item_embeddings'
+                    )
+                ),
+                (
+                  select count(*)
+                  from pg_subscription_rel sr
+                  join pg_subscription s on s.oid=sr.srsubid
+                  where s.subname='$EXPECTED_SUBSCRIPTION'
+                    and sr.srsubstate <> 'r'
+                ),
+                (
+                  select count(*)
+                  from pg_subscription s
+                  join pg_stat_subscription st on st.subid=s.oid
+                  where s.subname='$EXPECTED_SUBSCRIPTION'
+                    and st.pid is not null
+                );
+            ")"
+
+            if [ "$subscribed" = "3" ] && [ "$pending" = "0" ] && [ "$connected" = "1" ]; then
+              {
+                echo "### Search V3 DR subscription recovery"
+                echo ""
+                echo "- Search V3 replicated tables attached: 3/3"
+                echo "- Pending Oregon relations: 0"
+                echo "- Connected Oregon workers: 1"
+                echo "- Subscription refresh: ready"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "::error::Oregon subscription did not become ready after refresh."
+          exit 1
