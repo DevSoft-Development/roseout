@@ -99,3 +99,11 @@ export {
   DeterministicDecisionRankingProvider,
   type DeterministicDecisionRankingOptions,
 } from "./ranking/deterministicDecisionRankingProvider";
+
+export {
+  DeterministicOutingPairingProvider,
+  estimateTravelMinutes,
+  pairDistanceMiles,
+  requiresOutingPair,
+  type DeterministicOutingPairingOptions,
+} from "./pairing/deterministicOutingPairingProvider";
