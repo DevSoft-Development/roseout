@@ -3,6 +3,7 @@ import {
   createEmptyLocationIntelligenceProfile,
   type SearchCandidate,
   type SearchIntentGraph,
+  type SearchRankingProvider,
 } from "@/lib/search-framework";
 import {
   DeterministicDecisionRankingProvider,
@@ -180,9 +181,9 @@ describe("Search V3 deterministic decision ranking", () => {
   });
 
   it("keeps ranking provider replaceable in the production composition", () => {
-    const customRanking = {
+    const customRanking: SearchRankingProvider = {
       providerId: "experiment.ranker.v1",
-      async rank({ candidates }: { candidates: readonly SearchCandidate[] }) {
+      async rank({ candidates }) {
         return candidates;
       },
     };
