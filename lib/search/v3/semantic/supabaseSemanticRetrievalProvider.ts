@@ -40,9 +40,9 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
     intent: SearchIntentGraph;
   }): Promise<RetrievalLaneResult> {
     const startedAt = Date.now();
-    const expectedDomain = semanticDomain(args.intent);
+    const expectedDomains = semanticDomains(args.intent);
 
-    if (!expectedDomain) {
+    if (expectedDomains.length === 0) {
       return {
         lane: "semantic_dense",
         candidates: [],
@@ -69,57 +69,81 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
     const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
     const minSimilarity = this.options.minSimilarity ?? 0.55;
 
-    const { data, error } = await this.client.rpc(
-      "match_location_search_embeddings",
-      {
-        p_query_embedding: [...embedding.vector],
-        p_expected_domain: expectedDomain,
-        p_market_key: marketKey(args.intent),
-        p_match_count: limit,
-        p_min_similarity: minSimilarity,
-        p_embedding_version: embeddingVersion,
-      },
+    const results = await Promise.all(
+      expectedDomains.map(async (expectedDomain) => {
+        const { data, error } = await this.client.rpc(
+          "match_location_search_embeddings",
+          {
+            p_query_embedding: [...embedding.vector],
+            p_expected_domain: expectedDomain,
+            p_market_key: marketKey(args.intent),
+            p_match_count: limit,
+            p_min_similarity: minSimilarity,
+            p_embedding_version: embeddingVersion,
+          },
+        );
+
+        if (error) throw new Error(error.message);
+        return {
+          domain: expectedDomain,
+          rows: Array.isArray(data) ? data as SearchMatchRow[] : [],
+        };
+      }),
     );
 
-    if (error) throw new Error(error.message);
+    const byLocation = new Map<string, {
+      score: number;
+      domains: Set<string>;
+    }>();
 
-    const rows = Array.isArray(data) ? data as SearchMatchRow[] : [];
-    const ranked = rows
-      .map((row) => ({
-        row,
-        score: nullableNumber(row.similarity),
-      }))
-      .filter((entry): entry is { row: SearchMatchRow; score: number } =>
-        entry.score != null && entry.score >= minSimilarity
-      )
+    for (const result of results) {
+      for (const row of result.rows) {
+        const score = nullableNumber(row.similarity);
+        if (score == null || score < minSimilarity) continue;
+
+        const current = byLocation.get(row.location_id) ?? {
+          score,
+          domains: new Set<string>(),
+        };
+        current.score = Math.max(current.score, score);
+        current.domains.add(result.domain);
+        byLocation.set(row.location_id, current);
+      }
+    }
+
+    const ranked = [...byLocation.entries()]
       .sort((a, b) =>
-        b.score - a.score ||
-        a.row.location_id.localeCompare(b.row.location_id)
+        b[1].score - a[1].score ||
+        a[0].localeCompare(b[0])
       )
       .slice(0, limit);
 
-    const candidates: RetrievalCandidate[] = ranked.map((entry, index) => ({
-      locationId: entry.row.location_id,
-      lane: "semantic_dense",
-      rank: index + 1,
-      score: entry.score,
-      evidence: [
-        `similarity:${entry.score.toFixed(4)}`,
-        `model:${embedding.model}`,
-        `version:${embeddingVersion}`,
-      ],
-      metadata: {
-        semanticModel: embedding.model,
-        semanticVersion: embeddingVersion,
-        provider: "azure",
-      },
-    }));
+    const candidates: RetrievalCandidate[] = ranked.map(
+      ([locationId, value], index) => ({
+        locationId,
+        lane: "semantic_dense",
+        rank: index + 1,
+        score: value.score,
+        evidence: [
+          `similarity:${value.score.toFixed(4)}`,
+          `model:${embedding.model}`,
+          `version:${embeddingVersion}`,
+          ...[...value.domains].sort().map((domain) => `domain:${domain}`),
+        ],
+        metadata: {
+          semanticModel: embedding.model,
+          semanticVersion: embeddingVersion,
+          provider: "azure",
+          semanticDomains: [...value.domains].sort(),
+        },
+      }),
+    );
 
     return {
       lane: "semantic_dense",
       candidates,
       elapsedMs: Date.now() - startedAt,
-      truncated: rows.length >= limit,
+      truncated: results.some((result) => result.rows.length >= limit),
     };
   }
 }
@@ -139,14 +163,15 @@ export function buildSemanticQueryText(intent: SearchIntentGraph): string {
   return [...new Set(lines.filter(Boolean))].join("\n");
 }
 
-function semanticDomain(
+export function semanticDomains(
   intent: SearchIntentGraph,
-): "restaurant" | "activity" | null {
-  if (intent.primaryDomain === "restaurant") return "restaurant";
-  if (intent.primaryDomain === "activity" || intent.primaryDomain === "nightlife") {
-    return "activity";
+): Array<"restaurant" | "activity"> {
+  const domains: Array<"restaurant" | "activity"> = [];
+  if (intent.domains.includes("restaurant")) domains.push("restaurant");
+  if (intent.domains.includes("activity") || intent.domains.includes("nightlife")) {
+    domains.push("activity");
   }
-  return null;
+  return [...new Set(domains)];
 }
 
 function marketKey(intent: SearchIntentGraph): string | null {

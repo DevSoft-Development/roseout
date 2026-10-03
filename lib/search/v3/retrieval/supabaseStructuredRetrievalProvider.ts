@@ -72,17 +72,19 @@ export class SupabaseStructuredRetrievalProvider implements SearchRetrievalProvi
       query = query.ilike(resolvedGeo.key, resolvedGeo.value);
     }
 
-    const cuisine = constraintValue(args.intent, "cuisine");
-    const food = constraintValue(args.intent, "food");
-    const meal = constraintValue(args.intent, "meal_period");
-    const feature = constraintValue(args.intent, "feature");
-    const activity = constraintValue(args.intent, "activity_type");
+    if (shouldApplyDomainFacetSqlFilters(args.intent)) {
+      const cuisine = constraintValue(args.intent, "cuisine");
+      const food = constraintValue(args.intent, "food");
+      const meal = constraintValue(args.intent, "meal_period");
+      const feature = constraintValue(args.intent, "feature");
+      const activity = constraintValue(args.intent, "activity_type");
 
-    if (cuisine) query = query.overlaps("cuisines", [cuisine]);
-    if (food) query = query.overlaps("foods", [food]);
-    if (meal) query = query.overlaps("meal_periods", [meal]);
-    if (feature) query = query.overlaps("features", [feature]);
-    if (activity) query = query.overlaps("activity_categories", [activity]);
+      if (cuisine) query = query.overlaps("cuisines", [cuisine]);
+      if (food) query = query.overlaps("foods", [food]);
+      if (meal) query = query.overlaps("meal_periods", [meal]);
+      if (feature) query = query.overlaps("features", [feature]);
+      if (activity) query = query.overlaps("activity_categories", [activity]);
+    }
 
     if (
       args.intent.anchor?.latitude != null &&
@@ -147,10 +149,11 @@ function structuredScore(row: ProfileRow, intent: SearchIntentGraph): number {
     }
   }
 
-  if (intent.primaryDomain && (
-    row.primary_domain === intent.primaryDomain ||
-    (row.supported_domains ?? []).includes(intent.primaryDomain)
-  )) {
+  const supported = new Set(
+    [row.primary_domain, ...(row.supported_domains ?? [])]
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (intent.domains.some((domain) => supported.has(domain))) {
     score += 2;
   }
 
@@ -230,4 +233,11 @@ function anchorRadiusMiles(intent: SearchIntentGraph): number {
     return Math.max(1, Math.min(15, intent.maxTravelMinutes / 4));
   }
   return intent.travelMode === "walking" ? 1.5 : 3;
+}
+
+
+export function shouldApplyDomainFacetSqlFilters(
+  intent: SearchIntentGraph,
+): boolean {
+  return intent.domains.length <= 1;
 }
