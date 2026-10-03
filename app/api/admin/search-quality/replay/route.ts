@@ -196,30 +196,41 @@ export async function POST(request: Request) {
   for (const testCase of cases) {
     try {
       const requestId = `${run.id}:${testCase.id}`;
-      const [legacy, canonical, strictCanonical] = await Promise.all([
-        searchV2({ query: testCase.query, requestId: `${requestId}:legacy`, supabase: supabaseAdmin, rolloutOverride: { mode: "off", canaryPercent: 0 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
-        searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
+      const v3StartedAt = Date.now();
+      const [v2Results, v3Settled] = await Promise.all([
+        Promise.all([
+          searchV2({ query: testCase.query, requestId: `${requestId}:legacy`, supabase: supabaseAdmin, rolloutOverride: { mode: "off", canaryPercent: 0 } }),
+          searchV2({ query: testCase.query, requestId: `${requestId}:profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100 } }),
+          searchV2({ query: testCase.query, requestId: `${requestId}:strict-profile`, supabase: supabaseAdmin, rolloutOverride: { mode: "primary", canaryPercent: 100, strictNoFallback: true } }),
+        ]),
+        v3.orchestrator.execute({
+          requestId: `${requestId}:v3`,
+          query: testCase.query,
+          limit: 20,
+        }).then((execution) => ({
+          status: "fulfilled" as const,
+          execution,
+          latencyMs: Date.now() - v3StartedAt,
+        })).catch((error) => ({
+          status: "rejected" as const,
+          error: error instanceof Error ? error.message : String(error),
+          latencyMs: Date.now() - v3StartedAt,
+        })),
       ]);
+      const [legacy, canonical, strictCanonical] = v2Results;
       const base = evaluateReplayCase(testCase, legacy, canonical, strictCanonical);
       let v3Result: ReturnType<typeof snapshotV3Execution> | null = null;
       let v3Comparison: ReturnType<typeof evaluateV3Execution> | null = null;
       let v3Error: string | null = null;
-      const v3StartedAt = Date.now();
 
-      try {
-        const execution = await v3.orchestrator.execute({
-          requestId: `${requestId}:v3`,
-          query: testCase.query,
-          limit: 20,
-        });
-        v3Comparison = evaluateV3Execution(testCase, execution, {
+      if (v3Settled.status === "fulfilled") {
+        v3Comparison = evaluateV3Execution(testCase, v3Settled.execution, {
           legacyCount: base.legacyCount,
-          latencyMs: Date.now() - v3StartedAt,
+          latencyMs: v3Settled.latencyMs,
         });
-        v3Result = snapshotV3Execution(execution);
-      } catch (error) {
-        v3Error = error instanceof Error ? error.message : String(error);
+        v3Result = snapshotV3Execution(v3Settled.execution);
+      } else {
+        v3Error = v3Settled.error;
       }
 
       const comparison = {
