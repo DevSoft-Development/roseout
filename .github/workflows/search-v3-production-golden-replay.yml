@@ -9,6 +9,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
+# Manual production replay trigger: keep this workflow dispatchable and push-triggered.
 permissions:
   contents: read
   id-token: write
