@@ -10,3 +10,14 @@ export {
   toLocationIntelligenceProfile,
   type LocationSearchProfileLoader,
 } from "./theouthaven-adapters/locationIntelligenceAdapter";
+
+export {
+  SupabaseKnowledgeGraphProvider,
+  normalizeAlias,
+  type KnowledgeGraphSupabaseClient,
+} from "./theouthaven-adapters/supabaseKnowledgeGraphProvider";
+
+export {
+  upsertLocationIntelligenceIntoKnowledgeGraph,
+  type KnowledgeGraphMutationClient,
+} from "./theouthaven-adapters/knowledgeGraphIngestion";
