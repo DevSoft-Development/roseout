@@ -152,4 +152,111 @@ describe("Search V3 Phase 5 intent and eligibility", () => {
       event.stage === "hard_eligibility" && event.status === "completed"
     )).toBe(true);
   });
+
+  it("retries transient eligibility fetch failures", async () => {
+    let attempts = 0;
+
+    const retrieval: SearchRetrievalProvider = {
+      providerId: "test.retrieval",
+      async retrieve() {
+        return {
+          lane: "structured",
+          elapsedMs: 1,
+          candidates: [{ locationId: "keep", lane: "structured", rank: 1 }],
+        };
+      },
+    };
+
+    const eligibility: SearchEligibilityProvider = {
+      providerId: "test.eligibility",
+      async filter() {
+        attempts += 1;
+        if (attempts === 1) throw new TypeError("fetch failed");
+        return { eligibleLocationIds: ["keep"], rejected: [] };
+      },
+    };
+
+    const locationIntelligence: LocationIntelligenceProvider = {
+      providerId: "test.location-intelligence",
+      async getLocation(locationId) {
+        return createEmptyLocationIntelligenceProfile({
+          locationId,
+          name: locationId,
+          primaryDomain: "restaurant",
+        });
+      },
+      async getLocations(locationIds) {
+        return locationIds.map((locationId) =>
+          createEmptyLocationIntelligenceProfile({
+            locationId,
+            name: locationId,
+            primaryDomain: "restaurant",
+          }),
+        );
+      },
+    };
+
+    const orchestrator = createSearchV3Orchestrator({
+      intent: intentProvider,
+      retrieval: [retrieval],
+      eligibility,
+      locationIntelligence,
+    });
+
+    const result = await orchestrator.execute({
+      requestId: "phase5-transient-retry",
+      query: "dinner",
+    });
+
+    expect(attempts).toBe(2);
+    expect(result.candidates.map((candidate) => candidate.locationId)).toEqual(["keep"]);
+  });
+
+  it("does not retry permanent eligibility errors", async () => {
+    let attempts = 0;
+
+    const retrieval: SearchRetrievalProvider = {
+      providerId: "test.retrieval",
+      async retrieve() {
+        return {
+          lane: "structured",
+          elapsedMs: 1,
+          candidates: [{ locationId: "keep", lane: "structured", rank: 1 }],
+        };
+      },
+    };
+
+    const eligibility: SearchEligibilityProvider = {
+      providerId: "test.eligibility",
+      async filter() {
+        attempts += 1;
+        throw new Error("permanent eligibility failure");
+      },
+    };
+
+    const locationIntelligence: LocationIntelligenceProvider = {
+      providerId: "test.location-intelligence",
+      async getLocation() {
+        return null;
+      },
+      async getLocations() {
+        return [];
+      },
+    };
+
+    const orchestrator = createSearchV3Orchestrator({
+      intent: intentProvider,
+      retrieval: [retrieval],
+      eligibility,
+      locationIntelligence,
+    });
+
+    await expect(orchestrator.execute({
+      requestId: "phase5-permanent-error",
+      query: "dinner",
+    })).rejects.toThrow("permanent eligibility failure");
+
+    expect(attempts).toBe(1);
+  });
+
 });
