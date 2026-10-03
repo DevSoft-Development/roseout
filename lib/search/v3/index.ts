@@ -21,3 +21,8 @@ export {
   upsertLocationIntelligenceIntoKnowledgeGraph,
   type KnowledgeGraphMutationClient,
 } from "./theouthaven-adapters/knowledgeGraphIngestion";
+
+export {
+  GraphEntityResolver,
+  type GraphEntityResolverOptions,
+} from "./entity-resolution/graphEntityResolver";
