@@ -54,6 +54,19 @@ describe("Search V3 multi-domain intent handling", () => {
     expect(
       constraintAppliesToSupportedDomains("borough", activity, intent),
     ).toBe(true);
+
+    expect(
+      constraintAppliesToSupportedDomains("feature", restaurant, intent, "rooftop"),
+    ).toBe(false);
+    expect(
+      constraintAppliesToSupportedDomains("feature", activity, intent, "rooftop"),
+    ).toBe(true);
+    expect(
+      constraintAppliesToSupportedDomains("feature", restaurant, intent, "romantic"),
+    ).toBe(true);
+    expect(
+      constraintAppliesToSupportedDomains("feature", activity, intent, "romantic"),
+    ).toBe(false);
   });
 
   it("queries both semantic index domains with one multi-domain intent", () => {
