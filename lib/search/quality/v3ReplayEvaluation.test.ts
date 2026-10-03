@@ -296,6 +296,10 @@ function outing(
         diversity: 0.05,
       },
       withinTravelLimit: true,
+      routeSource: "test",
+      routeConfidence: "verified",
+      straightLineMiles: distanceMiles,
+      routeDistanceMiles: distanceMiles,
     },
   };
 }
@@ -320,8 +324,11 @@ function comparison(passed: boolean) {
     pairActivityCategoryPass: true,
     pairGeographyPass: true,
     pairDistancePass: true,
+    pairTravelTimePass: true,
+    pairRouteVerifiedPass: true,
     pairSequencingPass: true,
     distanceLeakage: false,
+    travelTimeLeakage: false,
     noResultRegression: false,
     latencyMs: 100,
     candidateDomainCounts: { restaurant: passed ? 1 : 0, activity: 0 },
