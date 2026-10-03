@@ -46,27 +46,31 @@ implements LocationSearchProfileLoader {
   constructor(private readonly client: SupabaseLocationSearchProfileLoaderClient) {}
 
   async getById(locationId: string): Promise<LocationSearchProfile | null> {
-    const { data, error } = await this.client
-      .from("location_search_profiles")
-      .select(PROFILE_COLUMNS)
-      .eq("location_id", locationId)
-      .maybeSingle();
+    return withTransientRetry(async () => {
+      const { data, error } = await this.client
+        .from("location_search_profiles")
+        .select(PROFILE_COLUMNS)
+        .eq("location_id", locationId)
+        .maybeSingle();
 
-    if (error) throw new Error(error.message);
-    return data ? mapProfile(data) : null;
+      if (error) throw new Error(error.message);
+      return data ? mapProfile(data) : null;
+    });
   }
 
   async getByIds(locationIds: readonly string[]): Promise<readonly LocationSearchProfile[]> {
     const ids = [...new Set(locationIds.filter(Boolean))];
     if (ids.length === 0) return [];
 
-    const { data, error } = await this.client
-      .from("location_search_profiles")
-      .select(PROFILE_COLUMNS)
-      .in("location_id", ids);
+    return withTransientRetry(async () => {
+      const { data, error } = await this.client
+        .from("location_search_profiles")
+        .select(PROFILE_COLUMNS)
+        .in("location_id", ids);
 
-    if (error) throw new Error(error.message);
-    return (data ?? []).map(mapProfile);
+      if (error) throw new Error(error.message);
+      return (data ?? []).map(mapProfile);
+    });
   }
 }
 
@@ -111,4 +115,24 @@ function mapProfile(row: any): LocationSearchProfile {
 function nullableNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+
+async function withTransientRetry<T>(work: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientFetchError(error) || attempt === 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  throw lastError;
+}
+
+function isTransientFetchError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|network|socket|timeout|temporar|ECONNRESET|ETIMEDOUT/i.test(message);
 }
