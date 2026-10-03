@@ -27,6 +27,8 @@ export type V3ReplayComparison = {
   pairDistancePass: boolean;
   pairTravelTimePass: boolean;
   pairRouteVerifiedPass: boolean;
+  routeVerificationRequired: boolean;
+  verifiedRouteCoverage: boolean;
   pairSequencingPass: boolean;
   distanceLeakage: boolean;
   travelTimeLeakage: boolean;
@@ -156,15 +158,17 @@ export function evaluateV3Execution(
       expected.maximumTravelMinutes ?? null,
     );
 
-  const pairRouteVerifiedPass =
-    !pairExpected ||
-    !expected.requireVerifiedRoute ||
-    (
-      execution.outings.length > 0 &&
-      execution.outings.every((outing) =>
-        outing.metadata.routeConfidence === "verified"
-      )
+  const routeVerificationRequired =
+    pairExpected && Boolean(expected.requireVerifiedRoute);
+
+  const verifiedRouteCoverage =
+    execution.outings.length > 0 &&
+    execution.outings.every((outing) =>
+      outing.metadata.routeConfidence === "verified"
     );
+
+  const pairRouteVerifiedPass =
+    !routeVerificationRequired || verifiedRouteCoverage;
 
   const pairSequencingPass =
     !pairExpected ||
@@ -244,6 +248,8 @@ export function evaluateV3Execution(
     pairDistancePass,
     pairTravelTimePass,
     pairRouteVerifiedPass,
+    routeVerificationRequired,
+    verifiedRouteCoverage,
     pairSequencingPass,
     distanceLeakage,
     travelTimeLeakage,
@@ -286,6 +292,8 @@ export function buildV3ReplayMetrics(
     row.v3.expectedDomains.includes("activity")
   );
   const pairedDenominator = paired.length || 1;
+  const routeRequired = comparable.filter((row) => row.v3?.routeVerificationRequired);
+  const routeRequiredDenominator = routeRequired.length || 1;
 
   const pct = (count: number, base = denominator) =>
     base > 0 ? (count / base) * 100 : 100;
@@ -331,8 +339,8 @@ export function buildV3ReplayMetrics(
       pairedDenominator,
     ),
     pairRouteVerificationRate: pct(
-      paired.filter((row) => row.v3?.pairRouteVerifiedPass).length,
-      pairedDenominator,
+      routeRequired.filter((row) => row.v3?.verifiedRouteCoverage).length,
+      routeRequiredDenominator,
     ),
     pairSequencingPassRate: pct(
       paired.filter((row) => row.v3?.pairSequencingPass).length,
@@ -394,6 +402,10 @@ export function snapshotV3Execution(execution: SearchV3Execution) {
       scoreComponents: outing.metadata.scoreComponents,
       scoreWeights: outing.metadata.scoreWeights,
       withinTravelLimit: outing.metadata.withinTravelLimit,
+      routeSource: outing.metadata.routeSource,
+      routeConfidence: outing.metadata.routeConfidence,
+      straightLineMiles: outing.metadata.straightLineMiles,
+      routeDistanceMiles: outing.metadata.routeDistanceMiles,
     })),
     trace: execution.trace,
   };
