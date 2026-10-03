@@ -396,22 +396,6 @@ async function main() {
   for (let index = 0; index < pending.length; index += BATCH_SIZE) {
     const batch = pending.slice(index, index + BATCH_SIZE);
 
-    await upsertRows(
-      batch.map((item) => ({
-        location_id: item.locationId,
-        embedding: null,
-        canonical_search_type: item.canonicalType,
-        market_key: item.marketKey,
-        embedding_model: VECTOR_MODEL,
-        embedding_version: EMBEDDING_VERSION,
-        semantic_document_hash: item.hash,
-        semantic_document_version: DOCUMENT_VERSION,
-        status: "pending",
-        calculated_at: null,
-        error_message: null,
-      })),
-    );
-
     try {
       const vectors = await fetchAzureEmbeddings(
         batch.map((item) => item.document),
@@ -436,22 +420,10 @@ async function main() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message.slice(0, 1000) : "unknown_error";
-      await upsertRows(
-        batch.map((item) => ({
-          location_id: item.locationId,
-          embedding: null,
-          canonical_search_type: item.canonicalType,
-          market_key: item.marketKey,
-          embedding_model: VECTOR_MODEL,
-          embedding_version: EMBEDDING_VERSION,
-          semantic_document_hash: item.hash,
-          semantic_document_version: DOCUMENT_VERSION,
-          status: "failed",
-          calculated_at: null,
-          error_message: message,
-        })),
-      );
       failed += batch.length;
+      console.error(
+        `location-intelligence batch failed for ${batch.length} rows: ${message}`,
+      );
     }
 
     console.log(
