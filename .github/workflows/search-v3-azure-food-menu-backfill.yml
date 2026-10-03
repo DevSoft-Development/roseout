@@ -225,7 +225,11 @@ jobs:
 
       - name: Run resumable Azure backfill
         if: steps.gate.outputs.should_run == 'true'
-        run: npx --yes tsx scripts/search-v3/backfill-azure-food-menu-embeddings.ts
+        run: |
+          set -euo pipefail
+          rm -rf .tmp-search-v3-azure-backfill
+          ./node_modules/.bin/tsc             --module commonjs             --target es2022             --moduleResolution node             --esModuleInterop             --skipLibCheck             --outDir .tmp-search-v3-azure-backfill             scripts/search-v3/backfill-azure-food-menu-embeddings.ts
+          node .tmp-search-v3-azure-backfill/scripts/search-v3/backfill-azure-food-menu-embeddings.js
 
       - name: Verify Virginia and Oregon parity
         if: steps.gate.outputs.should_run == 'true'
