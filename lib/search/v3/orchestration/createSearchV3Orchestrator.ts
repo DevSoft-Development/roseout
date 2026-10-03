@@ -459,7 +459,8 @@ async function runStage<T>(args: {
       args.trace,
       args.observability,
     );
-    throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Search V3 stage "${args.stage}" failed: ${message}`);
   }
 }
 
