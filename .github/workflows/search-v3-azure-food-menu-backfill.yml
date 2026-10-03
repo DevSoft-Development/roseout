@@ -259,6 +259,8 @@ jobs:
                 (select count(*) from public.location_menu_items) as menu_items,
                 (select count(*) from public.location_food_embeddings where embedding_version='$EMBEDDING_VERSION' and status='ready') as food_ready,
                 (select count(*) from public.location_menu_item_embeddings where embedding_version='$EMBEDDING_VERSION' and status='ready') as menu_ready,
+                (select count(*) from public.location_food_embeddings where embedding_version='$EMBEDDING_VERSION' and status='pending') as food_pending,
+                (select count(*) from public.location_menu_item_embeddings where embedding_version='$EMBEDDING_VERSION' and status='pending') as menu_pending,
                 (select count(*) from public.location_food_embeddings where embedding_version='$EMBEDDING_VERSION' and status='failed') as food_failed,
                 (select count(*) from public.location_menu_item_embeddings where embedding_version='$EMBEDDING_VERSION' and status='failed') as menu_failed;
             " '{query:$query}' > "$RUNNER_TEMP/query.json"
@@ -269,7 +271,7 @@ jobs:
             query_ref "$EAST_REF" "$RUNNER_TEMP/east.json"
             query_ref "$WEST_REF" "$RUNNER_TEMP/west.json"
             if cmp -s               <(jq -S '.[0]' "$RUNNER_TEMP/east.json")               <(jq -S '.[0]' "$RUNNER_TEMP/west.json"); then
-              jq -e '.[0].food_failed == 0 and .[0].menu_failed == 0' "$RUNNER_TEMP/east.json" >/dev/null
+              jq -e '.[0].food_pending == 0 and .[0].menu_pending == 0 and .[0].food_failed == 0 and .[0].menu_failed == 0' "$RUNNER_TEMP/east.json" >/dev/null
               echo "Virginia/Oregon Azure embedding parity reached."
               break
             fi
