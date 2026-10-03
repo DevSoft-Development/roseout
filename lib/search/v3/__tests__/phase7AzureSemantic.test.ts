@@ -7,6 +7,8 @@ import {
   SupabaseFoodSemanticRetrievalProvider,
   SupabaseMenuSemanticRetrievalProvider,
   SupabaseSemanticRetrievalProvider,
+  CoalescingQueryEmbeddingProvider,
+  createSearchV3SemanticRetrievalBundle,
   buildSemanticQueryText,
   reciprocalRankFusion,
 } from "@/lib/search/v3";
@@ -252,6 +254,110 @@ describe("Search V3 Phase 7 Azure semantic retrieval", () => {
 
     expect(result.candidates).toEqual([]);
     expect(embedded).toBe(false);
+  });
+
+
+
+  it("creates a modular three-lane semantic bundle with one shared embedding request", async () => {
+    let embedCalls = 0;
+    const embeddings: SearchQueryEmbeddingProvider = {
+      providerId: "test.shared-embedding",
+      async embed() {
+        embedCalls += 1;
+        await Promise.resolve();
+        return {
+          vector: [0.1, 0.2, 0.3],
+          model: "text-embedding-3-small",
+          version: "search-embedding:v1",
+        };
+      },
+    };
+
+    const rpcCalls: string[] = [];
+    const client = {
+      async rpc(fn: string) {
+        rpcCalls.push(fn);
+        if (fn === "match_location_menu_items") {
+          return {
+            data: [{
+              location_id: "shared",
+              item_name: "Wings",
+              source: "menu",
+              similarity: 0.9,
+            }],
+            error: null,
+          };
+        }
+        return {
+          data: [{ location_id: "shared", similarity: 0.9 }],
+          error: null,
+        };
+      },
+    };
+
+    const foodIntent: SearchIntentGraph = {
+      ...intent,
+      rawQuery: "wings for dinner in Queens",
+      constraints: [
+        ...intent.constraints,
+        {
+          key: "food",
+          value: "wings",
+          strength: "hard",
+          source: "explicit",
+          confidence: 1,
+        },
+      ],
+    };
+
+    const bundle = createSearchV3SemanticRetrievalBundle(client, { embeddings });
+    const results = await Promise.all(
+      bundle.providers.map((provider) =>
+        provider.retrieve({
+          request: { requestId: "semantic-bundle", query: foodIntent.rawQuery },
+          intent: foodIntent,
+        }),
+      ),
+    );
+
+    expect(bundle.providers).toHaveLength(3);
+    expect(results.map((result) => result.lane)).toEqual([
+      "semantic_dense",
+      "semantic_food",
+      "semantic_menu",
+    ]);
+    expect(embedCalls).toBe(1);
+    expect(rpcCalls.sort()).toEqual([
+      "match_location_food_embeddings",
+      "match_location_menu_items",
+      "match_location_search_embeddings",
+    ]);
+  });
+
+  it("coalesces only identical concurrent query embeddings", async () => {
+    let calls = 0;
+    const provider = new CoalescingQueryEmbeddingProvider({
+      providerId: "test.delegate",
+      async embed(text) {
+        calls += 1;
+        await Promise.resolve();
+        return {
+          vector: [text.length],
+          model: "text-embedding-3-small",
+          version: "search-embedding:v1",
+        };
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      provider.embed("Italian dinner"),
+      provider.embed("Italian dinner"),
+    ]);
+    const third = await provider.embed("Sushi dinner");
+
+    expect(first.vector).toEqual(second.vector);
+    expect(third.vector).not.toEqual(first.vector);
+    expect(calls).toBe(2);
   });
 
   it("fails closed when query and index embedding models differ", async () => {
