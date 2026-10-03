@@ -1,3 +1,4 @@
+export * from "./entityResolution";
 export * from "./evidence";
 export * from "./graph";
 export * from "./locationIntelligence";

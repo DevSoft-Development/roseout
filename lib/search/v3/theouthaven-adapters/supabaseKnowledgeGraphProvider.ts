@@ -45,11 +45,15 @@ export class SupabaseKnowledgeGraphProvider implements KnowledgeGraphProvider {
       .select("entity:knowledge_entities(*)")
       .eq("normalized_alias", normalized)
       .order("confidence", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10);
 
     if (error) throw new Error(error.message);
-    return data?.entity ? mapEntity(data.entity) : null;
+    const entities = (data ?? [])
+      .map((row: any) => row.entity)
+      .filter(Boolean)
+      .map(mapEntity)
+      .sort(compareEntitySpecificity);
+    return entities[0] ?? null;
   }
 
   async getEntity(entityId: string): Promise<KnowledgeEntity | null> {
@@ -133,6 +137,20 @@ export class SupabaseKnowledgeGraphProvider implements KnowledgeGraphProvider {
     return this.findRelated(entityId, "located_in");
   }
 
+  async searchEntities(query: string, limit = 25): Promise<readonly KnowledgeEntity[]> {
+    const token = query.trim().replace(/[%_,]/g, " ");
+    if (!token) return [];
+
+    const { data, error } = await this.client
+      .from("knowledge_entities")
+      .select("*")
+      .ilike("canonical_name", `%${token}%`)
+      .limit(Math.max(1, Math.min(limit, 100)));
+
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(mapEntity);
+  }
+
   async getEntityContext(entityId: string): Promise<KnowledgeEntityContext | null> {
     const entity = await this.getEntity(entityId);
     if (!entity) return null;
@@ -195,4 +213,37 @@ function mapEdge(row: any): KnowledgeEdge {
     validFrom: row.valid_from ?? null,
     validTo: row.valid_to ?? null,
   };
+}
+
+
+const ENTITY_TYPE_PRIORITY: Readonly<Record<string, number>> = {
+  location: 100,
+  arena: 95,
+  stadium: 95,
+  airport: 95,
+  transit_hub: 95,
+  museum: 90,
+  theater: 90,
+  event_venue: 90,
+  landmark: 80,
+  venue: 75,
+  neighborhood: 70,
+  borough: 65,
+  city: 60,
+  market: 55,
+};
+
+function compareEntitySpecificity(a: KnowledgeEntity, b: KnowledgeEntity): number {
+  const linkedDelta = Number(Boolean(b.locationId)) - Number(Boolean(a.locationId));
+  if (linkedDelta !== 0) return linkedDelta;
+
+  const typeDelta =
+    (ENTITY_TYPE_PRIORITY[b.entityType] ?? 0) -
+    (ENTITY_TYPE_PRIORITY[a.entityType] ?? 0);
+  if (typeDelta !== 0) return typeDelta;
+
+  const confidenceDelta = b.confidence - a.confidence;
+  if (confidenceDelta !== 0) return confidenceDelta;
+
+  return a.canonicalKey.localeCompare(b.canonicalKey);
 }

@@ -1,6 +1,7 @@
 import type {
   LocationIntelligenceProvider,
   SearchCandidate,
+  SearchEntityResolutionProvider,
   SearchIntentProvider,
   SearchObservabilityProvider,
   SearchRankingProvider,
@@ -11,10 +12,11 @@ import type {
   SearchV3TraceEvent,
 } from "@/lib/search-framework";
 
-export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-foundation-alpha.1";
+export const SEARCH_V3_ORCHESTRATION_VERSION = "v3-entity-resolution-alpha.1";
 
 export interface SearchV3Dependencies {
   intent: SearchIntentProvider;
+  entityResolution?: SearchEntityResolutionProvider | null;
   locationIntelligence: LocationIntelligenceProvider;
   retrieval: readonly SearchRetrievalProvider[];
   ranking?: SearchRankingProvider | null;
@@ -36,13 +38,67 @@ export function createSearchV3Orchestrator(
       validateRequest(request);
       const trace: SearchV3TraceEvent[] = [];
 
-      const intent = await runStage({
+      let intent = await runStage({
         stage: "intent",
         requestId: request.requestId,
         trace,
         observability: dependencies.observability,
         work: () => dependencies.intent.parse(request),
       });
+
+      if (dependencies.entityResolution && intent.anchor?.label) {
+        const resolution = await runStage({
+          stage: "entity_resolution",
+          requestId: request.requestId,
+          trace,
+          observability: dependencies.observability,
+          work: () => dependencies.entityResolution!.resolve(intent.anchor!.label),
+        });
+
+        if (resolution.status === "resolved" && resolution.entity) {
+          const attributes = resolution.entity.attributes;
+          intent = {
+            ...intent,
+            anchor: {
+              ...intent.anchor,
+              entityId: resolution.entity.id,
+              entityType: resolution.entity.entityType,
+              latitude: numberAttribute(attributes.latitude),
+              longitude: numberAttribute(attributes.longitude),
+              confidence: resolution.confidence ?? resolution.entity.confidence,
+            },
+            metadata: {
+              ...intent.metadata,
+              entityResolution: {
+                status: resolution.status,
+                source: resolution.source,
+                normalizedQuery: resolution.normalizedQuery,
+                canonicalName: resolution.entity.canonicalName,
+              },
+            },
+          };
+        } else {
+          intent = {
+            ...intent,
+            metadata: {
+              ...intent.metadata,
+              entityResolution: {
+                status: resolution.status,
+                source: resolution.source,
+                normalizedQuery: resolution.normalizedQuery,
+                candidateCount: resolution.candidates.length,
+              },
+            },
+          };
+        }
+      } else {
+        await recordSkipped(
+          "entity_resolution",
+          request.requestId,
+          trace,
+          dependencies.observability,
+        );
+      }
 
       const retrieval = await runStage({
         stage: "retrieval",
@@ -176,6 +232,11 @@ function validateRequest(request: SearchV3Request): void {
   if (typeof request.query !== "string" || !request.query.trim()) {
     throw new TypeError("Search V3 query must be a non-empty string.");
   }
+}
+
+function numberAttribute(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function normalizeLimit(limit: number | undefined): number {
