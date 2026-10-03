@@ -107,3 +107,9 @@ export {
   requiresOutingPair,
   type DeterministicOutingPairingOptions,
 } from "./pairing/deterministicOutingPairingProvider";
+
+export {
+  MapboxSearchRoutingProvider,
+  createMapboxSearchRoutingProviderFromEnvironment,
+  type MapboxSearchRoutingProviderOptions,
+} from "./routing/mapboxRoutingProvider";
