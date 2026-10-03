@@ -3,6 +3,7 @@ import type {
   KnowledgeEntity,
   KnowledgeEntityContext,
 } from "./graph";
+import type { EntityResolution } from "./entityResolution";
 import type { LocationIntelligenceProfile } from "./locationIntelligence";
 import type {
   RetrievalLaneResult,
@@ -16,6 +17,11 @@ export interface LocationIntelligenceProvider {
   readonly providerId: string;
   getLocation(locationId: string): Promise<LocationIntelligenceProfile | null>;
   getLocations(locationIds: readonly string[]): Promise<readonly LocationIntelligenceProfile[]>;
+}
+
+export interface SearchEntityResolutionProvider {
+  readonly providerId: string;
+  resolve(query: string): Promise<EntityResolution>;
 }
 
 export interface SearchIntentProvider {
@@ -76,4 +82,5 @@ export interface KnowledgeGraphProvider {
   findRelated(entityId: string, relationship?: string): Promise<readonly KnowledgeEntity[]>;
   resolveHierarchy(entityId: string): Promise<readonly KnowledgeEntity[]>;
   getEntityContext(entityId: string): Promise<KnowledgeEntityContext | null>;
+  searchEntities(query: string, limit?: number): Promise<readonly KnowledgeEntity[]>;
 }
