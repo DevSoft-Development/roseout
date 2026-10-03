@@ -171,6 +171,7 @@ export interface SearchV3Execution {
     rejectedCount: number;
     hydratedCount: number;
     outingCount: number;
+    retrievalFailureCount?: number;
     orchestrationVersion: string;
   };
 }
