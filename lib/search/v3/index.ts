@@ -26,3 +26,18 @@ export {
   GraphEntityResolver,
   type GraphEntityResolverOptions,
 } from "./entity-resolution/graphEntityResolver";
+
+export {
+  RuleBasedSearchV3IntentProvider,
+} from "./intent/ruleBasedIntentProvider";
+
+export {
+  SupabaseStructuredRetrievalProvider,
+  type StructuredRetrievalOptions,
+  type StructuredRetrievalSupabaseClient,
+} from "./retrieval/supabaseStructuredRetrievalProvider";
+
+export {
+  SupabaseHardEligibilityProvider,
+  type EligibilitySupabaseClient,
+} from "./eligibility/supabaseHardEligibilityProvider";
