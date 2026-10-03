@@ -5,7 +5,8 @@ import type {
 import { createAzureFoundryProvider } from "@/lib/ai/gateway/providers/azure-foundry";
 
 export interface AzureQueryEmbeddingProviderOptions {
-  model?: string;
+  deployment?: string;
+  vectorModel?: string;
   version?: string;
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
@@ -15,16 +16,21 @@ const inFlight = new Map<string, Promise<SearchQueryEmbedding>>();
 
 export class AzureQueryEmbeddingProvider implements SearchQueryEmbeddingProvider {
   readonly providerId = "theouthaven.azure-query-embedding.v1";
-  private readonly model: string;
+  private readonly deployment: string;
+  private readonly vectorModel: string;
   private readonly version: string;
   private readonly timeoutMs: number;
   private readonly provider: ReturnType<typeof createAzureFoundryProvider>;
 
   constructor(options: AzureQueryEmbeddingProviderOptions = {}) {
     const env = options.env ?? process.env;
-    this.model = String(
-      options.model ??
+    this.deployment = String(
+      options.deployment ??
       env.AZURE_AI_EMBEDDING_MODEL ??
+      "toh-embedding"
+    ).trim();
+    this.vectorModel = String(
+      options.vectorModel ??
       env.SEARCH_EMBEDDING_MODEL ??
       "text-embedding-3-small"
     ).trim();
@@ -41,7 +47,7 @@ export class AzureQueryEmbeddingProvider implements SearchQueryEmbeddingProvider
     const normalized = String(text ?? "").trim();
     if (!normalized) throw new Error("Semantic query text was empty.");
 
-    const key = this.model + ":" + normalized.toLowerCase();
+    const key = this.deployment + ":" + this.vectorModel + ":" + normalized.toLowerCase();
     const existing = inFlight.get(key);
     if (existing) return existing;
 
@@ -49,7 +55,7 @@ export class AzureQueryEmbeddingProvider implements SearchQueryEmbeddingProvider
       const result = await this.provider.invoke<string, number[][]>({
         capability: "embed",
         input: normalized,
-        model: this.model,
+        model: this.deployment,
         timeoutMs: this.timeoutMs,
       });
 
@@ -63,7 +69,7 @@ export class AzureQueryEmbeddingProvider implements SearchQueryEmbeddingProvider
 
       return {
         vector,
-        model: this.model,
+        model: this.vectorModel,
         version: this.version,
       };
     })().finally(() => {
