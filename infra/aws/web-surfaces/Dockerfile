@@ -24,8 +24,9 @@ RUN --mount=type=secret,id=platform_env,target=/tmp/platform_env,required=true \
 RUN set -eux; \
     mkdir -p /runtime; \
     cp -a "apps/$WEB_SURFACE/.next/standalone/." /runtime/; \
-    mkdir -p "/runtime/apps/$WEB_SURFACE/.next" "/runtime/apps/$WEB_SURFACE/public"; \
+    mkdir -p /runtime/public "/runtime/apps/$WEB_SURFACE/.next" "/runtime/apps/$WEB_SURFACE/public"; \
     cp -a "apps/$WEB_SURFACE/.next/static" "/runtime/apps/$WEB_SURFACE/.next/static"; \
+    cp -a public/. /runtime/public/; \
     cp -a public/. "/runtime/apps/$WEB_SURFACE/public/"; \
     printf 'require("./apps/%s/server.js");\n' "$WEB_SURFACE" > /runtime/start.cjs
 

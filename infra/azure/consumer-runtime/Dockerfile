@@ -21,9 +21,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build:surface:consumer
 RUN set -eux; \
-    mkdir -p /runtime/apps/consumer/.next /runtime/apps/consumer/public; \
+    mkdir -p /runtime/public /runtime/apps/consumer/.next /runtime/apps/consumer/public; \
     cp -a apps/consumer/.next/standalone/. /runtime/; \
     cp -a apps/consumer/.next/static /runtime/apps/consumer/.next/static; \
+    cp -a public/. /runtime/public/; \
     cp -a public/. /runtime/apps/consumer/public/
 
 COPY infra/azure/consumer-runtime/start.cjs /runtime/start.cjs
