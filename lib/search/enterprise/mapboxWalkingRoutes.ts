@@ -1,4 +1,7 @@
-import type { SearchRoutingProvider } from "@/lib/search-framework";
+import type {
+  SearchRouteMatrixEntry,
+  SearchRoutingProvider,
+} from "@/lib/search-framework";
 import {
   createMapboxSearchRoutingProviderFromEnvironment,
 } from "@/lib/search/routing/mapboxSearchRoutingProvider";
@@ -109,7 +112,7 @@ export async function enrichEnterprisePairsWithWalkingRoutes(
     };
   }
 
-  const byKey = new Map(
+  const byKey = new Map<string, SearchRouteMatrixEntry>(
     matrix.entries.map((entry) => [
       routeKey(entry.originId, entry.destinationId),
       entry,
