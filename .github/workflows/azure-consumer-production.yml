@@ -142,17 +142,7 @@ jobs:
             echo "- Reason: $REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Detect Azure AI infrastructure changes
-        id: ai_changes
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.before }}
-          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
-        run: |
-          set -euo pipefail
-          AI_CHANGED=false
-
-          if [ "$EVENT_NAME" = "push" ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}
+      - name: Configure AWS access to central Credential Vault
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
@@ -256,21 +246,16 @@ jobs:
 
       - name: Ensure production dual-region foundation
         env:
-          AI_CHANGED: ${{ steps.ai_changes.outputs.changed }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.before }}
+          IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
         uses: azure/CLI@v2
         with:
           inlineScript: |
             set -euo pipefail
-            for attempt in 1 2 3 4 5; do
-              if az deployment sub create \
-                --name toh-consumer-foundation-production \
-                --location eastus2 \
-                --template-file infra/azure/main.bicep \
-                --parameters infra/azure/parameters/production.bicepparam \
-                aiModelDeploymentEnabled="$AI_CHANGED" \
-                aiEmbeddingDeploymentEnabled="$AI_CHANGED" \
-                consumerRuntimeEnabled=false \
-                consumerEdgeEnabled=false 2>"/tmp/azure-foundation.err"; then
+
+            AI_CHANGED=false
+            if [ "$EVENT_NAME" = "push" ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}
                 exit 0
               fi
               cat "/tmp/azure-foundation.err" >&2
@@ -701,134 +686,26 @@ jobs:
           fi
           bash .github/scripts/write-platform-release.sh
 ; then
-            git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
-            if git diff --unified=0 "$BASE_SHA" "$IMAGE_SHA" --               infra/azure/main.bicep               infra/azure/modules/foundation.bicep               infra/azure/parameters/production.bicepparam               .github/workflows/azure-consumer-production.yml               | grep -Eq '^[+-].*(CognitiveServices|aiFoundry|aiModel|aiEmbedding|toh-primary|toh-embedding|consumerAzureAi)'; then
-              AI_CHANGED=true
+              git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch origin "$BASE_SHA" --no-tags
+              if git diff --unified=0 "$BASE_SHA" "$IMAGE_SHA" -- \
+                infra/azure/main.bicep \
+                infra/azure/modules/foundation.bicep \
+                infra/azure/parameters/production.bicepparam \
+                .github/workflows/azure-consumer-production.yml \
+                | grep -Eq '^[+-].*(CognitiveServices|aiFoundry|aiModel|aiEmbedding|toh-primary|toh-embedding|consumerAzureAi)'; then
+                AI_CHANGED=true
+              fi
             fi
-          fi
 
-          echo "changed=$AI_CHANGED" >> "$GITHUB_OUTPUT"
-          {
-            echo "## Azure AI deployment gate"
-            echo
-            echo "- AI infrastructure changed: $AI_CHANGED"
-            echo "- Normal consumer builds reuse existing Azure AI deployments."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Configure AWS access to central Credential Vault
-        uses: aws-actions/configure-aws-credentials@v6.2.3
-        with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
-          aws-region: us-east-1
-          allowed-account-ids: '742020474738'
-
-      - name: Resolve production consumer configuration from Admin Credential Vault
-        id: config
-        run: |
-          set -euo pipefail
-          PREFIX="/theouthaven/credential-vault/production"
-          WORK="$RUNNER_TEMP/azure-consumer-production-vault"
-          mkdir -p "$WORK"
-
-          aws secretsmanager get-secret-value             --secret-id "$PREFIX/supabase"             --query SecretString --output text > "$WORK/supabase.json"
-          aws secretsmanager get-secret-value             --secret-id "$PREFIX/mobile"             --query SecretString --output text > "$WORK/mobile.json"
-
-          if aws secretsmanager get-secret-value             --secret-id "$PREFIX/huggingface"             --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
-            jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
-          else
-            printf '{}' > "$WORK/huggingface.json"
-          fi
-          if aws secretsmanager get-secret-value             --secret-id "$PREFIX/mapbox"             --query SecretString --output text > "$WORK/mapbox.json" 2>/dev/null; then
-            jq -e 'type == "object"' "$WORK/mapbox.json" >/dev/null
-          else
-            printf '{}' > "$WORK/mapbox.json"
-          fi
-
-          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
-          jq -e 'type == "object"' "$WORK/mobile.json" >/dev/null
-
-          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
-          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
-          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
-          HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
-          HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
-          HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
-          MAPBOX_ACCESS_TOKEN="$(jq -r '.accessToken // empty' "$WORK/mapbox.json")"
-          IOS_TEAM_ID="$(jq -r '.iosTeamId // empty' "$WORK/mobile.json")"
-          ANDROID_KEYSTORE_PASSWORD="$(jq -r '.androidKeystorePassword // empty' "$WORK/mobile.json")"
-          ANDROID_KEY_ALIAS="$(jq -r '.androidKeyAlias // empty' "$WORK/mobile.json")"
-          ANDROID_APP_SIGNING_SHA256="$(jq -r '.androidAppSigningSha256Fingerprint // empty' "$WORK/mobile.json")"
-          SITE_URL="https://theouthaven.com"
-
-          test -n "$SUPABASE_URL"
-          test -n "$SUPABASE_ANON_KEY"
-          test -n "$SUPABASE_SERVICE_ROLE_KEY"
-          test -n "$IOS_TEAM_ID" || { echo "::error::Mobile vault iosTeamId is missing."; exit 1; }
-          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Mobile vault Android keystore password is missing."; exit 1; }
-          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Mobile vault Android key alias is missing."; exit 1; }
-
-          jq -r '.androidKeystoreBase64 // empty' "$WORK/mobile.json" | base64 --decode > "$WORK/android-upload.jks"
-          test -s "$WORK/android-upload.jks" || { echo "::error::Mobile vault Android keystore is missing."; exit 1; }
-          UPLOAD_SHA256="$(keytool -list -v -keystore "$WORK/android-upload.jks" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null | awk -F'SHA256: ' '/SHA256:/{print $2; exit}' | tr -d '\r')"
-          test -n "$UPLOAD_SHA256" || { echo "::error::Unable to derive Android upload certificate SHA256 fingerprint."; exit 1; }
-          if [ -n "$ANDROID_APP_SIGNING_SHA256" ]; then
-            ANDROID_APP_LINK_SHA256_FINGERPRINTS="$ANDROID_APP_SIGNING_SHA256,$UPLOAD_SHA256"
-          else
-            ANDROID_APP_LINK_SHA256_FINGERPRINTS="$UPLOAD_SHA256"
-            echo "::warning::androidAppSigningSha256Fingerprint is not present in the mobile vault; assetlinks.json will include the upload certificate until the Play app-signing fingerprint is added."
-          fi
-
-          if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
-            test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face token is missing."; exit 1; }
-            test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face model is missing."; exit 1; }
-            echo "::add-mask::$HUGGINGFACE_AI_TOKEN"
-          else
-            HUGGINGFACE_AI_ENDPOINT=""
-          fi
-
-          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$ANDROID_KEYSTORE_PASSWORD" "$MAPBOX_ACCESS_TOKEN"; do
-            echo "::add-mask::$value"
-          done
-
-          {
-            echo "SITE_URL=$SITE_URL"
-            echo "SUPABASE_URL=$SUPABASE_URL"
-            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
-            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
-            echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
-            echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
-            echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
-            echo "MAPBOX_ACCESS_TOKEN=$MAPBOX_ACCESS_TOKEN"
-            echo "IOS_TEAM_ID=$IOS_TEAM_ID"
-            echo "ANDROID_APP_LINK_SHA256_FINGERPRINTS=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
-          } >> "$GITHUB_ENV"
-
-          {
-            echo "ios_team_id=$IOS_TEAM_ID"
-            echo "android_app_link_sha256_fingerprints=$ANDROID_APP_LINK_SHA256_FINGERPRINTS"
-          } >> "$GITHUB_OUTPUT"
-
-          rm -rf "$WORK"
-
-      - name: Login to Azure with GitHub OIDC
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Ensure production dual-region foundation
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            set -euo pipefail
+            echo "Azure AI infrastructure changed: $AI_CHANGED"
             for attempt in 1 2 3 4 5; do
               if az deployment sub create \
                 --name toh-consumer-foundation-production \
                 --location eastus2 \
                 --template-file infra/azure/main.bicep \
                 --parameters infra/azure/parameters/production.bicepparam \
-                aiModelDeploymentEnabled=true \
+                aiModelDeploymentEnabled="$AI_CHANGED" \
+                aiEmbeddingDeploymentEnabled="$AI_CHANGED" \
                 consumerRuntimeEnabled=false \
                 consumerEdgeEnabled=false 2>"/tmp/azure-foundation.err"; then
                 exit 0
