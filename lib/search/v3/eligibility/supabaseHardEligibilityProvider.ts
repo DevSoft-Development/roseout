@@ -126,8 +126,16 @@ function rejectionReasons(
     }
   }
 
+  const supportedDomains = new Set<string>(
+    [
+      row.primary_domain,
+      ...(row.supported_domains ?? []),
+    ].filter((value): value is string => Boolean(value)),
+  );
+
   for (const constraint of intent.constraints) {
     if (constraint.strength !== "hard") continue;
+    if (!constraintAppliesToSupportedDomains(constraint.key, supportedDomains, intent)) continue;
     const value = String(constraint.value).trim().toLowerCase();
 
     switch (constraint.key) {
@@ -165,7 +173,11 @@ function rejectionReasons(
   }
 
   const query = intent.rawQuery.toLowerCase();
-  if (/\bdinner|dining\b/.test(query) && !/\bbakery|dessert|coffee|cafe|pastry\b/.test(query)) {
+  if (
+    supportedDomains.has("restaurant") &&
+    /\bdinner|dining\b/.test(query) &&
+    !/\bbakery|dessert|coffee|cafe|pastry\b/.test(query)
+  ) {
     if (location && isDinnerIneligibleClassification(location)) {
       reasons.push("dinner_location_type_mismatch");
     }
@@ -205,4 +217,23 @@ function isDinnerIneligibleClassification(location: LocationRow): boolean {
   return /\b(bakery|pastry|dessert|coffee shop|cafe|grocery|supermarket|market|store|shop|deli counter|convenience)\b/.test(
     classification,
   );
+}
+
+
+export function constraintAppliesToSupportedDomains(
+  key: string,
+  supportedDomains: ReadonlySet<string>,
+  intent: SearchIntentGraph,
+): boolean {
+  if (intent.domains.length <= 1) return true;
+
+  if (key === "cuisine" || key === "food" || key === "meal_period") {
+    return supportedDomains.has("restaurant");
+  }
+
+  if (key === "activity_type") {
+    return supportedDomains.has("activity") || supportedDomains.has("nightlife");
+  }
+
+  return true;
 }
