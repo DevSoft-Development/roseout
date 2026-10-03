@@ -54,6 +54,7 @@ export default async function ProfileRolloutQualityPage() {
 
   const latest = safeRuns[0] as any;
   const gates = Array.isArray(latest?.metrics?.gates) ? latest.metrics.gates : [];
+  const v3 = latest?.metrics?.v3 ?? null;
 
   return (
     <main className="min-h-screen bg-[#090706] px-4 pb-12 pt-24 text-white sm:px-6 lg:px-8">
@@ -88,6 +89,48 @@ export default async function ProfileRolloutQualityPage() {
             {!gates.length ? <p className="text-sm text-white/50">Run the golden suite to calculate launch gates.</p> : null}
           </div>
         </section>
+
+        {v3 ? (
+          <section className="rounded-3xl border border-sky-400/20 bg-[#0b1118] p-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[.24em] text-sky-300">Search V3 shadow</p>
+                <h2 className="mt-1 text-xl font-black">Golden-query comparison</h2>
+                <p className="mt-1 text-sm text-white/55">
+                  V3 runs beside the current search only. These metrics do not affect live traffic or existing rollout gates.
+                </p>
+              </div>
+              <span className="rounded-full border border-sky-300/20 px-3 py-1 text-xs font-black text-sky-100">
+                Shadow only
+              </span>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["V3 success", Number(v3.successRate ?? 0).toFixed(1) + "%"],
+                ["Domain coverage", Number(v3.exactDomainCoverageRate ?? 0).toFixed(1) + "%"],
+                ["Paired domain coverage", Number(v3.pairedDomainCoverageRate ?? 0).toFixed(1) + "%"],
+                ["No-result regression", Number(v3.noResultRegressionRate ?? 0).toFixed(1) + "%"],
+                ["Geography pass", Number(v3.geographyPassRate ?? 0).toFixed(1) + "%"],
+                ["P95 latency", Math.round(Number(v3.p95LatencyMs ?? 0)) + " ms"],
+                ["V3-only passes", String(v3.v3OnlyPassCount ?? 0)],
+                ["Canonical-only passes", String(v3.canonicalOnlyPassCount ?? 0)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-white/45">{label}</p>
+                  <p className="mt-2 text-2xl font-black">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3 text-xs text-white/55">
+              <span>Both pass: {Number(v3.bothPassCount ?? 0)}</span>
+              <span>Both fail: {Number(v3.bothFailCount ?? 0)}</span>
+              <span>Contract failures: {Number(v3.contractFailureCount ?? 0)}</span>
+              <span>Prohibited-category violations: {Number(v3.prohibitedCategoryViolationRate ?? 0).toFixed(1)}%</span>
+            </div>
+          </section>
+        ) : null}
 
         <ReplayHistoryClient runs={replayRuns} />
       </div>
