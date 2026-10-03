@@ -29,7 +29,9 @@ permissions:
   id-token: write
 
 concurrency:
-  group: azure-foundation-${{ github.ref }}-${{ inputs.environment || 'validate' }}
+  # Production foundation writes share the same lock as all other production
+  # Azure infrastructure writers. Validation/staging remain isolated.
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' && 'azure-consumer-infra-production' || format('azure-foundation-{0}-{1}', github.ref, inputs.environment || 'validate') }}
   cancel-in-progress: false
 
 jobs:
