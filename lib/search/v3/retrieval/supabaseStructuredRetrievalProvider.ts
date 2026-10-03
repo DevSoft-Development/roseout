@@ -60,15 +60,45 @@ export class SupabaseStructuredRetrievalProvider implements SearchRetrievalProvi
 
     const borough = constraintValue(args.intent, "borough");
     const market = constraintValue(args.intent, "market");
+    const city = constraintValue(args.intent, "city");
+    const neighborhood = constraintValue(args.intent, "neighborhood");
     if (borough) query = query.ilike("borough", borough);
     if (market) query = query.ilike("market", market);
+    if (city) query = query.ilike("city", city);
+    if (neighborhood) query = query.ilike("neighborhood", neighborhood);
+
+    const resolvedGeo = resolvedGeoConstraint(args.intent);
+    if (resolvedGeo && !constraintValue(args.intent, resolvedGeo.key)) {
+      query = query.ilike(resolvedGeo.key, resolvedGeo.value);
+    }
 
     const cuisine = constraintValue(args.intent, "cuisine");
     const food = constraintValue(args.intent, "food");
+    const meal = constraintValue(args.intent, "meal_period");
+    const feature = constraintValue(args.intent, "feature");
     const activity = constraintValue(args.intent, "activity_type");
+
     if (cuisine) query = query.overlaps("cuisines", [cuisine]);
-    else if (food) query = query.overlaps("foods", [food]);
-    else if (activity) query = query.overlaps("activity_categories", [activity]);
+    if (food) query = query.overlaps("foods", [food]);
+    if (meal) query = query.overlaps("meal_periods", [meal]);
+    if (feature) query = query.overlaps("features", [feature]);
+    if (activity) query = query.overlaps("activity_categories", [activity]);
+
+    if (
+      args.intent.anchor?.latitude != null &&
+      args.intent.anchor?.longitude != null &&
+      !resolvedGeo
+    ) {
+      const radiusMiles = anchorRadiusMiles(args.intent);
+      const latDelta = radiusMiles / 69;
+      const cosLat = Math.max(0.2, Math.cos(args.intent.anchor.latitude * Math.PI / 180));
+      const lonDelta = radiusMiles / (69 * cosLat);
+      query = query
+        .gte("latitude", args.intent.anchor.latitude - latDelta)
+        .lte("latitude", args.intent.anchor.latitude + latDelta)
+        .gte("longitude", args.intent.anchor.longitude - lonDelta)
+        .lte("longitude", args.intent.anchor.longitude + lonDelta);
+    }
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -168,4 +198,36 @@ function includesNormalized(values: readonly string[] | null, expected: string):
 
 function normalizedEqual(left: string | null, right: string): boolean {
   return String(left ?? "").trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+
+function resolvedGeoConstraint(
+  intent: SearchIntentGraph,
+): { key: "market" | "city" | "neighborhood" | "borough"; value: string } | null {
+  const entityType = intent.anchor?.entityType;
+  const resolution = intent.metadata?.entityResolution;
+  if (!resolution || typeof resolution !== "object") return null;
+
+  const canonicalName = (resolution as Record<string, unknown>).canonicalName;
+  if (typeof canonicalName !== "string" || !canonicalName.trim()) return null;
+
+  if (
+    entityType === "market" ||
+    entityType === "city" ||
+    entityType === "neighborhood" ||
+    entityType === "borough"
+  ) {
+    return { key: entityType, value: canonicalName.trim() };
+  }
+  return null;
+}
+
+function anchorRadiusMiles(intent: SearchIntentGraph): number {
+  if (intent.maxTravelMinutes != null) {
+    if (intent.travelMode === "walking") {
+      return Math.max(0.25, Math.min(3, intent.maxTravelMinutes / 20));
+    }
+    return Math.max(1, Math.min(15, intent.maxTravelMinutes / 4));
+  }
+  return intent.travelMode === "walking" ? 1.5 : 3;
 }
