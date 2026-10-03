@@ -102,7 +102,7 @@ select
   )),
   greatest(0, least(1, coalesce(confidence, 0.75))),
   'location_intelligence',
-  coalesce(updated_at, generated_at, location_updated_at),
+  coalesce(updated_at, generated_at),
   now()
 from location_rows
 on conflict (entity_type, canonical_key) do update set
