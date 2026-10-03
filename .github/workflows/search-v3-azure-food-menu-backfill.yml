@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: search-v3-azure-food-menu-backfill-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   EAST_REF: ftdsltatyqhtllyyefzp
@@ -33,9 +33,10 @@ env:
   EMBEDDING_MODEL: text-embedding-3-small
   EMBEDDING_VERSION: azure-text-embedding-3-small:v1
   EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
-  SEARCH_EMBEDDING_BATCH_SIZE: '512'
+  SEARCH_EMBEDDING_BATCH_SIZE: '64'
   SEARCH_EMBEDDING_MIN_REQUEST_INTERVAL_MS: '65000'
   SEARCH_EMBEDDING_RETRY_SAFETY_BUFFER_MS: '5000'
+  SEARCH_EMBEDDING_MAX_RETRIES: '4'
 
 jobs:
   backfill:
