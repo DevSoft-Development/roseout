@@ -6,6 +6,7 @@ import type {
   SearchIntentProvider,
   SearchPairingProvider,
   SearchRetrievalProvider,
+  SearchRoutingProvider,
   SearchRankingProvider,
 } from "@/lib/search-framework";
 import {
@@ -29,6 +30,9 @@ import {
   DeterministicOutingPairingProvider,
   type DeterministicOutingPairingOptions,
 } from "../pairing/deterministicOutingPairingProvider";
+import {
+  createMapboxSearchRoutingProviderFromEnvironment,
+} from "../routing/mapboxRoutingProvider";
 import {
   createSearchV3SemanticRetrievalBundle,
   type SearchV3SemanticRetrievalBundleOptions,
@@ -59,6 +63,7 @@ export interface TheOutHavenSearchV3CompositionOptions {
   fusion?: SearchFusionProvider | null;
   ranking?: SearchRankingProvider | null;
   pairing?: SearchPairingProvider | null;
+  routing?: SearchRoutingProvider | null;
   semantic?: SearchV3SemanticRetrievalBundleOptions;
   rrf?: ReciprocalRankFusionOptions;
   decisionRanking?: DeterministicDecisionRankingOptions;
@@ -69,6 +74,7 @@ export interface TheOutHavenSearchV3Composition {
   orchestrator: SearchV3Orchestrator;
   retrievalProviders: readonly SearchRetrievalProvider[];
   pairingProvider: SearchPairingProvider | null;
+  routingProvider: SearchRoutingProvider | null;
 }
 
 export function createTheOutHavenSearchV3(
@@ -104,14 +110,20 @@ export function createTheOutHavenSearchV3(
       ? new DeterministicDecisionRankingProvider(options.decisionRanking)
       : options.ranking;
 
+  const routing =
+    options.routing === undefined
+      ? createMapboxSearchRoutingProviderFromEnvironment()
+      : options.routing;
+
   const pairing =
     options.pairing === undefined
-      ? new DeterministicOutingPairingProvider(options.outingPairing)
+      ? new DeterministicOutingPairingProvider(options.outingPairing, routing)
       : options.pairing;
 
   return {
     retrievalProviders,
     pairingProvider: pairing,
+    routingProvider: routing,
     orchestrator: createSearchV3Orchestrator({
       intent: options.intent ?? new RuleBasedSearchV3IntentProvider(),
       entityResolution,
