@@ -82,3 +82,15 @@ export {
   type SearchV3SemanticRetrievalBundle,
   type SearchV3SemanticRetrievalBundleOptions,
 } from "./semantic/createSemanticRetrievalBundle";
+export {
+  SupabaseLocationSearchProfileLoader,
+  type SupabaseLocationSearchProfileLoaderClient,
+} from "./theouthaven-adapters/supabaseLocationSearchProfileLoader";
+
+export {
+  createDefaultRetrievalProviders,
+  createTheOutHavenSearchV3,
+  type TheOutHavenSearchV3Client,
+  type TheOutHavenSearchV3Composition,
+  type TheOutHavenSearchV3CompositionOptions,
+} from "./theouthaven-adapters/createTheOutHavenSearchV3";
