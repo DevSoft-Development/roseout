@@ -8,19 +8,25 @@ import type {
 } from "@/lib/search-framework";
 import {
   createSearchV3Orchestrator,
-  GraphEntityResolver,
-  ReciprocalRankFusionProvider,
-  RuleBasedSearchV3IntentProvider,
-  SearchProfileLocationIntelligenceProvider,
-  SupabaseBm25RetrievalProvider,
-  SupabaseHardEligibilityProvider,
-  SupabaseKnowledgeGraphProvider,
-  SupabaseStructuredRetrievalProvider,
-  createSearchV3SemanticRetrievalBundle,
-  type ReciprocalRankFusionOptions,
   type SearchV3Orchestrator,
+} from "../orchestration/createSearchV3Orchestrator";
+import { GraphEntityResolver } from "../entity-resolution/graphEntityResolver";
+import {
+  ReciprocalRankFusionProvider,
+  type ReciprocalRankFusionOptions,
+} from "../fusion/reciprocalRankFusionProvider";
+import { RuleBasedSearchV3IntentProvider } from "../intent/ruleBasedIntentProvider";
+import { SupabaseBm25RetrievalProvider } from "../retrieval/supabaseBm25RetrievalProvider";
+import { SupabaseStructuredRetrievalProvider } from "../retrieval/supabaseStructuredRetrievalProvider";
+import { SupabaseHardEligibilityProvider } from "../eligibility/supabaseHardEligibilityProvider";
+import {
+  createSearchV3SemanticRetrievalBundle,
   type SearchV3SemanticRetrievalBundleOptions,
-} from "@/lib/search/v3";
+} from "../semantic/createSemanticRetrievalBundle";
+import {
+  SearchProfileLocationIntelligenceProvider,
+} from "./locationIntelligenceAdapter";
+import { SupabaseKnowledgeGraphProvider } from "./supabaseKnowledgeGraphProvider";
 import {
   SupabaseLocationSearchProfileLoader,
   type SupabaseLocationSearchProfileLoaderClient,
