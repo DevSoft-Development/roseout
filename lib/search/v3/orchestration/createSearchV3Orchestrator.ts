@@ -7,6 +7,7 @@ import type {
   SearchFusionProvider,
   SearchIntentProvider,
   SearchObservabilityProvider,
+  SearchOuting,
   SearchPairingProvider,
   SearchRankingProvider,
   SearchRetrievalProvider,
@@ -252,7 +253,7 @@ export function createSearchV3Orchestrator(
         finalRank: index + 1,
       }));
 
-      let outings = [];
+      let outings: SearchOuting[] = [];
       if (dependencies.pairing) {
         outings = [...await runStage({
           stage: "pairing",
