@@ -5,6 +5,7 @@ import type {
   SearchFusionProvider,
   SearchIntentProvider,
   SearchRetrievalProvider,
+  SearchRankingProvider,
 } from "@/lib/search-framework";
 import {
   createSearchV3Orchestrator,
@@ -19,6 +20,10 @@ import { RuleBasedSearchV3IntentProvider } from "../intent/ruleBasedIntentProvid
 import { SupabaseBm25RetrievalProvider } from "../retrieval/supabaseBm25RetrievalProvider";
 import { SupabaseStructuredRetrievalProvider } from "../retrieval/supabaseStructuredRetrievalProvider";
 import { SupabaseHardEligibilityProvider } from "../eligibility/supabaseHardEligibilityProvider";
+import {
+  DeterministicDecisionRankingProvider,
+  type DeterministicDecisionRankingOptions,
+} from "../ranking/deterministicDecisionRankingProvider";
 import {
   createSearchV3SemanticRetrievalBundle,
   type SearchV3SemanticRetrievalBundleOptions,
@@ -47,8 +52,10 @@ export interface TheOutHavenSearchV3CompositionOptions {
   retrievalProviders?: readonly SearchRetrievalProvider[];
   eligibility?: SearchEligibilityProvider | null;
   fusion?: SearchFusionProvider | null;
+  ranking?: SearchRankingProvider | null;
   semantic?: SearchV3SemanticRetrievalBundleOptions;
   rrf?: ReciprocalRankFusionOptions;
+  decisionRanking?: DeterministicDecisionRankingOptions;
 }
 
 export interface TheOutHavenSearchV3Composition {
@@ -84,6 +91,11 @@ export function createTheOutHavenSearchV3(
       ? new SupabaseHardEligibilityProvider(client)
       : options.eligibility;
 
+  const ranking =
+    options.ranking === undefined
+      ? new DeterministicDecisionRankingProvider(options.decisionRanking)
+      : options.ranking;
+
   return {
     retrievalProviders,
     orchestrator: createSearchV3Orchestrator({
@@ -93,6 +105,7 @@ export function createTheOutHavenSearchV3(
       retrieval: retrievalProviders,
       fusion,
       eligibility,
+      ranking,
     }),
   };
 }
