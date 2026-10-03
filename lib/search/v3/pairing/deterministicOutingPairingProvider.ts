@@ -268,7 +268,7 @@ function pairIntentScore(
   let possible = 2;
 
   for (const constraint of intent.constraints) {
-    const role = constraintRole(constraint.key);
+    const role = constraintRole(constraint.key, constraint.value);
     const weight =
       constraint.strength === "hard" ? 2 :
       constraint.strength === "strong" ? 1.25 : 0.75;
@@ -310,9 +310,14 @@ function pairIntentScore(
   return clamp01(earned / Math.max(1, possible));
 }
 
-function constraintRole(key: string): PairRole | "shared" {
+function constraintRole(key: string, value?: unknown): PairRole | "shared" {
   if (["cuisine", "food", "meal_period"].includes(key)) return "restaurant";
   if (key === "activity_type") return "activity";
+  if (key === "feature") {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (["rooftop", "live music", "hookah"].includes(normalized)) return "activity";
+    if (["romantic", "outdoor seating", "waterfront", "private room"].includes(normalized)) return "restaurant";
+  }
   return "shared";
 }
 
