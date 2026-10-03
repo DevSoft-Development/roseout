@@ -9,6 +9,15 @@ export interface EligibilitySupabaseClient {
   from(table: string): { select(columns?: string): any };
 }
 
+type LocationRow = {
+  id: string;
+  location_type: string | null;
+  primary_category: string | null;
+  category: string | null;
+  type: string | null;
+  name: string | null;
+};
+
 type ProfileRow = {
   location_id: string;
   primary_domain: string | null;
@@ -48,7 +57,18 @@ export class SupabaseHardEligibilityProvider implements SearchEligibilityProvide
     if (error) throw new Error(error.message);
 
     const rows = (data ?? []) as ProfileRow[];
+
+    const locationRead = await this.client
+      .from("locations")
+      .select("id,location_type,primary_category,category,type,name")
+      .in("id", [...args.locationIds]);
+
+    if (locationRead.error) throw new Error(locationRead.error.message);
+
     const byId = new Map(rows.map((row) => [row.location_id, row]));
+    const locationById = new Map(
+      ((locationRead.data ?? []) as LocationRow[]).map((row) => [row.id, row]),
+    );
     const eligibleLocationIds: string[] = [];
     const rejected: Array<{ locationId: string; reasons: string[] }> = [];
 
@@ -59,7 +79,11 @@ export class SupabaseHardEligibilityProvider implements SearchEligibilityProvide
         continue;
       }
 
-      const reasons = rejectionReasons(row, args.intent);
+      const reasons = rejectionReasons(
+        row,
+        locationById.get(locationId) ?? null,
+        args.intent,
+      );
       if (reasons.length === 0) eligibleLocationIds.push(locationId);
       else rejected.push({ locationId, reasons });
     }
@@ -68,7 +92,11 @@ export class SupabaseHardEligibilityProvider implements SearchEligibilityProvide
   }
 }
 
-function rejectionReasons(row: ProfileRow, intent: SearchIntentGraph): string[] {
+function rejectionReasons(
+  row: ProfileRow,
+  location: LocationRow | null,
+  intent: SearchIntentGraph,
+): string[] {
   const reasons: string[] = [];
 
   if (intent.domains.length > 0) {
@@ -120,7 +148,10 @@ function rejectionReasons(row: ProfileRow, intent: SearchIntentGraph): string[] 
   }
 
   const query = intent.rawQuery.toLowerCase();
-  if (/\bdinner|dining\b/.test(query) && !/\bbakery|dessert|coffee|cafe\b/.test(query)) {
+  if (/\bdinner|dining\b/.test(query) && !/\bbakery|dessert|coffee|cafe|pastry\b/.test(query)) {
+    if (location && isDinnerIneligibleClassification(location)) {
+      reasons.push("dinner_location_type_mismatch");
+    }
     if ((row.meal_periods ?? []).length > 0 && !includesNormalized(row.meal_periods, "dinner")) {
       reasons.push("dinner_service_required");
     }
@@ -140,4 +171,21 @@ function includesNormalized(values: readonly string[] | null, expected: string):
 
 function normalizedEqual(left: string | null, right: string): boolean {
   return String(left ?? "").trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+
+function isDinnerIneligibleClassification(location: LocationRow): boolean {
+  const classification = [
+    location.location_type,
+    location.primary_category,
+    location.category,
+    location.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /\b(bakery|pastry|dessert|coffee shop|cafe|grocery|supermarket|market|store|shop|deli counter|convenience)\b/.test(
+    classification,
+  );
 }
