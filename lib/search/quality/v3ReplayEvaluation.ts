@@ -25,8 +25,11 @@ export type V3ReplayComparison = {
   pairActivityCategoryPass: boolean;
   pairGeographyPass: boolean;
   pairDistancePass: boolean;
+  pairTravelTimePass: boolean;
+  pairRouteVerifiedPass: boolean;
   pairSequencingPass: boolean;
   distanceLeakage: boolean;
+  travelTimeLeakage: boolean;
   noResultRegression: boolean;
   latencyMs: number;
   candidateDomainCounts: Record<string, number>;
@@ -45,6 +48,8 @@ export type V3ReplayComparison = {
     travelMinutes: number | null;
     travelMode: string;
     sequence: string;
+    routeSource: string;
+    routeConfidence: string;
   }>;
 };
 
@@ -59,6 +64,8 @@ export type V3ReplayMetrics = {
   pairSuccessRate: number;
   pairRelevancePassRate: number;
   pairDistanceLeakageRate: number;
+  pairTravelTimeLeakageRate: number;
+  pairRouteVerificationRate: number;
   pairSequencingPassRate: number;
   noResultRegressionRate: number;
   p95LatencyMs: number;
@@ -142,6 +149,23 @@ export function evaluateV3Execution(
       expected.maximumDistanceMiles ?? null,
     );
 
+  const pairTravelTimePass =
+    !pairExpected ||
+    matchesPairTravelTime(
+      execution.outings,
+      expected.maximumTravelMinutes ?? null,
+    );
+
+  const pairRouteVerifiedPass =
+    !pairExpected ||
+    !expected.requireVerifiedRoute ||
+    (
+      execution.outings.length > 0 &&
+      execution.outings.every((outing) =>
+        outing.metadata.routeConfidence === "verified"
+      )
+    );
+
   const pairSequencingPass =
     !pairExpected ||
     matchesPairSequence(
@@ -173,6 +197,14 @@ export function evaluateV3Execution(
       outing.distanceMiles > Number(expected.maximumDistanceMiles) + 1e-9
     );
 
+  const travelTimeLeakage =
+    pairExpected &&
+    expected.maximumTravelMinutes != null &&
+    execution.outings.some((outing) =>
+      outing.travelMinutes == null ||
+      outing.travelMinutes > Number(expected.maximumTravelMinutes) + 1e-9
+    );
+
   const noResultRegression =
     options.legacyCount > 0 &&
     execution.candidates.length === 0;
@@ -186,6 +218,8 @@ export function evaluateV3Execution(
     minimumPairsPass &&
     pairRelevancePass &&
     pairDistancePass &&
+    pairTravelTimePass &&
+    pairRouteVerifiedPass &&
     pairSequencingPass &&
     !noResultRegression;
 
@@ -208,8 +242,11 @@ export function evaluateV3Execution(
     pairActivityCategoryPass,
     pairGeographyPass,
     pairDistancePass,
+    pairTravelTimePass,
+    pairRouteVerifiedPass,
     pairSequencingPass,
     distanceLeakage,
+    travelTimeLeakage,
     noResultRegression,
     latencyMs: options.latencyMs,
     candidateDomainCounts: domainCounts,
@@ -228,6 +265,8 @@ export function evaluateV3Execution(
       travelMinutes: outing.travelMinutes,
       travelMode: outing.travelMode,
       sequence: outing.sequence,
+      routeSource: outing.metadata.routeSource,
+      routeConfidence: outing.metadata.routeConfidence,
     })),
   };
 }
@@ -255,6 +294,8 @@ export function buildV3ReplayMetrics(
     row.v3?.minimumPairsPass &&
     row.v3?.pairRelevancePass &&
     row.v3?.pairDistancePass &&
+    row.v3?.pairTravelTimePass &&
+    row.v3?.pairRouteVerifiedPass &&
     row.v3?.pairSequencingPass
   ).length;
 
@@ -283,6 +324,14 @@ export function buildV3ReplayMetrics(
     ),
     pairDistanceLeakageRate: pct(
       paired.filter((row) => row.v3?.distanceLeakage).length,
+      pairedDenominator,
+    ),
+    pairTravelTimeLeakageRate: pct(
+      paired.filter((row) => row.v3?.travelTimeLeakage).length,
+      pairedDenominator,
+    ),
+    pairRouteVerificationRate: pct(
+      paired.filter((row) => row.v3?.pairRouteVerifiedPass).length,
       pairedDenominator,
     ),
     pairSequencingPassRate: pct(
@@ -485,6 +534,19 @@ function matchesPairDistance(
   return outings.every((outing) =>
     outing.distanceMiles != null &&
     outing.distanceMiles <= maximumDistanceMiles + 1e-9
+  );
+}
+
+function matchesPairTravelTime(
+  outings: readonly SearchOuting[],
+  maximumTravelMinutes: number | null,
+): boolean {
+  if (maximumTravelMinutes == null) return true;
+  if (!outings.length) return false;
+
+  return outings.every((outing) =>
+    outing.travelMinutes != null &&
+    outing.travelMinutes <= maximumTravelMinutes + 1e-9
   );
 }
 
