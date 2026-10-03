@@ -25,7 +25,7 @@ select
   coalesce(nullif(trim(anchor_type), ''), 'landmark'),
   'search_anchor:' || id::text,
   canonical_name,
-  linked_location_id,
+  null,
   jsonb_strip_nulls(jsonb_build_object(
     'anchorId', id,
     'anchorType', anchor_type,
