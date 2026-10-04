@@ -6,6 +6,7 @@ import { providersForCapability } from "@/lib/location-intelligence/v2/providers
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
+import { pilotBatchQuotas } from "@/lib/location-intelligence/v2/pilot";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -83,6 +84,33 @@ describe("Location Intelligence V2", () => {
   });
 });
 
+
+describe("Location Intelligence V2 pilot quotas", () => {
+  it("selects exactly ten locations per pilot batch", () => {
+    for (const batchIndex of [0, 1, 2, 9]) {
+      expect(
+        pilotBatchQuotas(batchIndex).reduce((sum, quota) => sum + quota.count, 0),
+      ).toBe(10);
+    }
+  });
+
+  it("balances the full ten-batch pilot across states and location types", () => {
+    const totals = {
+      states: { NY: 0, NJ: 0, CT: 0 },
+      types: { restaurant: 0, activity: 0 },
+    };
+
+    for (let batchIndex = 0; batchIndex < 10; batchIndex += 1) {
+      for (const quota of pilotBatchQuotas(batchIndex)) {
+        totals.states[quota.state] += quota.count;
+        totals.types[quota.locationType] += quota.count;
+      }
+    }
+
+    expect(totals.states).toEqual({ NY: 70, NJ: 20, CT: 10 });
+    expect(totals.types).toEqual({ restaurant: 60, activity: 40 });
+  });
+});
 
 describe("Location Intelligence V2 provider health metadata", () => {
   it("preserves policy metadata while updating health detail", () => {
