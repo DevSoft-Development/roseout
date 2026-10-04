@@ -32,7 +32,7 @@ export const RUNTIME_ENV_MAP: RuntimeEnvMap = {
   meta: { appId: ["META_APP_ID", "FACEBOOK_APP_ID"], appSecret: ["META_APP_SECRET", "FACEBOOK_APP_SECRET"], instagramAppId: ["INSTAGRAM_APP_ID", "META_INSTAGRAM_APP_ID"], instagramAppSecret: ["INSTAGRAM_APP_SECRET", "META_INSTAGRAM_APP_SECRET"], graphVersion: ["META_GRAPH_VERSION"], loginConfigurationId: ["META_LOGIN_CONFIGURATION_ID"], accessToken: ["META_ACCESS_TOKEN", "FACEBOOK_ACCESS_TOKEN"] },
   tiktok: { clientKey: ["TIKTOK_CLIENT_KEY"], clientSecret: ["TIKTOK_CLIENT_SECRET"] },
   apple: { issuerId: ["APPLE_BUSINESS_API_CLIENT_ID", "APPLE_CLIENT_ID"], keyId: ["APPLE_BUSINESS_API_KEY_ID", "APPLE_KEY_ID"], privateKey: ["APPLE_BUSINESS_API_PRIVATE_KEY", "APPLE_PRIVATE_KEY"] },
-  turnstile: { secretKey: ["TURNSTILE_SECRET_KEY"] },
+  turnstile: { siteKey: ["NEXT_PUBLIC_TURNSTILE_SITE_KEY"], secretKey: ["TURNSTILE_SECRET_KEY"] },
   expo: { accessToken: ["EXPO_ACCESS_TOKEN"] },
   domains: { apiKey: ["DOMAIN_PROVIDER_API_KEY"], apiSecret: ["DOMAIN_PROVIDER_API_SECRET"], accountId: ["DOMAIN_PROVIDER_ACCOUNT_ID"], gatewaySecret: ["DOMAIN_GATEWAY_SECRET"] },
   platform: {
