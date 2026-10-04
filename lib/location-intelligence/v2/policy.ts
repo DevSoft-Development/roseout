@@ -1,7 +1,7 @@
 import "server-only";
 
 import { isClaimedLocation } from "@/lib/location-intelligence/source-precedence";
-import type { LocationMaintenanceMode } from "@/lib/location-intelligence/v2/contracts";
+import type { LocationMaintenanceMode, ProviderExecutionPurpose } from "@/lib/location-intelligence/v2/contracts";
 
 export const MATERIAL_CHANGE_TYPES = new Set([
   "temporarily_closed",
@@ -41,4 +41,19 @@ export function reviewRefreshCadenceDays(popularityScore: number) {
   if (popularityScore >= 40) return 90;
   if (popularityScore >= 10) return 180;
   return null;
+}
+
+
+export function allowPaidProviderExecution(input: {
+  purpose?: ProviderExecutionPurpose;
+  ownerMaintained?: boolean;
+}) {
+  const purpose = input.purpose || "unspecified";
+  if (purpose === "routine_profile_refresh" || purpose === "unspecified") return false;
+  if (
+    input.ownerMaintained === true &&
+    purpose !== "review_refresh" &&
+    purpose !== "material_change"
+  ) return false;
+  return true;
 }
