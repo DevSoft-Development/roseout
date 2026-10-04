@@ -19,6 +19,7 @@ type PilotCandidate = {
   duplicate_status: string | null;
   google_place_id: string | null;
   popularity_score: number | string | null;
+  claimed: boolean;
   provenance: Record<string, unknown>;
 };
 
@@ -105,7 +106,7 @@ export function pilotBatchQuotas(batchIndex: number): PilotQuota[] {
 
 async function fetchLocationRows(state: string, locationType: string) {
   const columns =
-    "id,state,location_type,primary_category,category,cuisine,cuisine_type,is_searchable,duplicate_status,google_place_id,popularity_score";
+    "id,state,location_type,primary_category,category,cuisine,cuisine_type,is_searchable,duplicate_status,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
 
   const base = () =>
     supabaseAdmin
@@ -198,6 +199,11 @@ async function eligiblePilotCandidates() {
         duplicate_status: row.duplicate_status == null ? null : String(row.duplicate_status),
         google_place_id: row.google_place_id == null ? null : String(row.google_place_id),
         popularity_score: row.popularity_score == null ? null : String(row.popularity_score),
+        claimed:
+          Boolean(row.is_claimed) ||
+          Boolean(row.claimed) ||
+          Boolean(row.owner_user_id) ||
+          ["approved", "claimed"].includes(String(row.claim_status || "").toLowerCase()),
         provenance: profile.provenance,
       } satisfies PilotCandidate,
     ];
@@ -287,6 +293,7 @@ function summarize(selected: PilotCandidate[]) {
   let missingGoogle = 0;
   let messy = 0;
   let nonSearchable = 0;
+  let claimed = 0;
 
   for (const candidate of selected) {
     byState[candidate.state] = (byState[candidate.state] || 0) + 1;
@@ -295,6 +302,7 @@ function summarize(selected: PilotCandidate[]) {
     if (isMissingGoogle(candidate)) missingGoogle += 1;
     if (isMessy(candidate)) messy += 1;
     if (candidate.is_searchable === false) nonSearchable += 1;
+    if (candidate.claimed) claimed += 1;
   }
 
   return {
@@ -304,7 +312,7 @@ function summarize(selected: PilotCandidate[]) {
     missingGoogle,
     messy,
     nonSearchable,
-    claimed: 0,
+    claimed,
   };
 }
 
@@ -323,8 +331,13 @@ export async function runLocationIntelligenceV2PilotBatch() {
   }
 
   const batchIndex = Math.floor(successBefore / LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE);
+  const remainingSlots = Math.min(
+    LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE,
+    LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - successBefore,
+  );
   const candidates = await eligiblePilotCandidates();
-  const { selected } = selectPilotBatch(candidates, batchIndex);
+  const { selected: planned } = selectPilotBatch(candidates, batchIndex);
+  const selected = planned.slice(0, remainingSlots);
   if (selected.length === 0) {
     throw new Error("No eligible Location Intelligence V2 pilot candidates remain.");
   }
