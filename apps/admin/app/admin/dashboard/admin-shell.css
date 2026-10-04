@@ -1021,3 +1021,90 @@ body {
 ) {
   color: #ffffff !important;
 }
+
+
+/* Route-by-route visibility exceptions discovered by the Admin theme audit.
+ * These rules preserve intentional inverse controls/statuses without allowing
+ * legacy page backgrounds to escape the active Daytime/Nighttime theme.
+ */
+
+/* Exact white actions are intentionally white in Nighttime and therefore need dark text. */
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(a, button)[class~="bg-white"] {
+  background: #ffffff !important;
+  border-color: rgba(255,255,255,.82) !important;
+  color: #09090b !important;
+}
+
+/* Solid status / action fills keep inverse text in both themes.
+ * Exact Tailwind classes avoid matching translucent variants such as bg-rose-500/15.
+ */
+.admin-shell .admin-enterprise-surface :is(
+  .bg-rose-500,.bg-rose-600,.bg-rose-700,
+  .bg-red-500,.bg-red-600,.bg-red-700,
+  .bg-emerald-500,.bg-emerald-600,.bg-emerald-700,
+  .bg-green-500,.bg-green-600,.bg-green-700,
+  .bg-blue-500,.bg-blue-600,.bg-blue-700,
+  .bg-sky-500,.bg-sky-600,.bg-sky-700,
+  .bg-indigo-500,.bg-indigo-600,.bg-indigo-700,
+  .bg-violet-500,.bg-violet-600,.bg-violet-700,
+  .bg-purple-500,.bg-purple-600,.bg-purple-700,
+  .bg-pink-500,.bg-pink-600,.bg-pink-700,
+  .bg-fuchsia-500,.bg-fuchsia-600,.bg-fuchsia-700,
+  .bg-orange-500,.bg-orange-600,.bg-orange-700,
+  .bg-teal-500,.bg-teal-600,.bg-teal-700,
+  .bg-cyan-500,.bg-cyan-600,.bg-cyan-700,
+  .bg-lime-500,.bg-lime-600,.bg-lime-700,
+  .bg-amber-500,.bg-amber-600,.bg-amber-700,
+  .bg-yellow-500,.bg-yellow-600,.bg-yellow-700,
+  .bg-black
+).text-white {
+  color: #ffffff !important;
+}
+
+/* Inverse text utilities nested inside solid status fills also stay visible. */
+.admin-shell .admin-enterprise-surface :is(
+  .bg-rose-500,.bg-rose-600,.bg-rose-700,
+  .bg-red-500,.bg-red-600,.bg-red-700,
+  .bg-emerald-500,.bg-emerald-600,.bg-emerald-700,
+  .bg-green-500,.bg-green-600,.bg-green-700,
+  .bg-blue-500,.bg-blue-600,.bg-blue-700,
+  .bg-sky-500,.bg-sky-600,.bg-sky-700,
+  .bg-indigo-500,.bg-indigo-600,.bg-indigo-700,
+  .bg-violet-500,.bg-violet-600,.bg-violet-700,
+  .bg-purple-500,.bg-purple-600,.bg-purple-700,
+  .bg-pink-500,.bg-pink-600,.bg-pink-700,
+  .bg-fuchsia-500,.bg-fuchsia-600,.bg-fuchsia-700,
+  .bg-orange-500,.bg-orange-600,.bg-orange-700,
+  .bg-teal-500,.bg-teal-600,.bg-teal-700,
+  .bg-cyan-500,.bg-cyan-600,.bg-cyan-700,
+  .bg-lime-500,.bg-lime-600,.bg-lime-700,
+  .bg-amber-500,.bg-amber-600,.bg-amber-700,
+  .bg-yellow-500,.bg-yellow-600,.bg-yellow-700,
+  .bg-black
+) :is(.text-white,[class*="text-white/"]) {
+  color: #ffffff !important;
+}
+
+/* Light-first Marketing/CRM cards become shell cards in Nighttime, but compact
+ * white pills/actions remain intentional inverse controls rather than disappearing.
+ */
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  span, small, strong, p
+)[class~="bg-white"][class*="text-black"],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  span, small, strong, p
+)[class~="bg-white"][class*="text-neutral-9"] {
+  background: #ffffff !important;
+  color: #09090b !important;
+}
+
+/* Keep disabled and placeholder content readable instead of fading into the surface. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :disabled,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [aria-disabled="true"] {
+  opacity: .58;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :disabled,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface [aria-disabled="true"] {
+  opacity: .62;
+}
