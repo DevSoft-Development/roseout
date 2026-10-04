@@ -1,40 +1,37 @@
 -- Search V3 graph-authoritative geography enrichment.
 -- Geography type, canonical name, centroid and hierarchy are derived from production
 -- location_search_profiles instead of static application dictionaries.
+-- Only market-classified profiles contribute authoritative geography evidence;
+-- UNKNOWN/unclassified imports cannot contaminate canonical geography centroids.
 
-with geo_source as (
-  select
-    'market'::text as entity_type,
-    trim(p.market) as canonical_name,
-    p.latitude,
-    p.longitude,
-    p.city,
-    p.borough,
-    p.neighborhood,
-    l.zip_code
+with authoritative_profiles as (
+  select p.*, l.zip_code
   from public.location_search_profiles p
   join public.locations l on l.id = p.location_id
   where nullif(trim(p.market), '') is not null
+    and upper(trim(p.market)) <> 'UNKNOWN'
+),
+geo_source as (
+  select 'market'::text as entity_type, trim(market) as canonical_name,
+         latitude, longitude, city, borough, neighborhood, zip_code
+  from authoritative_profiles
+  where nullif(trim(market), '') is not null
   union all
-  select 'city', trim(p.city), p.latitude, p.longitude, p.city, p.borough, p.neighborhood, l.zip_code
-  from public.location_search_profiles p
-  join public.locations l on l.id = p.location_id
-  where nullif(trim(p.city), '') is not null
+  select 'city', trim(city), latitude, longitude, city, borough, neighborhood, zip_code
+  from authoritative_profiles
+  where nullif(trim(city), '') is not null
   union all
-  select 'borough', trim(p.borough), p.latitude, p.longitude, p.city, p.borough, p.neighborhood, l.zip_code
-  from public.location_search_profiles p
-  join public.locations l on l.id = p.location_id
-  where nullif(trim(p.borough), '') is not null
+  select 'borough', trim(borough), latitude, longitude, city, borough, neighborhood, zip_code
+  from authoritative_profiles
+  where nullif(trim(borough), '') is not null
   union all
-  select 'neighborhood', trim(p.neighborhood), p.latitude, p.longitude, p.city, p.borough, p.neighborhood, l.zip_code
-  from public.location_search_profiles p
-  join public.locations l on l.id = p.location_id
-  where nullif(trim(p.neighborhood), '') is not null
+  select 'neighborhood', trim(neighborhood), latitude, longitude, city, borough, neighborhood, zip_code
+  from authoritative_profiles
+  where nullif(trim(neighborhood), '') is not null
   union all
-  select 'zip_code', trim(l.zip_code), p.latitude, p.longitude, p.city, p.borough, p.neighborhood, l.zip_code
-  from public.location_search_profiles p
-  join public.locations l on l.id = p.location_id
-  where nullif(trim(l.zip_code), '') is not null
+  select 'zip_code', trim(zip_code), latitude, longitude, city, borough, neighborhood, zip_code
+  from authoritative_profiles
+  where nullif(trim(zip_code), '') is not null
 ),
 geo_rollup as (
   select
