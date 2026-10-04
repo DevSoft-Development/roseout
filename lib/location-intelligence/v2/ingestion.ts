@@ -98,7 +98,6 @@ export async function registerInitialLocationIntelligenceV2(input: {
       profile_version: 1,
       quality_score: score,
       search_v3_ready: false,
-      last_initial_enrichment_at: now,
       routine_paid_refresh_enabled: false,
       updated_at: now,
     }, { onConflict: "location_id" });
