@@ -2,6 +2,8 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { allowPaidMaterialChangeVerification } from "@/lib/location-intelligence/v2/policy";
+import { executeWithProviderFallback } from "@/lib/location-intelligence/v2/orchestrator";
+import { isClaimedLocation } from "@/lib/location-intelligence/source-precedence";
 
 export async function enqueueMaterialChange(input: {
   locationId: string;
@@ -69,4 +71,97 @@ export async function setMaterialChangeResult(input: {
     .single();
   if (error) throw new Error(`Material change result update failed: ${error.message}`);
   return data;
+}
+
+
+export async function verifyMaterialChangeEvent(eventId: string) {
+  const { data: event, error: eventError } = await supabaseAdmin
+    .from("location_material_change_events")
+    .select("*")
+    .eq("id", eventId)
+    .single();
+  if (eventError) throw new Error(`Material change event read failed: ${eventError.message}`);
+  if (!event?.location_id) throw new Error("material_change_location_required");
+
+  const [{ data: location, error: locationError }, { data: googleIdentity, error: identityError }] = await Promise.all([
+    supabaseAdmin
+      .from("locations")
+      .select("id,name,restaurant_name,activity_name,address,city,state,website,is_claimed,claimed,claim_status,owner_user_id")
+      .eq("id", event.location_id)
+      .single(),
+    supabaseAdmin
+      .from("location_external_identities")
+      .select("external_id")
+      .eq("location_id", event.location_id)
+      .eq("provider", "google")
+      .eq("status", "active")
+      .eq("is_current", true)
+      .maybeSingle(),
+  ]);
+  if (locationError) throw new Error(locationError.message);
+  if (identityError) throw new Error(identityError.message);
+
+  const ownerMaintained = isClaimedLocation(location as Record<string, unknown>);
+  const name = String(location.name || location.restaurant_name || location.activity_name || "").trim();
+  const query = [name, location.address, location.city, location.state].filter(Boolean).join(", ");
+
+  await setMaterialChangeResult({ eventId, status: "verifying" });
+
+  try {
+    const result = await executeWithProviderFallback({
+      capability: "status_verification",
+      purpose: "material_change",
+      ownerMaintained,
+      input: {
+        googlePlaceId: googleIdentity?.external_id || null,
+        placeId: googleIdentity?.external_id || null,
+        url: location.website || null,
+        query,
+        title: name,
+        description: query,
+        limit: 10,
+      },
+    });
+    return setMaterialChangeResult({
+      eventId,
+      status: "confirmed",
+      evidence: {
+        ...(event.evidence && typeof event.evidence === "object" ? event.evidence : {}),
+        verificationProvider: result.providerId,
+        verificationData: result.data,
+        verifiedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    await setMaterialChangeResult({
+      eventId,
+      status: "failed",
+      evidence: {
+        ...(event.evidence && typeof event.evidence === "object" ? event.evidence : {}),
+        verificationError: error instanceof Error ? error.message : "material_change_verification_failed",
+      },
+    });
+    throw error;
+  }
+}
+
+export async function processMaterialChangeVerificationBatch(limit = 25) {
+  const due = await dueMaterialChangeVerifications(limit);
+  const results: Array<Record<string, unknown>> = [];
+  for (const event of due as Array<Record<string, any>>) {
+    try {
+      results.push(await verifyMaterialChangeEvent(String(event.id)));
+    } catch (error) {
+      results.push({
+        id: event.id,
+        locationId: event.location_id,
+        error: error instanceof Error ? error.message : "material_change_verification_failed",
+      });
+    }
+  }
+  return {
+    processed: results.length,
+    failed: results.filter((row) => Boolean(row.error)).length,
+    results,
+  };
 }
