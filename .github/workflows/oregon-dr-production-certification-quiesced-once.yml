@@ -37,7 +37,7 @@ jobs:
           promotion='.github/workflows/oregon-dr-promotion.yml'
           failback='scripts/dr/oregon-failback.sh'
 
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
 
           # Live readiness is observational. Exact public-data equality is only
