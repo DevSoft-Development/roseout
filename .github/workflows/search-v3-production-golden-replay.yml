@@ -9,7 +9,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
-# Manual production replay trigger: identify exact failing Search V3 stage.
+# Manual production replay trigger: verify hard eligibility batching fix.
 permissions:
   contents: read
   id-token: write
