@@ -38,6 +38,7 @@ ALLOWED_PROVIDERS = {
     "openai": {"apiKey"},
     "huggingface": {"token"},
     "brave": {"apiKey"},
+    "dataforseo": {"login", "password"},
     "serpapi": {"apiKey"},
     "stripe": {"secretKey", "webhookSecret", "connectWebhookSecret"},
     "resend": {"apiKey", "webhookSecret"},
