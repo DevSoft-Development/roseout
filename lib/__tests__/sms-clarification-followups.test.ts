@@ -99,6 +99,15 @@ describe("SMS clarification follow-ups", () => {
     expect(workflow).toContain(".OPENAI_API_KEY // empty");
   });
 
+  it("loads DataForSEO from the authoritative Credential Vault before runtime reconciliation", () => {
+    const workflow = fs.readFileSync(
+      path.join(process.cwd(), ".github/workflows/aws-credential-vault-runtime-sync.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("brave dataforseo serpapi");
+    expect(workflow).toContain("'dataforseo': {'login':['DATAFORSEO_LOGIN'],'password':['DATAFORSEO_PASSWORD']}");
+  });
+
   it("recovers the missing Google vault credential for Location Intelligence V2 without dropping OAuth fields", () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), ".github/workflows/aws-credential-vault-runtime-sync.yml"),
