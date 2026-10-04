@@ -391,6 +391,20 @@ function selectPilotBatch(
   return selected;
 }
 
+export function pilotEnrichmentCommitted(lastInitialEnrichmentAt: unknown) {
+  return Boolean(String(lastInitialEnrichmentAt || "").trim());
+}
+
+async function locationInitialEnrichmentCommitted(locationId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("location_intelligence_profiles_v2")
+    .select("last_initial_enrichment_at")
+    .eq("location_id", locationId)
+    .single();
+  if (error) throw new Error(`Pilot enrichment reconciliation failed: ${error.message}`);
+  return pilotEnrichmentCommitted(data?.last_initial_enrichment_at);
+}
+
 async function markPilotResult(
   locationId: string,
   status: "reserved" | "success" | "failed",
@@ -480,6 +494,7 @@ export async function runLocationIntelligenceV2PilotBatch() {
 
   let succeeded = 0;
   const enrichmentFailures: Array<{ locationId: string; error: string }> = [];
+  const postEnrichmentFailures: Array<{ locationId: string; error: string }> = [];
   const auditFailures: Array<{ locationId: string; error: string }> = [];
 
   for (let index = 0; index < selected.length; index += 2) {
@@ -501,6 +516,37 @@ export async function runLocationIntelligenceV2PilotBatch() {
           succeeded += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : "initial_enrichment_failed";
+
+          let committed = false;
+          try {
+            committed = await locationInitialEnrichmentCommitted(candidate.id);
+          } catch (reconcileError) {
+            auditFailures.push({
+              locationId: candidate.id,
+              error:
+                reconcileError instanceof Error
+                  ? reconcileError.message
+                  : "pilot_enrichment_reconciliation_failed",
+            });
+          }
+
+          if (committed) {
+            succeeded += 1;
+            postEnrichmentFailures.push({ locationId: candidate.id, error: message });
+            try {
+              await markPilotResult(candidate.id, "success", message);
+            } catch (auditError) {
+              auditFailures.push({
+                locationId: candidate.id,
+                error:
+                  auditError instanceof Error
+                    ? auditError.message
+                    : "pilot_post_enrichment_audit_failed",
+              });
+            }
+            return;
+          }
+
           enrichmentFailures.push({ locationId: candidate.id, error: message });
           try {
             await markPilotResult(candidate.id, "failed", message);
@@ -537,10 +583,12 @@ export async function runLocationIntelligenceV2PilotBatch() {
     succeeded,
     failed: enrichmentFailures.length,
     auditFailed: auditFailures.length,
+    postEnrichmentFailed: postEnrichmentFailures.length,
     remaining: Math.max(0, LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - progressAfter.successful),
     quotas,
     cohort: summarize(selected),
     failures: enrichmentFailures,
+    postEnrichmentFailures,
     auditFailures,
   };
 }
