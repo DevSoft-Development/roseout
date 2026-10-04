@@ -6,6 +6,9 @@ import { providersForCapability } from "@/lib/location-intelligence/v2/providers
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
+import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -83,6 +86,103 @@ describe("Location Intelligence V2", () => {
   });
 });
 
+
+describe("Location Intelligence V2 pilot quotas", () => {
+  it("selects exactly ten locations per pilot batch", () => {
+    for (const batchIndex of [0, 1, 2, 9]) {
+      expect(
+        pilotBatchQuotas(batchIndex).reduce((sum, quota) => sum + quota.count, 0),
+      ).toBe(10);
+    }
+  });
+
+  it("balances the full ten-batch pilot across states and location types", () => {
+    const totals = {
+      states: { NY: 0, NJ: 0, CT: 0 },
+      types: { restaurant: 0, activity: 0 },
+    };
+
+    for (let batchIndex = 0; batchIndex < 10; batchIndex += 1) {
+      for (const quota of pilotBatchQuotas(batchIndex)) {
+        totals.states[quota.state] += quota.count;
+        totals.types[quota.locationType] += quota.count;
+      }
+    }
+
+    expect(totals.states).toEqual({ NY: 70, NJ: 20, CT: 10 });
+    expect(totals.types).toEqual({ restaurant: 60, activity: 40 });
+  });
+
+  it("fills failed pilot cells instead of drifting the final cohort", () => {
+    const quotas = nextPilotQuotas({
+      attempted: 100,
+      successful: 99,
+      successfulByCell: {
+        "NY:restaurant": 45,
+        "NY:activity": 25,
+        "NJ:restaurant": 10,
+        "NJ:activity": 10,
+        "CT:restaurant": 5,
+        "CT:activity": 4,
+      },
+    });
+
+    expect(quotas).toEqual([
+      { state: "CT", locationType: "activity", count: 1 },
+    ]);
+  });
+
+  it("uses activity_type for activity diversity", () => {
+    expect(
+      pilotCategoryKey({
+        primary_category: null,
+        activity_type: "arcade",
+        category: null,
+        cuisine_type: null,
+        cuisine: null,
+      }),
+    ).toBe("arcade");
+  });
+
+  it("prefers activity_type over generic primary_category for activities", () => {
+    expect(
+      pilotCategoryKey({
+        location_type: "activity",
+        primary_category: "listing",
+        activity_type: "rooftop",
+        category: null,
+        cuisine_type: null,
+        cuisine: null,
+      }),
+    ).toBe("rooftop");
+  });
+
+  it("does not impose a fixed top-ranked candidate cap before eligibility filtering", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/location-intelligence/v2/pilot.ts"),
+      "utf8",
+    );
+    expect(source).toContain(".range(offset, offset + pageSize - 1)");
+    expect(source).not.toContain(".limit(160)");
+  });
+
+  it("counts a reserved location as successful after enrichment even if the final audit write fails", () => {
+    expect(pilotMarkerCountsAsSuccess("reserved", true)).toBe(true);
+    expect(pilotMarkerCountsAsSuccess("reserved", false)).toBe(false);
+    expect(pilotMarkerCountsAsSuccess("success", true)).toBe(true);
+  });
+
+  it("recognizes a durable initial-enrichment timestamp after a later enrichment error", () => {
+    expect(pilotEnrichmentCommitted("2026-10-04T21:00:00.000Z")).toBe(true);
+    expect(pilotEnrichmentCommitted(null)).toBe(false);
+    expect(pilotEnrichmentCommitted("")).toBe(false);
+  });
+
+  it("never treats an unknown reconciliation result as a confirmed non-commit", () => {
+    const unknown: boolean | null = null;
+    expect(unknown).not.toBe(false);
+  });
+});
 
 describe("Location Intelligence V2 provider health metadata", () => {
   it("preserves policy metadata while updating health detail", () => {

@@ -47,6 +47,7 @@ jobs:
           grep -F 'location-search-profile-worker' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'catalog-enrichment-runner' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'location-description-backfill' infra/aws/lambda/background_work_signal.py >/dev/null
+          grep -F 'location-intelligence-v2-pilot' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'claim-qr-repair-worker' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'unified-location-gap-repair' infra/aws/lambda/background_work_signal.py >/dev/null
           grep -F 'worker-dispatcher-unified' infra/aws/lambda/background_work_signal.py >/dev/null
