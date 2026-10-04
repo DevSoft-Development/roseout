@@ -194,7 +194,7 @@ set enabled=excluded.enabled, priority=excluded.priority, capabilities=excluded.
 
 -- Backfill only Google identities that are currently unambiguous.
 insert into public.location_external_identities(location_id,provider,external_id,status,is_current,metadata)
-select min(id), 'google', google_place_id, 'active', true, jsonb_build_object('backfill','locations.google_place_id')
+select (min(id::text) filter (where coalesce(duplicate_status,'') <> 'duplicate'))::uuid, 'google', google_place_id, 'active', true, jsonb_build_object('backfill','locations.google_place_id')
 from public.locations
 where google_place_id is not null and btrim(google_place_id) <> ''
 group by google_place_id
@@ -203,7 +203,7 @@ on conflict (provider, external_id) do nothing;
 
 -- Queue legacy collisions instead of choosing a winner silently.
 insert into public.location_material_change_events(location_id,change_type,confidence,source,evidence)
-select min(id), 'identity_conflict', 1.0, 'v2_google_identity_backfill',
+select min(id::text)::uuid, 'identity_conflict', 1.0, 'v2_google_identity_backfill',
        jsonb_build_object('provider','google','external_id',google_place_id,'candidate_count',count(*),'candidate_location_ids',jsonb_agg(id))
 from public.locations
 where google_place_id is not null and btrim(google_place_id) <> ''
