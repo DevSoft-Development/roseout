@@ -7,7 +7,7 @@ import { deriveLocationClassification } from "@/lib/location-intelligence/v2/cla
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 import { safeSingleGooglePlaceId } from "@/lib/location-intelligence/v2/initial-enrichment";
-import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
+import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotDuplicateState, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -187,6 +187,26 @@ describe("Location Intelligence V2 pilot quotas", () => {
     );
     expect(source).toContain(".range(offset, offset + pageSize - 1)");
     expect(source).not.toContain(".limit(160)");
+  });
+
+
+  it("excludes confirmed duplicates while retaining unresolved duplicate cases", () => {
+    expect(pilotDuplicateState({ duplicate_status: "duplicate", duplicate_of: null })).toEqual({
+      confirmed: true,
+      messy: false,
+    });
+    expect(pilotDuplicateState({ duplicate_status: "unknown", duplicate_of: "master-1" })).toEqual({
+      confirmed: true,
+      messy: false,
+    });
+    expect(pilotDuplicateState({ duplicate_status: "possible_duplicate", duplicate_of: null })).toEqual({
+      confirmed: false,
+      messy: true,
+    });
+    expect(pilotDuplicateState({ duplicate_status: "unique", duplicate_of: null })).toEqual({
+      confirmed: false,
+      messy: false,
+    });
   });
 
   it("counts a reserved location as successful after enrichment even if the final audit write fails", () => {
