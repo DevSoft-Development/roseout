@@ -397,6 +397,16 @@ export async function approveLocationClaim({
       reviewedBy: actorContext?.userId || null,
     });
 
+    const { error: intelligenceOwnershipError } = await claimDb
+      .from("location_intelligence_profiles_v2")
+      .upsert({
+        location_id: locationId,
+        maintenance_mode: "owner_maintained",
+        routine_paid_refresh_enabled: false,
+        updated_at: now,
+      }, { onConflict: "location_id" });
+    if (intelligenceOwnershipError) throw new Error(intelligenceOwnershipError.message);
+
     const { error: updateError } = await claimDb
       .from("location_claim_requests")
       .update({
