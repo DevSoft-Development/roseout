@@ -87,9 +87,11 @@ export function createTheOutHavenSearchV3(
       new SupabaseLocationSearchProfileLoader(client),
     );
 
+  const knowledgeGraph = new SupabaseKnowledgeGraphProvider(client);
+
   const entityResolution =
     options.entityResolution === undefined
-      ? new GraphEntityResolver(new SupabaseKnowledgeGraphProvider(client))
+      ? new GraphEntityResolver(knowledgeGraph)
       : options.entityResolution;
 
   const retrievalProviders =
@@ -117,7 +119,7 @@ export function createTheOutHavenSearchV3(
 
   const pairing =
     options.pairing === undefined
-      ? new DeterministicOutingPairingProvider(options.outingPairing, routing)
+      ? new DeterministicOutingPairingProvider(options.outingPairing, routing, knowledgeGraph)
       : options.pairing;
 
   return {
