@@ -22,7 +22,7 @@ AUTO_CONTAIN_TAG_VALUE = os.environ.get("AUTO_CONTAIN_TAG_VALUE", "enabled")
 MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
-CREDENTIAL_SCHEMA_VERSION = 3
+CREDENTIAL_SCHEMA_VERSION = 4
 MAX_CREDENTIAL_BYTES = 60 * 1024
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_./@+-]{8,200}$")
 PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
@@ -388,6 +388,16 @@ def _test_credential(environment, provider):
         if status == 200:
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Hugging Face token verified."}
         raise ValueError("huggingface_credential_test_failed")
+
+    if provider == "dataforseo" and values.get("login") and values.get("password"):
+        auth = base64.b64encode(f"{values['login']}:{values['password']}".encode()).decode()
+        status, payload = _http_json(
+            "https://api.dataforseo.com/v3/appendix/user_data",
+            headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+        )
+        if status == 200 and '"status_code":20000' in payload.replace(" ", ""):
+            return {"ok": True, "provider": provider, "status": "healthy", "detail": "DataForSEO API credentials verified."}
+        raise ValueError("dataforseo_credential_test_failed")
 
     if provider == "mapbox" and values.get("accessToken"):
         token = urllib.parse.quote(values["accessToken"], safe="")
