@@ -14,6 +14,7 @@ export const RUNTIME_ENV_MAP: RuntimeEnvMap = {
   openai: { apiKey: ["OPENAI_API_KEY"] },
   huggingface: { token: ["SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] },
   brave: { apiKey: ["BRAVE_SEARCH_API_KEY"] },
+  dataforseo: { login: ["DATAFORSEO_LOGIN"], password: ["DATAFORSEO_PASSWORD"] },
   serpapi: { apiKey: ["SERPAPI_API_KEY"] },
   stripe: { secretKey: ["STRIPE_SECRET_KEY"], webhookSecret: ["STRIPE_WEBHOOK_SECRET"], connectWebhookSecret: ["STRIPE_CONNECT_WEBHOOK_SECRET"] },
   resend: { apiKey: ["RESEND_API_KEY"], webhookSecret: ["RESEND_WEBHOOK_SECRET"] },
