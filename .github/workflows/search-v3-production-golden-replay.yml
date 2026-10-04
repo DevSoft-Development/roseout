@@ -9,7 +9,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
-# Manual production replay trigger: verify Location Intelligence batching fix.
+# Manual production replay trigger: verify taxonomy normalization relevance fix.
 permissions:
   contents: read
   id-token: write
