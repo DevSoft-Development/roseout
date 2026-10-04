@@ -44,9 +44,9 @@ jobs:
             .failback_prepare_confirmation=="PREPARE_FAILBACK" and
             .failback_confirmation=="FAILBACK_VIRGINIA" and
             .expected_final_primary=="virginia" and
-            .canonical_schedule_count==65
+            .canonical_schedule_count==66
           ' "$marker" >/dev/null
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'aws-scheduler-activation.yml' "$workflow" >/dev/null
           grep -F 'aws-dr-scheduler-activation.yml' "$workflow" >/dev/null
