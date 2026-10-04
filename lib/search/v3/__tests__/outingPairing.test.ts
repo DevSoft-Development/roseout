@@ -198,6 +198,63 @@ describe("DeterministicOutingPairingProvider", () => {
     });
   });
 
+  it("uses knowledge-graph relationship evidence to rank stronger pairs first", async () => {
+    const graph = {
+      providerId: "test.graph",
+      async getLocationEntities(locationIds: readonly string[]) {
+        return locationIds.map((locationId) => ({
+          id: `entity-${locationId}`,
+          entityType: "location",
+          canonicalKey: `location:${locationId}`,
+          canonicalName: locationId,
+          locationId,
+          attributes: {},
+          confidence: 1,
+          source: "test",
+          sourceUpdatedAt: null,
+        }));
+      },
+      async getRelationshipsForEntities() {
+        return [
+          {
+            id: "edge-r1-a-good",
+            subjectEntityId: "entity-r1",
+            predicate: "compatible_with",
+            objectEntityId: "entity-a-good",
+            confidence: 1,
+            source: "test",
+            validFrom: null,
+            validTo: null,
+          },
+        ];
+      },
+    };
+
+    const pairer = new DeterministicOutingPairingProvider(
+      { graphWeight: 0.4, maxCandidatesPerRole: 10 },
+      null,
+      graph,
+    );
+
+    const outings = await pairer.pair({
+      request: { requestId: "pair-graph", query: "Dinner and bowling" },
+      intent: intent({
+        rawQuery: "Dinner and bowling",
+        domains: ["restaurant", "activity"],
+        constraints: [hard("activity_type", "bowling")],
+      }),
+      candidates: [
+        candidate({ id: "r1", domain: "restaurant", score: 0.8 }),
+        candidate({ id: "a-plain", domain: "activity", score: 0.8, activityCategories: ["bowling"] }),
+        candidate({ id: "a-good", domain: "activity", score: 0.8, activityCategories: ["bowling"] }),
+      ],
+    });
+
+    expect(outings[0]?.activity.locationId).toBe("a-good");
+    expect(outings[0]?.metadata.scoreComponents.graph).toBe(1);
+    expect(outings[0]?.metadata.graphEvidence.status).toBe("available");
+  });
+
   it("does not pair a single-domain search", async () => {
     const pairer = new DeterministicOutingPairingProvider();
 
