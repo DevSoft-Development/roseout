@@ -58,8 +58,9 @@ export async function registerInitialLocationIntelligenceV2(input: {
     snapshotId = data?.id ? String(data.id) : null;
   }
 
-  const evidence = [
-    input.googlePlaceId ? {
+  const evidence: Record<string, unknown>[] = [];
+  if (input.googlePlaceId) {
+    evidence.push({
       location_id: input.locationId,
       provider: "google",
       provider_entity_id: input.googlePlaceId,
@@ -70,8 +71,9 @@ export async function registerInitialLocationIntelligenceV2(input: {
       snapshot_id: snapshotId,
       observed_at: now,
       metadata: { initialIngestion: true },
-    } : null,
-    {
+    });
+  }
+  evidence.push({
       location_id: input.locationId,
       provider: provider || input.source || "unknown",
       provider_entity_id: input.sourceId || null,
@@ -82,8 +84,7 @@ export async function registerInitialLocationIntelligenceV2(input: {
       snapshot_id: snapshotId,
       observed_at: now,
       metadata: { initialIngestion: true },
-    },
-  ].filter(Boolean);
+    });
 
   if (evidence.length) {
     const { error } = await supabaseAdmin.from("location_evidence_v2").insert(evidence);
