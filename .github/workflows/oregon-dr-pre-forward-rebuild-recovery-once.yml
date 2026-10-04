@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/dr/recover-failback-pre-forward-rebuild.sh
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'Recovery requires DR_MODE=failback_in_progress.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
           grep -F 'Recovery requires AWS runtime still targeting Oregon.' scripts/dr/recover-failback-pre-forward-rebuild.sh >/dev/null
