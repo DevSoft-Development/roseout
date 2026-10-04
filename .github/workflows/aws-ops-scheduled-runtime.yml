@@ -47,8 +47,8 @@ jobs:
           grep -F 'arn:aws:scheduler:::aws-sdk:codebuild:startBuild' infra/aws/cloudformation/ops-scheduled-runtime.yml >/dev/null
           grep -F 'codebuild:CreateProject' .github/workflows/aws-ops-scheduled-runtime.yml >/dev/null
           grep -F 'describe-stack-events' .github/workflows/aws-ops-scheduled-runtime.yml >/dev/null
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
-          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
+          test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '66'
 
   deploy:
     if: github.event_name != 'pull_request'
