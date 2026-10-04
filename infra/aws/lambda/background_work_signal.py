@@ -37,6 +37,7 @@ ALLOWED_JOBS = {
     "location-search-profile-worker": "/api/cron/managed?job=location-search-profile-worker",
     "catalog-enrichment-runner": "/api/cron/managed?job=catalog-enrichment-runner",
     "location-intelligence-v2-maintenance": "/api/cron/managed?job=location-intelligence-v2-maintenance",
+    "location-intelligence-v2-pilot": "/api/cron/managed?job=location-intelligence-v2-pilot",
     "location-description-backfill": "/api/cron/managed?job=location-description-backfill",
     "search-ml-learning-maintenance": "/api/cron/managed?job=search-ml-learning-maintenance",
     "claim-qr-repair-worker": "edge:claim-qr-repair-worker",
