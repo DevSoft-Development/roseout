@@ -153,6 +153,11 @@ describe("Location Intelligence V2 pilot quotas", () => {
     expect(pilotEnrichmentCommitted(null)).toBe(false);
     expect(pilotEnrichmentCommitted("")).toBe(false);
   });
+
+  it("never treats an unknown reconciliation result as a confirmed non-commit", () => {
+    const unknown: boolean | null = null;
+    expect(unknown).not.toBe(false);
+  });
 });
 
 describe("Location Intelligence V2 provider health metadata", () => {
