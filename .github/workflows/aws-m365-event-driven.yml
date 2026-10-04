@@ -50,7 +50,7 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
-          if (rows.length !== 63) throw new Error(`expected 63 schedules, got ${rows.length}`);
+          if (rows.length !== 64) throw new Error(`expected 64 schedules, got ${rows.length}`);
           const m365 = rows.find((row) => row.name === 'microsoft-365-sync');
           if (m365?.expression !== 'cron(0/30 * * * ? *)') throw new Error('Microsoft 365 recovery must be 30 minutes');
           if (m365?.function !== 'sqs:background-cron') throw new Error('Microsoft 365 recovery must remain durable');
