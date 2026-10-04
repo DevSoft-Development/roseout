@@ -14,8 +14,30 @@ function requiredFields(provider: string) {
   return [];
 }
 
+export function mergeProviderHealthMetadata(
+  metadata: unknown,
+  detail?: string,
+): Record<string, unknown> {
+  const existing =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? { ...(metadata as Record<string, unknown>) }
+      : {};
+  if (detail) existing.detail = detail;
+  else delete existing.detail;
+  return existing;
+}
+
 export async function refreshLocationIntelligenceProviderHealth() {
   const results: Array<{ provider: string; status: string; detail?: string }> = [];
+  const { data: providerRows, error: providerRowsError } = await supabaseAdmin
+    .from("location_provider_registry")
+    .select("provider,metadata");
+  if (providerRowsError) {
+    throw new Error(`Provider health metadata load failed: ${providerRowsError.message}`);
+  }
+  const metadataByProvider = new Map(
+    (providerRows || []).map((row) => [String(row.provider), row.metadata]),
+  );
 
   for (const provider of LOCATION_INTELLIGENCE_PROVIDER_REGISTRY) {
     let status = provider.enabled ? "healthy" : "disabled";
@@ -40,7 +62,7 @@ export async function refreshLocationIntelligenceProviderHealth() {
       .update({
         health_status: status,
         last_health_check_at: new Date().toISOString(),
-        metadata: detail ? { detail } : {},
+        metadata: mergeProviderHealthMetadata(metadataByProvider.get(provider.id), detail),
         updated_at: new Date().toISOString(),
       })
       .eq("provider", provider.id);
