@@ -149,14 +149,23 @@ jobs:
           aws lambda wait function-updated --function-name "$FUNCTION_NAME"
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
-      - name: Verify Assistant API and OpenAI credential
+      - name: Verify Assistant API and optional OpenAI credential
+        id: verify
         env:
           API_URL: ${{ steps.runtime.outputs.api_url }}
         run: |
           set -euo pipefail
           BASE_URL="${API_URL%/}"
           curl --fail --silent --show-error "$BASE_URL/v1/status" > "$RUNNER_TEMP/assistant-status.json"
-          jq -e '.ok == true and .service == "assistant-api" and .providers.openai.configured == true and .providers.huggingface.mode == "aws-search-ml"' "$RUNNER_TEMP/assistant-status.json" >/dev/null
+          jq -e '.ok == true and .service == "assistant-api" and .providers.huggingface.mode == "aws-search-ml"' "$RUNNER_TEMP/assistant-status.json" >/dev/null
+
+          OPENAI_CONFIGURED="$(jq -r '.providers.openai.configured // false' "$RUNNER_TEMP/assistant-status.json")"
+          echo "openai_configured=$OPENAI_CONFIGURED" >> "$GITHUB_OUTPUT"
+          if [ "$OPENAI_CONFIGURED" != "true" ]; then
+            echo "openai_verified=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::OpenAI is not configured in the central Credential Vault. Assistant API runtime is healthy, but OpenAI routes will remain disabled."
+            exit 0
+          fi
 
           SECRET="$(cat "$RUNNER_TEMP/assistant-api-secret")"
           PATH_VALUE='/v1/openai/verify'
@@ -176,9 +185,10 @@ jobs:
             --header "x-toh-signature: $SIGNATURE" \
             "$BASE_URL$PATH_VALUE" > "$RUNNER_TEMP/openai-verify.json"
           jq -e '.ok == true and .provider == "openai" and .credentialConfigured == true and .verified == true' "$RUNNER_TEMP/openai-verify.json" >/dev/null
+          echo "openai_verified=true" >> "$GITHUB_OUTPUT"
           echo 'OpenAI credential verified read-only through AWS Assistant API; no model generation performed.'
       - name: Activate Assistant API in Vercel production
-        if: steps.config.outputs.target_env == 'production'
+        if: steps.config.outputs.target_env == 'production' && steps.verify.outputs.openai_verified == 'true'
         id: vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -225,7 +235,7 @@ jobs:
           done
           test "$READY" = true
       - name: Verify production app after Assistant activation
-        if: steps.config.outputs.target_env == 'production'
+        if: steps.config.outputs.target_env == 'production' && steps.verify.outputs.openai_verified == 'true'
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 12 --retry-delay 5 https://www.theouthaven.com/api/health/platform-dr >/dev/null
@@ -233,14 +243,21 @@ jobs:
         env:
           TARGET_ENV: ${{ steps.config.outputs.target_env }}
           API_URL: ${{ steps.runtime.outputs.api_url }}
+          OPENAI_CONFIGURED: ${{ steps.verify.outputs.openai_configured }}
+          OPENAI_VERIFIED: ${{ steps.verify.outputs.openai_verified }}
         run: |
           {
             echo '### TheOutHaven Assistant API'
             echo "- Environment: $TARGET_ENV"
             echo "- Endpoint: $API_URL"
-            echo '- OpenAI: AWS-owned credential and egress boundary; read-only credential verification passed'
+            if [ "$OPENAI_VERIFIED" = "true" ]; then
+              echo '- OpenAI: configured in central Credential Vault and read-only verification passed'
+              echo '- Vercel: signed Assistant API URL/HMAC activated; OPENAI_API_KEY is a non-secret compatibility marker'
+            else
+              echo '- OpenAI: not configured in central Credential Vault; provider routes remain disabled'
+              echo '- Vercel: Assistant API activation skipped until the OpenAI vault credential is configured and verified'
+            fi
             echo '- Hugging Face: existing AWS Search ML service remains authoritative'
-            echo '- Vercel: signed Assistant API URL/HMAC only; OPENAI_API_KEY is a non-secret compatibility marker'
             echo '- Edge: provider key removal is enforced by the Edge runtime deployment'
             echo '- No model generation was used for provider verification'
           } >> "$GITHUB_STEP_SUMMARY"
