@@ -258,22 +258,30 @@ export async function collectPendingDataForSeoReviewRefreshes(limit = 25) {
       });
 
       const reviews = extractReviewItems(payload);
-      const rows = reviews
-        .map((review) => {
-          const reviewId = String(review.review_id || "").trim();
-          if (!reviewId) return null;
-          return {
-            location_id: locationId,
-            provider: "dataforseo",
-            external_review_id: reviewId,
-            published_at: reviewTimestamp(review),
-            rating: reviewRating(review),
-            review_text: reviewText(review) || null,
-            author_name: String(review.profile_name || "").trim() || null,
-            payload: review,
-          };
-        })
-        .filter(Boolean);
+      const rows: Array<{
+        location_id: string;
+        provider: string;
+        external_review_id: string;
+        published_at: string | null;
+        rating: number | null;
+        review_text: string | null;
+        author_name: string | null;
+        payload: RawReview;
+      }> = [];
+      for (const review of reviews) {
+        const reviewId = String(review.review_id || "").trim();
+        if (!reviewId) continue;
+        rows.push({
+          location_id: locationId,
+          provider: "dataforseo",
+          external_review_id: reviewId,
+          published_at: reviewTimestamp(review),
+          rating: reviewRating(review),
+          review_text: reviewText(review) || null,
+          author_name: String(review.profile_name || "").trim() || null,
+          payload: review,
+        });
+      }
 
       if (rows.length) {
         const { error: reviewError } = await supabaseAdmin
