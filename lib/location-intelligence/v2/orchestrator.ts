@@ -7,6 +7,7 @@ import type {
   ProviderCapability,
 } from "@/lib/location-intelligence/v2/contracts";
 import { providersForCapability, providerDescriptor } from "@/lib/location-intelligence/v2/providers";
+import { allowPaidProviderExecution } from "@/lib/location-intelligence/v2/policy";
 import {
   braveContextSearch,
   createDataForSeoReviewTask,
@@ -41,13 +42,11 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     const purpose = request.purpose || "unspecified";
     const paidRequest = this.descriptor.paid ||
       (this.descriptor.id === "google" && request.capability === "status_verification");
-    if (paidRequest) {
-      if (purpose === "routine_profile_refresh" || purpose === "unspecified") {
-        throw new Error(`paid_provider_purpose_blocked:${this.descriptor.id}:${purpose}`);
-      }
-      if (request.ownerMaintained === true && purpose !== "review_refresh" && purpose !== "material_change") {
-        throw new Error(`paid_provider_owner_maintained_blocked:${this.descriptor.id}:${purpose}`);
-      }
+    if (paidRequest && !allowPaidProviderExecution({
+      purpose,
+      ownerMaintained: request.ownerMaintained,
+    })) {
+      throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
     return {
       providerId: this.descriptor.id,
