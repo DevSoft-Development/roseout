@@ -29,8 +29,8 @@ const vercelJobs = new Set();
 
 if (activation.batch !== 15) throw new Error(`expected Batch 15, got ${activation.batch}`);
 if (schedules.length !== 64) throw new Error(`expected 64 active AWS schedules, got ${schedules.length}`);
-if ((activation.enabled ?? []).length !== 63) throw new Error(`expected 63 enabled schedules, got ${(activation.enabled ?? []).length}`);
-if ((activation.rollback_enabled ?? []).length !== 62) throw new Error(`expected rollback baseline 62, got ${(activation.rollback_enabled ?? []).length}`);
+if ((activation.enabled ?? []).length !== 64) throw new Error(`expected 64 enabled schedules, got ${(activation.enabled ?? []).length}`);
+if ((activation.rollback_enabled ?? []).length !== 63) throw new Error(`expected rollback baseline 63, got ${(activation.rollback_enabled ?? []).length}`);
 if (staged.length !== 0) throw new Error(`expected no staged schedules, got ${staged.length}`);
 if (JSON.stringify(activeSorted) !== JSON.stringify(enabledSorted)) throw new Error("enabled inventory must exactly equal active schedule inventory");
 if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must be the exact previous 62-schedule fleet");
