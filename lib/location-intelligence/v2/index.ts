@@ -6,3 +6,4 @@ export * from "@/lib/location-intelligence/v2/identity";
 export * from "@/lib/location-intelligence/v2/reviews";
 
 export * from "@/lib/location-intelligence/v2/ingestion";
+export * from "@/lib/location-intelligence/v2/provider-runtime";
