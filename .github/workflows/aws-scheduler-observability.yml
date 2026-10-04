@@ -55,8 +55,8 @@ jobs:
           ACTIVATION='infra/aws/edge-runtime/activation.json'
           SCHEDULES='infra/aws/edge-runtime/schedules.json'
 
-          test "$(jq '.enabled | length' "$ACTIVATION")" = '65'
-          test "$(jq 'length' "$SCHEDULES")" = '65'
+          test "$(jq '.enabled | length' "$ACTIVATION")" = '64'
+          test "$(jq 'length' "$SCHEDULES")" = '64'
           grep -F 'MetricName: TargetErrorCount' "$TEMPLATE" >/dev/null
           grep -F 'MetricName: TargetErrorThrottledCount' "$TEMPLATE" >/dev/null
           grep -F 'MetricName: InvocationThrottleCount' "$TEMPLATE" >/dev/null
