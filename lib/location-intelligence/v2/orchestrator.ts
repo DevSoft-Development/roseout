@@ -139,7 +139,7 @@ export function adaptersForCapability(capability: ProviderCapability) {
   return LOCATION_INTELLIGENCE_ADAPTERS.filter((adapter) => allowed.has(adapter.descriptor.id));
 }
 
-function hasUsableProviderData(data: unknown): boolean {
+export function hasUsableProviderData(data: unknown): boolean {
   if (data == null) return false;
   if (Array.isArray(data)) return data.length > 0;
   if (typeof data === "string") return data.trim().length > 0;
