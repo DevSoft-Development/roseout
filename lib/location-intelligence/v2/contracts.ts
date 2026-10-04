@@ -50,7 +50,11 @@ export type ProviderCapability =
   | "routing"
   | "website_discovery"
   | "web_context"
-  | "status_verification";
+  | "status_verification"
+  | "owner_profile"
+  | "behavior_signals"
+  | "ai_extraction"
+  | "public_geography";
 
 export type ProviderDescriptor = {
   id: string;
@@ -59,6 +63,7 @@ export type ProviderDescriptor = {
   credentialRef: string | null;
   priority: number;
   paid: boolean;
+  maintenanceClass: "external_paid" | "external_free" | "first_party" | "internal";
 };
 
 export type LocationIntelligenceProfileV2 = {
