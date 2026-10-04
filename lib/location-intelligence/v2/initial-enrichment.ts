@@ -2,12 +2,74 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lifecycle";
+import type { LocationEvidenceType, LocationProviderResponse } from "@/lib/location-intelligence/v2/contracts";
 import { executeWithProviderFallback, LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 import { maintenanceModeForLocation } from "@/lib/location-intelligence/v2/policy";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { scheduleReviewRefresh } from "@/lib/location-intelligence/v2/reviews";
-import { storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
+import { recordLocationEvidence, reconcileCanonicalFields, storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
+import { attachExternalIdentity, resolveTohLocationByExternalIdentity } from "@/lib/location-intelligence/v2/identity";
+
+function googleCandidateIds(data: unknown) {
+  if (!Array.isArray(data)) return [];
+  return [...new Set(data.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+export function safeSingleGooglePlaceId(data: unknown) {
+  const candidates = googleCandidateIds(data);
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+async function resolveSafeGooglePlaceId(locationId: string, data: unknown) {
+  const candidates = googleCandidateIds(data);
+  for (const candidate of candidates) {
+    const attached = await resolveTohLocationByExternalIdentity("google", candidate);
+    if (attached === locationId) return candidate;
+  }
+
+  const single = safeSingleGooglePlaceId(candidates);
+  if (!single) return null;
+  const attached = await resolveTohLocationByExternalIdentity("google", single);
+  return attached ? null : single;
+}
+
+async function persistProviderObservation(input: {
+  locationId: string;
+  response: LocationProviderResponse;
+  evidenceType: LocationEvidenceType;
+  field: string;
+  evidenceValue?: unknown;
+  providerEntityId?: string | null;
+  confidence?: number | null;
+}) {
+  const snapshotId = await storeProviderSnapshot({
+    locationId: input.locationId,
+    provider: input.response.providerId,
+    providerEntityId: input.providerEntityId || null,
+    payload: input.response.data,
+  });
+
+  await recordLocationEvidence({
+    locationId: input.locationId,
+    provider: input.response.providerId,
+    providerEntityId: input.providerEntityId || null,
+    evidenceType: input.evidenceType,
+    field: input.field,
+    value: input.evidenceValue ?? {
+      snapshotId,
+      capability: input.response.capability,
+    },
+    confidence: input.confidence ?? null,
+    snapshotId,
+    metadata: {
+      initialEnrichment: true,
+      capability: input.response.capability,
+    },
+  });
+
+  return snapshotId;
+}
 
 export async function runInitialLocationEnrichmentV2(locationId: string) {
   const { data: location, error } = await supabaseAdmin
@@ -40,46 +102,95 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   });
 
   const snapshots: string[] = [];
+  let canonicalGooglePlaceId = String(location.google_place_id || "").trim();
 
-  if (!location.google_place_id && query) {
+  if (canonicalGooglePlaceId) {
+    await attachExternalIdentity({
+      locationId,
+      provider: "google",
+      externalId: canonicalGooglePlaceId,
+      metadata: { source: "canonical_location", initialEnrichment: true },
+    });
+    await recordLocationEvidence({
+      locationId,
+      provider: "google",
+      providerEntityId: canonicalGooglePlaceId,
+      evidenceType: "identity",
+      field: "google_place_id",
+      value: canonicalGooglePlaceId,
+      confidence: 1,
+      metadata: { source: "canonical_location", initialEnrichment: true },
+    });
+  } else if (query) {
+    let identity: LocationProviderResponse | null = null;
     try {
-      const identity = await executeWithProviderFallback({
+      identity = await executeWithProviderFallback({
         capability: "identity",
         purpose: "bootstrap",
         ownerMaintained: mode === "owner_maintained",
         input: { query, limit: 5 },
       });
-      snapshots.push(await storeProviderSnapshot({
-        locationId,
-        provider: identity.providerId,
-        payload: identity.data,
-      }));
     } catch {
       // Identity resolution can remain incomplete and be surfaced by readiness.
+    }
+
+    if (identity) {
+      const candidates = googleCandidateIds(identity.data);
+      snapshots.push(await persistProviderObservation({
+        locationId,
+        response: identity,
+        evidenceType: "identity",
+        field: "google_place_id_candidates",
+        evidenceValue: candidates,
+      }));
+
+      const resolvedGooglePlaceId = await resolveSafeGooglePlaceId(locationId, candidates);
+      if (resolvedGooglePlaceId) {
+        await attachExternalIdentity({
+          locationId,
+          provider: "google",
+          externalId: resolvedGooglePlaceId,
+          metadata: { source: "location_intelligence_v2_identity", initialEnrichment: true },
+        });
+        await reconcileCanonicalFields({
+          locationId,
+          provider: "google",
+          fields: { google_place_id: resolvedGooglePlaceId },
+          confidence: 1,
+          evidenceType: "identity",
+          sourceRef: "location_intelligence_v2_identity",
+        });
+        canonicalGooglePlaceId = resolvedGooglePlaceId;
+      }
     }
   }
 
   if (location.zip_code) {
+    let geo: LocationProviderResponse | null = null;
     try {
-      const geo = await executeWithProviderFallback({
+      geo = await executeWithProviderFallback({
         capability: "public_geography",
         purpose: "bootstrap",
         ownerMaintained: mode === "owner_maintained",
         input: { zipCode: location.zip_code },
       });
-      snapshots.push(await storeProviderSnapshot({
-        locationId,
-        provider: geo.providerId,
-        payload: geo.data,
-      }));
     } catch {
       // Existing canonical geography remains usable.
+    }
+    if (geo) {
+      snapshots.push(await persistProviderObservation({
+        locationId,
+        response: geo,
+        evidenceType: "geography",
+        field: "public_geography_snapshot",
+      }));
     }
   }
 
   if (location.website) {
+    let website: LocationProviderResponse | null = null;
     try {
-      const website = mode === "owner_maintained"
+      website = mode === "owner_maintained"
         ? await (async () => {
             const official = LOCATION_INTELLIGENCE_ADAPTERS.find((adapter) => adapter.descriptor.id === "official_website");
             if (!official) throw new Error("official_website_provider_missing");
@@ -96,37 +207,45 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
             ownerMaintained: false,
             input: { url: location.website, query },
           });
-      snapshots.push(await storeProviderSnapshot({
-        locationId,
-        provider: website.providerId,
-        payload: website.data,
-      }));
     } catch {
       // Website intelligence is gap-driven and non-blocking.
+    }
+    if (website) {
+      snapshots.push(await persistProviderObservation({
+        locationId,
+        response: website,
+        evidenceType: "website",
+        field: "web_context_snapshot",
+      }));
     }
   }
 
   if (!location.website && mode === "theouthaven_managed" && query) {
+    let discovery: LocationProviderResponse | null = null;
     try {
-      const discovery = await executeWithProviderFallback({
+      discovery = await executeWithProviderFallback({
         capability: "website_discovery",
         purpose: "bootstrap",
         ownerMaintained: false,
         input: { query, count: 5 },
       });
-      snapshots.push(await storeProviderSnapshot({
-        locationId,
-        provider: discovery.providerId,
-        payload: discovery.data,
-      }));
     } catch {
       // Website discovery is fallback-only and non-blocking.
+    }
+    if (discovery) {
+      snapshots.push(await persistProviderObservation({
+        locationId,
+        response: discovery,
+        evidenceType: "website",
+        field: "website_discovery_snapshot",
+      }));
     }
   }
 
   if (mode === "theouthaven_managed" && name) {
+    let profileResult: LocationProviderResponse | null = null;
     try {
-      const profileResult = await executeWithProviderFallback({
+      profileResult = await executeWithProviderFallback({
         capability: "business_profile",
         purpose: "bootstrap",
         ownerMaintained: false,
@@ -139,13 +258,16 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
           limit: 10,
         },
       });
-      snapshots.push(await storeProviderSnapshot({
-        locationId,
-        provider: profileResult.providerId,
-        payload: profileResult.data,
-      }));
     } catch {
       // Paid provider gaps do not make the canonical location unusable.
+    }
+    if (profileResult) {
+      snapshots.push(await persistProviderObservation({
+        locationId,
+        response: profileResult,
+        evidenceType: "classification",
+        field: "business_profile_snapshot",
+      }));
     }
   }
 
@@ -159,6 +281,10 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
       maintenance_mode: mode,
       last_initial_enrichment_at: now,
       routine_paid_refresh_enabled: false,
+      identity: {
+        google_place_id: canonicalGooglePlaceId || null,
+        location_key: locationId,
+      },
       updated_at: now,
     }, { onConflict: "location_id" });
   if (updateError) throw new Error(updateError.message);
