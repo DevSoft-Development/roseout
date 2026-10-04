@@ -7,6 +7,7 @@ on:
     paths:
       - 'app/api/admin/ml/recalculate-location-scores/route.ts'
       - 'app/api/admin/ml/recalculate-advanced-all/route.ts'
+      - 'apps/admin/app/api/admin/ml/recalculate-advanced-all/route.ts'
       - 'app/api/cron/search-hf-inventory-maintenance/route.ts'
       - 'app/api/cron/search-hf-photo-intelligence/route.ts'
       - 'app/api/cron/search-hf-production-qa/**'
