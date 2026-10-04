@@ -7,6 +7,7 @@ import { deriveLocationClassification } from "@/lib/location-intelligence/v2/cla
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 import { safeSingleGooglePlaceId } from "@/lib/location-intelligence/v2/initial-enrichment";
+import { dataForSeoTaskFailure, normalizeDataForSeoLocationCoordinate } from "@/lib/location-intelligence/v2/dataforseo";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -106,6 +107,39 @@ describe("Location Intelligence V2", () => {
     expect(source).toContain("google_place_id_candidates");
     expect(source).toContain("public_geography_snapshot");
     expect(source).toContain("business_profile_snapshot");
+  });
+
+
+  it("normalizes DataForSEO business listing coordinates to numeric kilometer radius", () => {
+    expect(normalizeDataForSeoLocationCoordinate("40.75800000,-73.98550000,5km"))
+      .toBe("40.758,-73.9855,5");
+    expect(normalizeDataForSeoLocationCoordinate("40.758,-73.9855,5"))
+      .toBe("40.758,-73.9855,5");
+    expect(() => normalizeDataForSeoLocationCoordinate("40.758,-73.9855,0"))
+      .toThrow("dataforseo_location_coordinate_invalid");
+  });
+
+  it("surfaces DataForSEO task-level errors even when the envelope succeeds", () => {
+    expect(dataForSeoTaskFailure({
+      status_code: 20000,
+      tasks: [{ status_code: 40501, status_message: "Invalid Field: 'location_coordinate'." }],
+    })).toEqual({
+      code: 40501,
+      message: "Invalid Field: 'location_coordinate'.",
+    });
+    expect(dataForSeoTaskFailure({
+      status_code: 20000,
+      tasks: [{ status_code: 20000, status_message: "Ok." }],
+    })).toBeNull();
+  });
+
+  it("does not send the obsolete km suffix in initial DataForSEO enrichment", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/location-intelligence/v2/initial-enrichment.ts"),
+      "utf8",
+    );
+    expect(source).toContain("${location.latitude},${location.longitude},5");
+    expect(source).not.toContain("${location.latitude},${location.longitude},5km");
   });
 });
 
