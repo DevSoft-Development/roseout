@@ -43,6 +43,7 @@ export type PilotProgress = {
   attempted: number;
   successful: number;
   successfulByCell: Record<string, number>;
+  successfulCategories?: string[];
 };
 
 export const LOCATION_INTELLIGENCE_V2_PILOT_CELL_TARGETS: readonly PilotQuota[] = [
@@ -300,7 +301,7 @@ async function eligiblePilotCandidates() {
 async function pilotProgress(): Promise<PilotProgress> {
   const { data, error } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
-    .select("location_id,provenance,locations!inner(state,location_type)")
+    .select("location_id,last_initial_enrichment_at,provenance,locations!inner(state,location_type,primary_category,activity_type,category,cuisine_type,cuisine)")
     .contains("provenance", {
       v2_pilot: {
         id: LOCATION_INTELLIGENCE_V2_PILOT_ID,
@@ -309,11 +310,14 @@ async function pilotProgress(): Promise<PilotProgress> {
   if (error) throw new Error(`Pilot progress read failed: ${error.message}`);
 
   const successfulByCell: Record<string, number> = {};
+  const successfulCategories = new Set<string>();
   let successful = 0;
 
   for (const row of data || []) {
     const marker = pilotMarker(row.provenance);
-    if (String(marker?.status || "") !== "success") continue;
+    const markerStatus = String(marker?.status || "");
+    const enriched = Boolean(row.last_initial_enrichment_at);
+    if (markerStatus !== "success" && !(markerStatus === "reserved" && enriched)) continue;
 
     const joined = Array.isArray((row as any).locations)
       ? (row as any).locations[0]
@@ -322,6 +326,15 @@ async function pilotProgress(): Promise<PilotProgress> {
     const locationType = String(joined?.location_type || "");
     const key = cellKey(state, locationType);
     successfulByCell[key] = (successfulByCell[key] || 0) + 1;
+    successfulCategories.add(
+      pilotCategoryKey({
+        primary_category: joined?.primary_category == null ? null : String(joined.primary_category),
+        activity_type: joined?.activity_type == null ? null : String(joined.activity_type),
+        category: joined?.category == null ? null : String(joined.category),
+        cuisine_type: joined?.cuisine_type == null ? null : String(joined.cuisine_type),
+        cuisine: joined?.cuisine == null ? null : String(joined.cuisine),
+      }),
+    );
     successful += 1;
   }
 
@@ -329,13 +342,18 @@ async function pilotProgress(): Promise<PilotProgress> {
     attempted: (data || []).length,
     successful,
     successfulByCell,
+    successfulCategories: [...successfulCategories],
   };
 }
 
-function selectPilotBatch(candidates: PilotCandidate[], quotas: PilotQuota[]) {
+function selectPilotBatch(
+  candidates: PilotCandidate[],
+  quotas: PilotQuota[],
+  successfulCategories: string[] = [],
+) {
   const selected: PilotCandidate[] = [];
   const selectedIds = new Set<string>();
-  const seenCategories = new Set<string>();
+  const seenCategories = new Set(successfulCategories);
   const stats: PilotStats = { missingGoogle: 0, messy: 0, nonSearchable: 0 };
 
   for (const quota of quotas) {
@@ -370,13 +388,20 @@ function selectPilotBatch(candidates: PilotCandidate[], quotas: PilotQuota[]) {
 }
 
 async function markPilotResult(
-  candidate: PilotCandidate,
-  status: "success" | "failed",
+  locationId: string,
+  status: "reserved" | "success" | "failed",
   error?: string,
 ) {
+  const { data: profile, error: readError } = await supabaseAdmin
+    .from("location_intelligence_profiles_v2")
+    .select("provenance")
+    .eq("location_id", locationId)
+    .single();
+  if (readError) throw new Error(`Pilot audit read failed: ${readError.message}`);
+
   const now = new Date().toISOString();
   const provenance = {
-    ...candidate.provenance,
+    ...asObject(profile?.provenance),
     v2_pilot: {
       id: LOCATION_INTELLIGENCE_V2_PILOT_ID,
       attempted_at: now,
@@ -387,7 +412,7 @@ async function markPilotResult(
   const { error: updateError } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
     .update({ provenance, updated_at: now })
-    .eq("location_id", candidate.id);
+    .eq("location_id", locationId);
   if (updateError) throw new Error(`Pilot audit update failed: ${updateError.message}`);
 }
 
@@ -442,33 +467,54 @@ export async function runLocationIntelligenceV2PilotBatch() {
   }
 
   const candidates = await eligiblePilotCandidates();
-  const selected = selectPilotBatch(candidates, quotas);
+  const selected = selectPilotBatch(
+    candidates,
+    quotas,
+    progressBefore.successfulCategories || [],
+  );
 
   let succeeded = 0;
-  const failures: Array<{ locationId: string; error: string }> = [];
+  const enrichmentFailures: Array<{ locationId: string; error: string }> = [];
+  const auditFailures: Array<{ locationId: string; error: string }> = [];
 
   for (let index = 0; index < selected.length; index += 2) {
     const slice = selected.slice(index, index + 2);
     await Promise.all(
       slice.map(async (candidate) => {
         try {
+          await markPilotResult(candidate.id, "reserved");
+        } catch (auditError) {
+          auditFailures.push({
+            locationId: candidate.id,
+            error: auditError instanceof Error ? auditError.message : "pilot_reservation_failed",
+          });
+          return;
+        }
+
+        try {
           await runInitialLocationEnrichmentV2(candidate.id);
-          await markPilotResult(candidate, "success");
           succeeded += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : "initial_enrichment_failed";
+          enrichmentFailures.push({ locationId: candidate.id, error: message });
           try {
-            await markPilotResult(candidate, "failed", message);
+            await markPilotResult(candidate.id, "failed", message);
           } catch (auditError) {
-            failures.push({
+            auditFailures.push({
               locationId: candidate.id,
-              error: `${message}; audit=${
-                auditError instanceof Error ? auditError.message : "pilot_audit_failed"
-              }`,
+              error: auditError instanceof Error ? auditError.message : "pilot_failure_audit_failed",
             });
-            return;
           }
-          failures.push({ locationId: candidate.id, error: message });
+          return;
+        }
+
+        try {
+          await markPilotResult(candidate.id, "success");
+        } catch (auditError) {
+          auditFailures.push({
+            locationId: candidate.id,
+            error: auditError instanceof Error ? auditError.message : "pilot_success_audit_failed",
+          });
         }
       }),
     );
@@ -484,10 +530,12 @@ export async function runLocationIntelligenceV2PilotBatch() {
     successAfter: progressAfter.successful,
     selected: selected.length,
     succeeded,
-    failed: failures.length,
+    failed: enrichmentFailures.length,
+    auditFailed: auditFailures.length,
     remaining: Math.max(0, LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - progressAfter.successful),
     quotas,
     cohort: summarize(selected),
-    failures,
+    failures: enrichmentFailures,
+    auditFailures,
   };
 }
