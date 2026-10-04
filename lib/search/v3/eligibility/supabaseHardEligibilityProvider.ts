@@ -39,6 +39,8 @@ type ProfileRow = {
   borough: string | null;
 };
 
+const ELIGIBILITY_ID_BATCH_SIZE = 100;
+
 export class SupabaseHardEligibilityProvider implements SearchEligibilityProvider {
   readonly providerId = "theouthaven.supabase-hard-eligibility.v1";
 
@@ -53,25 +55,25 @@ export class SupabaseHardEligibilityProvider implements SearchEligibilityProvide
       return { eligibleLocationIds: [], rejected: [] };
     }
 
-    const { data, error } = await this.client
-      .from("location_search_profiles")
-      .select("location_id,primary_domain,supported_domains,cuisines,foods,meal_periods,features,activity_categories,nightlife_categories,exclusions,market,city,neighborhood,borough")
-      .in("location_id", [...args.locationIds]);
+    const rows = await readInBatches<ProfileRow>({
+      client: this.client,
+      table: "location_search_profiles",
+      columns: "location_id,primary_domain,supported_domains,cuisines,foods,meal_periods,features,activity_categories,nightlife_categories,exclusions,market,city,neighborhood,borough",
+      idColumn: "location_id",
+      locationIds: args.locationIds,
+    });
 
-    if (error) throw new Error(error.message);
-
-    const rows = (data ?? []) as ProfileRow[];
-
-    const locationRead = await this.client
-      .from("locations")
-      .select("id,location_type,primary_category,category,type,name,active,is_searchable,is_hidden,deleted_at")
-      .in("id", [...args.locationIds]);
-
-    if (locationRead.error) throw new Error(locationRead.error.message);
+    const locationRows = await readInBatches<LocationRow>({
+      client: this.client,
+      table: "locations",
+      columns: "id,location_type,primary_category,category,type,name,active,is_searchable,is_hidden,deleted_at",
+      idColumn: "id",
+      locationIds: args.locationIds,
+    });
 
     const byId = new Map(rows.map((row) => [row.location_id, row]));
     const locationById = new Map(
-      ((locationRead.data ?? []) as LocationRow[]).map((row) => [row.id, row]),
+      locationRows.map((row) => [row.id, row]),
     );
     const eligibleLocationIds: string[] = [];
     const rejected: Array<{ locationId: string; reasons: string[] }> = [];
@@ -252,4 +254,39 @@ export function constraintAppliesToSupportedDomains(
   }
 
   return true;
+}
+
+
+async function readInBatches<T>(args: {
+  client: EligibilitySupabaseClient;
+  table: string;
+  columns: string;
+  idColumn: string;
+  locationIds: readonly string[];
+}): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let offset = 0; offset < args.locationIds.length; offset += ELIGIBILITY_ID_BATCH_SIZE) {
+    const batch = args.locationIds.slice(offset, offset + ELIGIBILITY_ID_BATCH_SIZE);
+    const { data, error } = await args.client
+      .from(args.table)
+      .select(args.columns)
+      .in(args.idColumn, [...batch]);
+
+    if (error) {
+      const details = [
+        error.message,
+        error.code,
+        error.details,
+        error.hint,
+      ].filter(Boolean).join(" | ");
+      throw new Error(
+        `Supabase eligibility read failed for ${args.table} batch ${Math.floor(offset / ELIGIBILITY_ID_BATCH_SIZE) + 1}: ${details || "unknown error"}`,
+      );
+    }
+
+    rows.push(...((data ?? []) as T[]));
+  }
+
+  return rows;
 }
