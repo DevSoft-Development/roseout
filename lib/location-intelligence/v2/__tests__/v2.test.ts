@@ -3,6 +3,7 @@ import { coveragePriority } from "@/lib/location-intelligence/v2/coverage";
 import { reviewRefreshCadenceDays } from "@/lib/location-intelligence/v2/policy";
 import { computeSearchV3Readiness } from "@/lib/location-intelligence/v2/readiness";
 import { providersForCapability } from "@/lib/location-intelligence/v2/providers";
+import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -44,6 +45,20 @@ describe("Location Intelligence V2", () => {
       negativeClassificationKnown: true,
     });
     expect(missingType.searchV3Ready).toBe(false);
+  });
+
+  it("captures bakery-only negative intelligence", () => {
+    const classification = deriveLocationClassification({
+      location_type: "restaurant",
+      primary_category: "Bakery",
+      google_types: ["bakery", "food", "point_of_interest"],
+      tags: ["pastries", "dessert"],
+      is_searchable: true,
+      has_photos: true,
+      photo_status: "cached",
+    });
+    expect(classification.negativeFlags).toContain("bakery_only");
+    expect(classification.negativeClassificationKnown).toBe(true);
   });
 
   it("keeps Google first for identity and DataForSEO for reviews", () => {
