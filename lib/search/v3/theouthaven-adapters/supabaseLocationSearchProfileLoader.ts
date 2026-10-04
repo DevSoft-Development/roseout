@@ -41,6 +41,8 @@ const PROFILE_COLUMNS = [
   "generated_at",
 ].join(",");
 
+const PROFILE_ID_BATCH_SIZE = 100;
+
 export class SupabaseLocationSearchProfileLoader
 implements LocationSearchProfileLoader {
   constructor(private readonly client: SupabaseLocationSearchProfileLoaderClient) {}
@@ -62,15 +64,35 @@ implements LocationSearchProfileLoader {
     const ids = [...new Set(locationIds.filter(Boolean))];
     if (ids.length === 0) return [];
 
-    return withTransientRetry(async () => {
-      const { data, error } = await this.client
-        .from("location_search_profiles")
-        .select(PROFILE_COLUMNS)
-        .in("location_id", ids);
+    const profiles: LocationSearchProfile[] = [];
 
-      if (error) throw new Error(error.message);
-      return (data ?? []).map(mapProfile);
-    });
+    for (let offset = 0; offset < ids.length; offset += PROFILE_ID_BATCH_SIZE) {
+      const batch = ids.slice(offset, offset + PROFILE_ID_BATCH_SIZE);
+      const batchProfiles = await withTransientRetry(async () => {
+        const { data, error } = await this.client
+          .from("location_search_profiles")
+          .select(PROFILE_COLUMNS)
+          .in("location_id", batch);
+
+        if (error) {
+          const details = [
+            error.message,
+            error.code,
+            error.details,
+            error.hint,
+          ].filter(Boolean).join(" | ");
+          throw new Error(
+            `Supabase location intelligence read failed for batch ${Math.floor(offset / PROFILE_ID_BATCH_SIZE) + 1}: ${details || "unknown error"}`,
+          );
+        }
+
+        return (data ?? []).map(mapProfile);
+      });
+
+      profiles.push(...batchProfiles);
+    }
+
+    return profiles;
   }
 }
 
