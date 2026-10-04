@@ -5,6 +5,7 @@ import { computeSearchV3Readiness } from "@/lib/location-intelligence/v2/readine
 import { providersForCapability } from "@/lib/location-intelligence/v2/providers";
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
+import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -82,6 +83,34 @@ describe("Location Intelligence V2", () => {
   });
 });
 
+
+describe("Location Intelligence V2 provider health metadata", () => {
+  it("preserves policy metadata while updating health detail", () => {
+    expect(
+      mergeProviderHealthMetadata(
+        { role: "fallback_only", quota_mode: "free_tier" },
+        "missing:apiKey",
+      ),
+    ).toEqual({
+      role: "fallback_only",
+      quota_mode: "free_tier",
+      detail: "missing:apiKey",
+    });
+  });
+
+  it("clears stale health detail without erasing provider policy metadata", () => {
+    expect(
+      mergeProviderHealthMetadata({
+        role: "fallback_only",
+        quota_mode: "free_tier",
+        detail: "missing:apiKey",
+      }),
+    ).toEqual({
+      role: "fallback_only",
+      quota_mode: "free_tier",
+    });
+  });
+});
 
 describe("Location Intelligence V2 provider fallback adequacy", () => {
   it("treats empty provider payloads as inadequate", () => {
