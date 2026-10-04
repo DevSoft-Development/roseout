@@ -76,16 +76,20 @@ export async function searchDataForSeoBusinessListings(input: {
 }
 
 export async function createDataForSeoReviewTask(input: {
-  keyword: string;
+  googlePlaceId?: string;
+  keyword?: string;
   locationName: string;
   depth?: number;
   sortBy?: "most_relevant" | "newest" | "highest_rating" | "lowest_rating";
   tag?: string;
 }) {
+  const googlePlaceId = String(input.googlePlaceId || "").trim();
+  const keyword = String(input.keyword || "").trim();
+  if (!googlePlaceId && !keyword) throw new Error("dataforseo_review_identity_required");
   const payload = await request<Record<string, unknown>>("/v3/business_data/google/reviews/task_post", {
     method: "POST",
     body: JSON.stringify([{
-      keyword: input.keyword,
+      ...(googlePlaceId ? { place_id: googlePlaceId } : { keyword }),
       location_name: input.locationName,
       language_name: "English",
       depth: Math.max(10, Math.min(1000, Math.trunc(input.depth || 100))),
@@ -105,5 +109,5 @@ export async function getDataForSeoReviewTask(taskId: string) {
 }
 
 export async function testDataForSeoCredential() {
-  return request<Record<string, unknown>>("/v3/business_data/business_listings/locations/us", { method: "GET" });
+  return request<Record<string, unknown>>("/v3/appendix/user_data", { method: "GET" });
 }
