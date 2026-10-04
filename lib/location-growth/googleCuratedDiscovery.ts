@@ -339,6 +339,25 @@ function rowMatchesArea(row: InventoryRow, area: string) {
   return geography.includes(key);
 }
 
+async function loadCoverageTargetOverrides(kind: GoogleDiscoveryKind) {
+  const { data, error } = await supabaseAdmin
+    .from("location_coverage_targets")
+    .select("market,area_key,category,target_count")
+    .eq("location_kind", kind)
+    .eq("enabled", true);
+  if (error) {
+    // Keep discovery available during rollout; static catalog targets remain the safe fallback.
+    console.warn("location_coverage_targets_unavailable", error.message);
+    return new Map<string, number>();
+  }
+  const map = new Map<string, number>();
+  for (const row of data || []) {
+    const key = [String(row.market || ""), normalize(row.area_key), String(row.category || "")].join("::");
+    map.set(key, Math.max(0, Number(row.target_count || 0)));
+  }
+  return map;
+}
+
 async function loadPublishedInventory() {
   const { data, error } = await supabaseAdmin
     .from("locations")
@@ -360,7 +379,10 @@ export async function buildGoogleDiscoveryPlan(
   kind: GoogleDiscoveryKind,
   maxPlans = 6,
 ): Promise<DiscoveryPlan[]> {
-  const inventory = await loadPublishedInventory();
+  const [inventory, targetOverrides] = await Promise.all([
+    loadPublishedInventory(),
+    loadCoverageTargetOverrides(kind),
+  ]);
   const catalog = catalogFor(kind);
   const candidates: DiscoveryPlan[] = [];
 
@@ -380,7 +402,9 @@ export async function buildGoogleDiscoveryPlan(
         const text = rowSearchText(row);
         return entry.matchTerms.some((term) => text.includes(normalize(term)));
       }).length;
-      const gapRatio = existingCount / Math.max(1, entry.targetPerArea);
+      const overrideKey = [market, normalize(area), entry.category].join("::");
+      const target = targetOverrides.get(overrideKey) ?? entry.targetPerArea;
+      const gapRatio = existingCount / Math.max(1, target);
       candidates.push({
         market,
         area,
@@ -388,7 +412,7 @@ export async function buildGoogleDiscoveryPlan(
         category: entry.category,
         query: `${entry.query} in ${area}`,
         existingCount,
-        target: entry.targetPerArea,
+        target,
         gapRatio,
       });
     });
