@@ -14,6 +14,7 @@ import {
   type CanonicalMarketKey,
 } from "@/lib/location-markets";
 import { calculateStagingQuality } from "@/lib/location-growth/stagingQuality";
+import { persistCoverageState } from "@/lib/location-intelligence/v2/coverage-state";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 import {
   evaluateGoogleDiscoveryCandidate,
@@ -417,6 +418,33 @@ export async function buildGoogleDiscoveryPlan(
       });
     });
   }
+
+  const coverageGroups = new Map<string, DiscoveryPlan[]>();
+  for (const candidate of candidates) {
+    const key = [candidate.market, candidate.area, kind].join("::");
+    const group = coverageGroups.get(key) || [];
+    group.push(candidate);
+    coverageGroups.set(key, group);
+  }
+  await Promise.all([...coverageGroups.values()].map(async (group) => {
+    const first = group[0];
+    try {
+      await persistCoverageState({
+        market: first.market,
+        areaType: "heat_zone",
+        areaKey: first.area,
+        locationKind: kind,
+        rows: group.map((item) => ({
+          area: item.area,
+          category: item.category,
+          current: item.existingCount,
+          target: item.target,
+        })),
+      });
+    } catch (error) {
+      console.warn("location_coverage_state_persist_failed", error instanceof Error ? error.message : "unknown_error");
+    }
+  }));
 
   const limit = Math.max(1, maxPlans);
   const selected: DiscoveryPlan[] = [];
