@@ -155,6 +155,15 @@ describe("Location Intelligence V2 pilot quotas", () => {
     ).toBe("rooftop");
   });
 
+  it("does not impose a fixed top-ranked candidate cap before eligibility filtering", () => {
+    const source = require("fs").readFileSync(
+      require("path").join(process.cwd(), "lib/location-intelligence/v2/pilot.ts"),
+      "utf8",
+    );
+    expect(source).toContain(".range(offset, offset + pageSize - 1)");
+    expect(source).not.toContain(".limit(160)");
+  });
+
   it("counts a reserved location as successful after enrichment even if the final audit write fails", () => {
     expect(pilotMarkerCountsAsSuccess("reserved", true)).toBe(true);
     expect(pilotMarkerCountsAsSuccess("reserved", false)).toBe(false);
