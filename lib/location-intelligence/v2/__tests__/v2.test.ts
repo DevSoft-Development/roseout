@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { coveragePriority } from "@/lib/location-intelligence/v2/coverage";
-import { reviewRefreshCadenceDays } from "@/lib/location-intelligence/v2/policy";
+import { allowPaidProviderExecution, reviewRefreshCadenceDays } from "@/lib/location-intelligence/v2/policy";
 import { computeSearchV3Readiness } from "@/lib/location-intelligence/v2/readiness";
 import { providersForCapability } from "@/lib/location-intelligence/v2/providers";
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
@@ -59,6 +59,14 @@ describe("Location Intelligence V2", () => {
     });
     expect(classification.negativeFlags).toContain("bakery_only");
     expect(classification.negativeClassificationKnown).toBe(true);
+  });
+
+  it("blocks routine paid enrichment and protects owner-maintained profiles", () => {
+    expect(allowPaidProviderExecution({ purpose: "routine_profile_refresh" })).toBe(false);
+    expect(allowPaidProviderExecution({ purpose: "bootstrap", ownerMaintained: true })).toBe(false);
+    expect(allowPaidProviderExecution({ purpose: "review_refresh", ownerMaintained: true })).toBe(true);
+    expect(allowPaidProviderExecution({ purpose: "material_change", ownerMaintained: true })).toBe(true);
+    expect(allowPaidProviderExecution({ purpose: "bootstrap", ownerMaintained: false })).toBe(true);
   });
 
   it("keeps Google first for identity and DataForSEO for reviews", () => {
