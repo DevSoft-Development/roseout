@@ -246,25 +246,16 @@ function extractGeo(query: string): {
   const zip = query.match(/\b(\d{5})\b/);
   if (zip) {
     return {
-      constraint: { key: "zip_code", value: zip[1] },
+      constraint: null,
       anchorLabel: zip[1],
     };
   }
 
-  const borough = query.match(/\b(?:in|near|around)\s+(Manhattan|Brooklyn|Queens|Bronx|Staten Island)\b/i);
-  if (borough) {
-    return {
-      constraint: { key: "borough", value: borough[1] },
-      anchorLabel: borough[1],
-    };
-  }
-
-  const area = query.match(/\b(?:in|near|around)\s+([A-Za-z][A-Za-z .'-]{1,48}?)(?=\s+(?:for|with|and|then|within|under)\b|$)/i);
+  const area = query.match(/\b(?:in|near|around|on)\s+([A-Za-z0-9][A-Za-z0-9 .'-]{1,64}?)(?=\s+(?:for|with|and|then|within|under|after|before)\b|$)/i);
   if (!area?.[1]) return null;
 
-  const value = area[1].trim();
   return {
     constraint: null,
-    anchorLabel: value,
+    anchorLabel: area[1].trim(),
   };
 }
