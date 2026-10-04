@@ -35,7 +35,10 @@ async function run(request: Request) {
     return Response.json({
       ok: true,
       pilot,
-      hasFailures: pilot.failed > 0 || pilot.auditFailed > 0,
+      hasFailures:
+        pilot.failed > 0 ||
+        pilot.auditFailed > 0 ||
+        pilot.postEnrichmentFailed > 0,
     });
   } catch (error) {
     return Response.json(
