@@ -52,7 +52,7 @@ const ACTIVITIES: Readonly<Record<string, readonly string[]>> = {
   "mini golf": ["mini golf", "putt putt"],
   "axe throwing": ["axe throwing"],
   comedy: ["comedy", "stand up", "stand-up"],
-  cinema: ["cinema", "movie", "movies"],
+  movie: ["cinema", "movie", "movies"],
   spa: ["spa", "massage"],
   billiards: ["billiards", "pool hall"],
   "live music": ["live music", "jazz"],
@@ -106,7 +106,7 @@ export class RuleBasedSearchV3IntentProvider implements SearchIntentProvider {
     if (cuisine) constraints.push(hard("cuisine", cuisine));
 
     const food = detectFirst(q, FOODS);
-    if (food) constraints.push(hard("food", food));
+    if (food && food !== cuisine) constraints.push(hard("food", food));
 
     const meal = detectFirst(q, MEALS);
     if (meal) constraints.push(hard("meal_period", meal));
