@@ -81,7 +81,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
-    .select("last_initial_enrichment_at")
+    .select("last_initial_enrichment_at,identity")
     .eq("location_id", locationId)
     .maybeSingle();
   if (profileError) throw new Error(profileError.message);
@@ -89,6 +89,9 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     return { locationId, skipped: true, reason: "initial_enrichment_already_completed" };
   }
 
+  const existingIdentity = profile?.identity && typeof profile.identity === "object" && !Array.isArray(profile.identity)
+    ? profile.identity as Record<string, unknown>
+    : {};
   const mode = maintenanceModeForLocation(location as Record<string, unknown>);
   const name = String(location.name || location.restaurant_name || location.activity_name || "").trim();
   const query = [name, location.address, location.city, location.state].filter(Boolean).join(", ");
@@ -281,10 +284,9 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
       maintenance_mode: mode,
       last_initial_enrichment_at: now,
       routine_paid_refresh_enabled: false,
-      identity: {
-        google_place_id: canonicalGooglePlaceId || null,
-        location_key: locationId,
-      },
+      identity: canonicalGooglePlaceId
+        ? { ...existingIdentity, google_place_id: canonicalGooglePlaceId }
+        : existingIdentity,
       updated_at: now,
     }, { onConflict: "location_id" });
   if (updateError) throw new Error(updateError.message);
