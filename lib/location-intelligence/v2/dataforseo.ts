@@ -15,6 +15,47 @@ type DataForSeoEnvelope<T = unknown> = {
   }>;
 };
 
+export function normalizeDataForSeoLocationCoordinate(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const parts = raw.split(",").map((part) => part.trim());
+  if (parts.length !== 3) throw new Error("dataforseo_location_coordinate_invalid");
+
+  const latitude = Number(parts[0]);
+  const longitude = Number(parts[1]);
+  const radiusKm = Number(parts[2].replace(/\s*km$/i, "").trim());
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    !Number.isFinite(radiusKm) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180 ||
+    radiusKm < 1 ||
+    radiusKm > 100000
+  ) {
+    throw new Error("dataforseo_location_coordinate_invalid");
+  }
+
+  const coordinate = (number: number) =>
+    Number(number.toFixed(7)).toString();
+
+  return `${coordinate(latitude)},${coordinate(longitude)},${coordinate(radiusKm)}`;
+}
+
+export function dataForSeoTaskFailure(payload: DataForSeoEnvelope<unknown> | null) {
+  const task = payload?.tasks?.find((item) => Number(item.status_code || 0) >= 40000);
+  return task
+    ? {
+        code: Number(task.status_code || 0),
+        message: String(task.status_message || "").trim(),
+      }
+    : null;
+}
+
 async function credentials() {
   const values = await getCredentialVaultProviderValues("dataforseo");
   const login = String(values.login || "").trim();
@@ -45,6 +86,16 @@ async function request<T>(path: string, init: RequestInit = {}) {
     if (!payload || Number(payload.status_code || 0) >= 40000) {
       throw new Error(`dataforseo_api_${payload?.status_code || "invalid"}`);
     }
+    const taskFailure = dataForSeoTaskFailure(payload);
+    if (taskFailure) {
+      const detail = taskFailure.message
+        .replace(/[^a-z0-9_.:' -]+/gi, " ")
+        .trim()
+        .slice(0, 160);
+      throw new Error(
+        `dataforseo_task_${taskFailure.code}${detail ? `:${detail}` : ""}`,
+      );
+    }
     return payload;
   } finally {
     clearTimeout(timeout);
@@ -60,11 +111,14 @@ export async function searchDataForSeoBusinessListings(input: {
   orderBy?: string[];
   filters?: unknown[];
 }) {
+  const locationCoordinate = input.locationCoordinate
+    ? normalizeDataForSeoLocationCoordinate(input.locationCoordinate)
+    : null;
   const task: Record<string, unknown> = {
     ...(input.categories?.length ? { categories: input.categories } : {}),
     ...(input.title ? { title: input.title } : {}),
     ...(input.description ? { description: input.description } : {}),
-    ...(input.locationCoordinate ? { location_coordinate: input.locationCoordinate } : {}),
+    ...(locationCoordinate ? { location_coordinate: locationCoordinate } : {}),
     limit: Math.max(1, Math.min(1000, Math.trunc(input.limit || 100))),
     ...(input.orderBy?.length ? { order_by: input.orderBy } : {}),
     ...(input.filters?.length ? { filters: input.filters } : {}),
