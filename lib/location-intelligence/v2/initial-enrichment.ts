@@ -5,12 +5,13 @@ import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lif
 import { executeWithProviderFallback, LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 import { maintenanceModeForLocation } from "@/lib/location-intelligence/v2/policy";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
+import { scheduleReviewRefresh } from "@/lib/location-intelligence/v2/reviews";
 import { storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
 
 export async function runInitialLocationEnrichmentV2(locationId: string) {
   const { data: location, error } = await supabaseAdmin
     .from("locations")
-    .select("id,name,restaurant_name,activity_name,address,city,state,zip_code,latitude,longitude,website,google_place_id,is_claimed,claimed,claim_status,owner_user_id")
+    .select("id,name,restaurant_name,activity_name,address,city,state,zip_code,latitude,longitude,website,google_place_id,is_claimed,claimed,claim_status,owner_user_id,popularity_score")
     .eq("id", locationId)
     .single();
   if (error) throw new Error(`Initial enrichment location read failed: ${error.message}`);
@@ -131,6 +132,12 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
       updated_at: now,
     }, { onConflict: "location_id" });
   if (updateError) throw new Error(updateError.message);
+
+  await scheduleReviewRefresh({
+    locationId,
+    provider: "dataforseo",
+    popularityScore: Number(location.popularity_score || 0),
+  });
 
   await recordLocationIntelligenceStage({
     locationId,
