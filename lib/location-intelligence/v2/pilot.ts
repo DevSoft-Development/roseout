@@ -39,7 +39,7 @@ export type PilotQuota = {
   count: number;
 };
 
-type PilotProgress = {
+export type PilotProgress = {
   attempted: number;
   successful: number;
   successfulByCell: Record<string, number>;
@@ -69,7 +69,7 @@ function pilotMarker(provenance: unknown) {
   return String(marker.id || "") === LOCATION_INTELLIGENCE_V2_PILOT_ID ? marker : null;
 }
 
-function categoryKey(candidate: PilotCandidate) {
+export function pilotCategoryKey(candidate: Pick<PilotCandidate, "primary_category" | "activity_type" | "category" | "cuisine_type" | "cuisine">) {
   return String(
     candidate.primary_category ||
       candidate.activity_type ||
@@ -99,7 +99,7 @@ function scoreCandidate(
   if (isMissingGoogle(candidate) && stats.missingGoogle < 1) score += 1200;
   if (isMessy(candidate) && stats.messy < 2) score += 900;
   if (candidate.is_searchable === false && stats.nonSearchable < 1) score += 650;
-  if (!seenCategories.has(categoryKey(candidate))) score += 300;
+  if (!seenCategories.has(pilotCategoryKey(candidate))) score += 300;
   if (candidate.is_searchable !== false) score += 30;
   if (isMissingGoogle(candidate) && stats.missingGoogle >= 1) score -= 80;
   if (isMessy(candidate) && stats.messy >= 2) score -= 40;
@@ -403,7 +403,7 @@ function summarize(selected: PilotCandidate[]) {
   for (const candidate of selected) {
     byState[candidate.state] = (byState[candidate.state] || 0) + 1;
     byType[candidate.location_type] = (byType[candidate.location_type] || 0) + 1;
-    categories.add(categoryKey(candidate));
+    categories.add(pilotCategoryKey(candidate));
     if (isMissingGoogle(candidate)) missingGoogle += 1;
     if (isMessy(candidate)) messy += 1;
     if (candidate.is_searchable === false) nonSearchable += 1;
