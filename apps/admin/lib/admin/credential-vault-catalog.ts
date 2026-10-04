@@ -153,7 +153,8 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "sentryOrg", label: "Sentry organization slug", placeholder: "your-sentry-org" },
     { key: "sentryProject", label: "Sentry mobile project slug", placeholder: "theouthaven-mobile" },
   ] },
-  { id: "turnstile", label: "Cloudflare Turnstile", category: "Security", description: "Turnstile server-side verification credential.", fields: [
+  { id: "turnstile", label: "Cloudflare Turnstile", category: "Security", description: "Turnstile browser and server verification credentials.", note: "The site key is public and may be embedded in web/mobile clients. The secret key must remain server-only.", fields: [
+    { key: "siteKey", label: "Site key" },
     { key: "secretKey", label: "Secret key", secret: true },
   ] },
   { id: "expo", label: "Expo Push (Temporary)", category: "Communications", description: "Temporary Expo Push credential retained only for existing mobile push delivery while native APNs/FCM is not yet configured.", note: "Expo is not a build, submit, OTA, or hosting control plane. Remove this provider after native APNs/FCM delivery is proven.", fields: [
