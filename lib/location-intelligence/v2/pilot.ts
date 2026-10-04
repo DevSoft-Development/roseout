@@ -6,6 +6,7 @@ import { runInitialLocationEnrichmentV2 } from "@/lib/location-intelligence/v2/i
 export const LOCATION_INTELLIGENCE_V2_PILOT_ID = "initial_100_v1";
 export const LOCATION_INTELLIGENCE_V2_PILOT_LIMIT = 100;
 export const LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE = 10;
+export const LOCATION_INTELLIGENCE_V2_PILOT_LEASE_SECONDS = 600;
 
 type PilotState = "NY" | "NJ" | "CT";
 type PilotLocationType = "restaurant" | "activity";
@@ -391,6 +392,31 @@ function selectPilotBatch(
   return selected;
 }
 
+async function acquirePilotLease() {
+  const ownerToken = crypto.randomUUID();
+  const { data, error } = await supabaseAdmin.rpc(
+    "acquire_location_intelligence_v2_pilot_lease",
+    {
+      p_pilot_id: LOCATION_INTELLIGENCE_V2_PILOT_ID,
+      p_owner_token: ownerToken,
+      p_lease_seconds: LOCATION_INTELLIGENCE_V2_PILOT_LEASE_SECONDS,
+    },
+  );
+  if (error) throw new Error(`Pilot lease acquisition failed: ${error.message}`);
+  return data === true ? ownerToken : null;
+}
+
+async function releasePilotLease(ownerToken: string) {
+  const { error } = await supabaseAdmin.rpc(
+    "release_location_intelligence_v2_pilot_lease",
+    {
+      p_pilot_id: LOCATION_INTELLIGENCE_V2_PILOT_ID,
+      p_owner_token: ownerToken,
+    },
+  );
+  if (error) throw new Error(`Pilot lease release failed: ${error.message}`);
+}
+
 export function pilotEnrichmentCommitted(lastInitialEnrichmentAt: unknown) {
   return Boolean(String(lastInitialEnrichmentAt || "").trim());
 }
@@ -464,7 +490,7 @@ function summarize(selected: PilotCandidate[]) {
   };
 }
 
-export async function runLocationIntelligenceV2PilotBatch() {
+async function runLockedLocationIntelligenceV2PilotBatch() {
   const progressBefore = await pilotProgress();
   if (progressBefore.successful >= LOCATION_INTELLIGENCE_V2_PILOT_LIMIT) {
     return {
@@ -476,6 +502,7 @@ export async function runLocationIntelligenceV2PilotBatch() {
       succeeded: 0,
       failed: 0,
       auditFailed: 0,
+      postEnrichmentFailed: 0,
       remaining: 0,
     };
   }
@@ -591,4 +618,37 @@ export async function runLocationIntelligenceV2PilotBatch() {
     postEnrichmentFailures,
     auditFailures,
   };
+}
+
+
+export async function runLocationIntelligenceV2PilotBatch() {
+  const ownerToken = await acquirePilotLease();
+  if (!ownerToken) {
+    return {
+      busy: true,
+      complete: false,
+      pilotId: LOCATION_INTELLIGENCE_V2_PILOT_ID,
+      attemptedBefore: 0,
+      attemptedAfter: 0,
+      successBefore: 0,
+      successAfter: 0,
+      selected: 0,
+      succeeded: 0,
+      failed: 0,
+      auditFailed: 0,
+      postEnrichmentFailed: 0,
+      remaining: LOCATION_INTELLIGENCE_V2_PILOT_LIMIT,
+      quotas: [] as PilotQuota[],
+      cohort: null,
+      failures: [] as Array<{ locationId: string; error: string }>,
+      postEnrichmentFailures: [] as Array<{ locationId: string; error: string }>,
+      auditFailures: [] as Array<{ locationId: string; error: string }>,
+    };
+  }
+
+  try {
+    return await runLockedLocationIntelligenceV2PilotBatch();
+  } finally {
+    await releasePilotLease(ownerToken);
+  }
 }
