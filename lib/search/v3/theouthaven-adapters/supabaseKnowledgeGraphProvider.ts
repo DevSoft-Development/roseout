@@ -56,6 +56,47 @@ export class SupabaseKnowledgeGraphProvider implements KnowledgeGraphProvider {
     return entities[0] ?? null;
   }
 
+  async getLocationEntities(locationIds: readonly string[]): Promise<readonly KnowledgeEntity[]> {
+    const ids = [...new Set(locationIds.filter(Boolean))];
+    if (ids.length === 0) return [];
+
+    const rows: any[] = [];
+    for (const batch of chunk(ids, 100)) {
+      const { data, error } = await this.client
+        .from("knowledge_entities")
+        .select("*")
+        .in("location_id", batch);
+
+      if (error) throw new Error(error.message);
+      rows.push(...(data ?? []));
+    }
+
+    return rows.map(mapEntity);
+  }
+
+  async getRelationshipsForEntities(entityIds: readonly string[]): Promise<readonly KnowledgeEdge[]> {
+    const ids = [...new Set(entityIds.filter(Boolean))];
+    if (ids.length === 0) return [];
+
+    const edges = new Map<string, KnowledgeEdge>();
+    for (const batch of chunk(ids, 50)) {
+      const [outgoing, incoming] = await Promise.all([
+        this.client.from("knowledge_edges").select("*").in("subject_entity_id", batch),
+        this.client.from("knowledge_edges").select("*").in("object_entity_id", batch),
+      ]);
+
+      if (outgoing.error) throw new Error(outgoing.error.message);
+      if (incoming.error) throw new Error(incoming.error.message);
+
+      for (const row of [...(outgoing.data ?? []), ...(incoming.data ?? [])]) {
+        const edge = mapEdge(row);
+        edges.set(edge.id, edge);
+      }
+    }
+
+    return [...edges.values()];
+  }
+
   async getEntity(entityId: string): Promise<KnowledgeEntity | null> {
     const { data, error } = await this.client
       .from("knowledge_entities")
@@ -246,4 +287,13 @@ function compareEntitySpecificity(a: KnowledgeEntity, b: KnowledgeEntity): numbe
   if (confidenceDelta !== 0) return confidenceDelta;
 
   return a.canonicalKey.localeCompare(b.canonicalKey);
+}
+
+
+function chunk<T>(values: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    batches.push(values.slice(index, index + size));
+  }
+  return batches;
 }

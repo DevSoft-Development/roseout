@@ -1,4 +1,6 @@
 import type {
+  KnowledgeEdge,
+  KnowledgeEntity,
   LocationIntelligenceProfile,
   SearchCandidate,
   SearchIntentGraph,
@@ -19,6 +21,7 @@ export interface DeterministicOutingPairingOptions {
   intentWeight?: number;
   qualityWeight?: number;
   diversityWeight?: number;
+  graphWeight?: number;
   maxDistanceMiles?: number;
   maxPairs?: number;
   maxCandidatesPerRole?: number;
@@ -26,12 +29,24 @@ export interface DeterministicOutingPairingOptions {
 
 type PairRole = "restaurant" | "activity";
 
+export interface GraphPairingKnowledgeProvider {
+  readonly providerId: string;
+  getLocationEntities(locationIds: readonly string[]): Promise<readonly KnowledgeEntity[]>;
+  getRelationshipsForEntities(entityIds: readonly string[]): Promise<readonly KnowledgeEdge[]>;
+}
+
+interface GraphPairingContext {
+  entityByLocationId: ReadonlyMap<string, KnowledgeEntity>;
+  edgesByEntityId: ReadonlyMap<string, readonly KnowledgeEdge[]>;
+}
+
 export class DeterministicOutingPairingProvider implements SearchPairingProvider {
   readonly providerId = "search-v3.deterministic-outing-pairer.v1";
 
   constructor(
     private readonly options: DeterministicOutingPairingOptions = {},
     private readonly routingProvider: SearchRoutingProvider | null = null,
+    private readonly graphProvider: GraphPairingKnowledgeProvider | null = null,
   ) {}
 
   async pair(args: {
@@ -47,6 +62,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
       intent: this.options.intentWeight ?? 0.2,
       quality: this.options.qualityWeight ?? 0.1,
       diversity: this.options.diversityWeight ?? 0.05,
+      graph: this.options.graphWeight ?? 0.15,
     });
 
     const maxPairs = Math.max(
@@ -61,12 +77,29 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
     const travelMode = effectiveTravelMode(args.intent);
     const travelLimit = resolveTravelLimit(args.intent, this.options.maxDistanceMiles);
 
-    const restaurants = args.candidates
+    const graphPoolMultiplier = this.graphProvider ? 2 : 1;
+    const restaurantPool = args.candidates
       .filter((candidate) => supportsRole(candidate, "restaurant"))
-      .slice(0, maxCandidatesPerRole);
-    const activities = args.candidates
+      .slice(0, maxCandidatesPerRole * graphPoolMultiplier);
+    const activityPool = args.candidates
       .filter((candidate) => supportsRole(candidate, "activity"))
-      .slice(0, maxCandidatesPerRole);
+      .slice(0, maxCandidatesPerRole * graphPoolMultiplier);
+
+    const graphContext = await buildGraphPairingContext(
+      [...restaurantPool, ...activityPool],
+      this.graphProvider,
+    );
+
+    const restaurants = prioritizeByGraphAnchor(
+      restaurantPool,
+      graphContext,
+      args.intent.anchor?.entityId ?? null,
+    ).slice(0, maxCandidatesPerRole);
+    const activities = prioritizeByGraphAnchor(
+      activityPool,
+      graphContext,
+      args.intent.anchor?.entityId ?? null,
+    ).slice(0, maxCandidatesPerRole);
 
     const rawPairs: Array<{ restaurant: SearchCandidate; activity: SearchCandidate }> = [];
 
@@ -181,6 +214,7 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
             candidateQualityScore(activity)
           ) / 2,
           diversity: sameVenue ? 0.5 : 1,
+          graph: pairGraphAffinity(restaurant, activity, graphContext),
         };
 
         const score =
@@ -188,7 +222,8 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
           components.proximity * weights.proximity +
           components.intent * weights.intent +
           components.quality * weights.quality +
-          components.diversity * weights.diversity;
+          components.diversity * weights.diversity +
+          components.graph * weights.graph;
 
         const sequence = resolveSequence(args.intent, restaurant, activity);
 
@@ -221,6 +256,8 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
             straightLineMiles,
             routeDistanceMiles,
             routingProvider: this.routingProvider?.providerId ?? null,
+            graphProvider: this.graphProvider?.providerId ?? null,
+            graphEvidence: describeGraphEvidence(restaurant, activity, graphContext),
             routingState,
             maxDistanceMiles: travelLimit?.maxDistanceMiles ?? null,
             maxTravelMinutes: travelLimit?.maxTravelMinutes ?? null,
@@ -666,7 +703,15 @@ function normalizeWeights(weights: {
   intent: number;
   quality: number;
   diversity: number;
-}) {
+  graph: number;
+}): {
+  relevance: number;
+  proximity: number;
+  intent: number;
+  quality: number;
+  diversity: number;
+  graph: number;
+} {
   const safe = Object.fromEntries(
     Object.entries(weights).map(([key, value]) => [
       key,
@@ -682,6 +727,7 @@ function normalizeWeights(weights: {
       intent: 0.2,
       quality: 0.1,
       diversity: 0.05,
+      graph: 0.15,
     };
   }
 
@@ -691,7 +737,168 @@ function normalizeWeights(weights: {
     intent: safe.intent / total,
     quality: safe.quality / total,
     diversity: safe.diversity / total,
+    graph: safe.graph / total,
   };
+}
+
+async function buildGraphPairingContext(
+  candidates: readonly SearchCandidate[],
+  provider: GraphPairingKnowledgeProvider | null,
+): Promise<GraphPairingContext> {
+  const empty: GraphPairingContext = {
+    entityByLocationId: new Map(),
+    edgesByEntityId: new Map(),
+  };
+  if (!provider || candidates.length === 0) return empty;
+
+  try {
+    const locationIds = [...new Set(candidates.map((candidate) => candidate.locationId))];
+    const entities = await provider.getLocationEntities(locationIds);
+    const entityByLocationId = new Map<string, KnowledgeEntity>();
+
+    for (const entity of entities) {
+      if (!entity.locationId) continue;
+      const current = entityByLocationId.get(entity.locationId);
+      if (!current || entity.confidence > current.confidence) {
+        entityByLocationId.set(entity.locationId, entity);
+      }
+    }
+
+    const entityIds = [...new Set([...entityByLocationId.values()].map((entity) => entity.id))];
+    const edges = await provider.getRelationshipsForEntities(entityIds);
+    const edgesByEntityId = new Map<string, KnowledgeEdge[]>();
+
+    for (const edge of edges) {
+      for (const entityId of [edge.subjectEntityId, edge.objectEntityId]) {
+        if (!entityIds.includes(entityId)) continue;
+        const list = edgesByEntityId.get(entityId) ?? [];
+        list.push(edge);
+        edgesByEntityId.set(entityId, list);
+      }
+    }
+
+    return { entityByLocationId, edgesByEntityId };
+  } catch {
+    return empty;
+  }
+}
+
+function prioritizeByGraphAnchor(
+  candidates: readonly SearchCandidate[],
+  context: GraphPairingContext,
+  anchorEntityId: string | null,
+): SearchCandidate[] {
+  if (!anchorEntityId) return [...candidates];
+
+  return [...candidates].sort((a, b) => {
+    const affinityDelta =
+      candidateAnchorAffinity(b, context, anchorEntityId) -
+      candidateAnchorAffinity(a, context, anchorEntityId);
+    if (affinityDelta !== 0) return affinityDelta;
+    return (a.finalRank ?? Number.MAX_SAFE_INTEGER) - (b.finalRank ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+function candidateAnchorAffinity(
+  candidate: SearchCandidate,
+  context: GraphPairingContext,
+  anchorEntityId: string,
+): number {
+  const entity = context.entityByLocationId.get(candidate.locationId);
+  if (!entity) return 0;
+
+  const edges = context.edgesByEntityId.get(entity.id) ?? [];
+  const direct = edges.find((edge) =>
+    (edge.subjectEntityId === entity.id && edge.objectEntityId === anchorEntityId) ||
+    (edge.objectEntityId === entity.id && edge.subjectEntityId === anchorEntityId)
+  );
+  return direct ? clamp01(direct.confidence) : 0;
+}
+
+function pairGraphAffinity(
+  restaurant: SearchCandidate,
+  activity: SearchCandidate,
+  context: GraphPairingContext,
+): number {
+  const left = context.entityByLocationId.get(restaurant.locationId);
+  const right = context.entityByLocationId.get(activity.locationId);
+  if (!left || !right) return 0.5;
+
+  const leftEdges = context.edgesByEntityId.get(left.id) ?? [];
+  const rightEdges = context.edgesByEntityId.get(right.id) ?? [];
+
+  const directPredicates = new Set([
+    "compatible_with",
+    "commonly_paired_with",
+    "near",
+    "same_area_as",
+    "reachable_within",
+    "followed_by",
+  ]);
+
+  const direct = [...leftEdges, ...rightEdges].filter((edge) =>
+    (
+      (edge.subjectEntityId === left.id && edge.objectEntityId === right.id) ||
+      (edge.subjectEntityId === right.id && edge.objectEntityId === left.id)
+    ) &&
+    directPredicates.has(edge.predicate)
+  );
+
+  if (direct.length > 0) {
+    return clamp01(Math.max(...direct.map((edge) => edge.confidence)));
+  }
+
+  const sharedLocatedIn = sharedObjects(left.id, right.id, leftEdges, rightEdges, "located_in");
+  if (sharedLocatedIn.length > 0) return 0.9;
+
+  for (const predicate of ["suited_for_occasion", "has_vibe", "for_audience"]) {
+    if (sharedObjects(left.id, right.id, leftEdges, rightEdges, predicate).length > 0) {
+      return 0.75;
+    }
+  }
+
+  return 0.5;
+}
+
+function describeGraphEvidence(
+  restaurant: SearchCandidate,
+  activity: SearchCandidate,
+  context: GraphPairingContext,
+): Readonly<Record<string, unknown>> {
+  const left = context.entityByLocationId.get(restaurant.locationId);
+  const right = context.entityByLocationId.get(activity.locationId);
+  if (!left || !right) return { status: "unavailable" };
+
+  const leftEdges = context.edgesByEntityId.get(left.id) ?? [];
+  const rightEdges = context.edgesByEntityId.get(right.id) ?? [];
+  const sharedGeography = sharedObjects(left.id, right.id, leftEdges, rightEdges, "located_in");
+
+  return {
+    status: "available",
+    restaurantEntityId: left.id,
+    activityEntityId: right.id,
+    sharedGeographyEntityIds: sharedGeography,
+    affinity: pairGraphAffinity(restaurant, activity, context),
+  };
+}
+
+function sharedObjects(
+  leftId: string,
+  rightId: string,
+  leftEdges: readonly KnowledgeEdge[],
+  rightEdges: readonly KnowledgeEdge[],
+  predicate: string,
+): string[] {
+  const targets = (entityId: string, edges: readonly KnowledgeEdge[]) =>
+    new Set(
+      edges
+        .filter((edge) => edge.subjectEntityId === entityId && edge.predicate === predicate)
+        .map((edge) => edge.objectEntityId),
+    );
+
+  const leftTargets = targets(leftId, leftEdges);
+  const rightTargets = targets(rightId, rightEdges);
+  return [...leftTargets].filter((id) => rightTargets.has(id));
 }
 
 function normalizeCandidateScore(value: number | null): number {
