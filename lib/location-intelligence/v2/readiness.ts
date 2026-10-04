@@ -36,7 +36,7 @@ export function computeSearchV3Readiness(input: {
 }
 
 export async function refreshLocationReadiness(locationId: string) {
-  const [{ data: location, error: locationError }, { data: identity, error: identityError }, { data: reviews, error: reviewsError }] = await Promise.all([
+  const [{ data: location, error: locationError }, { data: identity, error: identityError }, { data: reviews, error: reviewsError }, { data: profile, error: profileError }] = await Promise.all([
     supabaseAdmin
       .from("locations")
       .select("id,location_type,primary_category,cuisine,cuisine_type,activity_type,city,state,zip_code,latitude,longitude,google_business_status,active,operating_hours,tags,vibe_tags,best_for_tags,is_low_level,low_level_reason")
@@ -53,11 +53,20 @@ export async function refreshLocationReadiness(locationId: string) {
       .select("concept")
       .eq("location_id", locationId)
       .limit(1),
+    supabaseAdmin
+      .from("location_intelligence_profiles_v2")
+      .select("classification")
+      .eq("location_id", locationId)
+      .maybeSingle(),
   ]);
   if (locationError) throw new Error(locationError.message);
   if (identityError) throw new Error(identityError.message);
   if (reviewsError) throw new Error(reviewsError.message);
+  if (profileError) throw new Error(profileError.message);
 
+  const classification = profile?.classification && typeof profile.classification === "object"
+    ? profile.classification as Record<string, unknown>
+    : {};
   const category = String(location?.primary_category || location?.cuisine || location?.cuisine_type || location?.activity_type || "").trim();
   const result = computeSearchV3Readiness({
     hasIdentity: Boolean(identity?.length),
@@ -68,7 +77,7 @@ export async function refreshLocationReadiness(locationId: string) {
     hasHours: Boolean(location?.operating_hours),
     hasFeatures: Boolean((location?.tags || []).length || (location?.vibe_tags || []).length || (location?.best_for_tags || []).length),
     hasReviewIntelligence: Boolean(reviews?.length),
-    negativeClassificationKnown: location?.is_low_level != null || Boolean(location?.low_level_reason),
+    negativeClassificationKnown: classification.negativeClassificationKnown === true,
   });
 
   const { error } = await supabaseAdmin
