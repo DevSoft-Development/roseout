@@ -38,7 +38,7 @@ jobs:
       - name: Validate recovery cadence
         run: |
           set -euo pipefail
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           jq -e 'any(.[]; .name == "cron-alert-dispatcher" and .expression == "cron(0 * * * ? *)" and .function == "node:/api/cron/managed?job=cron-alert-dispatcher")' infra/aws/edge-runtime/schedules.json >/dev/null
 
       - name: Validate database wake contract

@@ -29,6 +29,7 @@
     "location-search-profile-worker",
     "catalog-enrichment-runner",
     "location-description-backfill",
+    "location-intelligence-v2-maintenance",
     "search-phase13-maintenance",
     "search-hf-inventory-maintenance",
     "website-replica-repair",
@@ -127,7 +128,8 @@
     "postcard-followups",
     "microsoft-365-sync",
     "marketing-social-publish",
-    "website-failover"
+    "website-failover",
+    "domain-lifecycle"
   ],
   "probe": [
     "domain-lifecycle"

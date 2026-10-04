@@ -82,7 +82,7 @@ jobs:
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
           aws secretsmanager get-secret-value --secret-id "$DR_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/dr-current.json"
           test "$(jq -r '.DR_MODE // empty' "$RUNNER_TEMP/dr-current.json")" = 'virginia_primary'
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           while IFS= read -r name; do
             test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)" = 'ENABLED' || {
               echo "Base production schedule is not enabled: $name" >&2

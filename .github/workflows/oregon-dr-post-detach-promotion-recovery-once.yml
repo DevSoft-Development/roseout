@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           file=.github/workflows/oregon-dr-post-detach-promotion-recovery-once.yml
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'post_detach_state=proven' "$file" >/dev/null
           grep -F 'DR_MODE == "oregon_primary"' "$file" >/dev/null
@@ -60,7 +60,7 @@ jobs:
           grep -F 'forward_slots==0' "$file" >/dev/null
           grep -F 'forward_subscriptions==0' "$file" >/dev/null
           grep -F 'reverse_subscriptions==0' "$file" >/dev/null
-          grep -F 'base_disabled==65' "$file" >/dev/null
+          grep -F 'base_disabled==64' "$file" >/dev/null
           grep -F 'dr_disabled==2' "$file" >/dev/null
           grep -F 'PREPARE_FAILBACK' "$file" >/dev/null
           grep -F 'FAILBACK_VIRGINIA' "$file" >/dev/null
@@ -159,7 +159,7 @@ jobs:
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
             case "$state" in ENABLED) dr_enabled=$((dr_enabled+1));; DISABLED) dr_disabled=$((dr_disabled+1));; *) exit 1;; esac
           done < <(jq -r '.[].name' infra/aws/edge-runtime/dr-schedules.json)
-          test "$base_enabled" = '0' && test "$base_disabled" = '65'
+          test "$base_enabled" = '0' && test "$base_disabled" = '64'
           test "$dr_enabled" = '0' && test "$dr_disabled" = '2'
           echo 'post_detach_state=proven'
 

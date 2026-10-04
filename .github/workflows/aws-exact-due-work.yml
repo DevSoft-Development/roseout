@@ -39,7 +39,7 @@ jobs:
           node - <<'NODE'
           const fs = require('fs');
           const rows = JSON.parse(fs.readFileSync('infra/aws/edge-runtime/schedules.json', 'utf8'));
-          if (rows.length !== 63) throw new Error(`expected 63 schedules, got ${rows.length}`);
+          if (rows.length !== 64) throw new Error(`expected 64 schedules, got ${rows.length}`);
           const report = rows.find((row) => row.name === 'marketing-report-scheduler');
           const social = rows.find((row) => row.name === 'marketing-social-publish');
           if (report?.expression !== 'cron(0 * * * ? *)') throw new Error('report recovery must be hourly');

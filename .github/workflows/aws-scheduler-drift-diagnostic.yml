@@ -32,6 +32,8 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -41,17 +43,40 @@ jobs:
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
       - name: Compare canonical manifest with live AWS state
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
 
-          jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort > "$RUNNER_TEMP/enabled-expected.txt"
-          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$RUNNER_TEMP/manifest.txt"
-          diff -u "$RUNNER_TEMP/manifest.txt" "$RUNNER_TEMP/enabled-expected.txt" || {
-            echo 'Manifest and activation enabled set differ.' >&2
+          # Always validate the candidate checkout internally.
+          jq -r '.enabled[]' infra/aws/edge-runtime/activation.json | sort > "$RUNNER_TEMP/candidate-enabled.txt"
+          jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort > "$RUNNER_TEMP/candidate-manifest.txt"
+          diff -u "$RUNNER_TEMP/candidate-manifest.txt" "$RUNNER_TEMP/candidate-enabled.txt" || {
+            echo 'Candidate manifest and activation enabled set differ.' >&2
             exit 1
           }
 
+          if [ "$EVENT_NAME" = 'pull_request' ]; then
+            # A PR can add schedules that do not exist in production yet. Compare live AWS
+            # only with the currently deployed base branch, and accept either its desired
+            # fleet or its explicit fail-closed rollback fleet. Production/main remains strict.
+            git fetch --no-tags origin "$BASE_REF"
+            git show "origin/$BASE_REF:infra/aws/edge-runtime/schedules.json" > "$RUNNER_TEMP/live-manifest.json"
+            git show "origin/$BASE_REF:infra/aws/edge-runtime/activation.json" > "$RUNNER_TEMP/live-activation.json"
+            mode='pull_request_base'
+          else
+            cp infra/aws/edge-runtime/schedules.json "$RUNNER_TEMP/live-manifest.json"
+            cp infra/aws/edge-runtime/activation.json "$RUNNER_TEMP/live-activation.json"
+            mode='production_current'
+          fi
+
+          jq -r '.[].name' "$RUNNER_TEMP/live-manifest.json" | sort > "$RUNNER_TEMP/manifest.txt"
+          jq -r '.enabled[]' "$RUNNER_TEMP/live-activation.json" | sort > "$RUNNER_TEMP/enabled-expected.txt"
+          jq -r '.rollback_enabled[]' "$RUNNER_TEMP/live-activation.json" | sort > "$RUNNER_TEMP/rollback-expected.txt"
+
+          : > "$RUNNER_TEMP/enabled-actual.txt"
           : > "$RUNNER_TEMP/disabled.txt"
           : > "$RUNNER_TEMP/missing.txt"
           while IFS= read -r name; do
@@ -59,42 +84,45 @@ jobs:
               echo "$name" >> "$RUNNER_TEMP/missing.txt"
               continue
             fi
-            if [ "$state" != 'ENABLED' ]; then
+            if [ "$state" = 'ENABLED' ]; then
+              echo "$name" >> "$RUNNER_TEMP/enabled-actual.txt"
+            else
               printf '%s\t%s\n' "$name" "$state" >> "$RUNNER_TEMP/disabled.txt"
             fi
           done < "$RUNNER_TEMP/manifest.txt"
+          sort -o "$RUNNER_TEMP/enabled-actual.txt" "$RUNNER_TEMP/enabled-actual.txt"
 
           manifest_count="$(wc -l < "$RUNNER_TEMP/manifest.txt" | tr -d ' ')"
           disabled_count="$(wc -l < "$RUNNER_TEMP/disabled.txt" | tr -d ' ')"
           missing_count="$(wc -l < "$RUNNER_TEMP/missing.txt" | tr -d ' ')"
+          live_state='drifted'
+
+          if [ "$missing_count" = '0' ] && diff -q "$RUNNER_TEMP/enabled-expected.txt" "$RUNNER_TEMP/enabled-actual.txt" >/dev/null; then
+            live_state='desired'
+          elif [ "$EVENT_NAME" = 'pull_request' ] && [ "$missing_count" = '0' ] && diff -q "$RUNNER_TEMP/rollback-expected.txt" "$RUNNER_TEMP/enabled-actual.txt" >/dev/null; then
+            live_state='rollback'
+          fi
 
           {
             echo '### AWS scheduler drift diagnostic'
             echo ''
-            echo "- Canonical schedules: ${manifest_count}"
+            echo "- Mode: ${mode}"
+            echo "- Canonical schedules checked against live AWS: ${manifest_count}"
+            echo "- Live state: ${live_state}"
             echo "- Non-enabled schedules: ${disabled_count}"
             echo "- Missing schedules: ${missing_count}"
-            if [ "$disabled_count" -gt 0 ]; then
-              echo ''
-              echo '#### Non-enabled'
-              echo '```'
-              cat "$RUNNER_TEMP/disabled.txt"
-              echo '```'
-            fi
-            if [ "$missing_count" -gt 0 ]; then
-              echo ''
-              echo '#### Missing'
-              echo '```'
-              cat "$RUNNER_TEMP/missing.txt"
-              echo '```'
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$disabled_count" -gt 0 ] || [ "$missing_count" -gt 0 ]; then
-            echo 'Live AWS scheduler state differs from canonical activation.' >&2
+          if [ "$live_state" = 'drifted' ]; then
+            echo 'Live AWS scheduler state differs from the allowed deployed state.' >&2
             echo 'non_enabled:' >&2
             cat "$RUNNER_TEMP/disabled.txt" >&2 || true
             echo 'missing:' >&2
             cat "$RUNNER_TEMP/missing.txt" >&2 || true
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" != 'pull_request' ] && [ "$live_state" != 'desired' ]; then
+            echo 'Production scheduler state must exactly match current activation.' >&2
             exit 1
           fi

@@ -37,7 +37,7 @@ jobs:
           promotion='.github/workflows/oregon-dr-promotion.yml'
           failback='scripts/dr/oregon-failback.sh'
 
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '65'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
 
           # Live readiness is observational. Exact public-data equality is only
@@ -201,7 +201,7 @@ jobs:
           }
 
           base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
-          test "$base_expected" = '65'
+          test "$base_expected" = '64'
           base_enabled=0
           while IFS= read -r name; do
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
@@ -322,7 +322,7 @@ jobs:
               echo '- Oregon -> Virginia failback completed successfully.'
               echo '- Production smoke checks passed after Virginia was restored.'
               echo '- Final primary: **Virginia**.'
-              echo '- Base production schedules enabled: **65/65**.'
+              echo '- Base production schedules enabled: **64/64**.'
               echo '- Forward DR reconciliation schedules enabled: **2/2**.'
               echo '- Final standby reconciler reports Auth parity and Storage parity.'
               echo "- Promotion workflow duration: **${{ steps.drill.outputs.promotion_duration_seconds }} seconds**."
