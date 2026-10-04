@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { resolveSearchMlRuntimeConfig } from "@/lib/search/huggingFaceEmbedding";
 import { resolveProductionDeploymentCommit } from "@/lib/search/runtimeDeploymentCommit";
+import { handleGeneratePost } from "@/lib/search/public-api/controller";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const PUBLIC_SEARCH_PATH = "/api/generate";
 const TEST_TIMEZONE = "America/New_York";
 const REQUEST_DELAY_MS = 1500;
 const MAX_RATE_LIMIT_RETRIES = 6;
@@ -98,12 +98,12 @@ function checksFor(query: (typeof GOLD_QUERIES)[number], rawResponse: any) {
   return checks;
 }
 
-async function runPublicSearch(origin: string, query: string) {
+async function runPublicSearch(query: string) {
   let rateLimitRetries = 0;
   let lastPayload: any = null;
   let lastStatus = 0;
   for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
-    const response = await fetch(`${origin}${PUBLIC_SEARCH_PATH}`, {
+    const searchRequest = new Request("http://search-gold.local/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
@@ -114,8 +114,8 @@ async function runPublicSearch(origin: string, query: string) {
         guidedFlow: "guided_create_v1",
         debug: true,
       }),
-      cache: "no-store",
     });
+    const response = await handleGeneratePost(searchRequest);
     lastStatus = response.status;
     lastPayload = await response.json().catch(() => ({ error: "public_search_returned_non_json" }));
     if (response.status !== 429) break;
@@ -178,7 +178,7 @@ export async function GET(request: Request) {
     const query = GOLD_QUERIES[index];
     const started = performance.now();
     try {
-      const result = await runPublicSearch(requestUrl.origin, query);
+      const result = await runPublicSearch(query);
       results.push(snapshot(query, result.payload, result.status, performance.now() - started, result.rateLimitRetries));
     } catch (error) {
       results.push({ query, ok: false, elapsedMs: performance.now() - started, error: error instanceof Error ? error.message : "unknown_gold_qa_failure" });
