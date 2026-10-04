@@ -56,6 +56,25 @@ export type ProviderCapability =
   | "ai_extraction"
   | "public_geography";
 
+export type LocationProviderRequest = {
+  capability: ProviderCapability;
+  input: Record<string, unknown>;
+};
+
+export type LocationProviderResponse = {
+  providerId: string;
+  capability: ProviderCapability;
+  data: unknown;
+  evidence?: Omit<LocationEvidence, "locationId">[];
+  metadata?: Record<string, unknown>;
+};
+
+export interface LocationIntelligenceProviderAdapter {
+  readonly descriptor: ProviderDescriptor;
+  supports(capability: ProviderCapability): boolean;
+  execute(request: LocationProviderRequest): Promise<LocationProviderResponse>;
+}
+
 export type ProviderDescriptor = {
   id: string;
   enabled: boolean;
