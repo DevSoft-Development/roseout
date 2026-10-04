@@ -202,50 +202,28 @@ export function nextPilotQuotas(progress: PilotProgress): PilotQuota[] {
 async function fetchLocationRows(state: PilotState, locationType: PilotLocationType) {
   const columns =
     "id,state,location_type,primary_category,category,cuisine,cuisine_type,activity_type,is_searchable,duplicate_status,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
+  const pageSize = 500;
+  const rows: Record<string, unknown>[] = [];
 
-  const base = () =>
-    supabaseAdmin
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseAdmin
       .from("locations")
       .select(columns)
       .eq("state", state)
       .eq("location_type", locationType)
-      .is("deleted_at", null);
+      .is("deleted_at", null)
+      .order("popularity_score", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
 
-  const [popular, messy, nonSearchable, missingNull, missingEmpty] = await Promise.all([
-    base().order("popularity_score", { ascending: false, nullsFirst: false }).limit(160),
-    base()
-      .in("duplicate_status", ["duplicate", "possible_duplicate"])
-      .order("popularity_score", { ascending: false, nullsFirst: false })
-      .limit(60),
-    base()
-      .eq("is_searchable", false)
-      .order("popularity_score", { ascending: false, nullsFirst: false })
-      .limit(50),
-    base()
-      .is("google_place_id", null)
-      .order("popularity_score", { ascending: false, nullsFirst: false })
-      .limit(30),
-    base()
-      .eq("google_place_id", "")
-      .order("popularity_score", { ascending: false, nullsFirst: false })
-      .limit(30),
-  ]);
+    if (error) throw new Error(`Pilot candidate read failed: ${error.message}`);
 
-  for (const result of [popular, messy, nonSearchable, missingNull, missingEmpty]) {
-    if (result.error) throw new Error(`Pilot candidate read failed: ${result.error.message}`);
+    const page = (data || []) as Record<string, unknown>[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
 
-  const deduped = new Map<string, Record<string, unknown>>();
-  for (const row of [
-    ...(popular.data || []),
-    ...(messy.data || []),
-    ...(nonSearchable.data || []),
-    ...(missingNull.data || []),
-    ...(missingEmpty.data || []),
-  ]) {
-    deduped.set(String((row as any).id), row as Record<string, unknown>);
-  }
-  return [...deduped.values()];
+  return rows;
 }
 
 async function eligiblePilotCandidates() {
