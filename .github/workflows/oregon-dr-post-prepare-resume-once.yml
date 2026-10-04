@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           file=.github/workflows/oregon-dr-post-prepare-resume-once.yml
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'prepared_failback_state=proven' "$file" >/dev/null
           grep -F '.[0].reverse_ready==462' "$file" >/dev/null
@@ -137,7 +137,7 @@ jobs:
           case "$base_enabled:$base_disabled" in
             '65:0') ;;
             '0:65') recover_base=true ;;
-            *) echo "Prepared failback requires either 65/0 or fail-closed 0/65 base schedules; got ${base_enabled}/${base_disabled}." >&2; exit 1 ;;
+            *) echo "Prepared failback requires either 64/0 or fail-closed 0/64 base schedules; got ${base_enabled}/${base_disabled}." >&2; exit 1 ;;
           esac
           test "$dr_enabled" = '0' && test "$dr_disabled" = '2'
           echo 'prepared_failback_state=proven'
