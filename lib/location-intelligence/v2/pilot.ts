@@ -70,6 +70,10 @@ function pilotMarker(provenance: unknown) {
   return String(marker.id || "") === LOCATION_INTELLIGENCE_V2_PILOT_ID ? marker : null;
 }
 
+export function pilotMarkerCountsAsSuccess(status: string, enriched: boolean) {
+  return status === "success" || (status === "reserved" && enriched);
+}
+
 export function pilotCategoryKey(candidate: Pick<PilotCandidate, "primary_category" | "activity_type" | "category" | "cuisine_type" | "cuisine">) {
   return String(
     candidate.primary_category ||
@@ -317,7 +321,7 @@ async function pilotProgress(): Promise<PilotProgress> {
     const marker = pilotMarker(row.provenance);
     const markerStatus = String(marker?.status || "");
     const enriched = Boolean(row.last_initial_enrichment_at);
-    if (markerStatus !== "success" && !(markerStatus === "reserved" && enriched)) continue;
+    if (!pilotMarkerCountsAsSuccess(markerStatus, enriched)) continue;
 
     const joined = Array.isArray((row as any).locations)
       ? (row as any).locations[0]
@@ -457,6 +461,7 @@ export async function runLocationIntelligenceV2PilotBatch() {
       selected: 0,
       succeeded: 0,
       failed: 0,
+      auditFailed: 0,
       remaining: 0,
     };
   }
