@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getCredentialVaultProviderValues } from "@/lib/admin/credential-vault-runtime-source";
-import { searchPlacesTextNew } from "@/lib/google/places-new-client";
+import { getPlaceDetailsNew, searchPlacesTextNew } from "@/lib/google/places-new-client";
 import {
   MapboxSearchRoutingProvider,
   type MapboxSearchRoutingProviderOptions,
@@ -22,6 +22,21 @@ export async function resolveGooglePlaceIds(textQuery: string, pageSize = 10) {
     priority: "high",
   });
   return places.map((place) => String(place.id || "").trim()).filter(Boolean);
+}
+
+export async function verifyGooglePlaceStatus(placeId: string) {
+  const place = await getPlaceDetailsNew(placeId, {
+    fieldMode: "rich",
+    jobKey: "location-intelligence-v2-status-verification",
+    priority: "high",
+  });
+  return {
+    placeId: String(place.id || placeId),
+    businessStatus: place.businessStatus || null,
+    displayName: place.displayName?.text || null,
+    formattedAddress: place.formattedAddress || null,
+    location: place.location || null,
+  };
 }
 
 export { createDataForSeoReviewTask, getDataForSeoReviewTask, searchDataForSeoBusinessListings, testDataForSeoCredential };
