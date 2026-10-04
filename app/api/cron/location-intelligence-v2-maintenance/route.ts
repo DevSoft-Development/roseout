@@ -1,5 +1,5 @@
 import { processMaterialChangeVerificationBatch } from "@/lib/location-intelligence/v2/changes";
-import { submitDueDataForSeoReviewRefreshes } from "@/lib/location-intelligence/v2/review-worker";
+import { collectPendingDataForSeoReviewRefreshes, submitDueDataForSeoReviewRefreshes } from "@/lib/location-intelligence/v2/review-worker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,18 +36,23 @@ async function run(request: Request) {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
     const reviewLimit = limitParam(request, "reviewLimit", 20, 100);
 
-    const [materialChanges, reviews] = await Promise.all([
+    const collectedReviews = await collectPendingDataForSeoReviewRefreshes(reviewLimit);
+    const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
       submitDueDataForSeoReviewRefreshes(reviewLimit),
     ]);
 
+    const reviewFailures =
+      collectedReviews.filter((row) => row.status === "failed").length +
+      submittedReviews.filter((row) => row.submitted === false).length;
+
     return Response.json({
-      ok: materialChanges.failed === 0 && reviews.every((row) => row.submitted !== false),
+      ok: materialChanges.failed === 0 && reviewFailures === 0,
       materialChanges,
       reviews: {
-        processed: reviews.length,
-        failed: reviews.filter((row) => row.submitted === false).length,
-        results: reviews,
+        collected: collectedReviews,
+        submitted: submittedReviews,
+        failed: reviewFailures,
       },
     });
   } catch (error) {
