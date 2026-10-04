@@ -7,14 +7,18 @@ export const LOCATION_INTELLIGENCE_V2_PILOT_ID = "initial_100_v1";
 export const LOCATION_INTELLIGENCE_V2_PILOT_LIMIT = 100;
 export const LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE = 10;
 
+type PilotState = "NY" | "NJ" | "CT";
+type PilotLocationType = "restaurant" | "activity";
+
 type PilotCandidate = {
   id: string;
-  state: string;
-  location_type: string;
+  state: PilotState;
+  location_type: PilotLocationType;
   primary_category: string | null;
   category: string | null;
   cuisine: string | null;
   cuisine_type: string | null;
+  activity_type: string | null;
   is_searchable: boolean | null;
   duplicate_status: string | null;
   google_place_id: string | null;
@@ -29,11 +33,30 @@ type PilotStats = {
   nonSearchable: number;
 };
 
-type PilotQuota = {
-  state: "NY" | "NJ" | "CT";
-  locationType: "restaurant" | "activity";
+export type PilotQuota = {
+  state: PilotState;
+  locationType: PilotLocationType;
   count: number;
 };
+
+type PilotProgress = {
+  attempted: number;
+  successful: number;
+  successfulByCell: Record<string, number>;
+};
+
+export const LOCATION_INTELLIGENCE_V2_PILOT_CELL_TARGETS: readonly PilotQuota[] = [
+  { state: "NY", locationType: "restaurant", count: 45 },
+  { state: "NY", locationType: "activity", count: 25 },
+  { state: "NJ", locationType: "restaurant", count: 10 },
+  { state: "NJ", locationType: "activity", count: 10 },
+  { state: "CT", locationType: "restaurant", count: 5 },
+  { state: "CT", locationType: "activity", count: 5 },
+];
+
+function cellKey(state: string, locationType: string) {
+  return `${state}:${locationType}`;
+}
 
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -49,6 +72,7 @@ function pilotMarker(provenance: unknown) {
 function categoryKey(candidate: PilotCandidate) {
   return String(
     candidate.primary_category ||
+      candidate.activity_type ||
       candidate.category ||
       candidate.cuisine_type ||
       candidate.cuisine ||
@@ -104,9 +128,65 @@ export function pilotBatchQuotas(batchIndex: number): PilotQuota[] {
       ];
 }
 
-async function fetchLocationRows(state: string, locationType: string) {
+function deficitForCell(progress: PilotProgress, quota: PilotQuota) {
+  const target =
+    LOCATION_INTELLIGENCE_V2_PILOT_CELL_TARGETS.find(
+      (row) => row.state === quota.state && row.locationType === quota.locationType,
+    )?.count || 0;
+  const succeeded = progress.successfulByCell[cellKey(quota.state, quota.locationType)] || 0;
+  return Math.max(0, target - succeeded);
+}
+
+function appendQuota(target: PilotQuota[], quota: PilotQuota, count: number) {
+  if (count <= 0) return;
+  const existing = target.find(
+    (row) => row.state === quota.state && row.locationType === quota.locationType,
+  );
+  if (existing) existing.count += count;
+  else target.push({ ...quota, count });
+}
+
+export function nextPilotQuotas(progress: PilotProgress): PilotQuota[] {
+  const remainingSuccesses = Math.max(0, LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - progress.successful);
+  const slots = Math.min(LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE, remainingSuccesses);
+  if (slots <= 0) return [];
+
+  const quotas: PilotQuota[] = [];
+  let allocated = 0;
+
+  if (progress.attempted < LOCATION_INTELLIGENCE_V2_PILOT_LIMIT) {
+    const plannedBatch = pilotBatchQuotas(
+      Math.floor(progress.attempted / LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE),
+    );
+    for (const quota of plannedBatch) {
+      const available = deficitForCell(progress, quota);
+      const take = Math.min(quota.count, available, slots - allocated);
+      appendQuota(quotas, quota, take);
+      allocated += take;
+      if (allocated >= slots) break;
+    }
+  }
+
+  if (allocated < slots) {
+    for (const target of LOCATION_INTELLIGENCE_V2_PILOT_CELL_TARGETS) {
+      const alreadyAllocated =
+        quotas.find(
+          (row) => row.state === target.state && row.locationType === target.locationType,
+        )?.count || 0;
+      const available = Math.max(0, deficitForCell(progress, target) - alreadyAllocated);
+      const take = Math.min(available, slots - allocated);
+      appendQuota(quotas, target, take);
+      allocated += take;
+      if (allocated >= slots) break;
+    }
+  }
+
+  return quotas;
+}
+
+async function fetchLocationRows(state: PilotState, locationType: PilotLocationType) {
   const columns =
-    "id,state,location_type,primary_category,category,cuisine,cuisine_type,is_searchable,duplicate_status,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
+    "id,state,location_type,primary_category,category,cuisine,cuisine_type,activity_type,is_searchable,duplicate_status,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
 
   const base = () =>
     supabaseAdmin
@@ -154,7 +234,7 @@ async function fetchLocationRows(state: string, locationType: string) {
 }
 
 async function eligiblePilotCandidates() {
-  const strata: Array<[string, string]> = [
+  const strata: Array<[PilotState, PilotLocationType]> = [
     ["NY", "restaurant"],
     ["NY", "activity"],
     ["NJ", "restaurant"],
@@ -186,15 +266,22 @@ async function eligiblePilotCandidates() {
     const id = String(row.id);
     const profile = profiles.get(id);
     if (!profile || profile.lastInitial || pilotMarker(profile.provenance)) return [];
+
+    const state = String(row.state || "").toUpperCase();
+    const locationType = String(row.location_type || "");
+    if (!["NY", "NJ", "CT"].includes(state)) return [];
+    if (!["restaurant", "activity"].includes(locationType)) return [];
+
     return [
       {
         id,
-        state: String(row.state || "").toUpperCase(),
-        location_type: String(row.location_type || ""),
+        state: state as PilotState,
+        location_type: locationType as PilotLocationType,
         primary_category: row.primary_category == null ? null : String(row.primary_category),
         category: row.category == null ? null : String(row.category),
         cuisine: row.cuisine == null ? null : String(row.cuisine),
         cuisine_type: row.cuisine_type == null ? null : String(row.cuisine_type),
+        activity_type: row.activity_type == null ? null : String(row.activity_type),
         is_searchable: row.is_searchable == null ? null : Boolean(row.is_searchable),
         duplicate_status: row.duplicate_status == null ? null : String(row.duplicate_status),
         google_place_id: row.google_place_id == null ? null : String(row.google_place_id),
@@ -210,34 +297,66 @@ async function eligiblePilotCandidates() {
   });
 }
 
-async function successfulPilotCount() {
-  const { count, error } = await supabaseAdmin
+async function pilotProgress(): Promise<PilotProgress> {
+  const { data, error } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
-    .select("location_id", { count: "exact", head: true })
+    .select("location_id,provenance,locations!inner(state,location_type)")
     .contains("provenance", {
       v2_pilot: {
         id: LOCATION_INTELLIGENCE_V2_PILOT_ID,
-        status: "success",
       },
     });
   if (error) throw new Error(`Pilot progress read failed: ${error.message}`);
-  return Number(count || 0);
+
+  const successfulByCell: Record<string, number> = {};
+  let successful = 0;
+
+  for (const row of data || []) {
+    const marker = pilotMarker(row.provenance);
+    if (String(marker?.status || "") !== "success") continue;
+
+    const joined = Array.isArray((row as any).locations)
+      ? (row as any).locations[0]
+      : (row as any).locations;
+    const state = String(joined?.state || "").toUpperCase();
+    const locationType = String(joined?.location_type || "");
+    const key = cellKey(state, locationType);
+    successfulByCell[key] = (successfulByCell[key] || 0) + 1;
+    successful += 1;
+  }
+
+  return {
+    attempted: (data || []).length,
+    successful,
+    successfulByCell,
+  };
 }
 
-function selectPilotBatch(candidates: PilotCandidate[], batchIndex: number) {
+function selectPilotBatch(candidates: PilotCandidate[], quotas: PilotQuota[]) {
   const selected: PilotCandidate[] = [];
   const selectedIds = new Set<string>();
   const seenCategories = new Set<string>();
   const stats: PilotStats = { missingGoogle: 0, messy: 0, nonSearchable: 0 };
 
-  const choose = (pool: PilotCandidate[], count: number) => {
-    for (let slot = 0; slot < count; slot += 1) {
-      const ranked = pool
-        .filter((candidate) => !selectedIds.has(candidate.id))
+  for (const quota of quotas) {
+    for (let slot = 0; slot < quota.count; slot += 1) {
+      const ranked = candidates
+        .filter(
+          (candidate) =>
+            !selectedIds.has(candidate.id) &&
+            candidate.state === quota.state &&
+            candidate.location_type === quota.locationType,
+        )
         .map((candidate) => ({ candidate, score: scoreCandidate(candidate, stats, seenCategories) }))
         .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id));
+
       const next = ranked[0]?.candidate;
-      if (!next) break;
+      if (!next) {
+        throw new Error(
+          `Pilot quota unavailable for ${quota.state} ${quota.locationType}; refusing cross-cell substitution.`,
+        );
+      }
+
       selected.push(next);
       selectedIds.add(next.id);
       seenCategories.add(categoryKey(next));
@@ -245,23 +364,9 @@ function selectPilotBatch(candidates: PilotCandidate[], batchIndex: number) {
       if (isMessy(next)) stats.messy += 1;
       if (next.is_searchable === false) stats.nonSearchable += 1;
     }
-  };
-
-  for (const quota of pilotBatchQuotas(batchIndex)) {
-    choose(
-      candidates.filter(
-        (candidate) =>
-          candidate.state === quota.state && candidate.location_type === quota.locationType,
-      ),
-      quota.count,
-    );
   }
 
-  if (selected.length < LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE) {
-    choose(candidates, LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE - selected.length);
-  }
-
-  return { selected, stats };
+  return selected;
 }
 
 async function markPilotResult(
@@ -317,12 +422,13 @@ function summarize(selected: PilotCandidate[]) {
 }
 
 export async function runLocationIntelligenceV2PilotBatch() {
-  const successBefore = await successfulPilotCount();
-  if (successBefore >= LOCATION_INTELLIGENCE_V2_PILOT_LIMIT) {
+  const progressBefore = await pilotProgress();
+  if (progressBefore.successful >= LOCATION_INTELLIGENCE_V2_PILOT_LIMIT) {
     return {
       complete: true,
       pilotId: LOCATION_INTELLIGENCE_V2_PILOT_ID,
-      successBefore,
+      attemptedBefore: progressBefore.attempted,
+      successBefore: progressBefore.successful,
       selected: 0,
       succeeded: 0,
       failed: 0,
@@ -330,17 +436,13 @@ export async function runLocationIntelligenceV2PilotBatch() {
     };
   }
 
-  const batchIndex = Math.floor(successBefore / LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE);
-  const remainingSlots = Math.min(
-    LOCATION_INTELLIGENCE_V2_PILOT_BATCH_SIZE,
-    LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - successBefore,
-  );
-  const candidates = await eligiblePilotCandidates();
-  const { selected: planned } = selectPilotBatch(candidates, batchIndex);
-  const selected = planned.slice(0, remainingSlots);
-  if (selected.length === 0) {
-    throw new Error("No eligible Location Intelligence V2 pilot candidates remain.");
+  const quotas = nextPilotQuotas(progressBefore);
+  if (quotas.length === 0) {
+    throw new Error("No remaining Location Intelligence V2 pilot quota.");
   }
+
+  const candidates = await eligiblePilotCandidates();
+  const selected = selectPilotBatch(candidates, quotas);
 
   let succeeded = 0;
   const failures: Array<{ locationId: string; error: string }> = [];
@@ -372,17 +474,19 @@ export async function runLocationIntelligenceV2PilotBatch() {
     );
   }
 
-  const successAfter = successBefore + succeeded;
+  const progressAfter = await pilotProgress();
   return {
-    complete: successAfter >= LOCATION_INTELLIGENCE_V2_PILOT_LIMIT,
+    complete: progressAfter.successful >= LOCATION_INTELLIGENCE_V2_PILOT_LIMIT,
     pilotId: LOCATION_INTELLIGENCE_V2_PILOT_ID,
-    batchIndex,
-    successBefore,
-    successAfter,
+    attemptedBefore: progressBefore.attempted,
+    attemptedAfter: progressAfter.attempted,
+    successBefore: progressBefore.successful,
+    successAfter: progressAfter.successful,
     selected: selected.length,
     succeeded,
     failed: failures.length,
-    remaining: Math.max(0, LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - successAfter),
+    remaining: Math.max(0, LOCATION_INTELLIGENCE_V2_PILOT_LIMIT - progressAfter.successful),
+    quotas,
     cohort: summarize(selected),
     failures,
   };
