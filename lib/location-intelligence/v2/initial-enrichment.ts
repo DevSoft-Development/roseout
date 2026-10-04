@@ -2,7 +2,7 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lifecycle";
-import { executeWithProviderFallback } from "@/lib/location-intelligence/v2/orchestrator";
+import { executeWithProviderFallback, LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 import { maintenanceModeForLocation } from "@/lib/location-intelligence/v2/policy";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import { storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
@@ -73,10 +73,19 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
 
   if (location.website) {
     try {
-      const website = await executeWithProviderFallback({
-        capability: "web_context",
-        input: { url: location.website, query },
-      });
+      const website = mode === "owner_maintained"
+        ? await (async () => {
+            const official = LOCATION_INTELLIGENCE_ADAPTERS.find((adapter) => adapter.descriptor.id === "official_website");
+            if (!official) throw new Error("official_website_provider_missing");
+            return official.execute({
+              capability: "web_context",
+              input: { url: location.website, query },
+            });
+          })()
+        : await executeWithProviderFallback({
+            capability: "web_context",
+            input: { url: location.website, query },
+          });
       snapshots.push(await storeProviderSnapshot({
         locationId,
         provider: website.providerId,
