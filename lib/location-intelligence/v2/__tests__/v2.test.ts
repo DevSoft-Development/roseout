@@ -6,7 +6,7 @@ import { providersForCapability } from "@/lib/location-intelligence/v2/providers
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
-import { pilotBatchQuotas } from "@/lib/location-intelligence/v2/pilot";
+import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey } from "@/lib/location-intelligence/v2/pilot";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -109,6 +109,37 @@ describe("Location Intelligence V2 pilot quotas", () => {
 
     expect(totals.states).toEqual({ NY: 70, NJ: 20, CT: 10 });
     expect(totals.types).toEqual({ restaurant: 60, activity: 40 });
+  });
+
+  it("fills failed pilot cells instead of drifting the final cohort", () => {
+    const quotas = nextPilotQuotas({
+      attempted: 100,
+      successful: 99,
+      successfulByCell: {
+        "NY:restaurant": 45,
+        "NY:activity": 25,
+        "NJ:restaurant": 10,
+        "NJ:activity": 10,
+        "CT:restaurant": 5,
+        "CT:activity": 4,
+      },
+    });
+
+    expect(quotas).toEqual([
+      { state: "CT", locationType: "activity", count: 1 },
+    ]);
+  });
+
+  it("uses activity_type for activity diversity", () => {
+    expect(
+      pilotCategoryKey({
+        primary_category: null,
+        activity_type: "arcade",
+        category: null,
+        cuisine_type: null,
+        cuisine: null,
+      }),
+    ).toBe("arcade");
   });
 });
 
