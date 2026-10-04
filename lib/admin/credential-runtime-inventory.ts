@@ -34,6 +34,10 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "aiModel", env: ["HUGGINGFACE_AI_MODEL"] },
   ] },
   brave: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["BRAVE_SEARCH_API_KEY"] }] },
+  dataforseo: { source: "Runtime environment", fields: [
+    { field: "login", env: ["DATAFORSEO_LOGIN"] },
+    { field: "password", env: ["DATAFORSEO_PASSWORD"] },
+  ] },
   serpapi: { source: "Runtime environment", fields: [{ field: "apiKey", env: ["SERPAPI_API_KEY"] }] },
   stripe: { source: "Runtime environment / AWS integration secret", fields: [
     { field: "secretKey", env: ["STRIPE_SECRET_KEY"] },
