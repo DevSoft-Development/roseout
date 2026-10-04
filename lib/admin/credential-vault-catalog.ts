@@ -9,6 +9,7 @@ export type CredentialProviderId =
   | "openai"
   | "huggingface"
   | "brave"
+  | "dataforseo"
   | "serpapi"
   | "stripe"
   | "resend"
@@ -81,6 +82,10 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "aiModel", label: "AI fallback model", placeholder: "provider/model-name" },
   ] },
   { id: "brave", label: "Brave Search", category: "AI", description: "Brave Search API credential used by search enrichment and discovery.", fields: [{ key: "apiKey", label: "API key", secret: true }] },
+  { id: "dataforseo", label: "DataForSEO", category: "Data", description: "Bulk business discovery, business profile, and review intelligence credentials for Location Intelligence V2.", note: "Use the dedicated API login and API password from DataForSEO API Access. The API password is separate from the account password.", fields: [
+    { key: "login", label: "API login" },
+    { key: "password", label: "API password", secret: true },
+  ] },
   { id: "serpapi", label: "SerpAPI", category: "AI", description: "SerpAPI credential used by search and enrichment fallbacks.", fields: [{ key: "apiKey", label: "API key", secret: true }] },
   { id: "stripe", label: "Stripe", category: "Payments", description: "Stripe server and webhook credentials used by payments, subscriptions, and Connect.", fields: [
     { key: "secretKey", label: "Secret key", secret: true },
