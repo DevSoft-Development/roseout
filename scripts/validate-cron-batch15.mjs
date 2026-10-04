@@ -20,7 +20,7 @@ const rollback = new Set(activation.rollback_enabled ?? []);
 const stagedNames = new Set(staged.map((row) => row.name));
 const activeSorted = [...activeNames].sort();
 const enabledSorted = [...enabled].sort();
-const rollbackExpected = activeSorted.filter((name) => name !== job).sort();
+const rollbackExpected = activeSorted.filter((name) => name !== "location-intelligence-v2-maintenance").sort();
 const rollbackSorted = [...rollback].sort();
 const delta = (activation.enabled ?? []).filter((name) => !rollback.has(name)).sort();
 const probes = [...(activation.probe ?? [])].sort();
@@ -33,12 +33,13 @@ if ((activation.enabled ?? []).length !== 64) throw new Error(`expected 64 enabl
 if ((activation.rollback_enabled ?? []).length !== 63) throw new Error(`expected rollback baseline 63, got ${(activation.rollback_enabled ?? []).length}`);
 if (staged.length !== 0) throw new Error(`expected no staged schedules, got ${staged.length}`);
 if (JSON.stringify(activeSorted) !== JSON.stringify(enabledSorted)) throw new Error("enabled inventory must exactly equal active schedule inventory");
-if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must be the exact previous 62-schedule fleet");
-if (JSON.stringify(delta) !== JSON.stringify([job])) throw new Error(`unexpected final activation delta: ${delta.join(",")}`);
+if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must preserve the previous 63-schedule fleet");
+if (JSON.stringify(delta) !== JSON.stringify(["location-intelligence-v2-maintenance"])) throw new Error(`unexpected final activation delta: ${delta.join(",")}`);
 if (JSON.stringify(probes) !== JSON.stringify([job])) throw new Error(`unexpected live activation probes: ${probes.join(",")}`);
 if (JSON.stringify(dryRunProbes) !== JSON.stringify([job])) throw new Error(`unexpected dry-run probes: ${dryRunProbes.join(",")}`);
 if (stagedNames.has(job)) throw new Error("domain-lifecycle must not remain staged");
-if (rollback.has(job)) throw new Error("domain-lifecycle leaked into rollback baseline");
+if (!rollback.has(job)) throw new Error("domain-lifecycle must remain in the rollback baseline");
+if (rollback.has("location-intelligence-v2-maintenance")) throw new Error("new V2 maintenance schedule must not enter the previous rollback baseline");
 
 const row = schedules.find((item) => item.name === job);
 if (!row) throw new Error("domain-lifecycle schedule missing");
@@ -69,4 +70,4 @@ if (!workerWorkflow.includes("enable_domain_lifecycle:") || !workerWorkflow.incl
   throw new Error("dedicated registrar worker deployment toggle must remain disabled by default");
 }
 
-console.log(`batch15_scheduler_contract=pass active=63 rollback=62 vercel_overlap=${vercelJobs.size} live_probe=1 dry_run_probe=1 domain_recovery=hourly`);
+console.log(`batch15_scheduler_contract=pass active=64 rollback=63 activation_delta=location-intelligence-v2-maintenance live_probe=domain-lifecycle dry_run_probe=domain-lifecycle domain_recovery=hourly`);
