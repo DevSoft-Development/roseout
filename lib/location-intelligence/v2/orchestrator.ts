@@ -13,6 +13,7 @@ import {
   createVaultBackedMapboxRoutingProvider,
   resolveGooglePlaceIds,
   searchDataForSeoBusinessListings,
+  verifyGooglePlaceStatus,
 } from "@/lib/location-intelligence/v2/provider-executors";
 import {
   fetchOfficialWebsiteContext,
@@ -38,7 +39,9 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       throw new Error(`provider_capability_not_supported:${this.descriptor.id}:${request.capability}`);
     }
     const purpose = request.purpose || "unspecified";
-    if (this.descriptor.paid) {
+    const paidRequest = this.descriptor.paid ||
+      (this.descriptor.id === "google" && request.capability === "status_verification");
+    if (paidRequest) {
       if (purpose === "routine_profile_refresh" || purpose === "unspecified") {
         throw new Error(`paid_provider_purpose_blocked:${this.descriptor.id}:${purpose}`);
       }
@@ -61,8 +64,17 @@ function descriptor(id: string) {
 }
 
 export const LOCATION_INTELLIGENCE_ADAPTERS: readonly LocationIntelligenceProviderAdapter[] = [
-  new Adapter(descriptor("google"), async ({ input }) =>
-    resolveGooglePlaceIds(String(input.query || ""), Number(input.limit || 10))),
+  new Adapter(descriptor("google"), async ({ capability, input }) => {
+    if (capability === "identity") {
+      return resolveGooglePlaceIds(String(input.query || ""), Number(input.limit || 10));
+    }
+    if (capability === "status_verification") {
+      const placeId = String(input.googlePlaceId || input.placeId || "").trim();
+      if (!placeId) throw new Error("google_status_place_id_required");
+      return verifyGooglePlaceStatus(placeId);
+    }
+    throw new Error(`google_capability_not_supported:${capability}`);
+  }),
 
   new Adapter(descriptor("dataforseo"), async ({ capability, input }) => {
     if (capability === "reviews") {
