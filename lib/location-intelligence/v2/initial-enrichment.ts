@@ -256,7 +256,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
           title: name,
           locationCoordinate:
             location.latitude != null && location.longitude != null
-              ? `${location.latitude},${location.longitude},5km`
+              ? `${location.latitude},${location.longitude},5`
               : undefined,
           limit: 10,
         },
