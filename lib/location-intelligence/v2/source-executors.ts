@@ -33,10 +33,10 @@ export async function fetchOfficialWebsiteContext(rawUrl: string) {
     return {
       url: response.url || parsed.toString(),
       html,
-      title: (html.match(/<title[^>]*>([sS]*?)</title>/i)?.[1] || "").replace(/s+/g, " ").trim(),
+      title: (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").replace(/\s+/g, " ").trim(),
       text: html
-        .replace(/<script[sS]*?</script>/gi, " ")
-        .replace(/<style[sS]*?</style>/gi, " ")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
         .replace(/<[^>]+>/g, " ")
         .replace(/&nbsp;/gi, " ")
         .replace(/&amp;/gi, "&")
