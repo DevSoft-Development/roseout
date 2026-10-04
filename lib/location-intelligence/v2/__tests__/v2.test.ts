@@ -6,7 +6,7 @@ import { providersForCapability } from "@/lib/location-intelligence/v2/providers
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
-import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey } from "@/lib/location-intelligence/v2/pilot";
+import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -140,6 +140,12 @@ describe("Location Intelligence V2 pilot quotas", () => {
         cuisine: null,
       }),
     ).toBe("arcade");
+  });
+
+  it("counts a reserved location as successful after enrichment even if the final audit write fails", () => {
+    expect(pilotMarkerCountsAsSuccess("reserved", true)).toBe(true);
+    expect(pilotMarkerCountsAsSuccess("reserved", false)).toBe(false);
+    expect(pilotMarkerCountsAsSuccess("success", true)).toBe(true);
   });
 });
 
