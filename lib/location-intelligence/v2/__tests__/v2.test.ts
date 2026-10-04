@@ -7,6 +7,8 @@ import { deriveLocationClassification } from "@/lib/location-intelligence/v2/cla
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -156,8 +158,8 @@ describe("Location Intelligence V2 pilot quotas", () => {
   });
 
   it("does not impose a fixed top-ranked candidate cap before eligibility filtering", () => {
-    const source = require("fs").readFileSync(
-      require("path").join(process.cwd(), "lib/location-intelligence/v2/pilot.ts"),
+    const source = readFileSync(
+      join(process.cwd(), "lib/location-intelligence/v2/pilot.ts"),
       "utf8",
     );
     expect(source).toContain(".range(offset, offset + pageSize - 1)");
