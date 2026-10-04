@@ -704,7 +704,14 @@ function normalizeWeights(weights: {
   quality: number;
   diversity: number;
   graph: number;
-}) {
+}): {
+  relevance: number;
+  proximity: number;
+  intent: number;
+  quality: number;
+  diversity: number;
+  graph: number;
+} {
   const safe = Object.fromEntries(
     Object.entries(weights).map(([key, value]) => [
       key,
