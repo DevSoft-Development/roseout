@@ -20,3 +20,5 @@ export * from "@/lib/location-intelligence/v2/changes";
 export * from "@/lib/location-intelligence/v2/review-worker";
 export * from "@/lib/location-intelligence/v2/initial-enrichment";
 export * from "@/lib/location-intelligence/v2/backfill";
+
+export * from "@/lib/location-intelligence/v2/classification";
