@@ -145,12 +145,32 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry_curl_json() {
+            local output="$1"; shift
+            local code attempt
+            for attempt in 1 2 3 4 5; do
+              code="$(curl --silent --show-error --max-time 300 --output "$output" --write-out '%{http_code}' "$@" || true)"
+              if [ "$code" = "200" ]; then
+                printf '%s' "$code"
+                return 0
+              fi
+              if [[ "$code" =~ ^5[0-9][0-9]$ ]] || [ "$code" = "000" ]; then
+                echo "Transient HTTP $code; retry $attempt/5" >&2
+                sleep $((attempt * 10))
+                continue
+              fi
+              printf '%s' "$code"
+              return 0
+            done
+            printf '%s' "$code"
+          }
+
           run_stage() {
             local stage="$1" query="${2:-}" output code
             output="$RUNNER_TEMP/advanced-${stage}-${query//[^A-Za-z0-9]/_}.json"
-            CODE="$(curl --silent --show-error --max-time 300 --output "$output" --write-out '%{http_code}' \
+            CODE="$(retry_curl_json "$output" \
               --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
-              "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=$stage$query" || true)"
+              "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=$stage$query")"
             echo "Advanced recalculation stage $stage$query HTTP $CODE"
             python -m json.tool "$output" || cat "$output"
             test "$CODE" = "200" || exit 1
@@ -176,9 +196,9 @@ jobs:
             offset=0
             while [ "$offset" -lt 10000 ]; do
               output="$RUNNER_TEMP/advanced-${stage}-${offset}.json"
-              CODE="$(curl --silent --show-error --max-time 300 --output "$output" --write-out '%{http_code}' \
+              CODE="$(retry_curl_json "$output" \
                 --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
-                "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=$stage&limit=$BATCH&offset=$offset" || true)"
+                "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=$stage&limit=$BATCH&offset=$offset")"
               echo "Advanced recalculation stage $stage offset $offset HTTP $CODE"
               python -m json.tool "$output" || cat "$output"
               test "$CODE" = "200" || exit 1
