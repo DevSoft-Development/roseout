@@ -5,6 +5,7 @@ import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lif
 import { executeWithProviderFallback, LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 import { maintenanceModeForLocation } from "@/lib/location-intelligence/v2/policy";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
+import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { scheduleReviewRefresh } from "@/lib/location-intelligence/v2/reviews";
 import { storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
 
@@ -121,6 +122,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   }
 
   const now = new Date().toISOString();
+  await refreshLocationClassificationV2(locationId);
   const readiness = await refreshLocationReadiness(locationId);
   const { error: updateError } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
