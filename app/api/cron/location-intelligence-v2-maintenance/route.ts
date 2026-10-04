@@ -1,5 +1,6 @@
 import { processMaterialChangeVerificationBatch } from "@/lib/location-intelligence/v2/changes";
 import { collectPendingDataForSeoReviewRefreshes, submitDueDataForSeoReviewRefreshes } from "@/lib/location-intelligence/v2/review-worker";
+import { refreshLocationIntelligenceProviderHealth } from "@/lib/location-intelligence/v2/provider-runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,10 @@ async function run(request: Request) {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
     const reviewLimit = limitParam(request, "reviewLimit", 20, 100);
 
-    const collectedReviews = await collectPendingDataForSeoReviewRefreshes(reviewLimit);
+    const [providerHealth, collectedReviews] = await Promise.all([
+      refreshLocationIntelligenceProviderHealth(),
+      collectPendingDataForSeoReviewRefreshes(reviewLimit),
+    ]);
     const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
       submitDueDataForSeoReviewRefreshes(reviewLimit),
@@ -48,6 +52,7 @@ async function run(request: Request) {
 
     return Response.json({
       ok: materialChanges.failed === 0 && reviewFailures === 0,
+      providerHealth,
       materialChanges,
       reviews: {
         collected: collectedReviews,
