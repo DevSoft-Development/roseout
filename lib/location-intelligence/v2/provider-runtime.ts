@@ -14,6 +14,64 @@ function requiredFields(provider: string) {
   return [];
 }
 
+export function mergeProviderHealthMetadata(
+  metadata: unknown,
+  detail?: string,
+): Record<string, unknown> {
+  const existing =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? { ...(metadata as Record<string, unknown>) }
+      : {};
+  if (detail) existing.detail = detail;
+  else delete existing.detail;
+  return existing;
+}
+
+async function updateProviderHealthRow(
+  providerId: string,
+  status: string,
+  detail?: string,
+) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: row, error: readError } = await supabaseAdmin
+      .from("location_provider_registry")
+      .select("provider,metadata,updated_at")
+      .eq("provider", providerId)
+      .maybeSingle();
+    if (readError) {
+      throw new Error(`Provider health metadata load failed for ${providerId}: ${readError.message}`);
+    }
+    if (!row?.provider) {
+      throw new Error(`Provider health row missing for ${providerId}`);
+    }
+
+    const now = new Date().toISOString();
+    let update = supabaseAdmin
+      .from("location_provider_registry")
+      .update({
+        health_status: status,
+        last_health_check_at: now,
+        metadata: mergeProviderHealthMetadata(row.metadata, detail),
+        updated_at: now,
+      })
+      .eq("provider", providerId);
+
+    update = row.updated_at
+      ? update.eq("updated_at", row.updated_at)
+      : update.is("updated_at", null);
+
+    const { data: updated, error: updateError } = await update
+      .select("provider")
+      .maybeSingle();
+    if (updateError) {
+      throw new Error(`Provider health update failed for ${providerId}: ${updateError.message}`);
+    }
+    if (updated?.provider) return;
+  }
+
+  throw new Error(`Provider health update conflicted repeatedly for ${providerId}`);
+}
+
 export async function refreshLocationIntelligenceProviderHealth() {
   const results: Array<{ provider: string; status: string; detail?: string }> = [];
 
@@ -35,16 +93,7 @@ export async function refreshLocationIntelligenceProviderHealth() {
       }
     }
 
-    const { error } = await supabaseAdmin
-      .from("location_provider_registry")
-      .update({
-        health_status: status,
-        last_health_check_at: new Date().toISOString(),
-        metadata: detail ? { detail } : {},
-        updated_at: new Date().toISOString(),
-      })
-      .eq("provider", provider.id);
-    if (error) throw new Error(`Provider health update failed for ${provider.id}: ${error.message}`);
+    await updateProviderHealthRow(provider.id, status, detail);
 
     results.push({ provider: provider.id, status, ...(detail ? { detail } : {}) });
   }
