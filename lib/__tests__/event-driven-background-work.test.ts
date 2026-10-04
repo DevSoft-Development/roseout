@@ -14,8 +14,8 @@ describe("event-driven AWS background work", () => {
   const schedules = JSON.parse(read("infra/aws/edge-runtime/schedules.json")) as Schedule[];
   const schedule = (name: string) => schedules.find((entry) => entry.name === name);
 
-  it("keeps 65 schedules but turns idle loops into recovery sweeps", () => {
-    expect(schedules).toHaveLength(65);
+  it("keeps 64 schedules but turns idle loops into recovery sweeps", () => {
+    expect(schedules).toHaveLength(64);
     expect(schedule("worker-http-response-reconciler")).toMatchObject({
       expression: "cron(0 * * * ? *)",
       function: "aws-db-maintenance",
