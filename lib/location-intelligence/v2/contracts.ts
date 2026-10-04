@@ -56,9 +56,19 @@ export type ProviderCapability =
   | "ai_extraction"
   | "public_geography";
 
+export type ProviderExecutionPurpose =
+  | "bootstrap"
+  | "discovery"
+  | "material_change"
+  | "review_refresh"
+  | "routine_profile_refresh"
+  | "unspecified";
+
 export type LocationProviderRequest = {
   capability: ProviderCapability;
   input: Record<string, unknown>;
+  purpose?: ProviderExecutionPurpose;
+  ownerMaintained?: boolean;
 };
 
 export type LocationProviderResponse = {
