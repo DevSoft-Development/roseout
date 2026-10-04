@@ -11,7 +11,10 @@ function text(bytes: Uint8Array) {
 }
 
 export async function fetchOfficialWebsiteContext(rawUrl: string) {
-  const withProtocol = /^https:///i.test(rawUrl) ? rawUrl : `https://${rawUrl.replace(/^http:///i, "")}`;
+  const trimmedUrl = String(rawUrl || "").trim();
+  const withProtocol = trimmedUrl.toLowerCase().startsWith("https://")
+    ? trimmedUrl
+    : `https://${trimmedUrl.toLowerCase().startsWith("http://") ? trimmedUrl.slice(7) : trimmedUrl}`;
   const parsed = new URL(withProtocol);
   const host = parsed.hostname.toLowerCase();
   const allowedHosts = [host, host.startsWith("www.") ? host.slice(4) : `www.${host}`];
@@ -26,7 +29,8 @@ export async function fetchOfficialWebsiteContext(rawUrl: string) {
     });
     if (!response.ok) throw new Error(`official_website_http_${response.status}`);
     const contentType = response.headers.get("content-type") || "";
-    if (!/text/html|application/xhtml+xml/i.test(contentType)) {
+    const normalizedContentType = contentType.toLowerCase();
+    if (!normalizedContentType.includes("text/html") && !normalizedContentType.includes("application/xhtml+xml")) {
       throw new Error("official_website_not_html");
     }
     const html = text(await readResponseWithLimit(response, 750_000));
@@ -40,7 +44,7 @@ export async function fetchOfficialWebsiteContext(rawUrl: string) {
         .replace(/<[^>]+>/g, " ")
         .replace(/&nbsp;/gi, " ")
         .replace(/&amp;/gi, "&")
-        .replace(/s+/g, " ")
+        .replace(/\s+/g, " ")
         .trim()
         .slice(0, 100_000),
     };
