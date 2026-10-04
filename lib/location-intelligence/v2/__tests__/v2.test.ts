@@ -142,6 +142,19 @@ describe("Location Intelligence V2 pilot quotas", () => {
     ).toBe("arcade");
   });
 
+  it("prefers activity_type over generic primary_category for activities", () => {
+    expect(
+      pilotCategoryKey({
+        location_type: "activity",
+        primary_category: "listing",
+        activity_type: "rooftop",
+        category: null,
+        cuisine_type: null,
+        cuisine: null,
+      }),
+    ).toBe("rooftop");
+  });
+
   it("counts a reserved location as successful after enrichment even if the final audit write fails", () => {
     expect(pilotMarkerCountsAsSuccess("reserved", true)).toBe(true);
     expect(pilotMarkerCountsAsSuccess("reserved", false)).toBe(false);
