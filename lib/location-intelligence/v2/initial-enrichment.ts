@@ -106,6 +106,24 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }
   }
 
+  if (!location.website && mode === "theouthaven_managed" && query) {
+    try {
+      const discovery = await executeWithProviderFallback({
+        capability: "website_discovery",
+        purpose: "bootstrap",
+        ownerMaintained: false,
+        input: { query, count: 5 },
+      });
+      snapshots.push(await storeProviderSnapshot({
+        locationId,
+        provider: discovery.providerId,
+        payload: discovery.data,
+      }));
+    } catch {
+      // Website discovery is fallback-only and non-blocking.
+    }
+  }
+
   if (mode === "theouthaven_managed" && name) {
     try {
       const profileResult = await executeWithProviderFallback({
