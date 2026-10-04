@@ -38,7 +38,7 @@ jobs:
           bash -n infra/aws/ops/worker-reliability-soak.sh
           bash -n infra/aws/ops/search-ml-train-evaluate-promote.sh
           bash -n infra/aws/ops/run-scheduled-job.sh
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           python - <<'PY'
           from pathlib import Path
