@@ -13,6 +13,7 @@ import {
   testDataForSeoCredential,
 } from "@/lib/location-intelligence/v2/dataforseo";
 import { searchBraveLocationContext } from "@/lib/location-intelligence/v2/brave";
+import { searchSerpApiLocationContext } from "@/lib/location-intelligence/v2/serpapi";
 
 export async function resolveGooglePlaceIds(textQuery: string, pageSize = 10) {
   const places = await searchPlacesTextNew(textQuery, {
@@ -44,6 +45,13 @@ export { createDataForSeoReviewTask, getDataForSeoReviewTask, searchDataForSeoBu
 export async function braveContextSearch(query: string, count = 10) {
   return searchBraveLocationContext({
     name: query,
+    count,
+  });
+}
+
+export async function serpApiContextSearch(query: string, count = 5) {
+  return searchSerpApiLocationContext({
+    query,
     count,
   });
 }
