@@ -737,6 +737,7 @@ function normalizeWeights(weights: {
     intent: safe.intent / total,
     quality: safe.quality / total,
     diversity: safe.diversity / total,
+    graph: safe.graph / total,
   };
 }
 
