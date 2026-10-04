@@ -7,6 +7,7 @@ import {
 import { isLowLevelLocation, isUnverifiedNycRestaurant } from "@/lib/search/lowLevel";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildPublishabilityUpdate } from "@/lib/location-publishability";
+import { registerInitialLocationIntelligenceV2 } from "@/lib/location-intelligence/v2/ingestion";
 
 // Supabase rows are intentionally dynamic because this project does not ship
 // generated database types for the location growth tables.
@@ -375,7 +376,7 @@ export async function publishReadyStagedLocations({
     const { data: insertedRows, error: insertError } = await supabaseAdmin
       .from("locations")
       .insert(insertRows)
-      .select("import_source,import_source_id");
+      .select("id,import_source,import_source_id,google_place_id,quality_score");
 
     if (insertError) {
       throw new Error(`Publish fallback insert failed: ${insertError.message}`);
@@ -383,6 +384,20 @@ export async function publishReadyStagedLocations({
 
     for (const row of insertedRows || []) {
       existingKeys.add(`${row.import_source}::${row.import_source_id}`);
+      const staged = newRows.find((candidate) =>
+        String(candidate.source) === String(row.import_source) &&
+        String(candidate.source_id) === String(row.import_source_id)
+      );
+      if (staged) {
+        await registerInitialLocationIntelligenceV2({
+          locationId: String(row.id),
+          source: String(row.import_source || staged.source || "unknown"),
+          sourceId: String(row.import_source_id || staged.source_id || "") || null,
+          googlePlaceId: row.google_place_id || staged.google_place_id || null,
+          rawPayload: recordValue(staged.raw_payload),
+          qualityScore: Number(row.quality_score || staged.quality_score || 0),
+        });
+      }
     }
     inserted = insertedRows?.length || 0;
   }
