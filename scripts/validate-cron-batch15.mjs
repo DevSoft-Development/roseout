@@ -28,7 +28,7 @@ const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
 const vercelJobs = new Set();
 
 if (activation.batch !== 15) throw new Error(`expected Batch 15, got ${activation.batch}`);
-if (schedules.length !== 63) throw new Error(`expected 63 active AWS schedules, got ${schedules.length}`);
+if (schedules.length !== 64) throw new Error(`expected 64 active AWS schedules, got ${schedules.length}`);
 if ((activation.enabled ?? []).length !== 63) throw new Error(`expected 63 enabled schedules, got ${(activation.enabled ?? []).length}`);
 if ((activation.rollback_enabled ?? []).length !== 62) throw new Error(`expected rollback baseline 62, got ${(activation.rollback_enabled ?? []).length}`);
 if (staged.length !== 0) throw new Error(`expected no staged schedules, got ${staged.length}`);
