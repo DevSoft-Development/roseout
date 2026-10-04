@@ -6,6 +6,7 @@ import { providersForCapability } from "@/lib/location-intelligence/v2/providers
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
+import { safeSingleGooglePlaceId } from "@/lib/location-intelligence/v2/initial-enrichment";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -83,6 +84,28 @@ describe("Location Intelligence V2", () => {
     const webProviders = providersForCapability("web_context").map((provider) => provider.id);
     expect(webProviders.indexOf("brave")).toBeGreaterThanOrEqual(0);
     expect(webProviders.indexOf("serpapi")).toBeGreaterThan(webProviders.indexOf("brave"));
+  });
+
+
+  it("only auto-promotes an unambiguous Google identity candidate", () => {
+    expect(safeSingleGooglePlaceId(["place-1"])).toBe("place-1");
+    expect(safeSingleGooglePlaceId(["place-1", "place-1"])).toBe("place-1");
+    expect(safeSingleGooglePlaceId(["place-1", "place-2"])).toBeNull();
+    expect(safeSingleGooglePlaceId([])).toBeNull();
+    expect(safeSingleGooglePlaceId(null)).toBeNull();
+  });
+
+  it("persists initial-enrichment provider observations into the evidence layer", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/location-intelligence/v2/initial-enrichment.ts"),
+      "utf8",
+    );
+    expect(source).toContain("attachExternalIdentity");
+    expect(source).toContain("recordLocationEvidence");
+    expect(source).toContain("reconcileCanonicalFields");
+    expect(source).toContain("google_place_id_candidates");
+    expect(source).toContain("public_geography_snapshot");
+    expect(source).toContain("business_profile_snapshot");
   });
 });
 
