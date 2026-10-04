@@ -45,6 +45,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     try {
       const identity = await executeWithProviderFallback({
         capability: "identity",
+        purpose: "bootstrap",
+        ownerMaintained: mode === "owner_maintained",
         input: { query, limit: 5 },
       });
       snapshots.push(await storeProviderSnapshot({
@@ -61,6 +63,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     try {
       const geo = await executeWithProviderFallback({
         capability: "public_geography",
+        purpose: "bootstrap",
+        ownerMaintained: mode === "owner_maintained",
         input: { zipCode: location.zip_code },
       });
       snapshots.push(await storeProviderSnapshot({
@@ -81,11 +85,15 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
             if (!official) throw new Error("official_website_provider_missing");
             return official.execute({
               capability: "web_context",
+              purpose: "bootstrap",
+              ownerMaintained: true,
               input: { url: location.website, query },
             });
           })()
         : await executeWithProviderFallback({
             capability: "web_context",
+            purpose: "bootstrap",
+            ownerMaintained: false,
             input: { url: location.website, query },
           });
       snapshots.push(await storeProviderSnapshot({
@@ -102,6 +110,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     try {
       const profileResult = await executeWithProviderFallback({
         capability: "business_profile",
+        purpose: "bootstrap",
+        ownerMaintained: false,
         input: {
           title: name,
           locationCoordinate:
