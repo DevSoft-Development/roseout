@@ -359,7 +359,7 @@ function selectPilotBatch(candidates: PilotCandidate[], quotas: PilotQuota[]) {
 
       selected.push(next);
       selectedIds.add(next.id);
-      seenCategories.add(categoryKey(next));
+      seenCategories.add(pilotCategoryKey(next));
       if (isMissingGoogle(next)) stats.missingGoogle += 1;
       if (isMessy(next)) stats.messy += 1;
       if (next.is_searchable === false) stats.nonSearchable += 1;
