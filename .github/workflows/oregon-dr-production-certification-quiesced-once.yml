@@ -201,7 +201,7 @@ jobs:
           }
 
           base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
-          test "$base_expected" = '65'
+          test "$base_expected" = '66'
           base_enabled=0
           while IFS= read -r name; do
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
@@ -322,7 +322,7 @@ jobs:
               echo '- Oregon -> Virginia failback completed successfully.'
               echo '- Production smoke checks passed after Virginia was restored.'
               echo '- Final primary: **Virginia**.'
-              echo '- Base production schedules enabled: **65/65**.'
+              echo '- Base production schedules enabled: **66/66**.'
               echo '- Forward DR reconciliation schedules enabled: **2/2**.'
               echo '- Final standby reconciler reports Auth parity and Storage parity.'
               echo "- Promotion workflow duration: **${{ steps.drill.outputs.promotion_duration_seconds }} seconds**."
