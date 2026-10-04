@@ -37,6 +37,15 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     if (!this.supports(request.capability)) {
       throw new Error(`provider_capability_not_supported:${this.descriptor.id}:${request.capability}`);
     }
+    const purpose = request.purpose || "unspecified";
+    if (this.descriptor.paid) {
+      if (purpose === "routine_profile_refresh" || purpose === "unspecified") {
+        throw new Error(`paid_provider_purpose_blocked:${this.descriptor.id}:${purpose}`);
+      }
+      if (request.ownerMaintained === true && purpose !== "review_refresh" && purpose !== "material_change") {
+        throw new Error(`paid_provider_owner_maintained_blocked:${this.descriptor.id}:${purpose}`);
+      }
+    }
     return {
       providerId: this.descriptor.id,
       capability: request.capability,
