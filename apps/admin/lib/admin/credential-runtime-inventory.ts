@@ -77,7 +77,10 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "keyId", env: ["APPLE_BUSINESS_API_KEY_ID", "APPLE_KEY_ID"] },
     { field: "privateKey", env: ["APPLE_BUSINESS_API_PRIVATE_KEY", "APPLE_PRIVATE_KEY"] },
   ] },
-  turnstile: { source: "Runtime environment", fields: [{ field: "secretKey", env: ["TURNSTILE_SECRET_KEY"] }] },
+  turnstile: { source: "Runtime environment", fields: [
+    { field: "siteKey", env: ["NEXT_PUBLIC_TURNSTILE_SITE_KEY"] },
+    { field: "secretKey", env: ["TURNSTILE_SECRET_KEY"] },
+  ] },
   expo: { source: "Runtime environment", fields: [{ field: "accessToken", env: ["EXPO_ACCESS_TOKEN"] }] },
   vercel: { source: "Vercel account / project", fields: [
     { field: "token", env: ["VERCEL_TOKEN"] }, { field: "teamId", env: ["VERCEL_TEAM_ID", "VERCEL_ORG_ID"] },
