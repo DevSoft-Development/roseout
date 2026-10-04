@@ -139,11 +139,37 @@ export function adaptersForCapability(capability: ProviderCapability) {
   return LOCATION_INTELLIGENCE_ADAPTERS.filter((adapter) => allowed.has(adapter.descriptor.id));
 }
 
+function hasUsableProviderData(data: unknown): boolean {
+  if (data == null) return false;
+  if (Array.isArray(data)) return data.length > 0;
+  if (typeof data === "string") return data.trim().length > 0;
+  if (typeof data !== "object") return true;
+
+  const value = data as Record<string, unknown>;
+  const resultArrays = Object.entries(value)
+    .filter(([key, entry]) => /results?$|places?$|items?$|matches?$/i.test(key) && Array.isArray(entry))
+    .map(([, entry]) => entry as unknown[]);
+  if (resultArrays.length > 0) return resultArrays.some((entry) => entry.length > 0);
+
+  return Object.values(value).some((entry) => {
+    if (entry == null) return false;
+    if (Array.isArray(entry)) return entry.length > 0;
+    if (typeof entry === "string") return entry.trim().length > 0;
+    if (typeof entry === "object") return Object.keys(entry as Record<string, unknown>).length > 0;
+    return true;
+  });
+}
+
 export async function executeWithProviderFallback(request: LocationProviderRequest) {
   const errors: Array<{ providerId: string; error: string }> = [];
   for (const adapter of adaptersForCapability(request.capability)) {
     try {
-      return await adapter.execute(request);
+      const response = await adapter.execute(request);
+      if (hasUsableProviderData(response.data)) return response;
+      errors.push({
+        providerId: adapter.descriptor.id,
+        error: "provider_result_inadequate",
+      });
     } catch (error) {
       errors.push({
         providerId: adapter.descriptor.id,
