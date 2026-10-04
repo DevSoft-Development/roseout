@@ -242,7 +242,15 @@ function includesNormalized(
 }
 
 function normalizedEqual(left: string | null, right: string): boolean {
-  return String(left ?? "").trim().toLowerCase() === right.trim().toLowerCase();
+  return normalizeTaxonomyValue(left) === normalizeTaxonomyValue(right);
+}
+
+function normalizeTaxonomyValue(value: string | null): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function normalizeNullable(value: number | null): number | null {
