@@ -49,6 +49,8 @@ jobs:
           grep -F 'describe-stack-events' .github/workflows/aws-ops-scheduled-runtime.yml >/dev/null
           test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
           test "$(jq -r '.[].name' infra/aws/edge-runtime/schedules.json | sort -u | wc -l | tr -d ' ')" = '66'
+          jq -e 'any(.[]; .name == "location-intelligence-v2-maintenance" and .expression == "cron(10 * * * ? *)" and .function == "sqs:background-cron" and .body.target == "/api/cron/managed?job=location-intelligence-v2-maintenance")' infra/aws/edge-runtime/schedules.json >/dev/null
+          grep -F '"location-intelligence-v2-maintenance": "/api/cron/managed?job=location-intelligence-v2-maintenance"' infra/aws/lambda/background_work_signal.py >/dev/null
 
   deploy:
     if: github.event_name != 'pull_request'
