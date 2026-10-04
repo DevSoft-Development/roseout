@@ -40,6 +40,29 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Classify deployment scope
+        id: scope
+        run: |
+          set -euo pipefail
+          CHANGED="$(git diff --name-only HEAD^ HEAD)"
+          echo "$CHANGED"
+          ADMIN_ONLY=true
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+            case "$path" in
+              apps/admin/*|app/api/admin/*|.github/workflows/search-ml-production-completion.yml)
+                ;;
+              *)
+                ADMIN_ONLY=false
+                ;;
+            esac
+          done <<< "$CHANGED"
+          echo "admin_only=$ADMIN_ONLY" >> "$GITHUB_OUTPUT"
+
       - name: Configure temporary AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -58,7 +81,8 @@ jobs:
           echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for exact Vercel production commit
+      - name: Wait for exact consumer production commit
+        if: steps.scope.outputs.admin_only != 'true'
         env:
           SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
         run: |
@@ -78,14 +102,44 @@ jobs:
           PY
           )"
             if [ "$DEPLOYMENT_COMMIT" = "$GITHUB_SHA" ]; then
-              echo "Production is serving $GITHUB_SHA (pre-maintenance QA HTTP $CODE)."
+              echo "Consumer production is serving $GITHUB_SHA (pre-maintenance QA HTTP $CODE)."
               READY=true
               break
             fi
-            echo "Production still serving ${DEPLOYMENT_COMMIT:-unknown}; attempt $attempt/60."
+            echo "Consumer production still serving ${DEPLOYMENT_COMMIT:-unknown}; attempt $attempt/60."
             sleep 10
           done
-          test "$READY" = "true" || { echo "Production did not reach $GITHUB_SHA" >&2; exit 1; }
+          test "$READY" = "true" || { echo "Consumer production did not reach $GITHUB_SHA" >&2; exit 1; }
+
+      - name: Wait for isolated Admin stage contract
+        if: steps.scope.outputs.admin_only == 'true'
+        env:
+          SEARCH_ML_TOKEN: ${{ steps.ml.outputs.token }}
+        run: |
+          set -euo pipefail
+          READY=false
+          for attempt in $(seq 1 60); do
+            CODE="$(curl --silent --show-error --max-time 120 --output "$RUNNER_TEMP/admin-stage-contract.json" --write-out '%{http_code}' \
+              --header "Authorization: Bearer $SEARCH_ML_TOKEN" \
+              "$ADMIN_ORIGIN/api/admin/ml/recalculate-advanced-all?stage=result_quality&limit=1" || true)"
+            CONTRACT="$(python - <<'PY'
+          import json, os
+          try:
+              with open(os.environ['RUNNER_TEMP'] + '/admin-stage-contract.json') as f: data=json.load(f)
+              print('ready' if data.get('stage') == 'result_quality' and 'result' in data else '')
+          except Exception:
+              print('')
+          PY
+          )"
+            if [ "$CODE" = "200" ] && [ "$CONTRACT" = "ready" ]; then
+              echo "Isolated Admin single-stage contract is live."
+              READY=true
+              break
+            fi
+            echo "Waiting for isolated Admin single-stage contract (HTTP $CODE, attempt $attempt/60)."
+            sleep 10
+          done
+          test "$READY" = "true" || { cat "$RUNNER_TEMP/admin-stage-contract.json" || true; exit 1; }
 
       - name: Verify live ML health
         env:
