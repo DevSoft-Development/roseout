@@ -1,19 +1,21 @@
 -- Serialize the controlled Location Intelligence V2 pilot so overlapping AWS
 -- signals cannot allocate the same remaining quota or exceed the 100-location cap.
 
-create table if not exists public.location_intelligence_v2_pilot_leases (
+create schema if not exists private;
+
+create table if not exists private.location_intelligence_v2_pilot_leases (
   pilot_id text primary key,
   owner_token uuid,
   locked_until timestamptz not null default 'epoch'::timestamptz,
   updated_at timestamptz not null default now()
 );
 
-alter table public.location_intelligence_v2_pilot_leases enable row level security;
+alter table private.location_intelligence_v2_pilot_leases enable row level security;
 
-revoke all on table public.location_intelligence_v2_pilot_leases from public, anon, authenticated;
-grant select, update on table public.location_intelligence_v2_pilot_leases to service_role;
+revoke all on table private.location_intelligence_v2_pilot_leases from public, anon, authenticated;
+grant select, update on table private.location_intelligence_v2_pilot_leases to service_role;
 
-insert into public.location_intelligence_v2_pilot_leases (pilot_id, locked_until)
+insert into private.location_intelligence_v2_pilot_leases (pilot_id, locked_until)
 values ('initial_100_v1', 'epoch'::timestamptz)
 on conflict (pilot_id) do nothing;
 
@@ -24,13 +26,13 @@ create or replace function public.acquire_location_intelligence_v2_pilot_lease(
 )
 returns boolean
 language plpgsql
-security invoker
-set search_path = public
+security definer
+set search_path = private, pg_temp
 as $$
 declare
   v_updated integer := 0;
 begin
-  update public.location_intelligence_v2_pilot_leases
+  update private.location_intelligence_v2_pilot_leases
   set owner_token = p_owner_token,
       locked_until = clock_timestamp() + make_interval(
         secs => greatest(60, least(coalesce(p_lease_seconds, 600), 1800))
@@ -55,13 +57,13 @@ create or replace function public.release_location_intelligence_v2_pilot_lease(
 )
 returns boolean
 language plpgsql
-security invoker
-set search_path = public
+security definer
+set search_path = private, pg_temp
 as $$
 declare
   v_updated integer := 0;
 begin
-  update public.location_intelligence_v2_pilot_leases
+  update private.location_intelligence_v2_pilot_leases
   set owner_token = null,
       locked_until = 'epoch'::timestamptz,
       updated_at = clock_timestamp()
