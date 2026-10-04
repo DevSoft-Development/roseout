@@ -162,7 +162,7 @@ jobs:
           PY
           )"
           RESPONSE="$(curl --fail --silent --show-error             -H "x-toh-timestamp: $TIMESTAMP"             -H "x-toh-signature: $SIGNATURE"             "${JOB_URL%/}/v1/status")"
-          jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 3' <<<"$RESPONSE" >/dev/null
+          jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 4' <<<"$RESPONSE" >/dev/null
           echo "New HMAC key authenticated against the live gateway after runtime propagation." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Retire previous key
