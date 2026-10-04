@@ -73,4 +73,10 @@ describe("Location Intelligence V2", () => {
     expect(providersForCapability("identity")[0]?.id).toBe("google");
     expect(providersForCapability("reviews")[0]?.id).toBe("dataforseo");
   });
+
+  it("keeps SerpAPI behind Brave as a fallback web provider", () => {
+    const webProviders = providersForCapability("web_context").map((provider) => provider.id);
+    expect(webProviders.indexOf("brave")).toBeGreaterThanOrEqual(0);
+    expect(webProviders.indexOf("serpapi")).toBeGreaterThan(webProviders.indexOf("brave"));
+  });
 });

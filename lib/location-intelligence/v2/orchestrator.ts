@@ -14,6 +14,7 @@ import {
   createVaultBackedMapboxRoutingProvider,
   resolveGooglePlaceIds,
   searchDataForSeoBusinessListings,
+  serpApiContextSearch,
   verifyGooglePlaceStatus,
 } from "@/lib/location-intelligence/v2/provider-executors";
 import {
@@ -98,6 +99,9 @@ export const LOCATION_INTELLIGENCE_ADAPTERS: readonly LocationIntelligenceProvid
 
   new Adapter(descriptor("brave"), async ({ input }) =>
     braveContextSearch(String(input.query || ""), Number(input.count || 10))),
+
+  new Adapter(descriptor("serpapi"), async ({ input }) =>
+    serpApiContextSearch(String(input.query || ""), Number(input.count || 5))),
 
   new Adapter(descriptor("mapbox"), async ({ capability, input }) => {
     if (capability === "geocoding") {

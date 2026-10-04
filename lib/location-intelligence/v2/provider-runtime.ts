@@ -5,12 +5,12 @@ import type { CredentialProviderId } from "@/lib/admin/credential-vault-catalog"
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { LOCATION_INTELLIGENCE_PROVIDER_REGISTRY } from "@/lib/location-intelligence/v2/providers";
 
-const VAULT_PROVIDERS = new Set<CredentialProviderId>(["google","dataforseo","mapbox","brave"]);
+const VAULT_PROVIDERS = new Set<CredentialProviderId>(["google","dataforseo","mapbox","brave","serpapi"]);
 
 function requiredFields(provider: string) {
   if (provider === "dataforseo") return ["login","password"];
   if (provider === "mapbox") return ["accessToken"];
-  if (provider === "google" || provider === "brave") return ["apiKey"];
+  if (provider === "google" || provider === "brave" || provider === "serpapi") return ["apiKey"];
   return [];
 }
 
