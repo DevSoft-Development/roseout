@@ -74,6 +74,27 @@ export async function setMaterialChangeResult(input: {
 }
 
 
+function verificationDecision(changeType: string, data: unknown): "confirmed" | "dismissed" | "verifying" {
+  const record = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  const businessStatus = String(
+    record.businessStatus ||
+    record.business_status ||
+    ((record.place && typeof record.place === "object") ? (record.place as Record<string, unknown>).businessStatus : "") ||
+    "",
+  ).toUpperCase();
+
+  if (changeType === "permanently_closed") {
+    if (businessStatus.includes("CLOSED_PERMANENT")) return "confirmed";
+    if (businessStatus.includes("OPERATIONAL")) return "dismissed";
+  }
+  if (changeType === "temporarily_closed") {
+    if (businessStatus.includes("CLOSED_TEMPORAR")) return "confirmed";
+    if (businessStatus.includes("OPERATIONAL")) return "dismissed";
+  }
+  if (changeType === "reopened" && businessStatus.includes("OPERATIONAL")) return "confirmed";
+  return "verifying";
+}
+
 export async function verifyMaterialChangeEvent(eventId: string) {
   const { data: event, error: eventError } = await supabaseAdmin
     .from("location_material_change_events")
@@ -122,9 +143,10 @@ export async function verifyMaterialChangeEvent(eventId: string) {
         limit: 10,
       },
     });
+    const decision = verificationDecision(String(event.change_type || ""), result.data);
     return setMaterialChangeResult({
       eventId,
-      status: "confirmed",
+      status: decision,
       evidence: {
         ...(event.evidence && typeof event.evidence === "object" ? event.evidence : {}),
         verificationProvider: result.providerId,
