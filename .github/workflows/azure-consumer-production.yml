@@ -159,6 +159,7 @@ jobs:
 
           aws secretsmanager get-secret-value             --secret-id "$PREFIX/supabase"             --query SecretString --output text > "$WORK/supabase.json"
           aws secretsmanager get-secret-value             --secret-id "$PREFIX/mobile"             --query SecretString --output text > "$WORK/mobile.json"
+          aws secretsmanager get-secret-value             --secret-id "$PREFIX/turnstile"             --query SecretString --output text > "$WORK/turnstile.json"
 
           if aws secretsmanager get-secret-value             --secret-id "$PREFIX/huggingface"             --query SecretString --output text > "$WORK/huggingface.json" 2>/dev/null; then
             jq -e 'type == "object"' "$WORK/huggingface.json" >/dev/null
@@ -173,10 +174,13 @@ jobs:
 
           jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
           jq -e 'type == "object"' "$WORK/mobile.json" >/dev/null
+          jq -e 'type == "object"' "$WORK/turnstile.json" >/dev/null
 
           SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
           SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
           SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          TURNSTILE_SITE_KEY="$(jq -r '.siteKey // empty' "$WORK/turnstile.json")"
+          TURNSTILE_SECRET_KEY="$(jq -r '.secretKey // empty' "$WORK/turnstile.json")"
           HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
@@ -190,6 +194,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_ANON_KEY"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$TURNSTILE_SITE_KEY" || { echo "::error::Turnstile site key is missing from Admin Credential Vault."; exit 1; }
+          test -n "$TURNSTILE_SECRET_KEY" || { echo "::error::Turnstile secret key is missing from Admin Credential Vault."; exit 1; }
           test -n "$IOS_TEAM_ID" || { echo "::error::Mobile vault iosTeamId is missing."; exit 1; }
           test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Mobile vault Android keystore password is missing."; exit 1; }
           test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Mobile vault Android key alias is missing."; exit 1; }
@@ -213,7 +219,7 @@ jobs:
             HUGGINGFACE_AI_ENDPOINT=""
           fi
 
-          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$ANDROID_KEYSTORE_PASSWORD" "$MAPBOX_ACCESS_TOKEN"; do
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$TURNSTILE_SITE_KEY" "$TURNSTILE_SECRET_KEY" "$ANDROID_KEYSTORE_PASSWORD" "$MAPBOX_ACCESS_TOKEN"; do
             echo "::add-mask::$value"
           done
 
@@ -222,6 +228,8 @@ jobs:
             echo "SUPABASE_URL=$SUPABASE_URL"
             echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY"
+            echo "TURNSTILE_SECRET_KEY=$TURNSTILE_SECRET_KEY"
             echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
             echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
             echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
@@ -376,7 +384,7 @@ jobs:
           if az acr repository show-tags             --name "${{ steps.azure.outputs.registry }}"             --repository consumer             --query "[?@=='${{ github.event_name == 'push' && github.sha || inputs.image_sha }}'] | [0]" -o tsv | grep -qx "${{ github.event_name == 'push' && github.sha || inputs.image_sha }}"; then
             echo "Production image already exists; reusing immutable tag."
           else
-            docker build               --file infra/azure/consumer-runtime/Dockerfile               --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"               --tag "$IMAGE"               .
+            docker build               --file infra/azure/consumer-runtime/Dockerfile               --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"               --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"               --build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY="$NEXT_PUBLIC_TURNSTILE_SITE_KEY"               --tag "$IMAGE"               .
             docker push "$IMAGE"
           fi
 
@@ -423,6 +431,8 @@ jobs:
               consumerNextPublicSiteUrl="$SITE_URL" \
               consumerNextPublicSupabaseUrl="$SUPABASE_URL" \
               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY" \
+              consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY" \
+              consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY" \
               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
               consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT" \
               consumerAzureAiApiKey="$PRIMARY_AI_KEY" \
@@ -474,6 +484,8 @@ jobs:
                 consumerNextPublicSiteUrl="$SITE_URL" \
                 consumerNextPublicSupabaseUrl="$SUPABASE_URL" \
                 consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY" \
+                consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY" \
+                consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY" \
                 consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY" \
                 consumerAzureAiEndpoint="$PRIMARY_AI_ENDPOINT" \
                 consumerAzureAiApiKey="$PRIMARY_AI_KEY" \
