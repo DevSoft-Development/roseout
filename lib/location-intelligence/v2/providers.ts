@@ -49,6 +49,15 @@ export const LOCATION_INTELLIGENCE_PROVIDER_REGISTRY: readonly ProviderDescripto
     maintenanceClass: "external_paid",
   },
   {
+    id: "serpapi",
+    enabled: true,
+    capabilities: ["website_discovery", "web_context", "status_verification"],
+    credentialRef: "serpapi.apiKey",
+    priority: 40,
+    paid: true,
+    maintenanceClass: "external_paid",
+  },
+  {
     id: "public_geo",
     enabled: true,
     capabilities: ["geocoding", "public_geography"],
