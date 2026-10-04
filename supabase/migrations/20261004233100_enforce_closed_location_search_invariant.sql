@@ -12,20 +12,20 @@ declare
     or coalesce(new.claimed, false)
     or new.owner_user_id is not null
     or coalesce(new.claim_status, '') = 'approved';
-  v_old_status text := case
-    when tg_op = 'UPDATE' then coalesce(old.google_business_status, '')
-    else ''
-  end;
-  v_google_hidden boolean := case
-    when tg_op = 'UPDATE' then coalesce(old.metadata ->> 'google_visibility_hide_reason', '') = 'google_closed_permanently'
-    else false
-  end;
+  v_old_status text := '';
+  v_google_hidden boolean := false;
 begin
-  if tg_op = 'INSERT'
-    or new.google_business_status is distinct from old.google_business_status then
+  if tg_op = 'UPDATE' then
+    v_old_status := coalesce(old.google_business_status, '');
+    v_google_hidden := coalesce(old.metadata ->> 'google_visibility_hide_reason', '') = 'google_closed_permanently';
+  end if;
+
+  if tg_op = 'INSERT' then
     if new.google_business_status is not null then
       new.google_business_status_checked_at := coalesce(new.google_business_status_checked_at, now());
     end if;
+  elsif new.google_business_status is distinct from old.google_business_status then
+    new.google_business_status_checked_at := coalesce(new.google_business_status_checked_at, now());
   end if;
 
   if new.google_business_status = 'CLOSED_PERMANENTLY' then
