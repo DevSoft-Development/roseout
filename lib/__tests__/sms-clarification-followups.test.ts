@@ -99,7 +99,7 @@ describe("SMS clarification follow-ups", () => {
     expect(workflow).toContain(".OPENAI_API_KEY // empty");
   });
 
-  it("recovers missing Location Intelligence provider vault credentials from the existing runtime", () => {
+  it("recovers the missing Google vault credential for Location Intelligence V2 from the existing runtime", () => {
     const workflow = fs.readFileSync(
       path.join(process.cwd(), ".github/workflows/aws-credential-vault-runtime-sync.yml"),
       "utf8",
@@ -107,10 +107,6 @@ describe("SMS clarification follow-ups", () => {
     expect(workflow).toContain("Adopted existing Google credential into Credential Vault.");
     expect(workflow).toContain("${CREDENTIAL_VAULT_PREFIX}/${TARGET_ENV}/google");
     expect(workflow).toContain(".GOOGLE_PLACES_API_KEY // .GOOGLE_GEOCODING_API_KEY // empty");
-    expect(workflow).toContain("Adopted existing DataForSEO credentials into Credential Vault.");
-    expect(workflow).toContain("${CREDENTIAL_VAULT_PREFIX}/${TARGET_ENV}/dataforseo");
-    expect(workflow).toContain(".DATAFORSEO_LOGIN // empty");
-    expect(workflow).toContain(".DATAFORSEO_PASSWORD // empty");
   });
 
   it("uses high-confidence learned support responses before the LLM", () => {
