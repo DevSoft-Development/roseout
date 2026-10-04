@@ -4,6 +4,7 @@ import { allowPaidProviderExecution, reviewRefreshCadenceDays } from "@/lib/loca
 import { computeSearchV3Readiness } from "@/lib/location-intelligence/v2/readiness";
 import { providersForCapability } from "@/lib/location-intelligence/v2/providers";
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
+import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 
 describe("Location Intelligence V2", () => {
   it("prioritizes under-covered heat zones over saturated ones", () => {
@@ -78,5 +79,21 @@ describe("Location Intelligence V2", () => {
     const webProviders = providersForCapability("web_context").map((provider) => provider.id);
     expect(webProviders.indexOf("brave")).toBeGreaterThanOrEqual(0);
     expect(webProviders.indexOf("serpapi")).toBeGreaterThan(webProviders.indexOf("brave"));
+  });
+});
+
+
+describe("Location Intelligence V2 provider fallback adequacy", () => {
+  it("treats empty provider payloads as inadequate", () => {
+    expect(hasUsableProviderData(null)).toBe(false);
+    expect(hasUsableProviderData([])).toBe(false);
+    expect(hasUsableProviderData({})).toBe(false);
+    expect(hasUsableProviderData({ organicResults: [], localResults: [] })).toBe(false);
+  });
+
+  it("accepts provider payloads containing usable results", () => {
+    expect(hasUsableProviderData([{ url: "https://example.com" }])).toBe(true);
+    expect(hasUsableProviderData({ organicResults: [{ title: "Example" }], localResults: [] })).toBe(true);
+    expect(hasUsableProviderData({ places: [{ id: "place-1" }] })).toBe(true);
   });
 });
