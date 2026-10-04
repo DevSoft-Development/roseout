@@ -544,7 +544,7 @@ async function runLockedLocationIntelligenceV2PilotBatch() {
         } catch (error) {
           const message = error instanceof Error ? error.message : "initial_enrichment_failed";
 
-          let committed = false;
+          let committed: boolean | null = null;
           try {
             committed = await locationInitialEnrichmentCommitted(candidate.id);
           } catch (reconcileError) {
@@ -555,6 +555,7 @@ async function runLockedLocationIntelligenceV2PilotBatch() {
                   ? reconcileError.message
                   : "pilot_enrichment_reconciliation_failed",
             });
+            return;
           }
 
           if (committed) {
