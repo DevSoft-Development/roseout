@@ -46,7 +46,7 @@ jobs:
             .expected_final_primary=="virginia" and
             .canonical_schedule_count==65
           ' "$marker" >/dev/null
-          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '66'
+          test "$(jq 'length' infra/aws/edge-runtime/schedules.json)" = '64'
           test "$(jq 'length' infra/aws/edge-runtime/dr-schedules.json)" = '2'
           grep -F 'aws-scheduler-activation.yml' "$workflow" >/dev/null
           grep -F 'aws-dr-scheduler-activation.yml' "$workflow" >/dev/null
@@ -120,7 +120,7 @@ jobs:
             echo "$workflow=$new_id" >> "$RUNNER_TEMP/certification-runs.txt"
           }
 
-          # Repair any base-scheduler drift from the canonical 66-schedule activation
+          # Repair any base-scheduler drift from the canonical 64-schedule activation
           # manifest before checking DR-specific reconciliation state. This is the
           # same fail-closed production activation path used by normal scheduler ops.
           dispatch_and_wait aws-scheduler-activation.yml
@@ -189,7 +189,7 @@ jobs:
           }
 
           base_expected="$(jq 'length' infra/aws/edge-runtime/schedules.json)"
-          test "$base_expected" = '66'
+          test "$base_expected" = '64'
           base_enabled=0
           while IFS= read -r name; do
             state="$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$name" --query State --output text)"
@@ -308,7 +308,7 @@ jobs:
               echo '- Oregon -> Virginia failback completed successfully.'
               echo '- Production smoke checks passed after Virginia was restored.'
               echo '- Final primary: **Virginia**.'
-              echo '- Base production schedules enabled: **66/66**.'
+              echo '- Base production schedules enabled: **64/64**.'
               echo '- Forward DR reconciliation schedules enabled: **2/2**.'
               echo '- Final public-data, Auth, and Storage promotion gates passed.'
               echo '- Final standby reconciler reports Auth parity and Storage parity.'
