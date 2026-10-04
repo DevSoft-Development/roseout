@@ -75,17 +75,26 @@ export function pilotMarkerCountsAsSuccess(status: string, enriched: boolean) {
   return status === "success" || (status === "reserved" && enriched);
 }
 
-export function pilotCategoryKey(candidate: Pick<PilotCandidate, "primary_category" | "activity_type" | "category" | "cuisine_type" | "cuisine">) {
-  return String(
-    candidate.primary_category ||
-      candidate.activity_type ||
-      candidate.category ||
-      candidate.cuisine_type ||
-      candidate.cuisine ||
-      "uncategorized",
-  )
-    .trim()
-    .toLowerCase();
+export function pilotCategoryKey(
+  candidate: Pick<
+    PilotCandidate,
+    "primary_category" | "activity_type" | "category" | "cuisine_type" | "cuisine"
+  > & { location_type?: PilotLocationType | string | null },
+) {
+  const value =
+    candidate.location_type === "activity"
+      ? candidate.activity_type ||
+        candidate.primary_category ||
+        candidate.category ||
+        candidate.cuisine_type ||
+        candidate.cuisine
+      : candidate.primary_category ||
+        candidate.category ||
+        candidate.cuisine_type ||
+        candidate.cuisine ||
+        candidate.activity_type;
+
+  return String(value || "uncategorized").trim().toLowerCase();
 }
 
 function isMessy(candidate: PilotCandidate) {
@@ -333,6 +342,7 @@ async function pilotProgress(): Promise<PilotProgress> {
     successfulByCell[key] = (successfulByCell[key] || 0) + 1;
     successfulCategories.add(
       pilotCategoryKey({
+        location_type: locationType,
         primary_category: joined?.primary_category == null ? null : String(joined.primary_category),
         activity_type: joined?.activity_type == null ? null : String(joined.activity_type),
         category: joined?.category == null ? null : String(joined.category),
