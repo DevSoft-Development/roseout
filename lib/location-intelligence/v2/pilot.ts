@@ -97,8 +97,16 @@ export function pilotCategoryKey(
   return String(value || "uncategorized").trim().toLowerCase();
 }
 
+export function pilotDuplicateState(input: { duplicate_status?: unknown; duplicate_of?: unknown }) {
+  const status = String(input.duplicate_status || "").trim().toLowerCase();
+  return {
+    confirmed: status === "duplicate" || Boolean(String(input.duplicate_of || "").trim()),
+    messy: status === "possible_duplicate",
+  };
+}
+
 function isMessy(candidate: PilotCandidate) {
-  return candidate.duplicate_status === "duplicate" || candidate.duplicate_status === "possible_duplicate";
+  return pilotDuplicateState({ duplicate_status: candidate.duplicate_status }).messy;
 }
 
 function isMissingGoogle(candidate: PilotCandidate) {
@@ -201,7 +209,7 @@ export function nextPilotQuotas(progress: PilotProgress): PilotQuota[] {
 
 async function fetchLocationRows(state: PilotState, locationType: PilotLocationType) {
   const columns =
-    "id,state,location_type,primary_category,category,cuisine,cuisine_type,activity_type,is_searchable,duplicate_status,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
+    "id,state,location_type,primary_category,category,cuisine,cuisine_type,activity_type,is_searchable,duplicate_status,duplicate_of,google_place_id,popularity_score,is_claimed,claimed,claim_status,owner_user_id";
   const pageSize = 500;
   const rows: Record<string, unknown>[] = [];
 
@@ -264,6 +272,10 @@ async function eligiblePilotCandidates() {
     const locationType = String(row.location_type || "");
     if (!["NY", "NJ", "CT"].includes(state)) return [];
     if (!["restaurant", "activity"].includes(locationType)) return [];
+    if (pilotDuplicateState({
+      duplicate_status: row.duplicate_status,
+      duplicate_of: row.duplicate_of,
+    }).confirmed) return [];
 
     return [
       {
