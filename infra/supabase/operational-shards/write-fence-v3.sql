@@ -47,11 +47,10 @@ begin
     return coalesce(new, old);
   end if;
 
-  v_cleanup_allowed :=
-    tg_table_name = 'pos_tenders'
-    and tg_op = 'UPDATE'
-    and old.status = 'initiated'
-    and new.status = 'voided';
+  v_cleanup_allowed := false;
+  if tg_table_name = 'pos_tenders' and tg_op = 'UPDATE' then
+    v_cleanup_allowed := old.status = 'initiated' and new.status = 'voided';
+  end if;
 
   -- Every operational write also participates in a physical-shard gate.
   -- Freezing this singleton row waits for all currently writing transactions.
