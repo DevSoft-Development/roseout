@@ -37,7 +37,7 @@
   {"jobKey":"location-search-profile-worker","jobName":"Location Search Profile Worker","targetPath":"/api/cron/location-search-profile-worker","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"catalog-enrichment-runner","jobName":"Catalog Enrichment Runner","targetPath":"/api/cron/catalog-enrichment-runner","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"location-intelligence-cleanup-worker","jobName":"Location Intelligence Cleanup Worker","targetPath":"/api/cron/location-intelligence-cleanup?limit=10","delivery":"managed","manuallyRunnable":false},
-  {"jobKey":"location-intelligence-v2-maintenance","jobName":"Location Intelligence V2 Maintenance","targetPath":"/api/cron/location-intelligence-v2-maintenance?materialLimit=20&reviewLimit=20","delivery":"managed","manuallyRunnable":true},
+  {"jobKey":"location-intelligence-v2-maintenance","jobName":"Location Intelligence V2 Maintenance","targetPath":"/api/cron/location-intelligence-v2-maintenance?materialLimit=20&reviewLimit=50","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"location-intelligence-v2-pilot","jobName":"Location Intelligence V2 100-Location Pilot","targetPath":"/api/cron/location-intelligence-v2-pilot","delivery":"managed","manuallyRunnable":false},
   {"jobKey":"location-intelligence-v2-rollout-500","jobName":"Location Intelligence V2 500-Location Rollout","targetPath":"/api/cron/location-intelligence-v2-rollout-500","delivery":"managed","manuallyRunnable":false},
   {"jobKey":"location-intelligence-dedupe-classifier","jobName":"Location Intelligence Dedupe Classifier","targetPath":"/api/cron/location-intelligence-dedupe-classifier?limit=25","delivery":"managed","manuallyRunnable":false},

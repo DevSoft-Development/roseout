@@ -4,7 +4,7 @@ import { refreshLocationIntelligenceProviderHealth } from "@/lib/location-intell
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 300;
 
 function authorized(request: Request) {
   const secret = String(process.env.CRON_SECRET || "").trim();
@@ -35,7 +35,7 @@ async function run(request: Request) {
 
   try {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
-    const reviewLimit = limitParam(request, "reviewLimit", 20, 100);
+    const reviewLimit = limitParam(request, "reviewLimit", 50, 100);
 
     const [providerHealth, collectedReviews] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),

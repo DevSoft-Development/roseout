@@ -22,11 +22,14 @@ import {
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import {
   LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS,
+  LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE,
   LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS,
+  LOCATION_INTELLIGENCE_V2_ROLLOUT_CONCURRENCY,
   nextRolloutQuotas,
   rolloutGapFields,
   rolloutReservationIsStale,
 } from "@/lib/location-intelligence/v2/rollout-500";
+import { nextReviewRefreshAt } from "@/lib/location-intelligence/v2/reviews";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -353,17 +356,31 @@ describe("Location Intelligence V2 provider freshness guard", () => {
   });
 });
 
+describe("Location Intelligence V2 review ingestion scheduling", () => {
+  it("schedules the first actual review pull immediately, then uses normal cadence", () => {
+    const now = new Date("2026-10-05T18:00:00.000Z");
+    expect(nextReviewRefreshAt({ popularityScore: 95, now })).toBe(now.toISOString());
+    expect(nextReviewRefreshAt({
+      popularityScore: 95,
+      lastRefreshedAt: "2026-10-05T18:00:00.000Z",
+      now,
+    })).toBe("2026-11-04T18:00:00.000Z");
+  });
+});
+
 describe("Location Intelligence V2 500-location rollout", () => {
-  it("keeps every 20-location batch balanced across the tri-state target mix", () => {
+  it("keeps every 50-location batch balanced across the tri-state target mix", () => {
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE).toBe(50);
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_CONCURRENCY).toBe(5);
     expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS).toEqual([
-      { state: "NY", locationType: "restaurant", count: 9 },
-      { state: "NY", locationType: "activity", count: 5 },
-      { state: "NJ", locationType: "restaurant", count: 2 },
-      { state: "NJ", locationType: "activity", count: 2 },
-      { state: "CT", locationType: "restaurant", count: 1 },
-      { state: "CT", locationType: "activity", count: 1 },
+      { state: "NY", locationType: "restaurant", count: 23 },
+      { state: "NY", locationType: "activity", count: 12 },
+      { state: "NJ", locationType: "restaurant", count: 5 },
+      { state: "NJ", locationType: "activity", count: 5 },
+      { state: "CT", locationType: "restaurant", count: 3 },
+      { state: "CT", locationType: "activity", count: 2 },
     ]);
-    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS.reduce((sum, row) => sum + row.count, 0)).toBe(20);
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS.reduce((sum, row) => sum + row.count, 0)).toBe(50);
     expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS.reduce((sum, row) => sum + row.count, 0)).toBe(500);
   });
 
