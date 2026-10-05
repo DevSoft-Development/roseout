@@ -1,0 +1,27 @@
+-- Operational shard bootstrap manifest.
+-- Applied to the four new operational Supabase projects before this workflow is merged.
+-- This file is retained as the auditable schema contract for future shard provisioning.
+-- It intentionally contains no credentials.
+
+-- Required operational anchor tables:
+-- public.locations
+-- public.location_reservations
+-- public.reserve_staff_profiles
+-- public.layout_items
+-- public.reservation_seating_resources
+--
+-- Required POS V1 tables:
+-- public.pos_checks
+-- public.pos_check_resources
+-- public.pos_orders
+-- public.pos_order_items
+-- public.pos_tenders
+-- public.pos_payments
+--
+-- Required function:
+-- public.pos_begin_card_tender(uuid, uuid, integer, uuid)
+--
+-- Security contract:
+-- RLS enabled on all public operational tables.
+-- anon/authenticated have no direct table grants.
+-- server access uses vault-managed Supabase secret keys.
