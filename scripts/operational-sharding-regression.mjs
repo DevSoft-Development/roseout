@@ -7,6 +7,7 @@ const resolver = read("lib/operational-shards.ts");
 const payment = read("lib/pos/payments/check-payment-service.ts");
 const catalog = read("lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
+const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -20,6 +21,19 @@ for (const token of [
   if (!migration.includes(token)) throw new Error(`Missing operational shard schema invariant: ${token}`);
 }
 
+for (const token of [
+  "operational_schema_versions",
+  "pos_check_resources_layout_item_fk_idx",
+  "pos_check_resources_seating_resource_fk_idx",
+  "pos_checks_server_staff_profile_fk_idx",
+  "pos_orders_server_staff_profile_fk_idx",
+  "pos_tenders_staff_profile_fk_idx",
+  "reservation_seating_resources_parent_layout_item_fk_idx",
+  "toh_operational_dr",
+]) {
+  if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
+}
+
 for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {
   const columnPattern = new RegExp(`\\b${forbiddenColumn}\\b\\s+(text|varchar|jsonb|bytea)`, "i");
   if (columnPattern.test(migration)) {
@@ -31,16 +45,22 @@ for (const token of [
   "OPERATIONAL_SHARDS_JSON",
   "operational_shard_unconfigured",
   "operational_shard_write_disabled",
-  'shardId === "primary"',
+  "operational_shard_write_requires_authoritative_resolution",
+  "operational_shard_assignment_epoch_mismatch",
+  "operational_shard_routing_epoch_mismatch",
+  "operational_shard_writes_frozen",
+  "active_physical_shard_id",
+  "routing_epoch",
   "getSupabaseAdminClient()",
 ]) {
   if (!resolver.includes(token)) throw new Error(`Missing shard resolver invariant: ${token}`);
 }
-if (!/if \(shardId === "primary"\) return getSupabaseAdminClient\(\);/.test(resolver)) {
-  throw new Error("Primary shard compatibility path is missing.");
+
+if (!payment.includes("resolveOperationalShardForLocationId")) {
+  throw new Error("POS payment persistence must resolve authoritative operational routing before writes.");
 }
-if (!payment.includes("getOperationalShardClientForLocation")) {
-  throw new Error("POS payment persistence must resolve its operational shard.");
+if (payment.includes("getOperationalShardClientForLocation")) {
+  throw new Error("POS payment persistence must not route writes from a stale location object.");
 }
 if (payment.includes('supabaseAdmin.rpc("pos_begin_card_tender"')) {
   throw new Error("POS payment service must not use the global Supabase client for tenant transaction writes.");
