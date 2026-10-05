@@ -16,6 +16,7 @@ for (const token of [
   "getpospaymentprovider",
   "idempotencykey",
   '.from("pos_payments")',
+  "getoperationalshardclientforlocation",
   "cancelpaymentintent",
 ]) {
   if (!service.toLowerCase().includes(token.toLowerCase())) throw new Error(`Missing POS payment service invariant: ${token}`);
@@ -34,6 +35,7 @@ if (!contracts.includes("cancelPaymentIntent")) throw new Error("POS provider co
 if (!stripe.includes("/cancel") || !stripe.includes('reason?: "duplicate"')) {
   throw new Error("Stripe POS adapter must cancel orphaned PaymentIntents through the provider boundary.");
 }
+if (service.includes('import { supabaseAdmin }')) throw new Error("POS payment service must not bind tenant writes to the global Supabase admin client.");
 if (!service.includes("pos_payment_persistence_failed_cancel_unconfirmed")) {
   throw new Error("POS service must surface an unconfirmed cancellation after persistence failure.");
 }
