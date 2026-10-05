@@ -257,7 +257,12 @@ try {
   // external-call window. The location fence blocks the next write for truly
   // in-flight calls, which then cancel and void through the cleanup allowance.
   let drained = false;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    await request(sourceUrl, source.serviceRoleKey, "/rest/v1/rpc/pos_expire_stale_card_tenders", {
+      method: "POST",
+      body: JSON.stringify({ p_location_id: locationId }),
+    });
+
     const initiated = await fetchAll(
       sourceUrl,
       source.serviceRoleKey,
@@ -271,7 +276,14 @@ try {
       `location_id=eq.${encodeURIComponent(locationId)}`,
     );
     const persistedTenderIds = new Set(persistedPayments.map((payment) => String(payment.tender_id || "")));
-    const inFlight = initiated.filter((tender) => !persistedTenderIds.has(String(tender.id)));
+    const now = Date.now();
+    const inFlight = initiated.filter((tender) => {
+      if (persistedTenderIds.has(String(tender.id))) return false;
+      const lease = tender.provider_call_lease_expires_at
+        ? Date.parse(String(tender.provider_call_lease_expires_at))
+        : Date.parse(String(tender.created_at || "")) + 2 * 60 * 1000;
+      return !Number.isFinite(lease) || lease > now;
+    });
     if (inFlight.length === 0) {
       drained = true;
       break;

@@ -39,6 +39,9 @@ for (const token of [
   "reservation_seating_resources_parent_layout_item_fk_idx",
   "reservation_resource_assignments",
   "reservation_resource_assignments_location_idx",
+  "provider_call_lease_expires_at",
+  "pos_expire_stale_card_tenders",
+  "pos_provider_call_lease_v6",
   "toh_operational_dr",
 ]) {
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
@@ -73,6 +76,8 @@ for (const token of [
   "total_cents",
   "in_flight_card_tenders_did_not_drain",
   "persistedTenderIds",
+  "provider_call_lease_expires_at",
+  "pos_expire_stale_card_tenders",
   "pos_payments",
   "sourceFenceFrozen",
   "deletionOrder",
@@ -125,6 +130,15 @@ for (const token of [
   "alter subscription $SUB enable",
   "from public.pos_payments p where p.tender_id=t.id",
   "Mark the attempted mutation before the request",
+  "CONFIRM_FAILBACK",
+  "FAILBACK_SUB",
+  "truncate table",
+  "create subscription $FAILBACK_SUB",
+  "failback_ready",
+  "row_hash",
+  "alter subscription $SUB enable",
+  "replication_state='healthy'",
+  "pos_expire_stale_card_tenders",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -236,6 +250,18 @@ for (const [flag, mutation] of [
 }
 if ((failover.match(/from public\.pos_payments p where p\.tender_id=t\.id/g) || []).length < 2) {
   throw new Error("Failover and failback drains must exclude persisted card tenders.");
+}
+if ((failover.match(/pos_expire_stale_card_tenders\(null\)/g) || []).length < 2) {
+  throw new Error("Failover and failback must expire abandoned card-provider leases before drain checks.");
+}
+if (failover.indexOf("set frozen=true,reason='failback-primary'") > failover.indexOf("create subscription $FAILBACK_SUB")) {
+  throw new Error("Failback must freeze DR before the final DR-to-primary resync.");
+}
+if (failover.indexOf("create subscription $FAILBACK_SUB") > failover.indexOf("set frozen=false,reason='active-primary'")) {
+  throw new Error("Failback must complete final resync before opening primary.");
+}
+if (!hardening.includes("now() + interval '2 minutes'")) {
+  throw new Error("Card tender reservation must create an explicit bounded provider-call lease.");
 }
 
 if (!validationScript.includes("reservation_resource_assignments")) {
