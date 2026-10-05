@@ -15,11 +15,23 @@ type OperationalShardRuntimeConfig = {
 
 type OperationalShardRuntimeMap = Record<string, OperationalShardRuntimeConfig>;
 
+export type OperationalShardResolutionOptions = {
+  mode?: OperationalShardAccessMode;
+  expectedAssignmentEpoch?: number;
+  expectedRoutingEpoch?: number;
+};
+
 const shardClients = new Map<string, { fingerprint: string; client: SupabaseClient }>();
 
 function cleanShardId(value: unknown): string {
   const shardId = String(value ?? "primary").trim().toLowerCase();
   return shardId || "primary";
+}
+
+function positiveEpoch(value: unknown, fallback = 1): number {
+  const epoch = Number(value ?? fallback);
+  if (!Number.isSafeInteger(epoch) || epoch < 1) throw new Error("operational_shard_invalid_epoch");
+  return epoch;
 }
 
 function parseOperationalShardConfig(): OperationalShardRuntimeMap {
@@ -96,31 +108,92 @@ export function getOperationalShardClient(
 
 export function getOperationalShardClientForLocation(
   location: Record<string, any>,
-  mode: OperationalShardAccessMode = "write",
+  mode: OperationalShardAccessMode = "read",
 ): SupabaseClient {
+  if (mode === "write") {
+    throw new Error("operational_shard_write_requires_authoritative_resolution");
+  }
   return getOperationalShardClient(operationalShardIdForLocation(location), mode);
 }
 
 export async function resolveOperationalShardForLocationId(
   locationId: string,
-  mode: OperationalShardAccessMode = "write",
+  options: OperationalShardResolutionOptions = {},
 ) {
+  const mode = options.mode || "write";
   const cleanLocationId = String(locationId || "").trim();
   if (!cleanLocationId) throw new Error("missing_location_id");
 
   const control = getSupabaseAdminClient();
   const { data: location, error } = await control
     .from("locations")
-    .select("id,operational_shard_id")
+    .select("id,operational_shard_id,operational_shard_epoch,operational_writes_frozen")
     .eq("id", cleanLocationId)
     .maybeSingle();
 
   if (error) throw new Error(error.message || "operational_shard_lookup_failed");
   if (!location?.id) throw new Error("location_not_found");
 
-  const shardId = cleanShardId(location.operational_shard_id);
+  const assignmentEpoch = positiveEpoch(location.operational_shard_epoch);
+  if (
+    options.expectedAssignmentEpoch !== undefined &&
+    positiveEpoch(options.expectedAssignmentEpoch) !== assignmentEpoch
+  ) {
+    throw new Error("operational_shard_assignment_epoch_mismatch");
+  }
+  if (mode === "write" && location.operational_writes_frozen === true) {
+    throw new Error("operational_shard_writes_frozen");
+  }
+
+  const logicalShardId = cleanShardId(location.operational_shard_id);
+  if (logicalShardId === "primary") {
+    if (
+      options.expectedRoutingEpoch !== undefined &&
+      positiveEpoch(options.expectedRoutingEpoch) !== 1
+    ) {
+      throw new Error("operational_shard_routing_epoch_mismatch");
+    }
+    return {
+      shardId: "primary",
+      logicalShardId: "primary",
+      physicalShardId: "primary",
+      routingEpoch: 1,
+      assignmentEpoch,
+      failoverState: "primary",
+      schemaVersion: 1,
+      client: getSupabaseAdminClient(),
+    };
+  }
+
+  const { data: shard, error: shardError } = await control
+    .from("operational_shards")
+    .select("id,status,read_enabled,write_enabled,active_physical_shard_id,routing_epoch,failover_state,schema_version")
+    .eq("id", logicalShardId)
+    .maybeSingle();
+
+  if (shardError) throw new Error(shardError.message || "operational_shard_registry_lookup_failed");
+  if (!shard?.id) throw new Error("operational_shard_registry_missing");
+  if (shard.status !== "active") throw new Error("operational_shard_not_active");
+  if (mode === "read" && shard.read_enabled !== true) throw new Error("operational_shard_read_disabled");
+  if (mode === "write" && shard.write_enabled !== true) throw new Error("operational_shard_write_disabled");
+
+  const routingEpoch = positiveEpoch(shard.routing_epoch);
+  if (
+    options.expectedRoutingEpoch !== undefined &&
+    positiveEpoch(options.expectedRoutingEpoch) !== routingEpoch
+  ) {
+    throw new Error("operational_shard_routing_epoch_mismatch");
+  }
+
+  const physicalShardId = cleanShardId(shard.active_physical_shard_id || logicalShardId);
   return {
-    shardId,
-    client: getOperationalShardClient(shardId, mode),
+    shardId: physicalShardId,
+    logicalShardId,
+    physicalShardId,
+    routingEpoch,
+    assignmentEpoch,
+    failoverState: String(shard.failover_state || "primary"),
+    schemaVersion: positiveEpoch(shard.schema_version),
+    client: getOperationalShardClient(physicalShardId, mode),
   };
 }
