@@ -106,24 +106,47 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
 
   const snapshots: string[] = [];
   let canonicalGooglePlaceId = String(location.google_place_id || "").trim();
+  let profileGooglePlaceId: string | null = canonicalGooglePlaceId || null;
 
   if (canonicalGooglePlaceId) {
-    await attachExternalIdentity({
-      locationId,
-      provider: "google",
-      externalId: canonicalGooglePlaceId,
-      metadata: { source: "canonical_location", initialEnrichment: true },
-    });
-    await recordLocationEvidence({
-      locationId,
-      provider: "google",
-      providerEntityId: canonicalGooglePlaceId,
-      evidenceType: "identity",
-      field: "google_place_id",
-      value: canonicalGooglePlaceId,
-      confidence: 1,
-      metadata: { source: "canonical_location", initialEnrichment: true },
-    });
+    const attachedLocationId = await resolveTohLocationByExternalIdentity("google", canonicalGooglePlaceId);
+    if (attachedLocationId && attachedLocationId !== locationId) {
+      profileGooglePlaceId = null;
+      await recordLocationEvidence({
+        locationId,
+        provider: "google",
+        providerEntityId: canonicalGooglePlaceId,
+        evidenceType: "identity",
+        field: "google_place_id_conflict",
+        value: {
+          google_place_id: canonicalGooglePlaceId,
+          attached_location_id: attachedLocationId,
+        },
+        confidence: 1,
+        metadata: {
+          source: "canonical_location",
+          initialEnrichment: true,
+          conflict: "external_identity_already_attached",
+        },
+      });
+    } else {
+      await attachExternalIdentity({
+        locationId,
+        provider: "google",
+        externalId: canonicalGooglePlaceId,
+        metadata: { source: "canonical_location", initialEnrichment: true },
+      });
+      await recordLocationEvidence({
+        locationId,
+        provider: "google",
+        providerEntityId: canonicalGooglePlaceId,
+        evidenceType: "identity",
+        field: "google_place_id",
+        value: canonicalGooglePlaceId,
+        confidence: 1,
+        metadata: { source: "canonical_location", initialEnrichment: true },
+      });
+    }
   } else if (query) {
     let identity: LocationProviderResponse | null = null;
     try {
@@ -164,6 +187,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
           sourceRef: "location_intelligence_v2_identity",
         });
         canonicalGooglePlaceId = resolvedGooglePlaceId;
+        profileGooglePlaceId = resolvedGooglePlaceId;
       }
     }
   }
@@ -284,8 +308,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
       maintenance_mode: mode,
       last_initial_enrichment_at: now,
       routine_paid_refresh_enabled: false,
-      identity: canonicalGooglePlaceId
-        ? { ...existingIdentity, google_place_id: canonicalGooglePlaceId }
+      identity: profileGooglePlaceId
+        ? { ...existingIdentity, google_place_id: profileGooglePlaceId }
         : existingIdentity,
       updated_at: now,
     }, { onConflict: "location_id" });

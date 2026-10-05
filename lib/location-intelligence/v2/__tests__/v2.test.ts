@@ -129,6 +129,9 @@ describe("Location Intelligence V2", () => {
     expect(source).toContain("google_place_id_candidates");
     expect(source).toContain("public_geography_snapshot");
     expect(source).toContain("business_profile_snapshot");
+    expect(source).toContain("google_place_id_conflict");
+    expect(source).toContain("external_identity_already_attached");
+    expect(source).toContain("profileGooglePlaceId = null");
   });
 });
 
