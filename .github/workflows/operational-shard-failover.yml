@@ -106,13 +106,28 @@ jobs:
           GLOBAL_FROZEN=false
           PHYSICAL_FROZEN=false
           CUTOVER_DONE=false
+          SUB_DISABLED=false
           ACTIVE_REF="$PRIMARY_REF"
 
           rollback_on_error() {
             trap - ERR
             if [ "$CUTOVER_DONE" != true ]; then
+              # If promotion already disabled replication, restore the DR path
+              # before any primary writes are reopened. Mark replication
+              # initializing so another promotion cannot trust it until the
+              # replication verifier proves bounded lag again.
+              if [ "$ACTION" = promote_dr ] && [ "$SUB_DISABLED" = true ]; then
+                sql_api "$DR_REF" "update public.operational_shard_write_gate
+                  set frozen=true,reason='failover-aborted',updated_at=now() where id=1;
+                  alter subscription $SUB enable;" "$RUNNER_TEMP/restore-subscription.json" || true
+                sql_api "$GLOBAL_REF" "update public.operational_shards
+                  set replication_state='initializing',last_replication_check_at=now(),updated_at=now()
+                  where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-replication-recovering.json" || true
+              fi
+
               if [ "$PHYSICAL_FROZEN" = true ]; then
-                sql_api "$ACTIVE_REF" "update public.operational_shard_write_gate set frozen=false,reason='failover-aborted',updated_at=now() where id=1;" "$RUNNER_TEMP/unfreeze.json" || true
+                sql_api "$ACTIVE_REF" "update public.operational_shard_write_gate
+                  set frozen=false,reason='failover-aborted',updated_at=now() where id=1;" "$RUNNER_TEMP/unfreeze.json" || true
               fi
               if [ "$GLOBAL_FROZEN" = true ]; then
                 sql_api "$GLOBAL_REF" "update public.operational_shards
@@ -183,6 +198,7 @@ jobs:
 
             sql_api "$DR_REF" "alter subscription $SUB disable;
               update public.operational_shard_write_gate set frozen=false,reason='active-dr',updated_at=now() where id=1;" "$RUNNER_TEMP/disable.json"
+            SUB_DISABLED=true
 
             sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
               (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status,replication_lag_bytes)
