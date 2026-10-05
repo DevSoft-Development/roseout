@@ -13,6 +13,12 @@ import {
   selectDataForSeoBusinessProfile,
 } from "@/lib/location-intelligence/v2/business-profile";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
+import {
+  LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS,
+  LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS,
+  nextRolloutQuotas,
+  rolloutGapFields,
+} from "@/lib/location-intelligence/v2/rollout-500";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -287,6 +293,50 @@ describe("Location Intelligence V2 pilot quotas", () => {
   it("never treats an unknown reconciliation result as a confirmed non-commit", () => {
     const unknown: boolean | null = null;
     expect(unknown).not.toBe(false);
+  });
+});
+
+describe("Location Intelligence V2 500-location rollout", () => {
+  it("keeps every 20-location batch balanced across the tri-state target mix", () => {
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS).toEqual([
+      { state: "NY", locationType: "restaurant", count: 9 },
+      { state: "NY", locationType: "activity", count: 5 },
+      { state: "NJ", locationType: "restaurant", count: 2 },
+      { state: "NJ", locationType: "activity", count: 2 },
+      { state: "CT", locationType: "restaurant", count: 1 },
+      { state: "CT", locationType: "activity", count: 1 },
+    ]);
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS.reduce((sum, row) => sum + row.count, 0)).toBe(20);
+    expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS.reduce((sum, row) => sum + row.count, 0)).toBe(500);
+  });
+
+  it("targets canonical business-profile gaps instead of complete records", () => {
+    expect(rolloutGapFields({
+      google_place_id: "place-1",
+      phone: null,
+      website: "",
+      operating_hours: null,
+      primary_category: "restaurant",
+      description: null,
+      main_image: "https://example.com/image.jpg",
+      rating: 4.7,
+      review_count: 42,
+    })).toEqual(["phone", "website", "operating_hours", "description"]);
+  });
+
+  it("fills failed rollout cells without drifting the 500-success cohort", () => {
+    const quotas = nextRolloutQuotas({
+      successful: 499,
+      successfulByCell: {
+        "NY:restaurant": 225,
+        "NY:activity": 125,
+        "NJ:restaurant": 50,
+        "NJ:activity": 50,
+        "CT:restaurant": 25,
+        "CT:activity": 24,
+      },
+    });
+    expect(quotas).toEqual([{ state: "CT", locationType: "activity", count: 1 }]);
   });
 });
 
