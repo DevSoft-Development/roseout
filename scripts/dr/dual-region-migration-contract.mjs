@@ -25,8 +25,14 @@ for (const marker of [
   "Require healthy DR after migration",
   "toh_dual_region_migration_ledger",
   "alter subscription $EXPECTED_SUBSCRIPTION refresh publication",
+  "-- toh:replicated-dml-reviewed",
 ]) {
   if (!migrationWorkflow.includes(marker)) throw new Error(`Dual-region migration workflow missing marker: ${marker}`);
+}
+
+const standbyGuardCount = (migrationWorkflow.match(/set local session_replication_role = replica/g) || []).length;
+if (standbyGuardCount < 2) {
+  throw new Error("Oregon migration preflight and deploy must suppress origin triggers while the standby subscription is attached.");
 }
 
 const oregonApply = migrationWorkflow.indexOf('apply_one "$OREGON_REF"');
