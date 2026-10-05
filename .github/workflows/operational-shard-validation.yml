@@ -11,7 +11,14 @@ on:
       - 'lib/admin/credential-runtime-inventory.ts'
       - 'supabase/migrations/*operational_shard*.sql'
       - 'scripts/operational-sharding-regression.mjs'
+      - 'scripts/operational-shard-rebalance.mjs'
+      - 'scripts/operational-shard-isolation-proof.mjs'
       - 'scripts/validate-operational-shards.mjs'
+      - 'infra/supabase/operational-shards/**'
+      - '.github/workflows/operational-shard-dr-replication.yml'
+      - '.github/workflows/operational-shard-failover.yml'
+      - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   push:
     branches: [main]
@@ -23,7 +30,14 @@ on:
       - 'lib/admin/credential-runtime-inventory.ts'
       - 'supabase/migrations/*operational_shard*.sql'
       - 'scripts/operational-sharding-regression.mjs'
+      - 'scripts/operational-shard-rebalance.mjs'
+      - 'scripts/operational-shard-isolation-proof.mjs'
       - 'scripts/validate-operational-shards.mjs'
+      - 'infra/supabase/operational-shards/**'
+      - '.github/workflows/operational-shard-dr-replication.yml'
+      - '.github/workflows/operational-shard-failover.yml'
+      - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   workflow_dispatch:
     inputs:
@@ -36,7 +50,7 @@ on:
       expected_shards:
         description: Comma-separated operational shard ids
         required: true
-        default: shard-01,shard-02
+        default: shard-01,shard-01-dr,shard-02,shard-02-dr
         type: string
 
 permissions:
@@ -53,6 +67,10 @@ jobs:
         run: node scripts/operational-sharding-regression.mjs
       - name: Validate shard-aware POS payment invariants
         run: node scripts/pos-payment-service-regression.mjs
+      - name: Validate shard operator script syntax
+        run: |
+          node --check scripts/operational-shard-rebalance.mjs
+          node --check scripts/operational-shard-isolation-proof.mjs
 
   live-multi-shard:
     name: Live multi-shard probe

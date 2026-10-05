@@ -9,6 +9,7 @@
 -- public.reserve_staff_profiles
 -- public.layout_items
 -- public.reservation_seating_resources
+-- public.reservation_resource_assignments
 --
 -- Required POS V1 tables:
 -- public.pos_checks

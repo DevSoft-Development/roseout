@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getOperationalShardClientForLocation } from "@/lib/operational-shards";
+import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
 import type { PosPaymentIntent } from "@/lib/pos/payments/contracts";
 import { getStripeModeForLocation } from "@/lib/stripe/server";
@@ -29,7 +29,8 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
   if (!connectedAccountId) throw new Error("pos_stripe_connect_not_configured");
   if (input.location.stripe_connect_charges_enabled !== true) throw new Error("pos_stripe_connect_charges_not_enabled");
 
-  const shardClient = getOperationalShardClientForLocation(input.location, "write");
+  const shard = await resolveOperationalShardForLocationId(locationId, { mode: "write" });
+  const shardClient = shard.client;
 
   const tipCents = Number(input.tipCents || 0);
   if (!Number.isInteger(tipCents) || tipCents < 0) throw new Error("invalid_pos_tip_amount");
@@ -66,6 +67,10 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       metadata: {
         tender_id: tender.tender_id,
         tender_number: tender.tender_number,
+        logical_shard_id: shard.logicalShardId,
+        physical_shard_id: shard.physicalShardId,
+        routing_epoch: shard.routingEpoch,
+        assignment_epoch: shard.assignmentEpoch,
       },
     });
 
@@ -85,6 +90,10 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       metadata: {
         tender_number: tender.tender_number,
         amount_semantics: "processor_charge_total_including_tip",
+        logical_shard_id: shard.logicalShardId,
+        physical_shard_id: shard.physicalShardId,
+        routing_epoch: shard.routingEpoch,
+        assignment_epoch: shard.assignmentEpoch,
       },
     });
 
@@ -98,6 +107,12 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       tip_cents: Number(tender.tip_cents),
       charge_total_cents: Number(tender.charge_total_cents),
       currency: tender.currency,
+      routing: {
+        logical_shard_id: shard.logicalShardId,
+        physical_shard_id: shard.physicalShardId,
+        routing_epoch: shard.routingEpoch,
+        assignment_epoch: shard.assignmentEpoch,
+      },
       payment: paymentIntent,
     };
   } catch (error) {
@@ -123,6 +138,10 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
           failure: error instanceof Error ? error.message : "payment_intent_create_failed",
           provider_payment_intent_id: paymentIntent?.providerPaymentIntentId || null,
           cancellation_error: cancellationError,
+          logical_shard_id: shard.logicalShardId,
+          physical_shard_id: shard.physicalShardId,
+          routing_epoch: shard.routingEpoch,
+          assignment_epoch: shard.assignmentEpoch,
         },
       })
       .eq("id", tender.tender_id)

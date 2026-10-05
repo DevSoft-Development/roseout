@@ -12,10 +12,20 @@ on:
       - '.github/workflows/operational-shard-live-bootstrap.yml'
       - 'infra/supabase/operational-shards/**'
   workflow_dispatch:
+    inputs:
+      activate_initial_provisioning:
+        description: Explicitly activate registry writes for planned/provisioning shards after schema proof
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   id-token: write
+
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && format('operational-shard-contract-{0}-{1}', github.workflow, github.event.pull_request.number)) || 'operational-shard-control-production' }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
@@ -72,6 +82,78 @@ jobs:
           echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
           echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
 
+      - name: Apply shard schema and align physical write gates
+        run: |
+          set -euo pipefail
+          hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
+          fence_sql="$(cat infra/supabase/operational-shards/write-fence-v3.sql)"
+
+          sql_api() {
+            local ref="$1" sql="$2" out="$3" token="$SUPABASE_ACCESS_TOKEN" code
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+              --request POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN" || { cat "$out"; return 1; }
+              code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+                --request POST -H "Authorization: Bearer $SUPABASE_FALLBACK_ACCESS_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            fi
+            test "$code" -ge 200 && test "$code" -lt 300 || { cat "$out"; return 1; }
+          }
+
+          sql_api "$GLOBAL_REF" "select id,active_physical_shard_id from public.operational_shards
+            where id in ('shard-01','shard-02') order by id;" "$RUNNER_TEMP/routing-gates.json"
+          S1_ACTIVE="$(jq -r '.[] | select(.id=="shard-01") | .active_physical_shard_id' "$RUNNER_TEMP/routing-gates.json")"
+          S2_ACTIVE="$(jq -r '.[] | select(.id=="shard-02") | .active_physical_shard_id' "$RUNNER_TEMP/routing-gates.json")"
+          [[ "$S1_ACTIVE" = "shard-01" || "$S1_ACTIVE" = "shard-01-dr" ]]
+          [[ "$S2_ACTIVE" = "shard-02" || "$S2_ACTIVE" = "shard-02-dr" ]]
+
+          align_physical() {
+            local ref="$1" physical="$2" active="$3" active_reason="$4" standby_reason="$5" label="$6"
+            local frozen reason expected
+            if [ "$physical" = "$active" ]; then
+              frozen=false
+              reason="$active_reason"
+              expected=false
+            else
+              frozen=true
+              reason="$standby_reason"
+              expected=true
+            fi
+            sql_api "$ref" "update public.operational_shard_write_gate
+              set frozen=$frozen,reason='$reason',updated_at=now() where id=1;
+              select frozen from public.operational_shard_write_gate where id=1;" "$RUNNER_TEMP/$label-gate.json"
+            test "$(jq -r '.[0].frozen' "$RUNNER_TEMP/$label-gate.json")" = "$expected"
+          }
+
+          restore_authoritative_gates() {
+            local rc="$1"
+            trap - ERR
+            set +e
+            align_physical "$SHARD01_REF" shard-01 "$S1_ACTIVE" active-primary standby-primary shard01-restore
+            align_physical "$SHARD01_DR_REF" shard-01-dr "$S1_ACTIVE" active-dr standby-dr shard01dr-restore
+            align_physical "$SHARD02_REF" shard-02 "$S2_ACTIVE" active-primary standby-primary shard02-restore
+            align_physical "$SHARD02_DR_REF" shard-02-dr "$S2_ACTIVE" active-dr standby-dr shard02dr-restore
+            exit "$rc"
+          }
+          trap 'restore_authoritative_gates $?' ERR
+
+          apply_and_align() {
+            local ref="$1" label="$2" physical="$3" active="$4" active_reason="$5" standby_reason="$6"
+            sql_api "$ref" "$hardening_sql" "$RUNNER_TEMP/$label-hardening-result.json"
+            sql_api "$ref" "$fence_sql" "$RUNNER_TEMP/$label-write-fence-result.json"
+            align_physical "$ref" "$physical" "$active" "$active_reason" "$standby_reason" "$label"
+          }
+
+          apply_and_align "$SHARD01_REF" shard01 shard-01 "$S1_ACTIVE" active-primary standby-primary
+          apply_and_align "$SHARD01_DR_REF" shard01dr shard-01-dr "$S1_ACTIVE" active-dr standby-dr
+          apply_and_align "$SHARD02_REF" shard02 shard-02 "$S2_ACTIVE" active-primary standby-primary
+          apply_and_align "$SHARD02_DR_REF" shard02dr shard-02-dr "$S2_ACTIVE" active-dr standby-dr
+
+          trap - ERR
+
       - name: Resolve modern secret keys without printing them
         run: |
           set -euo pipefail
@@ -106,9 +188,9 @@ jobs:
           set -euo pipefail
           jq -n             --arg s1 "https://${SHARD01_REF}.supabase.co"             --arg s1k "$(cat "$RUNNER_TEMP/shard01-secret")"             --arg s1dr "https://${SHARD01_DR_REF}.supabase.co"             --arg s1drk "$(cat "$RUNNER_TEMP/shard01dr-secret")"             --arg s2 "https://${SHARD02_REF}.supabase.co"             --arg s2k "$(cat "$RUNNER_TEMP/shard02-secret")"             --arg s2dr "https://${SHARD02_DR_REF}.supabase.co"             --arg s2drk "$(cat "$RUNNER_TEMP/shard02dr-secret")"             '{
               "shard-01": {url:$s1,serviceRoleKey:$s1k,readEnabled:true,writeEnabled:true},
-              "shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:false},
+              "shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:true},
               "shard-02": {url:$s2,serviceRoleKey:$s2k,readEnabled:true,writeEnabled:true},
-              "shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:false}
+              "shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:true}
             }' > "$RUNNER_TEMP/operational-shards.json"
           shards="$(cat "$RUNNER_TEMP/operational-shards.json")"
           echo "::add-mask::$shards"
@@ -123,37 +205,74 @@ jobs:
             key="$(cat "$keyfile")"
             code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_checks?select=id&limit=1")"
             test "$code" = 200 || { echo "::error::${label} POS schema probe failed: HTTP ${code}"; exit 1; }
-            echo "${label}: reachable and POS schema available" >> "$GITHUB_STEP_SUMMARY"
+            assignment_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-assignment-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/reservation_resource_assignments?select=id&limit=1")"
+            test "$assignment_code" = 200 || { echo "::error::${label} reservation assignment schema probe failed: HTTP ${assignment_code}"; exit 1; }
+            echo "${label}: reachable with POS and reservation-assignment schema" >> "$GITHUB_STEP_SUMMARY"
           }
           probe "$SHARD01_REF" "$RUNNER_TEMP/shard01-secret" shard-01
           probe "$SHARD01_DR_REF" "$RUNNER_TEMP/shard01dr-secret" shard-01-dr
           probe "$SHARD02_REF" "$RUNNER_TEMP/shard02-secret" shard-02
           probe "$SHARD02_DR_REF" "$RUNNER_TEMP/shard02dr-secret" shard-02-dr
 
-      - name: Activate primary shard registry entries
+      - name: Update shard registry schema without reopening fail-closed shards
+        env:
+          ACTIVATE_INITIAL_PROVISIONING: ${{ github.event_name == 'workflow_dispatch' && inputs.activate_initial_provisioning || false }}
         run: |
           set -euo pipefail
-          sql="update public.operational_shards
-               set status='active', read_enabled=true, write_enabled=true, updated_at=now()
-               where id in ('shard-01','shard-02');
-               select id,status,read_enabled,write_enabled from public.operational_shards
-               where id in ('shard-01','shard-02') order by id;"
+          if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
+            sql="update public.operational_shards
+                 set status='active',
+                     read_enabled=true,
+                     write_enabled=true,
+                     schema_version=5,
+                     updated_at=now()
+                 where id in ('shard-01','shard-02')
+                   and status in ('planned','provisioning')
+                   and active_physical_shard_id=id
+                   and failover_state='primary'
+                   and replication_state in ('initializing','healthy');
+                 update public.operational_shards
+                 set schema_version=5,updated_at=now()
+                 where id in ('shard-01','shard-02')
+                   and not (
+                     status in ('planned','provisioning')
+                     and active_physical_shard_id=id
+                     and failover_state='primary'
+                     and replication_state in ('initializing','healthy')
+                   );
+                 select id,status,read_enabled,write_enabled,active_physical_shard_id,
+                        failover_state,replication_state,schema_version
+                 from public.operational_shards
+                 where id in ('shard-01','shard-02') order by id;"
+          else
+            sql="update public.operational_shards
+                 set schema_version=5,updated_at=now()
+                 where id in ('shard-01','shard-02');
+                 select id,status,read_enabled,write_enabled,active_physical_shard_id,
+                        failover_state,replication_state,schema_version
+                 from public.operational_shards
+                 where id in ('shard-01','shard-02') order by id;"
+          fi
           jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
           curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
-          jq -e 'length == 2 and all(.[]; .status=="active" and .read_enabled==true and .write_enabled==true)'             "$RUNNER_TEMP/activate-result.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .schema_version==5)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
+            jq -e 'all(.[]; (.status=="planned" or .status=="provisioning") | not)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          fi
 
       - name: Summary
         run: |
           {
             echo '### Operational shard bootstrap'
-            echo '- Shard 01 primary: active in us-east-1'
-            echo '- Shard 01 DR: reachable in us-west-1; write-disabled in runtime map'
-            echo '- Shard 02 primary: active in us-east-1'
-            echo '- Shard 02 DR: reachable in us-west-1; write-disabled in runtime map'
+            echo '- Both shard pairs: runtime credentials verified for primary and DR'
+            echo '- Physical write gates aligned to authoritative active routing'
+            echo '- Standby physical databases remain write-frozen'
+            echo '- Reservation seat-assignment schema present on all four physical shards'
             echo '- Server secrets persisted only in AWS Credential Vault'
-            echo '- Global routing registry activated after live POS schema proof'
+            echo '- Registry fail-closed read/write state preserved on normal pushes'
+            echo '- New registry writes activate only through explicit initial-provisioning dispatch after schema proof'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/activate*.json
+        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/*-hardening*.json "$RUNNER_TEMP"/*-write-fence*.json "$RUNNER_TEMP"/routing-gates*.json "$RUNNER_TEMP"/*-gate.json "$RUNNER_TEMP"/activate*.json

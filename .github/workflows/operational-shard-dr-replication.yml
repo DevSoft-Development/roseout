@@ -1,0 +1,204 @@
+name: Operational shard DR replication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/operational-shard-dr-replication.yml'
+      - 'infra/supabase/operational-shards/hardening-v2.sql'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/operational-shard-dr-replication.yml'
+      - 'infra/supabase/operational-shards/hardening-v2.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ (github.event_name == 'pull_request' && format('operational-shard-contract-{0}-{1}', github.workflow, github.event.pull_request.number)) || 'operational-shard-control-production' }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  DR_SECRET: /theouthaven/production/dr-reconciler/env
+  GLOBAL_REF: ftdsltatyqhtllyyefzp
+  SHARD01_REF: lyeruuzsnceaxrmdafxb
+  SHARD01_DR_REF: vcdnwrsuvhtlvxqbkamg
+  SHARD02_REF: lpcrikaixcfbqaikevlg
+  SHARD02_DR_REF: bjhcxzahgfeniitejtrx
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate replication contract
+        run: |
+          set -euo pipefail
+          grep -F 'toh_operational_dr' infra/supabase/operational-shards/hardening-v2.sql >/dev/null
+          grep -F 'openssl rand -hex 32' .github/workflows/operational-shard-dr-replication.yml >/dev/null
+          grep -F "replication_state='broken'" .github/workflows/operational-shard-dr-replication.yml >/dev/null
+          ! grep -Eq 'password[[:space:]]*:[[:space:]]*["'\''][^$]' .github/workflows/operational-shard-dr-replication.yml
+
+  configure:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Supabase management authority
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vault.json"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/vault.json")"
+          FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
+          test -n "$PRIMARY_TOKEN"
+          echo "::add-mask::$PRIMARY_TOKEN"
+          [ -z "$FALLBACK_TOKEN" ] || echo "::add-mask::$FALLBACK_TOKEN"
+          echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
+          echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Configure both replication pairs
+        run: |
+          set -euo pipefail
+
+          sql_api() {
+            local ref="$1" sql="$2" out="$3" token="$SUPABASE_ACCESS_TOKEN" code
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}'               --request POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN" || { cat "$out"; return 1; }
+              code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}'                 --request POST -H "Authorization: Bearer $SUPABASE_FALLBACK_ACCESS_TOKEN" -H 'Content-Type: application/json'                 --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            fi
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              cat "$out"
+              return 1
+            fi
+          }
+
+          hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
+          sql_api "$SHARD01_REF" "$hardening_sql" "$RUNNER_TEMP/shard01-hardening.json"
+          sql_api "$SHARD01_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard01dr-hardening.json"
+          sql_api "$SHARD02_REF" "$hardening_sql" "$RUNNER_TEMP/shard02-hardening.json"
+          sql_api "$SHARD02_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard02dr-hardening.json"
+
+          configure_pair() {
+            local logical="$1" source="$2" target="$3" role="$4" sub="$5"
+            local password conn source_sql target_check exists target_sql active_physical
+            sql_api "$GLOBAL_REF" "select active_physical_shard_id,write_enabled,routing_epoch
+              from public.operational_shards where id='$logical';" "$RUNNER_TEMP/$logical-routing.json"
+            active_physical="$(jq -r '.[0].active_physical_shard_id // empty' "$RUNNER_TEMP/$logical-routing.json")"
+            test "$active_physical" = "$logical" || {
+              echo "::error::$logical replication configuration refused because $active_physical is active."
+              return 1
+            }
+            test "$(jq -r '.[0].write_enabled // false' "$RUNNER_TEMP/$logical-routing.json")" = true
+
+            sql_api "$target" "update public.operational_shard_write_gate
+              set frozen=true,reason='standby-dr-replication',updated_at=now() where id=1;
+              select frozen from public.operational_shard_write_gate where id=1;" "$RUNNER_TEMP/$logical-standby-gate.json"
+            test "$(jq -r '.[0].frozen // false' "$RUNNER_TEMP/$logical-standby-gate.json")" = true
+
+            sql_api "$GLOBAL_REF" "update public.operational_shards
+              set replication_state='broken',last_replication_check_at=now(),updated_at=now()
+              where id='$logical';
+              select replication_state from public.operational_shards where id='$logical';" "$RUNNER_TEMP/$logical-mark-broken.json"
+            test "$(jq -r '.[0].replication_state // empty' "$RUNNER_TEMP/$logical-mark-broken.json")" = broken
+
+            password="$(openssl rand -hex 32)"
+            echo "::add-mask::$password"
+            conn="host=db.$source.supabase.co port=5432 dbname=postgres user=$role password=$password sslmode=require"
+
+            source_sql="do \$\$
+            begin
+              if not exists (select 1 from pg_roles where rolname='$role') then
+                execute 'create role $role with login replication bypassrls';
+              end if;
+            end \$\$;
+            alter role $role password '$password';
+            grant connect on database postgres to $role;
+            grant usage on schema public to $role;
+            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments to $role;
+            do \$\$
+            begin
+              if not exists (select 1 from pg_publication where pubname='toh_operational_dr') then
+                execute 'create publication toh_operational_dr for table public.locations';
+              end if;
+            end \$\$;
+            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments;"
+            sql_api "$source" "$source_sql" "$RUNNER_TEMP/$logical-source.json"
+
+            target_check="select exists(select 1 from pg_subscription where subname='$sub') as exists;"
+            sql_api "$target" "$target_check" "$RUNNER_TEMP/$logical-check.json"
+            exists="$(jq -r '.[0].exists // false' "$RUNNER_TEMP/$logical-check.json")"
+
+            if [ "$exists" = "true" ]; then
+              target_sql="alter subscription $sub connection '$conn'; alter subscription $sub enable; alter subscription $sub refresh publication with (copy_data=true);"
+            else
+              target_sql="create subscription $sub connection '$conn' publication toh_operational_dr with (copy_data=true, create_slot=true, enabled=true);"
+            fi
+            sql_api "$target" "$target_sql" "$RUNNER_TEMP/$logical-subscription.json"
+
+            ready=false
+            for attempt in $(seq 1 40); do
+              sql_api "$target" "select not exists (
+                select 1 from pg_subscription_rel r join pg_subscription s on s.oid=r.srsubid
+                where s.subname='$sub' and r.srsubstate <> 'r'
+              ) as ready;" "$RUNNER_TEMP/$logical-ready.json"
+              if [ "$(jq -r '.[0].ready // false' "$RUNNER_TEMP/$logical-ready.json")" = "true" ]; then
+                ready=true
+                break
+              fi
+              sleep 15
+            done
+            test "$ready" = "true"
+
+            sql_api "$target" "select count(*)::int as workers from pg_stat_subscription where subname='$sub';" "$RUNNER_TEMP/$logical-stat.json"
+            test "$(jq -r '.[0].workers // 0' "$RUNNER_TEMP/$logical-stat.json")" -ge 1
+
+            caught_up=false
+            lag_bytes=-1
+            for attempt in $(seq 1 40); do
+              sql_api "$target" "select latest_end_lsn::text as target_lsn from pg_stat_subscription where subname='$sub' and pid is not null;" "$RUNNER_TEMP/$logical-target-lsn.json"
+              target_lsn="$(jq -r '.[0].target_lsn // empty' "$RUNNER_TEMP/$logical-target-lsn.json")"
+              if [ -n "$target_lsn" ]; then
+                sql_api "$source" "select greatest(0,pg_wal_lsn_diff(pg_current_wal_lsn(),'$target_lsn'::pg_lsn))::bigint as lag_bytes;" "$RUNNER_TEMP/$logical-lag.json"
+                lag_bytes="$(jq -r '.[0].lag_bytes // -1' "$RUNNER_TEMP/$logical-lag.json")"
+                if [ "$lag_bytes" -ge 0 ] && [ "$lag_bytes" -le 1048576 ]; then
+                  caught_up=true
+                  break
+                fi
+              fi
+              sleep 5
+            done
+            test "$caught_up" = "true"
+
+            sql_api "$GLOBAL_REF" "update public.operational_shards
+              set replication_state='healthy',last_replication_check_at=now(),updated_at=now()
+              where id='$logical';
+              select replication_state from public.operational_shards where id='$logical';" "$RUNNER_TEMP/$logical-mark-healthy.json"
+            test "$(jq -r '.[0].replication_state // empty' "$RUNNER_TEMP/$logical-mark-healthy.json")" = healthy
+            echo "$logical replication_ready=true lag_bytes=$lag_bytes" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          configure_pair shard-01 "$SHARD01_REF" "$SHARD01_DR_REF" toh_repl_shard01 toh_shard01_dr
+          configure_pair shard-02 "$SHARD02_REF" "$SHARD02_DR_REF" toh_repl_shard02 toh_shard02_dr
+
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json
