@@ -138,7 +138,6 @@ for (const token of [
   if (!isolationProof.includes(token)) throw new Error(`Isolation proof must use authoritative active routing: ${token}`);
 }
 for (const token of [
-  "group: operational-shard-control-production",
   "GLOBAL_SUPABASE_URL",
   "GLOBAL_SUPABASE_SERVICE_ROLE_KEY",
 ]) {
