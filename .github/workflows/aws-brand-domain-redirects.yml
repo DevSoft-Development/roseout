@@ -50,7 +50,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +88,7 @@ jobs:
                 "Effect":"Allow",
                 "Action":[
                   "route53:ListHostedZones",
+                  "route53:GetHostedZone",
                   "route53:ListResourceRecordSets",
                   "route53:ChangeResourceRecordSets",
                   "route53:GetChange"
@@ -140,13 +141,69 @@ jobs:
           echo "pos_zone=$POS_ZONE" >> "$GITHUB_OUTPUT"
           echo "reserve_zone=$RESERVE_ZONE" >> "$GITHUB_OUTPUT"
 
+      - name: Verify registrar delegation
+        env:
+          POS_ZONE: ${{ steps.zones.outputs.pos_zone }}
+          RESERVE_ZONE: ${{ steps.zones.outputs.reserve_zone }}
+        run: |
+          set -euo pipefail
+          if ! command -v dig >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq dnsutils
+          fi
+
+          verify_delegation() {
+            local domain="$1" zone="$2"
+            mapfile -t expected < <(
+              aws route53 get-hosted-zone --id "$zone" --query 'DelegationSet.NameServers' --output text |
+                tr '\t' '\n' | sed '/^$/d' | tr '[:upper:]' '[:lower:]' | sort
+            )
+            mapfile -t actual < <(
+              dig +short NS "$domain" @a.gtld-servers.net |
+                sed 's/\.$//' | sed '/^$/d' | tr '[:upper:]' '[:lower:]' | sort
+            )
+
+            echo "Expected Route 53 delegation for $domain:"
+            printf '  %s\n' "${expected[@]}"
+            echo "Current .com parent delegation for $domain:"
+            if [ "${#actual[@]}" -eq 0 ]; then
+              echo "  <none>"
+              echo "::error::$domain is not delegated at the .com parent. Update the registrar nameservers to the Route 53 values printed above."
+              return 1
+            fi
+            printf '  %s\n' "${actual[@]}"
+
+            if ! diff -u <(printf '%s\n' "${expected[@]}") <(printf '%s\n' "${actual[@]}"); then
+              echo "::error::$domain registrar delegation does not match its Route 53 hosted zone."
+              return 1
+            fi
+          }
+
+          verify_delegation "$POS_DOMAIN" "$POS_ZONE"
+          verify_delegation "$RESERVE_DOMAIN" "$RESERVE_ZONE"
+
       - name: Request or reuse ACM certificate
         id: cert
         run: |
           set -euo pipefail
           ARN="$(aws acm list-certificates --certificate-statuses ISSUED PENDING_VALIDATION             --query "CertificateSummaryList[?DomainName=='$POS_DOMAIN'].CertificateArn | [0]" --output text)"
+
+          certificate_covers_all_names() {
+            local arn="$1"
+            local names
+            names="$(aws acm describe-certificate --certificate-arn "$arn" --query 'Certificate.SubjectAlternativeNames' --output text)"
+            for required in "$POS_DOMAIN" "www.$POS_DOMAIN" "$RESERVE_DOMAIN" "www.$RESERVE_DOMAIN"; do
+              grep -Fxq "$required" < <(tr '\t' '\n' <<<"$names") || return 1
+            done
+          }
+
+          if [ -n "$ARN" ] && [ "$ARN" != "None" ] && ! certificate_covers_all_names "$ARN"; then
+            echo "Existing certificate $ARN does not cover all four required names; requesting the complete certificate."
+            ARN=""
+          fi
+
           if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
-            ARN="$(aws acm request-certificate               --domain-name "$POS_DOMAIN"               --subject-alternative-names "www.$POS_DOMAIN" "$RESERVE_DOMAIN" "www.$RESERVE_DOMAIN"               --validation-method DNS               --idempotency-token tohbranddomains               --options CertificateTransparencyLoggingPreference=ENABLED               --query CertificateArn --output text)"
+            ARN="$(aws acm request-certificate               --domain-name "$POS_DOMAIN"               --subject-alternative-names "www.$POS_DOMAIN" "$RESERVE_DOMAIN" "www.$RESERVE_DOMAIN"               --validation-method DNS               --idempotency-token tohbranddomainsv2               --options CertificateTransparencyLoggingPreference=ENABLED               --query CertificateArn --output text)"
             aws acm add-tags-to-certificate --certificate-arn "$ARN"               --tags Key=Project,Value=TheOutHaven Key=Purpose,Value=BrandDomainRedirects
           fi
           echo "certificate_arn=$ARN" >> "$GITHUB_OUTPUT"
@@ -184,8 +241,21 @@ jobs:
           CERTIFICATE_ARN: ${{ steps.cert.outputs.certificate_arn }}
         run: |
           set -euo pipefail
-          aws acm wait certificate-validated --certificate-arn "$CERTIFICATE_ARN"
-          test "$(aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" --query Certificate.Status --output text)" = "ISSUED"
+          for attempt in $(seq 1 40); do
+            STATUS="$(aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" --query Certificate.Status --output text)"
+            echo "ACM status: $STATUS (attempt $attempt/40)"
+            if [ "$STATUS" = "ISSUED" ]; then
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN"                 --query 'Certificate.DomainValidationOptions[].{Domain:DomainName,Status:ValidationStatus}' --output table
+              exit 1
+            fi
+            sleep 30
+          done
+          aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN"             --query 'Certificate.DomainValidationOptions[].{Domain:DomainName,Status:ValidationStatus,Record:ResourceRecord.Name}' --output table
+          echo "::error::ACM certificate did not issue within 20 minutes after verified parent delegation."
+          exit 1
 
       - name: Create or update redirect functions
         id: functions
@@ -194,12 +264,24 @@ jobs:
           ensure_function() {
             local name="$1" target="$2" code="$RUNNER_TEMP/${name}.js"
             cat > "$code" <<EOF
+          function serializeQuery(querystring) {
+            var parts = [];
+            Object.keys(querystring || {}).forEach(function(k) {
+              var q = querystring[k];
+              var values = q.multiValue && q.multiValue.length ? q.multiValue : [q];
+              values.forEach(function(v) {
+                parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v.value || ''));
+              });
+            });
+            return parts.length ? '?' + parts.join('&') : '';
+          }
+
           function handler(event) {
             return {
               statusCode: 301,
               statusDescription: 'Moved Permanently',
               headers: {
-                location: { value: 'https://${target}' + event.request.uri + (event.request.querystring && Object.keys(event.request.querystring).length ? '?' + Object.keys(event.request.querystring).map(function(k){var q=event.request.querystring[k];return encodeURIComponent(k)+'='+encodeURIComponent(q.value || '');}).join('&') : '') },
+                location: { value: 'https://${target}' + event.request.uri + serializeQuery(event.request.querystring) },
                 'cache-control': { value: 'public, max-age=300' }
               }
             };
