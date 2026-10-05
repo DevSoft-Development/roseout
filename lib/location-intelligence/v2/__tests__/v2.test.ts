@@ -7,6 +7,7 @@ import { deriveLocationClassification } from "@/lib/location-intelligence/v2/cla
 import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrator";
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 import { safeSingleGooglePlaceId } from "@/lib/location-intelligence/v2/initial-enrichment";
+import { assertDataForSeoEnvelopeSuccess, normalizeDataForSeoLocationCoordinate } from "@/lib/location-intelligence/v2/dataforseo";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -78,6 +79,28 @@ describe("Location Intelligence V2", () => {
   it("keeps Google first for identity and DataForSEO for reviews", () => {
     expect(providersForCapability("identity")[0]?.id).toBe("google");
     expect(providersForCapability("reviews")[0]?.id).toBe("dataforseo");
+  });
+
+
+  it("normalizes DataForSEO location_coordinate radius to a numeric kilometer value", () => {
+    expect(normalizeDataForSeoLocationCoordinate("40.758,-73.9855,5km"))
+      .toBe("40.758,-73.9855,5");
+    expect(normalizeDataForSeoLocationCoordinate("40.758, -73.9855, 5"))
+      .toBe("40.758,-73.9855,5");
+    expect(() => normalizeDataForSeoLocationCoordinate("40.758,-73.9855,0km"))
+      .toThrow("dataforseo_location_coordinate_invalid");
+  });
+
+  it("rejects DataForSEO task-level API failures even when the envelope succeeds", () => {
+    expect(() => assertDataForSeoEnvelopeSuccess({
+      status_code: 20000,
+      tasks: [{ status_code: 40501, status_message: "Invalid Field" }],
+    })).toThrow("dataforseo_task_40501");
+
+    expect(() => assertDataForSeoEnvelopeSuccess({
+      status_code: 20000,
+      tasks: [{ status_code: 20000 }],
+    })).not.toThrow();
   });
 
   it("keeps SerpAPI behind Brave as a fallback web provider", () => {
