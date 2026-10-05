@@ -93,7 +93,7 @@ if (sourceLogicalShard === "primary" || targetLogicalShard === "primary" || sour
 
 const shardRows = await globalRows(
   "operational_shards",
-  `id=in.(${encodeURIComponent(sourceLogicalShard)},${encodeURIComponent(targetLogicalShard)})&select=id,active_physical_shard_id,schema_version,status,write_enabled`,
+  `id=in.(${encodeURIComponent(sourceLogicalShard)},${encodeURIComponent(targetLogicalShard)})&select=id,active_physical_shard_id,routing_epoch,schema_version,status,write_enabled`,
 );
 const registry = Object.fromEntries(shardRows.map((row) => [row.id, row]));
 const sourceRegistry = registry[sourceLogicalShard];
@@ -108,6 +108,8 @@ if (Number(sourceRegistry.schema_version) !== Number(targetRegistry.schema_versi
 
 const sourcePhysical = String(sourceRegistry.active_physical_shard_id || sourceLogicalShard);
 const targetPhysical = String(targetRegistry.active_physical_shard_id || targetLogicalShard);
+const sourceRoutingEpoch = Number(sourceRegistry.routing_epoch || 1);
+const targetRoutingEpoch = Number(targetRegistry.routing_epoch || 1);
 const source = config[sourcePhysical];
 const target = config[targetPhysical];
 if (!source?.url || !source?.serviceRoleKey || !target?.url || !target?.serviceRoleKey) {
@@ -130,6 +132,8 @@ const tables = [
   ["pos_tenders", "location_id"],
   ["pos_payments", "location_id"],
 ];
+
+const deletionOrder = [...tables].reverse();
 
 const generatedColumns = {
   pos_order_items: ["line_total_cents"],
@@ -202,6 +206,17 @@ try {
 
   await upsertFence(target, expectedEpoch + 1, false, `rebalance-target:${moveId}`);
 
+  // Replays and move-backs must start from an exact empty tenant snapshot on
+  // the target. Delete in reverse dependency order so rows removed on the
+  // active source cannot survive from an older target snapshot.
+  for (const [table, filterColumn] of deletionOrder) {
+    const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
+    await request(targetUrl, target.serviceRoleKey, `/rest/v1/${table}?${filter}`, {
+      method: "DELETE",
+      headers: { Prefer: "return=minimal" },
+    });
+  }
+
   for (const [table, filterColumn] of tables) {
     const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
     const sourceRows = await fetchAll(sourceUrl, source.serviceRoleKey, table, filter);
@@ -222,9 +237,41 @@ try {
     manifest[table] = { count: sourceRows.length, sha256: sourceHash };
   }
 
+  // Concurrency already serializes operator workflows, but revalidate the
+  // authoritative registry at the last possible moment so an out-of-band
+  // routing change also fails closed.
+  const finalShardRows = await globalRows(
+    "operational_shards",
+    `id=in.(${encodeURIComponent(sourceLogicalShard)},${encodeURIComponent(targetLogicalShard)})&select=id,active_physical_shard_id,routing_epoch,status,write_enabled`,
+  );
+  const finalRegistry = Object.fromEntries(finalShardRows.map((row) => [row.id, row]));
+  const finalSource = finalRegistry[sourceLogicalShard];
+  const finalTarget = finalRegistry[targetLogicalShard];
+  if (
+    !finalSource ||
+    !finalTarget ||
+    String(finalSource.active_physical_shard_id || sourceLogicalShard) !== sourcePhysical ||
+    String(finalTarget.active_physical_shard_id || targetLogicalShard) !== targetPhysical ||
+    Number(finalSource.routing_epoch || 1) !== sourceRoutingEpoch ||
+    Number(finalTarget.routing_epoch || 1) !== targetRoutingEpoch ||
+    finalSource.status !== "active" ||
+    finalTarget.status !== "active" ||
+    finalTarget.write_enabled !== true
+  ) {
+    throw new Error("routing_changed_during_rebalance");
+  }
+
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
     status: "cutover_ready",
-    verification: { sourcePhysical, targetPhysical, pageSize: PAGE_SIZE, sourceFence: "drained" },
+    verification: {
+      sourcePhysical,
+      targetPhysical,
+      sourceRoutingEpoch,
+      targetRoutingEpoch,
+      pageSize: PAGE_SIZE,
+      sourceFence: "drained",
+      targetSnapshot: "replaced",
+    },
     data_manifest: manifest,
   });
 
