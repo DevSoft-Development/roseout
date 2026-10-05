@@ -63,6 +63,11 @@ for (const token of [
 
 for (const token of [
   "PAGE_SIZE = 500",
+  "MAX_UPSERT_ROWS = 100",
+  "MAX_UPSERT_BYTES = 512 * 1024",
+  "writableBatches",
+  "Buffer.byteLength",
+  "row_too_large_for_rebalance",
   "fetchAll",
   "line_total_cents",
   "total_cents",
@@ -188,11 +193,24 @@ for (const token of [
   "reservation_resource_assignments",
   "restore_authoritative_gates",
   "apply_and_align",
+  "ACTIVATE_INITIAL_PROVISIONING",
+  "inputs.activate_initial_provisioning",
+  "status in ('planned','provisioning')",
+  "replication_state in ('initializing','healthy')",
 ]) {
   if (!liveBootstrap.includes(token)) throw new Error(`Missing bootstrap standby/schema invariant: ${token}`);
 }
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
+}
+if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=5")) {
+  throw new Error("Bootstrap must not unconditionally reopen fail-closed shard registry writes.");
+}
+if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {
+  throw new Error("Shard write activation must require explicit initial-provisioning intent.");
+}
+if (!rebalance.includes("for (const batch of writableBatches(table, sourceRows))")) {
+  throw new Error("Rebalance target writes must use bounded batches.");
 }
 if ((failover.match(/from public\.pos_payments p where p\.tender_id=t\.id/g) || []).length < 2) {
   throw new Error("Failover and failback drains must exclude persisted card tenders.");

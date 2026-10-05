@@ -7,6 +7,8 @@ const targetLogicalShard = String(process.env.TARGET_SHARD_ID || "");
 const expectedEpoch = Number(process.env.EXPECTED_ASSIGNMENT_EPOCH || "");
 const config = JSON.parse(String(process.env.OPERATIONAL_SHARDS_JSON || "{}"));
 const PAGE_SIZE = 500;
+const MAX_UPSERT_ROWS = 100;
+const MAX_UPSERT_BYTES = 512 * 1024;
 
 if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.isInteger(expectedEpoch) || expectedEpoch < 1) {
   throw new Error("invalid_rebalance_configuration");
@@ -159,6 +161,32 @@ const writableRows = (table, rows) =>
     return next;
   });
 
+function writableBatches(table, rows) {
+  const batches = [];
+  let batch = [];
+  let batchBytes = 2;
+  for (const row of writableRows(table, rows)) {
+    const rowJson = JSON.stringify(row);
+    const rowBytes = Buffer.byteLength(rowJson, "utf8");
+    if (rowBytes + 2 > MAX_UPSERT_BYTES) {
+      throw new Error(`row_too_large_for_rebalance:${table}`);
+    }
+    const separatorBytes = batch.length ? 1 : 0;
+    if (
+      batch.length &&
+      (batch.length >= MAX_UPSERT_ROWS || batchBytes + separatorBytes + rowBytes > MAX_UPSERT_BYTES)
+    ) {
+      batches.push(batch);
+      batch = [];
+      batchBytes = 2;
+    }
+    batch.push(row);
+    batchBytes += (batch.length > 1 ? 1 : 0) + rowBytes;
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
+}
+
 const canonicalHash = (rows) =>
   createHash("sha256")
     .update(JSON.stringify([...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))))
@@ -250,11 +278,13 @@ try {
     const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
     const sourceRows = await fetchAll(sourceUrl, source.serviceRoleKey, table, filter);
     if (sourceRows.length) {
-      await targetMutation(`/rest/v1/${table}?on_conflict=id`, {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify(writableRows(table, sourceRows)),
-      });
+      for (const batch of writableBatches(table, sourceRows)) {
+        await targetMutation(`/rest/v1/${table}?on_conflict=id`, {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(batch),
+        });
+      }
     }
 
     const targetRows = await fetchAll(targetUrl, target.serviceRoleKey, table, filter);
@@ -298,6 +328,8 @@ try {
       sourceRoutingEpoch,
       targetRoutingEpoch,
       pageSize: PAGE_SIZE,
+      maxUpsertRows: MAX_UPSERT_ROWS,
+      maxUpsertBytes: MAX_UPSERT_BYTES,
       sourceFence: "drained",
       targetSnapshot: "replaced",
     },

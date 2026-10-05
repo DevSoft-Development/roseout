@@ -12,6 +12,12 @@ on:
       - '.github/workflows/operational-shard-live-bootstrap.yml'
       - 'infra/supabase/operational-shards/**'
   workflow_dispatch:
+    inputs:
+      activate_initial_provisioning:
+        description: Explicitly activate registry writes for planned/provisioning shards after schema proof
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -208,17 +214,51 @@ jobs:
           probe "$SHARD02_REF" "$RUNNER_TEMP/shard02-secret" shard-02
           probe "$SHARD02_DR_REF" "$RUNNER_TEMP/shard02dr-secret" shard-02-dr
 
-      - name: Activate shard registry entries
+      - name: Update shard registry schema without reopening fail-closed shards
+        env:
+          ACTIVATE_INITIAL_PROVISIONING: ${{ github.event_name == 'workflow_dispatch' && inputs.activate_initial_provisioning || false }}
         run: |
           set -euo pipefail
-          sql="update public.operational_shards
-               set status='active', read_enabled=true, write_enabled=true, schema_version=5, updated_at=now()
-               where id in ('shard-01','shard-02');
-               select id,status,read_enabled,write_enabled,schema_version from public.operational_shards
-               where id in ('shard-01','shard-02') order by id;"
+          if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
+            sql="update public.operational_shards
+                 set status='active',
+                     read_enabled=true,
+                     write_enabled=true,
+                     schema_version=5,
+                     updated_at=now()
+                 where id in ('shard-01','shard-02')
+                   and status in ('planned','provisioning')
+                   and active_physical_shard_id=id
+                   and failover_state='primary'
+                   and replication_state in ('initializing','healthy');
+                 update public.operational_shards
+                 set schema_version=5,updated_at=now()
+                 where id in ('shard-01','shard-02')
+                   and not (
+                     status in ('planned','provisioning')
+                     and active_physical_shard_id=id
+                     and failover_state='primary'
+                     and replication_state in ('initializing','healthy')
+                   );
+                 select id,status,read_enabled,write_enabled,active_physical_shard_id,
+                        failover_state,replication_state,schema_version
+                 from public.operational_shards
+                 where id in ('shard-01','shard-02') order by id;"
+          else
+            sql="update public.operational_shards
+                 set schema_version=5,updated_at=now()
+                 where id in ('shard-01','shard-02');
+                 select id,status,read_enabled,write_enabled,active_physical_shard_id,
+                        failover_state,replication_state,schema_version
+                 from public.operational_shards
+                 where id in ('shard-01','shard-02') order by id;"
+          fi
           jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
           curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
-          jq -e 'length == 2 and all(.[]; .status=="active" and .read_enabled==true and .write_enabled==true and .schema_version==5)'             "$RUNNER_TEMP/activate-result.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .schema_version==5)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
+            jq -e 'all(.[]; (.status=="planned" or .status=="provisioning") | not)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          fi
 
       - name: Summary
         run: |
@@ -229,7 +269,8 @@ jobs:
             echo '- Standby physical databases remain write-frozen'
             echo '- Reservation seat-assignment schema present on all four physical shards'
             echo '- Server secrets persisted only in AWS Credential Vault'
-            echo '- Global routing registry activated after live POS schema proof'
+            echo '- Registry fail-closed read/write state preserved on normal pushes'
+            echo '- New registry writes activate only through explicit initial-provisioning dispatch after schema proof'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
