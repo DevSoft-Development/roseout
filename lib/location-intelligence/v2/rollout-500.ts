@@ -6,7 +6,8 @@ import { recentGoogleCanonicalReuse } from "@/lib/location-intelligence/v2/polic
 
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_ID = "controlled_500_v1";
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_LIMIT = 500;
-export const LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE = 20;
+export const LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE = 50;
+export const LOCATION_INTELLIGENCE_V2_ROLLOUT_CONCURRENCY = 5;
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_LEASE_SECONDS = 900;
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_STALE_RESERVED_SECONDS = 1200;
 
@@ -69,12 +70,12 @@ export const LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS: readonly RolloutQuot
 ];
 
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS: readonly RolloutQuota[] = [
-  { state: "NY", locationType: "restaurant", count: 9 },
-  { state: "NY", locationType: "activity", count: 5 },
-  { state: "NJ", locationType: "restaurant", count: 2 },
-  { state: "NJ", locationType: "activity", count: 2 },
-  { state: "CT", locationType: "restaurant", count: 1 },
-  { state: "CT", locationType: "activity", count: 1 },
+  { state: "NY", locationType: "restaurant", count: 23 },
+  { state: "NY", locationType: "activity", count: 12 },
+  { state: "NJ", locationType: "restaurant", count: 5 },
+  { state: "NJ", locationType: "activity", count: 5 },
+  { state: "CT", locationType: "restaurant", count: 3 },
+  { state: "CT", locationType: "activity", count: 2 },
 ];
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -418,8 +419,11 @@ async function runLockedBatch() {
   const failures: Array<{ locationId: string; error: string }> = [];
   const improvements: Array<{ locationId: string; changedFields: string[]; filledFields: string[] }> = [];
 
-  for (let i = 0; i < selected.length; i += 2) {
-    await Promise.all(selected.slice(i, i + 2).map(async (candidate) => {
+  for (let i = 0; i < selected.length; i += LOCATION_INTELLIGENCE_V2_ROLLOUT_CONCURRENCY) {
+    await Promise.all(
+      selected
+        .slice(i, i + LOCATION_INTELLIGENCE_V2_ROLLOUT_CONCURRENCY)
+        .map(async (candidate) => {
       const before = await readCanonical(candidate.id);
       await markResult(candidate.id, "reserved", { gaps_before: rolloutGapFields(before) });
       try {
@@ -458,7 +462,8 @@ async function runLockedBatch() {
         failures.push({ locationId: candidate.id, error: message });
         await markResult(candidate.id, "failed", { error: message, gaps_before: rolloutGapFields(before) });
       }
-    }));
+        }),
+    );
   }
 
   const progressAfter = await rolloutProgress();
