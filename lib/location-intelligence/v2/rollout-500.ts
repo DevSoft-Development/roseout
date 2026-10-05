@@ -62,6 +62,15 @@ export const LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS: readonly RolloutQuot
   { state: "CT", locationType: "activity", count: 25 },
 ];
 
+export const LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS: readonly RolloutQuota[] = [
+  { state: "NY", locationType: "restaurant", count: 9 },
+  { state: "NY", locationType: "activity", count: 5 },
+  { state: "NJ", locationType: "restaurant", count: 2 },
+  { state: "NJ", locationType: "activity", count: 2 },
+  { state: "CT", locationType: "restaurant", count: 1 },
+  { state: "CT", locationType: "activity", count: 1 },
+];
+
 function asObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? { ...(value as Record<string, unknown>) }
@@ -144,19 +153,48 @@ async function rolloutProgress() {
 }
 
 export function nextRolloutQuotas(progress: { successful: number; successfulByCell: Record<string, number> }) {
-  let slots = Math.min(
+  const totalSlots = Math.min(
     LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE,
     Math.max(0, LOCATION_INTELLIGENCE_V2_ROLLOUT_LIMIT - progress.successful),
   );
+  let slots = totalSlots;
   const quotas: RolloutQuota[] = [];
-  for (const target of LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS) {
+
+  const append = (quota: RolloutQuota, count: number) => {
+    if (count <= 0) return;
+    const existing = quotas.find(
+      (row) => row.state === quota.state && row.locationType === quota.locationType,
+    );
+    if (existing) existing.count += count;
+    else quotas.push({ ...quota, count });
+  };
+
+  for (const planned of LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS) {
     if (slots <= 0) break;
-    const current = progress.successfulByCell[rolloutCellKey(target.state, target.locationType)] || 0;
-    const deficit = Math.max(0, target.count - current);
-    const take = Math.min(deficit, slots);
-    if (take > 0) quotas.push({ ...target, count: take });
+    const target = LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS.find(
+      (row) => row.state === planned.state && row.locationType === planned.locationType,
+    );
+    const current = progress.successfulByCell[rolloutCellKey(planned.state, planned.locationType)] || 0;
+    const deficit = Math.max(0, Number(target?.count || 0) - current);
+    const take = Math.min(planned.count, deficit, slots);
+    append(planned, take);
     slots -= take;
   }
+
+  if (slots > 0) {
+    for (const target of LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS) {
+      if (slots <= 0) break;
+      const current = progress.successfulByCell[rolloutCellKey(target.state, target.locationType)] || 0;
+      const alreadyAllocated = quotas.find(
+        (row) => row.state === target.state && row.locationType === target.locationType,
+      )?.count || 0;
+      const deficit = Math.max(0, target.count - current - alreadyAllocated);
+      const take = Math.min(deficit, slots);
+      append(target, take);
+      slots -= take;
+    }
+  }
+
   return quotas;
 }
 
@@ -171,7 +209,6 @@ async function readCandidates(state: RolloutState, locationType: RolloutLocation
       .eq("location_type", locationType)
       .eq("is_searchable", true)
       .is("deleted_at", null)
-      .neq("duplicate_status", "duplicate")
       .order("popularity_score", { ascending: false, nullsFirst: false })
       .order("id", { ascending: true })
       .range(offset, offset + pageSize - 1);
@@ -216,6 +253,7 @@ async function eligibleCandidates() {
     if (profile?.lastInitial || marker(profile?.provenance)) return [];
 
     const candidate = row as unknown as RolloutCandidate;
+    if (candidate.duplicate_status === "duplicate") return [];
     if (rolloutGapFields(candidate).length === 0) return [];
     return [candidate];
   });
