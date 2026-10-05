@@ -224,15 +224,29 @@ jobs:
               update public.operational_shard_write_gate set frozen=false,reason='active-dr',updated_at=now() where id=1;" "$RUNNER_TEMP/disable.json"
             SUB_DISABLED=true
 
-            sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
-              (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status,replication_lag_bytes)
-              values ('$SHARD_ID','$SHARD_ID','$DR_ID',$EXPECTED_EPOCH,$((EXPECTED_EPOCH+1)),'promote_dr','completed',$LAG_BYTES);
-              update public.operational_shards set active_physical_shard_id='$DR_ID',
-                routing_epoch=routing_epoch+1, write_enabled=true, failover_state='dr', replication_state='disabled',
-                last_failover_at=now(), updated_at=now()
-              where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$SHARD_ID';
-              select id,active_physical_shard_id,routing_epoch,write_enabled from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/cutover.json"
+            sql_api "$GLOBAL_REF" "with moved as (
+                update public.operational_shards
+                   set active_physical_shard_id='$DR_ID',
+                       routing_epoch=routing_epoch+1,
+                       write_enabled=true,
+                       failover_state='dr',
+                       replication_state='disabled',
+                       last_failover_at=now(),
+                       updated_at=now()
+                 where id='$SHARD_ID'
+                   and routing_epoch=$EXPECTED_EPOCH
+                   and active_physical_shard_id='$SHARD_ID'
+                   and write_enabled=false
+                returning id,routing_epoch
+              )
+              insert into public.operational_shard_failover_events
+                (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status,replication_lag_bytes)
+              select '$SHARD_ID','$SHARD_ID','$DR_ID',$EXPECTED_EPOCH,routing_epoch,'promote_dr','completed',$LAG_BYTES
+                from moved;
+              select id,active_physical_shard_id,routing_epoch,write_enabled
+                from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/cutover.json"
             test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/cutover.json")" = "$DR_ID"
+            test "$(jq -r '.[0].routing_epoch' "$RUNNER_TEMP/cutover.json")" = "$((EXPECTED_EPOCH+1))"
             test "$(jq -r '.[0].write_enabled' "$RUNNER_TEMP/cutover.json")" = true
             CUTOVER_DONE=true
           else
@@ -265,13 +279,30 @@ jobs:
               set frozen=false,reason='active-primary',updated_at=now() where id=1;" "$RUNNER_TEMP/primary-unfreeze.json"
             PRIMARY_OPENED=true
 
-            sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
-              (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status)
-              values ('$SHARD_ID','$DR_ID','$SHARD_ID',$EXPECTED_EPOCH,$((EXPECTED_EPOCH+1)),'failback_primary','completed');
-              update public.operational_shards set active_physical_shard_id='$SHARD_ID',
-                routing_epoch=routing_epoch+1, write_enabled=true, failover_state='primary', replication_state='initializing',
-                last_failover_at=now(), updated_at=now()
-              where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$DR_ID';" "$RUNNER_TEMP/restore.json"
+            sql_api "$GLOBAL_REF" "with moved as (
+                update public.operational_shards
+                   set active_physical_shard_id='$SHARD_ID',
+                       routing_epoch=routing_epoch+1,
+                       write_enabled=true,
+                       failover_state='primary',
+                       replication_state='initializing',
+                       last_failover_at=now(),
+                       updated_at=now()
+                 where id='$SHARD_ID'
+                   and routing_epoch=$EXPECTED_EPOCH
+                   and active_physical_shard_id='$DR_ID'
+                   and write_enabled=false
+                returning id,routing_epoch
+              )
+              insert into public.operational_shard_failover_events
+                (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status)
+              select '$SHARD_ID','$DR_ID','$SHARD_ID',$EXPECTED_EPOCH,routing_epoch,'failback_primary','completed'
+                from moved;
+              select id,active_physical_shard_id,routing_epoch,write_enabled
+                from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/restore.json"
+            test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/restore.json")" = "$SHARD_ID"
+            test "$(jq -r '.[0].routing_epoch' "$RUNNER_TEMP/restore.json")" = "$((EXPECTED_EPOCH+1))"
+            test "$(jq -r '.[0].write_enabled' "$RUNNER_TEMP/restore.json")" = true
             CUTOVER_DONE=true
           fi
 
