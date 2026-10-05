@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { coveragePriority } from "@/lib/location-intelligence/v2/coverage";
-import { allowPaidProviderExecution, reviewRefreshCadenceDays } from "@/lib/location-intelligence/v2/policy";
+import {
+  GOOGLE_BOOTSTRAP_FRESHNESS_DAYS,
+  allowPaidProviderExecution,
+  isRecentGoogleEnrichment,
+  paidBusinessProfileGaps,
+  recentGoogleCanonicalReuse,
+  reviewRefreshCadenceDays,
+} from "@/lib/location-intelligence/v2/policy";
 import { computeSearchV3Readiness } from "@/lib/location-intelligence/v2/readiness";
 import { providersForCapability } from "@/lib/location-intelligence/v2/providers";
 import { deriveLocationClassification } from "@/lib/location-intelligence/v2/classification";
