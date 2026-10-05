@@ -1,0 +1,142 @@
+name: Operational shard live bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
+      - 'infra/supabase/operational-shards/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
+      - 'infra/supabase/operational-shards/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  GLOBAL_REF: ftdsltatyqhtllyyefzp
+  SHARD01_REF: lyeruuzsnceaxrmdafxb
+  SHARD01_DR_REF: vcdnwrsuvhtlvxqbkamg
+  SHARD02_REF: lpcrikaixcfbqaikevlg
+  SHARD02_DR_REF: bjhcxzahgfeniitejtrx
+
+jobs:
+  validate:
+    name: Validate shard bootstrap contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate project map and secret handling
+        run: |
+          set -euo pipefail
+          node scripts/operational-sharding-regression.mjs
+          grep -F 'api-keys?reveal=true' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
+          grep -F 'operationalShardsJson' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
+          ! grep -Eq 'sb_secret_[A-Za-z0-9_-]+' .github/workflows/operational-shard-live-bootstrap.yml
+          ! grep -Eq 'service_role_key[[:space:]]*:' infra/supabase/operational-shards/bootstrap.sql
+
+  bootstrap:
+    name: Bootstrap live operational shards
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Supabase management token
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
+          TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          test -n "$TOKEN" || { echo "::error::Supabase management token is unavailable in Credential Vault."; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "SUPABASE_ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Resolve modern secret keys without printing them
+        run: |
+          set -euo pipefail
+          resolve() {
+            local ref="$1" name="$2"
+            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/${name}-keys.json"
+            secret="$(jq -r '[.[] | select(.type=="secret" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${name}-keys.json")"
+            test -n "$secret" || { echo "::error::No active modern secret key found for ${name} (${ref})."; exit 1; }
+            [[ "$secret" == sb_secret_* ]]
+            echo "::add-mask::$secret"
+            printf '%s' "$secret" > "$RUNNER_TEMP/${name}-secret"
+          }
+          resolve "$SHARD01_REF" shard01
+          resolve "$SHARD01_DR_REF" shard01dr
+          resolve "$SHARD02_REF" shard02
+          resolve "$SHARD02_DR_REF" shard02dr
+
+      - name: Build and persist operational shard credential map
+        run: |
+          set -euo pipefail
+          jq -n             --arg s1 "https://${SHARD01_REF}.supabase.co"             --arg s1k "$(cat "$RUNNER_TEMP/shard01-secret")"             --arg s1dr "https://${SHARD01_DR_REF}.supabase.co"             --arg s1drk "$(cat "$RUNNER_TEMP/shard01dr-secret")"             --arg s2 "https://${SHARD02_REF}.supabase.co"             --arg s2k "$(cat "$RUNNER_TEMP/shard02-secret")"             --arg s2dr "https://${SHARD02_DR_REF}.supabase.co"             --arg s2drk "$(cat "$RUNNER_TEMP/shard02dr-secret")"             '{
+              "shard-01": {url:$s1,serviceRoleKey:$s1k,readEnabled:true,writeEnabled:true},
+              "shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:false},
+              "shard-02": {url:$s2,serviceRoleKey:$s2k,readEnabled:true,writeEnabled:true},
+              "shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:false}
+            }' > "$RUNNER_TEMP/operational-shards.json"
+          shards="$(cat "$RUNNER_TEMP/operational-shards.json")"
+          echo "::add-mask::$shards"
+          jq --arg shards "$shards" '.operationalShardsJson=$shards'             "$RUNNER_TEMP/supabase-vault.json" > "$RUNNER_TEMP/supabase-vault-next.json"
+          aws secretsmanager put-secret-value             --secret-id "$SUPABASE_VAULT_SECRET"             --secret-string "file://$RUNNER_TEMP/supabase-vault-next.json" >/dev/null
+
+      - name: Verify all four shard APIs and POS schema
+        run: |
+          set -euo pipefail
+          probe() {
+            local ref="$1" keyfile="$2" label="$3"
+            key="$(cat "$keyfile")"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_checks?select=id&limit=1")"
+            test "$code" = 200 || { echo "::error::${label} POS schema probe failed: HTTP ${code}"; exit 1; }
+            echo "${label}: reachable and POS schema available" >> "$GITHUB_STEP_SUMMARY"
+          }
+          probe "$SHARD01_REF" "$RUNNER_TEMP/shard01-secret" shard-01
+          probe "$SHARD01_DR_REF" "$RUNNER_TEMP/shard01dr-secret" shard-01-dr
+          probe "$SHARD02_REF" "$RUNNER_TEMP/shard02-secret" shard-02
+          probe "$SHARD02_DR_REF" "$RUNNER_TEMP/shard02dr-secret" shard-02-dr
+
+      - name: Activate primary shard registry entries
+        run: |
+          set -euo pipefail
+          sql="update public.operational_shards
+               set status='active', read_enabled=true, write_enabled=true, updated_at=now()
+               where id in ('shard-01','shard-02');
+               select id,status,read_enabled,write_enabled from public.operational_shards
+               where id in ('shard-01','shard-02') order by id;"
+          jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
+          curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
+          jq -e 'length == 2 and all(.[]; .status=="active" and .read_enabled==true and .write_enabled==true)'             "$RUNNER_TEMP/activate-result.json" >/dev/null
+
+      - name: Summary
+        run: |
+          {
+            echo '### Operational shard bootstrap'
+            echo '- Shard 01 primary: active in us-east-1'
+            echo '- Shard 01 DR: reachable in us-west-1; write-disabled in runtime map'
+            echo '- Shard 02 primary: active in us-east-1'
+            echo '- Shard 02 DR: reachable in us-west-1; write-disabled in runtime map'
+            echo '- Server secrets persisted only in AWS Credential Vault'
+            echo '- Global routing registry activated after live POS schema proof'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/activate*.json
