@@ -92,7 +92,7 @@ jobs:
           test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing staging secret NEXT_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
           test -n "$TURNSTILE_SITE_KEY" || { echo "::error::Missing staging Turnstile site key"; exit 1; }
       - name: Login to Azure with GitHub OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
