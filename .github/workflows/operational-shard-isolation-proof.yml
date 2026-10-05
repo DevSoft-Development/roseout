@@ -1,0 +1,52 @@
+name: Operational shard isolation proof
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/operational-shard-isolation-proof.mjs'
+      - '.github/workflows/operational-shard-isolation-proof.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/operational-shard-isolation-proof.mjs'
+      - '.github/workflows/operational-shard-isolation-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --check scripts/operational-shard-isolation-proof.mjs
+  live:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load shard map
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/vault.json"
+          SHARDS="$(jq -r '.operationalShardsJson // empty' "$RUNNER_TEMP/vault.json")"
+          test -n "$SHARDS"
+          echo "::add-mask::$SHARDS"
+          {
+            echo 'OPERATIONAL_SHARDS_JSON<<TOH_SHARDS'
+            printf '%s\n' "$SHARDS"
+            echo 'TOH_SHARDS'
+          } >> "$GITHUB_ENV"
+      - run: node scripts/operational-shard-isolation-proof.mjs
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/vault.json"
