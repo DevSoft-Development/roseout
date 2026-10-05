@@ -45,6 +45,17 @@ begin
     raise exception 'pos_check_not_payable';
   end if;
 
+  if exists (
+    select 1
+      from public.pos_tenders
+     where check_id = p_check_id
+       and location_id = p_location_id
+       and tender_type = 'card'
+       and status = 'initiated'
+  ) then
+    raise exception 'pos_payment_in_progress';
+  end if;
+
   select coalesce(sum(greatest(0, amount_cents - amount_refunded_cents)), 0)
     into v_net_paid
     from public.pos_tenders
