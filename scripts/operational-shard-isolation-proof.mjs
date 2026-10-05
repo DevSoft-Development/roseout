@@ -28,7 +28,7 @@ const s1 = config["shard-01"];
 const s2 = config["shard-02"];
 
 async function create(shard, ids, logical) {
-  await call(shard, "/rest/v1/locations", { method: "POST", body: JSON.stringify({ id: ids.location, operational_shard_id: logical }) });
+  await call(shard, "/rest/v1/locations", { method: "POST", body: JSON.stringify({ id: ids.location, location_type: "restaurant", operational_shard_id: logical }) });
   await call(shard, "/rest/v1/pos_checks", { method: "POST", body: JSON.stringify({ id: ids.check, location_id: ids.location }) });
   await call(shard, "/rest/v1/pos_orders", { method: "POST", body: JSON.stringify({ id: ids.order, location_id: ids.location, check_id: ids.check }) });
 }
