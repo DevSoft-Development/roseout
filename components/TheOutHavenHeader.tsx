@@ -167,7 +167,7 @@ export default function TheOutHavenHeader() {
           aria-label="TheOutHaven home"
         >
           <Image
-            src="/toh_logo_wordmark_white.webp"
+            src="/api/brand/theouthaven-logo?v=2"
             alt="TheOutHaven"
             width={600}
             height={200}

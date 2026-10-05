@@ -9,7 +9,7 @@ const LOGO_FILE = "toh_logo_wordmark_white.webp";
 async function readLogo() {
   const candidates = [
     path.join(process.cwd(), "public", LOGO_FILE),
-    path.join(process.cwd(), "apps", "admin", "public", LOGO_FILE),
+    path.join(process.cwd(), "apps", "consumer", "public", LOGO_FILE),
   ];
 
   let lastError: unknown;

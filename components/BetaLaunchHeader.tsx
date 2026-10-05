@@ -11,7 +11,7 @@ export default function BetaLaunchHeader({ launchListHref = "#launch-list" }: Be
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4" aria-label="Prelaunch header">
         <Link href="/" className="flex min-w-0 items-center" aria-label="TheOutHaven home">
           <Image
-            src="/toh_logo_wordmark_white.webp"
+            src="/api/brand/theouthaven-logo?v=2"
             alt="TheOutHaven"
             width={600}
             height={200}
