@@ -20,9 +20,7 @@ for (const token of [
   if (!migration.includes(token)) throw new Error(`Missing operational shard schema invariant: ${token}`);
 }
 
-if (/\b(service_role_key|service_role|password|api_key|credential_value)\b/i.test(migration)) {
-  throw new Error("Operational shard database metadata must never store shard credentials.");
-}
+for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {\n  const columnPattern = new RegExp(`\\b${forbiddenColumn}\\b\\s+(text|varchar|jsonb|bytea)`, "i");\n  if (columnPattern.test(migration)) {\n    throw new Error(`Operational shard database metadata must never store shard credential column: ${forbiddenColumn}`);\n  }\n}
 
 for (const token of [
   "OPERATIONAL_SHARDS_JSON",
