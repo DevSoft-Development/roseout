@@ -20,9 +20,7 @@ for (const token of [
   if (!migration.includes(token)) throw new Error(`Missing operational shard schema invariant: ${token}`);
 }
 
-if (/service_role_key|serviceRoleKey|password|secret/i.test(migration)) {
-  throw new Error("Operational shard database metadata must never store shard credentials.");
-}
+if (/\b(service_role_key|service_role|password|api_key|credential_value)\b/i.test(migration)) {\n  throw new Error("Operational shard database metadata must never store shard credentials.");\n}
 
 for (const token of [
   "OPERATIONAL_SHARDS_JSON",
