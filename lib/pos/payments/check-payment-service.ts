@@ -2,6 +2,7 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
+import type { PosPaymentIntent } from "@/lib/pos/payments/contracts";
 import { getStripeModeForLocation } from "@/lib/stripe/server";
 
 type BeginTenderRow = {
@@ -48,9 +49,10 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
   });
 
   const idempotencyKey = `pos-check-${input.checkId}-tender-${tender.tender_number}`;
+  let paymentIntent: PosPaymentIntent | null = null;
 
   try {
-    const paymentIntent = await provider.createPaymentIntent({
+    paymentIntent = await provider.createPaymentIntent({
       locationId,
       connectedAccountId,
       checkId: input.checkId,
@@ -80,6 +82,7 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       payment_method_type: "card_present",
       metadata: {
         tender_number: tender.tender_number,
+        amount_semantics: "processor_charge_total_including_tip",
       },
     });
 
@@ -96,15 +99,36 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       payment: paymentIntent,
     };
   } catch (error) {
+    let cancellationError: string | null = null;
+    if (paymentIntent) {
+      try {
+        await provider.cancelPaymentIntent({
+          connectedAccountId,
+          providerPaymentIntentId: paymentIntent.providerPaymentIntentId,
+          reason: "abandoned",
+        });
+      } catch (cancelError) {
+        cancellationError = cancelError instanceof Error ? cancelError.message : "pos_payment_intent_cancel_failed";
+      }
+    }
+
     await supabaseAdmin
       .from("pos_tenders")
       .update({
         status: "voided",
         voided_at: new Date().toISOString(),
-        metadata: { failure: error instanceof Error ? error.message : "payment_intent_create_failed" },
+        metadata: {
+          failure: error instanceof Error ? error.message : "payment_intent_create_failed",
+          provider_payment_intent_id: paymentIntent?.providerPaymentIntentId || null,
+          cancellation_error: cancellationError,
+        },
       })
       .eq("id", tender.tender_id)
       .eq("status", "initiated");
+
+    if (cancellationError) {
+      throw new Error("pos_payment_persistence_failed_cancel_unconfirmed");
+    }
     throw error;
   }
 }
