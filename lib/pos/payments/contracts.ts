@@ -33,6 +33,12 @@ export type CreatePosPaymentIntentInput = {
   metadata?: Record<string, string | number | boolean | null | undefined>;
 };
 
+export type CancelPosPaymentIntentInput = {
+  connectedAccountId: string;
+  providerPaymentIntentId: string;
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "abandoned";
+};
+
 export type PosPaymentIntent = {
   provider: PosPaymentProviderId;
   providerPaymentIntentId: string;
@@ -46,4 +52,5 @@ export type PosPaymentIntent = {
 export interface PosPaymentProvider {
   readonly id: PosPaymentProviderId;
   createPaymentIntent(input: CreatePosPaymentIntentInput): Promise<PosPaymentIntent>;
+  cancelPaymentIntent(input: CancelPosPaymentIntentInput): Promise<PosPaymentIntent>;
 }
