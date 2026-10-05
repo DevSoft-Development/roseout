@@ -2,6 +2,7 @@ import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { runInitialLocationEnrichmentV2 } from "@/lib/location-intelligence/v2/initial-enrichment";
+import { recentGoogleCanonicalReuse } from "@/lib/location-intelligence/v2/policy";
 
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_ID = "controlled_500_v1";
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_LIMIT = 500;
@@ -26,6 +27,10 @@ type CanonicalSnapshot = {
 
 type RolloutCandidate = CanonicalSnapshot & {
   id: string;
+  google_enriched_at: string | null;
+  google_website_uri: string | null;
+  google_rating: number | string | null;
+  google_user_rating_count: number | string | null;
   state: RolloutState;
   location_type: RolloutLocationType;
   duplicate_status: string | null;
@@ -91,8 +96,12 @@ function missing(value: unknown) {
   return false;
 }
 
-export function rolloutGapFields(input: CanonicalSnapshot) {
-  return FIELD_NAMES.filter((field) => missing(input[field]));
+export function rolloutGapFields(input: CanonicalSnapshot & Record<string, unknown>) {
+  const effective = {
+    ...input,
+    ...recentGoogleCanonicalReuse(input as Record<string, unknown>),
+  };
+  return FIELD_NAMES.filter((field) => missing(effective[field]));
 }
 
 export function rolloutCellKey(state: string, locationType: string) {
@@ -236,7 +245,7 @@ async function readCandidates(state: RolloutState, locationType: RolloutLocation
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabaseAdmin
       .from("locations")
-      .select("id,state,location_type,duplicate_status,popularity_score,is_claimed,claimed,claim_status,owner_user_id,google_place_id,phone,website,operating_hours,primary_category,description,main_image,rating,review_count")
+      .select("id,state,location_type,duplicate_status,popularity_score,is_claimed,claimed,claim_status,owner_user_id,google_place_id,phone,website,operating_hours,primary_category,description,main_image,rating,review_count,google_enriched_at,google_website_uri,google_rating,google_user_rating_count")
       .eq("state", state)
       .eq("location_type", locationType)
       .eq("is_searchable", true)
