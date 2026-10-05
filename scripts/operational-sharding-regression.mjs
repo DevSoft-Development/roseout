@@ -8,6 +8,9 @@ const payment = read("lib/pos/payments/check-payment-service.ts");
 const catalog = read("lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
+const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
+const rebalance = read("scripts/operational-shard-rebalance.mjs");
+const failover = read(".github/workflows/operational-shard-failover.yml");
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -32,6 +35,37 @@ for (const token of [
   "toh_operational_dr",
 ]) {
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
+}
+
+for (const token of [
+  "operational_shard_write_gate",
+  "operational_location_write_fences",
+  "for share",
+  "operational_shard_writes_frozen",
+  "operational_location_writes_frozen",
+]) {
+  if (!writeFence.includes(token)) throw new Error(`Missing local write-fence invariant: ${token}`);
+}
+
+for (const token of [
+  "PAGE_SIZE = 500",
+  "fetchAll",
+  "line_total_cents",
+  "total_cents",
+  "in_flight_card_tenders_did_not_drain",
+  "sourceFenceFrozen",
+]) {
+  if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
+}
+
+for (const token of [
+  "operational_shard_write_gate",
+  "pg_wal_lsn_diff",
+  "caught_up",
+  "LAG_BYTES",
+  "write_enabled=false",
+]) {
+  if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
 
 for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {
