@@ -36,7 +36,7 @@ for (const token of [
 ]) {
   if (!resolver.includes(token)) throw new Error(`Missing shard resolver invariant: ${token}`);
 }
-if (resolver.includes('return getSupabaseAdminClient();\n  const config') === false) {
+if (!/if \(shardId === "primary"\) return getSupabaseAdminClient\(\);/.test(resolver)) {
   throw new Error("Primary shard compatibility path is missing.");
 }
 if (!payment.includes("getOperationalShardClientForLocation")) {
