@@ -35,7 +35,7 @@ async function run(request: Request) {
 
   try {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
-    const reviewLimit = limitParam(request, "reviewLimit", 20, 100);
+    const reviewLimit = limitParam(request, "reviewLimit", 50, 100);
 
     const [providerHealth, collectedReviews] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),
