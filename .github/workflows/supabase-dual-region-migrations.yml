@@ -81,17 +81,27 @@ jobs:
           sed -i '/^[[:space:]]*$/d' "$RUNNER_TEMP/migrations.txt"
           cat "$RUNNER_TEMP/migrations.txt"
           if [ -s "$RUNNER_TEMP/migrations.txt" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; else echo "changed=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Reject destructive or non-transactional SQL from automatic lane
+      - name: Reject destructive or unsafe replicated DML from automatic lane
         if: steps.migrations.outputs.changed == 'true'
         run: |
           set -euo pipefail
           blocked='(^|[^a-z])(drop[[:space:]]+(table|schema|database|subscription|publication)|truncate[[:space:]]+table|alter[[:space:]]+subscription|create[[:space:]]+subscription|alter[[:space:]]+publication|create[[:space:]]+publication|pg_drop_replication_slot|create[[:space:]]+index[[:space:]]+concurrently|reindex[[:space:]]+concurrently|vacuum)([^a-z]|$)'
+          replicated_dml='(insert[[:space:]]+into|update|delete[[:space:]]+from|merge[[:space:]]+into)[[:space:]]+public\.'
           while IFS= read -r file; do
             test -f "$file"
             if grep -Eiq "$blocked" "$file"; then
               echo "Migration $file must use a protected explicit recovery/change workflow." >&2
               grep -Ein "$blocked" "$file" | head -n 20 >&2 || true
               exit 1
+            fi
+
+            normalized="$(sed -E 's/--.*$//' "$file" | tr '\n' ' ')"
+            if printf '%s' "$normalized" | grep -Eiq "$replicated_dml"; then
+              if ! grep -Fq -- '-- toh:replicated-dml-reviewed' "$file"; then
+                echo "Migration $file contains DML against replicated public tables." >&2
+                echo "Add '-- toh:replicated-dml-reviewed' only after confirming Virginia is authoritative and Oregon can run the statement with origin triggers suppressed." >&2
+                exit 1
+              fi
             fi
           done < "$RUNNER_TEMP/migrations.txt"
       - name: Require healthy starting DR state
@@ -120,9 +130,10 @@ jobs:
           }
           while IFS= read -r file; do
             sql="$(cat "$file")"
-            printf -v wrapped "begin;\nset local statement_timeout = '120s';\n%s\nrollback;" "$sql"
-            query_ref "$OREGON_REF" "$wrapped"
-            query_ref "$VIRGINIA_REF" "$wrapped"
+            printf -v oregon_wrapped "begin;\nset local statement_timeout = '120s';\nset local session_replication_role = replica;\n%s\nrollback;" "$sql"
+            printf -v virginia_wrapped "begin;\nset local statement_timeout = '120s';\n%s\nrollback;" "$sql"
+            query_ref "$OREGON_REF" "$oregon_wrapped"
+            query_ref "$VIRGINIA_REF" "$virginia_wrapped"
           done < "$RUNNER_TEMP/migrations.txt"
 
   deploy:
@@ -191,7 +202,7 @@ jobs:
           query_ref "$VIRGINIA_REF" "$ledger_sql" "$RUNNER_TEMP/ledger-va.json"
           apply_one() {
             local ref="$1" side="$2" file="$3" hash="$4"
-            local out existing existing_hash sql
+            local out existing existing_hash sql standby_guard
             query_ref "$ref" "select migration_sha256 from private.toh_dual_region_migration_ledger where migration_path='$file' limit 1;" "$RUNNER_TEMP/check-$side.json"
             out="$RUNNER_TEMP/check-$side.json"
             existing="$(jq 'length' "$out")"
@@ -201,7 +212,12 @@ jobs:
               return
             fi
             sql="$(cat "$file")"
+            standby_guard=""
+            if [ "$side" = "oregon" ]; then
+              standby_guard="set local session_replication_role = replica;"
+            fi
             query_ref "$ref" "begin;
+            $standby_guard
             $sql
             insert into private.toh_dual_region_migration_ledger(migration_path,migration_sha256,git_sha)
             values ('$file','$hash','$GITHUB_SHA');
