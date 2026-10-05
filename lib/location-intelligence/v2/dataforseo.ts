@@ -15,6 +15,41 @@ type DataForSeoEnvelope<T = unknown> = {
   }>;
 };
 
+export function normalizeDataForSeoLocationCoordinate(value: string) {
+  const parts = String(value || "").split(",").map((part) => part.trim());
+  if (parts.length !== 3) throw new Error("dataforseo_location_coordinate_invalid");
+
+  const latitude = Number(parts[0]);
+  const longitude = Number(parts[1]);
+  const radiusKm = Number(parts[2].replace(/\s*km$/i, ""));
+
+  if (
+    !Number.isFinite(latitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    !Number.isFinite(longitude) ||
+    longitude < -180 ||
+    longitude > 180 ||
+    !Number.isFinite(radiusKm) ||
+    radiusKm <= 0
+  ) {
+    throw new Error("dataforseo_location_coordinate_invalid");
+  }
+
+  return `${latitude},${longitude},${radiusKm}`;
+}
+
+export function assertDataForSeoEnvelopeSuccess(payload: DataForSeoEnvelope<unknown> | null) {
+  if (!payload || Number(payload.status_code || 0) >= 40000) {
+    throw new Error(`dataforseo_api_${payload?.status_code || "invalid"}`);
+  }
+
+  const failedTask = payload.tasks?.find((task) => Number(task.status_code || 0) >= 40000);
+  if (failedTask) {
+    throw new Error(`dataforseo_task_${failedTask.status_code || "invalid"}`);
+  }
+}
+
 async function credentials() {
   const values = await getCredentialVaultProviderValues("dataforseo");
   const login = String(values.login || "").trim();
@@ -42,10 +77,8 @@ async function request<T>(path: string, init: RequestInit = {}) {
     });
     const payload = await response.json().catch(() => null) as DataForSeoEnvelope<T> | null;
     if (!response.ok) throw new Error(`dataforseo_http_${response.status}`);
-    if (!payload || Number(payload.status_code || 0) >= 40000) {
-      throw new Error(`dataforseo_api_${payload?.status_code || "invalid"}`);
-    }
-    return payload;
+    assertDataForSeoEnvelopeSuccess(payload);
+    return payload as DataForSeoEnvelope<T>;
   } finally {
     clearTimeout(timeout);
   }
@@ -64,7 +97,9 @@ export async function searchDataForSeoBusinessListings(input: {
     ...(input.categories?.length ? { categories: input.categories } : {}),
     ...(input.title ? { title: input.title } : {}),
     ...(input.description ? { description: input.description } : {}),
-    ...(input.locationCoordinate ? { location_coordinate: input.locationCoordinate } : {}),
+    ...(input.locationCoordinate
+      ? { location_coordinate: normalizeDataForSeoLocationCoordinate(input.locationCoordinate) }
+      : {}),
     limit: Math.max(1, Math.min(1000, Math.trunc(input.limit || 100))),
     ...(input.orderBy?.length ? { order_by: input.orderBy } : {}),
     ...(input.filters?.length ? { filters: input.filters } : {}),
