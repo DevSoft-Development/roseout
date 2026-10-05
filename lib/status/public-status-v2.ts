@@ -43,10 +43,12 @@ const COMPONENTS = [
   { slug: "business", label: "Business Dashboard", group: "Business", surfaces: ["business"], incidentKeys: [] },
   { slug: "reserve", label: "Reservation Platform", group: "Reserve", surfaces: ["reserve", "reserve-api"], incidentKeys: [] },
   { slug: "mobile", label: "Mobile App Services", group: "Mobile", surfaces: ["mobile-ios", "mobile-runtime-patch"], incidentKeys: [] },
-  { slug: "workers", label: "Background Services", group: "Platform Services", surfaces: ["workers"], incidentKeys: ["critical_cron_failures"] },
+  { slug: "workers", label: "Background Services", group: "Platform Services", surfaces: ["workers"], incidentKeys: [] },
 ] as const;
 
-const PUBLIC_INCIDENT_KEYS = new Set(["production_outage", "critical_cron_failures"]);
+// Only customer-impacting incidents belong on the public status page. Internal
+// operational alerts (for example cron/DR health) remain in Admin monitoring.
+const PUBLIC_INCIDENT_KEYS = new Set(["production_outage"]);
 
 function toneForReleaseState(state: string | null | undefined): PublicStatusTone {
   if (state === "DEGRADED") return "degraded";
