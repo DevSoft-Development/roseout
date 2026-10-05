@@ -16,7 +16,7 @@ for (const token of [
   "getpospaymentprovider",
   "idempotencykey",
   '.from("pos_payments")',
-  "getoperationalshardclientforlocation",
+  "resolveoperationalshardforlocationid",
   "cancelpaymentintent",
 ]) {
   if (!service.toLowerCase().includes(token.toLowerCase())) throw new Error(`Missing POS payment service invariant: ${token}`);
