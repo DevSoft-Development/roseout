@@ -1,3 +1,4 @@
+-- toh:replicated-dml-reviewed
 -- Make existing never-refreshed DataForSEO review rows immediately eligible
 -- for the initial review backfill. The maintenance worker itself remains
 -- batch-limited, so this does not fan out provider calls all at once.
