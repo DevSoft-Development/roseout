@@ -1,0 +1,2 @@
+Operational shard bootstrap retrigger marker.
+Safe no-op used to create a fresh main push after credential rotation.
