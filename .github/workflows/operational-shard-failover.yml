@@ -126,6 +126,22 @@ jobs:
           runtime_preflight "$SHARD_ID" "$PRIMARY_REF"
           runtime_preflight "$DR_ID" "$DR_REF"
 
+          freeze_runtime_gate() {
+            local physical_id="$1" reason="$2" url key code
+            url="$(printf '%s' "$OPERATIONAL_SHARDS_JSON" | jq -r --arg id "$physical_id" '.[$id].url // empty')"
+            key="$(printf '%s' "$OPERATIONAL_SHARDS_JSON" | jq -r --arg id "$physical_id" '.[$id].serviceRoleKey // empty')"
+            test -n "$url" && test -n "$key"
+            echo "::add-mask::$key"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/freeze-$physical_id.json" --write-out '%{http_code}' \
+              --request PATCH \
+              -H "apikey: $key" -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
+              -H 'Prefer: return=representation' \
+              --data "{\"frozen\":true,\"reason\":\"$reason\"}" \
+              "$url/rest/v1/operational_shard_write_gate?id=eq.1" || true)"
+            test "$code" = 200 || { cat "$RUNNER_TEMP/freeze-$physical_id.json"; return 1; }
+            test "$(jq -r '.[0].frozen // false' "$RUNNER_TEMP/freeze-$physical_id.json")" = true
+          }
+
           GLOBAL_FROZEN=false
           PHYSICAL_FROZEN=false
           CUTOVER_DONE=false
@@ -170,9 +186,22 @@ jobs:
               # before any primary writes are reopened. If that restore fails,
               # stay fail-closed instead of resuming unreplicated writes.
               if [ "$ACTION" = promote_dr ] && [ "$SUB_DISABLED" = true ]; then
-                if ! sql_api "$DR_REF" "update public.operational_shard_write_gate
+                DR_RECOVERY_FROZEN=false
+                if sql_api "$DR_REF" "update public.operational_shard_write_gate
                   set frozen=true,reason='failover-aborted',updated_at=now() where id=1;
-                  alter subscription $SUB enable;" "$RUNNER_TEMP/restore-subscription.json"; then
+                  select frozen from public.operational_shard_write_gate where id=1;" "$RUNNER_TEMP/refreeze-dr.json" &&
+                   [ "$(jq -r '.[0].frozen // false' "$RUNNER_TEMP/refreeze-dr.json")" = true ]; then
+                  DR_RECOVERY_FROZEN=true
+                elif freeze_runtime_gate "$DR_ID" failover-aborted; then
+                  DR_RECOVERY_FROZEN=true
+                fi
+
+                if [ "$DR_RECOVERY_FROZEN" != true ]; then
+                  RECOVERY_OK=false
+                  sql_api "$GLOBAL_REF" "update public.operational_shards
+                    set write_enabled=false,failover_state='degraded',replication_state='broken',updated_at=now()
+                    where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-dr-refreeze-broken.json" || true
+                elif ! sql_api "$DR_REF" "alter subscription $SUB enable;" "$RUNNER_TEMP/restore-subscription.json"; then
                   RECOVERY_OK=false
                   sql_api "$GLOBAL_REF" "update public.operational_shards
                     set write_enabled=false,failover_state='degraded',replication_state='broken',updated_at=now()

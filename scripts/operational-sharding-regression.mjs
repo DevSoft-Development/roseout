@@ -109,6 +109,10 @@ for (const token of [
   "OPERATIONAL_SHARDS_JSON",
   "runtime_preflight",
   "operational_shard_write_gate",
+  "freeze_runtime_gate",
+  "DR_RECOVERY_FROZEN",
+  "refreeze-dr.json",
+  "alter subscription $SUB enable",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
