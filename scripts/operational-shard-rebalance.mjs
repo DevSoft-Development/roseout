@@ -170,17 +170,22 @@ await insertGlobal("location_shard_moves", {
 const manifest = {};
 let sourceFenceFrozen = false;
 let globalFrozen = false;
+let cutoverDone = false;
 try {
   // This update conflicts with the shared row lock every live shard write takes.
   // When it returns, already-running DB writes for the location have drained.
   await upsertFence(source, expectedEpoch, true, `rebalance:${moveId}`);
   sourceFenceFrozen = true;
 
-  await patchGlobal(
+  const frozenRows = await patchGlobal(
     "locations",
     `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}&operational_writes_frozen=eq.false`,
     { operational_writes_frozen: true },
+    "return=representation",
   );
+  if (!Array.isArray(frozenRows) || frozenRows.length !== 1) {
+    throw new Error("global_freeze_compare_and_swap_failed");
+  }
   globalFrozen = true;
 
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, { status: "copying" });
@@ -275,7 +280,7 @@ try {
     data_manifest: manifest,
   });
 
-  await patchGlobal(
+  const cutoverRows = await patchGlobal(
     "locations",
     `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}&operational_writes_frozen=eq.true`,
     {
@@ -283,7 +288,19 @@ try {
       operational_shard_epoch: expectedEpoch + 1,
       operational_writes_frozen: false,
     },
+    "return=representation",
   );
+  if (
+    !Array.isArray(cutoverRows) ||
+    cutoverRows.length !== 1 ||
+    String(cutoverRows[0].operational_shard_id) !== targetLogicalShard ||
+    Number(cutoverRows[0].operational_shard_epoch) !== expectedEpoch + 1 ||
+    cutoverRows[0].operational_writes_frozen !== false
+  ) {
+    throw new Error("global_cutover_compare_and_swap_failed");
+  }
+  cutoverDone = true;
+  globalFrozen = false;
 
   // Keep the old physical location fenced permanently. Any stale client that
   // attempts a late write to the old shard is rejected after cutover.
@@ -304,20 +321,33 @@ try {
     manifest,
   }));
 } catch (error) {
-  if (globalFrozen) {
-    await patchGlobal(
-      "locations",
-      `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}`,
-      { operational_writes_frozen: false },
-    ).catch(() => {});
+  if (!cutoverDone) {
+    if (globalFrozen) {
+      await patchGlobal(
+        "locations",
+        `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}&operational_writes_frozen=eq.true`,
+        { operational_writes_frozen: false },
+        "return=representation",
+      ).catch(() => {});
+    }
+    if (sourceFenceFrozen) {
+      await upsertFence(source, expectedEpoch, false, `rebalance-failed:${moveId}`).catch(() => {});
+    }
+    await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
+      status: "failed",
+      failure_reason: error instanceof Error ? error.message : "unknown_rebalance_failure",
+      data_manifest: manifest,
+    }).catch(() => {});
+  } else {
+    // Routing has already committed. Never reopen the old physical shard.
+    // Retry the audit completion once, but preserve the successful cutover
+    // even if the audit row remains unavailable.
+    await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
+      status: "completed",
+      cutover_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      failure_reason: error instanceof Error ? `post_cutover_audit_retry:${error.message}` : "post_cutover_audit_retry",
+    }).catch(() => {});
   }
-  if (sourceFenceFrozen) {
-    await upsertFence(source, expectedEpoch, false, `rebalance-failed:${moveId}`).catch(() => {});
-  }
-  await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
-    status: "failed",
-    failure_reason: error instanceof Error ? error.message : "unknown_rebalance_failure",
-    data_manifest: manifest,
-  }).catch(() => {});
   throw error;
 }
