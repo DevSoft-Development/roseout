@@ -10,6 +10,10 @@ import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/
 import { scheduleReviewRefresh } from "@/lib/location-intelligence/v2/reviews";
 import { recordLocationEvidence, reconcileCanonicalFields, storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
 import { attachExternalIdentity, resolveTohLocationByExternalIdentity } from "@/lib/location-intelligence/v2/identity";
+import {
+  canonicalFieldsFromDataForSeoBusinessProfile,
+  selectDataForSeoBusinessProfile,
+} from "@/lib/location-intelligence/v2/business-profile";
 
 function googleCandidateIds(data: unknown) {
   if (!Array.isArray(data)) return [];
@@ -295,6 +299,26 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
         evidenceType: "classification",
         field: "business_profile_snapshot",
       }));
+
+      if (profileResult.providerId === "dataforseo") {
+        const matchedProfile = selectDataForSeoBusinessProfile(profileResult.data, {
+          name,
+          googlePlaceId: canonicalGooglePlaceId || null,
+        });
+        const canonicalFields = canonicalFieldsFromDataForSeoBusinessProfile(matchedProfile);
+        if (Object.keys(canonicalFields).length > 0) {
+          await reconcileCanonicalFields({
+            locationId,
+            provider: "dataforseo",
+            fields: canonicalFields,
+            confidence: canonicalGooglePlaceId && String(matchedProfile?.place_id || "") === canonicalGooglePlaceId
+              ? 0.98
+              : 0.9,
+            evidenceType: "classification",
+            sourceRef: "location_intelligence_v2_business_profile",
+          });
+        }
+      }
     }
   }
 
