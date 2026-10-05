@@ -81,8 +81,16 @@ for (const token of [
   "replication_state='broken'",
   "failover_state='degraded'",
   "RECOVERY_OK",
+  "PRIMARY_OPENED",
+  "failback-aborted",
+  "mark-failback-degraded",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
+}
+
+const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
+if (!isolationProof.includes('location_type: "restaurant"')) {
+  throw new Error("Isolation proof must provide an explicit valid location_type.");
 }
 
 for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow]) {
