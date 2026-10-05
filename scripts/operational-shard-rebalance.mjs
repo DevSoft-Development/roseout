@@ -6,6 +6,7 @@ const locationId = String(process.env.LOCATION_ID || "");
 const targetLogicalShard = String(process.env.TARGET_SHARD_ID || "");
 const expectedEpoch = Number(process.env.EXPECTED_ASSIGNMENT_EPOCH || "");
 const config = JSON.parse(String(process.env.OPERATIONAL_SHARDS_JSON || "{}"));
+const PAGE_SIZE = 500;
 
 if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.isInteger(expectedEpoch) || expectedEpoch < 1) {
   throw new Error("invalid_rebalance_configuration");
@@ -28,8 +29,53 @@ async function request(url, key, path, init = {}) {
   return text ? JSON.parse(text) : null;
 }
 
+async function fetchAll(url, key, table, filterQuery) {
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const separator = filterQuery ? "&" : "";
+    const page = await request(
+      url,
+      key,
+      `/rest/v1/${table}?${filterQuery}${separator}select=*&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`,
+    );
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
 async function globalRows(table, query) {
   return request(globalUrl, globalKey, `/rest/v1/${table}?${query}`);
+}
+
+async function patchGlobal(table, filter, body, prefer = "return=minimal") {
+  return request(globalUrl, globalKey, `/rest/v1/${table}?${filter}`, {
+    method: "PATCH",
+    headers: { Prefer: prefer },
+    body: JSON.stringify(body),
+  });
+}
+
+async function insertGlobal(table, body) {
+  return request(globalUrl, globalKey, `/rest/v1/${table}`, {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function upsertFence(shard, epoch, frozen, reason) {
+  const base = String(shard.url).replace(/\/$/, "");
+  return request(base, shard.serviceRoleKey, "/rest/v1/operational_location_write_fences?on_conflict=location_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      location_id: locationId,
+      assignment_epoch: epoch,
+      frozen,
+      reason,
+      updated_at: new Date().toISOString(),
+    }),
+  });
 }
 
 const [location] = await globalRows(
@@ -67,6 +113,8 @@ const target = config[targetPhysical];
 if (!source?.url || !source?.serviceRoleKey || !target?.url || !target?.serviceRoleKey) {
   throw new Error("physical_shard_credentials_missing");
 }
+const sourceUrl = String(source.url).replace(/\/$/, "");
+const targetUrl = String(target.url).replace(/\/$/, "");
 
 const moveId = randomUUID();
 const tables = [
@@ -83,30 +131,25 @@ const tables = [
   ["pos_payments", "location_id"],
 ];
 
+const generatedColumns = {
+  pos_order_items: ["line_total_cents"],
+  pos_tenders: ["total_cents"],
+};
+
+const writableRows = (table, rows) =>
+  rows.map((row) => {
+    const next = { ...row };
+    for (const column of generatedColumns[table] || []) delete next[column];
+    return next;
+  });
+
 const canonicalHash = (rows) =>
   createHash("sha256")
     .update(JSON.stringify([...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))))
     .digest("hex");
 
-async function patchGlobal(table, filter, body, prefer = "return=minimal") {
-  return request(globalUrl, globalKey, `/rest/v1/${table}?${filter}`, {
-    method: "PATCH",
-    headers: { Prefer: prefer },
-    body: JSON.stringify(body),
-  });
-}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function insertGlobal(table, body) {
-  return request(globalUrl, globalKey, `/rest/v1/${table}`, {
-    method: "POST",
-    headers: { Prefer: "return=minimal" },
-    body: JSON.stringify(body),
-  });
-}
-
-await patchGlobal("locations", `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}`, {
-  operational_writes_frozen: true,
-});
 await insertGlobal("location_shard_moves", {
   id: moveId,
   location_id: locationId,
@@ -116,23 +159,61 @@ await insertGlobal("location_shard_moves", {
   target_epoch: expectedEpoch + 1,
   source_schema_version: sourceRegistry.schema_version,
   target_schema_version: targetRegistry.schema_version,
-  status: "copying",
+  status: "planned",
   started_at: new Date().toISOString(),
 });
 
 const manifest = {};
+let sourceFenceFrozen = false;
+let globalFrozen = false;
 try {
+  // This update conflicts with the shared row lock every live shard write takes.
+  // When it returns, already-running DB writes for the location have drained.
+  await upsertFence(source, expectedEpoch, true, `rebalance:${moveId}`);
+  sourceFenceFrozen = true;
+
+  await patchGlobal(
+    "locations",
+    `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}&operational_writes_frozen=eq.false`,
+    { operational_writes_frozen: true },
+  );
+  globalFrozen = true;
+
+  await patchGlobal("location_shard_moves", `id=eq.${moveId}`, { status: "copying" });
+
+  // A card flow can be outside Postgres while its PaymentIntent is being created.
+  // The local fence blocks its next write; the payment service cancels the
+  // external intent and is allowed to void the already-reserved tender.
+  let drained = false;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const initiated = await fetchAll(
+      sourceUrl,
+      source.serviceRoleKey,
+      "pos_tenders",
+      `location_id=eq.${encodeURIComponent(locationId)}&tender_type=eq.card&status=eq.initiated`,
+    );
+    if (initiated.length === 0) {
+      drained = true;
+      break;
+    }
+    await sleep(2000);
+  }
+  if (!drained) throw new Error("in_flight_card_tenders_did_not_drain");
+
+  await upsertFence(target, expectedEpoch + 1, false, `rebalance-target:${moveId}`);
+
   for (const [table, filterColumn] of tables) {
-    const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}&select=*`;
-    const sourceRows = await request(String(source.url).replace(/\/$/, ""), source.serviceRoleKey, `/rest/v1/${table}?${filter}`);
+    const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
+    const sourceRows = await fetchAll(sourceUrl, source.serviceRoleKey, table, filter);
     if (sourceRows.length) {
-      await request(String(target.url).replace(/\/$/, ""), target.serviceRoleKey, `/rest/v1/${table}?on_conflict=id`, {
+      await request(targetUrl, target.serviceRoleKey, `/rest/v1/${table}?on_conflict=id`, {
         method: "POST",
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify(sourceRows),
+        body: JSON.stringify(writableRows(table, sourceRows)),
       });
     }
-    const targetRows = await request(String(target.url).replace(/\/$/, ""), target.serviceRoleKey, `/rest/v1/${table}?${filter}`);
+
+    const targetRows = await fetchAll(targetUrl, target.serviceRoleKey, table, filter);
     const sourceHash = canonicalHash(sourceRows);
     const targetHash = canonicalHash(targetRows);
     if (sourceRows.length !== targetRows.length || sourceHash !== targetHash) {
@@ -143,7 +224,7 @@ try {
 
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
     status: "cutover_ready",
-    verification: { sourcePhysical, targetPhysical },
+    verification: { sourcePhysical, targetPhysical, pageSize: PAGE_SIZE, sourceFence: "drained" },
     data_manifest: manifest,
   });
 
@@ -157,16 +238,35 @@ try {
     },
   );
 
+  // Keep the old physical location fenced permanently. Any stale client that
+  // attempts a late write to the old shard is rejected after cutover.
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
     status: "completed",
     cutover_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
   });
-  console.log(JSON.stringify({ moveId, locationId, sourceLogicalShard, targetLogicalShard, sourcePhysical, targetPhysical, manifest }));
+
+  console.log(JSON.stringify({
+    moveId,
+    locationId,
+    sourceLogicalShard,
+    targetLogicalShard,
+    sourcePhysical,
+    targetPhysical,
+    sourceFenceFrozen: true,
+    manifest,
+  }));
 } catch (error) {
-  await patchGlobal("locations", `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}`, {
-    operational_writes_frozen: false,
-  }).catch(() => {});
+  if (globalFrozen) {
+    await patchGlobal(
+      "locations",
+      `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}`,
+      { operational_writes_frozen: false },
+    ).catch(() => {});
+  }
+  if (sourceFenceFrozen) {
+    await upsertFence(source, expectedEpoch, false, `rebalance-failed:${moveId}`).catch(() => {});
+  }
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
     status: "failed",
     failure_reason: error instanceof Error ? error.message : "unknown_rebalance_failure",
