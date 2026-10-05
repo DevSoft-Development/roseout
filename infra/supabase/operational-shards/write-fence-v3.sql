@@ -33,9 +33,17 @@ begin
     return coalesce(new, old);
   end if;
 
+  -- Every write transaction participates in the location fence. The shared
+  -- row lock is retained until commit. A rebalance freeze updates this same
+  -- row, so it waits for already-running writes to drain before succeeding.
+  insert into public.operational_location_write_fences(location_id,assignment_epoch,frozen)
+  values (v_location_id, 1, false)
+  on conflict (location_id) do nothing;
+
   select frozen into v_frozen
   from public.operational_location_write_fences
-  where location_id = v_location_id;
+  where location_id = v_location_id
+  for share;
 
   if coalesce(v_frozen, false) then
     -- A card flow that was already in flight before the fence may need to
