@@ -1,6 +1,7 @@
 import "server-only";
 
 import type {
+  CancelPosPaymentIntentInput,
   CreatePosPaymentIntentInput,
   PosPaymentIntent,
   PosPaymentIntentStatus,
@@ -30,6 +31,18 @@ function normalizeStripePaymentIntentStatus(value: unknown): PosPaymentIntentSta
     default:
       return "unknown";
   }
+}
+
+function toPosPaymentIntent(paymentIntent: StripePaymentIntentResponse, connectedAccountId: string, fallbackAmount = 0, fallbackCurrency = "usd"): PosPaymentIntent {
+  return {
+    provider: "stripe",
+    providerPaymentIntentId: paymentIntent.id,
+    connectedAccountId,
+    amountCents: Number(paymentIntent.amount || fallbackAmount),
+    currency: String(paymentIntent.currency || fallbackCurrency).toLowerCase(),
+    status: normalizeStripePaymentIntentStatus(paymentIntent.status),
+    clientSecret: paymentIntent.client_secret || null,
+  };
 }
 
 function appendMetadata(form: URLSearchParams, metadata: Record<string, string | number | boolean | null | undefined>) {
@@ -80,14 +93,28 @@ export class StripePosPaymentProvider implements PosPaymentProvider {
       body: buildStripeDirectChargePaymentIntentForm(validated),
     });
 
-    return {
-      provider: "stripe",
-      providerPaymentIntentId: paymentIntent.id,
-      connectedAccountId: validated.connectedAccountId,
-      amountCents: Number(paymentIntent.amount || validated.amountCents),
-      currency: String(paymentIntent.currency || validated.currency).toLowerCase(),
-      status: normalizeStripePaymentIntentStatus(paymentIntent.status),
-      clientSecret: paymentIntent.client_secret || null,
-    };
+    return toPosPaymentIntent(paymentIntent, validated.connectedAccountId, validated.amountCents, validated.currency);
+  }
+
+  async cancelPaymentIntent(input: CancelPosPaymentIntentInput): Promise<PosPaymentIntent> {
+    const connectedAccountId = String(input.connectedAccountId || "").trim();
+    const providerPaymentIntentId = String(input.providerPaymentIntentId || "").trim();
+    if (!connectedAccountId) throw new Error("missing_connected_account_id");
+    if (!providerPaymentIntentId) throw new Error("missing_provider_payment_intent_id");
+
+    const body = new URLSearchParams();
+    if (input.reason) body.set("cancellation_reason", input.reason);
+
+    const paymentIntent = await stripeRequest<StripePaymentIntentResponse>(
+      `/payment_intents/${encodeURIComponent(providerPaymentIntentId)}/cancel`,
+      {
+        method: "POST",
+        mode: this.mode,
+        stripeAccount: connectedAccountId,
+        body,
+      },
+    );
+
+    return toPosPaymentIntent(paymentIntent, connectedAccountId);
   }
 }
