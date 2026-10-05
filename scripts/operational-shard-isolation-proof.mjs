@@ -37,6 +37,11 @@ async function cleanup(shard, ids) {
   for (const [table, id] of [["pos_orders", ids.order], ["pos_checks", ids.check], ["locations", ids.location]]) {
     await call(shard, `/rest/v1/${table}?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
   }
+  await call(
+    shard,
+    `/rest/v1/operational_location_write_fences?location_id=eq.${ids.location}`,
+    { method: "DELETE" },
+  ).catch(() => {});
 }
 
 try {
