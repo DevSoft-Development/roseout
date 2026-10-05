@@ -7,6 +7,7 @@ export const LOCATION_INTELLIGENCE_V2_ROLLOUT_ID = "controlled_500_v1";
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_LIMIT = 500;
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_SIZE = 20;
 export const LOCATION_INTELLIGENCE_V2_ROLLOUT_LEASE_SECONDS = 900;
+export const LOCATION_INTELLIGENCE_V2_ROLLOUT_STALE_RESERVED_SECONDS = 1200;
 
 type RolloutState = "NY" | "NJ" | "CT";
 type RolloutLocationType = "restaurant" | "activity";
@@ -122,6 +123,37 @@ function candidateScore(candidate: RolloutCandidate) {
   const popularity = Number(candidate.popularity_score || 0);
   if (Number.isFinite(popularity)) score += Math.max(0, Math.min(100, popularity));
   return score;
+}
+
+export function rolloutReservationIsStale(attemptedAt: unknown, nowMs = Date.now()) {
+  const attemptedMs = Date.parse(String(attemptedAt || ""));
+  if (!Number.isFinite(attemptedMs)) return false;
+  return nowMs - attemptedMs >= LOCATION_INTELLIGENCE_V2_ROLLOUT_STALE_RESERVED_SECONDS * 1000;
+}
+
+async function recoverStaleReservations() {
+  const { data, error } = await supabaseAdmin
+    .from("location_intelligence_profiles_v2")
+    .select("location_id,last_initial_enrichment_at,provenance")
+    .contains("provenance", { v2_rollout: { id: LOCATION_INTELLIGENCE_V2_ROLLOUT_ID } });
+  if (error) throw new Error(`Rollout stale reservation read failed: ${error.message}`);
+
+  const recovered: string[] = [];
+  for (const row of data || []) {
+    const rollout = marker(row.provenance);
+    if (String(rollout?.status || "") !== "reserved") continue;
+    if (row.last_initial_enrichment_at) continue;
+    if (!rolloutReservationIsStale(rollout?.attempted_at)) continue;
+
+    await markResult(String(row.location_id), "failed", {
+      error: "stale_reserved_timeout",
+      stale_attempted_at: rollout?.attempted_at || null,
+      recovered_at: new Date().toISOString(),
+    });
+    recovered.push(String(row.location_id));
+  }
+
+  return recovered;
 }
 
 async function rolloutProgress() {
@@ -358,9 +390,16 @@ async function releaseLease(ownerToken: string) {
 }
 
 async function runLockedBatch() {
+  const recoveredStaleReservations = await recoverStaleReservations();
   const progressBefore = await rolloutProgress();
   if (progressBefore.successful >= LOCATION_INTELLIGENCE_V2_ROLLOUT_LIMIT) {
-    return { complete: true, rolloutId: LOCATION_INTELLIGENCE_V2_ROLLOUT_ID, ...progressBefore, selected: 0 };
+    return {
+      complete: true,
+      rolloutId: LOCATION_INTELLIGENCE_V2_ROLLOUT_ID,
+      ...progressBefore,
+      selected: 0,
+      recoveredStaleReservations,
+    };
   }
 
   const quotas = nextRolloutQuotas(progressBefore);
@@ -434,6 +473,7 @@ async function runLockedBatch() {
     quotas,
     fieldImprovementCounts,
     failures,
+    recoveredStaleReservations,
   };
 }
 
