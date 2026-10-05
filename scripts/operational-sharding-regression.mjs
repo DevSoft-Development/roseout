@@ -84,6 +84,11 @@ for (const token of [
   "PRIMARY_OPENED",
   "failback-aborted",
   "mark-failback-degraded",
+  "with moved as",
+  "rollback-routing.json",
+  "ambiguous-routing",
+  "CURRENT_ACTIVE",
+  "CURRENT_EPOCH",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
