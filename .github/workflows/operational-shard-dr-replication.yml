@@ -141,7 +141,24 @@ jobs:
 
             sql_api "$target" "select count(*)::int as workers from pg_stat_subscription where subname='$sub';" "$RUNNER_TEMP/$logical-stat.json"
             test "$(jq -r '.[0].workers // 0' "$RUNNER_TEMP/$logical-stat.json")" -ge 1
-            echo "$logical replication_ready=true" >> "$GITHUB_STEP_SUMMARY"
+
+            caught_up=false
+            lag_bytes=-1
+            for attempt in $(seq 1 40); do
+              sql_api "$target" "select latest_end_lsn::text as target_lsn from pg_stat_subscription where subname='$sub' and pid is not null;" "$RUNNER_TEMP/$logical-target-lsn.json"
+              target_lsn="$(jq -r '.[0].target_lsn // empty' "$RUNNER_TEMP/$logical-target-lsn.json")"
+              if [ -n "$target_lsn" ]; then
+                sql_api "$source" "select greatest(0,pg_wal_lsn_diff(pg_current_wal_lsn(),'$target_lsn'::pg_lsn))::bigint as lag_bytes;" "$RUNNER_TEMP/$logical-lag.json"
+                lag_bytes="$(jq -r '.[0].lag_bytes // -1' "$RUNNER_TEMP/$logical-lag.json")"
+                if [ "$lag_bytes" -ge 0 ] && [ "$lag_bytes" -le 1048576 ]; then
+                  caught_up=true
+                  break
+                fi
+              fi
+              sleep 5
+            done
+            test "$caught_up" = "true"
+            echo "$logical replication_ready=true lag_bytes=$lag_bytes" >> "$GITHUB_STEP_SUMMARY"
           }
 
           configure_pair shard-01 "$SHARD01_REF" "$SHARD01_DR_REF" toh_repl_shard01 toh_shard01_dr
