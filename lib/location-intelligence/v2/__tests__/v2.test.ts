@@ -8,6 +8,10 @@ import { hasUsableProviderData } from "@/lib/location-intelligence/v2/orchestrat
 import { mergeProviderHealthMetadata } from "@/lib/location-intelligence/v2/provider-runtime";
 import { safeSingleGooglePlaceId } from "@/lib/location-intelligence/v2/initial-enrichment";
 import { assertDataForSeoEnvelopeSuccess, normalizeDataForSeoLocationCoordinate } from "@/lib/location-intelligence/v2/dataforseo";
+import {
+  canonicalFieldsFromDataForSeoBusinessProfile,
+  selectDataForSeoBusinessProfile,
+} from "@/lib/location-intelligence/v2/business-profile";
 import { nextPilotQuotas, pilotBatchQuotas, pilotCategoryKey, pilotEnrichmentCommitted, pilotMarkerCountsAsSuccess } from "@/lib/location-intelligence/v2/pilot";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -103,6 +107,58 @@ describe("Location Intelligence V2", () => {
     })).not.toThrow();
   });
 
+  it("promotes only an unambiguous DataForSEO business profile match", () => {
+    const payload = {
+      tasks: [{
+        result: [{
+          items: [
+            {
+              title: "IPIC Theaters",
+              place_id: "place-1",
+              phone: "+1201-582-7100",
+              url: "https://www.ipic.com/fort-lee-nj-hudson-lights/location",
+              description: "Upscale cinema chain",
+              category: "Movie theater",
+              latitude: 40.8519987,
+              longitude: -73.9689983,
+              main_image: "https://example.com/ipic.jpg",
+              work_time: { timetable: { monday: [{ open: { hour: 11 } }] } },
+              rating: { value: 4.4, votes_count: 3230 },
+            },
+            {
+              title: "Another Theater",
+              place_id: "place-2",
+            },
+          ],
+        }],
+      }],
+    };
+
+    const matched = selectDataForSeoBusinessProfile(payload, {
+      name: "IPIC Theaters",
+      googlePlaceId: "place-1",
+    });
+    expect(matched?.place_id).toBe("place-1");
+    expect(canonicalFieldsFromDataForSeoBusinessProfile(matched)).toEqual({
+      phone: "+1201-582-7100",
+      website: "https://www.ipic.com/fort-lee-nj-hudson-lights/location",
+      description: "Upscale cinema chain",
+      main_image: "https://example.com/ipic.jpg",
+      image_url: "https://example.com/ipic.jpg",
+      primary_category: "movie_theater",
+      latitude: 40.8519987,
+      longitude: -73.9689983,
+      operating_hours: { timetable: { monday: [{ open: { hour: 11 } }] } },
+      hours_raw: { timetable: { monday: [{ open: { hour: 11 } }] } },
+      rating: 4.4,
+      review_count: 3230,
+    });
+
+    expect(selectDataForSeoBusinessProfile({
+      tasks: [{ result: [{ items: [{ title: "Same Name" }, { title: "Same Name" }] }] }],
+    }, { name: "Same Name" })).toBeNull();
+  });
+
   it("keeps SerpAPI behind Brave as a fallback web provider", () => {
     const webProviders = providersForCapability("web_context").map((provider) => provider.id);
     expect(webProviders.indexOf("brave")).toBeGreaterThanOrEqual(0);
@@ -132,6 +188,7 @@ describe("Location Intelligence V2", () => {
     expect(source).toContain("google_place_id_conflict");
     expect(source).toContain("external_identity_already_attached");
     expect(source).toContain("profileGooglePlaceId = null");
+    expect(source).toContain("location_intelligence_v2_business_profile");
   });
 });
 
