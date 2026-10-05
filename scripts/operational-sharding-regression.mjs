@@ -61,6 +61,10 @@ for (const token of [
   "sourceRoutingEpoch",
   "targetRoutingEpoch",
   "targetSnapshot: \"replaced\"",
+  "global_freeze_compare_and_swap_failed",
+  "global_cutover_compare_and_swap_failed",
+  "cutoverDone",
+  "post_cutover_audit_retry",
 ]) {
   if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
 }
