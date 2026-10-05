@@ -89,6 +89,9 @@ for (const token of [
   "targetFenceReleased",
   "target_fence_release_failed",
   "reservation_resource_assignments",
+  "classifyAuthoritativeCutoverState",
+  "ambiguous_cutover_state",
+  "authoritativeCutoverState === \"cutover\"",
 ]) {
   if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
 }
@@ -121,6 +124,7 @@ for (const token of [
   "refreeze-dr.json",
   "alter subscription $SUB enable",
   "from public.pos_payments p where p.tender_id=t.id",
+  "Mark the attempted mutation before the request",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -211,6 +215,24 @@ if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {
 }
 if (!rebalance.includes("for (const batch of writableBatches(table, sourceRows))")) {
   throw new Error("Rebalance target writes must use bounded batches.");
+}
+if (rebalance.indexOf("sourceFenceFrozen = true;") > rebalance.indexOf("await upsertFence(source")) {
+  throw new Error("Rebalance must record the source fence attempt before the network mutation.");
+}
+if (rebalance.indexOf("globalFrozen = true;") > rebalance.indexOf("const frozenRows = await patchGlobal")) {
+  throw new Error("Rebalance must record the global freeze attempt before the network mutation.");
+}
+if (rebalance.indexOf("targetFenceInstalled = true;") > rebalance.indexOf("await upsertFence(target")) {
+  throw new Error("Rebalance must record the target fence attempt before the network mutation.");
+}
+for (const [flag, mutation] of [
+  ["PHYSICAL_FROZEN=true", "set frozen=true,reason='failover-promote-dr'"],
+  ["SUB_DISABLED=true", "alter subscription $SUB disable"],
+  ["PRIMARY_OPENED=true", "set frozen=false,reason='active-primary'"],
+]) {
+  if (failover.indexOf(flag) > failover.indexOf(mutation)) {
+    throw new Error(`Failover response-loss bookkeeping must precede mutation: ${flag}`);
+  }
 }
 if ((failover.match(/from public\.pos_payments p where p\.tender_id=t\.id/g) || []).length < 2) {
   throw new Error("Failover and failback drains must exclude persisted card tenders.");

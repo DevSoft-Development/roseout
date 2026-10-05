@@ -252,17 +252,19 @@ jobs:
             test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/current.json")" = "$SHARD_ID"
             test "$(jq -r '.[0].replication_state' "$RUNNER_TEMP/current.json")" = healthy
 
+            # Mark the attempted mutation before the request. A committed SQL
+            # mutation with a lost HTTP response must still be rolled back.
+            GLOBAL_FROZEN=true
             sql_api "$GLOBAL_REF" "update public.operational_shards
               set write_enabled=false,failover_state='promoting_dr',updated_at=now()
               where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$SHARD_ID';
               select write_enabled from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/global-freeze.json"
             test "$(jq -r '.[0].write_enabled' "$RUNNER_TEMP/global-freeze.json")" = false
-            GLOBAL_FROZEN=true
 
             ACTIVE_REF="$PRIMARY_REF"
+            PHYSICAL_FROZEN=true
             sql_api "$PRIMARY_REF" "update public.operational_shard_write_gate
               set frozen=true,reason='failover-promote-dr',updated_at=now() where id=1;" "$RUNNER_TEMP/source-freeze.json"
-            PHYSICAL_FROZEN=true
 
             drained=false
             for attempt in $(seq 1 60); do
@@ -305,9 +307,9 @@ jobs:
             done
             test "$caught_up" = true
 
+            SUB_DISABLED=true
             sql_api "$DR_REF" "alter subscription $SUB disable;
               update public.operational_shard_write_gate set frozen=false,reason='active-dr',updated_at=now() where id=1;" "$RUNNER_TEMP/disable.json"
-            SUB_DISABLED=true
 
             sql_api "$GLOBAL_REF" "with moved as (
                 update public.operational_shards
@@ -338,15 +340,15 @@ jobs:
             test "$CONFIRMATION" = PRIMARY_RESYNCED
             test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/current.json")" = "$DR_ID"
 
+            GLOBAL_FROZEN=true
             sql_api "$GLOBAL_REF" "update public.operational_shards
               set write_enabled=false,failover_state='promoting_primary',updated_at=now()
               where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$DR_ID';" "$RUNNER_TEMP/global-freeze.json"
-            GLOBAL_FROZEN=true
 
             ACTIVE_REF="$DR_REF"
+            PHYSICAL_FROZEN=true
             sql_api "$DR_REF" "update public.operational_shard_write_gate
               set frozen=true,reason='failback-primary',updated_at=now() where id=1;" "$RUNNER_TEMP/dr-freeze.json"
-            PHYSICAL_FROZEN=true
 
             drained=false
             for attempt in $(seq 1 60); do
@@ -365,9 +367,9 @@ jobs:
             done
             test "$drained" = true
 
+            PRIMARY_OPENED=true
             sql_api "$PRIMARY_REF" "update public.operational_shard_write_gate
               set frozen=false,reason='active-primary',updated_at=now() where id=1;" "$RUNNER_TEMP/primary-unfreeze.json"
-            PRIMARY_OPENED=true
 
             sql_api "$GLOBAL_REF" "with moved as (
                 update public.operational_shards

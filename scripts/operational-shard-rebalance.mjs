@@ -194,6 +194,24 @@ const canonicalHash = (rows) =>
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function classifyAuthoritativeCutoverState() {
+  try {
+    const [current] = await globalRows(
+      "locations",
+      `id=eq.${encodeURIComponent(locationId)}&select=operational_shard_id,operational_shard_epoch,operational_writes_frozen`,
+    );
+    if (!current) return "ambiguous";
+    const shardId = String(current.operational_shard_id || "primary");
+    const epoch = Number(current.operational_shard_epoch || 0);
+    const frozen = current.operational_writes_frozen === true;
+    if (shardId === targetLogicalShard && epoch === expectedEpoch + 1 && !frozen) return "cutover";
+    if (shardId === sourceLogicalShard && epoch === expectedEpoch) return "pre_cutover";
+    return "ambiguous";
+  } catch {
+    return "ambiguous";
+  }
+}
+
 await insertGlobal("location_shard_moves", {
   id: moveId,
   location_id: locationId,
@@ -216,9 +234,12 @@ let cutoverDone = false;
 try {
   // This update conflicts with the shared row lock every live shard write takes.
   // When it returns, already-running DB writes for the location have drained.
-  await upsertFence(source, expectedEpoch, true, `rebalance:${moveId}`);
+  // Record the attempted state before the network mutation so a committed
+  // write with a lost response is still cleaned up correctly.
   sourceFenceFrozen = true;
+  await upsertFence(source, expectedEpoch, true, `rebalance:${moveId}`);
 
+  globalFrozen = true;
   const frozenRows = await patchGlobal(
     "locations",
     `id=eq.${encodeURIComponent(locationId)}&operational_shard_epoch=eq.${expectedEpoch}&operational_writes_frozen=eq.false`,
@@ -228,7 +249,6 @@ try {
   if (!Array.isArray(frozenRows) || frozenRows.length !== 1) {
     throw new Error("global_freeze_compare_and_swap_failed");
   }
-  globalFrozen = true;
 
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, { status: "copying" });
 
@@ -260,8 +280,8 @@ try {
   }
   if (!drained) throw new Error("in_flight_card_tenders_did_not_drain");
 
-  await upsertFence(target, expectedEpoch + 1, true, `rebalance-target-copy:${moveId}`, targetBypassToken);
   targetFenceInstalled = true;
+  await upsertFence(target, expectedEpoch + 1, true, `rebalance-target-copy:${moveId}`, targetBypassToken);
 
   // Replays and move-backs must start from an exact empty tenant snapshot on
   // the target. Delete in reverse dependency order so rows removed on the
@@ -391,6 +411,30 @@ try {
     manifest,
   }));
 } catch (error) {
+  if (!cutoverDone) {
+    const authoritativeCutoverState = await classifyAuthoritativeCutoverState();
+    if (authoritativeCutoverState === "cutover") {
+      // The cutover PATCH committed but its response was lost. Treat routing
+      // as authoritative and never reopen the old source fence.
+      cutoverDone = true;
+      globalFrozen = false;
+    } else if (authoritativeCutoverState === "ambiguous") {
+      // Assignment cannot be proven either pre- or post-cutover. Preserve the
+      // source fence and global freeze; keep the target fenced too.
+      if (targetFenceInstalled) {
+        await upsertFence(target, expectedEpoch + 1, true, `ambiguous-cutover:${moveId}`).catch(() => {});
+      }
+      await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
+        status: "failed",
+        failure_reason: error instanceof Error
+          ? `ambiguous_cutover_state:${error.message}`
+          : "ambiguous_cutover_state",
+        data_manifest: manifest,
+      }).catch(() => {});
+      throw error;
+    }
+  }
+
   if (!cutoverDone) {
     if (targetFenceInstalled) {
       await upsertFence(target, expectedEpoch + 1, true, `rebalance-aborted:${moveId}`).catch(() => {});
