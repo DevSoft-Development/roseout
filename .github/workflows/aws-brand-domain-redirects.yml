@@ -1,0 +1,362 @@
+name: AWS brand domain redirects
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-brand-domain-redirects.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/aws-brand-domain-redirects.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-brand-domain-redirects-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  POS_DOMAIN: theposhaven.com
+  POS_TARGET: pos.theouthaven.com
+  RESERVE_DOMAIN: thereservehaven.com
+  RESERVE_TARGET: reserve.theouthaven.com
+  CLOUDFRONT_ZONE_ID: Z2FDTNDATAQYW2
+
+jobs:
+  validate:
+    name: Validate brand redirect contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate safety contract
+        run: |
+          set -euo pipefail
+          test "$(grep -c 'theposhaven.com' .github/workflows/aws-brand-domain-redirects.yml)" -ge 2
+          test "$(grep -c 'thereservehaven.com' .github/workflows/aws-brand-domain-redirects.yml)" -ge 2
+          grep -F 'pos.theouthaven.com' .github/workflows/aws-brand-domain-redirects.yml >/dev/null
+          grep -F 'reserve.theouthaven.com' .github/workflows/aws-brand-domain-redirects.yml >/dev/null
+          grep -F '301' .github/workflows/aws-brand-domain-redirects.yml >/dev/null
+          ! grep -Eq 'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}' .github/workflows/aws-brand-domain-redirects.yml
+
+  deploy:
+    name: Deploy brand redirects
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve AWS deploy role
+        id: config
+        env:
+          CONFIGURED_ROLE: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          echo "role_arn=${CONFIGURED_ROLE:-arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ steps.config.outputs.role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS identity
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Bootstrap temporary brand-domain permissions
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          cat > "$RUNNER_TEMP/brand-domain-policy.json" <<'JSON'
+          {
+            "Version":"2012-10-17",
+            "Statement":[
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "route53:ListHostedZones",
+                  "route53:ListResourceRecordSets",
+                  "route53:ChangeResourceRecordSets",
+                  "route53:GetChange"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "acm:RequestCertificate",
+                  "acm:ListCertificates",
+                  "acm:DescribeCertificate",
+                  "acm:AddTagsToCertificate",
+                  "acm:ListTagsForCertificate"
+                ],
+                "Resource":"*"
+              },
+              {
+                "Effect":"Allow",
+                "Action":[
+                  "cloudfront:ListDistributions",
+                  "cloudfront:GetDistribution",
+                  "cloudfront:GetDistributionConfig",
+                  "cloudfront:CreateDistribution",
+                  "cloudfront:CreateFunction",
+                  "cloudfront:DescribeFunction",
+                  "cloudfront:UpdateFunction",
+                  "cloudfront:PublishFunction"
+                ],
+                "Resource":"*"
+              }
+            ]
+          }
+          JSON
+          aws iam put-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenBrandDomainRedirectBootstrap             --policy-document "file://$RUNNER_TEMP/brand-domain-policy.json"
+          sleep 8
+
+      - name: Resolve Route 53 hosted zones
+        id: zones
+        run: |
+          set -euo pipefail
+          aws route53 list-hosted-zones > "$RUNNER_TEMP/zones.json"
+          resolve_zone() {
+            jq -r --arg name "$1." '[.HostedZones[] | select(.Name==$name and .Config.PrivateZone==false)][0].Id // empty' "$RUNNER_TEMP/zones.json" | sed 's#^/hostedzone/##'
+          }
+          POS_ZONE="$(resolve_zone "$POS_DOMAIN")"
+          RESERVE_ZONE="$(resolve_zone "$RESERVE_DOMAIN")"
+          test -n "$POS_ZONE" || { echo "::error::Public hosted zone not found for $POS_DOMAIN"; exit 1; }
+          test -n "$RESERVE_ZONE" || { echo "::error::Public hosted zone not found for $RESERVE_DOMAIN"; exit 1; }
+          echo "pos_zone=$POS_ZONE" >> "$GITHUB_OUTPUT"
+          echo "reserve_zone=$RESERVE_ZONE" >> "$GITHUB_OUTPUT"
+
+      - name: Request or reuse ACM certificate
+        id: cert
+        run: |
+          set -euo pipefail
+          ARN="$(aws acm list-certificates --certificate-statuses ISSUED PENDING_VALIDATION             --query "CertificateSummaryList[?DomainName=='$POS_DOMAIN'].CertificateArn | [0]" --output text)"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            ARN="$(aws acm request-certificate               --domain-name "$POS_DOMAIN"               --subject-alternative-names "www.$POS_DOMAIN" "$RESERVE_DOMAIN" "www.$RESERVE_DOMAIN"               --validation-method DNS               --idempotency-token tohbranddomains               --options CertificateTransparencyLoggingPreference=ENABLED               --query CertificateArn --output text)"
+            aws acm add-tags-to-certificate --certificate-arn "$ARN"               --tags Key=Project,Value=TheOutHaven Key=Purpose,Value=BrandDomainRedirects
+          fi
+          echo "certificate_arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Publish ACM DNS validation records
+        env:
+          CERTIFICATE_ARN: ${{ steps.cert.outputs.certificate_arn }}
+          POS_ZONE: ${{ steps.zones.outputs.pos_zone }}
+          RESERVE_ZONE: ${{ steps.zones.outputs.reserve_zone }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" > "$RUNNER_TEMP/cert.json"
+            COUNT="$(jq '[.Certificate.DomainValidationOptions[] | select(.ResourceRecord.Name != null)] | length' "$RUNNER_TEMP/cert.json")"
+            [ "$COUNT" -ge 4 ] && break
+            sleep 3
+          done
+          jq -e '.Certificate.DomainValidationOptions | length >= 4' "$RUNNER_TEMP/cert.json" >/dev/null
+
+          jq -c '.Certificate.DomainValidationOptions[] | .ResourceRecord' "$RUNNER_TEMP/cert.json" | while read -r rr; do
+            NAME="$(jq -r '.Name' <<<"$rr")"
+            VALUE="$(jq -r '.Value' <<<"$rr")"
+            case "$NAME" in
+              *."$POS_DOMAIN".|*."$POS_DOMAIN") ZONE="$POS_ZONE" ;;
+              *."$RESERVE_DOMAIN".|*."$RESERVE_DOMAIN") ZONE="$RESERVE_ZONE" ;;
+              *) echo "::error::Unexpected ACM validation name: $NAME"; exit 1 ;;
+            esac
+            jq -n --arg name "$NAME" --arg value "$VALUE"               '{Comment:"TheOutHaven brand-domain ACM validation",Changes:[{Action:"UPSERT",ResourceRecordSet:{Name:$name,Type:"CNAME",TTL:300,ResourceRecords:[{Value:$value}]}}]}'               > "$RUNNER_TEMP/acm-change.json"
+            CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$ZONE"               --change-batch "file://$RUNNER_TEMP/acm-change.json" --query ChangeInfo.Id --output text)"
+            aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          done
+
+      - name: Wait for ACM issuance
+        env:
+          CERTIFICATE_ARN: ${{ steps.cert.outputs.certificate_arn }}
+        run: |
+          set -euo pipefail
+          aws acm wait certificate-validated --certificate-arn "$CERTIFICATE_ARN"
+          test "$(aws acm describe-certificate --certificate-arn "$CERTIFICATE_ARN" --query Certificate.Status --output text)" = "ISSUED"
+
+      - name: Create or update redirect functions
+        id: functions
+        run: |
+          set -euo pipefail
+          ensure_function() {
+            local name="$1" target="$2" code="$RUNNER_TEMP/${name}.js"
+            cat > "$code" <<EOF
+          function handler(event) {
+            return {
+              statusCode: 301,
+              statusDescription: 'Moved Permanently',
+              headers: {
+                location: { value: 'https://${target}' + event.request.uri + (event.request.querystring && Object.keys(event.request.querystring).length ? '?' + Object.keys(event.request.querystring).map(function(k){var q=event.request.querystring[k];return encodeURIComponent(k)+'='+encodeURIComponent(q.value || '');}).join('&') : '') },
+                'cache-control': { value: 'public, max-age=300' }
+              }
+            };
+          }
+          EOF
+            if aws cloudfront describe-function --name "$name" >/dev/null 2>&1; then
+              ETAG="$(aws cloudfront describe-function --name "$name" --query ETag --output text)"
+              aws cloudfront update-function --name "$name" --if-match "$ETAG"                 --function-config Comment="TheOutHaven brand redirect to $target",Runtime=cloudfront-js-2.0                 --function-code "fileb://$code" >/dev/null
+            else
+              aws cloudfront create-function --name "$name"                 --function-config Comment="TheOutHaven brand redirect to $target",Runtime=cloudfront-js-2.0                 --function-code "fileb://$code" >/dev/null
+            fi
+            ETAG="$(aws cloudfront describe-function --name "$name" --query ETag --output text)"
+            aws cloudfront publish-function --name "$name" --if-match "$ETAG" >/dev/null
+            aws cloudfront describe-function --name "$name" --stage LIVE --query FunctionSummary.FunctionMetadata.FunctionARN --output text
+          }
+          POS_ARN="$(ensure_function toh-brand-redirect-theposhaven "$POS_TARGET")"
+          RESERVE_ARN="$(ensure_function toh-brand-redirect-thereservehaven "$RESERVE_TARGET")"
+          echo "pos_arn=$POS_ARN" >> "$GITHUB_OUTPUT"
+          echo "reserve_arn=$RESERVE_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse CloudFront distributions
+        id: cf
+        env:
+          CERTIFICATE_ARN: ${{ steps.cert.outputs.certificate_arn }}
+          POS_FUNCTION_ARN: ${{ steps.functions.outputs.pos_arn }}
+          RESERVE_FUNCTION_ARN: ${{ steps.functions.outputs.reserve_arn }}
+        run: |
+          set -euo pipefail
+          ensure_distribution() {
+            local domain="$1" function_arn="$2" label="$3"
+            aws cloudfront list-distributions > "$RUNNER_TEMP/distributions.json"
+            local id
+            id="$(jq -r --arg d "$domain" '[.DistributionList.Items[]? | select(any(.Aliases.Items[]?; .==$d))][0].Id // empty' "$RUNNER_TEMP/distributions.json")"
+            if [ -n "$id" ]; then
+              local comment
+              comment="$(jq -r --arg id "$id" '[.DistributionList.Items[]? | select(.Id==$id)][0].Comment // empty' "$RUNNER_TEMP/distributions.json")"
+              test "$comment" = "TheOutHaven brand redirect: $domain" || {
+                echo "::error::Alias $domain already belongs to an unexpected CloudFront distribution ($id)."
+                exit 1
+              }
+              echo "$id"
+              return
+            fi
+            local caller="toh-${label}-$(date +%s)"
+            jq -n               --arg caller "$caller"               --arg comment "TheOutHaven brand redirect: $domain"               --arg apex "$domain"               --arg www "www.$domain"               --arg origin "origin-$label"               --arg functionArn "$function_arn"               --arg cert "$CERTIFICATE_ARN"               '{
+                CallerReference:$caller,
+                Comment:$comment,
+                Enabled:true,
+                HttpVersion:"http2and3",
+                IPV6Enabled:true,
+                Aliases:{Quantity:2,Items:[$apex,$www]},
+                Origins:{Quantity:1,Items:[{
+                  Id:$origin,
+                  DomainName:"theouthaven.com",
+                  CustomOriginConfig:{
+                    HTTPPort:80,HTTPSPort:443,
+                    OriginProtocolPolicy:"https-only",
+                    OriginSslProtocols:{Quantity:1,Items:["TLSv1.2"]},
+                    OriginReadTimeout:30,
+                    OriginKeepaliveTimeout:5
+                  }
+                }]},
+                DefaultCacheBehavior:{
+                  TargetOriginId:$origin,
+                  ViewerProtocolPolicy:"redirect-to-https",
+                  AllowedMethods:{Quantity:2,Items:["GET","HEAD"],CachedMethods:{Quantity:2,Items:["GET","HEAD"]}},
+                  Compress:true,
+                  SmoothStreaming:false,
+                  FieldLevelEncryptionId:"",
+                  CachePolicyId:"658327ea-f89d-4fab-a63d-7e88639e58f6",
+                  FunctionAssociations:{Quantity:1,Items:[{FunctionARN:$functionArn,EventType:"viewer-request"}]},
+                  TrustedSigners:{Enabled:false,Quantity:0},
+                  TrustedKeyGroups:{Enabled:false,Quantity:0}
+                },
+                ViewerCertificate:{
+                  ACMCertificateArn:$cert,
+                  SSLSupportMethod:"sni-only",
+                  MinimumProtocolVersion:"TLSv1.2_2021",
+                  CertificateSource:"acm"
+                },
+                PriceClass:"PriceClass_100",
+                Restrictions:{GeoRestriction:{RestrictionType:"none",Quantity:0}}
+              }' > "$RUNNER_TEMP/${label}-distribution.json"
+            aws cloudfront create-distribution --distribution-config "file://$RUNNER_TEMP/${label}-distribution.json" --query Distribution.Id --output text
+          }
+
+          POS_ID="$(ensure_distribution "$POS_DOMAIN" "$POS_FUNCTION_ARN" pos)"
+          RESERVE_ID="$(ensure_distribution "$RESERVE_DOMAIN" "$RESERVE_FUNCTION_ARN" reserve)"
+          echo "pos_id=$POS_ID" >> "$GITHUB_OUTPUT"
+          echo "reserve_id=$RESERVE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for CloudFront and publish Route 53 aliases
+        env:
+          POS_ID: ${{ steps.cf.outputs.pos_id }}
+          RESERVE_ID: ${{ steps.cf.outputs.reserve_id }}
+          POS_ZONE: ${{ steps.zones.outputs.pos_zone }}
+          RESERVE_ZONE: ${{ steps.zones.outputs.reserve_zone }}
+        run: |
+          set -euo pipefail
+          aws cloudfront wait distribution-deployed --id "$POS_ID"
+          aws cloudfront wait distribution-deployed --id "$RESERVE_ID"
+          POS_CF="$(aws cloudfront get-distribution --id "$POS_ID" --query Distribution.DomainName --output text)"
+          RESERVE_CF="$(aws cloudfront get-distribution --id "$RESERVE_ID" --query Distribution.DomainName --output text)"
+
+          publish_aliases() {
+            local domain="$1" cf="$2" zone="$3"
+            jq -n --arg apex "$domain" --arg www "www.$domain" --arg dns "$cf" --arg zone "$CLOUDFRONT_ZONE_ID"               '{Comment:"TheOutHaven brand redirect aliases",Changes:[
+                {Action:"UPSERT",ResourceRecordSet:{Name:$apex,Type:"A",AliasTarget:{DNSName:$dns,HostedZoneId:$zone,EvaluateTargetHealth:false}}},
+                {Action:"UPSERT",ResourceRecordSet:{Name:$apex,Type:"AAAA",AliasTarget:{DNSName:$dns,HostedZoneId:$zone,EvaluateTargetHealth:false}}},
+                {Action:"UPSERT",ResourceRecordSet:{Name:$www,Type:"A",AliasTarget:{DNSName:$dns,HostedZoneId:$zone,EvaluateTargetHealth:false}}},
+                {Action:"UPSERT",ResourceRecordSet:{Name:$www,Type:"AAAA",AliasTarget:{DNSName:$dns,HostedZoneId:$zone,EvaluateTargetHealth:false}}}
+              ]}' > "$RUNNER_TEMP/alias-change.json"
+            CHANGE_ID="$(aws route53 change-resource-record-sets --hosted-zone-id "$zone"               --change-batch "file://$RUNNER_TEMP/alias-change.json" --query ChangeInfo.Id --output text)"
+            aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+          }
+          publish_aliases "$POS_DOMAIN" "$POS_CF" "$POS_ZONE"
+          publish_aliases "$RESERVE_DOMAIN" "$RESERVE_CF" "$RESERVE_ZONE"
+
+      - name: Verify HTTPS redirects
+        run: |
+          set -euo pipefail
+          verify_redirect() {
+            local source="$1" target="$2"
+            for attempt in $(seq 1 20); do
+              LOCATION="$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{redirect_url}' "https://$source/" || true)"
+              if [ "$LOCATION" = "https://$target/" ]; then
+                echo "$source -> $LOCATION"
+                return 0
+              fi
+              sleep 15
+            done
+            echo "::error::$source did not redirect to https://$target/"
+            return 1
+          }
+          verify_redirect "$POS_DOMAIN" "$POS_TARGET"
+          verify_redirect "www.$POS_DOMAIN" "$POS_TARGET"
+          verify_redirect "$RESERVE_DOMAIN" "$RESERVE_TARGET"
+          verify_redirect "www.$RESERVE_DOMAIN" "$RESERVE_TARGET"
+
+      - name: Summary
+        run: |
+          {
+            echo '### Brand domain redirects'
+            echo '- theposhaven.com -> https://pos.theouthaven.com'
+            echo '- www.theposhaven.com -> https://pos.theouthaven.com'
+            echo '- thereservehaven.com -> https://reserve.theouthaven.com'
+            echo '- www.thereservehaven.com -> https://reserve.theouthaven.com'
+            echo '- TLS: ACM (us-east-1)'
+            echo '- Edge: CloudFront + CloudFront Functions'
+            echo '- DNS: Route 53'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary brand-domain permissions
+        if: always()
+        env:
+          DEPLOY_ROLE_ARN: ${{ steps.config.outputs.role_arn }}
+        run: |
+          set -euo pipefail
+          ROLE_NAME="${DEPLOY_ROLE_ARN##*/}"
+          aws iam delete-role-policy             --role-name "$ROLE_NAME"             --policy-name TheOutHavenBrandDomainRedirectBootstrap || true
