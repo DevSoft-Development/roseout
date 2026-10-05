@@ -32,7 +32,7 @@ for (const token of ["for update", "pos_check_not_payable", "pos_check_already_p
   if (!migration.includes(token)) throw new Error(`Missing atomic POS tender invariant: ${token}`);
 }
 if (!contracts.includes("cancelPaymentIntent")) throw new Error("POS provider contract must support PaymentIntent cancellation.");
-if (!stripe.includes("/cancel") || !stripe.includes('reason?: "duplicate"')) {
+if (!stripe.includes("/cancel") || !stripe.includes("cancellation_reason") || !contracts.includes('reason?: "duplicate"')) {
   throw new Error("Stripe POS adapter must cancel orphaned PaymentIntents through the provider boundary.");
 }
 if (service.includes('import { supabaseAdmin }')) throw new Error("POS payment service must not bind tenant writes to the global Supabase admin client.");
