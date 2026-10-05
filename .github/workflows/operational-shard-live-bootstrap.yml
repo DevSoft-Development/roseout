@@ -21,6 +21,7 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  DR_SECRET: /theouthaven/production/dr-reconciler/env
   GLOBAL_REF: ftdsltatyqhtllyyefzp
   SHARD01_REF: lyeruuzsnceaxrmdafxb
   SHARD01_DR_REF: vcdnwrsuvhtlvxqbkamg
@@ -58,21 +59,37 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
-      - name: Load Supabase management token
+      - name: Load Supabase management tokens
         run: |
           set -euo pipefail
           aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
-          TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
-          test -n "$TOKEN" || { echo "::error::Supabase management token is unavailable in Credential Vault."; exit 1; }
-          echo "::add-mask::$TOKEN"
-          echo "SUPABASE_ACCESS_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
+          test -n "$PRIMARY_TOKEN" || { echo "::error::Primary Supabase management token is unavailable in Credential Vault."; exit 1; }
+          echo "::add-mask::$PRIMARY_TOKEN"
+          if [ -n "$FALLBACK_TOKEN" ]; then echo "::add-mask::$FALLBACK_TOKEN"; fi
+          echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
+          echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
 
       - name: Resolve modern secret keys without printing them
         run: |
           set -euo pipefail
           resolve() {
-            local ref="$1" name="$2"
-            curl --fail --silent --show-error               -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$RUNNER_TEMP/${name}-keys.json"
+            local ref="$1" name="$2" token="$SUPABASE_ACCESS_TOKEN" code
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/${name}-keys.json" --write-out '%{http_code}'               -H "Authorization: Bearer $token"               "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN" || {
+                echo "::error::Primary Supabase token cannot reveal keys for ${name} (${ref}): HTTP ${code}, and no fallback token is available."
+                exit 1
+              }
+              token="$SUPABASE_FALLBACK_ACCESS_TOKEN"
+              code="$(curl --silent --show-error --output "$RUNNER_TEMP/${name}-keys.json" --write-out '%{http_code}'                 -H "Authorization: Bearer $token"                 "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" || true)"
+            fi
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "::error::Neither vault-managed Supabase management token can reveal keys for ${name} (${ref}): HTTP ${code}."
+              exit 1
+            fi
             secret="$(jq -r '[.[] | select(.type=="secret" and (.disabled != true))][0].api_key // empty' "$RUNNER_TEMP/${name}-keys.json")"
             test -n "$secret" || { echo "::error::No active modern secret key found for ${name} (${ref})."; exit 1; }
             [[ "$secret" == sb_secret_* ]]
@@ -139,4 +156,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/activate*.json
+        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/activate*.json
