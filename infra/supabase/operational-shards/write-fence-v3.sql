@@ -3,6 +3,18 @@
 
 begin;
 
+create table if not exists public.operational_shard_write_gate (
+  id smallint primary key check (id = 1),
+  frozen boolean not null default false,
+  reason text,
+  updated_at timestamptz not null default now()
+);
+insert into public.operational_shard_write_gate(id,frozen) values (1,false)
+on conflict (id) do nothing;
+alter table public.operational_shard_write_gate enable row level security;
+revoke all on table public.operational_shard_write_gate from anon, authenticated;
+grant select, insert, update, delete on table public.operational_shard_write_gate to service_role;
+
 create table if not exists public.operational_location_write_fences (
   location_id uuid primary key,
   assignment_epoch bigint not null check (assignment_epoch > 0),
@@ -22,6 +34,8 @@ as $$
 declare
   v_location_id uuid;
   v_frozen boolean;
+  v_shard_frozen boolean;
+  v_cleanup_allowed boolean := false;
 begin
   if tg_table_name = 'locations' then
     v_location_id := coalesce(new.id, old.id);
@@ -31,6 +45,23 @@ begin
 
   if v_location_id is null then
     return coalesce(new, old);
+  end if;
+
+  v_cleanup_allowed :=
+    tg_table_name = 'pos_tenders'
+    and tg_op = 'UPDATE'
+    and old.status = 'initiated'
+    and new.status = 'voided';
+
+  -- Every operational write also participates in a physical-shard gate.
+  -- Freezing this singleton row waits for all currently writing transactions.
+  select frozen into v_shard_frozen
+  from public.operational_shard_write_gate
+  where id = 1
+  for share;
+
+  if coalesce(v_shard_frozen, false) and not v_cleanup_allowed then
+    raise exception 'operational_shard_writes_frozen';
   end if;
 
   -- Every write transaction participates in the location fence. The shared
@@ -48,10 +79,7 @@ begin
   if coalesce(v_frozen, false) then
     -- A card flow that was already in flight before the fence may need to
     -- void its reserved tender after cancelling the external intent.
-    if tg_table_name = 'pos_tenders'
-       and tg_op = 'UPDATE'
-       and old.status = 'initiated'
-       and new.status = 'voided' then
+    if v_cleanup_allowed then
       return new;
     end if;
     raise exception 'operational_location_writes_frozen';
