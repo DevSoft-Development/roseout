@@ -13,6 +13,9 @@ const rebalance = read("scripts/operational-shard-rebalance.mjs");
 const failover = read(".github/workflows/operational-shard-failover.yml");
 const rebalanceWorkflow = read(".github/workflows/operational-shard-rebalance.yml");
 const replicationWorkflow = read(".github/workflows/operational-shard-dr-replication.yml");
+const validationWorkflow = read(".github/workflows/operational-shard-validation.yml");
+const validationScript = read("scripts/validate-operational-shards.mjs");
+const liveBootstrap = read(".github/workflows/operational-shard-live-bootstrap.yml");
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -45,6 +48,10 @@ for (const token of [
   "for share",
   "operational_shard_writes_frozen",
   "operational_location_writes_frozen",
+  "bypass_token_hash",
+  "bypass_expires_at",
+  "x-theouthaven-rebalance-token",
+  "extensions.digest",
 ]) {
   if (!writeFence.includes(token)) throw new Error(`Missing local write-fence invariant: ${token}`);
 }
@@ -65,6 +72,10 @@ for (const token of [
   "global_cutover_compare_and_swap_failed",
   "cutoverDone",
   "post_cutover_audit_retry",
+  "targetBypassToken",
+  "targetFenceInstalled",
+  "targetFenceReleased",
+  "target_fence_release_failed",
 ]) {
   if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
 }
@@ -89,6 +100,9 @@ for (const token of [
   "ambiguous-routing",
   "CURRENT_ACTIVE",
   "CURRENT_EPOCH",
+  "OPERATIONAL_SHARDS_JSON",
+  "runtime_preflight",
+  "operational_shard_write_gate",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -101,10 +115,28 @@ if (!isolationProof.includes("operational_location_write_fences")) {
   throw new Error("Isolation proof must clean synthetic location write-fence rows.");
 }
 
-for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow]) {
+for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow, liveBootstrap]) {
   if (!workflow.includes("group: operational-shard-control-production")) {
     throw new Error("Operational shard mutations must share one serialized control-plane concurrency group.");
   }
+}
+
+for (const shardId of ["shard-01", "shard-01-dr", "shard-02", "shard-02-dr"]) {
+  if (!validationWorkflow.includes(shardId)) {
+    throw new Error(`Standard live validation must include ${shardId}.`);
+  }
+}
+if (!validationScript.includes("Shard runtime write disabled")) {
+  throw new Error("Live validation must fail when a physical runtime shard is not write-capable.");
+}
+for (const token of [
+  '"shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:true}',
+  '"shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:true}',
+]) {
+  if (!liveBootstrap.includes(token)) throw new Error(`DR runtime configuration must be failover-capable: ${token}`);
+}
+if (!replicationWorkflow.includes("replication_state='broken'") || !replicationWorkflow.includes("replication_state='healthy'")) {
+  throw new Error("Replication rotation must fail closed and only mark healthy after verification.");
 }
 
 for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {

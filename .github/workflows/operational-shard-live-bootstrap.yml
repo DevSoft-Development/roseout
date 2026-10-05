@@ -17,6 +17,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: operational-shard-control-production
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
@@ -72,6 +76,25 @@ jobs:
           echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
           echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
 
+      - name: Apply latest tenant write-fence schema to all four shards
+        run: |
+          set -euo pipefail
+          sql="$(cat infra/supabase/operational-shards/write-fence-v3.sql)"
+          apply_schema() {
+            local ref="$1" label="$2" token="$SUPABASE_ACCESS_TOKEN" code
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/${label}-write-fence.json"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-write-fence-result.json" --write-out '%{http_code}'               --request POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/${label}-write-fence.json" "https://api.supabase.com/v1/projects/${ref}/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN" || { cat "$RUNNER_TEMP/${label}-write-fence-result.json"; return 1; }
+              code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-write-fence-result.json" --write-out '%{http_code}'                 --request POST -H "Authorization: Bearer $SUPABASE_FALLBACK_ACCESS_TOKEN" -H 'Content-Type: application/json'                 --data-binary "@$RUNNER_TEMP/${label}-write-fence.json" "https://api.supabase.com/v1/projects/${ref}/database/query" || true)"
+            fi
+            test "$code" -ge 200 && test "$code" -lt 300 || { cat "$RUNNER_TEMP/${label}-write-fence-result.json"; return 1; }
+          }
+          apply_schema "$SHARD01_REF" shard01
+          apply_schema "$SHARD01_DR_REF" shard01dr
+          apply_schema "$SHARD02_REF" shard02
+          apply_schema "$SHARD02_DR_REF" shard02dr
+
       - name: Resolve modern secret keys without printing them
         run: |
           set -euo pipefail
@@ -106,9 +129,9 @@ jobs:
           set -euo pipefail
           jq -n             --arg s1 "https://${SHARD01_REF}.supabase.co"             --arg s1k "$(cat "$RUNNER_TEMP/shard01-secret")"             --arg s1dr "https://${SHARD01_DR_REF}.supabase.co"             --arg s1drk "$(cat "$RUNNER_TEMP/shard01dr-secret")"             --arg s2 "https://${SHARD02_REF}.supabase.co"             --arg s2k "$(cat "$RUNNER_TEMP/shard02-secret")"             --arg s2dr "https://${SHARD02_DR_REF}.supabase.co"             --arg s2drk "$(cat "$RUNNER_TEMP/shard02dr-secret")"             '{
               "shard-01": {url:$s1,serviceRoleKey:$s1k,readEnabled:true,writeEnabled:true},
-              "shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:false},
+              "shard-01-dr": {url:$s1dr,serviceRoleKey:$s1drk,readEnabled:true,writeEnabled:true},
               "shard-02": {url:$s2,serviceRoleKey:$s2k,readEnabled:true,writeEnabled:true},
-              "shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:false}
+              "shard-02-dr": {url:$s2dr,serviceRoleKey:$s2drk,readEnabled:true,writeEnabled:true}
             }' > "$RUNNER_TEMP/operational-shards.json"
           shards="$(cat "$RUNNER_TEMP/operational-shards.json")"
           echo "::add-mask::$shards"
@@ -147,13 +170,13 @@ jobs:
           {
             echo '### Operational shard bootstrap'
             echo '- Shard 01 primary: active in us-east-1'
-            echo '- Shard 01 DR: reachable in us-west-1; write-disabled in runtime map'
+            echo '- Shard 01 DR: reachable in us-west-1; runtime write-capable for controlled failover'
             echo '- Shard 02 primary: active in us-east-1'
-            echo '- Shard 02 DR: reachable in us-west-1; write-disabled in runtime map'
+            echo '- Shard 02 DR: reachable in us-west-1; runtime write-capable for controlled failover'
             echo '- Server secrets persisted only in AWS Credential Vault'
             echo '- Global routing registry activated after live POS schema proof'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/activate*.json
+        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/*-write-fence*.json "$RUNNER_TEMP"/activate*.json

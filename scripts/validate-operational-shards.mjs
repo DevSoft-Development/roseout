@@ -14,14 +14,23 @@ if (!config || typeof config !== "object" || Array.isArray(config)) {
 for (const shardId of expected) {
   const shard = config[shardId];
   if (!shard?.url || !shard?.serviceRoleKey) throw new Error(`Missing configured shard: ${shardId}`);
-  const response = await fetch(`${String(shard.url).replace(/\/$/, "")}/rest/v1/pos_checks?select=id&limit=1`, {
+  if (shard.writeEnabled === false) throw new Error(`Shard runtime write disabled: ${shardId}`);
+  const baseUrl = String(shard.url).replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/rest/v1/pos_checks?select=id&limit=1`, {
     headers: {
       apikey: shard.serviceRoleKey,
       Authorization: `Bearer ${shard.serviceRoleKey}`,
     },
   });
   if (!response.ok) throw new Error(`Shard ${shardId} schema probe failed with HTTP ${response.status}`);
-  console.log(`${shardId}: reachable and POS schema available`);
+  const gate = await fetch(`${baseUrl}/rest/v1/operational_shard_write_gate?select=id,frozen&limit=1`, {
+    headers: {
+      apikey: shard.serviceRoleKey,
+      Authorization: `Bearer ${shard.serviceRoleKey}`,
+    },
+  });
+  if (!gate.ok) throw new Error(`Shard ${shardId} write-gate probe failed with HTTP ${gate.status}`);
+  console.log(`${shardId}: reachable, runtime write-capable, and POS/write-gate schema available`);
 }
 if (expected.length < 2) throw new Error("Multi-shard validation requires at least two expected operational shards.");
 console.log(`Validated ${expected.length} operational shards.`);

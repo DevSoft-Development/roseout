@@ -60,11 +60,18 @@ jobs:
           aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
           PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/vault.json")"
           FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
-          test -n "$PRIMARY_TOKEN"
+          SHARDS="$(jq -r '.operationalShardsJson // empty' "$RUNNER_TEMP/vault.json")"
+          test -n "$PRIMARY_TOKEN" && test -n "$SHARDS"
           echo "::add-mask::$PRIMARY_TOKEN"
+          echo "::add-mask::$SHARDS"
           [ -z "$FALLBACK_TOKEN" ] || echo "::add-mask::$FALLBACK_TOKEN"
           echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
           echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
+          {
+            echo 'OPERATIONAL_SHARDS_JSON<<TOH_SHARDS'
+            printf '%s\n' "$SHARDS"
+            echo 'TOH_SHARDS'
+          } >> "$GITHUB_ENV"
 
       - name: Validate, drain, prove RPO, and cut over routing
         env:
@@ -102,6 +109,22 @@ jobs:
             fi
             test "$code" -ge 200 && test "$code" -lt 300 || { cat "$out"; return 1; }
           }
+
+          runtime_preflight() {
+            local physical_id="$1" ref="$2" url key write_enabled code
+            url="$(printf '%s' "$OPERATIONAL_SHARDS_JSON" | jq -r --arg id "$physical_id" '.[$id].url // empty')"
+            key="$(printf '%s' "$OPERATIONAL_SHARDS_JSON" | jq -r --arg id "$physical_id" '.[$id].serviceRoleKey // empty')"
+            write_enabled="$(printf '%s' "$OPERATIONAL_SHARDS_JSON" | jq -r --arg id "$physical_id" '.[$id].writeEnabled // true')"
+            test "$url" = "https://$ref.supabase.co"
+            test -n "$key"
+            test "$write_enabled" = true
+            echo "::add-mask::$key"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/runtime-$physical_id.json" --write-out '%{http_code}'               -H "apikey: $key" -H "Authorization: Bearer $key"               "$url/rest/v1/operational_shard_write_gate?select=id,frozen&limit=1" || true)"
+            test "$code" = 200 || { cat "$RUNNER_TEMP/runtime-$physical_id.json"; return 1; }
+          }
+
+          runtime_preflight "$SHARD_ID" "$PRIMARY_REF"
+          runtime_preflight "$DR_ID" "$DR_REF"
 
           GLOBAL_FROZEN=false
           PHYSICAL_FROZEN=false

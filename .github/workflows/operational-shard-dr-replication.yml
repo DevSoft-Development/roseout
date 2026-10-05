@@ -42,6 +42,7 @@ jobs:
           set -euo pipefail
           grep -F 'toh_operational_dr' infra/supabase/operational-shards/hardening-v2.sql >/dev/null
           grep -F 'openssl rand -hex 32' .github/workflows/operational-shard-dr-replication.yml >/dev/null
+          grep -F "replication_state='broken'" .github/workflows/operational-shard-dr-replication.yml >/dev/null
           ! grep -Eq 'password[[:space:]]*:[[:space:]]*["'\''][^$]' .github/workflows/operational-shard-dr-replication.yml
 
   configure:
@@ -92,6 +93,12 @@ jobs:
           configure_pair() {
             local logical="$1" source="$2" target="$3" role="$4" sub="$5"
             local password conn source_sql target_check exists target_sql
+            sql_api "$GLOBAL_REF" "update public.operational_shards
+              set replication_state='broken',last_replication_check_at=now(),updated_at=now()
+              where id='$logical';
+              select replication_state from public.operational_shards where id='$logical';" "$RUNNER_TEMP/$logical-mark-broken.json"
+            test "$(jq -r '.[0].replication_state // empty' "$RUNNER_TEMP/$logical-mark-broken.json")" = broken
+
             password="$(openssl rand -hex 32)"
             echo "::add-mask::$password"
             conn="host=db.$source.supabase.co port=5432 dbname=postgres user=$role password=$password sslmode=require"
@@ -158,15 +165,18 @@ jobs:
               sleep 5
             done
             test "$caught_up" = "true"
+
+            sql_api "$GLOBAL_REF" "update public.operational_shards
+              set replication_state='healthy',last_replication_check_at=now(),updated_at=now()
+              where id='$logical';
+              select replication_state from public.operational_shards where id='$logical';" "$RUNNER_TEMP/$logical-mark-healthy.json"
+            test "$(jq -r '.[0].replication_state // empty' "$RUNNER_TEMP/$logical-mark-healthy.json")" = healthy
             echo "$logical replication_ready=true lag_bytes=$lag_bytes" >> "$GITHUB_STEP_SUMMARY"
           }
 
           configure_pair shard-01 "$SHARD01_REF" "$SHARD01_DR_REF" toh_repl_shard01 toh_shard01_dr
           configure_pair shard-02 "$SHARD02_REF" "$SHARD02_DR_REF" toh_repl_shard02 toh_shard02_dr
 
-          sql_api "$GLOBAL_REF" "update public.operational_shards
-            set replication_state='healthy', last_replication_check_at=now()
-            where id in ('shard-01','shard-02');" "$RUNNER_TEMP/global-update.json"
 
       - name: Cleanup
         if: always()

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 const globalUrl = String(process.env.GLOBAL_SUPABASE_URL || "").replace(/\/$/, "");
 const globalKey = String(process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || "");
@@ -63,7 +63,7 @@ async function insertGlobal(table, body) {
   });
 }
 
-async function upsertFence(shard, epoch, frozen, reason) {
+async function upsertFence(shard, epoch, frozen, reason, bypassToken = "") {
   const base = String(shard.url).replace(/\/$/, "");
   return request(base, shard.serviceRoleKey, "/rest/v1/operational_location_write_fences?on_conflict=location_id", {
     method: "POST",
@@ -73,6 +73,8 @@ async function upsertFence(shard, epoch, frozen, reason) {
       assignment_epoch: epoch,
       frozen,
       reason,
+      bypass_token_hash: bypassToken ? createHash("sha256").update(bypassToken).digest("hex") : null,
+      bypass_expires_at: bypassToken ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
       updated_at: new Date().toISOString(),
     }),
   });
@@ -117,6 +119,15 @@ if (!source?.url || !source?.serviceRoleKey || !target?.url || !target?.serviceR
 }
 const sourceUrl = String(source.url).replace(/\/$/, "");
 const targetUrl = String(target.url).replace(/\/$/, "");
+const targetBypassToken = randomBytes(32).toString("hex");
+const targetMutation = (path, init = {}) =>
+  request(targetUrl, target.serviceRoleKey, path, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      "x-theouthaven-rebalance-token": targetBypassToken,
+    },
+  });
 
 const moveId = randomUUID();
 const tables = [
@@ -169,6 +180,8 @@ await insertGlobal("location_shard_moves", {
 
 const manifest = {};
 let sourceFenceFrozen = false;
+let targetFenceInstalled = false;
+let targetFenceReleased = false;
 let globalFrozen = false;
 let cutoverDone = false;
 try {
@@ -209,14 +222,15 @@ try {
   }
   if (!drained) throw new Error("in_flight_card_tenders_did_not_drain");
 
-  await upsertFence(target, expectedEpoch + 1, false, `rebalance-target:${moveId}`);
+  await upsertFence(target, expectedEpoch + 1, true, `rebalance-target-copy:${moveId}`, targetBypassToken);
+  targetFenceInstalled = true;
 
   // Replays and move-backs must start from an exact empty tenant snapshot on
   // the target. Delete in reverse dependency order so rows removed on the
   // active source cannot survive from an older target snapshot.
   for (const [table, filterColumn] of deletionOrder) {
     const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
-    await request(targetUrl, target.serviceRoleKey, `/rest/v1/${table}?${filter}`, {
+    await targetMutation(`/rest/v1/${table}?${filter}`, {
       method: "DELETE",
       headers: { Prefer: "return=minimal" },
     });
@@ -226,7 +240,7 @@ try {
     const filter = `${filterColumn}=eq.${encodeURIComponent(locationId)}`;
     const sourceRows = await fetchAll(sourceUrl, source.serviceRoleKey, table, filter);
     if (sourceRows.length) {
-      await request(targetUrl, target.serviceRoleKey, `/rest/v1/${table}?on_conflict=id`, {
+      await targetMutation(`/rest/v1/${table}?on_conflict=id`, {
         method: "POST",
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify(writableRows(table, sourceRows)),
@@ -302,6 +316,20 @@ try {
   cutoverDone = true;
   globalFrozen = false;
 
+  let targetReleased = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await upsertFence(target, expectedEpoch + 1, false, `active-after-rebalance:${moveId}`);
+      targetReleased = true;
+      targetFenceReleased = true;
+      break;
+    } catch (releaseError) {
+      if (attempt === 2) throw releaseError;
+      await sleep(1000);
+    }
+  }
+  if (!targetReleased) throw new Error("target_fence_release_failed");
+
   // Keep the old physical location fenced permanently. Any stale client that
   // attempts a late write to the old shard is rejected after cutover.
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, {
@@ -322,6 +350,9 @@ try {
   }));
 } catch (error) {
   if (!cutoverDone) {
+    if (targetFenceInstalled) {
+      await upsertFence(target, expectedEpoch + 1, true, `rebalance-aborted:${moveId}`).catch(() => {});
+    }
     if (globalFrozen) {
       await patchGlobal(
         "locations",
@@ -339,6 +370,9 @@ try {
       data_manifest: manifest,
     }).catch(() => {});
   } else {
+    if (targetFenceInstalled && !targetFenceReleased) {
+      await upsertFence(target, expectedEpoch + 1, true, `post-cutover-frozen:${moveId}`).catch(() => {});
+    }
     // Routing has already committed. Never reopen the old physical shard.
     // Retry the audit completion once, but preserve the successful cutover
     // even if the audit row remains unavailable.

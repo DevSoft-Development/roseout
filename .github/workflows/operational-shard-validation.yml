@@ -18,6 +18,7 @@ on:
       - '.github/workflows/operational-shard-dr-replication.yml'
       - '.github/workflows/operational-shard-failover.yml'
       - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   push:
     branches: [main]
@@ -36,6 +37,7 @@ on:
       - '.github/workflows/operational-shard-dr-replication.yml'
       - '.github/workflows/operational-shard-failover.yml'
       - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   workflow_dispatch:
     inputs:
@@ -48,7 +50,7 @@ on:
       expected_shards:
         description: Comma-separated operational shard ids
         required: true
-        default: shard-01,shard-02
+        default: shard-01,shard-01-dr,shard-02,shard-02-dr
         type: string
 
 permissions:
