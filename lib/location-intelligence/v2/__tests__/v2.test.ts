@@ -328,6 +328,7 @@ describe("Location Intelligence V2 500-location rollout", () => {
   it("treats old reserved work as stale but leaves recent work alone", () => {
     const now = Date.parse("2026-10-05T14:00:00.000Z");
     expect(rolloutReservationIsStale("2026-10-05T13:39:59.000Z", now)).toBe(true);
+    expect(rolloutReservationIsStale("2026-10-05T13:40:00.000Z", now)).toBe(true);
     expect(rolloutReservationIsStale("2026-10-05T13:40:01.000Z", now)).toBe(false);
     expect(rolloutReservationIsStale(null, now)).toBe(false);
   });
