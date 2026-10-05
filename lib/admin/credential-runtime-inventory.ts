@@ -20,6 +20,7 @@ const RUNTIME_MAPPINGS: Partial<Record<CredentialProviderId, ProviderRuntimeMapp
     { field: "publishableKey", env: ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"] },
     { field: "secretKey", env: ["SUPABASE_SECRET_KEY"] },
     { field: "serviceRoleKey", env: ["SUPABASE_SERVICE_ROLE_KEY"] },
+    { field: "operationalShardsJson", env: ["OPERATIONAL_SHARDS_JSON"] },
   ] },
   microsoft: { source: "Runtime environment", fields: [
     { field: "tenantId", env: ["MICROSOFT_TENANT_ID", "AZURE_TENANT_ID", "M365_TENANT_ID"] },

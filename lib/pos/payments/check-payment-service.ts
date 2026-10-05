@@ -1,6 +1,6 @@
 import "server-only";
 
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getOperationalShardClientForLocation } from "@/lib/operational-shards";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
 import type { PosPaymentIntent } from "@/lib/pos/payments/contracts";
 import { getStripeModeForLocation } from "@/lib/stripe/server";
@@ -29,10 +29,12 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
   if (!connectedAccountId) throw new Error("pos_stripe_connect_not_configured");
   if (input.location.stripe_connect_charges_enabled !== true) throw new Error("pos_stripe_connect_charges_not_enabled");
 
+  const shardClient = getOperationalShardClientForLocation(input.location, "write");
+
   const tipCents = Number(input.tipCents || 0);
   if (!Number.isInteger(tipCents) || tipCents < 0) throw new Error("invalid_pos_tip_amount");
 
-  const { data, error } = await supabaseAdmin.rpc("pos_begin_card_tender", {
+  const { data, error } = await shardClient.rpc("pos_begin_card_tender", {
     p_location_id: locationId,
     p_check_id: input.checkId,
     p_tip_cents: tipCents,
@@ -67,7 +69,7 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       },
     });
 
-    const { error: insertError } = await supabaseAdmin.from("pos_payments").insert({
+    const { error: insertError } = await shardClient.from("pos_payments").insert({
       location_id: locationId,
       check_id: input.checkId,
       tender_id: tender.tender_id,
@@ -112,7 +114,7 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
       }
     }
 
-    await supabaseAdmin
+    await shardClient
       .from("pos_tenders")
       .update({
         status: "voided",
