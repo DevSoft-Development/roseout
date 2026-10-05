@@ -113,7 +113,7 @@ export async function getPublicStatusSummary(): Promise<PublicStatusSummary> {
         label: component.label,
         group: component.group,
         status: "no_data",
-        history: days.map((date) => ({ date, status: "no_data" as const })),
+        history: [],
         operationalPercent: null,
       })),
       incidents: [],
@@ -209,17 +209,23 @@ export async function getPublicStatusSummary(): Promise<PublicStatusSummary> {
       return { date, status: dayStatus };
     });
 
-    const monitored = history.filter((day) => day.status !== "no_data");
-    const operational = monitored.filter((day) => day.status === "operational").length;
+    const firstTrackedIndex = history.findIndex((day) => day.status !== "no_data");
+    const trackedHistory =
+      firstTrackedIndex >= 0
+        ? history.slice(firstTrackedIndex)
+        : current !== "no_data"
+          ? [{ date: days[days.length - 1], status: current }]
+          : [];
+    const operational = trackedHistory.filter((day) => day.status === "operational").length;
 
     return {
       slug: definition.slug,
       label: definition.label,
       group: definition.group,
       status: current,
-      history,
-      operationalPercent: monitored.length
-        ? Number(((operational / monitored.length) * 100).toFixed(2))
+      history: trackedHistory,
+      operationalPercent: trackedHistory.length
+        ? Number(((operational / trackedHistory.length) * 100).toFixed(2))
         : null,
     };
   });
