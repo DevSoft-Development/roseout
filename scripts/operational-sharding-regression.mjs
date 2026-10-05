@@ -67,6 +67,8 @@ for (const token of [
   "line_total_cents",
   "total_cents",
   "in_flight_card_tenders_did_not_drain",
+  "persistedTenderIds",
+  "pos_payments",
   "sourceFenceFrozen",
   "deletionOrder",
   "routing_changed_during_rebalance",
@@ -113,19 +115,37 @@ for (const token of [
   "DR_RECOVERY_FROZEN",
   "refreeze-dr.json",
   "alter subscription $SUB enable",
+  "from public.pos_payments p where p.tender_id=t.id",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
 
 const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
+const isolationProofWorkflow = read(".github/workflows/operational-shard-isolation-proof.yml");
 if (!isolationProof.includes('location_type: "restaurant"')) {
   throw new Error("Isolation proof must provide an explicit valid location_type.");
 }
 if (!isolationProof.includes("operational_location_write_fences")) {
   throw new Error("Isolation proof must clean synthetic location write-fence rows.");
 }
+for (const token of [
+  "GLOBAL_SUPABASE_URL",
+  "GLOBAL_SUPABASE_SERVICE_ROLE_KEY",
+  "active_physical_shard_id",
+  'activeShard("shard-01", "shard-01-dr")',
+  'activeShard("shard-02", "shard-02-dr")',
+]) {
+  if (!isolationProof.includes(token)) throw new Error(`Isolation proof must use authoritative active routing: ${token}`);
+}
+for (const token of [
+  "group: operational-shard-control-production",
+  "GLOBAL_SUPABASE_URL",
+  "GLOBAL_SUPABASE_SERVICE_ROLE_KEY",
+]) {
+  if (!isolationProofWorkflow.includes(token)) throw new Error(`Isolation proof workflow invariant missing: ${token}`);
+}
 
-for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow, liveBootstrap]) {
+for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow, liveBootstrap, isolationProofWorkflow]) {
   if (!workflow.includes("group: operational-shard-control-production")) {
     throw new Error("Operational shard mutations must share one serialized control-plane concurrency group.");
   }
@@ -162,9 +182,18 @@ for (const token of [
   "standby-primary",
   "schema_version=5",
   "reservation_resource_assignments",
+  "restore_authoritative_gates",
+  "apply_and_align",
 ]) {
   if (!liveBootstrap.includes(token)) throw new Error(`Missing bootstrap standby/schema invariant: ${token}`);
 }
+if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
+  throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
+}
+if ((failover.match(/from public\.pos_payments p where p\.tender_id=t\.id/g) || []).length < 2) {
+  throw new Error("Failover and failback drains must exclude persisted card tenders.");
+}
+
 if (!validationScript.includes("reservation_resource_assignments")) {
   throw new Error("Standard shard validation must probe reservation assignment schema.");
 }

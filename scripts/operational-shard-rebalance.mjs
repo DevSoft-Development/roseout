@@ -205,8 +205,9 @@ try {
   await patchGlobal("location_shard_moves", `id=eq.${moveId}`, { status: "copying" });
 
   // A card flow can be outside Postgres while its PaymentIntent is being created.
-  // The local fence blocks its next write; the payment service cancels the
-  // external intent and is allowed to void the already-reserved tender.
+  // Initiated tenders with a persisted pos_payments row are no longer in that
+  // external-call window. The location fence blocks the next write for truly
+  // in-flight calls, which then cancel and void through the cleanup allowance.
   let drained = false;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const initiated = await fetchAll(
@@ -215,7 +216,15 @@ try {
       "pos_tenders",
       `location_id=eq.${encodeURIComponent(locationId)}&tender_type=eq.card&status=eq.initiated`,
     );
-    if (initiated.length === 0) {
+    const persistedPayments = await fetchAll(
+      sourceUrl,
+      source.serviceRoleKey,
+      "pos_payments",
+      `location_id=eq.${encodeURIComponent(locationId)}`,
+    );
+    const persistedTenderIds = new Set(persistedPayments.map((payment) => String(payment.tender_id || "")));
+    const inFlight = initiated.filter((tender) => !persistedTenderIds.has(String(tender.id)));
+    if (inFlight.length === 0) {
       drained = true;
       break;
     }

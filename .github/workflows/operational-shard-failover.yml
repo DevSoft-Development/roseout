@@ -266,8 +266,13 @@ jobs:
 
             drained=false
             for attempt in $(seq 1 60); do
-              sql_api "$PRIMARY_REF" "select count(*)::int as pending from public.pos_tenders
-                where tender_type='card' and status='initiated';" "$RUNNER_TEMP/tenders.json"
+              sql_api "$PRIMARY_REF" "select count(*)::int as pending
+                from public.pos_tenders t
+                where t.tender_type='card'
+                  and t.status='initiated'
+                  and not exists (
+                    select 1 from public.pos_payments p where p.tender_id=t.id
+                  );" "$RUNNER_TEMP/tenders.json"
               if [ "$(jq -r '.[0].pending // 0' "$RUNNER_TEMP/tenders.json")" = 0 ]; then
                 drained=true
                 break
@@ -345,8 +350,13 @@ jobs:
 
             drained=false
             for attempt in $(seq 1 60); do
-              sql_api "$DR_REF" "select count(*)::int as pending from public.pos_tenders
-                where tender_type='card' and status='initiated';" "$RUNNER_TEMP/tenders.json"
+              sql_api "$DR_REF" "select count(*)::int as pending
+                from public.pos_tenders t
+                where t.tender_type='card'
+                  and t.status='initiated'
+                  and not exists (
+                    select 1 from public.pos_payments p where p.tender_id=t.id
+                  );" "$RUNNER_TEMP/tenders.json"
               if [ "$(jq -r '.[0].pending // 0' "$RUNNER_TEMP/tenders.json")" = 0 ]; then
                 drained=true
                 break

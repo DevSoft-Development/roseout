@@ -17,6 +17,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: operational-shard-control-production
+  cancel-in-progress: false
+
 jobs:
   contract:
     runs-on: ubuntu-latest
@@ -40,12 +44,17 @@ jobs:
           set -euo pipefail
           aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/vault.json"
           SHARDS="$(jq -r '.operationalShardsJson // empty' "$RUNNER_TEMP/vault.json")"
-          test -n "$SHARDS"
+          GLOBAL_URL="$(jq -r '.url // empty' "$RUNNER_TEMP/vault.json")"
+          GLOBAL_KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$RUNNER_TEMP/vault.json")"
+          test -n "$SHARDS" && test -n "$GLOBAL_URL" && test -n "$GLOBAL_KEY"
           echo "::add-mask::$SHARDS"
+          echo "::add-mask::$GLOBAL_KEY"
           {
             echo 'OPERATIONAL_SHARDS_JSON<<TOH_SHARDS'
             printf '%s\n' "$SHARDS"
             echo 'TOH_SHARDS'
+            echo "GLOBAL_SUPABASE_URL=$GLOBAL_URL"
+            echo "GLOBAL_SUPABASE_SERVICE_ROLE_KEY=$GLOBAL_KEY"
           } >> "$GITHUB_ENV"
       - run: node scripts/operational-shard-isolation-proof.mjs
       - if: always()
