@@ -15,7 +15,7 @@ type OperationalShardRuntimeConfig = {
 
 type OperationalShardRuntimeMap = Record<string, OperationalShardRuntimeConfig>;
 
-const shardClients = new Map<string, SupabaseClient>();
+const shardClients = new Map<string, { fingerprint: string; client: SupabaseClient }>();
 
 function cleanShardId(value: unknown): string {
   const shardId = String(value ?? "primary").trim().toLowerCase();
@@ -82,14 +82,15 @@ export function getOperationalShardClient(
     throw new Error("operational_shard_write_disabled");
   }
 
+  const fingerprint = `${config.url}|${config.serviceRoleKey}`;
   const existing = shardClients.get(shardId);
-  if (existing) return existing;
+  if (existing?.fingerprint === fingerprint) return existing.client;
 
   const client = createClient(config.url, config.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     realtime: { transport: WebSocketTransport },
   });
-  shardClients.set(shardId, client);
+  shardClients.set(shardId, { fingerprint, client });
   return client;
 }
 
