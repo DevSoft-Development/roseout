@@ -51,6 +51,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate shard routing invariants
         run: node scripts/operational-sharding-regression.mjs
+      - name: Validate shard-aware POS payment invariants
+        run: node scripts/pos-payment-service-regression.mjs
 
   live-multi-shard:
     name: Live multi-shard probe
