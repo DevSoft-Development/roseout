@@ -43,10 +43,12 @@ const COMPONENTS = [
   { slug: "business", label: "Business Dashboard", group: "Business", surfaces: ["business"], incidentKeys: [] },
   { slug: "reserve", label: "Reservation Platform", group: "Reserve", surfaces: ["reserve", "reserve-api"], incidentKeys: [] },
   { slug: "mobile", label: "Mobile App Services", group: "Mobile", surfaces: ["mobile-ios", "mobile-runtime-patch"], incidentKeys: [] },
-  { slug: "workers", label: "Background Services", group: "Platform Services", surfaces: ["workers"], incidentKeys: ["critical_cron_failures"] },
+  { slug: "workers", label: "Background Services", group: "Platform Services", surfaces: ["workers"], incidentKeys: [] },
 ] as const;
 
-const PUBLIC_INCIDENT_KEYS = new Set(["production_outage", "critical_cron_failures"]);
+// Only customer-impacting incidents belong on the public status page. Internal
+// operational alerts (for example cron/DR health) remain in Admin monitoring.
+const PUBLIC_INCIDENT_KEYS = new Set(["production_outage"]);
 
 function toneForReleaseState(state: string | null | undefined): PublicStatusTone {
   if (state === "DEGRADED") return "degraded";
@@ -111,7 +113,7 @@ export async function getPublicStatusSummary(): Promise<PublicStatusSummary> {
         label: component.label,
         group: component.group,
         status: "no_data",
-        history: days.map((date) => ({ date, status: "no_data" as const })),
+        history: [],
         operationalPercent: null,
       })),
       incidents: [],
@@ -207,17 +209,23 @@ export async function getPublicStatusSummary(): Promise<PublicStatusSummary> {
       return { date, status: dayStatus };
     });
 
-    const monitored = history.filter((day) => day.status !== "no_data");
-    const operational = monitored.filter((day) => day.status === "operational").length;
+    const firstTrackedIndex = history.findIndex((day) => day.status !== "no_data");
+    const trackedHistory =
+      firstTrackedIndex >= 0
+        ? history.slice(firstTrackedIndex)
+        : current !== "no_data"
+          ? [{ date: days[days.length - 1], status: current }]
+          : [];
+    const operational = trackedHistory.filter((day) => day.status === "operational").length;
 
     return {
       slug: definition.slug,
       label: definition.label,
       group: definition.group,
       status: current,
-      history,
-      operationalPercent: monitored.length
-        ? Number(((operational / monitored.length) * 100).toFixed(2))
+      history: trackedHistory,
+      operationalPercent: trackedHistory.length
+        ? Number(((operational / trackedHistory.length) * 100).toFixed(2))
         : null,
     };
   });

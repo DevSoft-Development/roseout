@@ -5,7 +5,7 @@ export default function TheOutHavenFooter() {
     <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
 
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-10">
+      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
         <div>
           <p className="max-w-md text-sm leading-7 text-white/45">
             TheOutHaven LLC is a New York-based technology company helping people
@@ -73,9 +73,9 @@ export default function TheOutHavenFooter() {
         />
       </div>
 
-      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35">
+      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35 md:flex-row md:items-center md:justify-between">
         <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
-        <p className="max-w-xl leading-6">
+        <p className="max-w-xl leading-6 md:text-right">
           Recommendations may include third-party listings. Always confirm details
           directly with the business.
         </p>

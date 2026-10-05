@@ -72,6 +72,16 @@ function statusTextClass(status: PublicStatusTone) {
   }
 }
 
+function formatStatusDay(date: string) {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function StatusPage() {
   const summary = await getPublicStatusSummary();
 
@@ -96,7 +106,7 @@ export default async function StatusPage() {
                   {headline(summary.overallStatus)}
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-white/45">
-                  Live service health and 90-day availability history.
+                  Live service health with availability history growing from the day tracking began, up to 90 days.
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 self-start rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold">
@@ -158,20 +168,46 @@ export default async function StatusPage() {
                     </div>
 
                     <div className="mt-5">
-                      <div className="grid grid-cols-[repeat(90,minmax(2px,1fr))] gap-[2px]">
-                        {component.history.map((day) => (
+                      {component.history.length ? (
+                        <>
                           <div
-                            key={day.date}
-                            className={`h-8 rounded-[2px] ${BAR_CLASS[day.status]}`}
-                            title={`${day.date}: ${LABELS[day.status]}`}
-                            aria-label={`${component.label} on ${day.date}: ${LABELS[day.status]}`}
-                          />
-                        ))}
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-white/25">
-                        <span>90 days ago</span>
-                        <span>Today</span>
-                      </div>
+                            className="grid gap-[2px]"
+                            style={{
+                              gridTemplateColumns: `repeat(${component.history.length}, minmax(2px, 1fr))`,
+                            }}
+                          >
+                            {component.history.map((day) => (
+                              <div key={day.date} className="group relative min-w-0">
+                                <button
+                                  type="button"
+                                  className={`block h-8 w-full rounded-[2px] outline-none transition hover:ring-2 hover:ring-white/70 focus-visible:ring-2 focus-visible:ring-white ${BAR_CLASS[day.status]}`}
+                                  aria-label={`${component.label} on ${formatStatusDay(day.date)}: ${LABELS[day.status]}`}
+                                />
+                                <div
+                                  role="tooltip"
+                                  className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-left text-xs shadow-xl group-hover:block group-focus-within:block"
+                                >
+                                  <p className="font-black text-white">{formatStatusDay(day.date)}</p>
+                                  <p className={`mt-1 font-bold ${statusTextClass(day.status)}`}>{LABELS[day.status]}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-white/25">
+                            <span>
+                              Tracking since {new Date(`${component.history[0].date}T12:00:00Z`).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                timeZone: "UTC",
+                              })}
+                            </span>
+                            <span>{component.history.length} of 90 days tracked</span>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm font-bold text-white/30">Monitoring history starts when the first service signal is recorded.</p>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -184,8 +220,8 @@ export default async function StatusPage() {
           <h2 className="text-lg font-black">About these metrics</h2>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-white/45">
             Service state is derived from TheOutHaven production release and incident monitoring.
-            Gray history blocks mean monitoring data is not available for that day; they are not
-            counted as successful uptime.
+            History begins on the first day a service has a recorded monitoring signal and grows
+            until it reaches a rolling 90-day window.
           </p>
         </section>
       </div>
