@@ -1,0 +1,125 @@
+name: Operational shard failover
+
+on:
+  workflow_dispatch:
+    inputs:
+      shard_id:
+        description: Logical shard to operate
+        required: true
+        type: choice
+        options: [shard-01, shard-02]
+      action:
+        description: Failover action
+        required: true
+        type: choice
+        options: [promote_dr, restore_primary_after_rebalance]
+      expected_routing_epoch:
+        description: Current routing epoch; stale requests fail closed
+        required: true
+        type: string
+      confirmation:
+        description: For restore_primary_after_rebalance enter PRIMARY_RESYNCED
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: operational-shard-failover-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  DR_SECRET: /theouthaven/production/dr-reconciler/env
+  GLOBAL_REF: ftdsltatyqhtllyyefzp
+  SHARD01_DR_REF: vcdnwrsuvhtlvxqbkamg
+  SHARD02_DR_REF: bjhcxzahgfeniitejtrx
+
+jobs:
+  failover:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Load Supabase management authority
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vault.json"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/vault.json")"
+          FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
+          test -n "$PRIMARY_TOKEN"
+          echo "::add-mask::$PRIMARY_TOKEN"
+          [ -z "$FALLBACK_TOKEN" ] || echo "::add-mask::$FALLBACK_TOKEN"
+          echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
+          echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
+      - name: Validate and cut over routing
+        env:
+          SHARD_ID: ${{ inputs.shard_id }}
+          ACTION: ${{ inputs.action }}
+          EXPECTED_EPOCH: ${{ inputs.expected_routing_epoch }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_EPOCH" =~ ^[1-9][0-9]*$ ]]
+          case "$SHARD_ID" in
+            shard-01) DR_ID=shard-01-dr; DR_REF="$SHARD01_DR_REF"; SUB=toh_shard01_dr ;;
+            shard-02) DR_ID=shard-02-dr; DR_REF="$SHARD02_DR_REF"; SUB=toh_shard02_dr ;;
+            *) exit 1 ;;
+          esac
+
+          sql_api() {
+            local ref="$1" sql="$2" out="$3" token="$SUPABASE_ACCESS_TOKEN" code
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' --request POST               -H "Authorization: Bearer $token" -H 'Content-Type: application/json'               --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN"
+              code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' --request POST                 -H "Authorization: Bearer $SUPABASE_FALLBACK_ACCESS_TOKEN" -H 'Content-Type: application/json'                 --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            fi
+            test "$code" -ge 200 && test "$code" -lt 300 || { cat "$out"; exit 1; }
+          }
+
+          sql_api "$GLOBAL_REF" "select id,active_physical_shard_id,routing_epoch,replication_state from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/current.json"
+          test "$(jq -r '.[0].routing_epoch' "$RUNNER_TEMP/current.json")" = "$EXPECTED_EPOCH"
+
+          if [ "$ACTION" = promote_dr ]; then
+            test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/current.json")" = "$SHARD_ID"
+            test "$(jq -r '.[0].replication_state' "$RUNNER_TEMP/current.json")" = healthy
+            sql_api "$DR_REF" "select not exists (
+              select 1 from pg_subscription_rel r join pg_subscription s on s.oid=r.srsubid
+              where s.subname='$SUB' and r.srsubstate <> 'r'
+            ) as ready;" "$RUNNER_TEMP/ready.json"
+            test "$(jq -r '.[0].ready // false' "$RUNNER_TEMP/ready.json")" = true
+            sql_api "$DR_REF" "alter subscription $SUB disable;" "$RUNNER_TEMP/disable.json"
+            sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
+              (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status)
+              values ('$SHARD_ID','$SHARD_ID','$DR_ID',$EXPECTED_EPOCH,$((EXPECTED_EPOCH+1)),'promote_dr','completed');
+              update public.operational_shards set active_physical_shard_id='$DR_ID',
+                routing_epoch=routing_epoch+1, failover_state='dr', replication_state='disabled',
+                last_failover_at=now(), updated_at=now()
+              where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$SHARD_ID';
+              select id,active_physical_shard_id,routing_epoch from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/cutover.json"
+            test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/cutover.json")" = "$DR_ID"
+          else
+            test "$CONFIRMATION" = PRIMARY_RESYNCED
+            test "$(jq -r '.[0].active_physical_shard_id' "$RUNNER_TEMP/current.json")" = "$DR_ID"
+            sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
+              (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status)
+              values ('$SHARD_ID','$DR_ID','$SHARD_ID',$EXPECTED_EPOCH,$((EXPECTED_EPOCH+1)),'failback_primary','completed');
+              update public.operational_shards set active_physical_shard_id='$SHARD_ID',
+                routing_epoch=routing_epoch+1, failover_state='primary', replication_state='initializing',
+                last_failover_at=now(), updated_at=now()
+              where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH and active_physical_shard_id='$DR_ID';" "$RUNNER_TEMP/restore.json"
+          fi
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json
