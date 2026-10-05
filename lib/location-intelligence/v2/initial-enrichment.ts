@@ -4,7 +4,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lifecycle";
 import type { LocationEvidenceType, LocationProviderResponse } from "@/lib/location-intelligence/v2/contracts";
 import { executeWithProviderFallback, LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
-import { maintenanceModeForLocation } from "@/lib/location-intelligence/v2/policy";
+import {
+  maintenanceModeForLocation,
+  recentGoogleCanonicalReuse,
+  shouldRunPaidBusinessProfileBootstrap,
+} from "@/lib/location-intelligence/v2/policy";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { scheduleReviewRefresh } from "@/lib/location-intelligence/v2/reviews";
@@ -78,7 +82,7 @@ async function persistProviderObservation(input: {
 export async function runInitialLocationEnrichmentV2(locationId: string) {
   const { data: location, error } = await supabaseAdmin
     .from("locations")
-    .select("id,name,restaurant_name,activity_name,address,city,state,zip_code,latitude,longitude,website,google_place_id,is_claimed,claimed,claim_status,owner_user_id,popularity_score")
+    .select("id,name,restaurant_name,activity_name,address,city,state,zip_code,latitude,longitude,website,google_place_id,is_claimed,claimed,claim_status,owner_user_id,popularity_score,phone,operating_hours,primary_category,description,main_image,rating,review_count,google_enriched_at,google_website_uri,google_rating,google_user_rating_count")
     .eq("id", locationId)
     .single();
   if (error) throw new Error(`Initial enrichment location read failed: ${error.message}`);
@@ -196,6 +200,19 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }
   }
 
+  const reusableGoogleFields = recentGoogleCanonicalReuse(location as Record<string, unknown>);
+  if (Object.keys(reusableGoogleFields).length > 0) {
+    await reconcileCanonicalFields({
+      locationId,
+      provider: "google",
+      fields: reusableGoogleFields,
+      confidence: 1,
+      evidenceType: "classification",
+      sourceRef: "recent_google_enrichment_reuse",
+    });
+    Object.assign(location, reusableGoogleFields);
+  }
+
   if (location.zip_code) {
     let geo: LocationProviderResponse | null = null;
     try {
@@ -273,7 +290,11 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }
   }
 
-  if (mode === "theouthaven_managed" && name) {
+  if (
+    mode === "theouthaven_managed" &&
+    name &&
+    shouldRunPaidBusinessProfileBootstrap(location as Record<string, unknown>)
+  ) {
     let profileResult: LocationProviderResponse | null = null;
     try {
       profileResult = await executeWithProviderFallback({
