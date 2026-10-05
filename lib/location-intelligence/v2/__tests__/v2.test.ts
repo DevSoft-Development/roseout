@@ -18,6 +18,7 @@ import {
   LOCATION_INTELLIGENCE_V2_ROLLOUT_CELL_TARGETS,
   nextRolloutQuotas,
   rolloutGapFields,
+  rolloutReservationIsStale,
 } from "@/lib/location-intelligence/v2/rollout-500";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -322,6 +323,13 @@ describe("Location Intelligence V2 500-location rollout", () => {
       rating: 4.7,
       review_count: 42,
     })).toEqual(["phone", "website", "operating_hours", "description"]);
+  });
+
+  it("treats old reserved work as stale but leaves recent work alone", () => {
+    const now = Date.parse("2026-10-05T14:00:00.000Z");
+    expect(rolloutReservationIsStale("2026-10-05T13:39:59.000Z", now)).toBe(true);
+    expect(rolloutReservationIsStale("2026-10-05T13:40:01.000Z", now)).toBe(false);
+    expect(rolloutReservationIsStale(null, now)).toBe(false);
   });
 
   it("fills failed rollout cells without drifting the 500-success cohort", () => {
