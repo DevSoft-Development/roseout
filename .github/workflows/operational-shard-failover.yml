@@ -112,29 +112,38 @@ jobs:
           rollback_on_error() {
             trap - ERR
             if [ "$CUTOVER_DONE" != true ]; then
+              RECOVERY_OK=true
+
               # If promotion already disabled replication, restore the DR path
-              # before any primary writes are reopened. Mark replication
-              # initializing so another promotion cannot trust it until the
-              # replication verifier proves bounded lag again.
+              # before any primary writes are reopened. If that restore fails,
+              # stay fail-closed instead of resuming unreplicated writes.
               if [ "$ACTION" = promote_dr ] && [ "$SUB_DISABLED" = true ]; then
-                sql_api "$DR_REF" "update public.operational_shard_write_gate
+                if ! sql_api "$DR_REF" "update public.operational_shard_write_gate
                   set frozen=true,reason='failover-aborted',updated_at=now() where id=1;
-                  alter subscription $SUB enable;" "$RUNNER_TEMP/restore-subscription.json" || true
-                sql_api "$GLOBAL_REF" "update public.operational_shards
-                  set replication_state='initializing',last_replication_check_at=now(),updated_at=now()
-                  where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-replication-recovering.json" || true
+                  alter subscription $SUB enable;" "$RUNNER_TEMP/restore-subscription.json"; then
+                  RECOVERY_OK=false
+                  sql_api "$GLOBAL_REF" "update public.operational_shards
+                    set write_enabled=false,failover_state='degraded',replication_state='broken',updated_at=now()
+                    where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-replication-broken.json" || true
+                else
+                  sql_api "$GLOBAL_REF" "update public.operational_shards
+                    set replication_state='initializing',last_replication_check_at=now(),updated_at=now()
+                    where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-replication-recovering.json" || true
+                fi
               fi
 
-              if [ "$PHYSICAL_FROZEN" = true ]; then
-                sql_api "$ACTIVE_REF" "update public.operational_shard_write_gate
-                  set frozen=false,reason='failover-aborted',updated_at=now() where id=1;" "$RUNNER_TEMP/unfreeze.json" || true
-              fi
-              if [ "$GLOBAL_FROZEN" = true ]; then
-                sql_api "$GLOBAL_REF" "update public.operational_shards
-                  set write_enabled=true,
-                      failover_state=case when active_physical_shard_id=id then 'primary' else 'dr' end,
-                      updated_at=now()
-                  where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/global-unfreeze.json" || true
+              if [ "$RECOVERY_OK" = true ]; then
+                if [ "$PHYSICAL_FROZEN" = true ]; then
+                  sql_api "$ACTIVE_REF" "update public.operational_shard_write_gate
+                    set frozen=false,reason='failover-aborted',updated_at=now() where id=1;" "$RUNNER_TEMP/unfreeze.json" || true
+                fi
+                if [ "$GLOBAL_FROZEN" = true ]; then
+                  sql_api "$GLOBAL_REF" "update public.operational_shards
+                    set write_enabled=true,
+                        failover_state=case when active_physical_shard_id=id then 'primary' else 'dr' end,
+                        updated_at=now()
+                    where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/global-unfreeze.json" || true
+                fi
               fi
             fi
           }
