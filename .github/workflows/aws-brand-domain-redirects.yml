@@ -179,8 +179,10 @@ jobs:
             fi
           }
 
-          verify_delegation "$POS_DOMAIN" "$POS_ZONE"
-          verify_delegation "$RESERVE_DOMAIN" "$RESERVE_ZONE"
+          DELEGATION_FAILED=0
+          verify_delegation "$POS_DOMAIN" "$POS_ZONE" || DELEGATION_FAILED=1
+          verify_delegation "$RESERVE_DOMAIN" "$RESERVE_ZONE" || DELEGATION_FAILED=1
+          exit "$DELEGATION_FAILED"
 
       - name: Request or reuse ACM certificate
         id: cert
