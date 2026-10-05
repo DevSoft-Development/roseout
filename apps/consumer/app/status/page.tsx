@@ -72,6 +72,16 @@ function statusTextClass(status: PublicStatusTone) {
   }
 }
 
+function formatStatusDay(date: string) {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function StatusPage() {
   const summary = await getPublicStatusSummary();
 
@@ -167,12 +177,20 @@ export default async function StatusPage() {
                             }}
                           >
                             {component.history.map((day) => (
-                              <div
-                                key={day.date}
-                                className={`h-8 rounded-[2px] ${BAR_CLASS[day.status]}`}
-                                title={`${day.date}: ${LABELS[day.status]}`}
-                                aria-label={`${component.label} on ${day.date}: ${LABELS[day.status]}`}
-                              />
+                              <div key={day.date} className="group relative min-w-0">
+                                <button
+                                  type="button"
+                                  className={`block h-8 w-full rounded-[2px] outline-none transition hover:ring-2 hover:ring-white/70 focus-visible:ring-2 focus-visible:ring-white ${BAR_CLASS[day.status]}`}
+                                  aria-label={`${component.label} on ${formatStatusDay(day.date)}: ${LABELS[day.status]}`}
+                                />
+                                <div
+                                  role="tooltip"
+                                  className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-left text-xs shadow-xl group-hover:block group-focus-within:block"
+                                >
+                                  <p className="font-black text-white">{formatStatusDay(day.date)}</p>
+                                  <p className={`mt-1 font-bold ${statusTextClass(day.status)}`}>{LABELS[day.status]}</p>
+                                </div>
+                              </div>
                             ))}
                           </div>
                           <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-white/25">
