@@ -1,0 +1,64 @@
+name: Operational shard tenant rebalance
+
+on:
+  workflow_dispatch:
+    inputs:
+      location_id:
+        description: Location UUID to move
+        required: true
+        type: string
+      target_shard_id:
+        description: Target logical shard
+        required: true
+        type: choice
+        options: [shard-01, shard-02]
+      expected_assignment_epoch:
+        description: Current location assignment epoch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: operational-shard-rebalance-${{ inputs.location_id }}
+  cancel-in-progress: false
+
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load routing credentials
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$RUNNER_TEMP/vault.json"
+          URL="$(jq -r '.url // empty' "$RUNNER_TEMP/vault.json")"
+          KEY="$(jq -r '.serviceRoleKey // .secretKey // empty' "$RUNNER_TEMP/vault.json")"
+          SHARDS="$(jq -r '.operationalShardsJson // empty' "$RUNNER_TEMP/vault.json")"
+          test -n "$URL" && test -n "$KEY" && test -n "$SHARDS"
+          echo "::add-mask::$KEY"
+          echo "::add-mask::$SHARDS"
+          echo "GLOBAL_SUPABASE_URL=$URL" >> "$GITHUB_ENV"
+          echo "GLOBAL_SUPABASE_SERVICE_ROLE_KEY=$KEY" >> "$GITHUB_ENV"
+          {
+            echo 'OPERATIONAL_SHARDS_JSON<<TOH_SHARDS'
+            printf '%s\n' "$SHARDS"
+            echo 'TOH_SHARDS'
+          } >> "$GITHUB_ENV"
+      - name: Freeze, copy, verify, and cut over
+        env:
+          LOCATION_ID: ${{ inputs.location_id }}
+          TARGET_SHARD_ID: ${{ inputs.target_shard_id }}
+          EXPECTED_ASSIGNMENT_EPOCH: ${{ inputs.expected_assignment_epoch }}
+        run: node scripts/operational-shard-rebalance.mjs
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/vault.json"
