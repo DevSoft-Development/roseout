@@ -1,5 +1,6 @@
 -- Global operational shard routing hardening migration.
 -- Idempotent on both authoritative East and global West DR.
+-- toh:replicated-dml-reviewed
 
 begin;
 
@@ -84,29 +85,3 @@ grant select, insert, update, delete on table public.operational_shard_failover_
 grant select, insert, update, delete on table public.operational_shard_migration_ledger to service_role;
 
 commit;
-
-
--- Keep the authoritative global VA->OR logical-replication publication complete
--- when this migration runs on the source project. The West DR project does not
--- own this publication, so this block is intentionally conditional.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname='theouthaven_dr_publication') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname='theouthaven_dr_publication'
-        and schemaname='public'
-        and tablename='operational_shard_failover_events'
-    ) then
-      alter publication theouthaven_dr_publication add table public.operational_shard_failover_events;
-    end if;
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname='theouthaven_dr_publication'
-        and schemaname='public'
-        and tablename='operational_shard_migration_ledger'
-    ) then
-      alter publication theouthaven_dr_publication add table public.operational_shard_migration_ledger;
-    end if;
-  end if;
-end $$;
