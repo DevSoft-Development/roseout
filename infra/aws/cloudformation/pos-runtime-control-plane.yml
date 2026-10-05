@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: TheOutHaven POS control plane ECS service.
+Parameters:
+  Environment: { Type: String, Default: production, AllowedValues: [production, staging] }
+  ClusterName: { Type: String }
+  SubnetIds: { Type: CommaDelimitedList }
+  SecurityGroupId: { Type: AWS::EC2::SecurityGroup::Id }
+  TargetGroupArn: { Type: String }
+  TaskExecutionRoleArn: { Type: String }
+  TaskRoleArn: { Type: String }
+  RuntimeSecretArn: { Type: String }
+  LogGroupName: { Type: String }
+  ImageUri: { Type: String }
+  GitSha: { Type: String }
+  MinCapacity: { Type: Number, Default: 2 }
+  MaxCapacity: { Type: Number, Default: 12 }
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'toh-${Environment}-pos-control'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref TaskRoleArn
+      ContainerDefinitions:
+        - Name: pos-control
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings: [{ ContainerPort: 3000, Protocol: tcp }]
+          Environment:
+            - { Name: PLATFORM_RUNTIME_PROVIDER, Value: aws-pos }
+            - { Name: THEOUTHAVEN_WEB_SURFACE, Value: pos }
+            - { Name: POS_RUNTIME_ROLE, Value: control-plane }
+            - { Name: PLATFORM_RUNTIME_GIT_SHA, Value: !Ref GitSha }
+            - { Name: HOSTNAME, Value: 0.0.0.0 }
+          Secrets:
+            - { Name: RUNTIME_ENV_JSON, ValueFrom: !Ref RuntimeSecretArn }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: [CMD, node, /app/healthcheck.cjs]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'toh-${Environment}-pos-control'
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      DesiredCount: !Ref MinCapacity
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
+      HealthCheckGracePeriodSeconds: 90
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref SecurityGroupId]
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - { ContainerName: pos-control, ContainerPort: 3000, TargetGroupArn: !Ref TargetGroupArn }
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: Service
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Sub 'service/${ClusterName}/toh-${Environment}-pos-control'
+      RoleARN: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub 'toh-${Environment}-pos-control-cpu'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 55
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageCPUUtilization }
+  MemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub 'toh-${Environment}-pos-control-memory'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 65
+        ScaleInCooldown: 120
+        ScaleOutCooldown: 30
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
+Outputs:
+  ServiceName: { Value: !GetAtt Service.Name }
