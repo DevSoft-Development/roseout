@@ -234,35 +234,3 @@ grant select, insert, update, delete on table public.pos_orders to service_role;
 grant select, insert, update, delete on table public.pos_order_items to service_role;
 grant select, insert, update, delete on table public.pos_tenders to service_role;
 grant select, insert, update, delete on table public.pos_payments to service_role;
-
--- Keep POS operational state inside the existing Virginia -> Oregon DR publication.
-do $dr$
-declare
-  table_name text;
-begin
-  if exists (select 1 from pg_publication where pubname = 'theouthaven_dr_publication') then
-    foreach table_name in array array[
-      'pos_checks',
-      'pos_check_resources',
-      'pos_orders',
-      'pos_order_items',
-      'pos_tenders',
-      'pos_payments'
-    ]
-    loop
-      if not exists (
-        select 1
-        from pg_publication_tables
-        where pubname = 'theouthaven_dr_publication'
-          and schemaname = 'public'
-          and tablename = table_name
-      ) then
-        execute format(
-          'alter publication theouthaven_dr_publication add table public.%I',
-          table_name
-        );
-      end if;
-    end loop;
-  end if;
-end
-$dr$;
