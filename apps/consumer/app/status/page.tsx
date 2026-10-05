@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { getPublicStatusSummary, type PublicStatusTone } from "@/lib/status/public-status";
+import { getPublicStatusSummary, type PublicStatusTone } from "@/lib/status/public-status-v2";
 import { buildMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
