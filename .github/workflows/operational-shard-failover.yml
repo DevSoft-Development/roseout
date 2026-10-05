@@ -113,6 +113,34 @@ jobs:
           rollback_on_error() {
             trap - ERR
             if [ "$CUTOVER_DONE" != true ]; then
+              # An HTTP/client error can be ambiguous after PostgreSQL commits.
+              # Re-read authoritative routing before changing any physical gate.
+              if sql_api "$GLOBAL_REF" "select active_physical_shard_id,routing_epoch
+                from public.operational_shards where id='$SHARD_ID';" "$RUNNER_TEMP/rollback-routing.json"; then
+                CURRENT_ACTIVE="$(jq -r '.[0].active_physical_shard_id // empty' "$RUNNER_TEMP/rollback-routing.json")"
+                CURRENT_EPOCH="$(jq -r '.[0].routing_epoch // 0' "$RUNNER_TEMP/rollback-routing.json")"
+                if [ "$ACTION" = promote_dr ] &&
+                   [ "$CURRENT_ACTIVE" = "$DR_ID" ] &&
+                   [ "$CURRENT_EPOCH" = "$((EXPECTED_EPOCH+1))" ]; then
+                  CUTOVER_DONE=true
+                  return
+                fi
+                if [ "$ACTION" = restore_primary_after_rebalance ] &&
+                   [ "$CURRENT_ACTIVE" = "$SHARD_ID" ] &&
+                   [ "$CURRENT_EPOCH" = "$((EXPECTED_EPOCH+1))" ]; then
+                  CUTOVER_DONE=true
+                  return
+                fi
+              else
+                # Routing state is unknowable: freeze both physical databases
+                # and stay closed rather than risk split-brain writes.
+                sql_api "$PRIMARY_REF" "update public.operational_shard_write_gate
+                  set frozen=true,reason='ambiguous-routing',updated_at=now() where id=1;" "$RUNNER_TEMP/ambiguous-primary.json" || true
+                sql_api "$DR_REF" "update public.operational_shard_write_gate
+                  set frozen=true,reason='ambiguous-routing',updated_at=now() where id=1;" "$RUNNER_TEMP/ambiguous-dr.json" || true
+                return
+              fi
+
               RECOVERY_OK=true
 
               # If promotion already disabled replication, restore the DR path
