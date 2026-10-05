@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Dedicated TheOutHaven POS runtime foundation for pos.theouthaven.com.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  PosHost:
+    Type: String
+    Default: pos.theouthaven.com
+  CertificateArn:
+    Type: String
+
+Resources:
+  PosVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.46.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - { Key: Project, Value: TheOutHaven }
+        - { Key: Service, Value: POS }
+        - { Key: Environment, Value: !Ref Environment }
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: { VpcId: !Ref PosVpc, InternetGatewayId: !Ref InternetGateway }
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PosVpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.46.1.0/24
+      MapPublicIpOnLaunch: true
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PosVpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.46.2.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref PosVpc }
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  RouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { RouteTableId: !Ref PublicRouteTable, SubnetId: !Ref PublicSubnetA }
+  RouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { RouteTableId: !Ref PublicRouteTable, SubnetId: !Ref PublicSubnetB }
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public POS ALB ingress
+      VpcId: !Ref PosVpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: POS control plane ingress from ALB only
+      VpcId: !Ref PosVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  CellSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: POS tenant cell ingress from control plane only
+      VpcId: !Ref PosVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+
+  PosCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'toh-${Environment}-pos'
+      ClusterSettings:
+        - { Name: containerInsights, Value: enabled }
+
+  PosNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub '${Environment}.pos.internal'
+      Vpc: !Ref PosVpc
+
+  PosRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub 'theouthaven-${Environment}-pos'
+      ImageScanningConfiguration: { ScanOnPush: true }
+      ImageTagMutability: IMMUTABLE
+      EncryptionConfiguration: { EncryptionType: AES256 }
+
+  PosRuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/theouthaven/${Environment}/pos/runtime'
+      Description: Dedicated POS runtime configuration.
+
+  ControlPlaneLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/theouthaven/${Environment}/pos/control-plane'
+      RetentionInDays: 30
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: PosRuntimeSecretRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref PosRuntimeSecret
+
+  PosTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'toh-${Environment}-pos'
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      LoadBalancerAttributes:
+        - { Key: routing.http.drop_invalid_header_fields.enabled, Value: 'true' }
+
+  ControlPlaneTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'toh-${Environment}-pos-control'
+      VpcId: !Ref PosVpc
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckPath: /api/health/platform-dr
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher: { HttpCode: '200' }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: '15' }
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: '443', StatusCode: HTTP_301 }
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - { CertificateArn: !Ref CertificateArn }
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig: { StatusCode: '404', ContentType: text/plain, MessageBody: Not found }
+
+  PosHostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig: { Values: [!Ref PosHost] }
+      Actions:
+        - { Type: forward, TargetGroupArn: !Ref ControlPlaneTargetGroup }
+
+  PosWebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub 'toh-${Environment}-pos'
+      Scope: REGIONAL
+      DefaultAction: { Allow: {} }
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub 'toh-${Environment}-pos'
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 10
+          OverrideAction: { None: {} }
+          Statement:
+            ManagedRuleGroupStatement: { VendorName: AWS, Name: AWSManagedRulesCommonRuleSet }
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub 'toh-${Environment}-pos-common'
+            SampledRequestsEnabled: true
+        - Name: PosControlPlaneRateLimit
+          Priority: 20
+          Action: { Block: {} }
+          Statement:
+            RateBasedStatement: { Limit: 3000, AggregateKeyType: IP }
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: !Sub 'toh-${Environment}-pos-rate'
+            SampledRequestsEnabled: true
+
+  PosWebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref LoadBalancer
+      WebACLArn: !GetAtt PosWebAcl.Arn
+
+Outputs:
+  VpcId: { Value: !Ref PosVpc }
+  SubnetIds: { Value: !Join [',', [!Ref PublicSubnetA, !Ref PublicSubnetB]] }
+  ClusterName: { Value: !Ref PosCluster }
+  NamespaceId: { Value: !Ref PosNamespace }
+  EcrRepositoryUri: { Value: !GetAtt PosRepository.RepositoryUri }
+  RuntimeSecretArn: { Value: !Ref PosRuntimeSecret }
+  TaskExecutionRoleArn: { Value: !GetAtt TaskExecutionRole.Arn }
+  PosTaskRoleArn: { Value: !GetAtt PosTaskRole.Arn }
+  ControlPlaneSecurityGroupId: { Value: !Ref ControlPlaneSecurityGroup }
+  CellSecurityGroupId: { Value: !Ref CellSecurityGroup }
+  ControlPlaneTargetGroupArn: { Value: !Ref ControlPlaneTargetGroup }
+  LoadBalancerDnsName: { Value: !GetAtt LoadBalancer.DNSName }
+  ControlPlaneLogGroupName: { Value: !Ref ControlPlaneLogGroup }

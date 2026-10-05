@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated autoscaling TheOutHaven POS tenant cell.
+Parameters:
+  Environment: { Type: String, Default: production, AllowedValues: [production, staging] }
+  CellId: { Type: String, AllowedPattern: '[a-z0-9-]+' }
+  ClusterName: { Type: String }
+  NamespaceId: { Type: String }
+  SubnetIds: { Type: CommaDelimitedList }
+  SecurityGroupId: { Type: AWS::EC2::SecurityGroup::Id }
+  TaskExecutionRoleArn: { Type: String }
+  TaskRoleArn: { Type: String }
+  RuntimeSecretArn: { Type: String }
+  ImageUri: { Type: String }
+  GitSha: { Type: String }
+  MaxTenants: { Type: Number, Default: 20, MinValue: 1, MaxValue: 25 }
+  MinCapacity: { Type: Number, Default: 2 }
+  MaxCapacity: { Type: Number, Default: 12 }
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/theouthaven/${Environment}/pos/cells/${CellId}'
+      RetentionInDays: 30
+  DiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: !Sub 'cell-${CellId}'
+      NamespaceId: !Ref NamespaceId
+      DnsConfig:
+        DnsRecords: [{ Type: A, TTL: 10 }]
+        RoutingPolicy: MULTIVALUE
+      HealthCheckCustomConfig: { FailureThreshold: 1 }
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'toh-${Environment}-pos-cell-${CellId}'
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref TaskRoleArn
+      ContainerDefinitions:
+        - Name: pos-cell
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings: [{ ContainerPort: 3000, Protocol: tcp }]
+          Environment:
+            - { Name: PLATFORM_RUNTIME_PROVIDER, Value: aws-pos }
+            - { Name: POS_RUNTIME_ROLE, Value: tenant-cell }
+            - { Name: POS_CELL_ID, Value: !Ref CellId }
+            - { Name: POS_CELL_MAX_TENANTS, Value: !Ref MaxTenants }
+            - { Name: PLATFORM_RUNTIME_GIT_SHA, Value: !Ref GitSha }
+            - { Name: HOSTNAME, Value: 0.0.0.0 }
+          Secrets:
+            - { Name: RUNTIME_ENV_JSON, ValueFrom: !Ref RuntimeSecretArn }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command: [CMD, node, /app/healthcheck.cjs]
+            Interval: 20
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 45
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'toh-${Environment}-pos-cell-${CellId}'
+      Cluster: !Ref ClusterName
+      LaunchType: FARGATE
+      DesiredCount: !Ref MinCapacity
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker: { Enable: true, Rollback: true }
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: [!Ref SecurityGroupId]
+          Subnets: !Ref SubnetIds
+      ServiceRegistries:
+        - { RegistryArn: !GetAtt DiscoveryService.Arn, ContainerName: pos-cell, ContainerPort: 3000 }
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: Service
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Sub 'service/${ClusterName}/toh-${Environment}-pos-cell-${CellId}'
+      RoleARN: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub 'toh-${Environment}-pos-cell-${CellId}-cpu'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 55
+        ScaleInCooldown: 180
+        ScaleOutCooldown: 30
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageCPUUtilization }
+  MemoryScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub 'toh-${Environment}-pos-cell-${CellId}-memory'
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 65
+        ScaleInCooldown: 180
+        ScaleOutCooldown: 30
+        PredefinedMetricSpecification: { PredefinedMetricType: ECSServiceAverageMemoryUtilization }
+Outputs:
+  ServiceName: { Value: !GetAtt Service.Name }
+  CellDnsName: { Value: !Sub 'cell-${CellId}.${Environment}.pos.internal' }
+  MaxTenants: { Value: !Ref MaxTenants }
