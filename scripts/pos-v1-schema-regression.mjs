@@ -20,7 +20,6 @@ const required = [
   "alter table public.pos_checks enable row level security",
   "revoke all on table public.pos_checks from anon, authenticated",
   "grant select, insert, update, delete on table public.pos_checks to service_role",
-  "theouthaven_dr_publication",
 ];
 
 for (const token of required) {
@@ -30,6 +29,7 @@ for (const token of required) {
 }
 
 const forbidden = [
+  "alter publication",
   "create table if not exists public.pos_staff",
   "create table if not exists public.pos_reservations",
   "create table if not exists public.pos_tables",
