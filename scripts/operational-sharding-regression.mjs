@@ -146,8 +146,13 @@ for (const token of [
 }
 
 for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow, liveBootstrap, isolationProofWorkflow]) {
-  if (!workflow.includes("group: operational-shard-control-production")) {
-    throw new Error("Operational shard mutations must share one serialized control-plane concurrency group.");
+  if (!workflow.includes("operational-shard-control-production")) {
+    throw new Error("Operational shard mutations must share one serialized production control-plane concurrency group.");
+  }
+}
+for (const workflow of [replicationWorkflow, liveBootstrap, isolationProofWorkflow]) {
+  if (!workflow.includes("operational-shard-contract-") || !workflow.includes("github.event_name == 'pull_request'")) {
+    throw new Error("PR-only shard contract checks must use workflow-scoped concurrency instead of the production mutation queue.");
   }
 }
 
