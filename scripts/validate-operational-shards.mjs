@@ -30,7 +30,14 @@ for (const shardId of expected) {
     },
   });
   if (!gate.ok) throw new Error(`Shard ${shardId} write-gate probe failed with HTTP ${gate.status}`);
-  console.log(`${shardId}: reachable, runtime write-capable, and POS/write-gate schema available`);
+  const assignments = await fetch(`${baseUrl}/rest/v1/reservation_resource_assignments?select=id&limit=1`, {
+    headers: {
+      apikey: shard.serviceRoleKey,
+      Authorization: `Bearer ${shard.serviceRoleKey}`,
+    },
+  });
+  if (!assignments.ok) throw new Error(`Shard ${shardId} reservation assignment probe failed with HTTP ${assignments.status}`);
+  console.log(`${shardId}: reachable, runtime write-capable, and operational schema available`);
 }
 if (expected.length < 2) throw new Error("Multi-shard validation requires at least two expected operational shards.");
 console.log(`Validated ${expected.length} operational shards.`);

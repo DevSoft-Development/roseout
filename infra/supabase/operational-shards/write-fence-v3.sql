@@ -5,11 +5,12 @@ begin;
 
 create table if not exists public.operational_shard_write_gate (
   id smallint primary key check (id = 1),
-  frozen boolean not null default false,
+  frozen boolean not null default true,
   reason text,
   updated_at timestamptz not null default now()
 );
-insert into public.operational_shard_write_gate(id,frozen) values (1,false)
+alter table public.operational_shard_write_gate alter column frozen set default true;
+insert into public.operational_shard_write_gate(id,frozen,reason) values (1,true,'new-shard-standby')
 on conflict (id) do nothing;
 alter table public.operational_shard_write_gate enable row level security;
 revoke all on table public.operational_shard_write_gate from anon, authenticated;
@@ -123,6 +124,7 @@ begin
     'reserve_staff_profiles',
     'layout_items',
     'reservation_seating_resources',
+    'reservation_resource_assignments',
     'pos_checks',
     'pos_check_resources',
     'pos_orders',
@@ -145,6 +147,18 @@ values (
   '20261005_operational_location_write_fence_v3',
   'sha256:operational-location-write-fence-v3',
   '{"scope":"tenant_move_write_fence_with_maintenance_bypass"}'::jsonb
+)
+on conflict (version) do update
+set migration_key=excluded.migration_key,
+    checksum=excluded.checksum,
+    metadata=excluded.metadata;
+
+insert into public.operational_schema_versions(version,migration_key,checksum,metadata)
+values (
+  5,
+  '20261005_operational_write_fence_standby_v5',
+  'sha256:operational-write-fence-standby-v5',
+  '{"scope":"standby_fail_closed_and_reservation_assignment_fence"}'::jsonb
 )
 on conflict (version) do update
 set migration_key=excluded.migration_key,

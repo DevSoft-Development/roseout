@@ -136,6 +136,7 @@ const tables = [
   ["layout_items", "location_id"],
   ["reservation_seating_resources", "location_id"],
   ["location_reservations", "location_id"],
+  ["reservation_resource_assignments", "location_id"],
   ["pos_checks", "location_id"],
   ["pos_check_resources", "location_id"],
   ["pos_orders", "location_id"],

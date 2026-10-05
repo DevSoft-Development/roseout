@@ -37,6 +37,8 @@ for (const token of [
   "pos_orders_server_staff_profile_fk_idx",
   "pos_tenders_staff_profile_fk_idx",
   "reservation_seating_resources_parent_layout_item_fk_idx",
+  "reservation_resource_assignments",
+  "reservation_resource_assignments_location_idx",
   "toh_operational_dr",
 ]) {
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
@@ -52,6 +54,9 @@ for (const token of [
   "bypass_expires_at",
   "x-theouthaven-rebalance-token",
   "extensions.digest",
+  "reservation_resource_assignments",
+  "new-shard-standby",
+  "operational_write_fence_standby_v5",
 ]) {
   if (!writeFence.includes(token)) throw new Error(`Missing local write-fence invariant: ${token}`);
 }
@@ -76,6 +81,7 @@ for (const token of [
   "targetFenceInstalled",
   "targetFenceReleased",
   "target_fence_release_failed",
+  "reservation_resource_assignments",
 ]) {
   if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
 }
@@ -137,6 +143,26 @@ for (const token of [
 }
 if (!replicationWorkflow.includes("replication_state='broken'") || !replicationWorkflow.includes("replication_state='healthy'")) {
   throw new Error("Replication rotation must fail closed and only mark healthy after verification.");
+}
+for (const token of [
+  "active_physical_shard_id",
+  "standby-dr-replication",
+  "reservation_resource_assignments",
+  "hardening-v2.sql",
+]) {
+  if (!replicationWorkflow.includes(token)) throw new Error(`Missing replication standby safety invariant: ${token}`);
+}
+for (const token of [
+  "hardening-v2.sql",
+  "standby-dr",
+  "standby-primary",
+  "schema_version=5",
+  "reservation_resource_assignments",
+]) {
+  if (!liveBootstrap.includes(token)) throw new Error(`Missing bootstrap standby/schema invariant: ${token}`);
+}
+if (!validationScript.includes("reservation_resource_assignments")) {
+  throw new Error("Standard shard validation must probe reservation assignment schema.");
 }
 
 for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {
