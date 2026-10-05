@@ -1,5 +1,7 @@
 -- Atomic POS tender reservation for card payments.
 -- Keeps the payable amount authoritative and prevents two devices from charging the same open balance.
+-- toh:replicated-dml-reviewed
+-- The DML below is function-body runtime logic only; the migration itself performs no replicated-table writes.
 
 create or replace function public.pos_begin_card_tender(
   p_location_id uuid,
