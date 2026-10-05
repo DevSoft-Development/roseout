@@ -92,6 +92,9 @@ const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
 if (!isolationProof.includes('location_type: "restaurant"')) {
   throw new Error("Isolation proof must provide an explicit valid location_type.");
 }
+if (!isolationProof.includes("operational_location_write_fences")) {
+  throw new Error("Isolation proof must clean synthetic location write-fence rows.");
+}
 
 for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow]) {
   if (!workflow.includes("group: operational-shard-control-production")) {
