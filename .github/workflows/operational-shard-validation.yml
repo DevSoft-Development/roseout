@@ -1,0 +1,87 @@
+name: Operational shard validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/operational-shards.ts'
+      - 'lib/pos/**'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'lib/admin/credential-vault-runtime-source.ts'
+      - 'lib/admin/credential-runtime-inventory.ts'
+      - 'supabase/migrations/*operational_shard*.sql'
+      - 'scripts/operational-sharding-regression.mjs'
+      - 'scripts/validate-operational-shards.mjs'
+      - '.github/workflows/operational-shard-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/operational-shards.ts'
+      - 'lib/pos/**'
+      - 'lib/admin/credential-vault-catalog.ts'
+      - 'lib/admin/credential-vault-runtime-source.ts'
+      - 'lib/admin/credential-runtime-inventory.ts'
+      - 'supabase/migrations/*operational_shard*.sql'
+      - 'scripts/operational-sharding-regression.mjs'
+      - 'scripts/validate-operational-shards.mjs'
+      - '.github/workflows/operational-shard-validation.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Vault environment to validate
+        required: true
+        default: production
+        type: choice
+        options: [staging, production]
+      expected_shards:
+        description: Comma-separated operational shard ids
+        required: true
+        default: shard-01,shard-02
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  contract:
+    name: Shard routing contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shard routing invariants
+        run: node scripts/operational-sharding-regression.mjs
+
+  live-multi-shard:
+    name: Live multi-shard probe
+    if: github.event_name == 'workflow_dispatch'
+    needs: contract
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS access to Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load operational shard credentials
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          secret_id="/theouthaven/credential-vault/${TARGET_ENV}/supabase"
+          aws secretsmanager get-secret-value --secret-id "$secret_id" --query SecretString --output text > "$RUNNER_TEMP/supabase-vault.json"
+          shards="$(jq -r '.operationalShardsJson // empty' "$RUNNER_TEMP/supabase-vault.json")"
+          test -n "$shards" || { echo "Operational shard runtime JSON is not configured in the Supabase credential vault." >&2; exit 1; }
+          echo "::add-mask::$shards"
+          {
+            echo 'OPERATIONAL_SHARDS_JSON<<TOH_SHARDS'
+            printf '%s\n' "$shards"
+            echo 'TOH_SHARDS'
+          } >> "$GITHUB_ENV"
+      - name: Probe every expected shard
+        env:
+          EXPECTED_OPERATIONAL_SHARDS: ${{ github.event.inputs.expected_shards }}
+        run: node scripts/validate-operational-shards.mjs
