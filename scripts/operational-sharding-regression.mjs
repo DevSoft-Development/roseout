@@ -74,6 +74,9 @@ for (const token of [
   "SUB_DISABLED",
   "alter subscription $SUB enable",
   "replication_state='initializing'",
+  "replication_state='broken'",
+  "failover_state='degraded'",
+  "RECOVERY_OK",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
