@@ -84,6 +84,9 @@ jobs:
           else
             printf '{}' > "$WORK/huggingface.json"
           fi
+          if ! aws secretsmanager get-secret-value --secret-id "$PREFIX/turnstile" --query SecretString --output text > "$WORK/turnstile.json" 2>/dev/null; then
+            aws secretsmanager get-secret-value --secret-id "/theouthaven/credential-vault/production/turnstile" --query SecretString --output text > "$WORK/turnstile.json"
+          fi
           if aws secretsmanager get-secret-value --secret-id "$PREFIX/mapbox" --query SecretString --output text > "$WORK/mapbox.json" 2>/dev/null; then
             jq -e 'type == "object"' "$WORK/mapbox.json" >/dev/null
           else
@@ -91,10 +94,13 @@ jobs:
           fi
 
           jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+          jq -e 'type == "object"' "$WORK/turnstile.json" >/dev/null
 
           SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
           SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
           SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+          TURNSTILE_SITE_KEY="$(jq -r '.siteKey // empty' "$WORK/turnstile.json")"
+          TURNSTILE_SECRET_KEY="$(jq -r '.secretKey // empty' "$WORK/turnstile.json")"
           HUGGINGFACE_AI_TOKEN="$(jq -r '.token // empty' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_ENDPOINT="$(jq -r '.aiEndpoint // "https://router.huggingface.co/v1"' "$WORK/huggingface.json")"
           HUGGINGFACE_AI_MODEL="$(jq -r '.aiModel // empty' "$WORK/huggingface.json")"
@@ -104,6 +110,8 @@ jobs:
           test -n "$SUPABASE_URL" || { echo "::error::Admin Credential Vault shared primary Supabase URL is missing."; exit 1; }
           test -n "$SUPABASE_ANON_KEY" || { echo "::error::Admin Credential Vault shared primary Supabase publishable key is missing."; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "::error::Admin Credential Vault shared primary Supabase service role key is missing."; exit 1; }
+          test -n "$TURNSTILE_SITE_KEY" || { echo "::error::Turnstile site key is missing from Admin Credential Vault."; exit 1; }
+          test -n "$TURNSTILE_SECRET_KEY" || { echo "::error::Turnstile secret key is missing from Admin Credential Vault."; exit 1; }
           if [ -n "$HUGGINGFACE_AI_TOKEN" ] || [ -n "$HUGGINGFACE_AI_MODEL" ]; then
             test -n "$HUGGINGFACE_AI_TOKEN" || { echo "::error::Hugging Face fallback is partially configured: access token is missing."; exit 1; }
             test -n "$HUGGINGFACE_AI_MODEL" || { echo "::error::Hugging Face fallback is partially configured: model is missing."; exit 1; }
@@ -114,7 +122,7 @@ jobs:
             echo "Hugging Face AI fallback is not configured; Azure AI will run as the sole provider."
           fi
 
-          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$MAPBOX_ACCESS_TOKEN"; do
+          for value in "$SUPABASE_ANON_KEY" "$SUPABASE_SERVICE_ROLE_KEY" "$TURNSTILE_SITE_KEY" "$TURNSTILE_SECRET_KEY" "$MAPBOX_ACCESS_TOKEN"; do
             echo "::add-mask::$value"
           done
 
@@ -123,6 +131,8 @@ jobs:
             echo "SUPABASE_URL=$SUPABASE_URL"
             echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+            echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY"
+            echo "TURNSTILE_SECRET_KEY=$TURNSTILE_SECRET_KEY"
             echo "HUGGINGFACE_AI_TOKEN=$HUGGINGFACE_AI_TOKEN"
             echo "HUGGINGFACE_AI_ENDPOINT=$HUGGINGFACE_AI_ENDPOINT"
             echo "HUGGINGFACE_AI_MODEL=$HUGGINGFACE_AI_MODEL"
@@ -190,7 +200,7 @@ jobs:
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             MAPBOX_ACCESS_TOKEN="${MAPBOX_ACCESS_TOKEN:-}"
-            az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
+            az deployment sub what-if               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY"               consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
 
       - name: Deploy staging runtime
         uses: azure/CLI@v2
@@ -206,7 +216,7 @@ jobs:
             HUGGINGFACE_AI_TOKEN="${HUGGINGFACE_AI_TOKEN:-}"
             HUGGINGFACE_AI_MODEL="${HUGGINGFACE_AI_MODEL:-}"
             MAPBOX_ACCESS_TOKEN="${MAPBOX_ACCESS_TOKEN:-}"
-            az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
+            az deployment sub create               --name toh-consumer-runtime-staging               --location eastus2               --template-file infra/azure/main.bicep               --parameters infra/azure/parameters/staging.bicepparam               consumerRuntimeEnabled=true               consumerImage="$IMAGE"               consumerGitSha="$IMAGE_SHA"               consumerNextPublicSiteUrl="$SITE_URL"               consumerNextPublicSupabaseUrl="$SUPABASE_URL"               consumerNextPublicSupabaseAnonKey="$SUPABASE_ANON_KEY"               consumerNextPublicTurnstileSiteKey="$NEXT_PUBLIC_TURNSTILE_SITE_KEY"               consumerTurnstileSecretKey="$TURNSTILE_SECRET_KEY"               consumerSupabaseServiceRoleKey="$SUPABASE_SERVICE_ROLE_KEY"               consumerAzureAiEndpoint="$AZURE_AI_ENDPOINT"               consumerAzureAiApiKey="$AZURE_AI_API_KEY"               consumerAzureAiModel=toh-primary               consumerHuggingFaceAiEndpoint="$HUGGINGFACE_AI_ENDPOINT"               consumerHuggingFaceAiToken="$HUGGINGFACE_AI_TOKEN"               consumerHuggingFaceAiModel="$HUGGINGFACE_AI_MODEL"               consumerMapboxAccessToken="$MAPBOX_ACCESS_TOKEN"
 
       - name: Smoke-test Azure Container App
         uses: azure/CLI@v2
