@@ -11,6 +11,8 @@ const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toL
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
 const rebalance = read("scripts/operational-shard-rebalance.mjs");
 const failover = read(".github/workflows/operational-shard-failover.yml");
+const rebalanceWorkflow = read(".github/workflows/operational-shard-rebalance.yml");
+const replicationWorkflow = read(".github/workflows/operational-shard-dr-replication.yml");
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -54,6 +56,11 @@ for (const token of [
   "total_cents",
   "in_flight_card_tenders_did_not_drain",
   "sourceFenceFrozen",
+  "deletionOrder",
+  "routing_changed_during_rebalance",
+  "sourceRoutingEpoch",
+  "targetRoutingEpoch",
+  "targetSnapshot: \"replaced\"",
 ]) {
   if (!rebalance.includes(token)) throw new Error(`Missing safe rebalance invariant: ${token}`);
 }
@@ -64,8 +71,17 @@ for (const token of [
   "caught_up",
   "LAG_BYTES",
   "write_enabled=false",
+  "SUB_DISABLED",
+  "alter subscription $SUB enable",
+  "replication_state='initializing'",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
+}
+
+for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow]) {
+  if (!workflow.includes("group: operational-shard-control-production")) {
+    throw new Error("Operational shard mutations must share one serialized control-plane concurrency group.");
+  }
 }
 
 for (const forbiddenColumn of ["service_role_key", "password", "api_key", "credential_value", "secret_key"]) {
