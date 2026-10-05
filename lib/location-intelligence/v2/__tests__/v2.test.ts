@@ -297,6 +297,55 @@ describe("Location Intelligence V2 pilot quotas", () => {
   });
 });
 
+describe("Location Intelligence V2 provider freshness guard", () => {
+  it("treats month-old Google enrichment as fresh within the 60-day guard", () => {
+    const now = Date.parse("2026-10-05T12:00:00.000Z");
+    expect(GOOGLE_BOOTSTRAP_FRESHNESS_DAYS).toBe(60);
+    expect(isRecentGoogleEnrichment("2026-09-05T12:00:00.000Z", now)).toBe(true);
+    expect(isRecentGoogleEnrichment("2026-07-01T12:00:00.000Z", now)).toBe(false);
+  });
+
+  it("reuses fresh Google website, rating, and review count before paid bootstrap", () => {
+    const now = Date.parse("2026-10-05T12:00:00.000Z");
+    const location = {
+      google_enriched_at: "2026-09-05T12:00:00.000Z",
+      website: null,
+      google_website_uri: "https://example.com",
+      rating: null,
+      google_rating: 4.6,
+      review_count: null,
+      google_user_rating_count: 321,
+    };
+
+    expect(recentGoogleCanonicalReuse(location, now)).toEqual({
+      website: "https://example.com",
+      rating: 4.6,
+      review_count: 321,
+    });
+  });
+
+  it("does not spend paid bootstrap on gaps already satisfied by fresh Google evidence", () => {
+    const now = Date.parse("2026-10-05T12:00:00.000Z");
+    const gaps = paidBusinessProfileGaps({
+      google_enriched_at: "2026-09-05T12:00:00.000Z",
+      google_place_id: "place-1",
+      phone: "555-0100",
+      website: null,
+      google_website_uri: "https://example.com",
+      operating_hours: { monday: "9-5" },
+      primary_category: "restaurant",
+      description: "Description",
+      main_image: "https://example.com/image.jpg",
+      rating: null,
+      google_rating: 4.6,
+      review_count: null,
+      google_user_rating_count: 321,
+    }, now);
+
+    expect(gaps).toEqual([]);
+  });
+});
+
 describe("Location Intelligence V2 500-location rollout", () => {
   it("keeps every 20-location batch balanced across the tri-state target mix", () => {
     expect(LOCATION_INTELLIGENCE_V2_ROLLOUT_BATCH_QUOTAS).toEqual([
