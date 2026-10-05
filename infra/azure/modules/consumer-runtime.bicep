@@ -12,6 +12,9 @@ param nextPublicSiteUrl string
 param nextPublicSupabaseUrl string
 @secure()
 param nextPublicSupabaseAnonKey string
+param nextPublicTurnstileSiteKey string
+@secure()
+param turnstileSecretKey string
 @secure()
 param supabaseServiceRoleKey string
 param azureAiEndpoint string
@@ -93,6 +96,14 @@ resource supabaseServiceRoleSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01
   }
 }
 
+resource turnstileSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: vault
+  name: 'consumer-turnstile-secret-key-${secretSuffix}'
+  properties: {
+    value: turnstileSecretKey
+  }
+}
+
 resource azureAiApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: vault
   name: 'consumer-azure-ai-api-key-${secretSuffix}'
@@ -168,6 +179,11 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
           identity: identity.id
         }
         {
+          name: 'turnstile-secret-key'
+          keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${turnstileSecret.name}'
+          identity: identity.id
+        }
+        {
           name: 'azure-ai-api-key'
           keyVaultUrl: 'https://${vault.name}${az.environment().suffixes.keyvaultDns}/secrets/${azureAiApiKeySecret.name}'
           identity: identity.id
@@ -215,6 +231,14 @@ resource consumer 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'NEXT_PUBLIC_SUPABASE_ANON_KEY'
               value: nextPublicSupabaseAnonKey
+            }
+            {
+              name: 'NEXT_PUBLIC_TURNSTILE_SITE_KEY'
+              value: nextPublicTurnstileSiteKey
+            }
+            {
+              name: 'TURNSTILE_SECRET_KEY'
+              secretRef: 'turnstile-secret-key'
             }
             {
               name: 'SUPABASE_SERVICE_ROLE_KEY'

@@ -50,7 +50,7 @@ ALLOWED_PROVIDERS = {
     "tiktok": {"clientKey", "clientSecret"},
     "apple": {"issuerId", "keyId", "privateKey"},
     "mobile": {"azureDevOpsOrg", "azureDevOpsProject", "azureDevOpsPat", "azureDevOpsGithubServiceConnectionId", "iosCertificateP12Base64", "iosCertificatePassword", "iosProvisioningProfileBase64", "iosTeamId", "appStoreConnectKeyId", "appStoreConnectIssuerId", "appStoreConnectPrivateKey", "appStoreConnectAppId", "androidKeystoreBase64", "androidKeystorePassword", "androidKeyAlias", "androidKeyPassword", "googlePlayServiceAccountJson", "sentryAuthToken", "sentryOrg", "sentryProject"},
-    "turnstile": {"secretKey"},
+    "turnstile": {"siteKey", "secretKey"},
     "expo": {"accessToken"},
     "domains": {"apiKey", "apiSecret", "accountId", "gatewaySecret"},
     "platform": {"cronSecret", "importSecret", "internalImportSecret", "outingReminderCronSecret", "googleLocationEnrichmentCronSecret", "adminApiSecret", "adminDigestSecret", "notificationSecret", "supportEmailWebhookSecret", "supportInboundSecret", "websiteHostingGatewaySecret", "drGatewaySecret", "jobGatewaySecret", "integrationApiSecret", "assistantApiSecret", "criticalAlertSmsEnabled", "criticalAlertSmsRecoveryEnabled", "criticalAlertSmsFrom", "criticalAlertSmsTo", "criticalAlertTimezone", "criticalAlertQuietHoursStart", "criticalAlertQuietHoursEnd", "criticalAlertQuietHoursMode"},

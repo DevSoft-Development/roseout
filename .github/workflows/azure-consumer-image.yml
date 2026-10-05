@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: |
-          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL=https://staging.theouthaven.com             --build-arg NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=consumer-ci-placeholder             --tag theouthaven-consumer:ci             .
+          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL=https://staging.theouthaven.com             --build-arg NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=consumer-ci-placeholder             --build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA             --tag theouthaven-consumer:ci             .
 
   push:
     name: Push immutable staging image
@@ -61,16 +61,36 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
+      - name: Configure AWS access to central Credential Vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Resolve staging Turnstile site key from Admin Credential Vault
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/turnstile.json"
+          if ! aws secretsmanager get-secret-value --secret-id "/theouthaven/credential-vault/staging/turnstile" --query SecretString --output text > "$WORK" 2>/dev/null; then
+            aws secretsmanager get-secret-value --secret-id "/theouthaven/credential-vault/production/turnstile" --query SecretString --output text > "$WORK"
+          fi
+          TURNSTILE_SITE_KEY="$(jq -r '.siteKey // empty' "$WORK")"
+          test -n "$TURNSTILE_SITE_KEY" || { echo "::error::Turnstile site key is missing from Admin Credential Vault"; exit 1; }
+          echo "::add-mask::$TURNSTILE_SITE_KEY"
+          echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY" >> "$GITHUB_ENV"
+          rm -f "$WORK"
       - name: Require staging public runtime variables
         env:
           SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
           SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          TURNSTILE_SITE_KEY: ${{ env.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
         run: |
           set -euo pipefail
           test -n "$SITE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SITE_URL"; exit 1; }
           test -n "$SUPABASE_URL" || { echo "::error::Missing staging variable NEXT_PUBLIC_SUPABASE_URL"; exit 1; }
           test -n "$SUPABASE_ANON_KEY" || { echo "::error::Missing staging secret NEXT_PUBLIC_SUPABASE_ANON_KEY"; exit 1; }
+          test -n "$TURNSTILE_SITE_KEY" || { echo "::error::Missing staging Turnstile site key"; exit 1; }
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
         with:
@@ -95,9 +115,10 @@ jobs:
           SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           LOGIN_SERVER: ${{ steps.acr.outputs.login_server }}
+          TURNSTILE_SITE_KEY: ${{ env.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
         run: |
           set -euo pipefail
           IMAGE="$LOGIN_SERVER/consumer:${GITHUB_SHA}"
-          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"             --tag "$IMAGE"             .
+          docker build             --file infra/azure/consumer-runtime/Dockerfile             --build-arg NEXT_PUBLIC_SITE_URL="$SITE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_URL="$SUPABASE_URL"             --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"             --build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY="$TURNSTILE_SITE_KEY"             --tag "$IMAGE"             .
           docker push "$IMAGE"
           echo "Pushed $IMAGE" >> "$GITHUB_STEP_SUMMARY"

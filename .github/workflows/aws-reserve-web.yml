@@ -180,6 +180,10 @@ jobs:
           SOURCE_SECRET="/theouthaven/${TARGET_ENV}/edge-runtime/env"
           aws secretsmanager get-secret-value --secret-id "$SOURCE_SECRET" --query SecretString --output text > "$RUNNER_TEMP/source-env.json"
           jq 'del(.VERCEL_TOKEN, .VERCEL_ACCESS_TOKEN, .VERCEL_RUNTIME_TOKEN)' "$RUNNER_TEMP/source-env.json" > "$RUNNER_TEMP/reserve-env.json"
+          jq -e '(.NEXT_PUBLIC_TURNSTILE_SITE_KEY | strings | length > 0) and (.TURNSTILE_SECRET_KEY | strings | length > 0)' "$RUNNER_TEMP/reserve-env.json" >/dev/null || {
+            echo "Reserve runtime is missing Turnstile site/secret credentials from the central vault sync." >&2
+            exit 1
+          }
           aws secretsmanager put-secret-value --secret-id "$RESERVE_SECRET_ARN" --secret-string "file://$RUNNER_TEMP/reserve-env.json" >/dev/null
 
       - name: Build and push isolated Reserve image
