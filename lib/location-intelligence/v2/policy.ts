@@ -57,3 +57,64 @@ export function allowPaidProviderExecution(input: {
   ) return false;
   return true;
 }
+
+
+export const GOOGLE_BOOTSTRAP_FRESHNESS_DAYS = 60;
+
+export function isRecentGoogleEnrichment(
+  enrichedAt: unknown,
+  nowMs = Date.now(),
+  freshnessDays = GOOGLE_BOOTSTRAP_FRESHNESS_DAYS,
+) {
+  const enrichedMs = Date.parse(String(enrichedAt || ""));
+  if (!Number.isFinite(enrichedMs)) return false;
+  return nowMs - enrichedMs <= freshnessDays * 24 * 60 * 60 * 1000;
+}
+
+function missing(value: unknown) {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length === 0;
+  return false;
+}
+
+export function recentGoogleCanonicalReuse(location: Record<string, unknown>, nowMs = Date.now()) {
+  if (!isRecentGoogleEnrichment(location.google_enriched_at, nowMs)) return {};
+
+  const reusable: Record<string, unknown> = {};
+  if (missing(location.website) && !missing(location.google_website_uri)) {
+    reusable.website = location.google_website_uri;
+  }
+  if (missing(location.rating) && !missing(location.google_rating)) {
+    reusable.rating = location.google_rating;
+  }
+  if (missing(location.review_count) && !missing(location.google_user_rating_count)) {
+    reusable.review_count = location.google_user_rating_count;
+  }
+  return reusable;
+}
+
+export function paidBusinessProfileGaps(location: Record<string, unknown>, nowMs = Date.now()) {
+  const effective = { ...location, ...recentGoogleCanonicalReuse(location, nowMs) };
+  const fields = [
+    "google_place_id",
+    "phone",
+    "website",
+    "operating_hours",
+    "primary_category",
+    "description",
+    "main_image",
+    "rating",
+    "review_count",
+  ];
+
+  return fields.filter((field) => missing(effective[field]));
+}
+
+export function shouldRunPaidBusinessProfileBootstrap(
+  location: Record<string, unknown>,
+  nowMs = Date.now(),
+) {
+  return paidBusinessProfileGaps(location, nowMs).length > 0;
+}
