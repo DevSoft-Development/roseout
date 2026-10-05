@@ -114,6 +114,21 @@ jobs:
           chmod 600 "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
           rm -f "$VAULT_FILE"
 
+      - name: Resolve Turnstile credentials from central vault
+        run: |
+          set -euo pipefail
+          TURNSTILE_FILE="$RUNNER_TEMP/turnstile-vault.json"
+          aws secretsmanager get-secret-value             --secret-id "/theouthaven/credential-vault/production/turnstile"             --query SecretString --output text > "$TURNSTILE_FILE"
+          TURNSTILE_SITE_KEY="$(jq -r '.siteKey // empty' "$TURNSTILE_FILE")"
+          TURNSTILE_SECRET_KEY="$(jq -r '.secretKey // empty' "$TURNSTILE_FILE")"
+          test -n "$TURNSTILE_SITE_KEY" || { echo "Turnstile site key is unavailable in the central credential vault" >&2; exit 1; }
+          test -n "$TURNSTILE_SECRET_KEY" || { echo "Turnstile secret key is unavailable in the central credential vault" >&2; exit 1; }
+          echo "::add-mask::$TURNSTILE_SITE_KEY"
+          echo "::add-mask::$TURNSTILE_SECRET_KEY"
+          echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY" >> "$GITHUB_ENV"
+          echo "TURNSTILE_SECRET_KEY=$TURNSTILE_SECRET_KEY" >> "$GITHUB_ENV"
+          rm -f "$TURNSTILE_FILE"
+
       - name: Build AWS runtime secret
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -125,7 +140,6 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_CONNECT_WEBHOOK_SECRET: ${{ secrets.STRIPE_CONNECT_WEBHOOK_SECRET }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           SUPPORT_EMAIL_WEBHOOK_SECRET: ${{ secrets.SUPPORT_EMAIL_WEBHOOK_SECRET }}
           SUPPORT_INBOUND_SECRET: ${{ secrets.SUPPORT_INBOUND_SECRET }}
           NOTIFICATION_SECRET: ${{ secrets.NOTIFICATION_SECRET }}
@@ -239,7 +253,7 @@ jobs:
             BRAVE_SEARCH_API_KEY SERPAPI_API_KEY TELNYX_PUBLIC_KEY TELNYX_CONCIERGE_API_KEY \
             TELNYX_TRANSACTIONAL_API_KEY TELNYX_RESERVATIONS_API_KEY TELNYX_CRM_API_KEY \
             TELNYX_SUPPORT_API_KEY TELNYX_MARKETING_API_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET \
-            STRIPE_CONNECT_WEBHOOK_SECRET TURNSTILE_SECRET_KEY SUPPORT_EMAIL_WEBHOOK_SECRET \
+            STRIPE_CONNECT_WEBHOOK_SECRET NEXT_PUBLIC_TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY SUPPORT_EMAIL_WEBHOOK_SECRET \
             SUPPORT_INBOUND_SECRET NOTIFICATION_SECRET ADMIN_API_SECRET ADMIN_DIGEST_SECRET \
             DOMAIN_GATEWAY_SECRET AWS_PLATFORM_JOB_GATEWAY_SECRET MICROSOFT_CLIENT_SECRET \
             MICROSOFT_TENANT_ID MICROSOFT_CLIENT_ID SEARCH_HF_ML_TOKEN SEARCH_HF_ML_ENDPOINT \
