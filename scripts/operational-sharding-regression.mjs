@@ -157,8 +157,18 @@ for (const token of [
   "active_physical_shard_id",
   "routing_epoch",
   "getSupabaseAdminClient()",
+  "getOperationalShardClientInternal",
+  "authoritativeRegistryWrite",
+  'mode === "write"',
 ]) {
   if (!resolver.includes(token)) throw new Error(`Missing shard resolver invariant: ${token}`);
+}
+
+if (!resolver.includes("getOperationalShardClientInternal(physicalShardId, mode, mode === \"write\")")) {
+  throw new Error("Authoritative shard resolution must not be blocked by a stale runtime write hint.");
+}
+if (!resolver.includes("config.writeEnabled === false && !authoritativeRegistryWrite")) {
+  throw new Error("Direct shard clients must continue honoring runtime write-disable hints.");
 }
 
 if (!payment.includes("resolveOperationalShardForLocationId")) {

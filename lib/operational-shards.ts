@@ -78,9 +78,10 @@ export function operationalShardIdForLocation(location: Record<string, any>): st
   return cleanShardId(location.operational_shard_id);
 }
 
-export function getOperationalShardClient(
+function getOperationalShardClientInternal(
   shardIdInput: string,
   mode: OperationalShardAccessMode = "write",
+  authoritativeRegistryWrite = false,
 ): SupabaseClient {
   const shardId = cleanShardId(shardIdInput);
   if (shardId === "primary") return getSupabaseAdminClient();
@@ -90,7 +91,7 @@ export function getOperationalShardClient(
   if (mode === "read" && config.readEnabled === false) {
     throw new Error("operational_shard_read_disabled");
   }
-  if (mode === "write" && config.writeEnabled === false) {
+  if (mode === "write" && config.writeEnabled === false && !authoritativeRegistryWrite) {
     throw new Error("operational_shard_write_disabled");
   }
 
@@ -104,6 +105,13 @@ export function getOperationalShardClient(
   });
   shardClients.set(shardId, { fingerprint, client });
   return client;
+}
+
+export function getOperationalShardClient(
+  shardIdInput: string,
+  mode: OperationalShardAccessMode = "write",
+): SupabaseClient {
+  return getOperationalShardClientInternal(shardIdInput, mode, false);
 }
 
 export function getOperationalShardClientForLocation(
@@ -194,6 +202,9 @@ export async function resolveOperationalShardForLocationId(
     assignmentEpoch,
     failoverState: String(shard.failover_state || "primary"),
     schemaVersion: positiveEpoch(shard.schema_version),
-    client: getOperationalShardClient(physicalShardId, mode),
+    // The global routing registry is authoritative for routed writes. Runtime
+    // flags are deployment-time hints and may be stale across a failover, but
+    // the physical credentials must still exist in the vault-backed map.
+    client: getOperationalShardClientInternal(physicalShardId, mode, mode === "write"),
   };
 }
