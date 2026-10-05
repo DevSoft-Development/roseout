@@ -6,10 +6,19 @@ import { reviewRefreshCadenceDays } from "@/lib/location-intelligence/v2/policy"
 export function nextReviewRefreshAt(input: {
   popularityScore: number;
   lastRefreshedAt?: string | null;
+  now?: Date;
 }) {
   const days = reviewRefreshCadenceDays(input.popularityScore);
   if (!days) return null;
-  const base = input.lastRefreshedAt ? new Date(input.lastRefreshedAt) : new Date();
+
+  const now = input.now || new Date();
+  if (!Number.isFinite(now.getTime())) return null;
+
+  // First review ingestion should happen immediately. The normal popularity-based
+  // cadence begins only after we have actually collected a review snapshot.
+  if (!input.lastRefreshedAt) return now.toISOString();
+
+  const base = new Date(input.lastRefreshedAt);
   if (!Number.isFinite(base.getTime())) return null;
   return new Date(base.getTime() + days * 86_400_000).toISOString();
 }
@@ -19,7 +28,7 @@ export function shouldRefreshReviews(input: {
   lastRefreshedAt?: string | null;
   now?: Date;
 }) {
-  const next = nextReviewRefreshAt(input);
+  const next = nextReviewRefreshAt({ ...input, now: input.now });
   if (!next) return false;
   return new Date(next).getTime() <= (input.now || new Date()).getTime();
 }
