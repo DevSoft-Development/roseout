@@ -7,8 +7,9 @@ export const dynamic = "force-dynamic";
 
 function statusForError(message: string) {
   if (message === "pos_check_not_found") return 404;
-  if (message === "pos_check_not_payable" || message === "pos_check_already_paid") return 409;
+  if (message === "pos_check_not_payable" || message === "pos_check_already_paid" || message === "pos_payment_in_progress") return 409;
   if (message === "pos_stripe_connect_not_configured" || message === "pos_stripe_connect_charges_not_enabled") return 409;
+  if (message === "pos_payment_persistence_failed_cancel_unconfirmed") return 502;
   if (message.startsWith("invalid_") || message.startsWith("missing_")) return 400;
   return 500;
 }
