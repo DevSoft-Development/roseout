@@ -107,6 +107,7 @@ jobs:
           PHYSICAL_FROZEN=false
           CUTOVER_DONE=false
           SUB_DISABLED=false
+          PRIMARY_OPENED=false
           ACTIVE_REF="$PRIMARY_REF"
 
           rollback_on_error() {
@@ -129,6 +130,20 @@ jobs:
                   sql_api "$GLOBAL_REF" "update public.operational_shards
                     set replication_state='initializing',last_replication_check_at=now(),updated_at=now()
                     where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-replication-recovering.json" || true
+                fi
+              fi
+
+              # During failback the primary is opened immediately before the
+              # routing CAS. If that CAS fails, refreeze primary before DR or
+              # global writes are restored; otherwise both physical shards
+              # could accept writes.
+              if [ "$ACTION" = restore_primary_after_rebalance ] && [ "$PRIMARY_OPENED" = true ]; then
+                if ! sql_api "$PRIMARY_REF" "update public.operational_shard_write_gate
+                  set frozen=true,reason='failback-aborted',updated_at=now() where id=1;" "$RUNNER_TEMP/refreeze-primary.json"; then
+                  RECOVERY_OK=false
+                  sql_api "$GLOBAL_REF" "update public.operational_shards
+                    set write_enabled=false,failover_state='degraded',updated_at=now()
+                    where id='$SHARD_ID' and routing_epoch=$EXPECTED_EPOCH;" "$RUNNER_TEMP/mark-failback-degraded.json" || true
                 fi
               fi
 
@@ -248,6 +263,7 @@ jobs:
 
             sql_api "$PRIMARY_REF" "update public.operational_shard_write_gate
               set frozen=false,reason='active-primary',updated_at=now() where id=1;" "$RUNNER_TEMP/primary-unfreeze.json"
+            PRIMARY_OPENED=true
 
             sql_api "$GLOBAL_REF" "insert into public.operational_shard_failover_events
               (shard_id,from_physical_shard_id,to_physical_shard_id,from_epoch,to_epoch,action,status)
