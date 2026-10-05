@@ -43,13 +43,21 @@ The same gate also requires:
 
 `enforce` fails on any drift or replication-membership gap. `assess` reports the same findings without intentionally failing the workflow.
 
+## Passive-standby migration execution
+
+Oregon is not an independent application writer while Virginia is primary. The automatic dual-region migration workflow therefore runs Oregon migration transactions with `session_replication_role = replica`. This keeps compatible DDL available in Oregon while suppressing normal origin triggers that could create standby-only application rows. Virginia runs the same migration with normal trigger behavior and remains the authoritative source for data-plane side effects, which then arrive in Oregon through logical replication.
+
+Any new migration containing `INSERT`, `UPDATE`, `DELETE`, or `MERGE` against replicated `public` tables must include the explicit marker `-- toh:replicated-dml-reviewed`. That marker is a review acknowledgement, not a bypass: the DML must be deterministic, safe when Oregon origin triggers are suppressed, and must not independently create identities or rows that will later collide with Virginia replication. Prefer primary-authoritative data repair and replication over dual-region seed writes.
+
+This guard exists because running an Oregon backfill with normal triggers can create local side effects such as reconciliation-queue rows. Those rows are invisible to Virginia and can later cause logical-replication apply failures when Virginia produces the authoritative version of the same side effect.
+
 ## Schema-change order
 
 For any schema change affecting replicated application objects:
 
 1. Confirm the schema-drift gate is green before the change.
-2. Apply compatible DDL to Oregon first while Oregon remains passive.
-3. Apply the production schema change to Virginia.
+2. Apply compatible DDL to Oregon first while Oregon remains passive and origin triggers are suppressed by the migration workflow.
+3. Apply the production schema change to Virginia with normal trigger behavior.
 4. If a new eligible public table was introduced, add it to `theouthaven_dr_publication` on Virginia.
 5. Refresh `theouthaven_va_to_or_dr` on Oregon.
 6. Wait until every subscription relation reports `srsubstate = 'r'` and the worker is connected.
