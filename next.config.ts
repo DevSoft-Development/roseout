@@ -40,6 +40,9 @@ const nextConfig = {
   ...(isAwsRuntime || !isVercel ? { output: "standalone" } : {}),
   ...(!isProduction ? { allowedDevOrigins: ["127.0.0.1"] } : {}),
   async redirects() { return myWorkspaceRedirects; },
+  async rewrites() {
+    return [{ source: "/api/stripe/connect/webhooK", destination: "/api/stripe/connect/webhook" }];
+  },
   async headers() { return [{ source: "/:path*", headers: securityHeaders }]; },
   images: {
     maximumRedirects: 0,
