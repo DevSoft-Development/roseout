@@ -18,7 +18,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: operational-shard-dr-replication-production
+  group: operational-shard-control-production
   cancel-in-progress: false
 
 env:
