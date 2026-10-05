@@ -11,9 +11,8 @@ const navItems = [
   { href: "/explore", label: "Discover" },
   { href: "/#plan-your-outing", label: "Create Outing" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
-  { href: "/reservations", label: "Reservations" },
   { href: "/support", label: "Support" },
-  { href: "/business", label: "For Businesses" },
+  { href: "https://business.theouthaven.com/business", label: "For Businesses" },
 ];
 
 type AuthMeResponse = {
@@ -212,7 +211,6 @@ export default function TheOutHavenHeader() {
                         ["/user/dashboard", "Dashboard"],
                         ["/user/dashboard/beta/weekly", "Beta Weekly Tasks"],
                         ["/user/dashboard/saved", "Saved Outings"],
-                        ["/reservations", "Reservations"],
                         ["/user/dashboard/account", "Account Settings"],
                         ["/help", "Get Help"],
                       ].map(([href, label]) => (
@@ -257,7 +255,7 @@ export default function TheOutHavenHeader() {
                   <span className="min-w-0 truncate text-sm font-black text-white">{displayName}</span>
                 </div>
                 <Link href="/user/dashboard" className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">Dashboard</Link>
-                {[["/user/dashboard/beta/weekly", "Beta Weekly Tasks"], ["/user/dashboard/saved", "Saved Outings"], ["/reservations", "Reservations"], ["/user/dashboard/account", "Account Settings"], ["/help", "Get Help"]].map(([href, label]) => (
+                {[["/user/dashboard/beta/weekly", "Beta Weekly Tasks"], ["/user/dashboard/saved", "Saved Outings"], ["/user/dashboard/account", "Account Settings"], ["/help", "Get Help"]].map(([href, label]) => (
                   <Link key={href} href={href} className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">{label}</Link>
                 ))}
                 {isAdmin ? <Link href="/admin/dashboard" className="block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black">Admin Dashboard</Link> : null}

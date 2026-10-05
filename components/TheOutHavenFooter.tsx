@@ -5,7 +5,7 @@ export default function TheOutHavenFooter() {
     <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
 
-      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
+      <div className="relative mx-auto flex max-w-7xl flex-col gap-10">
         <div>
           <p className="max-w-md text-sm leading-7 text-white/45">
             TheOutHaven LLC is a New York-based technology company helping people
@@ -45,8 +45,8 @@ export default function TheOutHavenFooter() {
           title="Company"
           links={[
             { label: "About", href: "/about" },
-            { label: "For Businesses", href: "/business" },
-            { label: "Claim Listing", href: "/business/claim" },
+            { label: "For Businesses", href: "https://business.theouthaven.com/business" },
+            { label: "Claim Listing", href: "https://business.theouthaven.com/business/claim" },
             { label: "Careers", href: "/careers" },
           ]}
         />
@@ -73,12 +73,19 @@ export default function TheOutHavenFooter() {
         />
       </div>
 
-      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35 md:flex-row md:items-center md:justify-between">
+      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35">
         <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
-        <p className="max-w-xl leading-6 md:text-right">
+        <p className="max-w-xl leading-6">
           Recommendations may include third-party listings. Always confirm details
           directly with the business.
         </p>
+        <Link
+          href="/status"
+          className="inline-flex w-fit items-center gap-2 text-sm font-black text-white/65 transition hover:text-white"
+        >
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          System Status
+        </Link>
       </div>
     </footer>
   );

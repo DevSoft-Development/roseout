@@ -60,6 +60,15 @@ export function proxy(request: NextRequest) {
   if (shortHostResponse) return shortHostResponse;
 
   const { pathname, search } = request.nextUrl;
+
+  if (
+    pathname === "/business" ||
+    pathname.startsWith("/business/claim") ||
+    pathname.startsWith("/business/plans")
+  ) {
+    return NextResponse.redirect(`https://business.theouthaven.com${pathname}${search}`, 308);
+  }
+
   if (reserveHandoff(pathname)) {
     return NextResponse.redirect(`https://reserve.theouthaven.com${pathname}${search}`, 308);
   }

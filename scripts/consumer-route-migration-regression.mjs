@@ -89,4 +89,18 @@ for (const required of [
   }
 }
 
+const consumerProxy = fs.readFileSync(path.join(root, "apps/consumer/proxy.ts"), "utf8");
+const consumerHeader = fs.readFileSync(path.join(root, "components/TheOutHavenHeader.tsx"), "utf8");
+const consumerFooter = fs.readFileSync(path.join(root, "components/TheOutHavenFooter.tsx"), "utf8");
+
+if (!consumerProxy.includes("https://business.theouthaven.com")) {
+  throw new Error("Consumer proxy must hand public business routes to the isolated Business host.");
+}
+if (consumerHeader.includes('{ href: "/reservations", label: "Reservations" }')) {
+  throw new Error("Consumer global header must not expose a standalone Reservations destination.");
+}
+if (!consumerFooter.includes('{ label: "Status", href: "/status" }') || !consumerFooter.includes("System Status")) {
+  throw new Error("Consumer footer must expose public system status.");
+}
+
 console.log(`Consumer-only surface parity passed for ${publicFiles.length} public files; private Admin/Business/Reserve routes excluded.`);
