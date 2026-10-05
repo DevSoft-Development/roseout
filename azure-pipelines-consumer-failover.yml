@@ -32,10 +32,11 @@ parameters:
       - high
 
 variables:
+  - group: theouthaven-consumer-failover
   - name: nodeVersion
     value: '22.x'
   - name: azureServiceConnection
-    value: 'TheOutHaven Azure Production'
+    value: $(AZURE_SERVICE_CONNECTION)
 
 stages:
   - stage: CircuitBreaker
@@ -137,7 +138,7 @@ stages:
     condition: and(
       succeeded(),
       eq(stageDependencies.CircuitBreaker.Evaluate.outputs['breaker.circuitState'], 'OPEN'),
-      eq('${{ parameters.deploy }}', 'true')
+      eq(${{ parameters.deploy }}, true)
       )
     variables:
       RELEASE_SHA: $[ stageDependencies.Validate.ValidateCandidate.outputs['release.releaseSha'] ]
