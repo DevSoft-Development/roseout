@@ -31,6 +31,22 @@ const menuAdapter = fs.readFileSync(
   "utf8",
 ).toLowerCase();
 
+
+const businessMenuPage = fs.readFileSync(
+  path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/page.tsx"),
+  "utf8",
+).toLowerCase();
+
+const guidedItemEditor = fs.readFileSync(
+  path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/QuickAddMenuItem.tsx"),
+  "utf8",
+).toLowerCase();
+
+const locationMenuModule = fs.readFileSync(
+  path.join(process.cwd(), "lib/locations/menu.ts"),
+  "utf8",
+).toLowerCase();
+
 const requiredMigrationTokens = [
   "add column if not exists item_type text not null default 'food_beverage'",
   "add column if not exists channel_visibility jsonb not null default",
@@ -110,6 +126,42 @@ const requiredTypes = [
 for (const token of requiredTypes) {
   if (!types.includes(token)) {
     throw new Error(`Universal catalog regression: missing TypeScript contract: ${token}`);
+  }
+}
+
+
+for (const token of [
+  "what are you adding?",
+  "basic details",
+  "how it works",
+  "where it appears",
+  "pos & operations",
+  "review",
+  "timed_resource",
+  "admission_experience",
+  "channel_visibility",
+]) {
+  if (!guidedItemEditor.includes(token)) {
+    throw new Error(`Universal catalog regression: guided editor missing ${token}`);
+  }
+}
+
+if (businessMenuPage.includes("<details") || businessMenuPage.includes("advanced organization")) {
+  throw new Error("Universal catalog regression: business menu controls must not be hidden in an advanced disclosure");
+}
+
+for (const token of [
+  "item_type:",
+  "channel_visibility:",
+  "duration_minutes:",
+  "resource_type:",
+  "requires_booking:",
+  "tax_category:",
+  "revenue_category:",
+  "prep_station:",
+]) {
+  if (!locationMenuModule.includes(token)) {
+    throw new Error(`Universal catalog regression: menu save path missing ${token}`);
   }
 }
 
