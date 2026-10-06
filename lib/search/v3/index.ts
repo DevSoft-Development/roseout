@@ -50,6 +50,13 @@ export {
 } from "./retrieval/supabaseBm25RetrievalProvider";
 
 export {
+  SupabaseReviewIntelligenceRetrievalProvider,
+  reviewConceptsForIntent,
+  type ReviewIntelligenceRetrievalOptions,
+  type ReviewIntelligenceSupabaseClient,
+} from "./retrieval/supabaseReviewIntelligenceRetrievalProvider";
+
+export {
   ReciprocalRankFusionProvider,
   reciprocalRankFusion,
   type ReciprocalRankFusionOptions,

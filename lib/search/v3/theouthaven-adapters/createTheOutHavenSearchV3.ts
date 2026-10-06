@@ -21,6 +21,10 @@ import {
 import { RuleBasedSearchV3IntentProvider } from "../intent/ruleBasedIntentProvider";
 import { SupabaseBm25RetrievalProvider } from "../retrieval/supabaseBm25RetrievalProvider";
 import { SupabaseStructuredRetrievalProvider } from "../retrieval/supabaseStructuredRetrievalProvider";
+import {
+  SupabaseReviewIntelligenceRetrievalProvider,
+  type ReviewIntelligenceRetrievalOptions,
+} from "../retrieval/supabaseReviewIntelligenceRetrievalProvider";
 import { SupabaseHardEligibilityProvider } from "../eligibility/supabaseHardEligibilityProvider";
 import {
   DeterministicDecisionRankingProvider,
@@ -65,6 +69,7 @@ export interface TheOutHavenSearchV3CompositionOptions {
   pairing?: SearchPairingProvider | null;
   routing?: SearchRoutingProvider | null;
   semantic?: SearchV3SemanticRetrievalBundleOptions;
+  reviewIntelligence?: ReviewIntelligenceRetrievalOptions & { enabled?: boolean };
   rrf?: ReciprocalRankFusionOptions;
   decisionRanking?: DeterministicDecisionRankingOptions;
   outingPairing?: DeterministicOutingPairingOptions;
@@ -141,13 +146,24 @@ export function createTheOutHavenSearchV3(
 
 export function createDefaultRetrievalProviders(
   client: TheOutHavenSearchV3Client,
-  options: Pick<TheOutHavenSearchV3CompositionOptions, "semantic"> = {},
+  options: Pick<TheOutHavenSearchV3CompositionOptions, "semantic" | "reviewIntelligence"> = {},
 ): readonly SearchRetrievalProvider[] {
   const semantic = createSearchV3SemanticRetrievalBundle(client, options.semantic);
 
-  return [
+  const providers: SearchRetrievalProvider[] = [
     new SupabaseStructuredRetrievalProvider(client),
     new SupabaseBm25RetrievalProvider(client),
     ...semantic.providers,
   ];
+
+  if (options.reviewIntelligence?.enabled === true) {
+    providers.push(
+      new SupabaseReviewIntelligenceRetrievalProvider(
+        client,
+        options.reviewIntelligence,
+      ),
+    );
+  }
+
+  return providers;
 }
