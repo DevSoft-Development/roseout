@@ -98,7 +98,7 @@ jobs:
 
       - name: Inspect Azure privileged control-plane activity
         id: scan
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail

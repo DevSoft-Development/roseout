@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Bicep
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -278,7 +278,7 @@ jobs:
       - name: Ensure production dual-region foundation
         env:
           AI_CHANGED: ${{ steps.ai_changes.outputs.changed }}
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -312,7 +312,7 @@ jobs:
         id: azure
         env:
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -412,7 +412,7 @@ jobs:
 
       - name: Resolve previous good Azure revisions
         id: stable
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -470,7 +470,7 @@ jobs:
         run: bash .github/scripts/write-platform-release.sh
 
       - name: What-if dual-region production runtime
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
@@ -522,7 +522,7 @@ jobs:
               consumerInitialCanaryWeight=0
 
       - name: Deploy dual-region production runtime
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
@@ -605,7 +605,7 @@ jobs:
 
       - name: Resolve Azure canary revisions
         id: canary
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           IMAGE: ${{ steps.azure.outputs.image }}
         with:
@@ -661,7 +661,7 @@ jobs:
       - name: Resolve Azure production proof targets
         env:
           IMAGE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.image_sha }}
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -755,7 +755,7 @@ jobs:
 
       - name: Disable primary Front Door origin for regional failover drill
         if: github.event_name == 'workflow_dispatch' && inputs.run_failover_drill
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -790,7 +790,7 @@ jobs:
 
       - name: Restore primary Front Door origin
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_failover_drill }}
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
