@@ -31,6 +31,21 @@ const menuAdapter = fs.readFileSync(
   "utf8",
 ).toLowerCase();
 
+const stepEditor = fs.readFileSync(
+  path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/QuickAddMenuItem.tsx"),
+  "utf8",
+).toLowerCase();
+
+const menuPage = fs.readFileSync(
+  path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/page.tsx"),
+  "utf8",
+).toLowerCase();
+
+const menuService = fs.readFileSync(
+  path.join(process.cwd(), "lib/locations/menu.ts"),
+  "utf8",
+).toLowerCase();
+
 const requiredMigrationTokens = [
   "add column if not exists item_type text not null default 'food_beverage'",
   "add column if not exists channel_visibility jsonb not null default",
@@ -88,6 +103,40 @@ for (const token of [
 ]) {
   if (!menuAdapter.includes(token)) {
     throw new Error(`Universal catalog regression: legacy adapter missing ${token}`);
+  }
+}
+
+const requiredStepEditorTokens = [
+  "what are you adding?",
+  "basic details",
+  "how does it work?",
+  "options",
+  "where should it appear?",
+  "pos & operations",
+  "review & save",
+  "channel_visibility",
+  "item_type",
+  "requires_booking",
+  "prep_station",
+];
+
+for (const token of requiredStepEditorTokens) {
+  if (!stepEditor.includes(token)) {
+    throw new Error(`Universal catalog regression: step-driven editor missing ${token}`);
+  }
+}
+
+if (menuPage.includes("<details")) {
+  throw new Error("Universal catalog regression: menu editor must not hide controls inside details");
+}
+
+for (const token of [
+  "...catalogitemfields(body)",
+  "published_revision",
+  "published_at",
+]) {
+  if (!menuService.includes(token)) {
+    throw new Error(`Universal catalog regression: menu service missing catalog persistence contract ${token}`);
   }
 }
 
