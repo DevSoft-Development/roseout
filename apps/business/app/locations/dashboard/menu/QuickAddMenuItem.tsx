@@ -48,6 +48,16 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [itemType, setItemType] = useState("food_beverage");
+  const [channels, setChannels] = useState<Record<string, boolean>>({
+    website: true,
+    profile: true,
+    pos: true,
+    reserve: false,
+    online_ordering: false,
+    qr_ordering: false,
+    kiosk: false,
+  });
   const [sectionId, setSectionId] = useState(sections[0]?.id ? String(sections[0].id) : "__new__");
   const [newSection, setNewSection] = useState(sections.length ? "" : "General");
   const [uploading, setUploading] = useState(false);
@@ -76,6 +86,8 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
     setPrice("");
     setDescription("");
     setImageUrl("");
+    setItemType("food_beverage");
+    setChannels({ website: true, profile: true, pos: true, reserve: false, online_ordering: false, qr_ordering: false, kiosk: false });
     setSectionId(sections[0]?.id ? String(sections[0].id) : "__new__");
     setNewSection(sections.length ? "" : "General");
     setAttemptedSave(false);
@@ -89,6 +101,16 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
     setPrice(editablePrice(item));
     setDescription(String(item.description || ""));
     setImageUrl(String(item.image_url || ""));
+    setItemType(String(item.item_type || "food_beverage"));
+    setChannels({
+      website: item.channel_visibility?.website !== false,
+      profile: item.channel_visibility?.profile !== false,
+      pos: item.channel_visibility?.pos !== false,
+      reserve: item.channel_visibility?.reserve === true,
+      online_ordering: item.channel_visibility?.online_ordering === true,
+      qr_ordering: item.channel_visibility?.qr_ordering === true,
+      kiosk: item.channel_visibility?.kiosk === true,
+    });
     setSectionId(item.section_id ? String(item.section_id) : (sections[0]?.id ? String(sections[0].id) : "__new__"));
     setNewSection("");
     setAttemptedSave(false);
@@ -172,6 +194,8 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
         tags: editingItem?.tags || [],
         is_available: editingItem ? editingItem.is_available !== false : true,
         is_featured: editingItem?.is_featured === true,
+        item_type: itemType,
+        channel_visibility: channels,
       };
 
       if (editingItemId) {
@@ -212,6 +236,48 @@ export default function QuickAddMenuItem({ locationId, sections, items, contextK
           <label className="grid gap-1" htmlFor="menu-item-category"><span className="text-xs font-black text-white/60">Category <span className="text-[#ff6b86]">* Required</span></span><select id="menu-item-category" className={fieldClass} value={sectionId} onBlur={() => touch("category")} onChange={(event) => { setSectionId(event.target.value); setMessage(""); }}>{sections.map((section) => <option key={String(section.id)} value={String(section.id)}>{sectionName(section)}</option>)}<option value="__new__">+ Create a new category</option></select></label>
           {sectionId === "__new__" ? <label className="grid gap-1 sm:col-span-2" htmlFor="menu-new-category"><span className="text-xs font-black text-white/60">New category name <span className="text-[#ff6b86]">* Required</span></span><input id="menu-new-category" aria-invalid={showCategoryError} className={showCategoryError ? fieldErrorClass : fieldClass} value={newSection} onBlur={() => touch("category")} onChange={(event) => { setNewSection(event.target.value); setMessage(""); }} placeholder="Example: Cocktails, Packages, Activities" />{showCategoryError ? <p className="text-xs font-bold text-red-300">{categoryError}</p> : null}</label> : null}
           <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-black text-white/60">Description <span className="font-semibold text-white/30">Optional</span></span><textarea className={fieldClass} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="A short description guests will understand." /></label>
+
+          <label className="grid gap-1 sm:col-span-2" htmlFor="menu-item-type">
+            <span className="text-xs font-black text-white/60">Item type</span>
+            <select id="menu-item-type" className={fieldClass} value={itemType} onChange={(event) => setItemType(event.target.value)}>
+              <option value="food_beverage">Food or beverage</option>
+              <option value="retail">Retail product</option>
+              <option value="service">Service</option>
+              <option value="timed_resource">Timed resource</option>
+              <option value="admission_experience">Admission or experience</option>
+              <option value="rental">Rental</option>
+              <option value="package_bundle">Package or bundle</option>
+              <option value="fee_deposit">Fee or deposit</option>
+            </select>
+            <p className="text-[11px] font-semibold text-white/30">Use timed resource for lanes, rooms, bays, tables, simulators, and other time-based inventory.</p>
+          </label>
+
+          <div className="grid gap-2 sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div>
+              <p className="text-xs font-black text-white/60">Where this item appears</p>
+              <p className="mt-1 text-[11px] font-semibold text-white/30">One master item can be shown or hidden independently across each TheOutHaven channel.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                ["website", "Location website"],
+                ["profile", "TheOutHaven profile"],
+                ["pos", "ThePOSHaven"],
+                ["reserve", "Reserve"],
+                ["online_ordering", "Online ordering"],
+                ["qr_ordering", "QR ordering"],
+                ["kiosk", "Kiosk"],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-black text-white/60">
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={channels[key] === true}
+                    onChange={(event) => setChannels((current) => ({ ...current, [key]: event.target.checked }))}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
