@@ -99,6 +99,11 @@ jobs:
 
           test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$SCHEDULE_NAME" --query State --output text)" = 'ENABLED'
           test "$(aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$SCHEDULE_NAME" --query ScheduleExpression --output text)" = 'rate(5 minutes)'
+
+          aws lambda invoke             --function-name "$INVOKER_ARN"             --cli-binary-format raw-in-base64-out             --payload "$INPUT"             "$RUNNER_TEMP/reservation-recovery-probe.json" >/dev/null
+          jq -e '.ok == true and .response.success == true' "$RUNNER_TEMP/reservation-recovery-probe.json" >/dev/null
+          jq '{ok,function,status,response:{selected:.response.selected,attempted:.response.attempted,found:.response.found,notFound:.response.notFound,blocked:.response.blocked,failed:.response.failed,providerCounts:.response.providerCounts}}' "$RUNNER_TEMP/reservation-recovery-probe.json"
+
           echo "Reservation recovery sweep enabled through $END_DATE UTC."
 
       - name: Sweep summary
