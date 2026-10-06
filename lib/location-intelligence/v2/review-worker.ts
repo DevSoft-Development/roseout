@@ -6,6 +6,7 @@ import {
   getDataForSeoReviewTask,
 } from "@/lib/location-intelligence/v2/dataforseo";
 import {
+  automaticReviewRefreshEnabled,
   dueReviewRefreshes,
   nextReviewRefreshAt,
 } from "@/lib/location-intelligence/v2/reviews";
@@ -224,8 +225,7 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
           ? `${latitude},${longitude},200`
           : undefined;
       const geo = [location?.city, location?.state, "United States"].filter(Boolean).join(",");
-      const isInitialIngest = !item.last_refreshed_at;
-      const reviewDepth = isInitialIngest ? 100 : 25;
+      const reviewDepth = 100;
       const task = await createDataForSeoReviewTask({
         googlePlaceId,
         locationCoordinate,
@@ -245,7 +245,7 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
             taskStatus: "submitted",
             submittedAt: new Date().toISOString(),
             reviewDepth,
-            ingestMode: isInitialIngest ? "initial_100" : "incremental_25",
+            ingestMode: item.last_refreshed_at ? "refresh_100" : "initial_100",
           },
           updated_at: new Date().toISOString(),
         })
@@ -342,10 +342,13 @@ export async function collectPendingDataForSeoReviewRefreshes(limit = 25) {
 
       const conceptsUpdated = await refreshReviewIntelligence(locationId);
       const refreshedAt = new Date().toISOString();
-      const next = nextReviewRefreshAt({
-        popularityScore: Number(item.popularity_score || 0),
-        lastRefreshedAt: refreshedAt,
-      });
+      const refreshEnabled = await automaticReviewRefreshEnabled();
+      const next = refreshEnabled
+        ? nextReviewRefreshAt({
+            popularityScore: Number(item.popularity_score || 0),
+            lastRefreshedAt: refreshedAt,
+          })
+        : null;
 
       const { error: stateError } = await supabaseAdmin
         .from("location_review_refresh_state")
