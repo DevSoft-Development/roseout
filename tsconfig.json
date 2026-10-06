@@ -54,6 +54,7 @@
   "exclude": [
     "node_modules",
     "mobile",
+    "pos-mobile",
     "supabase/functions",
     "tests/e2e",
     "playwright.config.ts",
