@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import {
@@ -109,7 +110,7 @@ function formatLastSeen(value: string | null) {
   })}`;
 }
 
-function DeviceCard({ item }: { item: PosLocationHardware }) {
+function DeviceCard({ item, locationId }: { item: PosLocationHardware; locationId: string }) {
   const status = statusFor(item.device.health_status);
   return (
     <article className="rounded-[1.35rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
@@ -146,9 +147,17 @@ function DeviceCard({ item }: { item: PosLocationHardware }) {
         </div>
       </div>
 
-      <p className="mt-4 text-xs font-semibold text-[var(--business-muted)]">
-        {formatLastSeen(item.device.last_seen_at)}
-      </p>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold text-[var(--business-muted)]">
+          {formatLastSeen(item.device.last_seen_at)}
+        </p>
+        <Link
+          href={`/locations/dashboard/hardware/${item.deviceId}?locationId=${encodeURIComponent(locationId)}`}
+          className="rounded-full border border-[var(--business-border)] px-3 py-2 text-xs font-black text-[var(--business-text)] hover:bg-white/[0.05]"
+        >
+          Manage
+        </Link>
+      </div>
     </article>
   );
 }
@@ -206,10 +215,12 @@ export default async function HardwareWorkspacePage({
     );
   }
 
+  const canonicalLocationId = access.canonicalLocationId;
+
   let hardware: PosLocationHardware[] = [];
   let unavailable = false;
   try {
-    hardware = await listLocationHardware(access.canonicalLocationId);
+    hardware = await listLocationHardware(canonicalLocationId);
   } catch {
     unavailable = true;
   }
@@ -279,7 +290,7 @@ export default async function HardwareWorkspacePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {hardware.map((item) => (
-                <DeviceCard key={item.deviceId} item={item} />
+                <DeviceCard key={item.deviceId} item={item} locationId={canonicalLocationId} />
               ))}
             </div>
           </section>
