@@ -84,7 +84,9 @@ function reviewProfileNeedsSync(review: any, profile: any) {
 
 async function getReviewPriorityLocationIds(limit: number) {
   const selected: string[] = [];
-  const pageSize = 500;
+  // Keep PostgREST .in(...) request URLs bounded. We only need enough
+  // candidates to fill the current maintenance batch, so scan in small chunks.
+  const pageSize = 100;
   const maxRowsToScan = 10_000;
 
   for (
