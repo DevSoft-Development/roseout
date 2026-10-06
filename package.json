@@ -87,7 +87,8 @@
     "test:pos-claim": "vitest run lib/pos/hardware/claim/__tests__",
     "test:pos-routing": "vitest run lib/pos/hardware/routing/__tests__",
     "test:pos-health": "vitest run lib/pos/hardware/health/__tests__",
-    "test:pos-native-bridge": "node scripts/pos-native-hardware-bridge-regression.mjs"
+    "test:pos-native-bridge": "node scripts/pos-native-hardware-bridge-regression.mjs",
+    "test:business-hardware": "vitest run apps/business/app/locations/dashboard/__tests__/hardware-workspace.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
