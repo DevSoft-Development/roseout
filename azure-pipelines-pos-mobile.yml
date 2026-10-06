@@ -1,0 +1,60 @@
+# ThePOSHaven native app pipeline foundation
+trigger: none
+pr: none
+
+parameters:
+  - name: targetPlatform
+    displayName: Validate platform
+    type: string
+    default: both
+    values:
+      - both
+      - ios
+      - android
+
+variables:
+  - group: theposhaven-mobile-production
+  - name: nodeVersion
+    value: '22.x'
+
+stages:
+  - stage: Validate
+    displayName: Validate isolated ThePOSHaven native app
+    jobs:
+      - job: iOS
+        displayName: Generate iOS native project
+        condition: and(succeeded(), ne('${{ parameters.targetPlatform }}', 'android'))
+        pool:
+          vmImage: macOS-26
+        steps:
+          - task: UseNode@1
+            inputs:
+              version: $(nodeVersion)
+          - script: |
+              set -euo pipefail
+              cd pos-mobile
+              npm ci --no-audit --no-fund
+              npm run typecheck
+              npx expo prebuild --clean --platform ios --no-install
+              test -d ios
+              grep -R -F 'com.theposhaven.app' ios >/dev/null
+            displayName: Generate isolated iOS project
+
+      - job: Android
+        displayName: Generate Android native project
+        condition: and(succeeded(), ne('${{ parameters.targetPlatform }}', 'ios'))
+        pool:
+          vmImage: ubuntu-24.04
+        steps:
+          - task: UseNode@1
+            inputs:
+              version: $(nodeVersion)
+          - script: |
+              set -euo pipefail
+              cd pos-mobile
+              npm ci --no-audit --no-fund
+              npm run typecheck
+              npx expo prebuild --clean --platform android --no-install
+              test -d android
+              grep -R -F 'com.theposhaven.app' android/app >/dev/null
+            displayName: Generate isolated Android project
