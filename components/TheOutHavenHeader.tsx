@@ -1,18 +1,25 @@
 "use client";
 
 import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
-import Image from "next/image";
 import Link from "next/link";
+import TheOutHavenBrandLogo from "@/components/TheOutHavenBrandLogo";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
-const navItems = [
+const consumerNavItems = [
   { href: "/explore", label: "Discover" },
   { href: "/#plan-your-outing", label: "Create Outing" },
   { href: "/user/dashboard/saved", label: "Saved Outings" },
   { href: "/support", label: "Support" },
   { href: "https://business.theouthaven.com/business", label: "For Businesses" },
+];
+
+const businessNavItems = [
+  { href: "https://theouthaven.com/explore", label: "Discover" },
+  { href: "https://theouthaven.com/#plan-your-outing", label: "Create Outing" },
+  { href: "https://theouthaven.com/support", label: "Support" },
+  { href: "/business", label: "Business Home" },
 ];
 
 type AuthMeResponse = {
@@ -35,10 +42,15 @@ function getInitials(value: string) {
   return words.slice(0, 2).map((word) => word[0]?.toUpperCase()).join("") || "A";
 }
 
-export default function TheOutHavenHeader() {
+export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: "consumer" | "business" }) {
   const pathname = usePathname();
   const router = useRouter();
   const safePathname = pathname || "";
+  const navItems = surface === "business" ? businessNavItems : consumerNavItems;
+  const homeHref = surface === "business" ? "/business" : "/";
+  const signInHref = surface === "business" ? "/business/login" : "/login";
+  const getStartedHref = surface === "business" ? "/business/claim/no-code" : "/signup";
+  const getStartedLabel = surface === "business" ? "Claim Listing" : "Get Started";
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -161,18 +173,14 @@ export default function TheOutHavenHeader() {
     <header className={headerClass}>
       <div className={shellClass}>
         <Link
-          href="/"
+          href={homeHref}
           className="flex min-w-0 shrink-0 items-center"
           aria-label="TheOutHaven home"
         >
-          <Image
-            src="/toh_logo_wordmark_white.webp"
-            alt="TheOutHaven"
-            width={600}
-            height={200}
-            priority
-            unoptimized
-            className={scrolled ? "h-auto w-[170px] max-w-[42vw] object-contain sm:w-[185px]" : "h-auto w-[190px] max-w-[46vw] object-contain sm:w-[215px]"}
+          <TheOutHavenBrandLogo
+            className={scrolled
+              ? "h-auto w-[170px] max-w-[42vw] object-contain sm:w-[185px]"
+              : "h-auto w-[190px] max-w-[46vw] object-contain sm:w-[215px]"}
           />
         </Link>
 
@@ -188,8 +196,8 @@ export default function TheOutHavenHeader() {
         <div className="hidden items-center gap-3 lg:flex">
           {!signedIn ? (
             <>
-              <Link href="/login" className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">Sign In</Link>
-              <Link href="/signup" className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">Get Started</Link>
+              <Link href={signInHref} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">Sign In</Link>
+              <Link href={getStartedHref} className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">{getStartedLabel}</Link>
             </>
           ) : (
             <>
@@ -245,8 +253,8 @@ export default function TheOutHavenHeader() {
             ))}
             {!signedIn ? (
               <>
-                <Link href="/login" className="block rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Sign In</Link>
-                <Link href="/signup" className="block rounded-2xl bg-[#e1062a] px-4 py-4 text-sm font-black text-white transition hover:bg-red-500">Get Started</Link>
+                <Link href={signInHref} className="block rounded-2xl border border-white/15 bg-white/[0.05] px-4 py-4 text-sm font-black text-white transition hover:bg-white hover:text-black">Sign In</Link>
+                <Link href={getStartedHref} className="block rounded-2xl bg-[#e1062a] px-4 py-4 text-sm font-black text-white transition hover:bg-red-500">{getStartedLabel}</Link>
               </>
             ) : (
               <div className="space-y-2 pt-2">

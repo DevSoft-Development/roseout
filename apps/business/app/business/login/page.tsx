@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import { sanitizeIntendedPath } from "@/lib/auth-redirect";
+import TheOutHavenBrandLogo from "@/components/TheOutHavenBrandLogo";
 
 const inputClass =
   "min-h-[56px] w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-white outline-none transition placeholder:text-white/35 focus:border-[#e1062a]/70 focus:ring-2 focus:ring-[#e1062a]/20";
