@@ -61,15 +61,96 @@ function enrichedForSemantic(location: any, review: any) {
   };
 }
 
+function timestampMs(value: unknown) {
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function reviewProfileNeedsSync(review: any, profile: any) {
+  if (!profile) return false;
+  const evidence =
+    profile.evidence && typeof profile.evidence === "object"
+      ? profile.evidence.review_intelligence
+      : null;
+  if (!evidence || typeof evidence !== "object") return true;
+
+  const sourceUpdatedAt = Math.max(
+    timestampMs(review?.updated_at),
+    timestampMs(review?.calculated_at),
+  );
+  const syncedAt = timestampMs(evidence.synced_at);
+  return sourceUpdatedAt > 0 && sourceUpdatedAt > syncedAt;
+}
+
+async function getReviewPriorityLocationIds(limit: number) {
+  const selected: string[] = [];
+  const pageSize = 500;
+  const maxRowsToScan = 10_000;
+
+  for (
+    let from = 0;
+    selected.length < limit && from < maxRowsToScan;
+    from += pageSize
+  ) {
+    const { data: reviewRows, error: reviewError } = await supabaseAdmin
+      .from("location_review_ml_features")
+      .select("location_id,updated_at,calculated_at")
+      .order("location_id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (reviewError) throw reviewError;
+    if (!reviewRows?.length) break;
+
+    const ids = reviewRows.map((row: any) => row.location_id).filter(Boolean);
+    const { data: profiles, error: profileError } = ids.length
+      ? await supabaseAdmin
+          .from("location_search_profiles")
+          .select("location_id,evidence")
+          .in("location_id", ids)
+      : { data: [] as any[], error: null };
+    if (profileError) throw profileError;
+
+    const profileByLocation = new Map(
+      (profiles ?? []).map((row: any) => [String(row.location_id), row]),
+    );
+
+    for (const review of reviewRows) {
+      const locationId = String(review.location_id ?? "");
+      if (!locationId) continue;
+      const profile = profileByLocation.get(locationId);
+      if (!reviewProfileNeedsSync(review, profile)) continue;
+      selected.push(locationId);
+      if (selected.length >= limit) break;
+    }
+
+    if (reviewRows.length < pageSize) break;
+  }
+
+  return selected;
+}
+
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const startedAt = new Date().toISOString();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
   const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50)));
+  let reviewPriorityLocationIds: string[] = [];
+  try {
+    reviewPriorityLocationIds = await getReviewPriorityLocationIds(batchSize);
+  } catch (caught) {
+    return NextResponse.json({
+      ok: false,
+      behavior: behavior.data ?? null,
+      error: caught instanceof Error ? caught.message : "review_priority_queue_failed",
+    }, { status: 500 });
+  }
+
   const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_search_embedding_backfill_candidates", { p_limit: batchSize });
   if (queueError) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: queueError.message }, { status: 500 });
 
-  const queuedLocationIds = (queueRows ?? []).map((row: any) => row.location_id).filter(Boolean);
+  const queuedLocationIds = uniq([
+    reviewPriorityLocationIds,
+    (queueRows ?? []).map((row: any) => row.location_id).filter(Boolean),
+  ]).slice(0, batchSize);
   const { data: rows, error } = queuedLocationIds.length
     ? await supabaseAdmin.from("locations").select("*").in("id", queuedLocationIds)
     : { data: [] as any[], error: null };
@@ -101,6 +182,11 @@ export async function GET(request: Request) {
   let unchanged = 0;
   let reviewProfilesUpdated = 0;
   const failures: Array<{ locationId: string; error: string }> = [];
+  const minEmbeddingIntervalMs = Math.max(
+    0,
+    Math.min(5_000, Number(process.env.SEARCH_EMBEDDING_MIN_INTERVAL_MS || 1_500)),
+  );
+  let lastEmbeddingRequestAt = 0;
 
   for (const location of rows ?? []) {
     try {
@@ -149,6 +235,15 @@ export async function GET(request: Request) {
         continue;
       }
 
+      if (lastEmbeddingRequestAt > 0 && minEmbeddingIntervalMs > 0) {
+        const elapsed = Date.now() - lastEmbeddingRequestAt;
+        if (elapsed < minEmbeddingIntervalMs) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, minEmbeddingIntervalMs - elapsed),
+          );
+        }
+      }
+      lastEmbeddingRequestAt = Date.now();
       const embedding = await embed(document.semanticDocument);
       const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings").upsert({
         location_id: location.id,
@@ -192,6 +287,7 @@ export async function GET(request: Request) {
     behavior: behavior.data ?? null,
     embeddings: {
       queued: queuedLocationIds.length,
+      reviewPriorityQueued: reviewPriorityLocationIds.length,
       scanned: rows?.length ?? 0,
       updated,
       unchanged,
