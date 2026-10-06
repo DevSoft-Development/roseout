@@ -1,4 +1,5 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";\nimport { readFileSync } from "node:fs";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const globalUrl = String(process.env.GLOBAL_SUPABASE_URL || "").replace(/\/$/, "");
 const globalKey = String(process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || "");
