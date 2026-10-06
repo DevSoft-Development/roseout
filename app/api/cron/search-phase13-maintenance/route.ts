@@ -135,7 +135,7 @@ export async function GET(request: Request) {
   const startedAt = new Date().toISOString();
   const runStartedAtMs = Date.now();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
-  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 100)));
+  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 125)));
   const candidatePoolSize = Math.min(400, Math.max(batchSize, batchSize * 2));
   const maxRunMs = Math.max(
     60_000,
