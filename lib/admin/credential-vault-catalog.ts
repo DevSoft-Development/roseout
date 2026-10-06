@@ -69,7 +69,6 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
     { key: "shard02SecretKey", label: "Shard 02 secret key", secret: true, multiline: true },
     { key: "shard02DrUrl", label: "Shard 02 DR URL", placeholder: "https://bjhcxzahgfeniitejtrx.supabase.co" },
     { key: "shard02DrSecretKey", label: "Shard 02 DR secret key", secret: true, multiline: true },
-    { key: "operationalShardsJson", label: "Operational shard runtime JSON (generated compatibility field)", secret: true, multiline: true, placeholder: "{\n  \"shard-01\": { \"url\": \"https://...supabase.co\", \"serviceRoleKey\": \"...\", \"readEnabled\": true, \"writeEnabled\": true }\n}" },
   ] },
   { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
     { key: "token", label: "Runtime sync access token", secret: true },
