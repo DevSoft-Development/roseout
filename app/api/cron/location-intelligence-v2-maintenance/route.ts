@@ -64,7 +64,7 @@ async function run(request: Request) {
         error: String(row.error || "review_task_collection_failed"),
       }));
     const submissionFailures = submittedReviews
-      .filter((row) => row.submitted === false)
+      .filter((row) => row.submitted === false && row.quarantined !== true)
       .map((row) => ({
         phase: "submit",
         locationId: String(row.locationId || ""),
