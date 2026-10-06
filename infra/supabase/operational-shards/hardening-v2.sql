@@ -59,7 +59,7 @@ returns integer
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $poslease$
 declare
   v_expired integer;
 begin
@@ -83,7 +83,7 @@ begin
   get diagnostics v_expired = row_count;
   return v_expired;
 end;
-$;
+$poslease$;
 
 revoke all on function public.pos_expire_stale_card_tenders(uuid) from public, anon, authenticated;
 grant execute on function public.pos_expire_stale_card_tenders(uuid) to service_role;
@@ -105,7 +105,7 @@ returns table (
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $posbegin$
 declare
   v_check public.pos_checks%rowtype;
   v_net_paid integer;
@@ -195,7 +195,7 @@ begin
     v_remaining + coalesce(p_tip_cents, 0),
     v_check.currency;
 end;
-$;
+$posbegin$;
 
 revoke all on function public.pos_begin_card_tender(uuid, uuid, integer, uuid) from public, anon, authenticated;
 grant execute on function public.pos_begin_card_tender(uuid, uuid, integer, uuid) to service_role;
