@@ -71,3 +71,17 @@ export async function dueReviewRefreshes(limit = 100) {
   if (error) throw new Error(`Review refresh due queue failed: ${error.message}`);
   return data || [];
 }
+
+
+export async function automaticReviewRefreshEnabled() {
+  const { data, error } = await supabaseAdmin
+    .from("location_provider_registry")
+    .select("metadata")
+    .eq("provider", "dataforseo")
+    .maybeSingle();
+  if (error) throw new Error(`Review refresh policy read failed: ${error.message}`);
+  const metadata = data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+    ? data.metadata as Record<string, unknown>
+    : {};
+  return metadata.automatic_review_refresh_enabled === true;
+}
