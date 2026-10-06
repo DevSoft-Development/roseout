@@ -81,11 +81,12 @@
     "test:universal-catalog": "node scripts/universal-location-catalog-regression.mjs",
     "test:pos-hardware": "node scripts/pos-hardware-certification-regression.mjs",
     "test:pos-device-registry": "node scripts/pos-device-registry-regression.mjs",
-    "test:pos-hardware-suite": "npm run test:pos-hardware && npm run test:pos-device-registry && npm run test:pos-printers && npm run test:pos-discovery && npm run test:pos-claim && npm run test:pos-routing",
+    "test:pos-hardware-suite": "npm run test:pos-hardware && npm run test:pos-device-registry && npm run test:pos-printers && npm run test:pos-discovery && npm run test:pos-claim && npm run test:pos-routing && npm run test:pos-health",
     "test:pos-printers": "vitest run lib/pos/hardware/printers/__tests__",
     "test:pos-discovery": "vitest run lib/pos/hardware/discovery/__tests__",
     "test:pos-claim": "vitest run lib/pos/hardware/claim/__tests__",
-    "test:pos-routing": "vitest run lib/pos/hardware/routing/__tests__"
+    "test:pos-routing": "vitest run lib/pos/hardware/routing/__tests__",
+    "test:pos-health": "vitest run lib/pos/hardware/health/__tests__"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
