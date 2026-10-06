@@ -234,19 +234,19 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
 }
 
 export async function collectPendingDataForSeoReviewRefreshes(limit = 25) {
-  const scanLimit = Math.max(25, Math.min(500, Math.trunc(limit) * 8));
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
   const { data, error } = await supabaseAdmin
     .from("location_review_refresh_state")
     .select("*")
     .eq("provider", "dataforseo")
     .eq("refresh_enabled", false)
+    .filter("metadata->>taskStatus", "eq", "submitted")
+    .not("metadata->>taskId", "is", null)
     .order("updated_at", { ascending: true })
-    .limit(scanLimit);
+    .limit(safeLimit);
   if (error) throw new Error(`Review task collection queue failed: ${error.message}`);
 
-  const pending = (data || [])
-    .filter((row: any) => row.metadata && typeof row.metadata === "object" && row.metadata.taskId)
-    .slice(0, Math.max(1, Math.min(100, Math.trunc(limit))));
+  const pending = data || [];
 
   const results: Array<Record<string, unknown>> = [];
 
