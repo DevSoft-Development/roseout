@@ -32,7 +32,7 @@ test("batch 9 is AWS-owned with lower-frequency recovery schedules", () => {
     assert.equal(stagedNames.has(name), false);
     assert.equal(vercelJobs.has(name), false);
   }
-  assert.equal(active.get("search-phase13-maintenance")?.expression, "cron(5 * * * ? *)");
+  assert.equal(active.get("search-phase13-maintenance")?.expression, "cron(0/15 * * * ? *)");
   assert.equal(active.get("search-hf-inventory-maintenance")?.expression, "cron(20 * * * ? *)");
   assert.equal(active.get("website-replica-repair")?.expression, "cron(0/15 * * * ? *)");
   assert.equal(active.get("cron-alert-dispatcher")?.expression, "cron(0/10 * * * ? *)");
