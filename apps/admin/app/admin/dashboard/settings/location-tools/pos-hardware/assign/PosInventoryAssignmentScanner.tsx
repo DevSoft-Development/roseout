@@ -8,6 +8,13 @@ type Device = {
   assetTag: string;
   serialNumber: string;
   lifecycleStatus: string;
+  roleOptions: string[];
+};
+
+type SelectedAssignment = {
+  deviceId: string;
+  role: string;
+  stationKey: string;
 };
 
 function parseQr(value: string) {
@@ -18,12 +25,32 @@ function parseQr(value: string) {
   return match?.[1] || null;
 }
 
+function roleLabel(role: string) {
+  const labels: Record<string, string> = {
+    receipt: "Receipt",
+    kitchen_hot_line: "Hot Kitchen",
+    kitchen_cold_line: "Cold Kitchen",
+    bar: "Bar",
+    expo: "Expo",
+    prep: "Prep",
+    label: "Label",
+    register: "Register",
+    payment: "Payment",
+    cash_drawer: "Cash Drawer",
+    scanner: "Scanner",
+    network: "Network Hub",
+    network_bridge: "Network Bridge",
+    kitchen_display: "Kitchen Display",
+  };
+  return labels[role] || role.replaceAll("_", " ");
+}
+
 export default function PosInventoryAssignmentScanner({
   devices,
 }: {
   devices: Device[];
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<SelectedAssignment[]>([]);
   const [manualScan, setManualScan] = useState("");
   const [message, setMessage] = useState("Scan a ThePOSHaven inventory QR.");
   const [cameraActive, setCameraActive] = useState(false);
@@ -43,11 +70,36 @@ export default function PosInventoryAssignmentScanner({
       return;
     }
 
+    if (!device.roleOptions.length) {
+      setMessage("That device does not have a provisioning role configured.");
+      return;
+    }
+
     setSelected((current) =>
-      current.includes(deviceId) ? current : [...current, deviceId],
+      current.some((item) => item.deviceId === deviceId)
+        ? current
+        : [
+            ...current,
+            {
+              deviceId,
+              role: device.roleOptions[0],
+              stationKey: "default",
+            },
+          ],
     );
     setMessage(`${device.assetTag} added to the assignment cart.`);
     setManualScan("");
+  }
+
+  function updateAssignment(
+    deviceId: string,
+    patch: Partial<Pick<SelectedAssignment, "role" | "stationKey">>,
+  ) {
+    setSelected((current) =>
+      current.map((item) =>
+        item.deviceId === deviceId ? { ...item, ...patch } : item,
+      ),
+    );
   }
 
   async function startCamera() {
@@ -79,8 +131,14 @@ export default function PosInventoryAssignmentScanner({
   }, []);
 
   const selectedDevices = selected
-    .map((id) => byId.get(id))
-    .filter(Boolean) as Device[];
+    .map((assignment) => ({
+      assignment,
+      device: byId.get(assignment.deviceId),
+    }))
+    .filter((item) => Boolean(item.device)) as Array<{
+      assignment: SelectedAssignment;
+      device: Device;
+    }>;
 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[1fr_1fr]">
@@ -155,30 +213,67 @@ export default function PosInventoryAssignmentScanner({
           ) : null}
         </div>
 
-        <input type="hidden" name="deviceIds" value={JSON.stringify(selected)} />
+        <input type="hidden" name="assignments" value={JSON.stringify(selected)} />
 
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 space-y-3">
           {selectedDevices.length ? (
-            selectedDevices.map((device) => (
+            selectedDevices.map(({ assignment, device }) => (
               <div
                 key={device.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-white">{device.label}</p>
-                  <p className="mt-1 text-xs font-bold text-white/40">
-                    {device.assetTag} · {device.serialNumber}
-                  </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-white">{device.label}</p>
+                    <p className="mt-1 text-xs font-bold text-white/40">
+                      {device.assetTag} · {device.serialNumber}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelected((current) =>
+                        current.filter((item) => item.deviceId !== device.id),
+                      )
+                    }
+                    className="shrink-0 text-xs font-black text-rose-200"
+                  >
+                    Remove
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSelected((current) => current.filter((id) => id !== device.id))
-                  }
-                  className="shrink-0 text-xs font-black text-rose-200"
-                >
-                  Remove
-                </button>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
+                    Role
+                    <select
+                      value={assignment.role}
+                      onChange={(event) =>
+                        updateAssignment(device.id, { role: event.target.value })
+                      }
+                      className="mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-xs font-black text-white"
+                    >
+                      {device.roleOptions.map((role) => (
+                        <option key={role} value={role}>
+                          {roleLabel(role)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-[10px] font-black uppercase tracking-[0.12em] text-white/35">
+                    Station
+                    <input
+                      value={assignment.stationKey === "default" ? "" : assignment.stationKey}
+                      onChange={(event) =>
+                        updateAssignment(device.id, {
+                          stationKey: event.target.value.trim() || "default",
+                        })
+                      }
+                      placeholder="Main"
+                      className="mt-1 min-h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-xs font-black text-white"
+                    />
+                  </label>
+                </div>
               </div>
             ))
           ) : (
