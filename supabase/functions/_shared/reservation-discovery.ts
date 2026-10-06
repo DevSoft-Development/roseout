@@ -150,7 +150,7 @@ function collectJsonUrls(value: unknown, base: URL, results: Set<string>) {
   }
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (["url", "sameas", "target", "actionplatform", "contenturl", "embedurl"].includes(key.toLowerCase())) {
+    if (["url", "urltemplate", "sameas", "target", "actionplatform", "contenturl", "embedurl"].includes(key.toLowerCase())) {
       collectJsonUrls(child, base, results);
     } else if (typeof child === "object") {
       collectJsonUrls(child, base, results);
@@ -167,9 +167,28 @@ export function extractReservationLinks(html: string, base: URL) {
     .replace(/\\\//g, "/")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"');
+
   for (const match of decoded.matchAll(/(?:href|src|action|data-(?:url|href|src|link|booking-url|reservation-url))\s*=\s*["']([^"']+)["']/gi)) {
-    try { results.add(new URL(match[1], base).toString()); } catch { /* ignore */ }
+    addUrl(results, match[1], base);
   }
+
+  for (const match of decoded.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      collectJsonUrls(JSON.parse(match[1]), base, results);
+    } catch {
+      // Ignore malformed structured data and continue with raw URL extraction.
+    }
+  }
+
+  for (const match of decoded.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (!/http-equiv\s*=\s*["']?refresh["']?/i.test(tag)) continue;
+    const content = tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1]
+      ?? tag.match(/content\s*=\s*([^\s>]+)/i)?.[1];
+    const destination = content?.match(/(?:^|;)\s*url\s*=\s*(.+)$/i)?.[1]?.trim().replace(/^["']|["']$/g, "");
+    if (destination) addUrl(results, destination, base);
+  }
+
   for (const match of decoded.matchAll(/(?:https?:\/\/|www\.)[^\s"'<>\\)\]]+/gi)) {
     const normalized = normalizeUrl(match[0]);
     if (normalized) results.add(normalized);
@@ -182,6 +201,23 @@ function isLikelyReservationPage(candidate: URL, home: URL) {
   const value = `${candidate.pathname} ${candidate.search}`.toLowerCase();
   return ["reserv", "book", "ticket", "schedule", "class", "experience", "visit", "dining", "table", "event", "appointment", "private-dining", "private-events"]
     .some((token) => value.includes(token));
+}
+
+function extractSitemapCandidates(xml: string, base: URL, home: URL) {
+  const reservationPages: URL[] = [];
+  const childSitemaps: URL[] = [];
+  for (const match of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
+    const value = match[1].replace(/&amp;/g, "&").trim();
+    try {
+      const candidate = new URL(value, base);
+      if (venueHost(candidate) !== venueHost(home)) continue;
+      if (isLikelyReservationPage(candidate, home)) reservationPages.push(candidate);
+      else if (/sitemap/i.test(candidate.pathname) && childSitemaps.length < 2) childSitemaps.push(candidate);
+    } catch {
+      // Ignore malformed sitemap locations.
+    }
+  }
+  return { reservationPages, childSitemaps };
 }
 
 function extractIntentLinks(html: string, base: URL, home: URL) {
@@ -209,7 +245,7 @@ async function fetchVenuePage(start: URL, home: URL) {
         redirect: "manual",
         headers: {
           "User-Agent": "TheOutHavenBot/2.0 (+https://theouthaven.com)",
-          "Accept": "text/html,application/xhtml+xml",
+          "Accept": "text/html,application/xhtml+xml,application/xml,text/xml;q=0.9",
           "Accept-Language": "en-US,en;q=0.9",
           "Cache-Control": "no-cache",
         },
@@ -241,7 +277,7 @@ export async function discoverReservation(website: string): Promise<ReservationD
   let blockedChecks = 0;
   let failedChecks = 0;
   const failureNotes: string[] = [];
-  const queue = [home, ...RESERVATION_DISCOVERY_PATHS.map((path) => new URL(path, home.origin))];
+  const queue = [home, new URL("/sitemap.xml", home.origin), ...RESERVATION_DISCOVERY_PATHS.map((path) => new URL(path, home.origin))];
   const queued = new Set(queue.map((url) => url.toString()));
   const visited = new Set<string>();
 
@@ -264,6 +300,21 @@ export async function discoverReservation(website: string): Promise<ReservationD
       if (response.status >= 500) { failedChecks += 1; failureNotes.push(`${url.pathname}:${response.status}`); continue; }
       if (!response.ok) continue;
       const contentType = response.headers.get("content-type") || "";
+      const isXml = contentType.includes("xml") || url.pathname.toLowerCase().endsWith(".xml");
+      if (isXml) {
+        successfulChecks += 1;
+        const xml = await response.text();
+        const { reservationPages, childSitemaps } = extractSitemapCandidates(xml, url, home);
+        for (const candidate of [...reservationPages, ...childSitemaps]) {
+          const key = candidate.toString();
+          if (!queued.has(key) && !visited.has(key)) {
+            if (reservationPages.some((page) => page.toString() === key)) queue.unshift(candidate);
+            else queue.push(candidate);
+            queued.add(key);
+          }
+        }
+        continue;
+      }
       if (!contentType.includes("text/html")) continue;
       successfulChecks += 1;
       const html = await response.text();
