@@ -187,6 +187,10 @@ export default async function HardwareWorkspacePage({
     ownerAccess.ownedLocationIds[0] ||
     ownerAccess.ownedSourceLocationIds[0] ||
     undefined;
+  const managedLocationCount = new Set([
+    ...ownerAccess.ownedLocationIds,
+    ...ownerAccess.ownedSourceLocationIds,
+  ]).size;
 
   const access = await resolveLocationAccessContext({
     userId: user.id,
@@ -245,6 +249,14 @@ export default async function HardwareWorkspacePage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {managedLocationCount > 1 ? (
+              <Link
+                href="/locations/dashboard/hardware/all"
+                className="rounded-full border border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-2 text-xs font-black text-[var(--business-text)]"
+              >
+                All locations
+              </Link>
+            ) : null}
             <span className="rounded-full border border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-2 text-xs font-black text-[var(--business-muted)]">
               {canManage ? "Manager access" : "View-only access"}
             </span>
