@@ -113,6 +113,41 @@ for (const token of requiredTypes) {
   }
 }
 
+const businessQuickEditor = fs.readFileSync(
+  path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/QuickAddMenuItem.tsx"),
+  "utf8",
+).toLowerCase();
+
+const menuWriteModule = fs.readFileSync(
+  path.join(process.cwd(), "lib/locations/menu.ts"),
+  "utf8",
+).toLowerCase();
+
+for (const token of [
+  'value="timed_resource"',
+  'value="admission_experience"',
+  'value="rental"',
+  'value="package_bundle"',
+  'location website',
+  'theouthaven profile',
+  'theposhaven',
+  'channel_visibility: channels',
+]) {
+  if (!businessQuickEditor.includes(token)) {
+    throw new Error(`Universal catalog regression: business editor missing ${token}`);
+  }
+}
+
+for (const token of [
+  "normalizecatalogitemtype",
+  "normalizechannelvisibility",
+  "...catalogitemfields(body)",
+]) {
+  if (!menuWriteModule.includes(token)) {
+    throw new Error(`Universal catalog regression: menu writes missing ${token}`);
+  }
+}
+
 const forbidden = [
   "create table if not exists public.pos_menu_items",
   "create table if not exists public.pos_catalog_items",
