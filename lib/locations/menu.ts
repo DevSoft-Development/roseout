@@ -54,8 +54,20 @@ function normalizeChannelVisibility(value: unknown) {
   const source = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+  const defaults: Record<string, boolean> = {
+    website: true,
+    profile: true,
+    pos: true,
+    reserve: false,
+    online_ordering: false,
+    qr_ordering: false,
+    kiosk: false,
+  };
   return Object.fromEntries(
-    CATALOG_CHANNELS.map((channel) => [channel, source[channel] === true]),
+    CATALOG_CHANNELS.map((channel) => [
+      channel,
+      source[channel] == null ? defaults[channel] : source[channel] === true,
+    ]),
   );
 }
 
