@@ -98,7 +98,6 @@ jobs:
                   unchanged: .response.embeddings.unchanged,
                   skippedIneligible: .response.embeddings.skippedIneligible,
                   skippedUnsupported: .response.embeddings.skippedUnsupported,
-                  skippedNightlife: .response.embeddings.skippedNightlife,
                   candidatePool: .response.embeddings.candidatePool,
                   error: .response.error
                 }
