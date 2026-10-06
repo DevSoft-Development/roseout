@@ -6,6 +6,11 @@ const expected = String(process.env.EXPECTED_OPERATIONAL_SHARDS || "")
   .map((value) => value.trim())
   .filter(Boolean);
 
+const authHeaders = (key) => ({
+  apikey: key,
+  ...(String(key).startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }),
+});
+
 if (!raw) throw new Error("OPERATIONAL_SHARDS_JSON is required for multi-shard validation.");
 const config = JSON.parse(raw);
 if (!config || typeof config !== "object" || Array.isArray(config)) {
@@ -17,24 +22,15 @@ for (const shardId of expected) {
   if (shard.writeEnabled === false) throw new Error(`Shard runtime write disabled: ${shardId}`);
   const baseUrl = String(shard.url).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/rest/v1/pos_checks?select=id&limit=1`, {
-    headers: {
-      apikey: shard.serviceRoleKey,
-      Authorization: `Bearer ${shard.serviceRoleKey}`,
-    },
+    headers: authHeaders(shard.serviceRoleKey),
   });
   if (!response.ok) throw new Error(`Shard ${shardId} schema probe failed with HTTP ${response.status}`);
   const gate = await fetch(`${baseUrl}/rest/v1/operational_shard_write_gate?select=id,frozen&limit=1`, {
-    headers: {
-      apikey: shard.serviceRoleKey,
-      Authorization: `Bearer ${shard.serviceRoleKey}`,
-    },
+    headers: authHeaders(shard.serviceRoleKey),
   });
   if (!gate.ok) throw new Error(`Shard ${shardId} write-gate probe failed with HTTP ${gate.status}`);
   const assignments = await fetch(`${baseUrl}/rest/v1/reservation_resource_assignments?select=id&limit=1`, {
-    headers: {
-      apikey: shard.serviceRoleKey,
-      Authorization: `Bearer ${shard.serviceRoleKey}`,
-    },
+    headers: authHeaders(shard.serviceRoleKey),
   });
   if (!assignments.ok) throw new Error(`Shard ${shardId} reservation assignment probe failed with HTTP ${assignments.status}`);
   console.log(`${shardId}: reachable, runtime write-capable, and operational schema available`);
