@@ -78,6 +78,7 @@ const tools = [
   ["Markets", "Market assignment counts and safe bounded repairs", "Repair", "/admin/dashboard/settings/location-tools/markets"],
   ["Anchor Locations", "Manage the named landmarks, venues, businesses, aliases, and radius policies used by anchored nearby search", "Search", "/admin/dashboard/search-anchors"],
   ["Claim URLs", "Claim code, canonical URL, and QR repair tools", "Claims", "/admin/dashboard/settings/location-tools/claim-urls"],
+  ["POS Hardware Diagnostics", "Technical device identity, assignments, firmware, heartbeat, provider IDs, and raw support metadata", "POS", "/admin/dashboard/settings/location-tools/pos-hardware"],
   ["Logs", "Import and maintenance activity filters", "Logs", "/admin/dashboard/settings/location-tools/logs"],
 ] as const;
 
