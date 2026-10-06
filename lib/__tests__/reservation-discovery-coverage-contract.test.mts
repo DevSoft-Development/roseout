@@ -14,6 +14,14 @@ const curatedPublisher = readFileSync(
   new URL("../location-growth/googleCuratedPublisher.ts", import.meta.url),
   "utf8",
 );
+const sweepWorkflow = readFileSync(
+  new URL("../../.github/workflows/aws-reservation-recovery-sweep.yml", import.meta.url),
+  "utf8",
+);
+const edgeTemplate = readFileSync(
+  new URL("../../infra/aws/cloudformation/edge-runtime.yml", import.meta.url),
+  "utf8",
+);
 
 test("every eligible catalog insertion is queued for reservation discovery", () => {
   assert.match(queueGuard, /before insert or update of website/i);
@@ -39,4 +47,15 @@ test("curated Google publishing still performs immediate reservation enrichment"
   assert.match(curatedPublisher, /enrichPublishedReservations/);
   assert.match(curatedPublisher, /discoverReservationFromWebsite/);
   assert.match(curatedPublisher, /discoverReservationViaProviderSearch/);
+});
+
+
+test("rendered reservation fallback stays tightly bounded", () => {
+  assert.match(recovery, /renderedFallbackLimit/);
+  assert.match(recovery, /Math\.min\(5,/);
+  assert.match(recovery, /reservation_only_rendered_website_crawl/);
+  assert.match(sweepWorkflow, /"renderedFallback":true/);
+  assert.match(sweepWorkflow, /"renderedFallbackLimit":3/);
+  assert.match(edgeTemplate, /ReservedConcurrentExecutions:\s*2/);
+  assert.match(edgeTemplate, /RESERVATION_RENDERER_FUNCTION_NAME/);
 });
