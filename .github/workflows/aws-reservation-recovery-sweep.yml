@@ -38,6 +38,8 @@ jobs:
           grep -F '"limit":25' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"concurrency":8' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"statuses":["not_found"]' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
+          grep -F '"renderedFallback":true' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
+          grep -F '"renderedFallbackLimit":3' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"googleCalls":0' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
 
   deploy:
@@ -69,7 +71,7 @@ jobs:
           test -n "$INVOKER_ARN" && test "$INVOKER_ARN" != 'None'
           test -n "$SCHEDULER_ROLE" && test "$SCHEDULER_ROLE" != 'None'
 
-          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":25,"concurrency":8,"force":false,"statuses":["not_found"],"googleCalls":0}}'
+          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":25,"concurrency":8,"force":false,"statuses":["not_found"],"renderedFallback":true,"renderedFallbackLimit":3,"googleCalls":0}}'
           TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:900,MaximumRetryAttempts:1}}')"
           END_DATE="$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')"
 
@@ -102,7 +104,7 @@ jobs:
 
           aws lambda invoke             --function-name "$INVOKER_ARN"             --cli-binary-format raw-in-base64-out             --payload "$INPUT"             "$RUNNER_TEMP/reservation-recovery-probe.json" >/dev/null
           jq -e '.ok == true and .response.success == true' "$RUNNER_TEMP/reservation-recovery-probe.json" >/dev/null
-          jq '{ok,function,status,response:{selected:.response.selected,attempted:.response.attempted,found:.response.found,notFound:.response.notFound,blocked:.response.blocked,failed:.response.failed,providerCounts:.response.providerCounts}}' "$RUNNER_TEMP/reservation-recovery-probe.json"
+          jq '{ok,function,status,response:{selected:.response.selected,attempted:.response.attempted,found:.response.found,notFound:.response.notFound,blocked:.response.blocked,failed:.response.failed,renderedAttempted:.response.renderedAttempted,renderedFound:.response.renderedFound,renderedFailed:.response.renderedFailed,providerCounts:.response.providerCounts}}' "$RUNNER_TEMP/reservation-recovery-probe.json"
 
           echo "Reservation recovery sweep enabled through $END_DATE UTC."
 
@@ -115,6 +117,8 @@ jobs:
             echo '- Batch size: 25'
             echo '- Concurrency: 8'
             echo '- Statuses: not_found only'
+            echo '- Rendered fallback: first 3 eligible rows per batch'
+            echo '- Renderer concurrency cap: 2 isolated Lambda executions'
             echo '- Google calls: 0'
             echo '- Isolation: separate EventBridge schedule group; canonical 65-schedule fleet unchanged'
             echo '- Retry policy: honor reservation_discovery_next_retry_at'\n            echo '- Safety cap: schedule auto-deletes after 30 minutes'
