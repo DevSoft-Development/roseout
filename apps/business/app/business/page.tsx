@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import TheOutHavenHeader from "@/components/TheOutHavenHeader";
 import { buildMetadata } from "@/lib/seo";
 
 
@@ -70,7 +69,6 @@ const venueTypes = [
 export default function BusinessPage() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
-      <TheOutHavenHeader />
       <HeroSection />
       <ProofRow />
 
