@@ -15,7 +15,9 @@ export type LocationPermission =
   | "recommendations.view"
   | "recommendations.apply"
   | "photos.view"
-  | "photos.upload";
+  | "photos.upload"
+  | "hardware.view"
+  | "hardware.manage";
 
 export type LocationAccessSource =
   | "superadmin"
@@ -54,6 +56,7 @@ const VIEW_PERMISSIONS: LocationPermission[] = [
   "marketing.view",
   "recommendations.view",
   "photos.view",
+  "hardware.view",
 ];
 
 const EDIT_PERMISSIONS: LocationPermission[] = [
@@ -63,6 +66,7 @@ const EDIT_PERMISSIONS: LocationPermission[] = [
   "marketing.edit",
   "recommendations.apply",
   "photos.upload",
+  "hardware.manage",
 ];
 
 function uniquePermissions(values: LocationPermission[]) {
