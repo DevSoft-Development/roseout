@@ -400,7 +400,7 @@ jobs:
             -H "x-toh-timestamp: $TIMESTAMP" \
             -H "x-toh-signature: $SIGNATURE" \
             "${JOB_URL%/}/v1/status")"
-          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 4' >/dev/null
+          echo "$RESPONSE" | jq -e '.ok == true and .authenticated == true and .credentialSchemaVersion == 5' >/dev/null
 
       - name: Record stable worker release
         if: steps.config.outputs.target_env == 'production'
