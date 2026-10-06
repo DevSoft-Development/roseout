@@ -349,7 +349,7 @@ jobs:
           RESERVATION_RENDERER_IMAGE_URI: ${{ steps.renderer_image.outputs.uri }}
         run: |
           set -euo pipefail
-          aws cloudformation deploy \
+          if ! aws cloudformation deploy \
             --stack-name "$STACK_NAME" \
             --template-file infra/aws/cloudformation/edge-runtime.yml \
             --capabilities CAPABILITY_NAMED_IAM \
@@ -359,7 +359,15 @@ jobs:
               EdgeRuntimeImageUri="$IMAGE_URI" \
               ReservationRendererImageUri="$RESERVATION_RENDERER_IMAGE_URI" \
               RuntimeSecretName="$RUNTIME_SECRET_NAME" \
-            --tags Project=TheOutHaven Environment=production Service=EdgeRuntime ManagedBy=CloudFormation
+            --tags Project=TheOutHaven Environment=production Service=EdgeRuntime ManagedBy=CloudFormation; then
+            echo "::error::CloudFormation deployment failed; dumping recent stack events."
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --max-items 30 \
+              --query 'StackEvents[?contains(ResourceStatus, `FAILED`) || contains(ResourceStatus, `ROLLBACK`) || contains(ResourceStatus, `DELETE`)].{Time:Timestamp,LogicalId:LogicalResourceId,Type:ResourceType,Status:ResourceStatus,Reason:ResourceStatusReason}' \
+              --output table || true
+            exit 1
+          fi
 
       - name: Upsert EventBridge schedules
         run: |
