@@ -65,7 +65,7 @@ serve(async (req) => {
     .is("deleted_at", null)
     .not("website", "is", null)
     .order("reservation_discovery_next_retry_at", { ascending: true, nullsFirst: true })
-    .limit(Math.max(limit * 20, 200));
+    .limit(Math.max(limit * 120, 6_000));
 
   if (error) return json({ error: error.message }, 500);
 
