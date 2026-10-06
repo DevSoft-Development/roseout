@@ -6,6 +6,7 @@ const migration = read("supabase/migrations/20261005133000_operational_shard_rou
 const resolver = read("lib/operational-shards.ts");
 const payment = read("lib/pos/payments/check-payment-service.ts");
 const catalog = read("lib/admin/credential-vault-catalog.ts");
+const adminCatalog = read("apps/admin/lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
@@ -309,8 +310,25 @@ if (payment.includes("getOperationalShardClientForLocation")) {
 if (payment.includes('supabaseAdmin.rpc("pos_begin_card_tender"')) {
   throw new Error("POS payment service must not use the global Supabase client for tenant transaction writes.");
 }
-if (!catalog.includes("operationalShardsJson") || !runtimeSource.includes("OPERATIONAL_SHARDS_JSON")) {
-  throw new Error("Operational shard credentials must be managed through the centralized credential vault.");
+for (const field of [
+  "shard01Url",
+  "shard01SecretKey",
+  "shard01DrUrl",
+  "shard01DrSecretKey",
+  "shard02Url",
+  "shard02SecretKey",
+  "shard02DrUrl",
+  "shard02DrSecretKey",
+]) {
+  if (!catalog.includes(field) || !adminCatalog.includes(field)) {
+    throw new Error(`Operational shard credential field must be managed through both credential vault catalogs: ${field}`);
+  }
+}
+if (catalog.includes('{ key: "operationalShardsJson"') || adminCatalog.includes('{ key: "operationalShardsJson"')) {
+  throw new Error("Operational shard compatibility JSON must remain generated and non-editable.");
+}
+if (!runtimeSource.includes("OPERATIONAL_SHARDS_JSON") || !liveBootstrap.includes(".operationalShardsJson=$shards")) {
+  throw new Error("Operational shard runtime compatibility JSON must be generated through the centralized credential vault.");
 }
 
 console.log("Operational shard routing regression passed.");
