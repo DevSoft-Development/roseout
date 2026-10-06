@@ -227,3 +227,18 @@ Deno.test("extractReservationLinks detects meta refresh provider destinations", 
   const links = extractReservationLinks(html, new URL("https://venue.example/"));
   assertEquals(links.includes("https://sevenrooms.com/reservations/example"), true);
 });
+
+
+Deno.test("discoverReservation stops slow venues at site time budget", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() => new Promise<Response>((resolve) => setTimeout(() => resolve(new Response("timeout", { status: 500 })), 7000))) as typeof fetch;
+  try {
+    const started = Date.now();
+    const result = await discoverReservation("https://venue.example");
+    const elapsed = Date.now() - started;
+    assertEquals(result.status, "failed");
+    assertEquals(elapsed < 30000, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
