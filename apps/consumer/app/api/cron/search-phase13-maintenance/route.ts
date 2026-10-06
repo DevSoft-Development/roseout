@@ -1,8 +1,8 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildLocationSemanticDocument, EMBEDDING_MODEL, EMBEDDING_VERSION } from "@/lib/search/enterprise/semantic";
 import { classifySearchLocation } from "@/lib/search/enterprise/classification";
+import { AzureQueryEmbeddingProvider } from "@/lib/search/v3/semantic/azureQueryEmbeddingProvider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,13 +14,14 @@ function authorized(request: Request) {
   return request.headers.get("authorization") === `Bearer ${expected}`;
 }
 
+const azureEmbeddingProvider = new AzureQueryEmbeddingProvider({ timeoutMs: 30_000 });
+
 async function embed(text: string) {
-  const model = process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL;
-  const client = new OpenAI();
-  const payload = await client.embeddings.create({ model, input: text });
-  const embedding = payload?.data?.[0]?.embedding as number[] | undefined;
-  if (!Array.isArray(embedding) || !embedding.length) throw new Error("embedding response was empty");
-  return embedding;
+  const result = await azureEmbeddingProvider.embed(text);
+  if (!Array.isArray(result.vector) || !result.vector.length) {
+    throw new Error("Azure embedding response was empty");
+  }
+  return result.vector;
 }
 
 const uniq = (values: unknown[]) => [...new Set(values.flatMap((value) => Array.isArray(value) ? value : value == null ? [] : [value]).map(String).map((value) => value.trim()).filter(Boolean))];
