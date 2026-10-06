@@ -122,8 +122,9 @@ async function normalizeOneLocation(locationId: string) {
   };
 }
 
-export async function normalizeExistingGoogleEnrichmentBatch(limit = 100) {
-  const safeLimit = Math.max(1, Math.min(250, Math.trunc(limit)));
+export async function normalizeExistingGoogleEnrichmentBatch(limit = 500, concurrency = 10) {
+  const safeLimit = Math.max(1, Math.min(1000, Math.trunc(limit)));
+  const safeConcurrency = Math.max(1, Math.min(20, Math.trunc(concurrency)));
   const { data, error } = await supabaseAdmin
     .from("location_intelligence_profiles_v2")
     .select("location_id,last_initial_enrichment_at,locations!inner(google_enriched_at)")
@@ -133,19 +134,27 @@ export async function normalizeExistingGoogleEnrichmentBatch(limit = 100) {
     .limit(safeLimit);
   if (error) throw new Error(`Google normalization batch plan failed: ${error.message}`);
 
+  const rows = (data || [])
+    .map((row: any) => String(row.location_id || ""))
+    .filter(Boolean);
   const results: Array<Record<string, unknown>> = [];
-  for (const row of data || []) {
-    const locationId = String((row as any).location_id || "");
-    if (!locationId) continue;
-    try {
-      results.push(await normalizeOneLocation(locationId));
-    } catch (error) {
-      results.push({
-        locationId,
-        normalized: false,
-        error: error instanceof Error ? error.message : "google_normalization_failed",
-      });
-    }
+
+  for (let index = 0; index < rows.length; index += safeConcurrency) {
+    const chunk = rows.slice(index, index + safeConcurrency);
+    const chunkResults = await Promise.all(
+      chunk.map(async (locationId) => {
+        try {
+          return await normalizeOneLocation(locationId);
+        } catch (error) {
+          return {
+            locationId,
+            normalized: false,
+            error: error instanceof Error ? error.message : "google_normalization_failed",
+          };
+        }
+      }),
+    );
+    results.push(...chunkResults);
   }
 
   return {
