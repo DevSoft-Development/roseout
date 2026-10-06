@@ -146,7 +146,7 @@ returns trigger
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $$
 declare
   v_page_id uuid;
 begin
@@ -172,7 +172,7 @@ begin
 
   return coalesce(new, old);
 end;
-$;
+$$;
 
 drop trigger if exists location_commerce_items_bump_catalog_revision on public.location_commerce_items;
 create trigger location_commerce_items_bump_catalog_revision
