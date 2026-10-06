@@ -456,7 +456,10 @@ jobs:
 
             sql_api "$PRIMARY_REF" "alter subscription $FAILBACK_SUB disable;" "$RUNNER_TEMP/failback-disable.json"
             sql_api "$PRIMARY_REF" "drop subscription $FAILBACK_SUB;" "$RUNNER_TEMP/failback-drop.json"
-            sql_api "$DR_REF" "drop role if exists $FAILBACK_ROLE;" "$RUNNER_TEMP/failback-drop-role.json"
+            sql_api "$DR_REF" "revoke select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments from $FAILBACK_ROLE;
+              revoke usage on schema public from $FAILBACK_ROLE;
+              revoke connect on database postgres from $FAILBACK_ROLE;
+              drop role if exists $FAILBACK_ROLE;" "$RUNNER_TEMP/failback-drop-role.json"
 
             # Restore normal primary->DR replication before reopening primary.
             sql_api "$DR_REF" "alter subscription $SUB enable;" "$RUNNER_TEMP/forward-enable.json"
