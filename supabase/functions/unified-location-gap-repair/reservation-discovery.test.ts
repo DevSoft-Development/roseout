@@ -242,3 +242,50 @@ Deno.test("discoverReservation stops slow venues at site time budget", async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+Deno.test("extractReservationLinks parses relative JSON-LD urlTemplate reservation target", () => {
+  const html = `<script type="application/ld+json">{"@context":"https://schema.org","potentialAction":{"@type":"ReserveAction","target":{"urlTemplate":"/reserve/table"}}}</script>`;
+  const links = extractReservationLinks(html, new URL("https://venue.example/"));
+  assertEquals(links.includes("https://venue.example/reserve/table"), true);
+});
+
+Deno.test("extractReservationLinks detects relative meta refresh regardless attribute order", () => {
+  const html = '<meta content="0; url=/book-now" http-equiv="refresh">';
+  const links = extractReservationLinks(html, new URL("https://venue.example/"));
+  assertEquals(links.includes("https://venue.example/book-now"), true);
+});
+
+Deno.test("discoverReservation follows reservation URL from sitemap", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    seen.push(url.pathname);
+    if (url.pathname === "/") {
+      return Promise.resolve(new Response("<html>Venue</html>", { status: 200, headers: { "content-type": "text/html" } }));
+    }
+    if (url.pathname === "/sitemap.xml") {
+      return Promise.resolve(new Response(
+        '<?xml version="1.0"?><urlset><url><loc>https://venue.example/private-events/reservations</loc></url></urlset>',
+        { status: 200, headers: { "content-type": "application/xml" } },
+      ));
+    }
+    if (url.pathname === "/private-events/reservations") {
+      return Promise.resolve(new Response(
+        '<iframe src="https://sevenrooms.com/reservations/example"></iframe>',
+        { status: 200, headers: { "content-type": "text/html" } },
+      ));
+    }
+    return Promise.resolve(new Response("not found", { status: 404 }));
+  }) as typeof fetch;
+  try {
+    const result = await discoverReservation("https://venue.example");
+    assertEquals(result.status, "found");
+    assertEquals(result.match?.provider, "SevenRooms");
+    assertEquals(seen.includes("/sitemap.xml"), true);
+    assertEquals(seen.includes("/private-events/reservations"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
