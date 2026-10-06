@@ -219,10 +219,12 @@ export default async function HardwareWorkspacePage({
     );
   }
 
+  const canonicalLocationId = access.canonicalLocationId;
+
   let hardware: PosLocationHardware[] = [];
   let unavailable = false;
   try {
-    hardware = await listLocationHardware(access.canonicalLocationId);
+    hardware = await listLocationHardware(canonicalLocationId);
   } catch {
     unavailable = true;
   }
@@ -250,7 +252,7 @@ export default async function HardwareWorkspacePage({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(access.canonicalLocationId || "")}`}
+              href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(canonicalLocationId)}`}
               className="rounded-full border border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-2 text-xs font-black text-[var(--business-text)]"
             >
               Health
@@ -268,7 +270,7 @@ export default async function HardwareWorkspacePage({
             </span>
             {canManage ? (
               <Link
-                href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(access.canonicalLocationId)}`}
+                href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(canonicalLocationId)}`}
                 className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white"
               >
                 Add device
@@ -309,7 +311,7 @@ export default async function HardwareWorkspacePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {hardware.map((item) => (
-                <DeviceCard key={item.deviceId} item={item} locationId={access.canonicalLocationId} />
+                <DeviceCard key={item.deviceId} item={item} locationId={canonicalLocationId} />
               ))}
             </div>
           </section>
