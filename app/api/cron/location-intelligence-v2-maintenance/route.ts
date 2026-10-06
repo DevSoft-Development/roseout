@@ -23,6 +23,10 @@ function limitParam(request: Request, key: string, fallback: number, max: number
   return Number.isFinite(parsed) ? Math.max(1, Math.min(max, Math.trunc(parsed))) : fallback;
 }
 
+function shouldRunPaidReviewCycle(now = new Date()) {
+  return now.getUTCMinutes() % 10 === 0;
+}
+
 async function run(request: Request) {
   if (!authorized(request)) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -39,15 +43,16 @@ async function run(request: Request) {
     const reviewLimit = limitParam(request, "reviewLimit", 50, 100);
     const normalizationLimit = limitParam(request, "normalizationLimit", 500, 1000);
     const normalizationConcurrency = limitParam(request, "normalizationConcurrency", 10, 20);
+    const runPaidReviews = shouldRunPaidReviewCycle();
 
     const [providerHealth, collectedReviews, normalization] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),
-      collectPendingDataForSeoReviewRefreshes(reviewLimit),
+      runPaidReviews ? collectPendingDataForSeoReviewRefreshes(reviewLimit) : Promise.resolve([]),
       normalizeExistingGoogleEnrichmentBatch(normalizationLimit, normalizationConcurrency),
     ]);
     const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
-      submitDueDataForSeoReviewRefreshes(reviewLimit),
+      runPaidReviews ? submitDueDataForSeoReviewRefreshes(reviewLimit) : Promise.resolve([]),
     ]);
 
     const collectedFailures = collectedReviews
@@ -81,6 +86,8 @@ async function run(request: Request) {
       normalization,
       materialChanges,
       reviews: {
+        cycleRan: runPaidReviews,
+        cadenceMinutes: 10,
         collected: collectedReviews,
         submitted: submittedReviews,
         failed: reviewFailures,
