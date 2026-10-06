@@ -142,9 +142,9 @@ function compareVariants(baseline: VariantResult, review: VariantResult) {
     netWins: wins - losses,
     successRateDelta:
       Number(review.metrics.successRate ?? 0) - Number(baseline.metrics.successRate ?? 0),
-    pairedQuerySuccessRateDelta:
-      Number(review.metrics.pairedQuerySuccessRate ?? 0) -
-      Number(baseline.metrics.pairedQuerySuccessRate ?? 0),
+    pairSuccessRateDelta:
+      Number(review.metrics.pairSuccessRate ?? 0) -
+      Number(baseline.metrics.pairSuccessRate ?? 0),
     p95LatencyDeltaMs:
       Number(review.metrics.p95LatencyMs ?? 0) -
       Number(baseline.metrics.p95LatencyMs ?? 0),
