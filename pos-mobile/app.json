@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "ThePOSHaven",
+    "slug": "theposhaven",
+    "scheme": "theposhaven",
+    "version": "0.1.0",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.theposhaven.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "ThePOSHaven uses your local network to automatically find and connect to the POS printers and hardware assigned to this location.",
+        "NSBonjourServices": [
+          "_pdl-datastream._tcp",
+          "_printer._tcp",
+          "_ipp._tcp"
+        ]
+      }
+    },
+    "android": {
+      "package": "com.theposhaven.app",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE"
+      ]
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "backgroundColor": "#070303",
+    "extra": {
+      "appSurface": "theposhaven-cashier",
+      "hardwareRuntime": "native-bridge"
+    }
+  }
+}

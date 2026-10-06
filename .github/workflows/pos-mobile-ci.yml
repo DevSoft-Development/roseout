@@ -1,0 +1,80 @@
+name: ThePOSHaven mobile CI
+
+on:
+  pull_request:
+    paths:
+      - 'pos-mobile/**'
+      - '.github/workflows/pos-mobile-ci.yml'
+      - 'azure-pipelines-pos-mobile.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pos-mobile/**'
+      - '.github/workflows/pos-mobile-ci.yml'
+      - 'azure-pipelines-pos-mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: theposhaven-mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pos-mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: pos-mobile/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate Expo configuration
+        run: npx expo config --type public >/tmp/theposhaven-pos-config.json
+
+      - name: Verify separate app identity and POS-only network permissions
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          if (app?.name !== 'ThePOSHaven') throw new Error('Unexpected app name');
+          if (app?.ios?.bundleIdentifier !== 'com.theposhaven.app') throw new Error('Unexpected iOS bundle identifier');
+          if (app?.android?.package !== 'com.theposhaven.app') throw new Error('Unexpected Android package');
+          if (!app?.ios?.infoPlist?.NSLocalNetworkUsageDescription) throw new Error('iOS local-network usage description missing');
+          const bonjour = app?.ios?.infoPlist?.NSBonjourServices || [];
+          for (const service of ['_pdl-datastream._tcp', '_printer._tcp', '_ipp._tcp']) {
+            if (!bonjour.includes(service)) throw new Error('Missing Bonjour service: ' + service);
+          }
+          const permissions = app?.android?.permissions || [];
+          for (const permission of [
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_NETWORK_STATE',
+            'android.permission.ACCESS_WIFI_STATE',
+            'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+          ]) {
+            if (!permissions.includes(permission)) throw new Error('Missing Android permission: ' + permission);
+          }
+          NODE
+
+      - name: Verify consumer app remains isolated
+        working-directory: .
+        run: |
+          set -euo pipefail
+          grep -F '"bundleIdentifier": "com.theouthaven.app"' mobile/app.json >/dev/null
+          grep -F '"package": "com.theouthaven.app"' mobile/app.json >/dev/null
+          ! grep -F 'com.theposhaven.app' mobile/app.json >/dev/null
