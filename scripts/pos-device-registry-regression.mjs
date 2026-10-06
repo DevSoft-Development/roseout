@@ -9,6 +9,10 @@ const service = fs.readFileSync(
   path.join(process.cwd(), "lib/pos/hardware/device-registry.ts"),
   "utf8",
 );
+const publicationWorkflow = fs.readFileSync(
+  path.join(process.cwd(), ".github/workflows/pos-hardware-registry-dr-publication.yml"),
+  "utf8",
+);
 
 const requiredMigration = [
   "create table if not exists public.pos_hardware_devices",
@@ -21,8 +25,6 @@ const requiredMigration = [
   "assignment_status = 'replaced'",
   "replacement_for_device_id",
   "create or replace function public.pos_record_hardware_heartbeat",
-  "alter publication theouthaven_dr_publication add table public.pos_hardware_devices",
-  "alter publication theouthaven_dr_publication add table public.pos_hardware_assignments",
   "enable row level security",
   "revoke all on table public.pos_hardware_devices from anon, authenticated",
 ];
@@ -47,6 +49,20 @@ for (const token of requiredService) {
   if (!service.includes(token)) {
     throw new Error(`POS device registry regression missing service contract: ${token}`);
   }
+}
+
+for (const token of [
+  "alter publication $PUBLICATION add table public.pos_hardware_devices",
+  "alter publication $PUBLICATION add table public.pos_hardware_assignments",
+  "alter subscription $SUBSCRIPTION refresh publication",
+]) {
+  if (!publicationWorkflow.includes(token)) {
+    throw new Error(`POS device registry regression missing protected DR publication contract: ${token}`);
+  }
+}
+
+if (migration.includes("alter publication")) {
+  throw new Error("POS hardware registry migration must not mutate DR publication directly.");
 }
 
 console.log("POS hardware device registry contract passed.");
