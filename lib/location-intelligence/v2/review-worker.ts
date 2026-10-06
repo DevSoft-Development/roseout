@@ -126,9 +126,29 @@ async function refreshReviewIntelligence(locationId: string) {
 
   if (!concepts.size) return 0;
 
+  const totalReviews = (data || []).length;
+  const sampleConfidence =
+    totalReviews >= 100 ? 1 :
+    totalReviews >= 50 ? 0.85 :
+    totalReviews >= 20 ? 0.65 :
+    totalReviews > 0 ? 0.35 : 0;
+  const sampleTier =
+    totalReviews >= 100 ? "high" :
+    totalReviews >= 50 ? "good" :
+    totalReviews >= 20 ? "medium" : "low";
+
   const rows = [...concepts.entries()].map(([concept, state]) => {
     const sentimentTotal = state.positive + state.negative;
     const recentRatio = state.lifetime ? state.d90 / state.lifetime : 0;
+    const conceptSupport = Math.min(1, state.lifetime / 20);
+    const sentimentAgreement = sentimentTotal
+      ? Math.max(state.positive, state.negative) / sentimentTotal
+      : 0.5;
+    const recencyBoost = state.d90 > 0 ? 1 : state.y12 > 0 ? 0.9 : 0.75;
+    const confidence = Math.min(
+      1,
+      sampleConfidence * conceptSupport * (0.75 + 0.25 * sentimentAgreement) * recencyBoost,
+    );
     return {
       location_id: locationId,
       concept,
@@ -137,9 +157,18 @@ async function refreshReviewIntelligence(locationId: string) {
       trailing_90d_count: state.d90,
       positive_ratio: sentimentTotal ? state.positive / sentimentTotal : null,
       negative_ratio: sentimentTotal ? state.negative / sentimentTotal : null,
-      confidence: Math.min(1, state.lifetime / 20),
+      confidence,
       trend: recentRatio >= 0.5 ? "recently_prominent" : recentRatio <= 0.1 ? "historical" : "stable",
-      evidence: { source: "external_reviews", reviewCount: state.lifetime },
+      evidence: {
+        source: "external_reviews",
+        reviewCount: state.lifetime,
+        totalReviewSample: totalReviews,
+        sampleTier,
+        sampleConfidence,
+        conceptSupport,
+        sentimentAgreement,
+        recencyBoost,
+      },
       updated_at: new Date().toISOString(),
     };
   });
@@ -195,11 +224,13 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
           ? `${latitude},${longitude},200`
           : undefined;
       const geo = [location?.city, location?.state, "United States"].filter(Boolean).join(",");
+      const isInitialIngest = !item.last_refreshed_at;
+      const reviewDepth = isInitialIngest ? 100 : 25;
       const task = await createDataForSeoReviewTask({
         googlePlaceId,
         locationCoordinate,
         locationName: locationCoordinate ? undefined : (geo || "United States"),
-        depth: 100,
+        depth: reviewDepth,
         sortBy: "newest",
         tag: `toh:${locationId}`,
       });
@@ -213,6 +244,8 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
             taskId: task.id,
             taskStatus: "submitted",
             submittedAt: new Date().toISOString(),
+            reviewDepth,
+            ingestMode: isInitialIngest ? "initial_100" : "incremental_25",
           },
           updated_at: new Date().toISOString(),
         })
