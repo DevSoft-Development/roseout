@@ -23,6 +23,61 @@ export function validateMenuPayload(method: "POST" | "PATCH" | "DELETE", input: 
 function assertCanRead(ctx: MenuActorContext) { if (ctx.permissions?.canRead === false) throw new MenuAccessError("You do not have permission to view this menu"); }
 function assertCanEdit(ctx: MenuActorContext) { if (ctx.permissions?.canEdit === false) throw new MenuAccessError(); }
 
+const CATALOG_ITEM_TYPES = new Set([
+  "food_beverage",
+  "retail",
+  "service",
+  "timed_resource",
+  "admission_experience",
+  "rental",
+  "package_bundle",
+  "fee_deposit",
+]);
+
+const CATALOG_CHANNELS = [
+  "website",
+  "profile",
+  "pos",
+  "reserve",
+  "online_ordering",
+  "qr_ordering",
+  "kiosk",
+] as const;
+
+function normalizeCatalogItemType(value: unknown) {
+  const candidate = String(value || "food_beverage").trim();
+  if (!CATALOG_ITEM_TYPES.has(candidate)) throw new MenuValidationError("Invalid catalog item type");
+  return candidate;
+}
+
+function normalizeChannelVisibility(value: unknown) {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return Object.fromEntries(
+    CATALOG_CHANNELS.map((channel) => [channel, source[channel] === true]),
+  );
+}
+
+function catalogItemFields(body: SaveLocationMenuInput) {
+  return {
+    item_type: normalizeCatalogItemType(body.item_type),
+    channel_visibility: normalizeChannelVisibility(body.channel_visibility),
+    pos_short_name: String(body.pos_short_name || "").trim() || null,
+    sku: String(body.sku || "").trim() || null,
+    tax_category: String(body.tax_category || "").trim() || null,
+    revenue_category: String(body.revenue_category || "").trim() || null,
+    prep_station: String(body.prep_station || "").trim() || null,
+    resource_type: String(body.resource_type || "").trim() || null,
+    duration_minutes: body.duration_minutes == null || body.duration_minutes === "" ? null : Number(body.duration_minutes),
+    capacity: body.capacity == null || body.capacity === "" ? null : Number(body.capacity),
+    requires_booking: body.requires_booking === true,
+    requires_waiver: body.requires_waiver === true,
+    minimum_age: body.minimum_age == null || body.minimum_age === "" ? null : Number(body.minimum_age),
+    deposit_cents: body.deposit_cents == null || body.deposit_cents === "" ? null : Number(body.deposit_cents),
+  };
+}
+
 export async function getLocationCommercePages(locationId: string) {
   const { data, error } = await supabaseAdmin
     .from("location_commerce_pages")
@@ -133,7 +188,7 @@ export async function saveLocationMenu(locationId: string, input: SaveLocationMe
       const price = normalizePriceCents(body.price_cents); if (price === undefined) throw new MenuValidationError("Price must be a non-negative integer");
       const sectionId = String(body.section_id || body.sectionId || "");
       const { data: section } = await supabaseAdmin.from("location_commerce_sections").select("id,commerce_page_id").eq("id", sectionId).eq("location_id", locationId).maybeSingle(); if (!section || String(section.commerce_page_id) !== String(page.id)) throw new MenuValidationError("Section not found on this page");
-      const { error } = await supabaseAdmin.from("location_commerce_items").insert({ location_id: locationId, commerce_page_id: page.id, page_id: page.id, section_id: sectionId, name, description: String(body.description || "").trim() || null, price_cents: price, price: body.price_label || (price != null ? `$${(price / 100).toFixed(2)}` : null), price_label: String(body.price_label || "").trim() || null, image_url: cleanNullableUrl(body.image_url), tags: body.tags || [], is_available: body.is_available !== false, is_featured: body.is_featured === true, sort_order: Number(body.sort_order ?? 0) }); if (error) throw error;
+      const { error } = await supabaseAdmin.from("location_commerce_items").insert({ location_id: locationId, commerce_page_id: page.id, page_id: page.id, section_id: sectionId, name, description: String(body.description || "").trim() || null, price_cents: price, price: body.price_label || (price != null ? `${(price / 100).toFixed(2)}` : null), price_label: String(body.price_label || "").trim() || null, image_url: cleanNullableUrl(body.image_url), tags: body.tags || [], is_available: body.is_available !== false, is_featured: body.is_featured === true, sort_order: Number(body.sort_order ?? 0), ...catalogItemFields(body) }); if (error) throw error;
     }
   } else if (method === "PATCH") {
     const page = await getMenuPage(locationId, commercePageId); if (!page) throw new MenuValidationError("Menu or package page not found");
@@ -150,7 +205,7 @@ export async function saveLocationMenu(locationId: string, input: SaveLocationMe
       if (!sectionId) throw new MenuValidationError("Section required");
       const { data: section } = await supabaseAdmin.from("location_commerce_sections").select("id,commerce_page_id").eq("id", sectionId).eq("location_id", locationId).maybeSingle();
       if (!section || String(section.commerce_page_id) !== String(page.id)) throw new MenuValidationError("Section not found on this page");
-      const { error } = await supabaseAdmin.from("location_commerce_items").update({ section_id: sectionId, name, description: String(body.description || "").trim() || null, price_cents: price, price_label: String(body.price_label || "").trim() || null, price: body.price_label || (price != null ? `$${(price / 100).toFixed(2)}` : null), image_url: cleanNullableUrl(body.image_url), tags: body.tags || [], is_available: body.is_available !== false, is_featured: body.is_featured === true, updated_at: new Date().toISOString() }).eq("id", body.item_id).eq("commerce_page_id", page.id).eq("location_id", locationId); if (error) throw error;
+      const { error } = await supabaseAdmin.from("location_commerce_items").update({ section_id: sectionId, name, description: String(body.description || "").trim() || null, price_cents: price, price_label: String(body.price_label || "").trim() || null, price: body.price_label || (price != null ? `${(price / 100).toFixed(2)}` : null), image_url: cleanNullableUrl(body.image_url), tags: body.tags || [], is_available: body.is_available !== false, is_featured: body.is_featured === true, updated_at: new Date().toISOString(), ...catalogItemFields(body) }).eq("id", body.item_id).eq("commerce_page_id", page.id).eq("location_id", locationId); if (error) throw error;
     }
     for (const [i, id] of (body.section_ids || []).entries()) await supabaseAdmin.from("location_commerce_sections").update({ sort_order: i }).eq("id", id).eq("commerce_page_id", page.id).eq("location_id", locationId);
     for (const [i, id] of (body.item_ids || []).entries()) await supabaseAdmin.from("location_commerce_items").update({ sort_order: i }).eq("id", id).eq("commerce_page_id", page.id).eq("location_id", locationId);
