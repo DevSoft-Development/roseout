@@ -119,7 +119,7 @@ jobs:
             test -n "$key"
             test "$write_enabled" = true
             echo "::add-mask::$key"
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/runtime-$physical_id.json" --write-out '%{http_code}'               -H "apikey: $key" -H "Authorization: Bearer $key"               "$url/rest/v1/operational_shard_write_gate?select=id,frozen&limit=1" || true)"
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/runtime-$physical_id.json" --write-out '%{http_code}'               -H "apikey: $key"               "$url/rest/v1/operational_shard_write_gate?select=id,frozen&limit=1" || true)"
             test "$code" = 200 || { cat "$RUNNER_TEMP/runtime-$physical_id.json"; return 1; }
           }
 
@@ -134,7 +134,7 @@ jobs:
             echo "::add-mask::$key"
             code="$(curl --silent --show-error --output "$RUNNER_TEMP/freeze-$physical_id.json" --write-out '%{http_code}' \
               --request PATCH \
-              -H "apikey: $key" -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
+              -H "apikey: $key" -H 'Content-Type: application/json' \
               -H 'Prefer: return=representation' \
               --data "{\"frozen\":true,\"reason\":\"$reason\"}" \
               "$url/rest/v1/operational_shard_write_gate?id=eq.1" || true)"
