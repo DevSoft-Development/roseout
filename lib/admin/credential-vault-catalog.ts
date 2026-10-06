@@ -55,13 +55,20 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "mapbox", label: "Mapbox", category: "Data", description: "Server-side Mapbox routing credentials used by Search V3 to verify real walking routes between outing stops.", note: "Create a dedicated Mapbox access token for Directions/Matrix routing. Keep it server-side; Search V3 reads it from the runtime secret as MAPBOX_ACCESS_TOKEN.", fields: [
     { key: "accessToken", label: "Access token", secret: true, placeholder: "pk. or sk. Mapbox token" },
   ] },
-  { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, and protected management credentials.", note: "Prefer modern sb_publishable_ and sb_secret_ keys. Keep the scoped general management token for approved management automation.", fields: [
-    { key: "url", label: "Project URL", placeholder: "https://project-ref.supabase.co" },
-    { key: "publishableKey", label: "Publishable / anon key", secret: true, multiline: true },
-    { key: "secretKey", label: "Secret key (recommended)", secret: true, multiline: true },
-    { key: "serviceRoleKey", label: "Legacy service role key (transition only)", secret: true, multiline: true },
+  { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, protected management credentials, and isolated operational shard credentials.", note: "Prefer modern sb_publishable_ and sb_secret_ keys. Each operational shard is a separate Supabase project and must keep its own secret key. The runtime shard JSON is generated/persisted for compatibility.", fields: [
+    { key: "url", label: "Global project URL", placeholder: "https://project-ref.supabase.co" },
+    { key: "publishableKey", label: "Global publishable / anon key", secret: true, multiline: true },
+    { key: "secretKey", label: "Global secret key (recommended)", secret: true, multiline: true },
+    { key: "serviceRoleKey", label: "Global legacy service role key (transition only)", secret: true, multiline: true },
     { key: "managementAccessToken", label: "Management access token", secret: true, multiline: true },
-    { key: "operationalShardsJson", label: "Operational shard runtime JSON", secret: true, multiline: true, placeholder: "{\n  \"shard-01\": { \"url\": \"https://...supabase.co\", \"serviceRoleKey\": \"...\", \"readEnabled\": true, \"writeEnabled\": true }\n}" },
+    { key: "shard01Url", label: "Shard 01 URL", placeholder: "https://lyeruuzsnceaxrmdafxb.supabase.co" },
+    { key: "shard01SecretKey", label: "Shard 01 secret key", secret: true, multiline: true },
+    { key: "shard01DrUrl", label: "Shard 01 DR URL", placeholder: "https://vcdnwrsuvhtlvxqbkamg.supabase.co" },
+    { key: "shard01DrSecretKey", label: "Shard 01 DR secret key", secret: true, multiline: true },
+    { key: "shard02Url", label: "Shard 02 URL", placeholder: "https://lpcrikaixcfbqaikevlg.supabase.co" },
+    { key: "shard02SecretKey", label: "Shard 02 secret key", secret: true, multiline: true },
+    { key: "shard02DrUrl", label: "Shard 02 DR URL", placeholder: "https://bjhcxzahgfeniitejtrx.supabase.co" },
+    { key: "shard02DrSecretKey", label: "Shard 02 DR secret key", secret: true, multiline: true },
   ] },
   { id: "vercel", label: "Vercel", category: "Cloud", description: "Vercel API access for deployment and environment operations.", note: "Use a dedicated project-scoped token for DR control. Create it for project prj_G4nFS7P3F4cW3PQn4oQAx6Vf3GIN (roseout) and store it here as the DR control token; do not reuse a personal/SAML session token.", fields: [
     { key: "token", label: "Runtime sync access token", secret: true },

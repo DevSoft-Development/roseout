@@ -194,8 +194,29 @@ jobs:
             }' > "$RUNNER_TEMP/operational-shards.json"
           shards="$(cat "$RUNNER_TEMP/operational-shards.json")"
           echo "::add-mask::$shards"
-          jq --arg shards "$shards" '.operationalShardsJson=$shards'             "$RUNNER_TEMP/supabase-vault.json" > "$RUNNER_TEMP/supabase-vault-next.json"
-          aws secretsmanager put-secret-value             --secret-id "$SUPABASE_VAULT_SECRET"             --secret-string "file://$RUNNER_TEMP/supabase-vault-next.json" >/dev/null
+          jq \
+            --arg shards "$shards" \
+            --arg s1 "https://${SHARD01_REF}.supabase.co" \
+            --arg s1k "$(cat "$RUNNER_TEMP/shard01-secret")" \
+            --arg s1dr "https://${SHARD01_DR_REF}.supabase.co" \
+            --arg s1drk "$(cat "$RUNNER_TEMP/shard01dr-secret")" \
+            --arg s2 "https://${SHARD02_REF}.supabase.co" \
+            --arg s2k "$(cat "$RUNNER_TEMP/shard02-secret")" \
+            --arg s2dr "https://${SHARD02_DR_REF}.supabase.co" \
+            --arg s2drk "$(cat "$RUNNER_TEMP/shard02dr-secret")" \
+            '.shard01Url=$s1 |
+             .shard01SecretKey=$s1k |
+             .shard01DrUrl=$s1dr |
+             .shard01DrSecretKey=$s1drk |
+             .shard02Url=$s2 |
+             .shard02SecretKey=$s2k |
+             .shard02DrUrl=$s2dr |
+             .shard02DrSecretKey=$s2drk |
+             .operationalShardsJson=$shards' \
+            "$RUNNER_TEMP/supabase-vault.json" > "$RUNNER_TEMP/supabase-vault-next.json"
+          aws secretsmanager put-secret-value \
+            --secret-id "$SUPABASE_VAULT_SECRET" \
+            --secret-string "file://$RUNNER_TEMP/supabase-vault-next.json" >/dev/null
 
       - name: Verify all four shard APIs and POS schema
         run: |

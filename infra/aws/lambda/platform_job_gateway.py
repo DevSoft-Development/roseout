@@ -22,7 +22,7 @@ AUTO_CONTAIN_TAG_VALUE = os.environ.get("AUTO_CONTAIN_TAG_VALUE", "enabled")
 MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
 MAX_JOBS = 10
 MAX_MESSAGE_BYTES = 240 * 1024
-CREDENTIAL_SCHEMA_VERSION = 4
+CREDENTIAL_SCHEMA_VERSION = 5
 MAX_CREDENTIAL_BYTES = 60 * 1024
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9:_./@+-]{8,200}$")
 PROVIDER_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
@@ -31,7 +31,12 @@ ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
     "mapbox": {"accessToken"},
-    "supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"},
+    "supabase": {
+        "url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken",
+        "shard01Url", "shard01SecretKey", "shard01DrUrl", "shard01DrSecretKey",
+        "shard02Url", "shard02SecretKey", "shard02DrUrl", "shard02DrSecretKey",
+        "operationalShardsJson",
+    },
     "vercel": {"token", "drControlToken", "teamId"},
     "github": {"token", "appId", "privateKey"},
     "microsoft": {"tenantId", "clientId", "clientSecret", "tokenEncryptionKey"},
@@ -54,6 +59,16 @@ ALLOWED_PROVIDERS = {
     "expo": {"accessToken"},
     "domains": {"apiKey", "apiSecret", "accountId", "gatewaySecret"},
     "platform": {"cronSecret", "importSecret", "internalImportSecret", "outingReminderCronSecret", "googleLocationEnrichmentCronSecret", "adminApiSecret", "adminDigestSecret", "notificationSecret", "supportEmailWebhookSecret", "supportInboundSecret", "websiteHostingGatewaySecret", "drGatewaySecret", "jobGatewaySecret", "integrationApiSecret", "assistantApiSecret", "criticalAlertSmsEnabled", "criticalAlertSmsRecoveryEnabled", "criticalAlertSmsFrom", "criticalAlertSmsTo", "criticalAlertTimezone", "criticalAlertQuietHoursStart", "criticalAlertQuietHoursEnd", "criticalAlertQuietHoursMode"},
+}
+
+SUPABASE_OPERATIONAL_SHARDS = {
+    "shard-01": ("shard01Url", "shard01SecretKey"),
+    "shard-01-dr": ("shard01DrUrl", "shard01DrSecretKey"),
+    "shard-02": ("shard02Url", "shard02SecretKey"),
+    "shard-02-dr": ("shard02DrUrl", "shard02DrSecretKey"),
+}
+SUPABASE_OPERATIONAL_SHARD_FIELDS = {
+    field for fields in SUPABASE_OPERATIONAL_SHARDS.values() for field in fields
 }
 
 sqs = boto3.client("sqs")
@@ -299,12 +314,67 @@ def _validate_credential_payload(provider, payload):
     return normalized, list(dict.fromkeys(clear_fields))
 
 
+def _sync_supabase_operational_shards(merged, clear_fields):
+    raw = str(merged.get("operationalShardsJson") or "").strip()
+    compatibility = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise ValueError("invalid_operational_shards_json") from error
+        if not isinstance(parsed, dict):
+            raise ValueError("invalid_operational_shards_json")
+        compatibility = parsed
+
+    cleared = set(clear_fields)
+    for shard_id, (url_field, key_field) in SUPABASE_OPERATIONAL_SHARDS.items():
+        existing = compatibility.get(shard_id)
+        if not isinstance(existing, dict):
+            existing = {}
+        if url_field not in cleared and not str(merged.get(url_field) or "").strip():
+            existing_url = str(existing.get("url") or "").strip()
+            if existing_url:
+                merged[url_field] = existing_url
+        if key_field not in cleared and not str(merged.get(key_field) or "").strip():
+            existing_key = str(existing.get("serviceRoleKey") or "").strip()
+            if existing_key:
+                merged[key_field] = existing_key
+
+    configured = []
+    runtime = {}
+    for shard_id, (url_field, key_field) in SUPABASE_OPERATIONAL_SHARDS.items():
+        url = str(merged.get(url_field) or "").strip()
+        key = str(merged.get(key_field) or "").strip()
+        configured.append(bool(url or key))
+        if url and key:
+            existing = compatibility.get(shard_id)
+            if not isinstance(existing, dict):
+                existing = {}
+            runtime[shard_id] = {
+                "url": url.rstrip("/"),
+                "serviceRoleKey": key,
+                "readEnabled": bool(existing.get("readEnabled", True)),
+                "writeEnabled": bool(existing.get("writeEnabled", True)),
+            }
+
+    if not any(configured):
+        merged.pop("operationalShardsJson", None)
+        return merged
+    if len(runtime) != len(SUPABASE_OPERATIONAL_SHARDS):
+        raise ValueError("incomplete_operational_shard_credentials")
+
+    merged["operationalShardsJson"] = json.dumps(runtime, separators=(",", ":"), ensure_ascii=False)
+    return merged
+
+
 def _write_credential(environment, provider, values, clear_fields):
     existing, _, _ = _read_credential(environment, provider)
     merged = {key: value for key, value in existing.items() if key in ALLOWED_PROVIDERS[provider] and isinstance(value, str)}
     merged.update(values)
     for key in clear_fields:
         merged.pop(key, None)
+    if provider == "supabase":
+        merged = _sync_supabase_operational_shards(merged, clear_fields)
     secret_id = _credential_secret_id(environment, provider)
     secret_string = json.dumps(merged, separators=(",", ":"), ensure_ascii=False)
     if len(secret_string.encode("utf-8")) > MAX_CREDENTIAL_BYTES:
@@ -417,12 +487,37 @@ def _test_credential(environment, provider):
             return {"ok": True, "provider": provider, "status": "healthy", "detail": "Resend API key verified."}
         raise ValueError("resend_credential_test_failed")
 
-    if provider == "supabase" and values.get("url") and (values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")):
-        key = values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")
-        status, _ = _http_json(values["url"].rstrip("/") + "/rest/v1/", headers={"apikey": key, "Authorization": f"Bearer {key}"})
-        if 200 <= status < 300:
-            return {"ok": True, "provider": provider, "status": "healthy", "detail": "Supabase API credentials verified."}
-        raise ValueError("supabase_credential_test_failed")
+    if provider == "supabase":
+        verified = []
+        if values.get("url") and (values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")):
+            key = values.get("secretKey") or values.get("serviceRoleKey") or values.get("publishableKey")
+            status, _ = _http_json(values["url"].rstrip("/") + "/rest/v1/", headers={"apikey": key})
+            if not 200 <= status < 300:
+                raise ValueError("supabase_credential_test_failed")
+            verified.append("global")
+
+        shard_configured = any(str(values.get(field) or "").strip() for field in SUPABASE_OPERATIONAL_SHARD_FIELDS)
+        if shard_configured:
+            for shard_id, (url_field, key_field) in SUPABASE_OPERATIONAL_SHARDS.items():
+                url = str(values.get(url_field) or "").strip()
+                key = str(values.get(key_field) or "").strip()
+                if not url or not key:
+                    raise ValueError("incomplete_operational_shard_credentials")
+                status, _ = _http_json(
+                    url.rstrip("/") + "/rest/v1/pos_checks?select=id&limit=1",
+                    headers={"apikey": key},
+                )
+                if not 200 <= status < 300:
+                    raise ValueError("supabase_shard_credential_test_failed")
+                verified.append(shard_id)
+
+        if verified:
+            return {
+                "ok": True,
+                "provider": provider,
+                "status": "healthy",
+                "detail": f"Supabase credentials verified: {', '.join(verified)}.",
+            }
 
     if provider == "twilio" and values.get("accountSid") and values.get("authToken"):
         auth = base64.b64encode(f"{values['accountSid']}:{values['authToken']}".encode()).decode()

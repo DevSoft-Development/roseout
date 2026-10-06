@@ -41,9 +41,12 @@ jobs:
       - name: Validate post-retirement credential contract
         run: |
           set -euo pipefail
-          grep -F '"supabase": {"url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken"}' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F '"shard01SecretKey"' infra/aws/lambda/platform_job_gateway.py >/dev/null
+          grep -F '"shard02DrSecretKey"' infra/aws/lambda/platform_job_gateway.py >/dev/null
           grep -F '{ key: "managementAccessToken", label: "Management access token"' lib/admin/credential-vault-catalog.ts >/dev/null
           grep -F '{ key: "managementAccessToken", label: "Management access token"' apps/admin/lib/admin/credential-vault-catalog.ts >/dev/null
+          grep -F '{ key: "shard01SecretKey", label: "Shard 01 secret key"' lib/admin/credential-vault-catalog.ts >/dev/null
+          grep -F '{ key: "shard01SecretKey", label: "Shard 01 secret key"' apps/admin/lib/admin/credential-vault-catalog.ts >/dev/null
           ! grep -F 'edgeFunctionsManagementToken' lib/admin/credential-vault-catalog.ts
           ! grep -F 'edgeFunctionsManagementToken' apps/admin/lib/admin/credential-vault-catalog.ts
           ! grep -F 'edgeFunctionsManagementToken' infra/aws/lambda/platform_job_gateway.py
