@@ -1,7 +1,23 @@
+import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { getMirrorDemoLocation } from "@/lib/demo/demo-center";
 import { getDemoOwnerSearchParams } from "@/lib/demo/owner-context";
+
+async function setAutomaticReviewRefreshes(formData: FormData) {
+  "use server";
+  await requireAdminRole(["superadmin", "admin"]);
+  const enabled = String(formData.get("enabled") || "") === "true";
+  const { data } = await supabaseAdmin.from("location_provider_registry").select("metadata").eq("provider", "dataforseo").maybeSingle();
+  const metadata = data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata) ? data.metadata as Record<string, unknown> : {};
+  const { error } = await supabaseAdmin.from("location_provider_registry").update({
+    metadata: { ...metadata, automatic_review_refresh_enabled: enabled },
+    updated_at: new Date().toISOString(),
+  }).eq("provider", "dataforseo");
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/dashboard/settings/location-tools");
+}
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +39,15 @@ const tools = [
 export default async function LocationToolsPage() {
   await requireAdminRole(["superadmin", "admin"]);
   const lounge = await getMirrorDemoLocation().catch(() => null);
+  const { data: dataForSeoProvider } = await supabaseAdmin
+    .from("location_provider_registry")
+    .select("metadata")
+    .eq("provider", "dataforseo")
+    .maybeSingle();
+  const providerMetadata = dataForSeoProvider?.metadata && typeof dataForSeoProvider.metadata === "object" && !Array.isArray(dataForSeoProvider.metadata)
+    ? dataForSeoProvider.metadata as Record<string, unknown>
+    : {};
+  const automaticReviewRefreshes = providerMetadata.automatic_review_refresh_enabled === true;
   const demoParams = lounge?.id
     ? getDemoOwnerSearchParams({
         id: String(lounge.id),
@@ -56,6 +81,22 @@ export default async function LocationToolsPage() {
               <Link href="/create?q=TheOutHaven%20Lounge" className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:bg-white hover:text-black">Start E2E Demo</Link>
               <Link href={publicHref} className="rounded-full border border-rose-300/25 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-rose-500/20">Public View</Link>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-[#111] p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.28em] text-rose-200">Review Intelligence</p>
+              <h2 className="mt-2 text-2xl font-black">Automatic review refreshes</h2>
+              <p className="mt-2 max-w-3xl text-sm font-bold leading-6 text-white/55">
+                Initial DataForSEO review ingest remains 100 newest reviews per location. Automatic repeat refreshes are currently {automaticReviewRefreshes ? "ON" : "OFF"}.
+              </p>
+            </div>
+            <form action={setAutomaticReviewRefreshes} className="flex gap-3">
+              <button name="enabled" value="false" className="rounded-full border border-white/15 bg-white/10 px-5 py-3 text-sm font-black text-white">Turn off</button>
+              <button name="enabled" value="true" className="rounded-full bg-[#e1062a] px-5 py-3 text-sm font-black text-white">Turn on</button>
+            </form>
           </div>
         </section>
 
