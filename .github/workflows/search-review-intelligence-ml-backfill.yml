@@ -1,0 +1,82 @@
+name: Search review intelligence ML backfill
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/backfill-review-intelligence-ml.ts'
+      - 'lib/search/reviewIntelligenceProfileSignals.ts'
+      - '.github/workflows/search-review-intelligence-ml-backfill.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: search-review-intelligence-ml-backfill-production
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Backfill review intelligence ML features
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Configure AWS access to credential vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Load production Supabase credentials
+        run: |
+          set -euo pipefail
+          PREFIX="/theouthaven/credential-vault/production"
+          WORK="$RUNNER_TEMP/review-intelligence-ml"
+          mkdir -p "$WORK"
+
+          aws secretsmanager get-secret-value --secret-id "$PREFIX/supabase" --query SecretString --output text > "$WORK/supabase.json"
+          jq -e 'type == "object"' "$WORK/supabase.json" >/dev/null
+
+          SUPABASE_URL="$(jq -r '.url // empty' "$WORK/supabase.json")"
+          SUPABASE_ANON_KEY="$(jq -r '.publishableKey // empty' "$WORK/supabase.json")"
+          SUPABASE_SERVICE_ROLE_KEY="$(jq -r '.serviceRoleKey // empty' "$WORK/supabase.json")"
+
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+
+          echo "::add-mask::$SUPABASE_ANON_KEY"
+          echo "::add-mask::$SUPABASE_SERVICE_ROLE_KEY"
+
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+          rm -rf "$WORK"
+
+      - name: Prepare standalone server-only shim
+        run: |
+          mkdir -p node_modules/server-only
+          printf "module.exports = {};\n" > node_modules/server-only/index.js
+
+      - name: Backfill review intelligence ML features
+        run: npx tsx scripts/backfill-review-intelligence-ml.ts
