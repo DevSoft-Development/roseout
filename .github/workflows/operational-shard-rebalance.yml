@@ -62,7 +62,7 @@ jobs:
           SHARDS_PATH="$RUNNER_TEMP/operational-shards.json"
           aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$VAULT_PATH"
           URL="$(jq -r '.url // empty' "$VAULT_PATH")"
-          KEY="$(jq -r '.serviceRoleKey // .secretKey // empty' "$VAULT_PATH")"
+          KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$VAULT_PATH")"
           SHARDS="$(jq -r '.operationalShardsJson // empty' "$VAULT_PATH")"
           test -n "$URL" && test -n "$KEY" && test -n "$SHARDS"
           echo "::add-mask::$KEY"
