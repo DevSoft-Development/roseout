@@ -181,9 +181,29 @@ async function refreshReviewIntelligence(locationId: string) {
   return rows.length;
 }
 
+async function quarantineReviewRefresh(locationId: string, metadata: Record<string, unknown>, reason: string) {
+  const quarantinedAt = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("location_review_refresh_state")
+    .update({
+      refresh_enabled: false,
+      next_refresh_at: null,
+      metadata: {
+        ...metadata,
+        taskStatus: "quarantined",
+        quarantineReason: reason,
+        quarantinedAt,
+      },
+      updated_at: quarantinedAt,
+    })
+    .eq("location_id", locationId)
+    .eq("provider", "dataforseo");
+  if (error) throw new Error(`Review refresh quarantine failed: ${error.message}`);
+}
+
 export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
   const due = await dueReviewRefreshes(limit);
-  const results: Array<{ locationId: string; submitted: boolean; taskId?: string; error?: string }> = [];
+  const results: Array<{ locationId: string; submitted: boolean; quarantined?: boolean; taskId?: string; error?: string }> = [];
 
   for (const item of due as Array<Record<string, any>>) {
     if (String(item.provider) !== "dataforseo") continue;
@@ -211,7 +231,15 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
 
       const name = locationName(location || {});
       const googlePlaceId = String(identity?.external_id || "").trim();
-      if (!name || !googlePlaceId) throw new Error("review_refresh_identity_incomplete");
+      if (!name || !googlePlaceId) {
+        const reason = "review_refresh_identity_incomplete";
+        const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+          ? item.metadata as Record<string, unknown>
+          : {};
+        await quarantineReviewRefresh(locationId, metadata, reason);
+        results.push({ locationId, submitted: false, quarantined: true, error: reason });
+        continue;
+      }
 
       const latitude = Number(location?.latitude);
       const longitude = Number(location?.longitude);
