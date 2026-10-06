@@ -5,7 +5,7 @@ export default function TheOutHavenFooter() {
     <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
 
-      <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.25fr_0.75fr_0.75fr_0.75fr_0.75fr]">
+      <div className="relative mx-auto flex max-w-7xl flex-col gap-10">
         <div>
           <p className="max-w-md text-sm leading-7 text-white/45">
             TheOutHaven LLC is a New York-based technology company helping people
@@ -15,13 +15,13 @@ export default function TheOutHavenFooter() {
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/create"
+              href="https://theouthaven.com/create"
               className="rounded-2xl bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500 hover:shadow-lg hover:shadow-red-500/20"
             >
               Start Planning
             </Link>
             <Link
-              href="/about"
+              href="https://theouthaven.com/about"
               className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
             >
               About TheOutHaven
@@ -32,55 +32,55 @@ export default function TheOutHavenFooter() {
         <FooterColumn
           title="Explore"
           links={[
-            { label: "Home", href: "/" },
-            { label: "Explore", href: "/explore" },
-            { label: "Plan Outing", href: "/create" },
-            { label: "Queens", href: "/explore/queens" },
-            { label: "Brooklyn", href: "/explore/brooklyn" },
-            { label: "Long Island", href: "/explore/long-island" },
+            { label: "Home", href: "https://theouthaven.com/" },
+            { label: "Explore", href: "https://theouthaven.com/explore" },
+            { label: "Plan Outing", href: "https://theouthaven.com/create" },
+            { label: "Queens", href: "https://theouthaven.com/explore/queens" },
+            { label: "Brooklyn", href: "https://theouthaven.com/explore/brooklyn" },
+            { label: "Long Island", href: "https://theouthaven.com/explore/long-island" },
           ]}
         />
 
         <FooterColumn
           title="Company"
           links={[
-            { label: "About", href: "/about" },
+            { label: "About", href: "https://theouthaven.com/about" },
             { label: "For Businesses", href: "https://business.theouthaven.com/business" },
             { label: "Claim Listing", href: "https://business.theouthaven.com/business/claim" },
-            { label: "Careers", href: "/careers" },
+            { label: "Careers", href: "https://theouthaven.com/careers" },
           ]}
         />
 
         <FooterColumn
           title="Support"
           links={[
-            { label: "Get Help", href: "/support" },
-            { label: "Knowledge Base", href: "/help" },
-            { label: "FAQ", href: "/faq" },
-            { label: "Trust Center", href: "/trust" },
-            { label: "Status", href: "/status" },
-            { label: "Contact", href: "/contact" },
+            { label: "Get Help", href: "https://theouthaven.com/support" },
+            { label: "Knowledge Base", href: "https://theouthaven.com/help" },
+            { label: "FAQ", href: "https://theouthaven.com/faq" },
+            { label: "Trust Center", href: "https://theouthaven.com/trust" },
+            { label: "Status", href: "https://theouthaven.com/status" },
+            { label: "Contact", href: "https://theouthaven.com/contact" },
           ]}
         />
 
         <FooterColumn
           title="Legal"
           links={[
-            { label: "Terms", href: "/terms" },
-            { label: "Privacy", href: "/privacy" },
-            { label: "Contact", href: "/contact" },
+            { label: "Terms", href: "https://theouthaven.com/terms" },
+            { label: "Privacy", href: "https://theouthaven.com/privacy" },
+            { label: "Contact", href: "https://theouthaven.com/contact" },
           ]}
         />
       </div>
 
-      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35 md:flex-row md:items-center md:justify-between">
+      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35">
         <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
-        <p className="max-w-xl leading-6 md:text-right">
+        <p className="max-w-xl leading-6">
           Recommendations may include third-party listings. Always confirm details
           directly with the business.
         </p>
         <Link
-          href="/status"
+          href="https://theouthaven.com/status"
           className="inline-flex w-fit items-center gap-2 text-sm font-black text-white/65 transition hover:text-white"
         >
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
