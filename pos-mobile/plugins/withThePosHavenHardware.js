@@ -3,7 +3,7 @@ const path = require("node:path");
 const {
   withDangerousMod,
   withXcodeProject,
-} = require("@expo/config-plugins");
+} = require("expo/config-plugins");
 
 const FILE_NAME = "ThePosHavenHardware.swift";
 
@@ -34,10 +34,7 @@ module.exports = function withThePosHavenHardware(config) {
       throw new Error("ThePOSHaven iOS target could not be resolved.");
     }
 
-    const existing = project.hasFile(FILE_NAME);
-    if (!existing) {
-      project.addSourceFile(FILE_NAME, { target });
-    }
+    project.addSourceFile(FILE_NAME, { target });
 
     return modConfig;
   });
