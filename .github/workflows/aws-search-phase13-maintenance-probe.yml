@@ -1,0 +1,108 @@
+name: AWS Search Phase 13 maintenance probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/aws-search-phase13-maintenance-probe.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-search-phase13-maintenance-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-search-phase13-maintenance-probe-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scoped probe contract
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/aws-search-phase13-maintenance-probe.yml'
+          ruby -e "require 'yaml'; YAML.load_file(ARGV[0])" "$FILE"
+          grep -F 'node:/api/cron/managed?job=search-phase13-maintenance' "$FILE" >/dev/null
+          grep -F 'TheOutHavenGitHubPlatformDeployRole' "$FILE" >/dev/null
+          if grep -E 'vercel|SUPABASE_ACCESS_TOKEN|secretsmanager:|put-secret-value|update-function-configuration' "$FILE" | grep -v 'grep -E' >/dev/null; then
+            echo 'Maintenance probe must not mutate credential stores or legacy hosting configuration.' >&2
+            exit 1
+          fi
+
+  probe:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Invoke Search Phase 13 maintenance
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+          INVOKER_FN="$(aws cloudformation describe-stacks \
+            --stack-name "$EDGE_STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" \
+            --output text)"
+          test -n "$INVOKER_FN" && test "$INVOKER_FN" != 'None'
+
+          jq -nc \
+            --arg fn 'node:/api/cron/managed?job=search-phase13-maintenance' \
+            '{function:$fn,body:{}}' > "$RUNNER_TEMP/probe.json"
+
+          aws lambda invoke \
+            --function-name "$INVOKER_FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/probe.json" \
+            "$RUNNER_TEMP/response.json" >/dev/null
+
+          jq -e '.ok == true and .runtime == "node" and (.status // 200) < 400 and (.response.ok // true) != false and (.response.success // true) != false' \
+            "$RUNNER_TEMP/response.json" >/dev/null
+
+          jq -c '{
+            ok,
+            runtime,
+            status,
+            response: (
+              if (.response | type) == "object" then
+                {
+                  ok: .response.ok,
+                  success: .response.success,
+                  recordsScanned: (.response.recordsScanned // .response.records_scanned),
+                  recordsUpdated: (.response.recordsUpdated // .response.records_updated),
+                  recordsFailed: (.response.recordsFailed // .response.records_failed),
+                  error: .response.error
+                }
+              else
+                {type:(.response | type)}
+              end
+            )
+          }' "$RUNNER_TEMP/response.json"
+
+          echo 'search_phase13_maintenance_probe=passed' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP/probe.json" "$RUNNER_TEMP/response.json"
