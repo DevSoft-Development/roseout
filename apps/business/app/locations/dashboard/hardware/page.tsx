@@ -215,10 +215,12 @@ export default async function HardwareWorkspacePage({
     );
   }
 
+  const canonicalLocationId = access.canonicalLocationId;
+
   let hardware: PosLocationHardware[] = [];
   let unavailable = false;
   try {
-    hardware = await listLocationHardware(access.canonicalLocationId);
+    hardware = await listLocationHardware(canonicalLocationId);
   } catch {
     unavailable = true;
   }
@@ -288,7 +290,7 @@ export default async function HardwareWorkspacePage({
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {hardware.map((item) => (
-                <DeviceCard key={item.deviceId} item={item} locationId={access.canonicalLocationId} />
+                <DeviceCard key={item.deviceId} item={item} locationId={canonicalLocationId} />
               ))}
             </div>
           </section>
