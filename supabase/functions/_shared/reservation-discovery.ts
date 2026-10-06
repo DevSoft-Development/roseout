@@ -21,6 +21,7 @@ const NON_CRAWLABLE_WEBSITE_HOSTS = [
 
 export const MAX_RESERVATION_DISCOVERY_PAGES = 12;
 const RESERVATION_FETCH_TIMEOUT_MS = 7000;
+const RESERVATION_SITE_BUDGET_MS = 20000;
 const MAX_SAME_VENUE_REDIRECTS = 3;
 
 export type ReservationMatch = { url: string; provider: string };
@@ -236,6 +237,7 @@ export async function discoverReservation(website: string): Promise<ReservationD
 
   let attempted = 0;
   let successfulChecks = 0;
+  const startedAt = Date.now();
   let blockedChecks = 0;
   let failedChecks = 0;
   const failureNotes: string[] = [];
@@ -243,7 +245,7 @@ export async function discoverReservation(website: string): Promise<ReservationD
   const queued = new Set(queue.map((url) => url.toString()));
   const visited = new Set<string>();
 
-  while (queue.length && attempted < MAX_RESERVATION_DISCOVERY_PAGES) {
+  while (queue.length && attempted < MAX_RESERVATION_DISCOVERY_PAGES && Date.now() - startedAt < RESERVATION_SITE_BUDGET_MS) {
     const url = queue.shift()!;
     if (visited.has(url.toString())) continue;
     visited.add(url.toString());
@@ -287,7 +289,8 @@ export async function discoverReservation(website: string): Promise<ReservationD
     }
   }
 
-  if (successfulChecks > 0) return { status: "not_found", match: null, note: `Checked ${successfulChecks} successful page(s) across ${attempted} attempt(s)` };
+  const budgetReached = Date.now() - startedAt >= RESERVATION_SITE_BUDGET_MS;
+  if (successfulChecks > 0) return { status: "not_found", match: null, note: `Checked ${successfulChecks} successful page(s) across ${attempted} attempt(s)${budgetReached ? " before site time budget" : ""}` };
   if (blockedChecks > 0) return { status: "blocked", match: null, note: `Venue website blocked ${blockedChecks} request(s): ${failureNotes.slice(0, 3).join(", ")}` };
   if (failedChecks > 0) return { status: "failed", match: null, note: `Venue website failed ${failedChecks} request(s): ${failureNotes.slice(0, 3).join(", ")}` };
   return { status: "not_found", match: null, note: `Checked ${attempted} page candidate(s) with no provider link` };
