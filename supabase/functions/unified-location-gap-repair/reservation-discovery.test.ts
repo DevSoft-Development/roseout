@@ -190,3 +190,40 @@ Deno.test("additional activity reservation providers are recognized", () => {
   assertEquals(reservationMatch("https://xola.com/example")?.provider, "Xola");
   assertEquals(reservationMatch("https://rezdy.com/example")?.provider, "Rezdy");
 });
+
+
+Deno.test("extractReservationLinks parses JSON-LD reservation actions", () => {
+  const html = `<script type="application/ld+json">{"@context":"https://schema.org","potentialAction":{"@type":"ReserveAction","target":"https://www.opentable.com/r/example"}}</script>`;
+  const links = extractReservationLinks(html, new URL("https://venue.example/"));
+  assertEquals(links.includes("https://www.opentable.com/r/example"), true);
+});
+
+Deno.test("discoverReservation follows reservation intent anchor text even on custom paths", async () => {
+  const originalFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const url = new URL(String(input));
+    seen.push(url.pathname);
+    if (url.pathname === "/") {
+      return Promise.resolve(new Response('<a href="/go/now">Book a table</a>', { status: 200, headers: { "content-type": "text/html" } }));
+    }
+    if (url.pathname === "/go/now") {
+      return Promise.resolve(new Response('<iframe src="https://resy.com/cities/ny/venues/example"></iframe>', { status: 200, headers: { "content-type": "text/html" } }));
+    }
+    return Promise.resolve(new Response("not found", { status: 404 }));
+  }) as typeof fetch;
+  try {
+    const result = await discoverReservation("https://venue.example");
+    assertEquals(result.status, "found");
+    assertEquals(result.match?.provider, "Resy");
+    assertEquals(seen.includes("/go/now"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("extractReservationLinks detects meta refresh provider destinations", () => {
+  const html = '<meta http-equiv="refresh" content="0; url=https://sevenrooms.com/reservations/example">';
+  const links = extractReservationLinks(html, new URL("https://venue.example/"));
+  assertEquals(links.includes("https://sevenrooms.com/reservations/example"), true);
+});

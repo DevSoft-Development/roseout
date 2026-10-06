@@ -19,7 +19,7 @@ const NON_CRAWLABLE_WEBSITE_HOSTS = [
   "order.online", "order.toasttab.com", "doordash.com", "grubhub.com", "ubereats.com",
 ] as const;
 
-export const MAX_RESERVATION_DISCOVERY_PAGES = 8;
+export const MAX_RESERVATION_DISCOVERY_PAGES = 12;
 const RESERVATION_FETCH_TIMEOUT_MS = 7000;
 const MAX_SAME_VENUE_REDIRECTS = 3;
 
@@ -133,6 +133,30 @@ export function reservationMatch(candidate: string): ReservationMatch | null {
   return null;
 }
 
+function addUrl(results: Set<string>, value: unknown, base: URL) {
+  if (typeof value !== "string" || !value.trim()) return;
+  try { results.add(new URL(value.trim(), base).toString()); } catch { /* ignore */ }
+}
+
+function collectJsonUrls(value: unknown, base: URL, results: Set<string>) {
+  if (typeof value === "string") {
+    if (/^(?:https?:\/\/|\/|\.\/|\.\.\/)/i.test(value.trim())) addUrl(results, value, base);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectJsonUrls(item, base, results);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (["url", "sameas", "target", "actionplatform", "contenturl", "embedurl"].includes(key.toLowerCase())) {
+      collectJsonUrls(child, base, results);
+    } else if (typeof child === "object") {
+      collectJsonUrls(child, base, results);
+    }
+  }
+}
+
 export function extractReservationLinks(html: string, base: URL) {
   const results = new Set<string>();
   const decoded = html
@@ -155,8 +179,22 @@ export function extractReservationLinks(html: string, base: URL) {
 function isLikelyReservationPage(candidate: URL, home: URL) {
   if (venueHost(candidate) !== venueHost(home)) return false;
   const value = `${candidate.pathname} ${candidate.search}`.toLowerCase();
-  return ["reserv", "book", "ticket", "schedule", "class", "experience", "visit", "dining", "table", "event", "appointment"]
+  return ["reserv", "book", "ticket", "schedule", "class", "experience", "visit", "dining", "table", "event", "appointment", "private-dining", "private-events"]
     .some((token) => value.includes(token));
+}
+
+function extractIntentLinks(html: string, base: URL, home: URL) {
+  const results: URL[] = [];
+  const intent = /\b(reserve|reservation|book|booking|book now|book a table|make a reservation|tickets?|schedule|appointment|private dining|private events?|experiences?)\b/i;
+  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const text = match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    if (!intent.test(text)) continue;
+    try {
+      const candidate = new URL(match[1], base);
+      if (venueHost(candidate) === venueHost(home)) results.push(candidate);
+    } catch { /* ignore */ }
+  }
+  return results;
 }
 
 async function fetchVenuePage(start: URL, home: URL) {
@@ -168,7 +206,12 @@ async function fetchVenuePage(start: URL, home: URL) {
       const response = await fetch(current, {
         signal: controller.signal,
         redirect: "manual",
-        headers: { "User-Agent": "TheOutHavenBot/1.0 (+https://theouthaven.com)", "Accept": "text/html" },
+        headers: {
+          "User-Agent": "TheOutHavenBot/2.0 (+https://theouthaven.com)",
+          "Accept": "text/html,application/xhtml+xml",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+        },
       });
       if (response.status < 300 || response.status >= 400) return response;
       const location = response.headers.get("location");
@@ -221,17 +264,22 @@ export async function discoverReservation(website: string): Promise<ReservationD
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("text/html")) continue;
       successfulChecks += 1;
-      const links = extractReservationLinks(await response.text(), url);
+      const html = await response.text();
+      const links = extractReservationLinks(html, url);
       const matches = links.map(reservationMatch).filter(Boolean) as ReservationMatch[];
       const unique = [...new Map(matches.map((match) => [match.url, match])).values()];
       if (unique.length) return { status: "found", match: unique[0], note: `Found on ${url.pathname}` };
+      const internalCandidates: URL[] = [];
       for (const link of links) {
         try {
           const candidate = new URL(link);
-          if (!isLikelyReservationPage(candidate, home)) continue;
-          const key = candidate.toString();
-          if (!queued.has(key) && !visited.has(key)) { queue.unshift(candidate); queued.add(key); }
+          if (isLikelyReservationPage(candidate, home)) internalCandidates.push(candidate);
         } catch { /* ignore malformed links */ }
+      }
+      internalCandidates.push(...extractIntentLinks(html, url, home));
+      for (const candidate of internalCandidates) {
+        const key = candidate.toString();
+        if (!queued.has(key) && !visited.has(key)) { queue.unshift(candidate); queued.add(key); }
       }
     } catch (error) {
       failedChecks += 1;
