@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { discoverReservation, reservationRecoveryPriority } from "../_shared/reservation-discovery.ts";
+import { discoverReservation, extractReservationLinks, reservationMatch, reservationRecoveryPriority } from "../_shared/reservation-discovery.ts";
+import { renderReservationPage } from "../_shared/reservation-renderer-client.ts";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -53,6 +54,10 @@ serve(async (req) => {
   const limit = Math.min(50, Math.max(1, Number(body.limit || 50)));
   const concurrency = Math.min(8, Math.max(1, Number(body.concurrency || 8)));
   const force = body.force === true;
+  const renderedFallback = body.renderedFallback === true;
+  const renderedFallbackLimit = renderedFallback
+    ? Math.min(5, Math.max(1, Number(body.renderedFallbackLimit || 3)))
+    : 0;
   const requestedStatuses = Array.isArray(body.statuses)
     ? body.statuses.map((value: unknown) => String(value || "").trim()).filter((value: string) => ALLOWED_STATUSES.has(value))
     : [];
@@ -102,6 +107,13 @@ serve(async (req) => {
     .sort((a: any, b: any) => reservationRecoveryPriority(a) - reservationRecoveryPriority(b))
     .slice(0, limit);
 
+  const renderedCandidateIds = new Set(
+    candidates
+      .filter((row: any) => String(row.reservation_discovery_status || "") === "not_found")
+      .slice(0, renderedFallbackLimit)
+      .map((row: any) => String(row.id)),
+  );
+
   const counters = {
     selected: candidates.length,
     attempted: 0,
@@ -109,6 +121,9 @@ serve(async (req) => {
     notFound: 0,
     blocked: 0,
     failed: 0,
+    renderedAttempted: 0,
+    renderedFound: 0,
+    renderedFailed: 0,
     googleCalls: 0,
     requestedStatuses,
     providerCounts: {} as Record<string, number>,
@@ -118,10 +133,40 @@ serve(async (req) => {
     const checkedAt = new Date().toISOString();
     try {
       counters.attempted += 1;
-      const discovery = await discoverReservation(String(row.website));
+      let discovery = await discoverReservation(String(row.website));
+      let renderedMatch = false;
+
+      if (discovery.status === "not_found" && renderedCandidateIds.has(String(row.id))) {
+        counters.renderedAttempted += 1;
+        const rendered = await renderReservationPage(String(row.website));
+        if (rendered.ok) {
+          const base = new URL(rendered.finalUrl || String(row.website));
+          let match = rendered.finalUrl ? reservationMatch(rendered.finalUrl) : null;
+          if (!match && rendered.html) {
+            const matches = extractReservationLinks(rendered.html, base)
+              .map(reservationMatch)
+              .filter(Boolean) as Array<{ url: string; provider: string }>;
+            match = matches[0] || null;
+          }
+          if (match) {
+            renderedMatch = true;
+            counters.renderedFound += 1;
+            discovery = {
+              status: "found",
+              match,
+              note: "Found after selective rendered-page fallback",
+            };
+          }
+        } else {
+          counters.renderedFailed += 1;
+        }
+      }
+
       const update: Record<string, unknown> = {
         reservation_discovery_status: discovery.status,
-        reservation_discovery_source: "reservation_only_website_crawl",
+        reservation_discovery_source: renderedMatch
+          ? "reservation_only_rendered_website_crawl"
+          : "reservation_only_website_crawl",
         reservation_discovery_notes: discovery.note,
         reservation_discovery_checked_at: checkedAt,
         reservation_last_checked_at: checkedAt,
@@ -175,9 +220,25 @@ serve(async (req) => {
       success_count: counters.found,
       failed_count: counters.failed,
       message: `Reservation recovery completed: ${counters.found} found of ${counters.attempted}.`,
-      metadata: { mode: "reservation_only", googleCalls: 0, requestedStatuses, providerCounts: counters.providerCounts },
+      metadata: {
+        mode: "reservation_only",
+        googleCalls: 0,
+        requestedStatuses,
+        providerCounts: counters.providerCounts,
+        renderedFallback,
+        renderedAttempted: counters.renderedAttempted,
+        renderedFound: counters.renderedFound,
+      },
     }).eq("id", runId);
   }
 
-  return json({ success: true, mode: "reservation_only", force, concurrency, ...counters });
+  return json({
+    success: true,
+    mode: "reservation_only",
+    force,
+    concurrency,
+    renderedFallback,
+    renderedFallbackLimit,
+    ...counters,
+  });
 });
