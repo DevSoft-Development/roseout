@@ -46,6 +46,9 @@ jobs:
       - name: Validate Expo configuration
         run: npx expo config --type public >/tmp/theposhaven-pos-config.json
 
+      - name: Verify iOS native hardware module
+        run: npm run verify:native:ios
+
       - name: Verify separate app identity and POS-only network permissions
         run: |
           set -euo pipefail
