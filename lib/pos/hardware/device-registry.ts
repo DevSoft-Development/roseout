@@ -1,6 +1,7 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getCertifiedHardware } from "@/lib/pos/hardware/catalog";
 import type {
   PosHardwareAssignment,
   PosHardwareDeviceType,
@@ -52,11 +53,22 @@ function required(value: string, field: string) {
 export async function registerPosHardwareDevice(
   input: RegisterPosHardwareDeviceInput,
 ): Promise<PosHardwareDeviceRecord> {
+  const hardwareCatalogId = required(input.hardwareCatalogId, "hardware_catalog_id");
+  const certified = getCertifiedHardware(hardwareCatalogId);
+  if (!certified) throw new Error("uncertified_pos_hardware");
+  if (
+    certified.vendor !== required(input.vendor, "vendor") ||
+    certified.model !== required(input.model, "model") ||
+    certified.deviceType !== input.deviceType
+  ) {
+    throw new Error("pos_hardware_catalog_identity_mismatch");
+  }
+
   const row = {
-    hardware_catalog_id: required(input.hardwareCatalogId, "hardware_catalog_id"),
-    vendor: required(input.vendor, "vendor"),
-    model: required(input.model, "model"),
-    device_type: input.deviceType,
+    hardware_catalog_id: hardwareCatalogId,
+    vendor: certified.vendor,
+    model: certified.model,
+    device_type: certified.deviceType,
     serial_number: required(input.serialNumber, "serial_number"),
     provider: input.provider?.trim() || null,
     provider_device_id: input.providerDeviceId?.trim() || null,
