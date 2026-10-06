@@ -191,7 +191,6 @@ export async function GET(request: Request) {
   let reviewProfilesUpdated = 0;
   let skippedIneligible = 0;
   let skippedUnsupported = 0;
-  let skippedNightlife = 0;
   const failures: Array<{ locationId: string; error: string }> = [];
   const minEmbeddingIntervalMs = Math.max(
     0,
@@ -214,10 +213,10 @@ export async function GET(request: Request) {
         skippedUnsupported += 1;
         continue;
       }
-      if (classification.canonicalType === "nightlife") {
-        skippedNightlife += 1;
-        continue;
-      }
+      const embeddingCanonicalType =
+        classification.canonicalType === "nightlife"
+          ? "activity"
+          : classification.canonicalType;
       scanned += 1;
 
       const profile = profileByLocation.get(String(location.id));
@@ -271,7 +270,7 @@ export async function GET(request: Request) {
       const { error: upsertError } = await supabaseAdmin.from("location_search_embeddings").upsert({
         location_id: location.id,
         embedding,
-        canonical_search_type: classification.canonicalType,
+        canonical_search_type: embeddingCanonicalType,
         market_key: location.market ?? location.default_market_id ?? null,
         embedding_model: process.env.SEARCH_EMBEDDING_MODEL || EMBEDDING_MODEL,
         embedding_version: expectedVersion,
@@ -318,7 +317,6 @@ export async function GET(request: Request) {
       reviewProfilesUpdated,
       skippedIneligible,
       skippedUnsupported,
-      skippedNightlife,
       failed: failures.length,
       ready: readyEmbeddingCount ?? 0,
       searchable: searchableCount ?? 0,
