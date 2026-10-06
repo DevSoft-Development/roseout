@@ -1,4 +1,5 @@
 import Link from "next/link";
+import TheOutHavenBrandLogo from "@/components/TheOutHavenBrandLogo";
 
 export default function TheOutHavenFooter() {
   return (
@@ -7,7 +8,8 @@ export default function TheOutHavenFooter() {
 
       <div className="relative mx-auto flex max-w-7xl flex-col gap-10">
         <div>
-          <p className="max-w-md text-sm leading-7 text-white/45">
+          <TheOutHavenBrandLogo className="h-auto w-[220px] max-w-full object-contain" />
+          <p className="mt-6 max-w-md text-sm leading-7 text-white/45">
             TheOutHaven LLC is a New York-based technology company helping people
             plan restaurants, activities, nightlife, and complete outings across
             NYC and Long Island.

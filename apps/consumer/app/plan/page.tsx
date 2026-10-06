@@ -1207,30 +1207,7 @@ function PlanPageInner() {
         </section>
       )}
 
-      <footer className="border-t border-white/10 bg-black px-3 py-7 text-white sm:px-6 sm:py-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xl font-black">
-              The<span className="text-[#e1062a]">Out</span>Haven
-            </p>
-            <p className="mt-1 text-sm font-semibold text-white/40">
-              Food, activities, and complete plans for better nights out.
-            </p>
-          </div>
 
-          <div className="flex flex-wrap gap-4 text-sm font-bold text-white/40">
-            <Link href="/create" className="hover:text-white">
-              Create
-            </Link>
-            <Link href="/location/apply" className="hover:text-white">
-              For Businesses
-            </Link>
-            <Link href="/pricing" className="hover:text-white">
-              Pricing
-            </Link>
-          </div>
-        </div>
-      </footer>
 
       <style jsx global>{`
         html,

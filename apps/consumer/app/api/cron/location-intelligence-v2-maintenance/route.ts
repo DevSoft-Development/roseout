@@ -1,6 +1,7 @@
 import { processMaterialChangeVerificationBatch } from "@/lib/location-intelligence/v2/changes";
 import { collectPendingDataForSeoReviewRefreshes, submitDueDataForSeoReviewRefreshes } from "@/lib/location-intelligence/v2/review-worker";
 import { refreshLocationIntelligenceProviderHealth } from "@/lib/location-intelligence/v2/provider-runtime";
+import { normalizeExistingGoogleEnrichmentBatch } from "@/lib/location-intelligence/v2/google-normalization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,10 +37,13 @@ async function run(request: Request) {
   try {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
     const reviewLimit = limitParam(request, "reviewLimit", 50, 100);
+    const normalizationLimit = limitParam(request, "normalizationLimit", 500, 1000);
+    const normalizationConcurrency = limitParam(request, "normalizationConcurrency", 10, 20);
 
-    const [providerHealth, collectedReviews] = await Promise.all([
+    const [providerHealth, collectedReviews, normalization] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),
       collectPendingDataForSeoReviewRefreshes(reviewLimit),
+      normalizeExistingGoogleEnrichmentBatch(normalizationLimit, normalizationConcurrency),
     ]);
     const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
@@ -74,6 +78,7 @@ async function run(request: Request) {
       ok: materialChanges.failed === 0 && reviewFailures === 0,
       ...(reviewError ? { error: reviewError } : {}),
       providerHealth,
+      normalization,
       materialChanges,
       reviews: {
         collected: collectedReviews,

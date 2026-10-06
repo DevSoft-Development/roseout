@@ -99,8 +99,36 @@ if (!consumerProxy.includes("https://business.theouthaven.com")) {
 if (consumerHeader.includes('{ href: "/reservations", label: "Reservations" }')) {
   throw new Error("Consumer global header must not expose a standalone Reservations destination.");
 }
-if (!consumerFooter.includes('{ label: "Status", href: "/status" }') || !consumerFooter.includes("System Status")) {
+if (!consumerFooter.includes("https://theouthaven.com/status") || !consumerFooter.includes("System Status")) {
   throw new Error("Consumer footer must expose public system status.");
+}
+
+const rootExploreClient = fs.readFileSync(path.join(root, "app/explore/ExploreClient.tsx"), "utf8");
+const isolatedExploreClient = fs.readFileSync(path.join(root, "apps/consumer/app/explore/ExploreClient.tsx"), "utf8");
+const rootPlanPage = fs.readFileSync(path.join(root, "app/plan/page.tsx"), "utf8");
+const isolatedPlanPage = fs.readFileSync(path.join(root, "apps/consumer/app/plan/page.tsx"), "utf8");
+
+for (const [name, source] of [
+  ["root Explore", rootExploreClient],
+  ["isolated Explore", isolatedExploreClient],
+]) {
+  if (source.includes("function PublicFooter") || source.includes("<PublicFooter")) {
+    throw new Error(`${name} must not render a route-local legacy footer.`);
+  }
+  if (!source.includes("isRenderableExploreLocation")) {
+    throw new Error(`${name} must preserve Explore render filtering when the legacy footer is removed.`);
+  }
+}
+for (const [name, source] of [
+  ["root Plan", rootPlanPage],
+  ["isolated Plan", isolatedPlanPage],
+]) {
+  if (source.includes('border-t border-white/10 bg-black px-3 py-7 text-white sm:px-6 sm:py-8')) {
+    throw new Error(`${name} must not render the legacy route-local Plan footer.`);
+  }
+}
+if (!consumerFooter.includes("TheOutHavenBrandLogo")) {
+  throw new Error("Consumer shared footer must render the official TheOutHaven logo.");
 }
 
 console.log(`Consumer-only surface parity passed for ${publicFiles.length} public files; private Admin/Business/Reserve routes excluded.`);
