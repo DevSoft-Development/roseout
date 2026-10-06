@@ -340,6 +340,76 @@ jobs:
             echo "secondary_ai_key=$SECONDARY_AI_KEY" >> "$GITHUB_OUTPUT"
             echo "image=$ACR.azurecr.io/consumer:$IMAGE_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Synchronize Azure AI into AWS background runtime
+        env:
+          PRIMARY_AI_ENDPOINT: ${{ steps.azure.outputs.primary_ai_endpoint }}
+          PRIMARY_AI_KEY: ${{ steps.azure.outputs.primary_ai_key }}
+        run: |
+          set -euo pipefail
+          test -n "$PRIMARY_AI_ENDPOINT" || { echo "::error::Primary Azure AI endpoint is missing."; exit 1; }
+          test -n "$PRIMARY_AI_KEY" || { echo "::error::Primary Azure AI key is missing."; exit 1; }
+          echo "::add-mask::$PRIMARY_AI_KEY"
+
+          APP_ENV_REGION="us-west-2"
+          APP_ENV_SECRET="/theouthaven/production/platform-dr/app-env"
+          BACKGROUND_REGION="us-east-1"
+          BACKGROUND_FUNCTION="toh-production-background-runtime"
+          CURRENT="$RUNNER_TEMP/background-azure-ai-current.json"
+          NEXT="$RUNNER_TEMP/background-azure-ai-next.json"
+          VARS="$RUNNER_TEMP/background-azure-ai-vars.json"
+          UPDATE="$RUNNER_TEMP/background-azure-ai-update.json"
+
+          aws secretsmanager get-secret-value \
+            --region "$APP_ENV_REGION" \
+            --secret-id "$APP_ENV_SECRET" \
+            --query SecretString \
+            --output text > "$CURRENT"
+          chmod 600 "$CURRENT"
+
+          jq -e 'type == "object"' "$CURRENT" >/dev/null
+          jq \
+            --arg endpoint "$PRIMARY_AI_ENDPOINT" \
+            --arg key "$PRIMARY_AI_KEY" \
+            '.AZURE_AI_ENDPOINT=$endpoint
+             | .AZURE_AI_API_KEY=$key
+             | .AZURE_AI_MODEL="toh-primary"
+             | .AZURE_AI_EMBEDDING_MODEL="toh-embedding"
+             | .SEARCH_EMBEDDING_MODEL="text-embedding-3-small"' \
+            "$CURRENT" > "$NEXT"
+          chmod 600 "$NEXT"
+
+          aws secretsmanager put-secret-value \
+            --region "$APP_ENV_REGION" \
+            --secret-id "$APP_ENV_SECRET" \
+            --secret-string "file://$NEXT" >/dev/null
+
+          for attempt in 1 2 3 4 5; do
+            aws lambda wait function-updated-v2 \
+              --region "$BACKGROUND_REGION" \
+              --function-name "$BACKGROUND_FUNCTION" || true
+            aws lambda get-function-configuration \
+              --region "$BACKGROUND_REGION" \
+              --function-name "$BACKGROUND_FUNCTION" \
+              --query 'Environment.Variables' \
+              --output json > "$VARS"
+            jq --arg token "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"               '{Variables:((. // {}) + {AZURE_AI_RUNTIME_REFRESH_TOKEN:$token})}'               "$VARS" > "$UPDATE"
+            if aws lambda update-function-configuration \
+              --region "$BACKGROUND_REGION" \
+              --function-name "$BACKGROUND_FUNCTION" \
+              --environment "file://$UPDATE" >/dev/null 2>"$RUNNER_TEMP/background-azure-ai-reload.err"; then
+              aws lambda wait function-updated-v2 \
+                --region "$BACKGROUND_REGION" \
+                --function-name "$BACKGROUND_FUNCTION"
+              break
+            fi
+            cat "$RUNNER_TEMP/background-azure-ai-reload.err" >&2
+            test "$attempt" -lt 5 || { echo "::error::Unable to recycle AWS background runtime after Azure AI sync."; exit 1; }
+            sleep $((attempt * 10))
+          done
+
+          rm -f "$CURRENT" "$NEXT" "$VARS" "$UPDATE" "$RUNNER_TEMP/background-azure-ai-reload.err"
+          echo "Azure AI embedding configuration synchronized into the AWS background runtime authority."
+
       - name: Resolve previous good Azure revisions
         id: stable
         uses: azure/CLI@v2
