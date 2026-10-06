@@ -10,13 +10,17 @@ for (const id of ["shard-01", "shard-01-dr", "shard-02", "shard-02-dr"]) {
 if (!globalUrl || !globalKey) throw new Error("missing_global_supabase_authority");
 if (config["shard-does-not-exist"]) throw new Error("unexpected_unknown_shard_configuration");
 
+const authHeaders = (key) => ({
+  apikey: key,
+  ...(String(key).startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }),
+});
+
 const call = async (shard, path, init = {}) => {
   const base = String(shard.url).replace(/\/$/, "");
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
-      apikey: shard.serviceRoleKey,
-      Authorization: `Bearer ${shard.serviceRoleKey}`,
+      ...authHeaders(shard.serviceRoleKey),
       "Content-Type": "application/json",
       ...(init.headers || {}),
     },
@@ -28,10 +32,7 @@ const call = async (shard, path, init = {}) => {
 
 const control = async (path) => {
   const response = await fetch(`${globalUrl}${path}`, {
-    headers: {
-      apikey: globalKey,
-      Authorization: `Bearer ${globalKey}`,
-    },
+    headers: authHeaders(globalKey),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`control_http_${response.status}:${text.slice(0,300)}`);
