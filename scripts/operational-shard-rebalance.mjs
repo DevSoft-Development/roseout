@@ -20,9 +20,13 @@ if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.is
   throw new Error("invalid_rebalance_configuration");
 }
 
-const headers = (key, extra = {}) => ({
+const authHeaders = (key) => ({
   apikey: key,
-  Authorization: `Bearer ${key}`,
+  ...(String(key).startsWith("sb_secret_") ? {} : { Authorization: `Bearer ${key}` }),
+});
+
+const headers = (key, extra = {}) => ({
+  ...authHeaders(key),
   "Content-Type": "application/json",
   ...extra,
 });
