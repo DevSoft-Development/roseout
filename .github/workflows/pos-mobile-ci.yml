@@ -49,6 +49,9 @@ jobs:
       - name: Verify iOS native hardware module
         run: npm run verify:native:ios
 
+      - name: Verify Android native hardware module
+        run: npm run verify:native:android
+
       - name: Verify separate app identity and POS-only network permissions
         run: |
           set -euo pipefail
