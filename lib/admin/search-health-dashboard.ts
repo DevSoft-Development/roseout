@@ -392,7 +392,7 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
     trendQuery = trendQuery.eq("source", filters.source);
   }
 
-  const [searchResult, issueResult, kpiResult, trendResult] = await Promise.all([
+  const [searchResult, issueResult, kpiResult, trendResult, latestEmbeddingRun, reviewMlRows, profileRows, readyEmbeddingCount] = await Promise.all([
     searches,
     issues,
     supabaseAdmin.rpc("admin_search_health_kpis", {
@@ -401,6 +401,24 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
       p_source: filters.source === "all" ? null : filters.source,
     }),
     trendQuery,
+    supabaseAdmin
+      .from("search_embedding_runs")
+      .select("status,started_at,completed_at,records_scanned,records_updated,records_failed")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("location_review_ml_features")
+      .select("location_id")
+      .range(0, 9999),
+    supabaseAdmin
+      .from("location_search_profiles")
+      .select("location_id,evidence")
+      .range(0, 9999),
+    supabaseAdmin
+      .from("location_search_embeddings")
+      .select("location_id", { count: "exact", head: true })
+      .eq("status", "ready"),
   ]);
 
   const kpiRow = Array.isArray(kpiResult.data) ? kpiResult.data[0] : kpiResult.data;
@@ -447,6 +465,22 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
     a.date.localeCompare(b.date),
   );
 
+  const reviewMlIds = new Set(
+    (reviewMlRows.data ?? []).map((row: any) => String(row.location_id)),
+  );
+  const reviewProfileIds = new Set(
+    (profileRows.data ?? [])
+      .filter((row: any) =>
+        row.evidence &&
+        typeof row.evidence === "object" &&
+        row.evidence.review_intelligence,
+      )
+      .map((row: any) => String(row.location_id)),
+  );
+  const reviewProfileBacklog = [...reviewMlIds].filter(
+    (locationId) => !reviewProfileIds.has(locationId),
+  ).length;
+
   return {
     searches: (searchResult.data ?? []) as unknown as SearchEvent[],
     searchCount: searchResult.count ?? 0,
@@ -454,6 +488,13 @@ export async function getSearchHealthDashboardData(filters: SearchHealthFilters)
     issueCount: issueResult.count ?? 0,
     kpis,
     trend,
+    enrichment: {
+      latestEmbeddingRun: latestEmbeddingRun.data ?? null,
+      reviewMlLocations: reviewMlIds.size,
+      reviewProfilesEnriched: reviewProfileIds.size,
+      reviewProfileBacklog,
+      readyEmbeddings: readyEmbeddingCount.count ?? 0,
+    },
     errors: {
       searches: searchResult.error?.message,
       issues: issueResult.error?.message,
