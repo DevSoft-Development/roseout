@@ -1,11 +1,17 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const globalUrl = String(process.env.GLOBAL_SUPABASE_URL || "").replace(/\/$/, "");
 const globalKey = String(process.env.GLOBAL_SUPABASE_SERVICE_ROLE_KEY || "");
 const locationId = String(process.env.LOCATION_ID || "");
 const targetLogicalShard = String(process.env.TARGET_SHARD_ID || "");
 const expectedEpoch = Number(process.env.EXPECTED_ASSIGNMENT_EPOCH || "");
-const config = JSON.parse(String(process.env.OPERATIONAL_SHARDS_JSON || "{}"));
+const operationalShardsFile = String(process.env.OPERATIONAL_SHARDS_FILE || "");
+const config = JSON.parse(
+  operationalShardsFile
+    ? readFileSync(operationalShardsFile, "utf8")
+    : String(process.env.OPERATIONAL_SHARDS_JSON || "{}"),
+);
 const PAGE_SIZE = 500;
 const MAX_UPSERT_ROWS = 100;
 const MAX_UPSERT_BYTES = 512 * 1024;
