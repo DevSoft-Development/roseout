@@ -26,9 +26,14 @@ declare
   v_frozen boolean;
   v_cleanup_allowed boolean := false;
 begin
-  v_location_id := coalesce(new.location_id, old.location_id);
+  if tg_op = 'DELETE' then
+    v_location_id := old.location_id;
+  else
+    v_location_id := new.location_id;
+  end if;
   if v_location_id is null then
-    return coalesce(new, old);
+    if tg_op = 'DELETE' then return old; end if;
+    return new;
   end if;
 
   -- A card flow that was already outside Postgres when a placement freeze
@@ -57,9 +62,12 @@ begin
     raise exception 'primary_location_writes_frozen';
   end if;
 
-  return coalesce(new, old);
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
 end;
-$$;
+$;
 
 do $$
 declare
