@@ -90,9 +90,16 @@ jobs:
                 {
                   ok: .response.ok,
                   success: .response.success,
-                  recordsScanned: (.response.recordsScanned // .response.records_scanned),
-                  recordsUpdated: (.response.recordsUpdated // .response.records_updated),
-                  recordsFailed: (.response.recordsFailed // .response.records_failed),
+                  recordsScanned: (.response.recordsScanned // .response.records_scanned // .response.embeddings.scanned),
+                  recordsUpdated: (.response.recordsUpdated // .response.records_updated // .response.embeddings.updated),
+                  recordsFailed: (.response.recordsFailed // .response.records_failed // .response.embeddings.failed),
+                  reviewPriorityQueued: .response.embeddings.reviewPriorityQueued,
+                  reviewProfilesUpdated: .response.embeddings.reviewProfilesUpdated,
+                  unchanged: .response.embeddings.unchanged,
+                  skippedIneligible: .response.embeddings.skippedIneligible,
+                  skippedUnsupported: .response.embeddings.skippedUnsupported,
+                  skippedNightlife: .response.embeddings.skippedNightlife,
+                  candidatePool: .response.embeddings.candidatePool,
                   error: .response.error
                 }
               else
