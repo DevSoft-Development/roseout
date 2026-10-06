@@ -249,6 +249,12 @@ export default async function HardwareWorkspacePage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(access.canonicalLocationId || "")}`}
+              className="rounded-full border border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-2 text-xs font-black text-[var(--business-text)]"
+            >
+              Health
+            </Link>
             {managedLocationCount > 1 ? (
               <Link
                 href="/locations/dashboard/hardware/all"
