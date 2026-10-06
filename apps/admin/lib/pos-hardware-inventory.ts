@@ -182,21 +182,50 @@ export async function listPosProvisioningLocations(limit = 500) {
   }));
 }
 
+export function getPosProvisioningRoleOptions(
+  device: Pick<AdminPosInventoryDevice, "hardware_catalog_id" | "device_type">,
+) {
+  const certified = getCertifiedHardware(device.hardware_catalog_id);
+  if (!certified) throw new Error("uncertified_pos_hardware");
+
+  if (certified.supportedPrinterRoles?.length) {
+    return [...certified.supportedPrinterRoles];
+  }
+
+  const defaults: Record<string, string[]> = {
+    cashier_tablet: ["register"],
+    payment_terminal: ["payment"],
+    cash_drawer: ["cash_drawer"],
+    barcode_scanner: ["scanner"],
+    network_hub: ["network"],
+    network_bridge: ["network_bridge"],
+    kitchen_display: ["kitchen_display"],
+  };
+
+  return defaults[device.device_type] || [];
+}
+
 export async function provisionPosInventoryDevices(input: {
   locationId: string;
-  deviceIds: string[];
+  assignments: Array<{
+    deviceId: string;
+    role: string;
+    stationKey?: string;
+  }>;
 }) {
   const locationId = required(input.locationId, "location_id");
-  const deviceIds = Array.from(
-    new Set(
-      input.deviceIds
-        .map((value) => String(value || "").trim())
-        .filter(Boolean),
-    ),
-  );
+  const normalizedAssignments = input.assignments.map((assignment) => ({
+    deviceId: required(assignment.deviceId, "device_id"),
+    role: required(assignment.role, "role"),
+    stationKey: String(assignment.stationKey || "default").trim() || "default",
+  }));
 
+  const deviceIds = normalizedAssignments.map((assignment) => assignment.deviceId);
   if (!deviceIds.length) throw new Error("pos_inventory_assignment_empty");
   if (deviceIds.length > 100) throw new Error("pos_inventory_assignment_too_large");
+  if (new Set(deviceIds).size !== deviceIds.length) {
+    throw new Error("pos_inventory_assignment_duplicate_device");
+  }
 
   const db = getAdminDatabaseClient();
 
@@ -245,12 +274,26 @@ export async function provisionPosInventoryDevices(input: {
 
   const provisionedAt = new Date().toISOString();
   const results: AdminPosInventoryDevice[] = [];
+  const assignmentByDeviceId = new Map(
+    normalizedAssignments.map((assignment) => [assignment.deviceId, assignment]),
+  );
 
   for (const device of devices || []) {
+    const requested = assignmentByDeviceId.get(String(device.id));
+    if (!requested) throw new Error("pos_inventory_assignment_payload_mismatch");
+
+    const allowedRoles = getPosProvisioningRoleOptions(device as AdminPosInventoryDevice);
+    if (!allowedRoles.includes(requested.role)) {
+      throw new Error(`pos_inventory_assignment_role_not_supported:${device.id}:${requested.role}`);
+    }
     const metadata =
       device.metadata && typeof device.metadata === "object" && !Array.isArray(device.metadata)
         ? device.metadata as Record<string, unknown>
         : {};
+
+    const history = Array.isArray(metadata.provisioning_history)
+      ? metadata.provisioning_history.slice(-19)
+      : [];
 
     const { data: updated, error: updateError } = await db
       .from("pos_hardware_devices")
@@ -260,8 +303,20 @@ export async function provisionPosInventoryDevices(input: {
           ...metadata,
           pre_enrolled_location_id: locationId,
           intended_location_id: locationId,
+          intended_role: requested.role,
+          intended_station_key: requested.stationKey,
           provisioned_at: provisionedAt,
           provisioning_mode: "admin_qr_assignment_cart",
+          provisioning_history: [
+            ...history,
+            {
+              at: provisionedAt,
+              location_id: locationId,
+              role: requested.role,
+              station_key: requested.stationKey,
+              mode: "admin_qr_assignment_cart",
+            },
+          ],
         },
         updated_at: provisionedAt,
       })
