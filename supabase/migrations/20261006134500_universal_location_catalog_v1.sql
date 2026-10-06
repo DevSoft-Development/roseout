@@ -197,37 +197,6 @@ create trigger location_catalog_channel_overrides_bump_catalog_revision
   after insert or update or delete on public.location_catalog_channel_overrides
   for each row execute function public.bump_location_catalog_revision();
 
-do $
-begin
-  if exists (select 1 from pg_publication where pubname = 'theouthaven_dr_publication') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'theouthaven_dr_publication'
-        and schemaname = 'public'
-        and tablename = 'location_catalog_modifier_groups'
-    ) then
-      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_modifier_groups';
-    end if;
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'theouthaven_dr_publication'
-        and schemaname = 'public'
-        and tablename = 'location_catalog_modifiers'
-    ) then
-      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_modifiers';
-    end if;
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'theouthaven_dr_publication'
-        and schemaname = 'public'
-        and tablename = 'location_catalog_channel_overrides'
-    ) then
-      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_channel_overrides';
-    end if;
-  end if;
-end
-$;
-
 comment on column public.location_commerce_items.item_type is
   'Universal catalog item type shared by Website, Profile, POS, Reserve, and ordering channels.';
 comment on column public.location_commerce_items.channel_visibility is
