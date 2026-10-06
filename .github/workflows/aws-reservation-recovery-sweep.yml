@@ -23,7 +23,7 @@ env:
   AWS_ACCOUNT_ID: '742020474738'
   STACK_NAME: theouthaven-edge-runtime-production
   SCHEDULE_GROUP: toh-production-reservation-recovery
-  SCHEDULE_NAME: reservation-recovery-backlog-5m
+  SCHEDULE_NAME: reservation-not-found-canary-5m
 
 jobs:
   validate:
@@ -37,7 +37,7 @@ jobs:
           grep -F '"function":"reservation-recovery"' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"limit":25' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"concurrency":8' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
-          grep -F '"statuses":["failed","blocked",""]' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
+          grep -F '"statuses":["not_found"]' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"googleCalls":0' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
 
   deploy:
@@ -69,15 +69,15 @@ jobs:
           test -n "$INVOKER_ARN" && test "$INVOKER_ARN" != 'None'
           test -n "$SCHEDULER_ROLE" && test "$SCHEDULER_ROLE" != 'None'
 
-          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":25,"concurrency":8,"force":false,"statuses":["failed","blocked",""],"googleCalls":0}}'
+          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":25,"concurrency":8,"force":false,"statuses":["not_found"],"googleCalls":0}}'
           TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:900,MaximumRetryAttempts:1}}')"
-          END_DATE="$(date -u -d '+2 hours' '+%Y-%m-%dT%H:%M:%SZ')"
+          END_DATE="$(date -u -d '+30 minutes' '+%Y-%m-%dT%H:%M:%SZ')"
 
           if aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$SCHEDULE_NAME" >/dev/null 2>&1; then
             aws scheduler update-schedule \
               --group-name "$SCHEDULE_GROUP" \
               --name "$SCHEDULE_NAME" \
-              --description 'Temporary TheOutHaven high-priority reservation recovery sweep; zero Google calls.' \
+              --description 'Temporary TheOutHaven not_found reservation recovery canary; zero Google calls.' \
               --schedule-expression 'rate(5 minutes)' \
               --flexible-time-window '{"Mode":"OFF"}' \
               --state ENABLED \
@@ -88,7 +88,7 @@ jobs:
             aws scheduler create-schedule \
               --group-name "$SCHEDULE_GROUP" \
               --name "$SCHEDULE_NAME" \
-              --description 'Temporary TheOutHaven reservation recovery backlog sweep; zero Google calls.' \
+              --description 'Temporary TheOutHaven not_found reservation recovery canary; zero Google calls.' \
               --schedule-expression 'rate(5 minutes)' \
               --flexible-time-window '{"Mode":"OFF"}' \
               --state ENABLED \
@@ -114,8 +114,8 @@ jobs:
             echo '- Frequency: every 5 minutes'
             echo '- Batch size: 25'
             echo '- Concurrency: 8'
-            echo '- Statuses: failed, blocked, unclassified'
+            echo '- Statuses: not_found only'
             echo '- Google calls: 0'
             echo '- Isolation: separate EventBridge schedule group; canonical 65-schedule fleet unchanged'
-            echo '- Retry policy: honor reservation_discovery_next_retry_at'\n            echo '- Safety cap: schedule auto-deletes after 2 hours'
+            echo '- Retry policy: honor reservation_discovery_next_retry_at'\n            echo '- Safety cap: schedule auto-deletes after 30 minutes'
           } >> "$GITHUB_STEP_SUMMARY"
