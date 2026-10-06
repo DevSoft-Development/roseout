@@ -79,6 +79,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Generated JavaScript emitted by test/regression scripts.
     ".tmp-test/**",
+    // Dedicated ThePOSHaven cashier app has its own TypeScript/lint CI.
+    "pos-mobile/**",
   ]),
 ]);
 
