@@ -177,6 +177,25 @@ export default async function HardwareDevicePage({
           )}
         </section>
 
+        {canManage ? (
+          <section className="mt-5 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-black">Replacing this device?</h2>
+                <p className="mt-1 text-sm font-semibold text-[var(--business-muted)]">
+                  The new device will inherit this role and station automatically.
+                </p>
+              </div>
+              <Link
+                href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(locationId)}&replaceDeviceId=${encodeURIComponent(item.deviceId)}`}
+                className="rounded-full border border-[#ff2142]/30 bg-[#e1062a]/10 px-4 py-2 text-sm font-black text-[#ff91a5]"
+              >
+                Replace device
+              </Link>
+            </div>
+          </section>
+        ) : null}
+
         <section className="mt-5 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
           <h2 className="font-black">No network settings needed</h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-[var(--business-muted)]">
