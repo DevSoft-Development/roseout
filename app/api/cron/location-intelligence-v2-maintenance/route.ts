@@ -37,12 +37,13 @@ async function run(request: Request) {
   try {
     const materialLimit = limitParam(request, "materialLimit", 20, 100);
     const reviewLimit = limitParam(request, "reviewLimit", 50, 100);
-    const normalizationLimit = limitParam(request, "normalizationLimit", 100, 250);
+    const normalizationLimit = limitParam(request, "normalizationLimit", 500, 1000);
+    const normalizationConcurrency = limitParam(request, "normalizationConcurrency", 10, 20);
 
     const [providerHealth, collectedReviews, normalization] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),
       collectPendingDataForSeoReviewRefreshes(reviewLimit),
-      normalizeExistingGoogleEnrichmentBatch(normalizationLimit),
+      normalizeExistingGoogleEnrichmentBatch(normalizationLimit, normalizationConcurrency),
     ]);
     const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
