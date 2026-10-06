@@ -98,6 +98,9 @@ jobs:
                   unchanged: .response.embeddings.unchanged,
                   skippedIneligible: .response.embeddings.skippedIneligible,
                   skippedUnsupported: .response.embeddings.skippedUnsupported,
+                  elapsedMs: .response.embeddings.elapsedMs,
+                  maxRunMs: .response.embeddings.maxRunMs,
+                  timeBudgetReached: .response.embeddings.timeBudgetReached,
                   candidatePool: .response.embeddings.candidatePool,
                   error: .response.error
                 }
