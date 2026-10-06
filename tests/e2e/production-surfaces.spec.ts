@@ -19,6 +19,19 @@ function canonicalHost(hostname: string) {
   return hostname.toLowerCase().replace(/^www\./, "");
 }
 
+const consumerCatalogPages = [
+  {
+    name: "consumer-location-profile",
+    path: "/locations/restaurants/642a2ad6-c144-47b7-b9ff-f89554edf0da",
+    expected: /TheOutHaven Lounge/i,
+  },
+  {
+    name: "consumer-location-menu",
+    path: "/locations/restaurants/642a2ad6-c144-47b7-b9ff-f89554edf0da/menu",
+    expected: /TheOutHaven Lounge Menu|Menu powered by TheOutHaven/i,
+  },
+] as const;
+
 const publicSurfaces = [
   {
     name: "consumer",
@@ -45,6 +58,22 @@ const publicSurfaces = [
     expected: /TheOutHaven Reserve|Book unforgettable experiences/i,
   },
 ] as const;
+
+for (const pageCheck of consumerCatalogPages) {
+  test(`${pageCheck.name} renders shared catalog content cleanly`, async ({ page }, testInfo) => {
+    test.skip(!selectedSurface("consumer"), "consumer not selected for this run");
+
+    const diagnostics = collectProductionDiagnostics(page, bases.consumer);
+    const response = await gotoProductionPage(page, `${bases.consumer}${pageCheck.path}`);
+
+    expect(response?.status() ?? 599).toBeLessThan(500);
+    expect(canonicalHost(new URL(page.url()).hostname)).toBe(canonicalHost(new URL(bases.consumer).hostname));
+    await expect(page.locator("body")).toContainText(pageCheck.expected);
+    await assertNoHardProductionError(page);
+    await attachProductionEvidence(page, testInfo, pageCheck.name, diagnostics);
+    assertDiagnosticsClean(diagnostics);
+  });
+}
 
 for (const surface of publicSurfaces) {
   test(`${surface.name} production surface renders cleanly`, async ({ page }, testInfo) => {
