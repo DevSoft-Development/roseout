@@ -1,0 +1,64 @@
+name: AWS LI V2 normalization cadence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/api/cron/location-intelligence-v2-maintenance/route.ts'
+      - 'apps/admin/lib/cron/manifests/aws-schedules.json'
+      - '.github/workflows/aws-li-v2-normalization-cadence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-li-v2-normalization-cadence
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  SCHEDULE_NAME: location-intelligence-v2-maintenance
+  SCHEDULE_EXPRESSION: 'cron(0/5 * * * ? *)'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Verify AWS account
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+
+      - name: Update only the LI V2 maintenance cadence
+        run: |
+          set -euo pipefail
+          CURRENT="$RUNNER_TEMP/li-v2-schedule.json"
+          aws scheduler get-schedule             --group-name "$SCHEDULE_GROUP"             --name "$SCHEDULE_NAME"             --output json > "$CURRENT"
+
+          TARGET="$(jq -c '.Target' "$CURRENT")"
+          STATE="$(jq -r '.State' "$CURRENT")"
+          test "$STATE" = 'ENABLED' || { echo "LI V2 schedule is not enabled: $STATE" >&2; exit 1; }
+
+          aws scheduler update-schedule             --group-name "$SCHEDULE_GROUP"             --name "$SCHEDULE_NAME"             --schedule-expression "$SCHEDULE_EXPRESSION"             --flexible-time-window '{"Mode":"OFF"}'             --state "$STATE"             --target "$TARGET"             >/dev/null
+
+      - name: Verify five-minute cadence
+        run: |
+          set -euo pipefail
+          EXPRESSION="$(aws scheduler get-schedule             --group-name "$SCHEDULE_GROUP"             --name "$SCHEDULE_NAME"             --query ScheduleExpression             --output text)"
+          STATE="$(aws scheduler get-schedule             --group-name "$SCHEDULE_GROUP"             --name "$SCHEDULE_NAME"             --query State             --output text)"
+          test "$EXPRESSION" = "$SCHEDULE_EXPRESSION"
+          test "$STATE" = 'ENABLED'
