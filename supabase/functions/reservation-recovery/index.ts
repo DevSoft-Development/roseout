@@ -59,13 +59,22 @@ serve(async (req) => {
   const statusFilter = requestedStatuses.length ? new Set(requestedStatuses) : null;
   const now = new Date();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("locations")
     .select("id,name,website,location_type,reservation_discovery_status,reservation_discovery_next_retry_at,external_reservation_url,reservation_external_url,reservation_provider_url,reservation_platform_url,reservation_url,reservation_link,booking_url,is_demo,is_hidden,duplicate_status,deleted_at")
     .is("deleted_at", null)
-    .not("website", "is", null)
+    .not("website", "is", null);
+
+  if (statusFilter) {
+    const statusClauses = requestedStatuses.map((status: string) =>
+      status ? `reservation_discovery_status.eq.${status}` : "reservation_discovery_status.is.null"
+    );
+    query = query.or(statusClauses.join(","));
+  }
+
+  const { data, error } = await query
     .order("reservation_discovery_next_retry_at", { ascending: true, nullsFirst: true })
-    .limit(Math.max(limit * 120, 6_000));
+    .limit(Math.max(limit * 4, 200));
 
   if (error) return json({ error: error.message }, 500);
 
