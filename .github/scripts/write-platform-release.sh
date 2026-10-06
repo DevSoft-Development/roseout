@@ -35,6 +35,12 @@ esac
 
 api() {
   curl --fail-with-body --silent --show-error \
+    --connect-timeout 10 \
+    --max-time 60 \
+    --retry 5 \
+    --retry-delay 2 \
+    --retry-max-time 45 \
+    --retry-all-errors \
     -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
     -H "authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
     "$@"
