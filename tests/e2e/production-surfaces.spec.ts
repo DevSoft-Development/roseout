@@ -22,8 +22,8 @@ function canonicalHost(hostname: string) {
 const consumerCatalogPages = [
   {
     name: "consumer-location-profile",
-    path: "/locations/restaurants/642a2ad6-c144-47b7-b9ff-f89554edf0da",
-    expected: /TheOutHaven Lounge/i,
+    path: "/locations/restaurants/3fbb193f-a664-4359-b0d5-1c31bbbc6104",
+    expected: /Ela Greek Kitchen/i,
   },
   {
     name: "consumer-location-menu",
