@@ -133,9 +133,14 @@ async function getReviewPriorityLocationIds(limit: number) {
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   const startedAt = new Date().toISOString();
+  const runStartedAtMs = Date.now();
   const behavior = await supabaseAdmin.rpc("recalculate_behavioral_search_features", { p_window: "30 days" });
-  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 50)));
-  const candidatePoolSize = Math.min(100, Math.max(batchSize, batchSize * 2));
+  const batchSize = Math.max(1, Math.min(250, Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 100)));
+  const candidatePoolSize = Math.min(400, Math.max(batchSize, batchSize * 2));
+  const maxRunMs = Math.max(
+    60_000,
+    Math.min(240_000, Number(process.env.SEARCH_PHASE13_MAX_RUN_MS || 240_000)),
+  );
   let reviewPriorityLocationIds: string[] = [];
   try {
     reviewPriorityLocationIds = await getReviewPriorityLocationIds(candidatePoolSize);
@@ -191,6 +196,7 @@ export async function GET(request: Request) {
   let reviewProfilesUpdated = 0;
   let skippedIneligible = 0;
   let skippedUnsupported = 0;
+  let timeBudgetReached = false;
   const failures: Array<{ locationId: string; error: string }> = [];
   const minEmbeddingIntervalMs = Math.max(
     0,
@@ -200,6 +206,10 @@ export async function GET(request: Request) {
 
   for (const location of orderedRows) {
     if (scanned >= batchSize) break;
+    if (Date.now() - runStartedAtMs >= maxRunMs) {
+      timeBudgetReached = true;
+      break;
+    }
     try {
       const review = reviewByLocation.get(String(location.id));
       const enrichedLocation = enrichedForSemantic(location, review);
@@ -318,6 +328,9 @@ export async function GET(request: Request) {
       skippedIneligible,
       skippedUnsupported,
       failed: failures.length,
+      elapsedMs: Date.now() - runStartedAtMs,
+      maxRunMs,
+      timeBudgetReached,
       ready: readyEmbeddingCount ?? 0,
       searchable: searchableCount ?? 0,
       remainingApprox: Math.max(0, Number(searchableCount ?? 0) - Number(readyEmbeddingCount ?? 0)),
