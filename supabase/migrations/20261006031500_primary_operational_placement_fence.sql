@@ -67,7 +67,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 do $$
 declare
