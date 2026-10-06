@@ -11,12 +11,17 @@ const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
 const rebalance = read("scripts/operational-shard-rebalance.mjs");
+const initialPlacement = read("scripts/operational-shard-initial-placement.mjs");
+const primaryPlacementFence = read("supabase/migrations/20261006031500_primary_operational_placement_fence.sql").toLowerCase();
 const failover = read(".github/workflows/operational-shard-failover.yml");
 const rebalanceWorkflow = read(".github/workflows/operational-shard-rebalance.yml");
+const initialPlacementWorkflow = read(".github/workflows/operational-shard-initial-placement.yml");
 const replicationWorkflow = read(".github/workflows/operational-shard-dr-replication.yml");
 const validationWorkflow = read(".github/workflows/operational-shard-validation.yml");
 const validationScript = read("scripts/validate-operational-shards.mjs");
 const liveBootstrap = read(".github/workflows/operational-shard-live-bootstrap.yml");
+const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
+const isolationProofWorkflow = read(".github/workflows/operational-shard-isolation-proof.yml");
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -46,6 +51,59 @@ for (const token of [
   "toh_operational_dr",
 ]) {
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
+}
+
+
+for (const token of [
+  "primary_location_write_fences",
+  "enforce_primary_location_write_fence",
+  "for share",
+  "primary_location_writes_frozen",
+  "pos_tenders",
+  "location_reservations",
+  "reservation_resource_assignments",
+]) {
+  if (!primaryPlacementFence.includes(token)) throw new Error(`Missing primary placement fence invariant: ${token}`);
+}
+
+for (const token of [
+  "TARGET_SCHEMA_VERSION = 6",
+  "location_not_on_primary",
+  "setPrimaryFence",
+  "drainPrimaryCardTenders",
+  "source_row_not_shard_compatible",
+  "targetSnapshot: \"replaced\"",
+  "sourceRetention: \"fenced\"",
+  "routing_changed_during_initial_placement",
+  "global_primary_freeze_compare_and_swap_failed",
+  "global_initial_placement_cutover_compare_and_swap_failed",
+  "classifyAuthoritativeCutoverState",
+  "targetBypassToken",
+  "targetFenceInstalled",
+  "targetFenceReleased",
+  "placed-to-",
+  "reservation_resource_assignments",
+]) {
+  if (!initialPlacement.includes(token)) throw new Error(`Missing safe initial placement invariant: ${token}`);
+}
+if (!initialPlacement.includes('String(key).startsWith("sb_secret_")')) {
+  throw new Error("Initial placement must support modern Supabase secret API key authentication.");
+}
+if (!rebalance.includes('String(key).startsWith("sb_secret_")')) {
+  throw new Error("Shard rebalance must support modern Supabase secret API key authentication.");
+}
+if (!validationScript.includes('String(key).startsWith("sb_secret_")')) {
+  throw new Error("Shard validation must support modern Supabase secret API key authentication.");
+}
+if (!isolationProof.includes('String(key).startsWith("sb_secret_")')) {
+  throw new Error("Shard isolation proof must support modern Supabase secret API key authentication.");
+}
+for (const token of [
+  "operational-shard-control-production",
+  "operational-shard-initial-placement.mjs",
+  ".secretKey // .serviceRoleKey // empty",
+]) {
+  if (!initialPlacementWorkflow.includes(token)) throw new Error(`Initial placement workflow invariant missing: ${token}`);
 }
 
 for (const token of [
@@ -144,8 +202,6 @@ for (const token of [
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
 
-const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
-const isolationProofWorkflow = read(".github/workflows/operational-shard-isolation-proof.yml");
 if (!isolationProof.includes('location_type: "restaurant"')) {
   throw new Error("Isolation proof must provide an explicit valid location_type.");
 }
@@ -168,7 +224,7 @@ for (const token of [
   if (!isolationProofWorkflow.includes(token)) throw new Error(`Isolation proof workflow invariant missing: ${token}`);
 }
 
-for (const workflow of [failover, rebalanceWorkflow, replicationWorkflow, liveBootstrap, isolationProofWorkflow]) {
+for (const workflow of [failover, rebalanceWorkflow, initialPlacementWorkflow, replicationWorkflow, liveBootstrap, isolationProofWorkflow]) {
   if (!workflow.includes("operational-shard-control-production")) {
     throw new Error("Operational shard mutations must share one serialized production control-plane concurrency group.");
   }

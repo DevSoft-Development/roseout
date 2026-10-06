@@ -1,10 +1,10 @@
-name: Operational shard tenant rebalance
+name: Operational shard initial placement
 
 on:
   workflow_dispatch:
     inputs:
       location_id:
-        description: Location UUID to move
+        description: Primary location UUID to place
         required: true
         type: string
       target_shard_id:
@@ -13,7 +13,7 @@ on:
         type: choice
         options: [shard-01, shard-02]
       expected_assignment_epoch:
-        description: Current location assignment epoch
+        description: Current primary assignment epoch
         required: true
         type: string
 
@@ -26,12 +26,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  move:
+  place:
     runs-on: ubuntu-latest
     environment: Production
     steps:
       - uses: actions/checkout@v4
-      - name: Validate rebalance inputs
+
+      - name: Validate placement inputs
         env:
           LOCATION_ID: ${{ inputs.location_id }}
           TARGET_SHARD_ID: ${{ inputs.target_shard_id }}
@@ -50,38 +51,45 @@ jobs:
             echo "::error::expected_assignment_epoch must be at least 1"
             exit 1
           fi
+
       - uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: us-east-1
           allowed-account-ids: '742020474738'
+
       - name: Load routing credentials
         run: |
           set -euo pipefail
           VAULT_PATH="$RUNNER_TEMP/vault.json"
           SHARDS_PATH="$RUNNER_TEMP/operational-shards.json"
-          aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text > "$VAULT_PATH"
+          aws secretsmanager get-secret-value             --secret-id /theouthaven/credential-vault/production/supabase             --query SecretString             --output text > "$VAULT_PATH"
+
           URL="$(jq -r '.url // empty' "$VAULT_PATH")"
           KEY="$(jq -r '.secretKey // .serviceRoleKey // empty' "$VAULT_PATH")"
           SHARDS="$(jq -r '.operationalShardsJson // empty' "$VAULT_PATH")"
           test -n "$URL" && test -n "$KEY" && test -n "$SHARDS"
+
           echo "::add-mask::$KEY"
           while IFS= read -r SHARD_KEY; do
             if [ -n "$SHARD_KEY" ]; then
               echo "::add-mask::$SHARD_KEY"
             fi
           done < <(printf '%s' "$SHARDS" | jq -r 'to_entries[] | (.value.serviceRoleKey // .value.secretKey // empty)')
+
           printf '%s\n' "$SHARDS" > "$SHARDS_PATH"
           chmod 600 "$SHARDS_PATH"
           echo "GLOBAL_SUPABASE_URL=$URL" >> "$GITHUB_ENV"
           echo "GLOBAL_SUPABASE_SERVICE_ROLE_KEY=$KEY" >> "$GITHUB_ENV"
           echo "OPERATIONAL_SHARDS_FILE=$SHARDS_PATH" >> "$GITHUB_ENV"
-      - name: Freeze, copy, verify, and cut over
+
+      - name: Freeze primary, copy, verify, and cut over
         env:
           LOCATION_ID: ${{ inputs.location_id }}
           TARGET_SHARD_ID: ${{ inputs.target_shard_id }}
           EXPECTED_ASSIGNMENT_EPOCH: ${{ inputs.expected_assignment_epoch }}
-        run: node scripts/operational-shard-rebalance.mjs
+        run: node scripts/operational-shard-initial-placement.mjs
+
       - name: Cleanup
         if: always()
         run: rm -f "$RUNNER_TEMP/vault.json" "$RUNNER_TEMP/operational-shards.json"

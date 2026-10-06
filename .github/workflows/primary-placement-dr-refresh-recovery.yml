@@ -1,0 +1,143 @@
+name: Primary placement DR subscription recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20261006031500_primary_operational_placement_fence.sql'
+      - '.github/workflows/primary-placement-dr-refresh-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primary-placement-dr-refresh-production
+  cancel-in-progress: false
+
+env:
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  EXPECTED_SUBSCRIPTION: theouthaven_va_to_or_dr
+  TARGET_TABLE: primary_location_write_fences
+
+jobs:
+  refresh:
+    name: Refresh Oregon subscription for primary placement fence
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 15
+    steps:
+      - name: Require Oregon database connection
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || {
+            echo "::error::Missing SUPABASE_DB_URL for Oregon DR recovery."
+            exit 1
+          }
+          case "$SUPABASE_DB_URL" in
+            *"$OREGON_REF"*) ;;
+            *) echo "::error::SUPABASE_DB_URL is not scoped to Oregon DR."; exit 1 ;;
+          esac
+          command -v psql >/dev/null || {
+            echo "::error::psql is unavailable."
+            exit 1
+          }
+          echo "::add-mask::$SUPABASE_DB_URL"
+          echo "SUPABASE_DB_URL=$SUPABASE_DB_URL" >> "$GITHUB_ENV"
+
+      - name: Verify safe recovery boundary
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -X -q -A -t -v ON_ERROR_STOP=1             -v subscription="$EXPECTED_SUBSCRIPTION"             -v target_table="$TARGET_TABLE" <<'SQL' > "$RUNNER_TEMP/preflight.txt"
+          select
+            (select count(*) from pg_subscription where subname=:'subscription'),
+            (select count(*) from pg_subscription where subname=:'subscription' and subenabled),
+            (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+              where n.nspname='public' and c.relname=:'target_table' and c.relkind in ('r','p')),
+            (select count(*) from cron.job where active);
+          SQL
+          IFS='|' read -r subscriptions enabled target_exists active_cron < "$RUNNER_TEMP/preflight.txt"
+          test "$subscriptions" = "1"
+          test "$enabled" = "1"
+          test "$target_exists" = "1"
+          test "$active_cron" = "0"
+
+      - name: Refresh subscription outside a transaction
+        run: |
+          set -euo pipefail
+          subscribed="$(psql "$SUPABASE_DB_URL" -X -q -A -t -v ON_ERROR_STOP=1             -v subscription="$EXPECTED_SUBSCRIPTION"             -v target_table="$TARGET_TABLE" <<'SQL' | tr -d '[:space:]'
+          select count(*)
+          from pg_subscription_rel sr
+          join pg_subscription s on s.oid=sr.srsubid
+          join pg_class c on c.oid=sr.srrelid
+          join pg_namespace n on n.oid=c.relnamespace
+          where s.subname=:'subscription'
+            and n.nspname='public'
+            and c.relname=:'target_table';
+          SQL
+          )"
+          if [ "$subscribed" != "1" ]; then
+            psql "$SUPABASE_DB_URL" -X -v ON_ERROR_STOP=1               -c "alter subscription $EXPECTED_SUBSCRIPTION refresh publication with (copy_data = true);"
+          else
+            echo "$TARGET_TABLE is already attached to the Oregon subscription."
+          fi
+
+      - name: Wait for ready replication
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            read -r subscribed ready pending connected <<<"$(psql "$SUPABASE_DB_URL" -X -q -A -t -F ' ' -v ON_ERROR_STOP=1               -v subscription="$EXPECTED_SUBSCRIPTION"               -v target_table="$TARGET_TABLE" <<'SQL'
+          select
+            (
+              select count(*)
+              from pg_subscription_rel sr
+              join pg_subscription s on s.oid=sr.srsubid
+              join pg_class c on c.oid=sr.srrelid
+              join pg_namespace n on n.oid=c.relnamespace
+              where s.subname=:'subscription'
+                and n.nspname='public'
+                and c.relname=:'target_table'
+            ),
+            (
+              select count(*)
+              from pg_subscription_rel sr
+              join pg_subscription s on s.oid=sr.srsubid
+              join pg_class c on c.oid=sr.srrelid
+              join pg_namespace n on n.oid=c.relnamespace
+              where s.subname=:'subscription'
+                and n.nspname='public'
+                and c.relname=:'target_table'
+                and sr.srsubstate='r'
+            ),
+            (
+              select count(*)
+              from pg_subscription_rel sr
+              join pg_subscription s on s.oid=sr.srsubid
+              where s.subname=:'subscription'
+                and sr.srsubstate<>'r'
+            ),
+            (
+              select count(*)
+              from pg_subscription s
+              join pg_stat_subscription st on st.subid=s.oid
+              where s.subname=:'subscription'
+                and st.pid is not null
+            );
+          SQL
+            )"
+            if [ "$subscribed" = "1" ] && [ "$ready" = "1" ] && [ "$pending" = "0" ] && [ "$connected" = "1" ]; then
+              {
+                echo '### Primary placement DR subscription recovery'
+                echo "- primary_location_write_fences attached: 1/1"
+                echo "- Pending Oregon relations: 0"
+                echo "- Connected Oregon workers: 1"
+                echo "- Subscription refresh: ready"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Oregon subscription did not become ready after refresh."
+          exit 1
