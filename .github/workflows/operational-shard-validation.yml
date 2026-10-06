@@ -10,14 +10,17 @@ on:
       - 'lib/admin/credential-vault-runtime-source.ts'
       - 'lib/admin/credential-runtime-inventory.ts'
       - 'supabase/migrations/*operational_shard*.sql'
+      - 'supabase/migrations/*primary_operational_placement*.sql'
       - 'scripts/operational-sharding-regression.mjs'
       - 'scripts/operational-shard-rebalance.mjs'
+      - 'scripts/operational-shard-initial-placement.mjs'
       - 'scripts/operational-shard-isolation-proof.mjs'
       - 'scripts/validate-operational-shards.mjs'
       - 'infra/supabase/operational-shards/**'
       - '.github/workflows/operational-shard-dr-replication.yml'
       - '.github/workflows/operational-shard-failover.yml'
       - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-initial-placement.yml'
       - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   push:
@@ -29,14 +32,17 @@ on:
       - 'lib/admin/credential-vault-runtime-source.ts'
       - 'lib/admin/credential-runtime-inventory.ts'
       - 'supabase/migrations/*operational_shard*.sql'
+      - 'supabase/migrations/*primary_operational_placement*.sql'
       - 'scripts/operational-sharding-regression.mjs'
       - 'scripts/operational-shard-rebalance.mjs'
+      - 'scripts/operational-shard-initial-placement.mjs'
       - 'scripts/operational-shard-isolation-proof.mjs'
       - 'scripts/validate-operational-shards.mjs'
       - 'infra/supabase/operational-shards/**'
       - '.github/workflows/operational-shard-dr-replication.yml'
       - '.github/workflows/operational-shard-failover.yml'
       - '.github/workflows/operational-shard-rebalance.yml'
+      - '.github/workflows/operational-shard-initial-placement.yml'
       - '.github/workflows/operational-shard-live-bootstrap.yml'
       - '.github/workflows/operational-shard-validation.yml'
   workflow_dispatch:
@@ -70,6 +76,7 @@ jobs:
       - name: Validate shard operator script syntax
         run: |
           node --check scripts/operational-shard-rebalance.mjs
+          node --check scripts/operational-shard-initial-placement.mjs
           node --check scripts/operational-shard-isolation-proof.mjs
 
   live-multi-shard:
