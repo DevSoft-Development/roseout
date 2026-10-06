@@ -11,7 +11,7 @@ import {
   POS_RECEIVING_CATALOG,
   posInventoryAssetTag,
   renderPosInventoryQrDataUrl,
-} from "../../../../../lib/pos-hardware-inventory";
+} from "@/lib/pos-hardware-inventory";
 import { receivePosInventoryAction } from "./actions";
 
 export const dynamic = "force-dynamic";
