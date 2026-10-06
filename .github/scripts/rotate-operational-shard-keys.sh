@@ -4,6 +4,7 @@ set -euo pipefail
 : "${AWS_REGION:=us-east-1}"
 : "${AWS_ACCOUNT_ID:=742020474738}"
 : "${SUPABASE_VAULT_SECRET:=/theouthaven/credential-vault/production/supabase}"
+: "${DR_SECRET:=/theouthaven/production/dr-reconciler/env}"
 : "${RUNTIME_SECRET:=/theouthaven/production/edge-runtime/env}"
 : "${SHARD01_REF:=lyeruuzsnceaxrmdafxb}"
 : "${SHARD01_DR_REF:=vcdnwrsuvhtlvxqbkamg}"
@@ -38,13 +39,53 @@ save_state() {
 aws secretsmanager get-secret-value   --secret-id "$SUPABASE_VAULT_SECRET"   --query SecretString --output text > "$VAULT_BEFORE"
 jq -e 'type=="object"' "$VAULT_BEFORE" >/dev/null
 
-TOKEN="$(jq -r '.managementAccessToken // empty' "$VAULT_BEFORE")"
-test -n "$TOKEN" || {
-  echo "::error::Supabase managementAccessToken is missing from Credential Vault."
+aws secretsmanager get-secret-value \
+  --secret-id "$DR_SECRET" \
+  --query SecretString --output text > "$WORK/dr.json"
+
+PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$VAULT_BEFORE")"
+FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$WORK/dr.json")"
+test -n "$PRIMARY_TOKEN" || test -n "$FALLBACK_TOKEN" || {
+  echo "::error::No Supabase management token is available for shard-key rotation."
   exit 1
 }
-echo "::add-mask::$TOKEN"
-printf '%s' "$TOKEN" > "$WORK/management-token"
+[ -z "$PRIMARY_TOKEN" ] || echo "::add-mask::$PRIMARY_TOKEN"
+[ -z "$FALLBACK_TOKEN" ] || echo "::add-mask::$FALLBACK_TOKEN"
+
+management_api_request() {
+  local method="$1" url="$2" out="$3" body="${4:-}" token code
+  for token in "$PRIMARY_TOKEN" "$FALLBACK_TOKEN"; do
+    [ -n "$token" ] || continue
+    if [ -n "$body" ]; then
+      code="$(curl --silent --show-error \
+        --output "$out" \
+        --write-out '%{http_code}' \
+        --request "$method" \
+        -H "Authorization: Bearer $token" \
+        -H 'Content-Type: application/json' \
+        --data-binary "@$body" \
+        "$url" || true)"
+    else
+      code="$(curl --silent --show-error \
+        --output "$out" \
+        --write-out '%{http_code}' \
+        --request "$method" \
+        -H "Authorization: Bearer $token" \
+        "$url" || true)"
+    fi
+    if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then
+      MGMT_CODE="$code"
+      return 0
+    fi
+    if [ "$code" = 401 ] || [ "$code" = 403 ]; then
+      continue
+    fi
+    echo "::error::Supabase Management API request failed with HTTP $code."
+    return 1
+  done
+  echo "::error::Both vault-managed Supabase management tokens lack permission for this API operation."
+  return 1
+}
 
 if ! aws secretsmanager get-secret-value   --secret-id "$STATE_SECRET"   --query SecretString --output text > "$STATE" 2>/dev/null; then
   jq -n --arg id "$ROTATION_ID"     '{rotationId:$id,status:"initializing",shards:{}}' > "$STATE"
@@ -64,7 +105,9 @@ current_key() {
 
 api_keys() {
   local ref="$1" out="$2"
-  curl --fail --silent --show-error     -H "Authorization: Bearer $TOKEN"     "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$out"
+  management_api_request GET \
+    "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" \
+    "$out"
 }
 
 verify_key() {
@@ -94,9 +137,15 @@ prepare_one() {
 
   if [ -z "$new_id" ] || [ -z "$new_key" ]; then
     jq -n --arg name "$KEY_NAME"       '{type:"secret",name:$name,secret_jwt_template:{role:"service_role"}}'       > "$WORK/${label}-create-body.json"
-    code="$(curl --silent --show-error       --output "$WORK/${label}-created.json"       --write-out '%{http_code}'       --request POST       -H "Authorization: Bearer $TOKEN"       -H 'Content-Type: application/json'       --data-binary "@$WORK/${label}-create-body.json"       "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true")"
-    test "$code" = 201 || {
-      echo "::error::Creating replacement key for ${shard} failed with HTTP ${code}."
+    management_api_request POST \
+      "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" \
+      "$WORK/${label}-created.json" \
+      "$WORK/${label}-create-body.json" || {
+        echo "::error::Creating replacement key for ${shard} failed."
+        exit 1
+      }
+    test "$MGMT_CODE" = 201 || {
+      echo "::error::Creating replacement key for ${shard} returned unexpected HTTP ${MGMT_CODE}."
       exit 1
     }
     new_id="$(jq -r '.id // empty' "$WORK/${label}-created.json")"
@@ -257,14 +306,20 @@ revoke_one() {
   [ -n "$old_id" ] || return 0
   [ "$old_id" != "$new_id" ] || return 0
 
-  curl --fail --silent --show-error     -H "Authorization: Bearer $TOKEN"     "https://api.supabase.com/v1/projects/${ref}/api-keys" > "$WORK/${label}-current-keys.json"
+  management_api_request GET \
+    "https://api.supabase.com/v1/projects/${ref}/api-keys" \
+    "$WORK/${label}-current-keys.json"
 
   if jq -e --arg id "$old_id" '.[] | select(.id==$id)' "$WORK/${label}-current-keys.json" >/dev/null; then
     encoded_reason="$(jq -rn --arg x "$ROTATION_REASON" '$x|@uri')"
-    curl --fail --silent --show-error       --request DELETE       -H "Authorization: Bearer $TOKEN"       "https://api.supabase.com/v1/projects/${ref}/api-keys/${old_id}?was_compromised=true&reason=${encoded_reason}"       > "$WORK/${label}-revoke.json"
+    management_api_request DELETE \
+      "https://api.supabase.com/v1/projects/${ref}/api-keys/${old_id}?was_compromised=true&reason=${encoded_reason}" \
+      "$WORK/${label}-revoke.json"
   fi
 
-  curl --fail --silent --show-error     -H "Authorization: Bearer $TOKEN"     "https://api.supabase.com/v1/projects/${ref}/api-keys" > "$WORK/${label}-post-revoke.json"
+  management_api_request GET \
+    "https://api.supabase.com/v1/projects/${ref}/api-keys" \
+    "$WORK/${label}-post-revoke.json"
   if jq -e --arg id "$old_id" '.[] | select(.id==$id)' "$WORK/${label}-post-revoke.json" >/dev/null; then
     echo "::error::Compromised old key id for ${shard} remains active after revocation."
     exit 1
