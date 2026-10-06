@@ -7,6 +7,7 @@ import {
   resolveLocationAccessContext,
 } from "@/lib/auth/locationOwnerAccess";
 import { getCertifiedHardware } from "@/lib/pos/hardware/catalog";
+import type { PosPrinterRole } from "@/lib/pos/hardware/contracts";
 import {
   assignPosHardwareDevice,
   listLocationHardware,
@@ -48,7 +49,7 @@ export async function updateBusinessHardwareRole(formData: FormData) {
 
   const certified = getCertifiedHardware(current.hardwareId);
   const allowedRoles = certified?.supportedPrinterRoles || [];
-  if (!allowedRoles.includes(role as never)) {
+  if (!allowedRoles.includes(role as PosPrinterRole)) {
     throw new Error("hardware_role_not_supported");
   }
 
