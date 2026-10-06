@@ -44,6 +44,40 @@ export type PosHardwareDeviceRecord = {
   metadata: Record<string, unknown>;
 };
 
+
+export function getPosHardwarePreenrolledLocationId(
+  device: Pick<PosHardwareDeviceRecord, "metadata">,
+) {
+  const metadata = device.metadata || {};
+  const value =
+    metadata.pre_enrolled_location_id ??
+    metadata.intended_location_id ??
+    null;
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized || null;
+}
+
+export function isPosHardwarePreenrolledForLocation(
+  device: Pick<PosHardwareDeviceRecord, "metadata">,
+  locationId: string,
+) {
+  return getPosHardwarePreenrolledLocationId(device) === String(locationId || "").trim();
+}
+
+export async function getPosHardwareDevice(
+  deviceId: string,
+): Promise<PosHardwareDeviceRecord | null> {
+  const normalizedDeviceId = required(deviceId, "device_id");
+  const { data, error } = await supabaseAdmin
+    .from("pos_hardware_devices")
+    .select("*")
+    .eq("id", normalizedDeviceId)
+    .maybeSingle();
+
+  if (error) throw new Error(`pos_hardware_device_lookup_failed:${error.message}`);
+  return (data as PosHardwareDeviceRecord | null) || null;
+}
+
 function required(value: string, field: string) {
   const normalized = String(value || "").trim();
   if (!normalized) throw new Error(`missing_${field}`);
