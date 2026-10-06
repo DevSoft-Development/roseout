@@ -65,6 +65,12 @@ export default async function PosHardwareInventoryPage({
         actions={
           <div className="flex flex-wrap gap-2">
             <Link
+              href="/admin/dashboard/settings/location-tools/pos-hardware/labels"
+              className="rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80"
+            >
+              Print labels
+            </Link>
+            <Link
               href="/admin/dashboard/settings/location-tools/pos-hardware/assign"
               className="rounded-full bg-[#e1062a] px-4 py-2 text-sm font-black text-white"
             >
