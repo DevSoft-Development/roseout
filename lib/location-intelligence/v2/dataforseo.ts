@@ -46,7 +46,8 @@ export function assertDataForSeoEnvelopeSuccess(payload: DataForSeoEnvelope<unkn
 
   const failedTask = payload.tasks?.find((task) => Number(task.status_code || 0) >= 40000);
   if (failedTask) {
-    throw new Error(`dataforseo_task_${failedTask.status_code || "invalid"}`);
+    const message = String(failedTask.status_message || "").trim().replace(/\s+/g, "_").slice(0, 160);
+    throw new Error(`dataforseo_task_${failedTask.status_code || "invalid"}${message ? `_${message}` : ""}`);
   }
 }
 
@@ -113,22 +114,29 @@ export async function searchDataForSeoBusinessListings(input: {
 export async function createDataForSeoReviewTask(input: {
   googlePlaceId?: string;
   keyword?: string;
-  locationName: string;
+  locationName?: string;
+  locationCoordinate?: string;
   depth?: number;
-  sortBy?: "most_relevant" | "newest" | "highest_rating" | "lowest_rating";
+  sortBy?: "relevant" | "most_relevant" | "newest" | "highest_rating" | "lowest_rating";
   tag?: string;
 }) {
   const googlePlaceId = String(input.googlePlaceId || "").trim();
   const keyword = String(input.keyword || "").trim();
+  const locationName = String(input.locationName || "").trim();
+  const locationCoordinate = String(input.locationCoordinate || "").trim();
   if (!googlePlaceId && !keyword) throw new Error("dataforseo_review_identity_required");
+  if (!locationName && !locationCoordinate) throw new Error("dataforseo_review_location_required");
+  const sortBy = input.sortBy === "most_relevant" ? "relevant" : input.sortBy;
   const payload = await request<Record<string, unknown>>("/v3/business_data/google/reviews/task_post", {
     method: "POST",
     body: JSON.stringify([{
       ...(googlePlaceId ? { place_id: googlePlaceId } : { keyword }),
-      location_name: input.locationName,
+      ...(locationCoordinate
+        ? { location_coordinate: normalizeDataForSeoLocationCoordinate(locationCoordinate) }
+        : { location_name: locationName }),
       language_name: "English",
       depth: Math.max(10, Math.min(1000, Math.trunc(input.depth || 100))),
-      ...(input.sortBy ? { sort_by: input.sortBy } : {}),
+      ...(sortBy ? { sort_by: sortBy } : {}),
       ...(input.tag ? { tag: input.tag } : {}),
     }]),
   });
