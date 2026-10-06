@@ -19,7 +19,7 @@ describe("website builder rich content", () => {
 
   it("grounds rich website content in dashboard data instead of invented AI facts", () => {
     const content = source("lib/websites/location-content.ts");
-    expect(content).toContain("getLocationMenu");
+    expect(content).toContain('getLocationMenu(id, undefined, "website")');
     expect(content).toContain('page.status === "published"');
     expect(content).toContain('.from("location_reviews")');
     expect(content).toContain('.eq("status", "approved")');
