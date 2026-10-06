@@ -7,6 +7,7 @@ import {
   AdminStatusBadge,
 } from "../../../../../../../components/admin/AdminDesignSystem";
 import {
+  getPosProvisioningRoleOptions,
   listAssignablePosInventoryDevices,
   listPosProvisioningLocations,
   posInventoryAssetTag,
@@ -49,6 +50,7 @@ export default async function PosInventoryAssignPage({
         : posInventoryAssetTag(device.id),
     serialNumber: device.serial_number,
     lifecycleStatus: device.lifecycle_status,
+    roleOptions: getPosProvisioningRoleOptions(device),
   }));
 
   return (
@@ -59,12 +61,20 @@ export default async function PosInventoryAssignPage({
         subtitle="Scan the ThePOSHaven QR labels for the equipment you picked, choose the destination location, then provision the whole cart at once."
         badge={<AdminStatusBadge tone="blue">QR assignment</AdminStatusBadge>}
         actions={
-          <Link
-            href="/admin/dashboard/settings/location-tools/pos-hardware/inventory"
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/dashboard/settings/location-tools/pos-hardware/provisioning"
+              className="rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80"
+            >
+              Provisioning status
+            </Link>
+            <Link
+              href="/admin/dashboard/settings/location-tools/pos-hardware/inventory"
             className="rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80"
           >
             Inventory
-          </Link>
+            </Link>
+          </div>
         }
       />
 
