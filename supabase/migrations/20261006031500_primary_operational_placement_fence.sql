@@ -3,7 +3,6 @@
 -- so initial placement can drain current writes before copying a tenant into a shard.
 -- toh:replicated-dml-reviewed
 
-begin;
 
 create table if not exists public.primary_location_write_fences (
   location_id uuid primary key references public.locations(id) on delete cascade,
@@ -88,4 +87,3 @@ begin
   end loop;
 end $$;
 
-commit;
