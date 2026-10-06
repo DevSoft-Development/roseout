@@ -138,6 +138,96 @@ grant select, insert, update, delete on table public.location_catalog_modifier_g
 grant select, insert, update, delete on table public.location_catalog_modifiers to service_role;
 grant select, insert, update, delete on table public.location_catalog_channel_overrides to service_role;
 
+
+create or replace function public.bump_location_catalog_revision()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $
+declare
+  v_page_id uuid;
+begin
+  if tg_table_name in ('location_commerce_items', 'location_commerce_sections') then
+    v_page_id := coalesce(new.commerce_page_id, old.commerce_page_id);
+  elsif tg_table_name in ('location_catalog_modifier_groups', 'location_catalog_channel_overrides') then
+    select commerce_page_id into v_page_id
+      from public.location_commerce_items
+      where id = coalesce(new.commerce_item_id, old.commerce_item_id);
+  elsif tg_table_name = 'location_catalog_modifiers' then
+    select i.commerce_page_id into v_page_id
+      from public.location_catalog_modifier_groups g
+      join public.location_commerce_items i on i.id = g.commerce_item_id
+      where g.id = coalesce(new.modifier_group_id, old.modifier_group_id);
+  end if;
+
+  if v_page_id is not null then
+    update public.location_commerce_pages
+       set catalog_revision = catalog_revision + 1,
+           updated_at = now()
+     where id = v_page_id;
+  end if;
+
+  return coalesce(new, old);
+end;
+$;
+
+drop trigger if exists location_commerce_items_bump_catalog_revision on public.location_commerce_items;
+create trigger location_commerce_items_bump_catalog_revision
+  after insert or update or delete on public.location_commerce_items
+  for each row execute function public.bump_location_catalog_revision();
+
+drop trigger if exists location_commerce_sections_bump_catalog_revision on public.location_commerce_sections;
+create trigger location_commerce_sections_bump_catalog_revision
+  after insert or update or delete on public.location_commerce_sections
+  for each row execute function public.bump_location_catalog_revision();
+
+drop trigger if exists location_catalog_modifier_groups_bump_catalog_revision on public.location_catalog_modifier_groups;
+create trigger location_catalog_modifier_groups_bump_catalog_revision
+  after insert or update or delete on public.location_catalog_modifier_groups
+  for each row execute function public.bump_location_catalog_revision();
+
+drop trigger if exists location_catalog_modifiers_bump_catalog_revision on public.location_catalog_modifiers;
+create trigger location_catalog_modifiers_bump_catalog_revision
+  after insert or update or delete on public.location_catalog_modifiers
+  for each row execute function public.bump_location_catalog_revision();
+
+drop trigger if exists location_catalog_channel_overrides_bump_catalog_revision on public.location_catalog_channel_overrides;
+create trigger location_catalog_channel_overrides_bump_catalog_revision
+  after insert or update or delete on public.location_catalog_channel_overrides
+  for each row execute function public.bump_location_catalog_revision();
+
+do $
+begin
+  if exists (select 1 from pg_publication where pubname = 'theouthaven_dr_publication') then
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'theouthaven_dr_publication'
+        and schemaname = 'public'
+        and tablename = 'location_catalog_modifier_groups'
+    ) then
+      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_modifier_groups';
+    end if;
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'theouthaven_dr_publication'
+        and schemaname = 'public'
+        and tablename = 'location_catalog_modifiers'
+    ) then
+      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_modifiers';
+    end if;
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'theouthaven_dr_publication'
+        and schemaname = 'public'
+        and tablename = 'location_catalog_channel_overrides'
+    ) then
+      execute 'alter publication theouthaven_dr_publication add table public.location_catalog_channel_overrides';
+    end if;
+  end if;
+end
+$;
+
 comment on column public.location_commerce_items.item_type is
   'Universal catalog item type shared by Website, Profile, POS, Reserve, and ordering channels.';
 comment on column public.location_commerce_items.channel_visibility is
