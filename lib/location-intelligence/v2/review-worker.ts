@@ -11,6 +11,7 @@ import {
   nextReviewRefreshAt,
 } from "@/lib/location-intelligence/v2/reviews";
 import { storeProviderSnapshot } from "@/lib/location-intelligence/v2/evidence";
+import { deriveReviewProfileSignals } from "@/lib/search/reviewIntelligenceProfileSignals";
 
 function locationName(row: Record<string, unknown>) {
   return String(row.name || row.restaurant_name || row.activity_name || "").trim();
@@ -178,6 +179,18 @@ async function refreshReviewIntelligence(locationId: string) {
     .from("location_review_intelligence")
     .upsert(rows, { onConflict: "location_id,concept" });
   if (upsertError) throw new Error(`Review intelligence upsert failed: ${upsertError.message}`);
+
+  const derivedMl = deriveReviewProfileSignals(rows);
+  if (derivedMl) {
+    const { error: mlError } = await supabaseAdmin
+      .from("location_review_ml_features")
+      .upsert(
+        { ...derivedMl, location_id: locationId },
+        { onConflict: "location_id", ignoreDuplicates: true },
+      );
+    if (mlError) throw new Error(`Review ML fallback upsert failed: ${mlError.message}`);
+  }
+
   return rows.length;
 }
 
