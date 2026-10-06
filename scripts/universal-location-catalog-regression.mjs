@@ -11,6 +11,11 @@ const types = fs.readFileSync(
   "utf8",
 ).toLowerCase();
 
+const drWorkflow = fs.readFileSync(
+  path.join(process.cwd(), ".github/workflows/universal-catalog-dr-publication.yml"),
+  "utf8",
+).toLowerCase();
+
 const requiredMigrationTokens = [
   "add column if not exists item_type text not null default 'food_beverage'",
   "add column if not exists channel_visibility jsonb not null default",
@@ -21,7 +26,6 @@ const requiredMigrationTokens = [
   "create table if not exists public.location_catalog_modifiers",
   "create table if not exists public.location_catalog_channel_overrides",
   "create or replace function public.bump_location_catalog_revision()",
-  "alter publication theouthaven_dr_publication add table public.location_catalog_modifier_groups",
   "alter table public.location_catalog_modifier_groups enable row level security",
   "revoke all on table public.location_catalog_modifier_groups from public, anon, authenticated",
   "grant select, insert, update, delete on table public.location_catalog_modifier_groups to service_role",
@@ -30,6 +34,19 @@ const requiredMigrationTokens = [
 for (const token of requiredMigrationTokens) {
   if (!migration.includes(token)) {
     throw new Error(`Universal catalog regression: missing migration contract: ${token}`);
+  }
+}
+
+const requiredWorkflowTokens = [
+  "alter publication $publication add table public.location_catalog_modifier_groups",
+  "alter publication $publication add table public.location_catalog_modifiers",
+  "alter publication $publication add table public.location_catalog_channel_overrides",
+  "alter subscription $subscription refresh publication",
+];
+
+for (const token of requiredWorkflowTokens) {
+  if (!drWorkflow.includes(token)) {
+    throw new Error(`Universal catalog regression: missing protected DR workflow contract: ${token}`);
   }
 }
 
