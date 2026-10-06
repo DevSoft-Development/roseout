@@ -1,4 +1,6 @@
 -- Universal Location Catalog V1
+-- toh:replicated-dml-reviewed
+-- The UPDATE against location_commerce_pages exists only inside the runtime revision-bump trigger function; the migration itself performs no replicated-table DML.
 -- Evolves existing location commerce/menu records into the shared source of truth
 -- for Website, Profile, ThePOSHaven, Reserve, and future ordering channels.
 --
