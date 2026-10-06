@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
           grep -F 'rate(5 minutes)' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"function":"reservation-recovery"' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
-          grep -F '"limit":50' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
+          grep -F '"limit":25' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"concurrency":8' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"statuses":["failed","blocked",""]' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
           grep -F '"googleCalls":0' .github/workflows/aws-reservation-recovery-sweep.yml >/dev/null
@@ -69,7 +69,7 @@ jobs:
           test -n "$INVOKER_ARN" && test "$INVOKER_ARN" != 'None'
           test -n "$SCHEDULER_ROLE" && test "$SCHEDULER_ROLE" != 'None'
 
-          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":50,"concurrency":8,"force":false,"statuses":["failed","blocked",""],"googleCalls":0}}'
+          INPUT='{"function":"reservation-recovery","body":{"source":"aws_eventbridge_backlog","limit":25,"concurrency":8,"force":false,"statuses":["failed","blocked",""],"googleCalls":0}}'
           TARGET="$(jq -nc --arg arn "$INVOKER_ARN" --arg role "$SCHEDULER_ROLE" --arg input "$INPUT" '{Arn:$arn,RoleArn:$role,Input:$input,RetryPolicy:{MaximumEventAgeInSeconds:900,MaximumRetryAttempts:1}}')"
           END_DATE="$(date -u -d '+2 hours' '+%Y-%m-%dT%H:%M:%SZ')"
 
@@ -112,7 +112,7 @@ jobs:
             echo '### Reservation recovery sweep'
             echo ''
             echo '- Frequency: every 5 minutes'
-            echo '- Batch size: 50'
+            echo '- Batch size: 25'
             echo '- Concurrency: 8'
             echo '- Statuses: failed, blocked, unclassified'
             echo '- Google calls: 0'
