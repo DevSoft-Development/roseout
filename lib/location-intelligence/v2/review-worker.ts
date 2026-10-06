@@ -164,7 +164,7 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
       const [{ data: location, error: locationError }, { data: identity, error: identityError }] = await Promise.all([
         supabaseAdmin
           .from("locations")
-          .select("id,name,restaurant_name,activity_name,city,state")
+          .select("id,name,restaurant_name,activity_name,city,state,latitude,longitude")
           .eq("id", locationId)
           .single(),
         supabaseAdmin
@@ -183,10 +183,22 @@ export async function submitDueDataForSeoReviewRefreshes(limit = 25) {
       const googlePlaceId = String(identity?.external_id || "").trim();
       if (!name || !googlePlaceId) throw new Error("review_refresh_identity_incomplete");
 
+      const latitude = Number(location?.latitude);
+      const longitude = Number(location?.longitude);
+      const locationCoordinate =
+        Number.isFinite(latitude) &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        Number.isFinite(longitude) &&
+        longitude >= -180 &&
+        longitude <= 180
+          ? `${latitude},${longitude},200`
+          : undefined;
       const geo = [location?.city, location?.state, "United States"].filter(Boolean).join(",");
       const task = await createDataForSeoReviewTask({
         googlePlaceId,
-        locationName: geo || "United States",
+        locationCoordinate,
+        locationName: locationCoordinate ? undefined : (geo || "United States"),
         depth: 100,
         sortBy: "newest",
         tag: `toh:${locationId}`,
