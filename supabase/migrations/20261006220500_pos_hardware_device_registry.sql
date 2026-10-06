@@ -232,29 +232,3 @@ grant select, insert, update, delete on table public.pos_hardware_devices to ser
 grant select, insert, update, delete on table public.pos_hardware_assignments to service_role;
 grant execute on function public.pos_assign_hardware_device(uuid, uuid, text, text, uuid, jsonb) to service_role;
 grant execute on function public.pos_record_hardware_heartbeat(uuid, text, text, jsonb) to service_role;
-
-
--- Keep the low-volume hardware control-plane registry available in global DR.
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'theouthaven_dr_publication') then
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'theouthaven_dr_publication'
-        and schemaname = 'public'
-        and tablename = 'pos_hardware_devices'
-    ) then
-      alter publication theouthaven_dr_publication add table public.pos_hardware_devices;
-    end if;
-
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'theouthaven_dr_publication'
-        and schemaname = 'public'
-        and tablename = 'pos_hardware_assignments'
-    ) then
-      alter publication theouthaven_dr_publication add table public.pos_hardware_assignments;
-    end if;
-  end if;
-end
-$$;
