@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { receivePosInventoryDevice } from "../../../../../lib/pos-hardware-inventory";
+import { receivePosInventoryDevice } from "@/lib/pos-hardware-inventory";
 
 export async function receivePosInventoryAction(formData: FormData) {
   await requireAdminRole(["superadmin", "admin"]);
