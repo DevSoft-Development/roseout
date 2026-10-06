@@ -1,5 +1,5 @@
 name: Search V3 production golden replay
-# replay trigger
+# Production replay trigger: review-profile enrichment refresh.
 
 on:
   push:

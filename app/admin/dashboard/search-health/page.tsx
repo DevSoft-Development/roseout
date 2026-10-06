@@ -202,6 +202,13 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
 
   const emptyDashboard: DashboardData = {
     searches: [], searchCount: 0, issues: [], issueCount: 0, kpis: null, trend: [],
+    enrichment: {
+      latestEmbeddingRun: null,
+      reviewMlLocations: 0,
+      reviewProfilesEnriched: 0,
+      reviewProfileBacklog: 0,
+      readyEmbeddings: 0,
+    },
     errors: { searches: undefined, issues: undefined, kpis: undefined, trend: undefined },
   };
   const dashboard = shouldLoadDashboard ? await getSearchHealthDashboardData(filters) : emptyDashboard;
@@ -262,6 +269,22 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
                   <div key={label} className="rounded-2xl border border-white/10 bg-[#100d0c] p-4">
                     <p className="text-[10px] font-black uppercase tracking-wider text-white/40">{label}</p>
                     <p className="mt-2 text-lg font-black">{value}</p>
+                  </div>
+                ))}
+              </section>
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Search V3 enrichment health">
+                {Object.entries({
+                  "Review ML locations": dashboard.enrichment.reviewMlLocations,
+                  "Review profiles enriched": dashboard.enrichment.reviewProfilesEnriched,
+                  "Review profile backlog": dashboard.enrichment.reviewProfileBacklog,
+                  "Ready embeddings": dashboard.enrichment.readyEmbeddings,
+                  "Latest Phase 13": dashboard.enrichment.latestEmbeddingRun
+                    ? `${dashboard.enrichment.latestEmbeddingRun.records_updated ?? 0}/${dashboard.enrichment.latestEmbeddingRun.records_scanned ?? 0} updated · ${dashboard.enrichment.latestEmbeddingRun.records_failed ?? 0} failed`
+                    : "No run",
+                }).map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-white/10 bg-[#100d0c] p-4">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-white/40">{label}</p>
+                    <p className="mt-2 text-lg font-black">{String(value)}</p>
                   </div>
                 ))}
               </section>
