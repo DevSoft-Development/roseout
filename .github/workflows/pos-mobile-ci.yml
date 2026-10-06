@@ -52,6 +52,9 @@ jobs:
       - name: Verify Android native hardware module
         run: npm run verify:native:android
 
+      - name: Verify secure cashier device identity
+        run: npm run verify:device-identity
+
       - name: Verify separate app identity and POS-only network permissions
         run: |
           set -euo pipefail
