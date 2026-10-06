@@ -57,7 +57,10 @@ stages:
               cd pos-mobile
               npm ci --no-audit --no-fund
               npm run typecheck
+              npm run verify:native:android
               npx expo prebuild --clean --platform android --no-install
               test -d android
               grep -R -F 'com.theposhaven.app' android/app >/dev/null
+              grep -R -F 'class ThePosHavenHardwareModule' android/app/src/main/java >/dev/null
+              grep -R -F 'add(ThePosHavenHardwarePackage())' android/app/src/main/java >/dev/null
             displayName: Generate isolated Android project
