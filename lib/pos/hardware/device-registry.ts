@@ -117,6 +117,11 @@ export async function recordPosHardwareHeartbeat(input: {
   if (error) throw new Error(`pos_hardware_heartbeat_failed:${error.message}`);
 }
 
+export type PosLocationHardware = PosHardwareAssignment & {
+  stationKey: string;
+  device: PosHardwareDeviceRecord;
+};
+
 export async function listLocationHardware(locationId: string) {
   const normalizedLocationId = required(locationId, "location_id");
   const { data: assignments, error: assignmentError } = await supabaseAdmin
@@ -132,7 +137,7 @@ export async function listLocationHardware(locationId: string) {
   }
 
   const deviceIds = (assignments || []).map((row) => String(row.device_id));
-  if (!deviceIds.length) return [] as Array<PosHardwareAssignment & { device: PosHardwareDeviceRecord }>;
+  if (!deviceIds.length) return [] as PosLocationHardware[];
 
   const { data: devices, error: deviceError } = await supabaseAdmin
     .from("pos_hardware_devices")
@@ -157,11 +162,12 @@ export async function listLocationHardware(locationId: string) {
         role: String(assignment.role),
         hardwareId: device.hardware_catalog_id,
         serialNumber: device.serial_number,
+        stationKey: String(assignment.station_key || "default"),
         replacementForDeviceId: assignment.replacement_for_device_id
           ? String(assignment.replacement_for_device_id)
           : null,
         device,
       };
     })
-    .filter(Boolean) as Array<PosHardwareAssignment & { device: PosHardwareDeviceRecord }>;
+    .filter(Boolean) as PosLocationHardware[];
 }
