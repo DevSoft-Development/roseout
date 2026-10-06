@@ -264,28 +264,21 @@ export default async function LocationMenuPage({
           <div className="flex items-start gap-4">
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#e1062a]/15 text-sm font-black text-[#ff6b86]">4</span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-xl font-black">Organize and fine-tune</h2>
-              <p className="mt-1 text-sm font-semibold text-white/45">Most owners can stop after adding items. Open this only when you want to reorder categories, edit tags, hide items, or adjust detailed settings.</p>
+              <h2 className="text-xl font-black">Organize your catalog</h2>
+              <p className="mt-1 text-sm font-semibold text-white/45">Everything stays visible. Reorder categories, manage sections, review availability, and make detailed edits without opening a hidden advanced panel.</p>
             </div>
           </div>
-          <details className="group mt-5 rounded-2xl border border-white/10 bg-black/20">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4">
-              <div><p className="font-black">Advanced organization</p><p className="mt-1 text-xs font-semibold text-white/35">{sections.length} categories · {items.length} items</p></div>
-              <span className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/60 group-open:hidden">Open</span>
-              <span className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-white/60 group-open:inline-flex">Close</span>
-            </summary>
-            <div className="border-t border-white/10 p-4">
-              <MenuEditorClient
-                key={String(page.id || selectedPageId || "primary-menu")}
-                initialData={initialData}
-                locationId={String(canonicalLocationId)}
-                contextKey={contextKey}
-                contextPayload={contextPayload}
-                returnHref="/locations/dashboard/menu"
-                embedded
-              />
-            </div>
-          </details>
+          <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+            <MenuEditorClient
+              key={String(page.id || selectedPageId || "primary-menu")}
+              initialData={initialData}
+              locationId={String(canonicalLocationId)}
+              contextKey={contextKey}
+              contextPayload={contextPayload}
+              returnHref="/locations/dashboard/menu"
+              embedded
+            />
+          </div>
         </section>
 
         <section className="rounded-3xl border border-[#f5b700]/20 bg-gradient-to-br from-[#17130a] to-[#0d0b08] p-5 sm:p-6">
