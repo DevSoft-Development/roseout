@@ -437,7 +437,6 @@ export default function ExploreClient({
       </section>
 
       <BusinessOwnerCta />
-      <PublicFooter />
     </main>
   );
 }
@@ -848,34 +847,6 @@ function BusinessOwnerCta() {
         </Link>
       </div>
     </section>
-  );
-}
-
-function PublicFooter() {
-  const links = [
-    ["Home", "/"],
-    ["Explore", "/explore"],
-    ["Create Outing", "/create"],
-    ["Business", "/business"],
-    ["Sign In", "/signup"],
-    ["Terms", "/terms"],
-    ["Privacy", "/privacy"],
-    ["SMS Terms", "/sms-terms"],
-    ["Contact", "/contact"],
-  ] as const;
-
-  return (
-    <footer className="border-t border-white/10 bg-black/50 px-5 py-10 sm:px-6">
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-wrap gap-4 text-sm text-white/60">
-          {links.map(([label, href]) => (
-            <Link key={label} href={href} className="hover:text-white">
-              {label}
-            </Link>
-          ))}
-        </div>
-      </div>
-    </footer>
   );
 }
 
