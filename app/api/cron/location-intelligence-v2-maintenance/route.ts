@@ -46,18 +46,40 @@ async function run(request: Request) {
       submitDueDataForSeoReviewRefreshes(reviewLimit),
     ]);
 
-    const reviewFailures =
-      collectedReviews.filter((row) => row.status === "failed").length +
-      submittedReviews.filter((row) => row.submitted === false).length;
+    const collectedFailures = collectedReviews
+      .filter((row) => row.status === "failed")
+      .map((row) => ({
+        phase: "collect",
+        locationId: String(row.locationId || ""),
+        taskId: String(row.taskId || ""),
+        error: String(row.error || "review_task_collection_failed"),
+      }));
+    const submissionFailures = submittedReviews
+      .filter((row) => row.submitted === false)
+      .map((row) => ({
+        phase: "submit",
+        locationId: String(row.locationId || ""),
+        error: String(row.error || "review_refresh_submit_failed"),
+      }));
+    const reviewFailureDetails = [...collectedFailures, ...submissionFailures];
+    const reviewFailures = reviewFailureDetails.length;
+    const reviewError = reviewFailures
+      ? reviewFailureDetails
+          .slice(0, 10)
+          .map((row) => `${row.phase}:${row.locationId || "unknown"}:${row.error}`)
+          .join("; ")
+      : undefined;
 
     return Response.json({
       ok: materialChanges.failed === 0 && reviewFailures === 0,
+      ...(reviewError ? { error: reviewError } : {}),
       providerHealth,
       materialChanges,
       reviews: {
         collected: collectedReviews,
         submitted: submittedReviews,
         failed: reviewFailures,
+        failureDetails: reviewFailureDetails.slice(0, 25),
       },
     });
   } catch (error) {
