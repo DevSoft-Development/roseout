@@ -8,6 +8,8 @@ Parameters:
     AllowedValues: [production, staging]
   EdgeRuntimeImageUri:
     Type: String
+  ReservationRendererImageUri:
+    Type: String
   RuntimeSecretName:
     Type: String
     Default: /theouthaven/production/edge-runtime/env
@@ -49,6 +51,69 @@ Resources:
         - Key: Service
           Value: DisasterRecovery
 
+  ReservationRendererRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub TheOutHavenReservationRenderer-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: reservation-renderer-logs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/toh-${Environment}-reservation-renderer:*
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: ReservationRenderer
+
+  ReservationRendererLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/toh-${Environment}-reservation-renderer
+      RetentionInDays: 14
+
+  ReservationRendererFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ReservationRendererLogGroup
+    Properties:
+      FunctionName: !Sub toh-${Environment}-reservation-renderer
+      Description: Selective headless-browser fallback for reservation provider discovery.
+      Role: !GetAtt ReservationRendererRole.Arn
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ReservationRendererImageUri
+      Architectures: [x86_64]
+      MemorySize: 2048
+      Timeout: 30
+      ReservedConcurrentExecutions: 2
+      EphemeralStorage:
+        Size: 1024
+      Environment:
+        Variables:
+          AWS_EC2_METADATA_DISABLED: 'true'
+      Tags:
+        - Key: Project
+          Value: TheOutHaven
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: ReservationRenderer
+
   EdgeRuntimeRole:
     Type: AWS::IAM::Role
     Properties:
@@ -76,6 +141,9 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${RuntimeSecretName}-*
                   - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${DrRuntimeSecretName}-*
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ReservationRendererFunction.Arn
               - Effect: Allow
                 Action:
                   - dynamodb:GetItem
@@ -117,6 +185,7 @@ Resources:
           EDGE_RUNTIME_SECRET_ID: !Ref RuntimeSecretName
           DR_RUNTIME_SECRET_ID: !Ref DrRuntimeSecretName
           DR_STORAGE_TOMBSTONE_TABLE: !Ref DrStorageTombstoneTable
+          RESERVATION_RENDERER_FUNCTION_NAME: !Ref ReservationRendererFunction
           AWS_LWA_PORT: '8080'
           AWS_LWA_READINESS_CHECK_PATH: /healthz
           AWS_LWA_READINESS_CHECK_PROTOCOL: http
@@ -586,6 +655,8 @@ Resources:
         - !Sub arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:toh-${Environment}-platform-alerts
 
 Outputs:
+  ReservationRendererFunctionName:
+    Value: !Ref ReservationRendererFunction
   EdgeRuntimeFunctionName:
     Value: !Ref EdgeRuntimeFunction
   SchedulerInvokerFunctionName:
