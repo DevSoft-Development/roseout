@@ -251,9 +251,12 @@ export default async function HardwareWorkspacePage({
               {canManage ? "Manager access" : "View-only access"}
             </span>
             {canManage ? (
-              <span className="rounded-full border border-[#ff2142]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black text-[#ff91a5]">
-                Add / replace device coming next
-              </span>
+              <Link
+                href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(canonicalLocationId)}`}
+                className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white"
+              >
+                Add device
+              </Link>
             ) : null}
           </div>
         </header>
