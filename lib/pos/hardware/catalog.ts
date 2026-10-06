@@ -1,83 +1,8 @@
 import type { PosCertifiedHardware } from "@/lib/pos/hardware/contracts";
+import { POS_CERTIFIED_HARDWARE_DATA } from "@theouthaven/config/pos-hardware-catalog";
 
-export const POS_CERTIFIED_HARDWARE: readonly PosCertifiedHardware[] = [
-  {
-    id: "apple-ipad-a16-11",
-    vendor: "Apple",
-    model: "iPad A16 11-inch",
-    deviceType: "cashier_tablet",
-    connections: ["wifi", "usb"],
-    capabilities: ["managed_wifi", "remote_management"],
-    managedKit: true,
-    notes: "Primary cashier tablet target.",
-  },
-  {
-    id: "samsung-tab-a9-plus",
-    vendor: "Samsung",
-    model: "Galaxy Tab A9+",
-    deviceType: "cashier_tablet",
-    connections: ["wifi", "usb"],
-    capabilities: ["managed_wifi", "remote_management"],
-    managedKit: true,
-    notes: "Value cashier tablet target.",
-  },
-  {
-    id: "stripe-s710",
-    vendor: "Stripe",
-    model: "Reader S710",
-    deviceType: "payment_terminal",
-    connections: ["wifi", "ethernet", "cellular"],
-    capabilities: ["managed_wifi", "offline_payments", "customer_display", "lte", "remote_management"],
-    managedKit: true,
-    notes: "Primary managed payment terminal and handheld target.",
-  },
-  {
-    id: "stripe-m2",
-    vendor: "Stripe",
-    model: "Reader M2",
-    deviceType: "payment_terminal",
-    connections: ["bluetooth"],
-    capabilities: ["offline_payments"],
-    managedKit: false,
-    notes: "BYOD/value payment reader; not the default managed-kit device.",
-  },
-  {
-    id: "3nstar-rpt006s",
-    vendor: "3nStar",
-    model: "RPT006S",
-    deviceType: "receipt_printer",
-    connections: ["ethernet", "usb"],
-    capabilities: ["auto_discovery", "cash_drawer_kick", "thermal_printing"],
-    printerProtocol: "esc_pos",
-    supportedPrinterRoles: ["receipt", "kitchen_cold_line", "bar", "expo", "prep"],
-    managedKit: true,
-    requiresNetworkBridge: true,
-    notes: "Low-cost thermal printer; bridge makes managed installs Wi-Fi-first.",
-  },
-  {
-    id: "3nstar-rpi007e",
-    vendor: "3nStar",
-    model: "RPI007E",
-    deviceType: "kitchen_printer",
-    connections: ["ethernet", "usb"],
-    capabilities: ["auto_discovery", "impact_printing"],
-    printerProtocol: "esc_pos",
-    supportedPrinterRoles: ["kitchen_hot_line"],
-    managedKit: true,
-    requiresNetworkBridge: true,
-    notes: "Hot-line impact printer target; paired with a preprovisioned Wi-Fi bridge.",
-  },
-  {
-    id: "grandstream-gwn7062e",
-    vendor: "Grandstream",
-    model: "GWN7062E",
-    deviceType: "network_hub",
-    connections: ["wifi", "ethernet"],
-    capabilities: ["managed_wifi", "mesh", "remote_management"],
-    managedKit: true,
-    notes: "ThePOSHaven Hub v1 target.",
-  },
-] as const;
+export const POS_CERTIFIED_HARDWARE =
+  POS_CERTIFIED_HARDWARE_DATA as unknown as readonly PosCertifiedHardware[];
 
 export function getCertifiedHardware(id: string) {
   return POS_CERTIFIED_HARDWARE.find((item) => item.id === id) || null;
