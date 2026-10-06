@@ -34,6 +34,7 @@ env:
   EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
   EAST_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
   ECR_REPOSITORY: theouthaven/edge-runtime
+  RESERVATION_RENDERER_ECR_REPOSITORY: theouthaven/reservation-renderer
   STACK_NAME: theouthaven-edge-runtime-production
   RUNTIME_SECRET_NAME: /theouthaven/production/edge-runtime/env
   SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
@@ -67,9 +68,13 @@ jobs:
           set -euo pipefail
           test -f infra/aws/edge-runtime/Dockerfile
           test -f infra/aws/edge-runtime/main/index.ts
+          test -f infra/aws/reservation-renderer/Dockerfile
+          test -f infra/aws/reservation-renderer/index.mjs
+          test -f infra/aws/reservation-renderer/package.json
           test -d supabase/functions
           test -f supabase/functions/aws-db-maintenance/index.ts
           docker build --check -f infra/aws/edge-runtime/Dockerfile .
+          docker build --check -f infra/aws/reservation-renderer/Dockerfile .
 
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -305,15 +310,17 @@ jobs:
           fi
           rm -f "$EXISTING" "$RUNTIME" "$RUNNER_TEMP/east-service-role" "$RUNNER_TEMP/east-anon"
 
-      - name: Ensure ECR repository
+      - name: Ensure ECR repositories
         run: |
           set -euo pipefail
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || \
-            aws ecr create-repository \
-              --repository-name "$ECR_REPOSITORY" \
-              --image-scanning-configuration scanOnPush=true \
-              --encryption-configuration encryptionType=AES256 \
-              --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production >/dev/null
+          for repository in "$ECR_REPOSITORY" "$RESERVATION_RENDERER_ECR_REPOSITORY"; do
+            aws ecr describe-repositories --repository-names "$repository" >/dev/null 2>&1 || \
+              aws ecr create-repository \
+                --repository-name "$repository" \
+                --image-scanning-configuration scanOnPush=true \
+                --encryption-configuration encryptionType=AES256 \
+                --tags Key=Project,Value=TheOutHaven Key=Environment,Value=production >/dev/null
+          done
 
       - name: Build and push edge runtime image
         id: image
@@ -326,9 +333,20 @@ jobs:
           docker push "$IMAGE_URI"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
 
+      - name: Build and push reservation renderer image
+        id: renderer_image
+        run: |
+          set -euo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          IMAGE_URI="${REGISTRY}/${RESERVATION_RENDERER_ECR_REPOSITORY}:${GITHUB_SHA}"
+          docker build -f infra/aws/reservation-renderer/Dockerfile -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
       - name: Deploy edge runtime stack
         env:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
+          RESERVATION_RENDERER_IMAGE_URI: ${{ steps.renderer_image.outputs.uri }}
         run: |
           set -euo pipefail
           aws cloudformation deploy \
@@ -339,6 +357,7 @@ jobs:
             --parameter-overrides \
               Environment=production \
               EdgeRuntimeImageUri="$IMAGE_URI" \
+              ReservationRendererImageUri="$RESERVATION_RENDERER_IMAGE_URI" \
               RuntimeSecretName="$RUNTIME_SECRET_NAME" \
             --tags Project=TheOutHaven Environment=production Service=EdgeRuntime ManagedBy=CloudFormation
 
@@ -394,6 +413,17 @@ jobs:
           aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --payload "fileb://$EVENT" "$RUNNER_TEMP/health-response.json" >/dev/null
           jq -e '.statusCode == 200 and (.body | fromjson | .ok == true)' "$RUNNER_TEMP/health-response.json" >/dev/null
 
+      - name: Smoke test reservation renderer safety boundary
+        run: |
+          set -euo pipefail
+          FN="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ReservationRendererFunctionName'].OutputValue" --output text)"
+          aws lambda invoke \
+            --function-name "$FN" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"url":"http://127.0.0.1/"}' \
+            "$RUNNER_TEMP/reservation-renderer-response.json" >/dev/null
+          jq -e '.statusCode == 400 and (.body | fromjson | .ok == false)' "$RUNNER_TEMP/reservation-renderer-response.json" >/dev/null
+
       - name: Deployment summary
         run: |
           STATE="$(tr -d '[:space:]' < infra/aws/edge-runtime/schedule-state.txt)"
@@ -402,6 +432,7 @@ jobs:
             echo '### AWS edge runtime'
             echo ''
             echo '- Runtime: Supabase Edge Runtime self-hosted on AWS Lambda'
+            echo '- Reservation renderer: isolated on-demand Chromium Lambda, concurrency capped at 2'
             echo '- Region: us-east-1'
             echo "- Scheduled jobs: ${COUNT}"
             echo '- Retired Supabase-only job: cron-run-history-retention (no pg_cron execution remains in Virginia)'
