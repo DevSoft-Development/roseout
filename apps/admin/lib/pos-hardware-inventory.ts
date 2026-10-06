@@ -2,7 +2,13 @@ import "server-only";
 
 import QRCode from "qrcode";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
-import { POS_CERTIFIED_HARDWARE, getCertifiedHardware } from "../../../lib/pos/hardware/catalog";
+import { POS_CERTIFIED_HARDWARE_DATA } from "@theouthaven/config/pos-hardware-catalog";
+
+const POS_CERTIFIED_HARDWARE = POS_CERTIFIED_HARDWARE_DATA;
+
+function getCertifiedHardware(id: string) {
+  return POS_CERTIFIED_HARDWARE.find((item) => item.id === id) || null;
+}
 
 export type AdminPosInventoryDevice = {
   id: string;
@@ -188,7 +194,7 @@ export function getPosProvisioningRoleOptions(
   const certified = getCertifiedHardware(device.hardware_catalog_id);
   if (!certified) throw new Error("uncertified_pos_hardware");
 
-  if (certified.supportedPrinterRoles?.length) {
+  if ("supportedPrinterRoles" in certified && certified.supportedPrinterRoles.length) {
     return [...certified.supportedPrinterRoles];
   }
 
