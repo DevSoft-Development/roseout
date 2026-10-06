@@ -1,0 +1,169 @@
+name: Universal catalog DR publication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/universal-catalog-dr-publication.yml'
+      - 'supabase/migrations/20261006134500_universal_location_catalog_v1.sql'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/universal-catalog-dr-publication.yml'
+      - 'supabase/migrations/20261006134500_universal_location_catalog_v1.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: universal-catalog-dr-publication-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+  DR_SECRET: /theouthaven/production/dr-reconciler/env
+  VIRGINIA_REF: ftdsltatyqhtllyyefzp
+  OREGON_REF: hnhbzynoyrhjndefbwkh
+  PUBLICATION: theouthaven_dr_publication
+  SUBSCRIPTION: theouthaven_va_to_or_dr
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate protected publication contract
+        run: |
+          set -euo pipefail
+          grep -F "location_catalog_modifier_groups" .github/workflows/universal-catalog-dr-publication.yml >/dev/null
+          grep -F "location_catalog_modifiers" .github/workflows/universal-catalog-dr-publication.yml >/dev/null
+          grep -F "location_catalog_channel_overrides" .github/workflows/universal-catalog-dr-publication.yml >/dev/null
+          grep -F "alter subscription \$SUBSCRIPTION refresh publication" .github/workflows/universal-catalog-dr-publication.yml >/dev/null
+
+  configure:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Load Supabase management authority
+        run: |
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text > "$RUNNER_TEMP/vault.json"
+          aws secretsmanager get-secret-value --secret-id "$DR_SECRET" --query SecretString --output text > "$RUNNER_TEMP/dr.json"
+          PRIMARY_TOKEN="$(jq -r '.managementAccessToken // empty' "$RUNNER_TEMP/vault.json")"
+          FALLBACK_TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$RUNNER_TEMP/dr.json")"
+          test -n "$PRIMARY_TOKEN"
+          echo "::add-mask::$PRIMARY_TOKEN"
+          [ -z "$FALLBACK_TOKEN" ] || echo "::add-mask::$FALLBACK_TOKEN"
+          echo "SUPABASE_ACCESS_TOKEN=$PRIMARY_TOKEN" >> "$GITHUB_ENV"
+          echo "SUPABASE_FALLBACK_ACCESS_TOKEN=$FALLBACK_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Publish catalog tables and refresh Oregon
+        run: |
+          set -euo pipefail
+
+          sql_api() {
+            local ref="$1" sql="$2" out="$3" token="$SUPABASE_ACCESS_TOKEN" code
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+              --request POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              test -n "$SUPABASE_FALLBACK_ACCESS_TOKEN" || { cat "$out"; return 1; }
+              code="$(curl --silent --show-error --output "$out" --write-out '%{http_code}' \
+                --request POST -H "Authorization: Bearer $SUPABASE_FALLBACK_ACCESS_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary "@$RUNNER_TEMP/query.json" "https://api.supabase.com/v1/projects/$ref/database/query" || true)"
+            fi
+            test "$code" -ge 200 && test "$code" -lt 300 || { cat "$out"; return 1; }
+          }
+
+          schema_ready=false
+          for attempt in $(seq 1 60); do
+            sql_api "$VIRGINIA_REF" "select count(*)::int as tables
+              from information_schema.tables
+              where table_schema='public'
+                and table_name in (
+                  'location_catalog_modifier_groups',
+                  'location_catalog_modifiers',
+                  'location_catalog_channel_overrides'
+                );" "$RUNNER_TEMP/schema-ready.json"
+            if [ "$(jq -r '.[0].tables // 0' "$RUNNER_TEMP/schema-ready.json")" = "3" ]; then
+              schema_ready=true
+              break
+            fi
+            sleep 5
+          done
+          test "$schema_ready" = true
+
+          sql_api "$VIRGINIA_REF" "do \$\$
+          begin
+            if not exists (
+              select 1 from pg_publication_tables
+              where pubname='$PUBLICATION' and schemaname='public'
+                and tablename='location_catalog_modifier_groups'
+            ) then
+              execute 'alter publication $PUBLICATION add table public.location_catalog_modifier_groups';
+            end if;
+            if not exists (
+              select 1 from pg_publication_tables
+              where pubname='$PUBLICATION' and schemaname='public'
+                and tablename='location_catalog_modifiers'
+            ) then
+              execute 'alter publication $PUBLICATION add table public.location_catalog_modifiers';
+            end if;
+            if not exists (
+              select 1 from pg_publication_tables
+              where pubname='$PUBLICATION' and schemaname='public'
+                and tablename='location_catalog_channel_overrides'
+            ) then
+              execute 'alter publication $PUBLICATION add table public.location_catalog_channel_overrides';
+            end if;
+          end
+          \$\$;" "$RUNNER_TEMP/publication.json"
+
+          sql_api "$OREGON_REF" "alter subscription $SUBSCRIPTION refresh publication with (copy_data=true);" "$RUNNER_TEMP/refresh.json"
+
+          ready=false
+          for attempt in $(seq 1 60); do
+            sql_api "$OREGON_REF" "select count(*)::int as pending
+              from pg_subscription_rel r
+              join pg_subscription s on s.oid=r.srsubid
+              where s.subname='$SUBSCRIPTION'
+                and r.srsubstate <> 'r';" "$RUNNER_TEMP/pending.json"
+            if [ "$(jq -r '.[0].pending // -1' "$RUNNER_TEMP/pending.json")" = "0" ]; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          test "$ready" = true
+
+          sql_api "$VIRGINIA_REF" "select tablename from pg_publication_tables
+            where pubname='$PUBLICATION'
+              and tablename in (
+                'location_catalog_modifier_groups',
+                'location_catalog_modifiers',
+                'location_catalog_channel_overrides'
+              )
+            order by tablename;" "$RUNNER_TEMP/published.json"
+          test "$(jq 'length' "$RUNNER_TEMP/published.json")" = "3"
+
+          echo "Universal catalog DR publication refreshed successfully." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/*.json
