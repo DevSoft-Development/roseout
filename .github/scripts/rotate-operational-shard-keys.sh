@@ -24,9 +24,9 @@ aws secretsmanager get-secret-value   --secret-id "$SUPABASE_VAULT_SECRET"   --q
 
 aws secretsmanager get-secret-value   --secret-id "$DR_SECRET"   --query SecretString   --output text > "$DR"
 
-TOKEN="$(jq -r '.managementAccessToken // empty' "$VAULT")"
+TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$DR")"
 if [ -z "$TOKEN" ]; then
-  TOKEN="$(jq -r '.DR_SUPABASE_ACCESS_TOKEN // empty' "$DR")"
+  TOKEN="$(jq -r '.managementAccessToken // empty' "$VAULT")"
 fi
 test -n "$TOKEN" || {
   echo "::error::Supabase management token is unavailable."
