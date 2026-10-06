@@ -64,6 +64,10 @@ export type UniversalCatalogItem = {
   imageUrl: string | null;
   basePriceCents: number | null;
   priceLabel: string | null;
+  tags: unknown[];
+  dietaryTags: unknown[];
+  sortOrder: number;
+  metadata: Record<string, unknown>;
   itemType: UniversalCatalogItemType;
   posShortName: string | null;
   sku: string | null;

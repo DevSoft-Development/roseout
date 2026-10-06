@@ -198,6 +198,10 @@ export async function getUniversalLocationCatalog(
             ? channelOverride.priceCents
             : integerOrNull(row.price_cents),
         priceLabel: stringOrNull(row.price_label) || stringOrNull(row.price),
+        tags: Array.isArray(row.tags) ? row.tags : [],
+        dietaryTags: Array.isArray(row.dietary_tags) ? row.dietary_tags : [],
+        sortOrder: Number(row.sort_order || 0),
+        metadata: objectValue(row.metadata),
         itemType: normalizeItemType(row.item_type),
         posShortName: stringOrNull(row.pos_short_name),
         sku: stringOrNull(row.sku),

@@ -16,6 +16,21 @@ const drWorkflow = fs.readFileSync(
   "utf8",
 ).toLowerCase();
 
+const menuModule = fs.readFileSync(
+  path.join(process.cwd(), "lib/locations/menu.ts"),
+  "utf8",
+).toLowerCase();
+
+const websiteContent = fs.readFileSync(
+  path.join(process.cwd(), "lib/websites/location-content.ts"),
+  "utf8",
+).toLowerCase();
+
+const menuAdapter = fs.readFileSync(
+  path.join(process.cwd(), "lib/catalog/menuAdapter.ts"),
+  "utf8",
+).toLowerCase();
+
 const requiredMigrationTokens = [
   "add column if not exists item_type text not null default 'food_beverage'",
   "add column if not exists channel_visibility jsonb not null default",
@@ -47,6 +62,32 @@ const requiredWorkflowTokens = [
 for (const token of requiredWorkflowTokens) {
   if (!drWorkflow.includes(token)) {
     throw new Error(`Universal catalog regression: missing protected DR workflow contract: ${token}`);
+  }
+}
+
+const requiredMenuAdapterTokens = [
+  'getlegacymenurowsfromuniversalcatalog',
+  'allowdraftpreview ? undefined : "profile"',
+];
+
+for (const token of requiredMenuAdapterTokens) {
+  if (!menuModule.includes(token)) {
+    throw new Error(`Universal catalog regression: menu path is not using catalog adapter: ${token}`);
+  }
+}
+
+if (!websiteContent.includes('getlocationmenu(id, undefined, "website")')) {
+  throw new Error("Universal catalog regression: generated websites are not channel-aware");
+}
+
+for (const token of [
+  "catalog_modifiers",
+  "catalog_channel_overrides",
+  "channel_visibility",
+  "item_type",
+]) {
+  if (!menuAdapter.includes(token)) {
+    throw new Error(`Universal catalog regression: legacy adapter missing ${token}`);
   }
 }
 

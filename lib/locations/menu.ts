@@ -1,6 +1,8 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getLegacyMenuRowsFromUniversalCatalog } from "@/lib/catalog/menuAdapter";
+import type { UniversalCatalogChannel } from "@/lib/catalog/types";
 import { getPublicLocationMenuHref } from "@/lib/locations/public-location-url";
 import { cleanNullableUrl, isValidMenuAction, menuResponseShape, normalizeMenuStatus, normalizePriceCents } from "@/lib/locations/menuValidation";
 import type { LocationMenuPayload, MenuActorContext, SaveLocationMenuInput } from "@/lib/locations/menuTypes";
@@ -55,17 +57,24 @@ export async function ensureMenuPage(locationId: string, title = "Menu", commerc
   return data as Record<string, any>;
 }
 
-async function readMenuRows(locationId: string, pageId: string, publicOnly = false) {
-  const sectionsQuery = supabaseAdmin.from("location_commerce_sections").select("*").eq("location_id", locationId).eq("commerce_page_id", pageId).order("sort_order", { ascending: true });
-  const itemsQuery = supabaseAdmin.from("location_commerce_items").select("*").eq("location_id", locationId).eq("commerce_page_id", pageId).order("sort_order", { ascending: true });
-  if (publicOnly) sectionsQuery.eq("is_active", true);
-  const [{ data: sections }, { data: items }] = await Promise.all([sectionsQuery, itemsQuery]);
-  return { sections: (sections || []) as Record<string, any>[], items: (items || []) as Record<string, any>[] };
+async function readMenuRows(
+  locationId: string,
+  pageId: string,
+  publicOnly = false,
+  channel?: UniversalCatalogChannel,
+) {
+  return getLegacyMenuRowsFromUniversalCatalog(locationId, pageId, { publicOnly, channel });
 }
 
-export async function getLocationMenu(locationId: string, commercePageId?: string | null) {
+export async function getLocationMenu(
+  locationId: string,
+  commercePageId?: string | null,
+  channel?: UniversalCatalogChannel,
+) {
   const page = await getMenuPage(locationId, commercePageId);
-  const rows = page ? await readMenuRows(locationId, String(page.id)) : { sections: [], items: [] };
+  const rows = page
+    ? await readMenuRows(locationId, String(page.id), false, channel)
+    : { sections: [], items: [] };
   return { page, ...rows };
 }
 
@@ -95,7 +104,14 @@ export async function getPublicLocationMenu(locationIdOrSlug: string, allowDraft
   else query = query.eq("page_type", "menu").order("sort_order", { ascending: true }).limit(1);
   if (!allowDraftPreview) query = query.eq("status", "published").eq("is_active", true);
   const { data: page } = await query.maybeSingle();
-  const rows = page ? await readMenuRows(String(location.id), String(page.id), !allowDraftPreview) : { sections: [], items: [] };
+  const rows = page
+    ? await readMenuRows(
+        String(location.id),
+        String(page.id),
+        !allowDraftPreview,
+        allowDraftPreview ? undefined : "profile",
+      )
+    : { sections: [], items: [] };
   return { location: location as Record<string, any>, page: page as Record<string, any> | null, ...rows };
 }
 
