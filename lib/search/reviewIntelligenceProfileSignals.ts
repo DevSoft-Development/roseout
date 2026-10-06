@@ -121,7 +121,6 @@ export function deriveReviewProfileSignals(
     .pop() ?? null;
 
   return {
-    _source: "location_review_intelligence",
     updated_at: updatedAt,
     calculated_at: updatedAt,
     quiet_score: quiet,
