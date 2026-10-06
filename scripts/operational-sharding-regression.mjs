@@ -20,6 +20,8 @@ const replicationWorkflow = read(".github/workflows/operational-shard-dr-replica
 const validationWorkflow = read(".github/workflows/operational-shard-validation.yml");
 const validationScript = read("scripts/validate-operational-shards.mjs");
 const liveBootstrap = read(".github/workflows/operational-shard-live-bootstrap.yml");
+const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
+const isolationProofWorkflow = read(".github/workflows/operational-shard-isolation-proof.yml");
 
 for (const token of [
   "create table if not exists public.operational_shards",
@@ -200,8 +202,6 @@ for (const token of [
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
 
-const isolationProof = read("scripts/operational-shard-isolation-proof.mjs");
-const isolationProofWorkflow = read(".github/workflows/operational-shard-isolation-proof.yml");
 if (!isolationProof.includes('location_type: "restaurant"')) {
   throw new Error("Isolation proof must provide an explicit valid location_type.");
 }
