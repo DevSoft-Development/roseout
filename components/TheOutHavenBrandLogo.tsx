@@ -22,7 +22,7 @@ export default function TheOutHavenBrandLogo({
       {!imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src="/toh_logo_wordmark_white.webp"
+          src="/toh_logo_wordmark_white_20261006.webp"
           alt="TheOutHaven"
           width={width}
           height={height}
