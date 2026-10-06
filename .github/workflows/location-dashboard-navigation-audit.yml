@@ -18,5 +18,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Audit 17-workspace location navigation
+      - name: Audit 18-workspace location navigation
         run: node scripts/audit-location-dashboard-navigation.mjs
