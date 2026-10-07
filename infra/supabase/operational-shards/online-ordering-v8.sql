@@ -344,6 +344,97 @@ $;
 revoke all on function public.pos_cancel_online_order(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.pos_cancel_online_order(uuid,uuid,text) to service_role;
 
+create or replace function public.pos_update_online_order_status(
+  p_location_id uuid,
+  p_online_order_id uuid,
+  p_status text,
+  p_actor_type text default 'device',
+  p_actor_id text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path=public
+as $
+declare
+  v_order public.pos_online_orders%rowtype;
+  v_current text;
+  v_allowed boolean := false;
+begin
+  select * into v_order
+    from public.pos_online_orders
+   where id=p_online_order_id and location_id=p_location_id
+   for update;
+  if not found then raise exception 'online_order_not_found'; end if;
+
+  v_current := v_order.status;
+  if v_current=p_status then
+    return jsonb_build_object('online_order_id',v_order.id,'status',v_current,'idempotent_replay',true);
+  end if;
+
+  v_allowed :=
+    (v_current='received' and p_status in ('accepted','canceled'))
+    or (v_current='accepted' and p_status in ('preparing','canceled'))
+    or (v_current='preparing' and p_status in ('ready','canceled'))
+    or (v_current='ready' and p_status in ('completed','canceled'));
+
+  if not v_allowed then
+    raise exception 'online_order_invalid_transition:%->%',v_current,p_status;
+  end if;
+
+  update public.pos_online_orders
+     set status=p_status,
+         accepted_at=case when p_status='accepted' then coalesce(accepted_at,now()) else accepted_at end,
+         preparing_at=case when p_status='preparing' then coalesce(preparing_at,now()) else preparing_at end,
+         ready_at=case when p_status='ready' then coalesce(ready_at,now()) else ready_at end,
+         completed_at=case when p_status='completed' then coalesce(completed_at,now()) else completed_at end,
+         canceled_at=case when p_status='canceled' then coalesce(canceled_at,now()) else canceled_at end,
+         updated_at=now()
+   where id=v_order.id
+   returning * into v_order;
+
+  if p_status='preparing' then
+    update public.pos_orders
+       set status='fired',fired_at=coalesce(fired_at,now()),updated_at=now()
+     where id=v_order.order_id and status in ('sent','fired');
+    update public.pos_order_items
+       set status='fired',updated_at=now()
+     where order_id=v_order.order_id and status in ('sent','fired');
+  elsif p_status='ready' then
+    update public.pos_orders
+       set status='fulfilled',fulfilled_at=coalesce(fulfilled_at,now()),updated_at=now()
+     where id=v_order.order_id and status in ('sent','fired','fulfilled');
+    update public.pos_order_items
+       set status='fulfilled',updated_at=now()
+     where order_id=v_order.order_id and status in ('sent','fired','fulfilled');
+  elsif p_status='completed' then
+    update public.pos_checks
+       set status='closed',closed_at=coalesce(closed_at,now()),updated_at=now()
+     where id=v_order.check_id and status='open';
+  end if;
+
+  insert into public.pos_online_order_events(location_id,online_order_id,event_type,actor_type,actor_id,metadata)
+  values(
+    p_location_id,
+    v_order.id,
+    'order_status_changed',
+    coalesce(nullif(btrim(p_actor_type),''),'device'),
+    nullif(btrim(coalesce(p_actor_id,'')),''),
+    jsonb_build_object('from',v_current,'to',p_status)
+  );
+
+  return jsonb_build_object(
+    'online_order_id',v_order.id,
+    'status',v_order.status,
+    'previous_status',v_current,
+    'idempotent_replay',false
+  );
+end;
+$;
+
+revoke all on function public.pos_update_online_order_status(uuid,uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.pos_update_online_order_status(uuid,uuid,text,text,text) to service_role;
+
 insert into public.operational_schema_versions(version,migration_key,checksum,metadata)
 values(8,'20261007_online_ordering_v8','sha256:online-ordering-v8','{"scope":"website_pickup_orders_and_settings"}'::jsonb)
 on conflict(version) do update set migration_key=excluded.migration_key,checksum=excluded.checksum,metadata=excluded.metadata;
