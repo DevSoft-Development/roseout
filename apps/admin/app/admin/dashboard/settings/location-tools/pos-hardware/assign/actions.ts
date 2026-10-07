@@ -32,6 +32,7 @@ export async function provisionPosInventoryCartAction(formData: FormData) {
 
   revalidatePath("/admin/dashboard/settings/location-tools/pos-hardware/inventory");
   revalidatePath("/admin/dashboard/settings/location-tools/pos-hardware/assign");
+  revalidatePath("/admin/dashboard/settings/location-tools/pos-hardware/provisioning");
   redirect(
     `/admin/dashboard/settings/location-tools/pos-hardware/assign?assigned=${provisioned.length}&locationId=${encodeURIComponent(locationId)}`,
   );
