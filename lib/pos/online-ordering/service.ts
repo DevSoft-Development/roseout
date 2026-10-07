@@ -307,6 +307,7 @@ export async function createWebsitePickupOrder(input: {
       paymentMethodType: "card_not_present",
       idempotencyKey: `online-order-payment:${idempotencyKey}`,
       metadata: {
+        type: "pos_online_order",
         online_order_id: String(draft.online_order_id),
         fulfillment: "pickup",
         source: "website",
