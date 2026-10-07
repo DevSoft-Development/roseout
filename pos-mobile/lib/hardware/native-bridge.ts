@@ -15,6 +15,9 @@ export type ThePosHavenDiscoveredDevice = {
 export interface ThePosHavenHardwareBridge {
   scanLocalDevices(timeoutMs: number): Promise<ThePosHavenDiscoveredDevice[]>;
   sendTcp(host: string, port: number, bytes: number[]): Promise<void>;
+  readState(key: string): Promise<string | null>;
+  writeState(key: string, value: string): Promise<void>;
+  deleteState(key: string): Promise<void>;
 }
 
 export function getThePosHavenHardwareBridge(): ThePosHavenHardwareBridge {
