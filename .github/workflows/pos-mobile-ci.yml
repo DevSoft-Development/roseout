@@ -8,6 +8,7 @@ on:
       - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
       - 'lib/pos/device-command-service.ts'
       - 'lib/pos/online-ordering/**'
+      - 'lib/pos/signature-plus/**'
       - 'app/api/pos/device/**'
       - 'apps/consumer/app/api/pos/device/**'
       - 'app/api/stripe/connect/webhook/route.ts'
@@ -15,6 +16,7 @@ on:
       - 'supabase/migrations/*pos_device_command_queue.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
+      - 'scripts/pos-signature-plus-regression.mjs'
       - 'pos-mobile/**'
       - 'pos-mobile/components/**'
       - '.github/workflows/pos-mobile-ci.yml'
@@ -26,6 +28,7 @@ on:
       - 'apps/business/app/api/locations/online-ordering/**'
       - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
       - 'lib/pos/device-command-service.ts'
+      - 'lib/pos/signature-plus/**'
       - 'lib/pos/online-ordering/**'
       - 'app/api/pos/device/**'
       - 'apps/consumer/app/api/pos/device/**'
@@ -34,6 +37,7 @@ on:
       - 'supabase/migrations/*pos_device_command_queue.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
+      - 'scripts/pos-signature-plus-regression.mjs'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'azure-pipelines-pos-mobile.yml'
@@ -89,6 +93,10 @@ jobs:
       - name: Verify online-order fulfillment contract
         working-directory: .
         run: node scripts/pos-online-order-fulfillment-regression.mjs
+
+      - name: Verify Signature+ operations contract
+        working-directory: .
+        run: node scripts/pos-signature-plus-regression.mjs
 
       - name: Verify separate app identity and POS-only network permissions
         run: |
