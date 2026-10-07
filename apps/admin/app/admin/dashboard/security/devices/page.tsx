@@ -108,7 +108,7 @@ export default async function DeviceManagementPage({
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-100" />
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">Apple Business Standard</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-200">Standard Managed Device</p>
               <h2 className="mt-1 text-xl font-black text-white">Baseline applied</h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
                 Company iPhones and iPads remain supervised and remotely manageable, while App Store access, normal app installation, AirDrop, camera, and everyday device use are restored.
@@ -122,7 +122,7 @@ export default async function DeviceManagementPage({
             <div className="flex items-start gap-3">
               <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-100" />
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">Apple Business Standard</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-200">Standard Managed Device</p>
                 <h2 className="mt-1 text-xl font-black text-white">Baseline could not be applied</h2>
                 <p className="mt-2 text-sm text-white/60">Confirm Microsoft 365 consent includes DeviceManagementConfiguration.ReadWrite.All, then try again.</p>
               </div>
@@ -145,7 +145,7 @@ export default async function DeviceManagementPage({
             <div className="flex flex-col gap-3 border-b border-white/10 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-200">Apple policy</p>
-                <h2 className="mt-1 text-xl font-black text-white">Business Standard baseline</h2>
+                <h2 className="mt-1 text-xl font-black text-white">Standard Managed Device</h2>
                 <p className="mt-1 text-sm text-white/50">Normal device experience with company controls preserved.</p>
               </div>
               <AdminStatusBadge tone={businessStandardProfile ? "green" : "amber"}>{businessStandardProfile ? "Configured in Intune" : "Not yet configured"}</AdminStatusBadge>

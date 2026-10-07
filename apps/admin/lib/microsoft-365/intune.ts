@@ -41,25 +41,47 @@ type IntuneIosConfiguration = {
   "@odata.type"?: string | null;
 };
 
-export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Apple Business Standard";
+export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 
 const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
   displayName: THEOUTHAVEN_BUSINESS_STANDARD_PROFILE,
   description:
-    "TheOutHaven company-owned iPhone/iPad baseline: supervised and remotely manageable without kiosk-style restrictions.",
+    "TheOutHaven Standard Managed Device baseline: normal iPhone/iPad behavior with company management, compliance, and remote security controls preserved.",
   appStoreBlocked: false,
   appStoreBlockUIAppInstallation: false,
   appStoreBlockAutomaticDownloads: false,
+  appStoreBlockInAppPurchases: false,
   airDropBlocked: false,
-  airDropForceUnmanagedDropTarget: true,
+  airDropForceUnmanagedDropTarget: false,
   cameraBlocked: false,
-  documentsBlockManagedDocumentsInUnmanagedApps: true,
+  bluetoothBlockModification: false,
+  cellularBlockPerAppDataModification: false,
+  cellularBlockPersonalHotspot: false,
+  configurationProfileBlockChanges: false,
+  deviceBlockEraseContentAndSettings: false,
+  deviceBlockNameModification: false,
+  documentsBlockManagedDocumentsInUnmanagedApps: false,
   documentsBlockUnmanagedDocumentsInManagedApps: false,
-  configurationProfileBlockChanges: true,
-  deviceBlockEraseContentAndSettings: true,
+  faceTimeBlocked: false,
+  iCloudBlockActivityContinuation: false,
+  iCloudBlockBackup: false,
+  iCloudBlockDocumentSync: false,
+  iCloudBlockManagedAppsSync: false,
+  iCloudBlockPhotoLibrary: false,
+  iCloudBlockPhotoStreamSync: false,
+  iCloudBlockSharedPhotoStream: false,
   iCloudRequireEncryptedBackup: true,
-  safariBlockFraudWarning: false,
+  messagesBlocked: false,
+  notificationsBlockSettingsModification: false,
+  passcodeBlockFingerprintUnlock: false,
+  passcodeBlockFingerprintModification: false,
+  passcodeBlockModification: false,
+  siriBlocked: false,
+  siriBlockedWhenLocked: false,
+  voiceDialingBlocked: false,
+  wallpaperBlockModification: false,
+  safariRequireFraudWarning: true,
 } as const;
 
 async function getAllPages<T>(userId: string, path: string, maxPages = 10): Promise<T[]> {
