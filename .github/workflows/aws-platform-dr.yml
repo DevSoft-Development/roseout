@@ -18,17 +18,19 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - '.github/workflows/aws-staged-scheduler-runtime.yml'
-      - 'infra/aws/edge-runtime/staged-schedules.json'
-      - '.github/workflows/aws-scheduler-invoker-runtime.yml'
-      - 'infra/aws/background-runtime/**'
-      - 'infra/aws/cloudformation/background-runtime.yml'
-      - 'infra/aws/lambda/edge_scheduler_invoker.py'
-      - '.github/workflows/aws-dr-failback-reconcile.yml'
-      - '.github/workflows/aws-edge-runtime.yml'
-      - '.github/workflows/aws-scheduler-activation.yml'
-      - '.github/workflows/aws-background-runtime.yml'
+    paths:
+      - 'app/admin/dashboard/infrastructure/**'
+      - 'app/api/admin/platform-dr/**'
+      - 'app/api/health/platform-dr/**'
+      - 'components/admin/PlatformDrPanel.tsx'
+      - 'lib/aws/platform-dr-client.ts'
+      - 'lib/__tests__/platform-dr-contract.test.ts'
+      - 'infra/aws/platform-dr/**'
+      - 'infra/aws/lambda/platform_dr_gateway.py'
+      - 'infra/aws/cloudformation/platform-dr-*.yml'
+      - 'infra/aws/cloudformation/github-platform-deploy-role.yml'
+      - 'next.config.ts'
+      - '.github/workflows/aws-platform-dr.yml'
   workflow_dispatch:
     inputs:
       deploy:
