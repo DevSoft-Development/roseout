@@ -6,6 +6,7 @@ import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
 import { getStripeModeForLocation, getStripePublishableKey, stripeRequest } from "@/lib/stripe/server";
+import { enqueuePosLocationCommand } from "@/lib/pos/device-command-service";
 
 export type WebsiteOrderLineInput = {
   catalogItemId: string;
@@ -475,5 +476,13 @@ export async function finalizeWebsitePickupOrder(input: {
     p_auto_accept: settings.auto_accept,
   });
   if (finalizeError) throw new Error(finalizeError.message || "online_order_finalize_failed");
+  await enqueuePosLocationCommand({
+    locationId,
+    commandType: "online_order_received",
+    sourceType: "pos_online_order",
+    sourceId: onlineOrderId,
+    dedupeKey: `online-order-received:${onlineOrderId}`,
+    payload: { online_order_id: onlineOrderId },
+  });
   return { ...(data as Record<string, unknown>), paymentStatus: "succeeded", finalized: true };
 }
