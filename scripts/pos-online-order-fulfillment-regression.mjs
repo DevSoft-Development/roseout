@@ -47,8 +47,13 @@ for(const token of [
 for(const token of ["payment_intent.succeeded","pos_online_order","finalizeWebsitePickupOrder","failWebsitePickupOrder"]) {
   if(!webhook.includes(token)||!consumerWebhook.includes(token)) throw new Error(`Stripe Connect fulfillment parity missing: ${token}`);
 }
-for(const token of ["Authorization","X-Pos-Device-Id","Cache-Control"]) {
-  if(!commands.includes(token)||!status.includes(token)||!mobileCloud.includes(token)) throw new Error(`Authenticated device transport missing: ${token}`);
+for(const token of ["authorization","x-pos-device-id","Cache-Control"]) {
+  if(!commands.toLowerCase().includes(token.toLowerCase())||!status.toLowerCase().includes(token.toLowerCase())) {
+    throw new Error(`Authenticated device server transport missing: ${token}`);
+  }
+}
+for(const token of ["Authorization","X-Pos-Device-Id"]) {
+  if(!mobileCloud.includes(token)) throw new Error(`Authenticated device mobile transport missing: ${token}`);
 }
 if(!claim.includes("claimPosDeviceCredential")||!mobileCloud.includes("posClaimTransport")) {
   throw new Error("POS claim transport must exist on server and mobile.");
