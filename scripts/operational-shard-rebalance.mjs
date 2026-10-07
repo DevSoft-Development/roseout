@@ -161,6 +161,7 @@ const tables = [
   ["pos_ordering_settings", "location_id"],
   ["pos_online_orders", "location_id"],
   ["pos_online_order_events", "location_id"],
+  ["pos_online_order_dispatches", "location_id"],
 ];
 
 const deletionOrder = [...tables].reverse();
