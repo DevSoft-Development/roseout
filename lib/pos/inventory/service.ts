@@ -88,6 +88,7 @@ export async function reservePosInventory(input: {
     p_source_type: input.sourceType,
     p_source_id: input.sourceId,
     p_idempotency_key: input.idempotencyKey,
+    p_reason: input.reason || "reservation_released",
   });
 
   if (error) throw new Error(error.message || "pos_inventory_reservation_failed");
@@ -153,6 +154,7 @@ export async function adjustPosInventory(input: {
 export async function releasePosInventory(input: {
   locationId: string;
   idempotencyKey: string;
+  reason?: string;
 }) {
   const shard = await resolveOperationalShardForLocationId(input.locationId, { mode: "write" });
   const { data, error } = await shard.client.rpc("pos_release_inventory", {
