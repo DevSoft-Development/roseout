@@ -6,11 +6,13 @@ on:
     paths:
       - '.github/workflows/operational-shard-dr-replication.yml'
       - 'infra/supabase/operational-shards/hardening-v2.sql'
+      - 'infra/supabase/operational-shards/inventory-v7.sql'
   push:
     branches: [main]
     paths:
       - '.github/workflows/operational-shard-dr-replication.yml'
       - 'infra/supabase/operational-shards/hardening-v2.sql'
+      - 'infra/supabase/operational-shards/inventory-v7.sql'
   workflow_dispatch:
 
 permissions:
@@ -91,10 +93,15 @@ jobs:
           }
 
           hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
+          inventory_sql="$(cat infra/supabase/operational-shards/inventory-v7.sql)"
           sql_api "$SHARD01_REF" "$hardening_sql" "$RUNNER_TEMP/shard01-hardening.json"
           sql_api "$SHARD01_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard01dr-hardening.json"
           sql_api "$SHARD02_REF" "$hardening_sql" "$RUNNER_TEMP/shard02-hardening.json"
           sql_api "$SHARD02_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard02dr-hardening.json"
+          sql_api "$SHARD01_REF" "$inventory_sql" "$RUNNER_TEMP/shard01-inventory.json"
+          sql_api "$SHARD01_DR_REF" "$inventory_sql" "$RUNNER_TEMP/shard01dr-inventory.json"
+          sql_api "$SHARD02_REF" "$inventory_sql" "$RUNNER_TEMP/shard02-inventory.json"
+          sql_api "$SHARD02_DR_REF" "$inventory_sql" "$RUNNER_TEMP/shard02dr-inventory.json"
 
           configure_pair() {
             local logical="$1" source="$2" target="$3" role="$4" sub="$5"
