@@ -74,7 +74,29 @@ export async function claimBusinessHardwareDevice(formData: FormData) {
   const certified = getCertifiedHardware(candidate.hardware_catalog_id);
   if (!certified) throw new Error("uncertified_pos_hardware");
 
+  const candidateMetadata =
+    candidate.metadata && typeof candidate.metadata === "object"
+      ? candidate.metadata
+      : {};
+  const intendedRole =
+    typeof candidateMetadata.intended_role === "string"
+      ? candidateMetadata.intended_role.trim()
+      : "";
+  const intendedStationKey =
+    typeof candidateMetadata.intended_station_key === "string"
+      ? candidateMetadata.intended_station_key.trim()
+      : "";
+
   const locationHardware = await listLocationHardware(locationId);
+  const hasThePosHavenHub = locationHardware.some(
+    (item) =>
+      item.device.device_type === "network_hub" &&
+      !["retired", "lost", "replaced"].includes(String(item.device.lifecycle_status || "")),
+  );
+  if (certified.managedKit === false && !hasThePosHavenHub) {
+    throw new Error("hardware_byoh_requires_pos_hub");
+  }
+
   const replacing = replaceDeviceId
     ? locationHardware.find((item) => item.deviceId === replaceDeviceId)
     : null;
@@ -94,6 +116,19 @@ export async function claimBusinessHardwareDevice(formData: FormData) {
     } else if (candidate.device_type !== replacing.device.device_type) {
       throw new Error("replacement_hardware_type_incompatible");
     }
+  } else if (intendedRole) {
+    if (certified.supportedPrinterRoles?.length) {
+      if (!certified.supportedPrinterRoles.includes(intendedRole as PosPrinterRole)) {
+        throw new Error("hardware_preprovisioned_role_incompatible");
+      }
+    } else {
+      const defaultRole = defaultRoleForDeviceType(candidate.device_type);
+      if (!defaultRole || intendedRole !== defaultRole) {
+        throw new Error("hardware_preprovisioned_role_incompatible");
+      }
+    }
+    role = intendedRole;
+    stationKey = intendedStationKey || "default";
   } else if (certified.supportedPrinterRoles?.length) {
     if (
       !requestedRole ||

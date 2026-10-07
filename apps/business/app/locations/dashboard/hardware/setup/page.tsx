@@ -77,12 +77,28 @@ export default async function HardwareSetupPage({
   const certified = candidate
     ? getCertifiedHardware(candidate.hardware_catalog_id)
     : null;
+  const intendedRole =
+    candidate && typeof candidate.metadata?.intended_role === "string"
+      ? candidate.metadata.intended_role.trim()
+      : "";
+  const intendedStationKey =
+    candidate && typeof candidate.metadata?.intended_station_key === "string"
+      ? candidate.metadata.intended_station_key.trim() || "default"
+      : "default";
 
+  const hasThePosHavenHub = hardware.some(
+    (item) =>
+      item.device.device_type === "network_hub" &&
+      !["retired", "lost", "replaced"].includes(String(item.device.lifecycle_status || "")),
+  );
+  const byohRequiresHub = certified?.managedKit === false;
+  const byohBlocked = Boolean(byohRequiresHub && !hasThePosHavenHub);
   const candidateReady = Boolean(
     candidate &&
       certified &&
       ["inventory", "provisioned"].includes(candidate.lifecycle_status) &&
-      isPosHardwarePreenrolledForLocation(candidate, locationId),
+      isPosHardwarePreenrolledForLocation(candidate, locationId) &&
+      !byohBlocked,
   );
 
   return (
@@ -123,6 +139,13 @@ export default async function HardwareSetupPage({
               </div>
             ))}
           </section>
+        ) : byohBlocked ? (
+          <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
+            <h2 className="font-black text-amber-100">ThePOSHaven Hub required for this BYOH device.</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-amber-100/65">
+              Certified bring-your-own hardware can only be claimed after an active ThePOSHaven Hub is assigned to this location. The Hub keeps local discovery, routing, and recovery inside the managed POS network.
+            </p>
+          </section>
         ) : !candidateReady ? (
           <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
             <h2 className="font-black text-amber-100">This device is not ready for this location.</h2>
@@ -149,6 +172,13 @@ export default async function HardwareSetupPage({
                     : ""}
                 </p>
               </div>
+            ) : intendedRole ? (
+              <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                <p className="font-black text-emerald-100">Pre-provisioned by TheOutHaven.</p>
+                <p className="mt-1 text-sm font-semibold text-emerald-100/65">
+                  This device is already assigned to {roleLabel(intendedRole)} at {intendedStationKey === "default" ? "Main" : intendedStationKey}. Finish setup without reconfiguring it.
+                </p>
+              </div>
             ) : null}
 
             <form action={claimBusinessHardwareDevice} className="mt-5">
@@ -158,7 +188,7 @@ export default async function HardwareSetupPage({
                 <input type="hidden" name="replaceDeviceId" value={replaceDeviceId} />
               ) : null}
 
-              {!replacing && certified?.supportedPrinterRoles?.length ? (
+              {!replacing && !intendedRole && certified?.supportedPrinterRoles?.length ? (
                 <label className="block text-xs font-black uppercase tracking-[0.14em] text-[var(--business-muted)]">
                   What should this printer do?
                   <select
