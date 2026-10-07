@@ -16,7 +16,7 @@ const features=[
   ["4 KDS",service.includes("listSignaturePlusKds")&&ui.includes("KDS")],
   ["5 move / merge tables",service.includes("moveOrMergeSignaturePlusTable")&&ui.includes("Move / Merge Table")],
   ["6 transfer server",service.includes("transferSignaturePlusServer")&&ui.includes("Transfer Server")],
-  ["7 advanced split check",service.includes("buildSignaturePlusSplit")&&service.includes('"by_guest"|"even"|"custom"')&&ui.includes("Split Check")],
+  ["7 advanced split check",service.includes("buildSignaturePlusSplit")&&service.includes("createSignaturePlusSplitTender")&&service.includes('"by_guest"|"even"|"custom"')&&ui.includes("Charge card")],
   ["8 multi device synchronization",command.includes('"pos_state_changed"')&&service.includes("enqueuePosLocationCommand")&&ui.includes("4000")],
   ["9 ingredient inventory",service.includes("inventory_role")&&service.includes("recipe_usage")&&ui.includes("Ingredient Inventory")],
   ["10 advanced reporting",service.includes("getSignaturePlusReport")&&ui.includes("Net Sales")&&ui.includes("Payment Methods")],
@@ -27,14 +27,14 @@ if(failed.length) throw new Error("Signature+ feature contract missing: "+failed
 
 if(!access.includes("requireSignaturePlusAccess")||!access.includes("business_subscriptions")) throw new Error("Signature+ entitlement resolver missing.");
 for(const route of [root,consumer]){
-  for(const token of ["authenticatePosDeviceCredential","getSignaturePlusBootstrap","setSignaturePlusCourseState","moveOrMergeSignaturePlusTable","transferSignaturePlusServer","buildSignaturePlusSplit"]){
+  for(const token of ["authenticatePosDeviceCredential","getSignaturePlusBootstrap","setSignaturePlusCourseState","moveOrMergeSignaturePlusTable","transferSignaturePlusServer","buildSignaturePlusSplit","createSignaturePlusSplitTender"]){
     if(!route.includes(token)) throw new Error("Signature+ route missing: "+token);
   }
   if(!route.includes("requireSignaturePlusAccess")) throw new Error("Signature+ route must enforce plan access.");
   for(const token of [] ){
   }
 }
-for(const token of ["fetchSignaturePlus","updateSignaturePlusCourse","moveSignaturePlusTable","transferSignaturePlusServer","createSignaturePlusSplit"]){
+for(const token of ["fetchSignaturePlus","updateSignaturePlusCourse","moveSignaturePlusTable","transferSignaturePlusServer","createSignaturePlusSplit","createSignaturePlusSplitTender"]){
   if(!cloud.includes(token)) throw new Error("Signature+ device client missing: "+token);
 }
 if(!home.includes('workspaceMode==="signature"')||!home.includes("SignaturePlusWorkspace")){

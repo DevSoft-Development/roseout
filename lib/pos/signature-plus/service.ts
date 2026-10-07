@@ -4,6 +4,8 @@ import { getUniversalLocationCatalog } from "@/lib/catalog/universalCatalog";
 import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
 import { adjustPosInventory, getPosInventoryAvailability } from "@/lib/pos/inventory/service";
 import { enqueuePosLocationCommand } from "@/lib/pos/device-command-service";
+import { createCheckCardPayment } from "@/lib/pos/payments/check-payment-service";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type CourseState="sent"|"fired"|"fulfilled";
 type SplitMode="by_guest"|"even"|"custom";
@@ -267,6 +269,23 @@ export async function buildSignaturePlusSplit(input:{
   if(updateError) throw new Error(updateError.message||"pos_signature_split_save_failed");
   await notify(input.locationId,"pos_check",input.checkId,{action:"split_plan_updated"});
   return plan;
+}
+
+export async function createSignaturePlusSplitTender(input:{locationId:string;checkId:string;allocationKey:string;tipCents?:number}){
+  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"read"});
+  const {data:check,error}=await shard.client.from("pos_checks").select("id,metadata").eq("location_id",input.locationId).eq("id",input.checkId).maybeSingle();
+  if(error||!check) throw new Error(error?.message||"pos_signature_check_not_found");
+  const plan=safeMetadata(check.metadata).signature_plus_split_plan;
+  const allocations=Array.isArray(plan?.allocations)?plan.allocations:[];
+  const allocation=allocations.find((row:any)=>String(row?.key||"")===String(input.allocationKey||""));
+  if(!allocation) throw new Error("pos_signature_split_allocation_not_found");
+  const amountCents=Number(allocation.amountCents||0);
+  if(!Number.isInteger(amountCents)||amountCents<=0) throw new Error("invalid_pos_partial_amount");
+  const {data:location, error:locationError}=await supabaseAdmin.from("locations").select("*").eq("id",input.locationId).maybeSingle();
+  if(locationError||!location) throw new Error(locationError?.message||"pos_location_not_found");
+  const result=await createCheckCardPayment({location,checkId:input.checkId,amountCents,tipCents:input.tipCents||0});
+  await notify(input.locationId,"pos_check",input.checkId,{action:"split_tender_created",allocationKey:input.allocationKey,tenderId:result.tender_id});
+  return {...result,allocationKey:input.allocationKey};
 }
 
 export async function getSignaturePlusInventory(locationId:string){
