@@ -8,6 +8,7 @@ on:
       - 'infra/supabase/operational-shards/hardening-v2.sql'
       - 'infra/supabase/operational-shards/inventory-v7.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
+      - 'infra/supabase/operational-shards/online-order-fulfillment-v9.sql'
   push:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'infra/supabase/operational-shards/hardening-v2.sql'
       - 'infra/supabase/operational-shards/inventory-v7.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
+      - 'infra/supabase/operational-shards/online-order-fulfillment-v9.sql'
   workflow_dispatch:
 
 permissions:
@@ -97,6 +99,7 @@ jobs:
           hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
           inventory_sql="$(cat infra/supabase/operational-shards/inventory-v7.sql)"
           online_ordering_sql="$(cat infra/supabase/operational-shards/online-ordering-v8.sql)"
+          fulfillment_sql="$(cat infra/supabase/operational-shards/online-order-fulfillment-v9.sql)"
           sql_api "$SHARD01_REF" "$hardening_sql" "$RUNNER_TEMP/shard01-hardening.json"
           sql_api "$SHARD01_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard01dr-hardening.json"
           sql_api "$SHARD02_REF" "$hardening_sql" "$RUNNER_TEMP/shard02-hardening.json"
@@ -109,6 +112,10 @@ jobs:
           sql_api "$SHARD01_DR_REF" "$online_ordering_sql" "$RUNNER_TEMP/shard01dr-online-ordering.json"
           sql_api "$SHARD02_REF" "$online_ordering_sql" "$RUNNER_TEMP/shard02-online-ordering.json"
           sql_api "$SHARD02_DR_REF" "$online_ordering_sql" "$RUNNER_TEMP/shard02dr-online-ordering.json"
+          sql_api "$SHARD01_REF" "$fulfillment_sql" "$RUNNER_TEMP/shard01-fulfillment.json"
+          sql_api "$SHARD01_DR_REF" "$fulfillment_sql" "$RUNNER_TEMP/shard01dr-fulfillment.json"
+          sql_api "$SHARD02_REF" "$fulfillment_sql" "$RUNNER_TEMP/shard02-fulfillment.json"
+          sql_api "$SHARD02_DR_REF" "$fulfillment_sql" "$RUNNER_TEMP/shard02dr-fulfillment.json"
 
           configure_pair() {
             local logical="$1" source="$2" target="$3" role="$4" sub="$5"
@@ -146,14 +153,14 @@ jobs:
             alter role $role password '$password';
             grant connect on database postgres to $role;
             grant usage on schema public to $role;
-            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events to $role;
+            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_online_order_dispatches to $role;
             do \$\$
             begin
               if not exists (select 1 from pg_publication where pubname='toh_operational_dr') then
                 execute 'create publication toh_operational_dr for table public.locations';
               end if;
             end \$\$;
-            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events;"
+            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_online_order_dispatches;"
             sql_api "$source" "$source_sql" "$RUNNER_TEMP/$logical-source.json"
 
             target_check="select exists(select 1 from pg_subscription where subname='$sub') as exists;"
