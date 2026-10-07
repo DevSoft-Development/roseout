@@ -27,7 +27,7 @@ export async function createPosDeviceClaimCode(input: {
     expires_at: expiresAt,
   });
   if (error) throw new Error(`pos_device_claim_code_create_failed:${error.message}`);
-  return { deviceId, code, expiresAt };
+  return { deviceId, code, pairingCode: `${deviceId}.${code}`, expiresAt };
 }
 
 export async function claimPosDeviceCredential(input: {
