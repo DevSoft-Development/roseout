@@ -67,7 +67,7 @@ for (const token of [
 }
 
 for (const token of [
-  "TARGET_SCHEMA_VERSION = 6",
+  "TARGET_SCHEMA_VERSION = 7",
   "location_not_on_primary",
   "setPrimaryFence",
   "drainPrimaryCardTenders",
