@@ -3,8 +3,16 @@ name: Production DR health gate
 on:
   pull_request:
     branches: [main]
+    paths: &dr_health_paths
+      - 'scripts/dr/**'
+      - 'supabase/migrations/**'
+      - 'infra/aws/platform-dr/**'
+      - 'infra/aws/cloudformation/platform-dr-*.yml'
+      - '.github/workflows/aws-platform-dr.yml'
+      - '.github/workflows/production-dr-health-gate.yml'
   push:
     branches: [main]
+    paths: *dr_health_paths
   workflow_dispatch:
 
 permissions:
