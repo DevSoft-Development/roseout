@@ -120,6 +120,9 @@ jobs:
           fi
           grep -F 'for attempt in 1 2 3 4; do' "$FILE" >/dev/null
           grep -F 'Background runtime failed Virginia health after 4 attempts.' "$FILE" >/dev/null
+          grep -F 'Recover failed CloudFormation update rollback' "$FILE" >/dev/null
+          grep -F 'continue-update-rollback' "$FILE" >/dev/null
+          grep -F 'UPDATE_ROLLBACK_COMPLETE' "$FILE" >/dev/null
           grep -F 'supabaseAdmin.from("locations").select("id").limit(1)' app/api/health/background-runtime/route.ts >/dev/null
           grep -F 'database: databaseOk ? "ok" : "unavailable"' app/api/health/background-runtime/route.ts >/dev/null
 
@@ -276,6 +279,38 @@ jobs:
           docker push "$IMAGE_URI"
           rm -f "$ENV_FILE" "$VIRGINIA_SERVICE_ROLE_FILE" "$BACKGROUND_APP_ENV_JSON"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Recover failed CloudFormation update rollback
+        run: |
+          set -euo pipefail
+          STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          echo "background_stack_status_before_recovery=$STATUS"
+          if [ "$STATUS" = "UPDATE_ROLLBACK_FAILED" ]; then
+            echo "Background runtime stack is stuck in UPDATE_ROLLBACK_FAILED; attempting safe rollback continuation."
+            aws cloudformation describe-stack-events               --stack-name "$STACK_NAME"               --query 'StackEvents[?ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`UPDATE_ROLLBACK_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]'               --output table || true
+            aws cloudformation continue-update-rollback --stack-name "$STACK_NAME"
+            recovered=0
+            for attempt in $(seq 1 60); do
+              sleep 10
+              STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+              echo "rollback_recovery_attempt=${attempt} status=${STATUS}"
+              case "$STATUS" in
+                UPDATE_ROLLBACK_COMPLETE)
+                  recovered=1
+                  break
+                  ;;
+                UPDATE_ROLLBACK_FAILED|ROLLBACK_FAILED|DELETE_FAILED)
+                  echo "CloudFormation rollback recovery entered terminal failure state: $STATUS" >&2
+                  aws cloudformation describe-stack-events                     --stack-name "$STACK_NAME"                     --query 'StackEvents[?ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`UPDATE_ROLLBACK_FAILED`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]'                     --output table || true
+                  exit 1
+                  ;;
+              esac
+            done
+            test "$recovered" = "1" || {
+              echo "Timed out waiting for CloudFormation rollback recovery." >&2
+              exit 1
+            }
+          fi
 
       - name: Deploy background runtime stack
         env:
