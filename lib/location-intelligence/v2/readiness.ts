@@ -55,7 +55,7 @@ export async function refreshLocationReadiness(locationId: string) {
       .limit(1),
     supabaseAdmin
       .from("location_intelligence_profiles_v2")
-      .select("classification")
+      .select("classification,features,reviews")
       .eq("location_id", locationId)
       .maybeSingle(),
   ]);
@@ -74,9 +74,20 @@ export async function refreshLocationReadiness(locationId: string) {
     hasGeography: Boolean(location?.latitude != null && location?.longitude != null && location?.city && location?.state),
     hasOperationalStatus: Boolean(location?.google_business_status || location?.active != null),
     hasClassification: Boolean(category),
-    hasHours: Boolean(location?.operating_hours),
-    hasFeatures: Boolean((location?.tags || []).length || (location?.vibe_tags || []).length || (location?.best_for_tags || []).length),
-    hasReviewIntelligence: Boolean(reviews?.length),
+    hasHours: Boolean(
+      location?.operating_hours ||
+      (profile?.features && typeof profile.features === "object" && (profile.features as Record<string, unknown>).operating_hours)
+    ),
+    hasFeatures: Boolean(
+      (location?.tags || []).length ||
+      (location?.vibe_tags || []).length ||
+      (location?.best_for_tags || []).length ||
+      (profile?.features && typeof profile.features === "object" && Object.keys(profile.features as Record<string, unknown>).length)
+    ),
+    hasReviewIntelligence: Boolean(
+      reviews?.length ||
+      (profile?.reviews && typeof profile.reviews === "object" && Object.keys(profile.reviews as Record<string, unknown>).length)
+    ),
     negativeClassificationKnown: classification.negativeClassificationKnown === true,
   });
 
