@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticatePosDeviceCredential } from "@/lib/pos/device-command-service";
+import { requireSignaturePlusAccess } from "@/lib/pos/access";
 import {
   buildSignaturePlusSplit,
   getSignaturePlusBootstrap,
@@ -26,6 +27,7 @@ async function auth(request:Request){
 function statusFor(message:string){
   if(/unauthorized|missing/.test(message)) return 401;
   if(/not_found/.test(message)) return 404;
+  if(/signature_plus_required/.test(message)) return 403;
   if(/invalid|mismatch|not_fireable|has_open_check/.test(message)) return 400;
   return 500;
 }
@@ -33,6 +35,7 @@ function statusFor(message:string){
 export async function GET(request:Request){
   try{
     const device=await auth(request);
+    await requireSignaturePlusAccess(device.locationId);
     const url=new URL(request.url);
     const view=String(url.searchParams.get("view")||"bootstrap");
     if(view==="kds"){
@@ -60,6 +63,7 @@ export async function GET(request:Request){
 export async function POST(request:Request){
   try{
     const device=await auth(request);
+    await requireSignaturePlusAccess(device.locationId);
     const body=await request.json().catch(()=>null) as any;
     if(!body||typeof body!=="object") throw new Error("pos_signature_invalid_payload");
     const action=String(body.action||"");
