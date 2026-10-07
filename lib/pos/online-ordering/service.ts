@@ -6,6 +6,8 @@ import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
 import { getStripeModeForLocation, getStripePublishableKey, stripeRequest } from "@/lib/stripe/server";
+import { enqueuePosLocationCommand } from "@/lib/pos/device-command-service";
+import { notifyOnlineOrderCustomer } from "@/lib/pos/online-ordering/notifications";
 
 export type WebsiteOrderLineInput = {
   catalogItemId: string;
@@ -479,5 +481,91 @@ export async function finalizeWebsitePickupOrder(input: {
     p_auto_accept: settings.auto_accept,
   });
   if (finalizeError) throw new Error(finalizeError.message || "online_order_finalize_failed");
+  await enqueuePosLocationCommand({
+    locationId,
+    commandType: "online_order_received",
+    sourceType: "pos_online_order",
+    sourceId: onlineOrderId,
+    dedupeKey: `online-order-received:${onlineOrderId}`,
+    payload: { online_order_id: onlineOrderId },
+  });
+  await notifyOnlineOrderCustomer({ locationId, onlineOrderId, status: "received" }).catch((error) => {
+    console.error("ONLINE_ORDER_RECEIVED_NOTIFICATION_FAILED", { locationId, onlineOrderId, error });
+  });
   return { ...(data as Record<string, unknown>), paymentStatus: "succeeded", finalized: true };
+}
+
+export async function failWebsitePickupOrder(input: {
+  locationId: string;
+  onlineOrderId: string;
+  reason?: string | null;
+}) {
+  const locationId=required(input.locationId,"location_id");
+  const onlineOrderId=required(input.onlineOrderId,"online_order_id");
+  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"write"});
+  const { data: order,error }=await shard.client.from("pos_online_orders")
+    .select("id,inventory_idempotency_key,status")
+    .eq("id",onlineOrderId).eq("location_id",locationId).maybeSingle();
+  if(error) throw new Error(error.message||"online_order_lookup_failed");
+  if(!order) throw new Error("online_order_not_found");
+  if(order.status==="completed"||order.status==="canceled") return {onlineOrderId,status:order.status};
+
+  const reason=String(input.reason||"payment_failed").slice(0,160);
+  const { error: cancelError }=await shard.client.rpc("pos_cancel_online_order",{
+    p_location_id:locationId,
+    p_online_order_id:onlineOrderId,
+    p_reason:reason,
+  });
+  if(cancelError) throw new Error(cancelError.message||"online_order_cancel_failed");
+  await releasePosInventory({
+    locationId,
+    idempotencyKey:String(order.inventory_idempotency_key),
+    reason,
+  });
+  return {onlineOrderId,status:"canceled"};
+}
+
+export async function updateWebsitePickupOrderStatus(input: {
+  locationId: string;
+  onlineOrderId: string;
+  status: "accepted"|"preparing"|"ready"|"completed"|"canceled";
+  actorType?: string;
+  actorId?: string | null;
+}) {
+  const locationId=required(input.locationId,"location_id");
+  const onlineOrderId=required(input.onlineOrderId,"online_order_id");
+  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"write"});
+  const { data,error }=await shard.client.rpc("pos_update_online_order_status",{
+    p_location_id:locationId,
+    p_online_order_id:onlineOrderId,
+    p_status:input.status,
+    p_actor_type:input.actorType||"device",
+    p_actor_id:input.actorId||null,
+  });
+  if(error) throw new Error(error.message||"online_order_status_update_failed");
+
+  await enqueuePosLocationCommand({
+    locationId,
+    commandType:"online_order_status_changed",
+    sourceType:"pos_online_order",
+    sourceId:onlineOrderId,
+    dedupeKey:`online-order-status:${onlineOrderId}:${input.status}`,
+    payload:{online_order_id:onlineOrderId,status:input.status},
+  });
+
+  if(input.status==="preparing"||input.status==="ready"){
+    await notifyOnlineOrderCustomer({
+      locationId,
+      onlineOrderId,
+      status:input.status,
+    }).catch((notificationError)=>{
+      console.error("ONLINE_ORDER_STATUS_NOTIFICATION_FAILED",{
+        locationId,
+        onlineOrderId,
+        status:input.status,
+        error:notificationError,
+      });
+    });
+  }
+  return data as Record<string,unknown>;
 }
