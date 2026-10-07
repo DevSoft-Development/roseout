@@ -7,6 +7,19 @@ import { applyBusinessStandardProfile, assignIntuneIosEnrollmentProfileToSerial,
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
 
+function getRequestOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+
+  if (host) {
+    const proto = forwardedProto || (host.includes("localhost") || host.startsWith("0.0.0.0") ? "http" : "https");
+    return `${proto}://${host}`;
+  }
+
+  return request.nextUrl.origin;
+}
+
 async function waitForAppleAssignment(activityId: string) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const activity = await getAppleDeviceActivity(activityId);
@@ -90,13 +103,13 @@ export async function POST(request: NextRequest) {
     revalidatePath(RETURN_PATH);
     revalidatePath("/admin/dashboard/security/devices");
 
-    const url = new URL(RETURN_PATH, request.url);
+    const url = new URL(RETURN_PATH, getRequestOrigin(request));
     url.searchParams.set("status", action === "prepare" ? "prepared" : "synced");
     if (activityId) url.searchParams.set("activity", activityId);
     return NextResponse.redirect(url, 303);
   } catch (error) {
     console.error("Apple device enrollment preparation failed", error);
-    const url = new URL(RETURN_PATH, request.url);
+    const url = new URL(RETURN_PATH, getRequestOrigin(request));
     url.searchParams.set("status", "failed");
     if (error instanceof Error) url.searchParams.set("error", error.message.slice(0, 180));
     return NextResponse.redirect(url, 303);
