@@ -205,8 +205,8 @@ const tableSpecs = [
   {
     table: "pos_ordering_settings",
     filterColumn: "location_id",
-    columns: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "slot_minutes", "max_orders_per_slot", "cutoff_minutes_before_close", "max_advance_days", "tax_rate_bps", "service_charge_bps", "ordering_hours", "pickup_instructions", "notification_settings", "metadata", "created_at", "updated_at"],
-    required: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "slot_minutes", "tax_rate_bps", "service_charge_bps", "ordering_hours", "notification_settings", "metadata", "created_at", "updated_at"],
+    columns: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "prep_delay_minutes", "paused_until", "timezone", "slot_minutes", "max_orders_per_slot", "cutoff_minutes_before_close", "max_advance_days", "tax_rate_bps", "service_charge_bps", "ordering_hours", "pickup_instructions", "notification_settings", "metadata", "created_at", "updated_at"],
+    required: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "prep_delay_minutes", "timezone", "slot_minutes", "tax_rate_bps", "service_charge_bps", "ordering_hours", "notification_settings", "metadata", "created_at", "updated_at"],
   },
   {
     table: "pos_online_orders",
