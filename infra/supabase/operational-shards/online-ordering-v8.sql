@@ -4,7 +4,8 @@
 begin;
 
 create table if not exists public.pos_ordering_settings (
-  location_id uuid primary key,
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid not null unique,
   accepting_orders boolean not null default true,
   auto_accept boolean not null default true,
   auto_print boolean not null default true,
