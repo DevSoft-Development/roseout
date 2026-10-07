@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticatePosDeviceCredential } from "@/lib/pos/hardware/device-auth";
+import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
 import {
   claimNextOnlineOrderFulfillment,
   finishOnlineOrderFulfillment,
@@ -22,6 +23,29 @@ async function auth(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const device = await auth(request);
+    if (request.nextUrl.searchParams.get("action") === "routes") {
+      const hardware = await listLocationHardware(device.locationId);
+      return NextResponse.json({
+        ok: true,
+        routes: hardware
+          .filter((entry) => entry.device.device_type === "receipt_printer" || entry.device.device_type === "kitchen_printer" || entry.device.device_type === "cash_drawer")
+          .map((entry) => ({
+            role: entry.role,
+            stationKey: entry.stationKey,
+            deviceId: entry.deviceId,
+            identity: {
+              vendor: entry.device.vendor,
+              model: entry.device.model,
+              serialNumber: entry.device.serial_number,
+              provider: entry.device.provider,
+              providerDeviceId: entry.device.provider_device_id,
+              networkIdentifiers: Array.isArray(entry.device.metadata?.network_identifiers)
+                ? entry.device.metadata.network_identifiers
+                : [],
+            },
+          })),
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
     const dispatch = await claimNextOnlineOrderFulfillment({
       locationId: device.locationId,
       deviceId: device.deviceId,
