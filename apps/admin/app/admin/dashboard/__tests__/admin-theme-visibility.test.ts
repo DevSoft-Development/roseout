@@ -69,3 +69,37 @@ describe("isolated admin light/dark visibility", () => {
     expect(combinedCss).toContain(":focus-visible");
   });
 });
+
+
+describe("Admin route CSS consolidation", () => {
+  const routePages = [
+    "apps/admin/app/admin/dashboard/search-benchmark/page.tsx",
+    "apps/admin/app/admin/dashboard/launch-checklist/page.tsx",
+    "apps/admin/app/admin/dashboard/settings/domain-benefit/page.tsx",
+    "apps/admin/app/admin/dashboard/settings/email-qa/page.tsx",
+    "apps/admin/app/admin/dashboard/marketing/reports/page.tsx",
+    "apps/admin/app/admin/dashboard/settings/microsoft-365/page.tsx",
+    "apps/admin/app/admin/dashboard/security/apple-devices/page.tsx",
+  ];
+
+  it("keeps route pages on the shared Admin stylesheet", () => {
+    for (const path of routePages) {
+      const source = readFileSync(path, "utf8");
+      expect(source).not.toMatch(/import\s+["'][^"']+\.css["']/);
+    }
+  });
+
+  it("keeps consolidated route selectors in the global theme layer", () => {
+    for (const selector of [
+      ".search-benchmark-page",
+      ".launch-checklist-page",
+      ".domain-benefit-page",
+      ".email-qa-page",
+      ".marketing-intelligence-theme",
+      ".m365-page",
+      ".apple-page",
+    ]) {
+      expect(css).toContain(selector);
+    }
+  });
+});
