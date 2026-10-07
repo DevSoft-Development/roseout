@@ -19,6 +19,7 @@ export type CreateCheckCardPaymentInput = {
   checkId: string;
   tipCents?: number;
   staffProfileId?: string | null;
+  amountCents?: number | null;
 };
 
 export async function createCheckCardPayment(input: CreateCheckCardPaymentInput) {
@@ -35,12 +36,15 @@ export async function createCheckCardPayment(input: CreateCheckCardPaymentInput)
   const tipCents = Number(input.tipCents || 0);
   if (!Number.isInteger(tipCents) || tipCents < 0) throw new Error("invalid_pos_tip_amount");
 
-  const { data, error } = await shardClient.rpc("pos_begin_card_tender", {
-    p_location_id: locationId,
-    p_check_id: input.checkId,
-    p_tip_cents: tipCents,
-    p_staff_profile_id: input.staffProfileId || null,
-  });
+  const requestedAmount=input.amountCents==null?null:Number(input.amountCents);
+  if(requestedAmount!==null&&(!Number.isInteger(requestedAmount)||requestedAmount<=0)) throw new Error("invalid_pos_partial_amount");
+  const rpcName=requestedAmount===null?"pos_begin_card_tender":"pos_begin_partial_card_tender";
+  const args=requestedAmount===null?{
+    p_location_id:locationId,p_check_id:input.checkId,p_tip_cents:tipCents,p_staff_profile_id:input.staffProfileId||null,
+  }:{
+    p_location_id:locationId,p_check_id:input.checkId,p_amount_cents:requestedAmount,p_tip_cents:tipCents,p_staff_profile_id:input.staffProfileId||null,
+  };
+  const { data, error } = await shardClient.rpc(rpcName,args);
   if (error) throw new Error(error.message || "pos_tender_reservation_failed");
 
   const tender = (Array.isArray(data) ? data[0] : data) as BeginTenderRow | null;
