@@ -107,11 +107,13 @@ export async function pollAndDispatchPosCommands(input:{
   session:PosClaimSession;
   router:RoleBasedPosOutputRouter;
   maxCommands?:number;
+  waitSeconds?:number;
 }) {
   const commands=await fetchPosDeviceCommands({
     deviceId:input.session.deviceId,
     credential:input.session.credential,
     limit:input.maxCommands||10,
+    waitSeconds:input.waitSeconds||0,
   });
   const results=[];
   for(const command of commands){
@@ -128,7 +130,7 @@ export async function pollAndDispatchPosCommands(input:{
       ok:result.ok,
       error:result.error||null,
     });
-    results.push({commandId:command.id,...result});
+    results.push({commandId:command.id,commandType:command.command_type,...result});
   }
   return results;
 }
