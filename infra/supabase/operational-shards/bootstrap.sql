@@ -24,6 +24,7 @@
 -- public.pos_ordering_settings
 -- public.pos_online_orders
 -- public.pos_online_order_events
+-- public.pos_online_order_dispatches
 --
 -- Required functions:
 -- public.pos_reserve_inventory(uuid, jsonb, text, text, text)
@@ -32,6 +33,9 @@
 -- public.pos_create_online_order_draft(...)
 -- public.pos_finalize_online_order_payment(uuid, uuid, text, boolean)
 -- public.pos_cancel_online_order(uuid, uuid, text)
+-- public.pos_claim_online_order_dispatch(uuid, uuid)
+-- public.pos_finish_online_order_dispatch(uuid, uuid, uuid, boolean, text, jsonb)
+-- public.pos_set_online_order_status(uuid, uuid, text, text, text)
 --
 -- Required function:
 -- public.pos_begin_card_tender(uuid, uuid, integer, uuid)
