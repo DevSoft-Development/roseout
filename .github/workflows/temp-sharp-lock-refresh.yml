@@ -1,0 +1,35 @@
+name: Temporary Sharp lock refresh
+
+on:
+  push:
+    branches:
+      - fix/sharp-0-35-5-security
+    paths:
+      - .github/workflows/temp-sharp-lock-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/sharp-0-35-5-security
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Refresh patched Sharp lock entry
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-save sharp@0.35.5
+          npm audit --package-lock-only --omit=dev --audit-level=high
+          git diff -- package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix sharp high severity advisory"
+          git push origin HEAD:fix/sharp-0-35-5-security
