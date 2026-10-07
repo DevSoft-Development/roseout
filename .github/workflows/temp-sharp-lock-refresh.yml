@@ -19,12 +19,12 @@ jobs:
           ref: fix/sharp-0-35-5-security
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
-      - name: Refresh patched Sharp lock entry
+      - name: Refresh patched dependency lock
         run: |
           set -euo pipefail
-          npm install --package-lock-only --ignore-scripts --no-save sharp@0.35.5
+          npm audit fix --package-lock-only --omit=dev
           npm audit --package-lock-only --omit=dev --audit-level=high
           git diff -- package-lock.json
           git config user.name "github-actions[bot]"
