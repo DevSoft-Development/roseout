@@ -152,7 +152,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
     const { data: embeddingRows, error: embeddingError } = ids.length
       ? await supabaseAdmin
           .from("location_search_embeddings")
-          .select("location_id,status,calculated_at")
+          .select("location_id,status,calculated_at,embedding_version")
           .in("location_id", ids)
       : { data: [] as any[], error: null };
     if (embeddingError) throw embeddingError;
@@ -165,9 +165,11 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
       const existing = embeddingByLocation.get(String(location.id));
       const sourceUpdatedAt = timestampMs(location.updated_at ?? location.created_at);
       const embeddingUpdatedAt = timestampMs(existing?.calculated_at);
+      const expectedVersion = process.env.SEARCH_EMBEDDING_VERSION || EMBEDDING_VERSION;
       const needsEmbedding =
         !existing ||
         existing.status !== "ready" ||
+        existing.embedding_version !== expectedVersion ||
         (sourceUpdatedAt > 0 && sourceUpdatedAt > embeddingUpdatedAt);
       if (!needsEmbedding || !semanticCandidateEligible(location)) continue;
       selected.push(String(location.id));
