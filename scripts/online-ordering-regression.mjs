@@ -7,8 +7,8 @@ const bootstrap = read(".github/workflows/operational-shard-live-bootstrap.yml")
 const websiteArtifact = read("lib/websites/online-ordering-artifact.ts");
 const websiteContent = read("lib/websites/content-artifact.ts");
 const locationContent = read("lib/websites/location-content.ts");
-const catalogRoute = read("app/api/public/online-ordering/[locationId]/catalog/route.ts");
-const orderRoute = read("app/api/public/online-ordering/[locationId]/orders/route.ts");
+const gateway = read("app/api/widgets/orders/route.ts");
+const consumerGateway = read("apps/consumer/app/api/widgets/orders/route.ts");
 const fence = read("infra/supabase/operational-shards/write-fence-v3.sql");
 
 for (const token of [
@@ -65,13 +65,13 @@ for (const token of ["order/index.html", "Order Online", "js.stripe.com/v3", "on
 if (!websiteContent.includes("addGeneratedOnlineOrderingArtifact")) {
   throw new Error("Generated website publisher must add ordering to the existing site artifact.");
 }
-for (const route of [catalogRoute, orderRoute]) {
-  if (!route.includes("onlineOrderingOptions") || !route.includes("Cache-Control")) {
-    throw new Error("Public ordering routes must be cross-domain safe and non-cacheable.");
+for (const route of [gateway, consumerGateway]) {
+  for (const token of ["originAllowed", "business_websites", "Idempotency-Key", "64 * 1024", "Cache-Control"]) {
+    if (!route.includes(token)) throw new Error(`Website ordering gateway missing security invariant: ${token}`);
   }
 }
-if (!orderRoute.includes("Idempotency-Key") || !orderRoute.includes("64 * 1024")) {
-  throw new Error("Public order creation must enforce idempotency and a bounded request body.");
+if (gateway.includes('"Access-Control-Allow-Origin": "*"') || consumerGateway.includes('"Access-Control-Allow-Origin": "*"')) {
+  throw new Error("Website order creation must not allow arbitrary origins.");
 }
 
 console.log("ThePOSHaven online ordering core verified.");
