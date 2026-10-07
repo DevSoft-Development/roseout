@@ -77,6 +77,14 @@ export default async function HardwareSetupPage({
   const certified = candidate
     ? getCertifiedHardware(candidate.hardware_catalog_id)
     : null;
+  const intendedRole =
+    candidate && typeof candidate.metadata?.intended_role === "string"
+      ? candidate.metadata.intended_role.trim()
+      : "";
+  const intendedStationKey =
+    candidate && typeof candidate.metadata?.intended_station_key === "string"
+      ? candidate.metadata.intended_station_key.trim() || "default"
+      : "default";
 
   const hasThePosHavenHub = hardware.some(
     (item) =>
@@ -164,6 +172,13 @@ export default async function HardwareSetupPage({
                     : ""}
                 </p>
               </div>
+            ) : intendedRole ? (
+              <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                <p className="font-black text-emerald-100">Pre-provisioned by TheOutHaven.</p>
+                <p className="mt-1 text-sm font-semibold text-emerald-100/65">
+                  This device is already assigned to {roleLabel(intendedRole)} at {intendedStationKey === "default" ? "Main" : intendedStationKey}. Finish setup without reconfiguring it.
+                </p>
+              </div>
             ) : null}
 
             <form action={claimBusinessHardwareDevice} className="mt-5">
@@ -173,7 +188,7 @@ export default async function HardwareSetupPage({
                 <input type="hidden" name="replaceDeviceId" value={replaceDeviceId} />
               ) : null}
 
-              {!replacing && certified?.supportedPrinterRoles?.length ? (
+              {!replacing && !intendedRole && certified?.supportedPrinterRoles?.length ? (
                 <label className="block text-xs font-black uppercase tracking-[0.14em] text-[var(--business-muted)]">
                   What should this printer do?
                   <select
