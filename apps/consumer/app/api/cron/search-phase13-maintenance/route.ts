@@ -138,7 +138,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
     selected.length < limit && from < maxRowsToScan;
     from += pageSize
   ) {
-    const { data: locationRows, error: locationError } = await supabaseAdmin
+    const { data: locationRowsRaw, error: locationError } = await supabaseAdmin
       .from("locations")
       .select(CANDIDATE_LOCATION_FIELDS)
       .eq("is_searchable", true)
@@ -148,7 +148,8 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (locationError) throw locationError;
-    if (!locationRows?.length) break;
+    const locationRows = (locationRowsRaw ?? []) as any[];
+    if (!locationRows.length) break;
 
     const ids = locationRows.map((row: any) => row.id).filter(Boolean);
     const { data: embeddingRows, error: embeddingError } = ids.length
