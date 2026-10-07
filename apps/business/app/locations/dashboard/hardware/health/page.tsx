@@ -115,14 +115,13 @@ export default async function HardwareHealthPage({
     userEmail: user.email,
     locationId,
   });
+  const canonicalLocationId = access.canonicalLocationId;
   if (
     !canonicalLocationId ||
     !hasLocationPermission(access, "hardware.view")
   ) {
     redirect("/locations/dashboard/hardware");
   }
-
-  const canonicalLocationId = access.canonicalLocationId;
   const canManage = hasLocationPermission(access, "hardware.manage");
   let hardware: Awaited<ReturnType<typeof listLocationHardware>> = [];
   let unavailable = false;
