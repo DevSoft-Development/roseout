@@ -18,6 +18,13 @@
 -- public.pos_order_items
 -- public.pos_tenders
 -- public.pos_payments
+-- public.pos_inventory_items
+-- public.pos_inventory_transactions
+-- public.pos_inventory_adjustments
+--
+-- Required functions:
+-- public.pos_reserve_inventory(uuid, jsonb, text, text, text)
+-- public.pos_adjust_inventory(uuid, uuid, integer, text, text, text)
 --
 -- Required function:
 -- public.pos_begin_card_tender(uuid, uuid, integer, uuid)
