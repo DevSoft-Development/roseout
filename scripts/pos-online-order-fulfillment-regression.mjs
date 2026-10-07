@@ -93,7 +93,7 @@ for(const token of ["authenticatePosDeviceCredential","listPosActiveOnlineOrders
 for(const token of ["Control pickup ordering from your existing website","OnlineOrderingControls","Essentials+","Existing website"]) {
   if(!businessOrderingPage.includes(token)) throw new Error(`Business ordering page missing: ${token}`);
 }
-for(const token of ["Accept online orders","Auto-accept paid orders","Auto-print new orders","Customer SMS","Pause 15m","Ordering hours","Max orders per slot"]) {
+for(const token of ["Accept online orders","Auto-accept paid orders","Auto-print new orders","Customer SMS","[15,30,45,60]","Pause {minutes}m","Ordering hours","Max orders per slot"]) {
   if(!businessOrderingControls.includes(token)) throw new Error(`Business ordering controls missing: ${token}`);
 }
 for(const token of ["resolveLocationAccessContext","location.edit","updateBusinessOnlineOrderingSettings","Cache-Control"]) {
@@ -102,6 +102,6 @@ for(const token of ["resolveLocationAccessContext","location.edit","updateBusine
 for(const token of ["resolveOperationalShardForLocationId","mode:\"write\"","pos_ordering_settings","notification_settings","paused_until","max_orders_per_slot"]) {
   if(!businessOrderingService.includes(token)) throw new Error(`Business ordering service invariant missing: ${token}`);
 }
-if(!businessNav.includes('href: "/locations/dashboard/online-ordering"')) throw new Error("Business navigation must expose Online Ordering.");
+if(!businessNav.includes('matches: ["/locations/dashboard/online-ordering"]')) throw new Error("Website workspace must map the Online Ordering child route.");
 
 console.log("ThePOSHaven online-order fulfillment verified.");
