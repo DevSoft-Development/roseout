@@ -31,6 +31,11 @@ const menuAdapter = fs.readFileSync(
   "utf8",
 ).toLowerCase();
 
+const universalCatalog = fs.readFileSync(
+  path.join(process.cwd(), "lib/catalog/universalCatalog.ts"),
+  "utf8",
+).toLowerCase();
+
 
 const businessMenuPage = fs.readFileSync(
   path.join(process.cwd(), "apps/business/app/locations/dashboard/menu/page.tsx"),
@@ -94,6 +99,17 @@ for (const token of requiredMenuAdapterTokens) {
 
 if (!websiteContent.includes('getlocationmenu(id, undefined, "website")')) {
   throw new Error("Universal catalog regression: generated websites are not channel-aware");
+}
+
+for (const token of [
+  "const haschannelpriceoverride =",
+  "basepricecents: haschannelpriceoverride",
+  "pricelabel: haschannelpriceoverride",
+  "? null",
+]) {
+  if (!universalCatalog.includes(token)) {
+    throw new Error(`Universal catalog regression: channel price override can expose a stale label: ${token}`);
+  }
 }
 
 for (const token of [

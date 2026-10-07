@@ -188,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            for key in security search reserve billing beta location business_revenue hardware; do
+            for key in security search reserve billing beta location business_revenue hardware catalog; do
               echo "$key=true" >> "$GITHUB_OUTPUT"
             done
             exit 0
@@ -212,6 +212,7 @@ jobs:
           location=false
           business_revenue=false
           hardware=false
+          catalog=false
 
           if [ "$all" = true ] || matches '^(lib/(auth|security)/|middleware\.(ts|js)$|app/api/admin/|apps/admin/|packages/(auth|db|config)/)'; then security=true; fi
           if [ "$all" = true ] || matches '^(lib/search/|lib/searchIntent\.ts$|app/api/(generate|search)/|scripts/search-|tsconfig\.search-|app/create/)'; then search=true; fi
@@ -221,6 +222,7 @@ jobs:
           if [ "$all" = true ] || matches '^(lib/locations/|app/api/locations/|app/locations/|components/.*location)'; then location=true; fi
           if [ "$all" = true ] || matches '^(lib/(analytics/(location-roi|growth-intelligence)|marketing/(canonical-attribution|location-demand-insights)|leads/|crm/customer-journey\.ts)|components/growth-pro/|apps/business/app/locations/dashboard/(analytics|marketing-studio|event-leads|catering)/|apps/admin/(lib/crm/customer-journey\.ts|app/admin/dashboard/crm/)|app/api/(reserve/|v1/reserve/)|apps/reserve/app/api/(reserve/|v1/reserve/)|scripts/(canonical-attribution-roi|private-events-catering|enterprise-reservations-waitlist|growth-intelligence|enterprise-release-gate)-regression\\.mjs$|supabase/migrations/.*(attribution|private_event|catering|waitlist|reservation))'; then business_revenue=true; fi
           if [ "$all" = true ] || matches '^(lib/pos/hardware/|apps/business/app/locations/dashboard/(hardware/|__tests__/hardware-)|apps/admin/app/admin/dashboard/settings/location-tools/(pos-hardware/|__tests__/pos-hardware)|scripts/pos-|supabase/migrations/.*pos_hardware)'; then hardware=true; fi
+          if [ "$all" = true ] || matches '^(lib/catalog/|lib/locations/menu\.ts$|apps/business/app/locations/dashboard/menu/|scripts/universal-location-catalog-regression\.mjs$|supabase/migrations/.*universal_location_catalog)'; then catalog=true; fi
 
           echo "security=$security" >> "$GITHUB_OUTPUT"
           echo "search=$search" >> "$GITHUB_OUTPUT"
@@ -230,16 +232,17 @@ jobs:
           echo "location=$location" >> "$GITHUB_OUTPUT"
           echo "business_revenue=$business_revenue" >> "$GITHUB_OUTPUT"
           echo "hardware=$hardware" >> "$GITHUB_OUTPUT"
+          echo "catalog=$catalog" >> "$GITHUB_OUTPUT"
 
       - name: Set up Node.js
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.business_revenue == 'true' || steps.changes.outputs.hardware == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.business_revenue == 'true' || steps.changes.outputs.hardware == 'true' || steps.changes.outputs.catalog == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install locked dependencies
-        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.business_revenue == 'true' || steps.changes.outputs.hardware == 'true'
+        if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.business_revenue == 'true' || steps.changes.outputs.hardware == 'true' || steps.changes.outputs.catalog == 'true'
         run: npm ci
 
       - name: Security access regressions
@@ -302,10 +305,14 @@ jobs:
             npx vitest run apps/admin/app/admin/dashboard/settings/location-tools/__tests__/pos-hardware-*.test.ts
           fi
 
+      - name: Universal catalog regression
+        if: steps.changes.outputs.catalog == 'true'
+        run: npm run test:universal-catalog
+
       - name: Report targeted PR validation
         if: github.event_name == 'pull_request'
         run: |
-          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}, business_revenue=${{ steps.changes.outputs.business_revenue }}, hardware=${{ steps.changes.outputs.hardware }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Targeted regression lanes: security=${{ steps.changes.outputs.security }}, search=${{ steps.changes.outputs.search }}, reserve=${{ steps.changes.outputs.reserve }}, billing=${{ steps.changes.outputs.billing }}, beta=${{ steps.changes.outputs.beta }}, location=${{ steps.changes.outputs.location }}, business_revenue=${{ steps.changes.outputs.business_revenue }}, hardware=${{ steps.changes.outputs.hardware }}, catalog=${{ steps.changes.outputs.catalog }}" >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
     name: Required browser smoke tests
