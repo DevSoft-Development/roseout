@@ -25,6 +25,9 @@ type OrderingSettings = {
   auto_accept: boolean;
   auto_print: boolean;
   default_prep_minutes: number;
+  prep_delay_minutes: number;
+  paused_until: string | null;
+  timezone: string;
   slot_minutes: number;
   max_orders_per_slot: number | null;
   cutoff_minutes_before_close: number;
@@ -41,6 +44,9 @@ const DEFAULT_SETTINGS: OrderingSettings = {
   auto_accept: true,
   auto_print: true,
   default_prep_minutes: 25,
+  prep_delay_minutes: 0,
+  paused_until: null,
+  timezone: "America/New_York",
   slot_minutes: 15,
   max_orders_per_slot: null,
   cutoff_minutes_before_close: 15,
@@ -69,6 +75,9 @@ function cleanSettings(row: Record<string, any> | null | undefined): OrderingSet
     auto_accept: row.auto_accept !== false,
     auto_print: row.auto_print !== false,
     default_prep_minutes: Number(row.default_prep_minutes || DEFAULT_SETTINGS.default_prep_minutes),
+    prep_delay_minutes: Number(row.prep_delay_minutes || 0),
+    paused_until: typeof row.paused_until === "string" ? row.paused_until : null,
+    timezone: typeof row.timezone === "string" && row.timezone.trim() ? row.timezone.trim() : DEFAULT_SETTINGS.timezone,
     slot_minutes: Number(row.slot_minutes || DEFAULT_SETTINGS.slot_minutes),
     max_orders_per_slot: Number.isInteger(row.max_orders_per_slot) ? Number(row.max_orders_per_slot) : null,
     cutoff_minutes_before_close: Number(row.cutoff_minutes_before_close ?? DEFAULT_SETTINGS.cutoff_minutes_before_close),
@@ -104,16 +113,62 @@ async function locationAndSettings(locationId: string) {
   return { location: location as Record<string, any>, settings: cleanSettings(settingsRow as Record<string, any> | null) };
 }
 
+function localDayAndMinutes(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const weekday = String(parts.find((part) => part.type === "weekday")?.value || "").slice(0, 3).toLowerCase();
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0) % 24;
+  const minute = Number(parts.find((part) => part.type === "minute")?.value || 0);
+  return { weekday, minutes: hour * 60 + minute };
+}
+
+function minutesOfDay(value: unknown) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function assertOrderingHours(date: Date, settings: OrderingSettings) {
+  const hours = settings.ordering_hours;
+  if (!hours || !Object.keys(hours).length) return;
+  const local = localDayAndMinutes(date, settings.timezone);
+  const raw = (hours as Record<string, unknown>)[local.weekday];
+  if (!Array.isArray(raw) || !raw.length) throw new Error("online_order_outside_ordering_hours");
+  const windows = raw
+    .map((entry) => Array.isArray(entry) ? entry : [])
+    .map((entry) => ({ open: minutesOfDay(entry[0]), close: minutesOfDay(entry[1]) }))
+    .filter((entry): entry is { open: number; close: number } => entry.open !== null && entry.close !== null);
+  const allowed = windows.some(({ open, close }) => {
+    if (close >= open) return local.minutes >= open && local.minutes <= close - settings.cutoff_minutes_before_close;
+    return local.minutes >= open || local.minutes <= close - settings.cutoff_minutes_before_close;
+  });
+  if (!allowed) throw new Error("online_order_outside_ordering_hours");
+}
+
 function validateRequestedPickup(value: string | null | undefined, settings: OrderingSettings) {
   const now = Date.now();
-  const earliest = now + settings.default_prep_minutes * 60_000;
+  if (settings.paused_until && Date.parse(settings.paused_until) > now) {
+    throw new Error("online_ordering_paused");
+  }
+  const prepMinutes = settings.default_prep_minutes + settings.prep_delay_minutes;
+  const earliest = now + prepMinutes * 60_000;
   if (!value) return new Date(earliest).toISOString();
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) throw new Error("online_order_invalid_pickup_time");
   const max = now + settings.max_advance_days * 24 * 60 * 60_000;
   if (parsed < earliest - 60_000) throw new Error("online_order_pickup_too_soon");
   if (parsed > max) throw new Error("online_order_pickup_too_far");
-  return new Date(parsed).toISOString();
+  const pickup = new Date(parsed);
+  assertOrderingHours(pickup, settings);
+  return pickup.toISOString();
 }
 
 function prepareLines(
@@ -189,7 +244,8 @@ export async function getWebsiteOrderingCatalog(locationId: string) {
 
   return {
     acceptingOrders: settings.accepting_orders,
-    defaultPrepMinutes: settings.default_prep_minutes,
+    defaultPrepMinutes: settings.default_prep_minutes + settings.prep_delay_minutes,
+    pausedUntil: settings.paused_until,
     maxAdvanceDays: settings.max_advance_days,
     pickupInstructions: settings.pickup_instructions,
     items: catalog.items.map((item) => {
@@ -259,6 +315,21 @@ export async function createWebsitePickupOrder(input: {
   if (totalCents <= 0) throw new Error("online_order_invalid_total");
 
   const promisedPickupAt = validateRequestedPickup(input.requestedPickupAt, settings);
+  if (settings.max_orders_per_slot !== null) {
+    const slotMs = settings.slot_minutes * 60_000;
+    const slotStart = new Date(Math.floor(Date.parse(promisedPickupAt) / slotMs) * slotMs).toISOString();
+    const slotEnd = new Date(Date.parse(slotStart) + slotMs).toISOString();
+    const readShard = await resolveOperationalShardForLocationId(locationId, { mode: "read" });
+    const { count, error: slotError } = await readShard.client
+      .from("pos_online_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("location_id", locationId)
+      .gte("promised_pickup_at", slotStart)
+      .lt("promised_pickup_at", slotEnd)
+      .not("status", "in", '("canceled","completed")');
+    if (slotError) throw new Error(slotError.message || "online_order_slot_check_failed");
+    if (Number(count || 0) >= settings.max_orders_per_slot) throw new Error("online_order_slot_full");
+  }
   const inventoryKey = `online-order:${idempotencyKey}`;
   await reservePosInventory({
     locationId,
