@@ -443,6 +443,26 @@ jobs:
           done
           echo 'Admin and Business AWS origins are healthy. DNS/public routing has not been changed by this workflow.'
 
+      - name: Smoke ThePOSHaven portal routes
+        if: steps.config.outputs.desired_count != '0'
+        env:
+          ORIGIN: ${{ steps.foundation.outputs.loadbalancerdnsname }}
+        run: |
+          set -euo pipefail
+          probe() {
+            local host="$1"
+            local path="$2"
+            local status
+            status="$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' -H "Host: $host" "http://$ORIGIN$path")"
+            case "$status" in
+              200|301|302|303|307|308|401|403) ;;
+              *) echo "Unexpected $status for $host$path" >&2; exit 1 ;;
+            esac
+          }
+          probe admin.theouthaven.com /admin/dashboard/pos
+          probe business.theouthaven.com /locations/dashboard/pos
+          echo 'ThePOSHaven Admin and Business routes are present on the deployed AWS origins.'
+
       - name: Record stable Admin and Business releases
         if: steps.config.outputs.target_env == 'production' && steps.config.outputs.desired_count != '0'
         env:
