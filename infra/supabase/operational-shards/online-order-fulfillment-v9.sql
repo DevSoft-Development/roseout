@@ -25,8 +25,8 @@ create table if not exists public.pos_online_order_dispatches (
 );
 
 create index if not exists pos_online_order_dispatches_queue_idx
-  on public.pos_online_order_dispatches(location_id,status,created_at)
-  where status in ('queued','failed');
+  on public.pos_online_order_dispatches(location_id,status,claimed_at,created_at)
+  where status in ('queued','failed','claimed');
 
 alter table public.pos_online_order_dispatches enable row level security;
 revoke all on table public.pos_online_order_dispatches from public,anon,authenticated;
@@ -47,7 +47,10 @@ begin
   select id into v_id
     from public.pos_online_order_dispatches
    where location_id=p_location_id
-     and status in ('queued','failed')
+     and (
+       status in ('queued','failed')
+       or (status='claimed' and claimed_at < now() - interval '45 seconds')
+     )
      and attempts < 10
    order by created_at asc
    for update skip locked
