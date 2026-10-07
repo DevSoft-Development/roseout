@@ -16,6 +16,7 @@ on:
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'pos-mobile/**'
+      - 'pos-mobile/components/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'azure-pipelines-pos-mobile.yml'
   push:

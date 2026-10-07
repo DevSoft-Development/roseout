@@ -24,6 +24,7 @@ import {
 import { pollAndDispatchPosCommands } from "@/lib/device/command-dispatcher";
 import { createSyncedPosOutputRouter } from "@/lib/output/local-runtime";
 import type { RoleBasedPosOutputRouter } from "@/lib/output/routing";
+import TableServiceWorkspace from "@/components/TableServiceWorkspace";
 
 const NEXT_STATUS:Record<string,{label:string;status:"accepted"|"preparing"|"ready"|"completed"}>={
   received:{label:"Accept",status:"accepted"},
@@ -62,6 +63,7 @@ export default function CashierHome() {
   const [message,setMessage]=useState("");
   const [busyOrderId,setBusyOrderId]=useState<string|null>(null);
   const [outputSummary,setOutputSummary]=useState("Printer routing not synced");
+  const [workspaceMode,setWorkspaceMode]=useState<"tables"|"online">("tables");
   const routerRef=useRef<RoleBasedPosOutputRouter|null>(null);
 
   const loadOrders=useCallback(async (activeSession:PosClaimSession,quiet=false)=>{
@@ -225,8 +227,31 @@ export default function CashierHome() {
     ready:orders.filter(order=>order.status==="ready").length,
   };
 
+  if(workspaceMode==="tables"){
+    return(
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.modeHeader}>
+          <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
+          <View style={styles.modeSwitch}>
+            <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Tables</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("online")} style={styles.modeButton}><Text style={styles.modeButtonText}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
+          </View>
+        </View>
+        {!!message&&<Text style={styles.errorBanner}>{message}</Text>}
+        <TableServiceWorkspace session={session}/>
+      </SafeAreaView>
+    );
+  }
+
   return(
     <SafeAreaView style={styles.safe}>
+      <View style={styles.modeHeader}>
+        <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
+        <View style={styles.modeSwitch}>
+          <Pressable onPress={()=>setWorkspaceMode("tables")} style={styles.modeButton}><Text style={styles.modeButtonText}>Tables</Text></Pressable>
+          <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
+        </View>
+      </View>
       <View style={styles.header}>
         <View>
           <Text style={styles.brand}>ThePOSHaven</Text>
@@ -308,6 +333,13 @@ export default function CashierHome() {
 const styles=StyleSheet.create({
   safe:{flex:1,backgroundColor:"#070303"},
   center:{flex:1,alignItems:"center",justifyContent:"center",gap:14,padding:24},
+  modeHeader:{paddingHorizontal:16,paddingTop:10,paddingBottom:10,borderBottomWidth:1,borderBottomColor:"#202329",flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12},
+  modeLocation:{color:"#8d878a",fontSize:10,fontWeight:"600",marginTop:2},
+  modeSwitch:{flexDirection:"row",gap:6},
+  modeButton:{borderRadius:11,borderWidth:1,borderColor:"#30343a",paddingHorizontal:13,paddingVertical:9,backgroundColor:"#101216"},
+  modeButtonActive:{backgroundColor:"#d91d37",borderColor:"#ff5368"},
+  modeButtonText:{color:"#a9a9ae",fontSize:11,fontWeight:"900"},
+  modeButtonTextActive:{color:"#fff"},
   header:{paddingHorizontal:20,paddingTop:18,paddingBottom:14,borderBottomWidth:1,borderBottomColor:"#292326"},
   brand:{color:"#ff6b86",fontSize:11,fontWeight:"900",letterSpacing:2,textTransform:"uppercase"},
   title:{marginTop:4,color:"#fff",fontSize:30,fontWeight:"900"},
