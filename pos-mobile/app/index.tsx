@@ -3,7 +3,7 @@ import Constants from "expo-constants";
 import { SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { claimPosDevice, getPosClaimSession, type PosClaimSession } from "@/lib/device/identity";
 import { HttpPosClaimTransport } from "@/lib/device/http-claim-transport";
-import { startOnlineOrderInboxLoop } from "@/lib/online-orders/inbox";
+import { setOnlineOrderStatusFromCashier, startOnlineOrderInboxLoop } from "@/lib/online-orders/inbox";
 
 const API_BASE = String(Constants.expoConfig?.extra?.posApiBaseUrl || "").replace(/\/$/, "");
 
@@ -11,7 +11,7 @@ export default function CashierHome() {
   const [session, setSession] = useState<PosClaimSession | null>(null);
   const [pairingCode, setPairingCode] = useState("");
   const [status, setStatus] = useState("Checking device setup…");
-  const [lastOrder, setLastOrder] = useState<string | null>(null);
+  const [lastOrder, setLastOrder] = useState<{ id: string; label: string; status: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -28,13 +28,36 @@ export default function CashierHome() {
       session,
       intervalMs: 5000,
       onOrder: (dispatch) => {
-        setLastOrder(`${dispatch.order.customerName} · ${dispatch.order.id.slice(0, 8).toUpperCase()}`);
+        setLastOrder({
+          id: dispatch.onlineOrderId,
+          label: dispatch.order.customerName + " · " + dispatch.order.id.slice(0, 8).toUpperCase(),
+          status: dispatch.order.status,
+        });
         setStatus("Online order received and routed.");
       },
       onError: (error) => setStatus(`Order inbox: ${error.message}`),
     });
     return stop;
   }, [session]);
+
+  async function advanceOrder(next: "accepted" | "preparing" | "ready" | "completed") {
+    if (!session || !lastOrder || !API_BASE) return;
+    setBusy(true);
+    try {
+      await setOnlineOrderStatusFromCashier({
+        baseUrl: API_BASE,
+        session,
+        onlineOrderId: lastOrder.id,
+        status: next,
+      });
+      setLastOrder({ ...lastOrder, status: next });
+      setStatus("Order marked " + next + ".");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to update order.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function claim() {
     if (!API_BASE) {
@@ -88,7 +111,18 @@ export default function CashierHome() {
           <View style={styles.ready}>
             <Text style={styles.readyTitle}>Ready</Text>
             <Text style={styles.readyCopy}>Location {session.locationId}</Text>
-            {lastOrder ? <Text style={styles.order}>Latest: {lastOrder}</Text> : null}
+            {lastOrder ? (
+              <View style={styles.orderBox}>
+                <Text style={styles.order}>Latest: {lastOrder.label}</Text>
+                <Text style={styles.readyCopy}>Status: {lastOrder.status}</Text>
+                <View style={styles.orderActions}>
+                  {lastOrder.status === "received" ? <TouchableOpacity style={styles.smallButton} disabled={busy} onPress={() => advanceOrder("accepted")}><Text style={styles.buttonText}>Accept</Text></TouchableOpacity> : null}
+                  {["received","accepted"].includes(lastOrder.status) ? <TouchableOpacity style={styles.smallButton} disabled={busy} onPress={() => advanceOrder("preparing")}><Text style={styles.buttonText}>Preparing</Text></TouchableOpacity> : null}
+                  {["accepted","preparing"].includes(lastOrder.status) ? <TouchableOpacity style={styles.smallButton} disabled={busy} onPress={() => advanceOrder("ready")}><Text style={styles.buttonText}>Ready</Text></TouchableOpacity> : null}
+                  {lastOrder.status === "ready" ? <TouchableOpacity style={styles.smallButton} disabled={busy} onPress={() => advanceOrder("completed")}><Text style={styles.buttonText}>Complete</Text></TouchableOpacity> : null}
+                </View>
+              </View>
+            ) : null}
           </View>
         )}
       </View>
@@ -112,4 +146,7 @@ const styles = StyleSheet.create({
   readyTitle: { color: "#76d09a", fontSize: 18, fontWeight: "900" },
   readyCopy: { marginTop: 4, color: "#a8a8a8", fontWeight: "600" },
   order: { marginTop: 12, color: "#ffffff", fontWeight: "800" },
+  orderBox: { marginTop: 8 },
+  orderActions: { marginTop: 12, flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  smallButton: { borderRadius: 999, backgroundColor: "#ec0b5b", paddingHorizontal: 14, paddingVertical: 10 },
 });
