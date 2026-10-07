@@ -38,7 +38,8 @@
     "backgroundColor": "#070303",
     "extra": {
       "appSurface": "theposhaven-cashier",
-      "hardwareRuntime": "native-bridge"
+      "hardwareRuntime": "native-bridge",
+      "posApiBaseUrl": "https://business.theouthaven.com"
     }
   }
 }
