@@ -46,7 +46,7 @@ const dailyItems: NavItem[] = [
 
 const advancedItems: NavItem[] = [
   { label: "Menu / Packages", href: "/locations/dashboard/menu", icon: BookOpen },
-  { label: "Website", href: "/locations/dashboard/website", icon: Globe2 },
+  { label: "Website", href: "/locations/dashboard/website", icon: Globe2, matches: ["/locations/dashboard/online-ordering"] },
   { label: "Visibility Health", href: "/locations/dashboard/visibility-health", icon: SearchCheck },
   { label: "Marketing & Growth", href: "/locations/dashboard/marketing-growth", icon: Sparkles, matches: ["/locations/dashboard/marketing-studio", "/locations/dashboard/social-accounts", "/locations/dashboard/promotions"] },
   { label: "Analytics", href: "/locations/dashboard/analytics", icon: BarChart3 },
