@@ -18,7 +18,7 @@ import {
   listAppleMdmServerDeviceIds,
   resolveAppleIntuneMdmServer,
 } from "@/lib/apple-business/api";
-import { getIntuneOverview, listIntuneDepOnboardingSettings } from "@/lib/microsoft-365/intune";
+import { getIntuneOverview, listIntuneDepOnboardingSettings, listIntuneVppTokens } from "@/lib/microsoft-365/intune";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +40,7 @@ export default async function AppleDeviceEnrollmentPage() {
   let assignedDeviceIds = new Set<string>();
   let intuneOverview: Awaited<ReturnType<typeof getIntuneOverview>> | null = null;
   let depSettings: Awaited<ReturnType<typeof listIntuneDepOnboardingSettings>> = [];
+  let vppTokens: Awaited<ReturnType<typeof listIntuneVppTokens>> = [];
 
   if (appleConfigured) {
     try {
@@ -56,9 +57,10 @@ export default async function AppleDeviceEnrollmentPage() {
   }
 
   try {
-    [intuneOverview, depSettings] = await Promise.all([
+    [intuneOverview, depSettings, vppTokens] = await Promise.all([
       getIntuneOverview(admin.user_id),
       listIntuneDepOnboardingSettings(admin.user_id),
+      listIntuneVppTokens(admin.user_id),
     ]);
   } catch (error) {
     intuneError = error instanceof Error ? error.message : "Intune could not be reached.";
@@ -74,6 +76,8 @@ export default async function AppleDeviceEnrollmentPage() {
   const enrolledCount = appleMobileDevices.filter((device) => managedBySerial.has(device.attributes?.serialNumber || device.id)).length;
   const readyCount = Math.max(0, assignedCount - enrolledCount);
   const depToken = depSettings[0] || null;
+  const appsAndBooksToken =
+    vppTokens.find((token) => (token.state || "").toLowerCase() === "valid") || null;
 
   return (
     <AdminPageShell>
@@ -120,6 +124,20 @@ export default async function AppleDeviceEnrollmentPage() {
           <div className="flex gap-3">
             <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-200" />
             <div><p className="font-black text-white">Intune enrollment connection needs attention</p><p className="mt-1 text-sm font-semibold text-white/50">Reconnect Microsoft 365 after granting the Intune service configuration ReadWrite permissions required for ADE synchronization.</p></div>
+          </div>
+        </AdminSectionCard>
+      ) : null}
+
+      {!intuneError && depToken && !appsAndBooksToken ? (
+        <AdminSectionCard className="border-amber-300/20 p-5 sm:p-6">
+          <div className="flex gap-3">
+            <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-200" />
+            <div>
+              <p className="font-black text-white">Apple Apps and Books token required</p>
+              <p className="mt-1 text-sm font-semibold text-white/50">
+                Add or restore a valid Apple Apps and Books (VPP) token in Intune. TheOutHaven uses it to install Company Portal with device licensing so employees can install approved apps without a personal Apple Account.
+              </p>
+            </div>
           </div>
         </AdminSectionCard>
       ) : null}
@@ -196,7 +214,7 @@ export default async function AppleDeviceEnrollmentPage() {
                     <form action="/api/admin/integrations/apple-device-enrollment/prepare" method="post" className="xl:justify-self-end">
                       <input type="hidden" name="device_id" value={device.id} />
                       <input type="hidden" name="action" value="prepare" />
-                      <button disabled={!intuneServer || !depToken} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-xs font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40">
+                      <button disabled={!intuneServer || !depToken || !appsAndBooksToken} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-xs font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40">
                         <CloudCog className="h-4 w-4" /> Activate Device
                       </button>
                     </form>

@@ -46,10 +46,30 @@ export type IntuneIosEnrollmentProfile = {
   displayName?: string | null;
   description?: string | null;
   isDefault?: boolean | null;
+  requiresUserAuthentication?: boolean | null;
+  enableAuthenticationViaCompanyPortal?: boolean | null;
+  requireCompanyPortalOnSetupAssistantEnrolledDevices?: boolean | null;
+  supervisedModeEnabled?: boolean | null;
+  isMandatory?: boolean | null;
+  profileRemovalDisabled?: boolean | null;
+  appleIdDisabled?: boolean | null;
+  companyPortalVppTokenId?: string | null;
   "@odata.type"?: string | null;
 };
 
+export type IntuneVppToken = {
+  id: string;
+  displayName?: string | null;
+  organizationName?: string | null;
+  vppTokenAccountType?: string | null;
+  state?: string | null;
+  lastSyncStatus?: string | null;
+  automaticallyUpdateApps?: boolean | null;
+  lastAppCount?: number | null;
+};
+
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
+export const THEOUTHAVEN_ADE_PROFILE = "TheOutHaven - Standard Managed Device ADE";
 
 const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
@@ -178,22 +198,109 @@ export async function getDefaultIntuneIosEnrollmentProfile(userId: string, depOn
   }
 }
 
-export async function ensureDefaultIntuneIosEnrollmentProfile(userId: string, depOnboardingSettingId: string) {
-  const currentDefault = await getDefaultIntuneIosEnrollmentProfile(userId, depOnboardingSettingId);
-  if (currentDefault?.id) return currentDefault;
-
-  const profiles = await listIntuneIosEnrollmentProfiles(userId, depOnboardingSettingId);
-  const preferred =
-    profiles.find((profile) => /theouthaven|standard managed/i.test(profile.displayName || "")) ||
-    profiles[0];
-  if (!preferred?.id) throw new Error("INTUNE_ADE_IOS_ENROLLMENT_PROFILE_NOT_FOUND");
-
-  await microsoftGraphBetaFetch(
+export async function listIntuneVppTokens(userId: string) {
+  const payload = await microsoftGraphFetch<GraphCollection<IntuneVppToken>>(
     userId,
-    `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles/${encodeURIComponent(preferred.id)}/setDefaultProfile`,
-    { method: "POST" },
+    "/deviceAppManagement/vppTokens?$select=id,displayName,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps,lastAppCount",
   );
-  return { ...preferred, isDefault: true };
+  return payload.value || [];
+}
+
+async function getPreferredCompanyPortalVppToken(userId: string) {
+  const tokens = await listIntuneVppTokens(userId);
+  const usable = tokens.filter((token) => (token.state || "").toLowerCase() === "valid");
+  return (
+    usable.find((token) => (token.vppTokenAccountType || "").toLowerCase() === "business") ||
+    usable[0] ||
+    null
+  );
+}
+
+function standardManagedAdeProfilePayload(companyPortalVppTokenId: string) {
+  return {
+    "@odata.type": "#microsoft.graph.depIOSEnrollmentProfile",
+    displayName: THEOUTHAVEN_ADE_PROFILE,
+    description:
+      "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
+    requiresUserAuthentication: true,
+    enableAuthenticationViaCompanyPortal: false,
+    supervisedModeEnabled: true,
+    isMandatory: true,
+    profileRemovalDisabled: true,
+    appleIdDisabled: true,
+    requireCompanyPortalOnSetupAssistantEnrolledDevices: true,
+    companyPortalVppTokenId,
+    enableSingleAppEnrollmentMode: false,
+    enableSharedIPad: false,
+    userlessSharedAadModeEnabled: false,
+    passCodeDisabled: false,
+    touchIdDisabled: false,
+    applePayDisabled: false,
+    siriDisabled: false,
+    diagnosticsDisabled: false,
+    displayToneSetupDisabled: false,
+    privacyPaneDisabled: false,
+    screenTimeScreenDisabled: false,
+    locationDisabled: false,
+    termsAndConditionsDisabled: false,
+    restoreBlocked: true,
+    restoreFromAndroidDisabled: true,
+    deviceToDeviceMigrationDisabled: true,
+    iTunesPairingMode: "allow",
+  } as const;
+}
+
+export async function ensureDefaultIntuneIosEnrollmentProfile(userId: string, depOnboardingSettingId: string) {
+  const [currentDefault, profiles, vppToken] = await Promise.all([
+    getDefaultIntuneIosEnrollmentProfile(userId, depOnboardingSettingId),
+    listIntuneIosEnrollmentProfiles(userId, depOnboardingSettingId),
+    getPreferredCompanyPortalVppToken(userId),
+  ]);
+
+  if (!vppToken?.id) {
+    throw new Error("INTUNE_APPLE_APPS_AND_BOOKS_TOKEN_REQUIRED");
+  }
+
+  const preferred =
+    profiles.find((profile) => profile.displayName === THEOUTHAVEN_ADE_PROFILE) ||
+    profiles.find((profile) => /theouthaven|standard managed/i.test(profile.displayName || "")) ||
+    currentDefault ||
+    null;
+
+  const payload = standardManagedAdeProfilePayload(vppToken.id);
+  let profile: IntuneIosEnrollmentProfile;
+
+  if (preferred?.id) {
+    profile = await microsoftGraphBetaFetch<IntuneIosEnrollmentProfile>(
+      userId,
+      `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles/${encodeURIComponent(preferred.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  } else {
+    profile = await microsoftGraphBetaFetch<IntuneIosEnrollmentProfile>(
+      userId,
+      `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  if (!profile?.id) throw new Error("INTUNE_ADE_IOS_ENROLLMENT_PROFILE_NOT_FOUND");
+
+  if (!profile.isDefault) {
+    await microsoftGraphBetaFetch(
+      userId,
+      `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles/${encodeURIComponent(profile.id)}/setDefaultProfile`,
+      { method: "POST" },
+    );
+  }
+
+  return { ...profile, isDefault: true };
 }
 
 export async function assignIntuneIosEnrollmentProfileToSerial(

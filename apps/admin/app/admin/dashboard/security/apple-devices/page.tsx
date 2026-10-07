@@ -27,6 +27,7 @@ import {
 import {
   getIntuneOverview,
   listIntuneDepOnboardingSettings,
+  listIntuneVppTokens,
 } from "@/lib/microsoft-365/intune";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export default async function AppleDeviceEnrollmentPage() {
   let assignedDeviceIds = new Set<string>();
   let intuneOverview: Awaited<ReturnType<typeof getIntuneOverview>> | null = null;
   let depSettings: Awaited<ReturnType<typeof listIntuneDepOnboardingSettings>> = [];
+  let vppTokens: Awaited<ReturnType<typeof listIntuneVppTokens>> = [];
 
   if (appleConfigured) {
     try {
@@ -74,9 +76,10 @@ export default async function AppleDeviceEnrollmentPage() {
   }
 
   try {
-    [intuneOverview, depSettings] = await Promise.all([
+    [intuneOverview, depSettings, vppTokens] = await Promise.all([
       getIntuneOverview(admin.user_id),
       listIntuneDepOnboardingSettings(admin.user_id),
+      listIntuneVppTokens(admin.user_id),
     ]);
   } catch (error) {
     intuneError =
@@ -100,6 +103,8 @@ export default async function AppleDeviceEnrollmentPage() {
   ).length;
   const readyCount = Math.max(0, assignedCount - enrolledCount);
   const depToken = depSettings[0] || null;
+  const appsAndBooksToken =
+    vppTokens.find((token) => (token.state || "").toLowerCase() === "valid") || null;
 
   return (
     <AdminPageShell>
@@ -152,6 +157,21 @@ export default async function AppleDeviceEnrollmentPage() {
             <p>
               Reconnect Microsoft 365 after granting the Intune service
               configuration permissions required for ADE synchronization.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {!intuneError && depToken && !appsAndBooksToken ? (
+        <section className="apple-alert">
+          <TriangleAlert />
+          <div>
+            <small>Company app catalog</small>
+            <h2>Apple Apps and Books token required</h2>
+            <p>
+              Add or restore a valid Apple Apps and Books (VPP) token in Intune.
+              TheOutHaven uses it to install Company Portal with device licensing,
+              so employees can install approved apps without a personal Apple Account.
             </p>
           </div>
         </section>
@@ -280,7 +300,7 @@ export default async function AppleDeviceEnrollmentPage() {
                       <input type="hidden" name="action" value="prepare" />
                       <button
                         type="submit"
-                        disabled={!intuneServer || !depToken}
+                        disabled={!intuneServer || !depToken || !appsAndBooksToken}
                       >
                         <CloudCog />
                         Activate Device
