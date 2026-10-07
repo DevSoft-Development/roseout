@@ -78,11 +78,19 @@ export default async function HardwareSetupPage({
     ? getCertifiedHardware(candidate.hardware_catalog_id)
     : null;
 
+  const hasThePosHavenHub = hardware.some(
+    (item) =>
+      item.device.device_type === "network_hub" &&
+      !["retired", "lost", "replaced"].includes(String(item.device.lifecycle_status || "")),
+  );
+  const byohRequiresHub = certified?.managedKit === false;
+  const byohBlocked = Boolean(byohRequiresHub && !hasThePosHavenHub);
   const candidateReady = Boolean(
     candidate &&
       certified &&
       ["inventory", "provisioned"].includes(candidate.lifecycle_status) &&
-      isPosHardwarePreenrolledForLocation(candidate, locationId),
+      isPosHardwarePreenrolledForLocation(candidate, locationId) &&
+      !byohBlocked,
   );
 
   return (
@@ -122,6 +130,13 @@ export default async function HardwareSetupPage({
                 </div>
               </div>
             ))}
+          </section>
+        ) : byohBlocked ? (
+          <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
+            <h2 className="font-black text-amber-100">ThePOSHaven Hub required for this BYOH device.</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-amber-100/65">
+              Certified bring-your-own hardware can only be claimed after an active ThePOSHaven Hub is assigned to this location. The Hub keeps local discovery, routing, and recovery inside the managed POS network.
+            </p>
           </section>
         ) : !candidateReady ? (
           <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
