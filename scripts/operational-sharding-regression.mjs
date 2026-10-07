@@ -10,6 +10,7 @@ const adminCatalog = read("apps/admin/lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
+const onlineOrdering = read("infra/supabase/operational-shards/online-ordering-v8.sql").toLowerCase();
 const rebalance = read("scripts/operational-shard-rebalance.mjs");
 const initialPlacement = read("scripts/operational-shard-initial-placement.mjs");
 const primaryPlacementFence = read("supabase/migrations/20261006031500_primary_operational_placement_fence.sql").toLowerCase();
@@ -48,16 +49,24 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
-  "online-ordering-v8.sql",
-  "pos_online_order_events",
-  "pos_online_orders",
-  "pos_ordering_settings",
   "provider_call_lease_expires_at",
   "pos_expire_stale_card_tenders",
   "pos_provider_call_lease_v6",
   "toh_operational_dr",
 ]) {
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
+}
+
+
+for (const token of [
+  "pos_ordering_settings",
+  "pos_online_orders",
+  "pos_online_order_events",
+  "pos_create_online_order_draft",
+  "pos_finalize_online_order_payment",
+  "20261007_online_ordering_v8",
+]) {
+  if (!onlineOrdering.includes(token)) throw new Error(`Missing online ordering shard invariant: ${token}`);
 }
 
 
