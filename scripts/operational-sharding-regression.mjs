@@ -48,6 +48,10 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "online-ordering-v8.sql",
+  "pos_online_order_events",
+  "pos_online_orders",
+  "pos_ordering_settings",
   "provider_call_lease_expires_at",
   "pos_expire_stale_card_tenders",
   "pos_provider_call_lease_v6",
@@ -70,7 +74,7 @@ for (const token of [
 }
 
 for (const token of [
-  "TARGET_SCHEMA_VERSION = 7",
+  "TARGET_SCHEMA_VERSION = 8",
   "location_not_on_primary",
   "setPrimaryFence",
   "drainPrimaryCardTenders",
@@ -267,7 +271,7 @@ for (const token of [
   "hardening-v2.sql",
   "standby-dr",
   "standby-primary",
-  "schema_version=7",
+  "schema_version=8",
   "reservation_resource_assignments",
   "restore_authoritative_gates",
   "apply_and_align",
@@ -281,7 +285,7 @@ for (const token of [
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
 }
-if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=7")) {
+if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=8")) {
   throw new Error("Bootstrap must not unconditionally reopen fail-closed shard registry writes.");
 }
 if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {
