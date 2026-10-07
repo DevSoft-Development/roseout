@@ -141,10 +141,10 @@ describe("Search V3 review intelligence lane", () => {
         },
       },
     });
-    expect(providers).toHaveLength(5);
-    expect(providers.some((provider) =>
-      provider.providerId.includes("review-intelligence")
-    )).toBe(false);
+    expect(providers).toHaveLength(6);
+    expect(providers[5].providerId).toBe(
+      "theouthaven.supabase-review-intelligence.v1",
+    );
   });
 
   it("allows the sixth lane to be explicitly disabled", () => {
@@ -167,9 +167,9 @@ describe("Search V3 review intelligence lane", () => {
         },
       },
     });
-    expect(providers).toHaveLength(6);
-    expect(providers[5].providerId).toBe(
-      "theouthaven.supabase-review-intelligence.v1",
-    );
+    expect(providers).toHaveLength(5);
+    expect(providers.some((provider) =>
+      provider.providerId.includes("review-intelligence")
+    )).toBe(false);
   });
 });
