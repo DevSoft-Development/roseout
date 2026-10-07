@@ -3,6 +3,10 @@
 
 begin;
 
+alter table public.pos_ordering_settings
+  add column if not exists customer_notification_settings jsonb not null default
+    '{"email":true,"sms":false,"received":true,"preparing":true,"ready":true,"completed":false}'::jsonb;
+
 create table if not exists public.pos_online_order_dispatches (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null,
@@ -90,6 +94,66 @@ begin
   if not found then raise exception 'online_order_dispatch_not_claimed'; end if;
 end;
 $$;
+
+create or replace function public.pos_set_online_order_status(
+  p_location_id uuid,
+  p_online_order_id uuid,
+  p_status text,
+  p_actor_type text default 'device',
+  p_actor_id text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path=public
+as $
+declare
+  v_order public.pos_online_orders%rowtype;
+  v_allowed boolean := false;
+begin
+  if p_status not in ('received','accepted','preparing','ready','completed','canceled') then
+    raise exception 'online_order_status_invalid';
+  end if;
+
+  select * into v_order
+    from public.pos_online_orders
+   where id=p_online_order_id and location_id=p_location_id
+   for update;
+  if not found then raise exception 'online_order_not_found'; end if;
+  if v_order.status=p_status then
+    return jsonb_build_object('online_order_id',v_order.id,'status',v_order.status,'idempotent_replay',true);
+  end if;
+
+  v_allowed :=
+    (v_order.status='received' and p_status in ('accepted','canceled'))
+    or (v_order.status='accepted' and p_status in ('preparing','ready','canceled'))
+    or (v_order.status='preparing' and p_status in ('ready','canceled'))
+    or (v_order.status='ready' and p_status in ('completed','canceled'));
+
+  if not v_allowed then
+    raise exception 'online_order_status_transition_invalid:%:%',v_order.status,p_status;
+  end if;
+
+  update public.pos_online_orders
+     set status=p_status,
+         accepted_at=case when p_status='accepted' then coalesce(accepted_at,now()) else accepted_at end,
+         preparing_at=case when p_status='preparing' then coalesce(preparing_at,now()) else preparing_at end,
+         ready_at=case when p_status='ready' then coalesce(ready_at,now()) else ready_at end,
+         completed_at=case when p_status='completed' then coalesce(completed_at,now()) else completed_at end,
+         canceled_at=case when p_status='canceled' then coalesce(canceled_at,now()) else canceled_at end,
+         updated_at=now()
+   where id=v_order.id
+   returning * into v_order;
+
+  insert into public.pos_online_order_events(location_id,online_order_id,event_type,actor_type,actor_id,metadata)
+  values(p_location_id,v_order.id,'order_'||p_status,coalesce(nullif(btrim(p_actor_type),''),'device'),nullif(btrim(p_actor_id),''),'{}'::jsonb);
+
+  return jsonb_build_object('online_order_id',v_order.id,'status',v_order.status,'idempotent_replay',false);
+end;
+$;
+
+revoke all on function public.pos_set_online_order_status(uuid,uuid,text,text,text) from public,anon,authenticated;
+grant execute on function public.pos_set_online_order_status(uuid,uuid,text,text,text) to service_role;
 
 revoke all on function public.pos_claim_online_order_dispatch(uuid,uuid) from public,anon,authenticated;
 revoke all on function public.pos_finish_online_order_dispatch(uuid,uuid,uuid,boolean,text,jsonb) from public,anon,authenticated;
