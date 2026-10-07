@@ -166,3 +166,30 @@ export function startOnlineOrderInboxLoop(input: {
     if (timer) clearTimeout(timer);
   };
 }
+
+export async function setOnlineOrderStatusFromCashier(input: {
+  baseUrl: string;
+  session: PosClaimSession;
+  onlineOrderId: string;
+  status: "accepted" | "preparing" | "ready" | "completed" | "canceled";
+}) {
+  const response = await fetch(
+    input.baseUrl.replace(/\/$/, "") + "/api/business/pos/devices/orders",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + input.session.credential,
+        "X-POS-Device-ID": input.session.deviceId,
+      },
+      body: JSON.stringify({
+        action: "status",
+        onlineOrderId: input.onlineOrderId,
+        status: input.status,
+      }),
+    },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.ok) throw new Error(body.error || "pos_order_status_update_failed");
+  return body.order as { online_order_id?: string; status?: string };
+}
