@@ -309,6 +309,41 @@ export async function getSignaturePlusInventory(locationId:string){
   const catalog=await getUniversalLocationCatalog(locationId,{channel:"pos",includeUnavailable:true});
   const ingredients=catalog.items.filter((item:any)=>item.metadata?.inventory_role==="ingredient");
   const availability=await getPosInventoryAvailability(locationId,ingredients.map((item:any)=>item.id));
+  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"read"});
+  const [
+    {data:itemRows,error:itemError},
+    {data:areas,error:areaError},
+    {data:balances,error:balanceError},
+    {data:adjustments,error:adjustmentError},
+    {data:transfers,error:transferError},
+  ]=await Promise.all([
+    shard.client.from("pos_inventory_items")
+      .select("id,catalog_item_id,quantity_on_hand,unit_code,reorder_point,reorder_quantity,preferred_vendor,vendor_sku,updated_at")
+      .eq("location_id",locationId),
+    shard.client.from("pos_inventory_stock_areas")
+      .select("id,code,name,is_active,created_at,updated_at")
+      .eq("location_id",locationId).eq("is_active",true).order("name",{ascending:true}),
+    shard.client.from("pos_inventory_area_balances")
+      .select("inventory_item_id,stock_area_id,quantity,updated_at")
+      .eq("location_id",locationId).order("updated_at",{ascending:false}),
+    shard.client.from("pos_inventory_adjustments")
+      .select("id,inventory_item_id,catalog_item_id,quantity_delta,reason,source_type,source_id,created_at")
+      .eq("location_id",locationId).order("created_at",{ascending:false}).limit(50),
+    shard.client.from("pos_inventory_transfers")
+      .select("id,inventory_item_id,from_stock_area_id,to_stock_area_id,quantity,status,metadata,created_at")
+      .eq("location_id",locationId).order("created_at",{ascending:false}).limit(50),
+  ]);
+  if(itemError) throw new Error(itemError.message||"pos_signature_inventory_items_failed");
+  if(areaError) throw new Error(areaError.message||"pos_signature_inventory_areas_failed");
+  if(balanceError) throw new Error(balanceError.message||"pos_signature_inventory_balances_failed");
+  if(adjustmentError) throw new Error(adjustmentError.message||"pos_signature_inventory_adjustments_failed");
+  if(transferError) throw new Error(transferError.message||"pos_signature_inventory_transfers_failed");
+
+  const catalogById=new Map(catalog.items.map((item:any)=>[String(item.id),item]));
+  const itemByCatalogId=new Map((itemRows||[]).map((row:any)=>[String(row.catalog_item_id),row]));
+  const itemById=new Map((itemRows||[]).map((row:any)=>[String(row.id),row]));
+  const areaById=new Map((areas||[]).map((row:any)=>[String(row.id),row]));
+
   const recipes=catalog.items.flatMap((item:any)=>{
     const components=Array.isArray(item.metadata?.recipe)?item.metadata.recipe:[];
     return components.length?[{
@@ -320,17 +355,88 @@ export async function getSignaturePlusInventory(locationId:string){
       })),
     }]:[];
   });
+
+  const normalizedIngredients=ingredients.map((item:any)=>{
+    const stock=availability.get(item.id);
+    const inventoryRow=itemByCatalogId.get(String(item.id)) as any;
+    const quantityOnHand=stock?.quantityOnHand??0;
+    const reorderPoint=stock?.reorderPoint??null;
+    return {
+      id:String(item.id),
+      inventoryItemId:inventoryRow?.id?String(inventoryRow.id):null,
+      name:item.name,
+      unit:stock?.unitCode||String(item.metadata?.inventory_unit||"unit"),
+      quantityOnHand,
+      lowStock:stock?.lowStock===true,
+      soldOut:stock?.soldOut===true,
+      lowStockThreshold:stock?.lowStockThreshold??null,
+      reorderPoint,
+      reorderQuantity:stock?.reorderQuantity??null,
+      preferredVendor:stock?.preferredVendor??null,
+      vendorSku:stock?.vendorSku??null,
+      reorderNeeded:reorderPoint!=null&&quantityOnHand<=reorderPoint,
+    };
+  });
+
+  const normalizedAdjustments=(adjustments||[]).map((row:any)=>({
+    id:String(row.id),
+    inventoryItemId:String(row.inventory_item_id),
+    catalogItemId:String(row.catalog_item_id),
+    ingredientName:String((catalogById.get(String(row.catalog_item_id)) as any)?.name||"Ingredient"),
+    quantityDelta:Number(row.quantity_delta||0),
+    reason:String(row.reason||"adjustment"),
+    sourceType:String(row.source_type||"manual"),
+    sourceId:row.source_id==null?null:String(row.source_id),
+    createdAt:row.created_at,
+  }));
+
   return {
-    ingredients:ingredients.map((item:any)=>{
-      const stock=availability.get(item.id);
+    summary:{
+      ingredientCount:normalizedIngredients.length,
+      lowStockCount:normalizedIngredients.filter((item:any)=>item.lowStock).length,
+      reorderCount:normalizedIngredients.filter((item:any)=>item.reorderNeeded).length,
+      wasteEvents:normalizedAdjustments.filter((row:any)=>row.sourceType==="waste"||row.reason==="waste").length,
+      transferEvents:(transfers||[]).length,
+    },
+    ingredients:normalizedIngredients,
+    recipes,
+    stockAreas:(areas||[]).map((row:any)=>({
+      id:String(row.id),code:String(row.code),name:String(row.name),updatedAt:row.updated_at,
+    })),
+    balances:(balances||[]).map((row:any)=>{
+      const inventory=itemById.get(String(row.inventory_item_id)) as any;
+      const catalogItem=inventory?catalogById.get(String(inventory.catalog_item_id)) as any:null;
+      const area=areaById.get(String(row.stock_area_id)) as any;
       return {
-        id:item.id,name:item.name,unit:stock?.unitCode||String(item.metadata?.inventory_unit||"unit"),
-        quantityOnHand:stock?.quantityOnHand??0,lowStock:stock?.lowStock===true,soldOut:stock?.soldOut===true,
-        lowStockThreshold:stock?.lowStockThreshold??null,reorderPoint:stock?.reorderPoint??null,
-        reorderQuantity:stock?.reorderQuantity??null,preferredVendor:stock?.preferredVendor??null,vendorSku:stock?.vendorSku??null,
+        inventoryItemId:String(row.inventory_item_id),
+        catalogItemId:inventory?.catalog_item_id?String(inventory.catalog_item_id):null,
+        ingredientName:String(catalogItem?.name||"Ingredient"),
+        stockAreaId:String(row.stock_area_id),
+        stockAreaName:String(area?.name||"Stock Area"),
+        quantity:Number(row.quantity||0),
+        updatedAt:row.updated_at,
       };
     }),
-    recipes,
+    recentAdjustments:normalizedAdjustments,
+    recentWaste:normalizedAdjustments.filter((row:any)=>row.sourceType==="waste"||row.reason==="waste"),
+    recentTransfers:(transfers||[]).map((row:any)=>{
+      const inventory=itemById.get(String(row.inventory_item_id)) as any;
+      const catalogItem=inventory?catalogById.get(String(inventory.catalog_item_id)) as any:null;
+      return {
+        id:String(row.id),
+        inventoryItemId:String(row.inventory_item_id),
+        catalogItemId:inventory?.catalog_item_id?String(inventory.catalog_item_id):null,
+        ingredientName:String(catalogItem?.name||"Ingredient"),
+        fromStockAreaId:String(row.from_stock_area_id),
+        fromStockAreaName:String((areaById.get(String(row.from_stock_area_id)) as any)?.name||"Stock Area"),
+        toStockAreaId:String(row.to_stock_area_id),
+        toStockAreaName:String((areaById.get(String(row.to_stock_area_id)) as any)?.name||"Stock Area"),
+        quantity:Number(row.quantity||0),
+        status:String(row.status||"completed"),
+        sourceId:row.metadata?.source_id==null?null:String(row.metadata.source_id),
+        createdAt:row.created_at,
+      };
+    }),
   };
 }
 
@@ -338,33 +444,118 @@ export async function getSignaturePlusReport(input:{locationId:string;from?:stri
   const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"read"});
   const from=input.from&&Number.isFinite(Date.parse(input.from))?new Date(input.from).toISOString():new Date(Date.now()-7*86400000).toISOString();
   const to=input.to&&Number.isFinite(Date.parse(input.to))?new Date(input.to).toISOString():now();
-  const [{data:checks,error:checkError},{data:tenders,error:tenderError},{data:items,error:itemError}]=await Promise.all([
-    shard.client.from("pos_checks").select("id,status,total_cents,discount_cents,tax_cents,tip_cents,amount_refunded_cents,opened_at,closed_at")
+  const [
+    {data:checks,error:checkError},
+    {data:tenders,error:tenderError},
+    {data:items,error:itemError},
+    {data:orders,error:orderError},
+    {data:staff,error:staffError},
+    {data:adjustments,error:adjustmentError},
+    {data:transfers,error:transferError},
+  ]=await Promise.all([
+    shard.client.from("pos_checks")
+      .select("id,status,total_cents,discount_cents,tax_cents,tip_cents,amount_refunded_cents,server_staff_profile_id,opened_at,closed_at")
       .eq("location_id",input.locationId).gte("opened_at",from).lte("opened_at",to),
-    shard.client.from("pos_tenders").select("id,check_id,tender_type,status,amount_cents,tip_cents,amount_refunded_cents,created_at")
+    shard.client.from("pos_tenders")
+      .select("id,check_id,tender_type,status,amount_cents,tip_cents,amount_refunded_cents,metadata,created_at")
       .eq("location_id",input.locationId).gte("created_at",from).lte("created_at",to),
-    shard.client.from("pos_order_items").select("item_name,quantity,line_total_cents,status,created_at")
+    shard.client.from("pos_order_items")
+      .select("item_name,quantity,line_total_cents,status,created_at")
       .eq("location_id",input.locationId).gte("created_at",from).lte("created_at",to).neq("status","voided"),
+    shard.client.from("pos_orders")
+      .select("id,course_name,status,server_staff_profile_id,created_at")
+      .eq("location_id",input.locationId).gte("created_at",from).lte("created_at",to),
+    shard.client.from("reserve_staff_profiles")
+      .select("id,display_name,role").eq("location_id",input.locationId),
+    shard.client.from("pos_inventory_adjustments")
+      .select("quantity_delta,reason,source_type,created_at")
+      .eq("location_id",input.locationId).gte("created_at",from).lte("created_at",to),
+    shard.client.from("pos_inventory_transfers")
+      .select("quantity,status,created_at")
+      .eq("location_id",input.locationId).gte("created_at",from).lte("created_at",to),
   ]);
   if(checkError) throw new Error(checkError.message||"pos_signature_report_checks_failed");
   if(tenderError) throw new Error(tenderError.message||"pos_signature_report_tenders_failed");
   if(itemError) throw new Error(itemError.message||"pos_signature_report_items_failed");
+  if(orderError) throw new Error(orderError.message||"pos_signature_report_orders_failed");
+  if(staffError) throw new Error(staffError.message||"pos_signature_report_staff_failed");
+  if(adjustmentError) throw new Error(adjustmentError.message||"pos_signature_report_inventory_failed");
+  if(transferError) throw new Error(transferError.message||"pos_signature_report_transfers_failed");
+
+  const settledStatuses=new Set(["completed","partially_refunded","refunded"]);
+  const settledTenders=(tenders||[]).filter((row:any)=>settledStatuses.has(String(row.status||"")));
   const gross=(checks||[]).reduce((s:number,r:any)=>s+Number(r.total_cents||0),0);
   const refunds=(checks||[]).reduce((s:number,r:any)=>s+Number(r.amount_refunded_cents||0),0);
-  const tips=(tenders||[]).reduce((s:number,r:any)=>s+Number(r.tip_cents||0),0);
+  const tips=settledTenders.reduce((s:number,r:any)=>s+Number(r.tip_cents||0),0);
   const discounts=(checks||[]).reduce((s:number,r:any)=>s+Number(r.discount_cents||0),0);
   const tax=(checks||[]).reduce((s:number,r:any)=>s+Number(r.tax_cents||0),0);
-  const paymentMethods=Object.entries((tenders||[]).reduce((acc:Record<string,number>,r:any)=>{
-    const key=String(r.tender_type||"other");acc[key]=(acc[key]||0)+Number(r.amount_cents||0);return acc;
+  const paymentMethods=Object.entries(settledTenders.reduce((acc:Record<string,number>,r:any)=>{
+    const key=String(r.tender_type||"other");
+    acc[key]=(acc[key]||0)+Math.max(0,Number(r.amount_cents||0)-Number(r.amount_refunded_cents||0));
+    return acc;
   },{})).map(([type,amountCents])=>({type,amountCents}));
   const topItems=Object.values((items||[]).reduce((acc:Record<string,any>,r:any)=>{
     const key=String(r.item_name||"Item");const row=acc[key]||{name:key,quantity:0,salesCents:0};
     row.quantity+=Number(r.quantity||0);row.salesCents+=Number(r.line_total_cents||0);acc[key]=row;return acc;
   },{})).sort((a:any,b:any)=>b.salesCents-a.salesCents).slice(0,20);
+
+  const staffById=new Map((staff||[]).map((row:any)=>[String(row.id),row]));
+  const serverPerformance=Object.values((checks||[]).reduce((acc:Record<string,any>,check:any)=>{
+    const key=check.server_staff_profile_id?String(check.server_staff_profile_id):"unassigned";
+    const staffRow=staffById.get(key) as any;
+    const row=acc[key]||{
+      staffProfileId:key==="unassigned"?null:key,
+      name:key==="unassigned"?"Unassigned":String(staffRow?.display_name||"Staff"),
+      role:key==="unassigned"?"":String(staffRow?.role||"staff"),
+      checks:0,
+      salesCents:0,
+      refundsCents:0,
+    };
+    row.checks+=1;
+    row.salesCents+=Number(check.total_cents||0);
+    row.refundsCents+=Number(check.amount_refunded_cents||0);
+    acc[key]=row;
+    return acc;
+  },{})).map((row:any)=>({...row,netSalesCents:Math.max(0,row.salesCents-row.refundsCents)}))
+    .sort((a:any,b:any)=>b.netSalesCents-a.netSalesCents);
+
+  const courseMix=Object.values((orders||[]).reduce((acc:Record<string,any>,order:any)=>{
+    const key=String(order.course_name||"other");
+    const row=acc[key]||{course:key,orders:0,fired:0,fulfilled:0};
+    row.orders+=1;
+    if(String(order.status)==="fired") row.fired+=1;
+    if(String(order.status)==="fulfilled") row.fulfilled+=1;
+    acc[key]=row;
+    return acc;
+  },{})).sort((a:any,b:any)=>b.orders-a.orders);
+
+  const recipeUsage=(adjustments||[]).filter((row:any)=>String(row.reason)==="recipe_usage"||String(row.source_type)==="signature_plus_recipe");
+  const waste=(adjustments||[]).filter((row:any)=>String(row.source_type)==="waste"||String(row.reason)==="waste");
+  const completedTransfers=(transfers||[]).filter((row:any)=>String(row.status||"completed")==="completed");
+
   return {
     from,to,
-    metrics:{grossSalesCents:gross,netSalesCents:Math.max(0,gross-refunds),refundsCents:refunds,tipsCents:tips,discountsCents:discounts,taxCents:tax,checks:(checks||[]).length,averageCheckCents:(checks||[]).length?Math.round(gross/(checks||[]).length):0},
-    paymentMethods,topItems,
+    metrics:{
+      grossSalesCents:gross,
+      netSalesCents:Math.max(0,gross-refunds),
+      refundsCents:refunds,
+      tipsCents:tips,
+      discountsCents:discounts,
+      taxCents:tax,
+      checks:(checks||[]).length,
+      closedChecks:(checks||[]).filter((row:any)=>String(row.status)==="closed").length,
+      openChecks:(checks||[]).filter((row:any)=>["open","held"].includes(String(row.status))).length,
+      averageCheckCents:(checks||[]).length?Math.round(gross/(checks||[]).length):0,
+      splitTenderCount:settledTenders.filter((row:any)=>row.metadata?.partial_tender===true).length,
+    },
+    inventoryMetrics:{
+      recipeUsageQuantity:Number(recipeUsage.reduce((sum:number,row:any)=>sum+Math.abs(Number(row.quantity_delta||0)),0).toFixed(4)),
+      wasteQuantity:Number(waste.reduce((sum:number,row:any)=>sum+Math.abs(Number(row.quantity_delta||0)),0).toFixed(4)),
+      wasteEvents:waste.length,
+      transferQuantity:Number(completedTransfers.reduce((sum:number,row:any)=>sum+Number(row.quantity||0),0).toFixed(4)),
+      transferEvents:completedTransfers.length,
+    },
+    paymentMethods,topItems,serverPerformance,courseMix,
   };
 }
 
