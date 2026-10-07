@@ -71,3 +71,24 @@ export async function acknowledgePosDeviceCommand(input:{
     }),
   });
 }
+
+export async function updatePosOnlineOrderStatus(input:{
+  deviceId:string;
+  credential:string;
+  onlineOrderId:string;
+  status:"accepted"|"preparing"|"ready"|"completed"|"canceled";
+}) {
+  const data=await jsonRequest("/api/pos/device/orders/status",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+      "Content-Type":"application/json",
+    },
+    body:JSON.stringify({
+      onlineOrderId:input.onlineOrderId,
+      status:input.status,
+    }),
+  });
+  return data.order as Record<string,unknown>;
+}
