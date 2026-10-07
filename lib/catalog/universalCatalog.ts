@@ -181,6 +181,8 @@ export async function getUniversalLocationCatalog(
       const channelOverride = options.channel
         ? overrides.find((override) => override.channel === options.channel)
         : undefined;
+      const hasChannelPriceOverride =
+        channelOverride?.priceCents !== null && channelOverride?.priceCents !== undefined;
 
       return {
         id: String(row.id),
@@ -193,11 +195,12 @@ export async function getUniversalLocationCatalog(
             ? channelOverride.description
             : stringOrNull(row.description),
         imageUrl: stringOrNull(row.image_url),
-        basePriceCents:
-          channelOverride?.priceCents !== null && channelOverride?.priceCents !== undefined
-            ? channelOverride.priceCents
-            : integerOrNull(row.price_cents),
-        priceLabel: stringOrNull(row.price_label) || stringOrNull(row.price),
+        basePriceCents: hasChannelPriceOverride
+          ? channelOverride.priceCents
+          : integerOrNull(row.price_cents),
+        priceLabel: hasChannelPriceOverride
+          ? null
+          : stringOrNull(row.price_label) || stringOrNull(row.price),
         tags: Array.isArray(row.tags) ? row.tags : [],
         dietaryTags: Array.isArray(row.dietary_tags) ? row.dietary_tags : [],
         sortOrder: Number(row.sort_order || 0),
