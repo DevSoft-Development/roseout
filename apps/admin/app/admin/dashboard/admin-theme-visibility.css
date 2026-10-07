@@ -199,3 +199,335 @@
 .admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-600 {
   color: var(--admin-shell-soft) !important;
 }
+
+
+/* ========================================================================
+ * Consolidated Admin route styling
+ * Route-specific theme CSS lives here so every Admin page follows the same
+ * light/dark tokens and no route can force an independent color system.
+ * ====================================================================== */
+
+
+/* Search benchmark route */
+.search-benchmark-page{display:grid;gap:20px}
+.search-benchmark-hero{padding:24px;border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.search-benchmark-hero p{margin:0;color:var(--admin-shell-accent);font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+.search-benchmark-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px);color:var(--admin-shell-text)}
+.search-benchmark-hero span{color:var(--admin-shell-soft)}
+.search-benchmark-stack{display:grid;gap:20px}
+
+
+/* Launch checklist route */
+.launch-checklist-page{display:grid;gap:20px}
+.launch-checklist-hero{padding:24px;border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.launch-checklist-hero p{margin:0;color:var(--admin-shell-accent);font-size:12px;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+.launch-checklist-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px);color:var(--admin-shell-text)}
+.launch-checklist-hero span{color:var(--admin-shell-soft)}
+.launch-checklist-grid{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.launch-checklist-grid article{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px;border:1px solid var(--admin-shell-border);border-radius:18px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.launch-checklist-grid strong{display:block}
+.launch-checklist-grid small{display:block;margin-top:4px;color:var(--admin-shell-muted);text-transform:uppercase;letter-spacing:.12em}
+.launch-checklist-grid article>span{border:1px solid rgba(245,158,11,.3);border-radius:999px;padding:6px 10px;background:rgba(245,158,11,.1);color:#92400e;font-size:12px;font-weight:800;white-space:nowrap}
+.admin-shell[data-admin-theme="dark"] .launch-checklist-grid article>span{color:#fde68a}
+@media(max-width:700px){.launch-checklist-grid{grid-template-columns:1fr}.launch-checklist-grid article{align-items:flex-start;flex-direction:column}}
+
+
+/* Domain benefit route */
+.domain-benefit-page{display:grid;gap:20px;max-width:900px;color:var(--admin-shell-text)}
+.domain-benefit-page>header,.domain-benefit-card{padding:24px;border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.domain-benefit-card{padding:22px}
+.domain-benefit-page small,.domain-benefit-card>small{color:var(--admin-shell-accent);font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+.domain-benefit-page h1{margin:8px 0;font-size:clamp(30px,4vw,44px);color:var(--admin-shell-text)}
+.domain-benefit-page p,.domain-benefit-card p,.domain-benefit-card label small,.domain-benefit-message{color:var(--admin-shell-soft)}
+.domain-benefit-card h2{margin:6px 0;color:var(--admin-shell-text)}
+.domain-benefit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.domain-benefit-card label{display:flex;gap:10px;align-items:flex-start;padding:16px;border:1px solid var(--admin-shell-border);border-radius:18px;background:var(--admin-shell-card-strong);color:var(--admin-shell-text)}
+.domain-benefit-card label span{display:grid;gap:4px}
+.domain-benefit-card label small{letter-spacing:0;text-transform:none;line-height:1.5}
+.domain-benefit-offer{margin-top:16px;padding:14px;border:1px solid var(--admin-shell-border);border-radius:14px;background:var(--admin-shell-card-strong);font-size:13px}
+.domain-benefit-card button{margin-top:16px;border:0;border-radius:12px;padding:11px 14px;background:var(--admin-shell-accent);color:#fff;font-weight:800;cursor:pointer}
+.domain-benefit-card button:disabled{opacity:.62}
+.domain-benefit-message{margin-top:10px;font-size:13px}
+@media(max-width:700px){.domain-benefit-grid{grid-template-columns:1fr}}
+
+
+/* Email QA route */
+.email-qa-page{display:grid;gap:18px;color:var(--admin-shell-text)}
+.email-qa-hero,.email-qa-filters,.email-qa-list,.email-qa-summary article,.email-qa-previews article,.email-qa-health{border:1px solid var(--admin-shell-border);border-radius:22px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.email-qa-hero{padding:24px}
+.email-qa-hero small,.email-qa-list small,.email-qa-summary small{color:var(--admin-shell-accent);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.email-qa-hero h1{margin:7px 0;font-size:clamp(30px,4vw,44px);color:var(--admin-shell-text)}
+.email-qa-hero p,.email-qa-list span,.email-qa-summary span{color:var(--admin-shell-soft)}
+.email-qa-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px}
+.email-qa-filters select,.email-qa-filters input{border:1px solid var(--admin-shell-border-strong);border-radius:12px;padding:11px 12px;background:var(--admin-shell-card-strong);color:var(--admin-shell-text)}
+.email-qa-filters button{border:0;border-radius:12px;background:var(--admin-shell-accent);color:#fff;font-weight:800}
+.email-qa-layout{display:grid;grid-template-columns:320px 1fr;gap:16px}
+.email-qa-list{max-height:780px;overflow:auto;padding:10px}
+.email-qa-list a{display:grid;gap:4px;margin-bottom:8px;padding:12px;border:1px solid var(--admin-shell-border);border-radius:14px;background:var(--admin-shell-card-strong);color:var(--admin-shell-text);text-decoration:none}
+.email-qa-list a.selected{border-color:var(--admin-shell-accent-border);background:var(--admin-shell-accent-soft)}
+.email-qa-main{display:grid;gap:16px;min-width:0}
+.email-qa-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.email-qa-summary article{display:grid;gap:6px;padding:16px}
+.email-qa-summary strong,.email-qa-summary code{overflow-wrap:anywhere}
+.email-qa-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.email-qa-previews article{padding:16px;min-width:0}
+.email-qa-previews h2,.email-qa-health h2{margin:0 0 12px;color:var(--admin-shell-text)}
+.email-qa-previews iframe{width:100%;height:620px;border:0;border-radius:14px;background:#fff}
+.email-qa-previews iframe.mobile{display:block;width:min(100%,360px);height:520px;margin:0 auto}
+.email-qa-previews pre{max-height:260px;overflow:auto;white-space:pre-wrap;padding:12px;border-radius:12px;background:var(--admin-shell-card-strong);color:var(--admin-shell-soft);font-size:12px}
+.email-qa-health{padding:16px}
+.email-qa-health>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.email-qa-health article{display:grid;gap:4px;padding:10px;border:1px solid var(--admin-shell-border);border-radius:12px;background:var(--admin-shell-card-strong)}
+.email-qa-health b{color:var(--admin-shell-accent);font-size:11px;text-transform:uppercase}
+.email-qa-health span{overflow-wrap:anywhere;color:var(--admin-shell-soft);font-size:12px}
+@media(max-width:1050px){.email-qa-layout{grid-template-columns:1fr}.email-qa-list{max-height:none}.email-qa-previews{grid-template-columns:1fr}}
+@media(max-width:760px){.email-qa-filters,.email-qa-summary,.email-qa-health>div{grid-template-columns:1fr}}
+
+
+/* Marketing Intelligence route */
+.marketing-intelligence-theme {
+  --mi-bg: var(--admin-shell-bg);
+  --mi-panel: var(--admin-shell-panel);
+  --mi-card: var(--admin-shell-card);
+  --mi-card-strong: var(--admin-shell-card-strong);
+  --mi-border: var(--admin-shell-border);
+  --mi-border-strong: var(--admin-shell-border-strong);
+  --mi-accent: var(--admin-shell-accent);
+  --mi-accent-hover: var(--admin-shell-accent-hover);
+  --mi-accent-soft: var(--admin-accent-soft, rgba(225,6,42,.14));
+  --mi-accent-border: var(--admin-accent-border, rgba(225,6,42,.34));
+  --mi-text: var(--admin-shell-text);
+  --mi-soft: var(--admin-shell-soft);
+  --mi-muted: var(--admin-shell-muted);
+  color: var(--mi-text);
+}
+
+/* Marketing Intelligence must always follow the Admin visual contract. */
+.marketing-intelligence-theme .bg-white,
+.marketing-intelligence-theme .bg-neutral-50,
+.marketing-intelligence-theme .bg-neutral-50\/60 {
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025)) !important;
+}
+
+.marketing-intelligence-theme .bg-red-50,
+.marketing-intelligence-theme .bg-red-50\/60 {
+  background: var(--mi-accent-soft) !important;
+}
+
+.marketing-intelligence-theme .bg-neutral-950 {
+  background: var(--mi-accent) !important;
+}
+
+.marketing-intelligence-theme .text-neutral-950,
+.marketing-intelligence-theme .text-neutral-900,
+.marketing-intelligence-theme .text-neutral-800,
+.marketing-intelligence-theme .text-neutral-700 {
+  color: var(--mi-text) !important;
+}
+
+.marketing-intelligence-theme .text-neutral-600,
+.marketing-intelligence-theme .text-neutral-500 {
+  color: var(--mi-muted) !important;
+}
+
+.marketing-intelligence-theme .text-red-700,
+.marketing-intelligence-theme .text-red-600 {
+  color: #fb7185 !important;
+}
+
+.marketing-intelligence-theme .border,
+.marketing-intelligence-theme .border-neutral-200,
+.marketing-intelligence-theme .border-neutral-300 {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme .border-red-200,
+.marketing-intelligence-theme .border-red-300 {
+  border-color: var(--mi-accent-border) !important;
+}
+
+.marketing-intelligence-theme .ring-red-200 {
+  --tw-ring-color: rgba(225,6,42,.28) !important;
+}
+
+.marketing-intelligence-theme .shadow-sm {
+  box-shadow: 0 18px 55px rgba(0,0,0,.32) !important;
+}
+
+.marketing-intelligence-theme input,
+.marketing-intelligence-theme select,
+.marketing-intelligence-theme textarea {
+  border-color: var(--mi-border-strong) !important;
+  background: rgba(0,0,0,.34) !important;
+  color: var(--mi-text) !important;
+  color-scheme: dark;
+}
+
+.marketing-intelligence-theme input::placeholder,
+.marketing-intelligence-theme textarea::placeholder {
+  color: var(--mi-muted) !important;
+}
+
+.marketing-intelligence-theme input:focus,
+.marketing-intelligence-theme select:focus,
+.marketing-intelligence-theme textarea:focus {
+  border-color: var(--mi-accent-border) !important;
+  outline: 2px solid rgba(225,6,42,.18) !important;
+  outline-offset: 1px;
+}
+
+.marketing-intelligence-theme button.bg-neutral-950 {
+  border-color: transparent !important;
+  background: var(--mi-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 12px 34px rgba(225,6,42,.22);
+}
+
+.marketing-intelligence-theme button.bg-neutral-950:hover {
+  background: var(--mi-accent-hover) !important;
+}
+
+.marketing-intelligence-theme button.border:not(.border-red-200):not(.border-red-300) {
+  border-color: var(--mi-border-strong) !important;
+  background: rgba(255,255,255,.035) !important;
+  color: var(--mi-text) !important;
+}
+
+.marketing-intelligence-theme button.border:not(.border-red-200):not(.border-red-300):hover {
+  border-color: var(--mi-accent-border) !important;
+  background: var(--mi-accent-soft) !important;
+}
+
+.marketing-intelligence-theme button.border-red-200,
+.marketing-intelligence-theme button.border-red-300 {
+  border-color: var(--mi-accent-border) !important;
+  background: var(--mi-accent-soft) !important;
+  color: #fff !important;
+}
+
+.marketing-intelligence-theme table,
+.marketing-intelligence-theme thead,
+.marketing-intelligence-theme tbody,
+.marketing-intelligence-theme tr,
+.marketing-intelligence-theme td,
+.marketing-intelligence-theme th {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme thead {
+  background: rgba(255,255,255,.035) !important;
+}
+
+.marketing-intelligence-theme tbody tr:hover {
+  background: rgba(225,6,42,.055) !important;
+}
+
+.marketing-intelligence-theme .divide-y > :not(:last-child) {
+  border-color: var(--mi-border) !important;
+}
+
+.marketing-intelligence-theme a:hover {
+  color: #fff;
+}
+
+.marketing-intelligence-theme ::selection {
+  background: rgba(225,6,42,.42);
+  color: #fff;
+}
+
+
+/* Microsoft 365 route */
+.m365-page{display:grid;gap:20px;color:var(--admin-shell-text)}
+.m365-hero,.m365-card,.m365-connection,.m365-stat{border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text);box-shadow:0 18px 48px rgba(15,23,42,.08)}
+.m365-hero{display:flex;justify-content:space-between;gap:20px;padding:24px}
+.m365-hero p,.m365-connection>small{margin:0;color:#e11d48;font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+.m365-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px);color:var(--admin-shell-text)}
+.m365-hero span,.m365-connection p,.m365-card p,.m365-card>small,.m365-stat span,.m365-stat small{color:var(--admin-shell-muted)}
+.m365-hero nav,.m365-actions{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start}
+.m365-hero nav a,.m365-actions a,.m365-actions button,.m365-save{border:1px solid var(--admin-shell-accent-border);border-radius:12px;padding:10px 13px;background:var(--admin-shell-accent);color:#fff;text-decoration:none;font-size:13px;font-weight:800;cursor:pointer}
+.m365-hero nav a:hover,.m365-actions a:hover,.m365-actions button:hover,.m365-save:hover{background:var(--admin-shell-accent-hover)}
+.m365-actions button.secondary{border-color:var(--admin-shell-border-strong);background:color-mix(in srgb,var(--admin-shell-card-strong) 88%,transparent);color:var(--admin-shell-text)}
+.m365-notices{display:grid;gap:8px}
+.m365-notices>div,.m365-error-detail{border-radius:14px;padding:12px 14px;font-size:13px;font-weight:700}
+.m365-notices .success{border:1px solid rgba(22,163,74,.24);background:rgba(22,163,74,.08);color:#166534}
+.m365-notices .error,.m365-error-detail{border:1px solid rgba(225,29,72,.24);background:rgba(225,29,72,.08);color:#be123c}
+.m365-summary{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
+.m365-connection,.m365-stat,.m365-card{padding:20px}
+.m365-connection h2{margin:8px 0;font-size:24px;color:var(--admin-shell-text)}
+.m365-actions{margin-top:18px}
+.m365-stat{display:flex;min-height:160px;flex-direction:column;justify-content:center}
+.m365-stat strong{font-size:38px;color:var(--admin-shell-text)}
+.m365-settings{display:grid;gap:16px}
+.m365-section-title{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.m365-section-title h2{margin:0;color:var(--admin-shell-text)}
+.m365-section-title p{margin:5px 0 0}
+.m365-grid-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}
+.m365-card label{display:grid;gap:8px;font-size:13px;font-weight:800;color:var(--admin-shell-text)}
+.m365-card select{width:100%;border:1px solid var(--admin-shell-border-strong);border-radius:12px;padding:11px 12px;background:var(--admin-shell-panel)!important;color:var(--admin-shell-text)!important}
+.m365-checklist{display:grid;gap:10px}
+.m365-checklist label,.m365-feature-toggle{display:flex;gap:10px;align-items:flex-start}
+.m365-feature-toggle{margin-top:14px;border:1px solid var(--admin-shell-accent-border);border-radius:14px;padding:12px;background:var(--admin-shell-accent-soft)}
+.m365-feature-toggle span{display:grid;gap:4px}
+.m365-card>a{color:#be123c;font-size:13px;font-weight:800;text-decoration:none}
+.m365-save{justify-self:start;padding:12px 16px}
+.admin-shell[data-admin-theme="dark"] .m365-hero p,.admin-shell[data-admin-theme="dark"] .m365-connection>small,.admin-shell[data-admin-theme="dark"] .m365-card>a{color:#fda4af}
+.admin-shell[data-admin-theme="dark"] .m365-notices .success{color:#d1fae5}
+.admin-shell[data-admin-theme="dark"] .m365-notices .error,.admin-shell[data-admin-theme="dark"] .m365-error-detail{color:#fecdd3}
+@media(max-width:900px){.m365-summary,.m365-grid-two{grid-template-columns:1fr}.m365-hero{flex-direction:column}}
+
+
+/* Apple Devices route */
+.apple-page{display:grid;gap:20px;color:var(--admin-shell-text)}
+.apple-hero,.apple-card,.apple-alert{border:1px solid var(--admin-shell-border);border-radius:24px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.apple-hero{display:flex;justify-content:space-between;gap:20px;padding:24px}
+.apple-hero p,.apple-card small,.apple-alert small{margin:0;color:var(--admin-shell-accent);font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.apple-hero h1{margin:8px 0;font-size:clamp(30px,4vw,46px);color:var(--admin-shell-text)}
+.apple-hero span,.apple-card p,.apple-alert p,.apple-device-main span,.apple-device-main small,.apple-device-status small,.apple-device-meta span,.apple-ready-copy,.apple-guide-note,.apple-empty p{color:var(--admin-shell-soft)}
+.apple-hero nav{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start}
+.apple-hero nav a,.apple-guide-head a{border:1px solid var(--admin-shell-border);border-radius:12px;padding:10px 12px;background:var(--admin-shell-card-strong);color:var(--admin-shell-text);text-decoration:none;font-size:13px;font-weight:800}
+.apple-alert{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:18px}
+.apple-alert>svg{width:22px;color:#d97706}
+.apple-alert h2{margin:3px 0;color:var(--admin-shell-text)}
+.apple-alert p{margin:6px 0}
+.apple-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.apple-metrics article{display:grid;gap:5px;padding:16px;border:1px solid var(--admin-shell-border);border-radius:18px;background:var(--admin-shell-card);color:var(--admin-shell-text)}
+.apple-metrics svg,.apple-device-main svg{width:18px;color:var(--admin-shell-accent)}
+.apple-metrics strong{font-size:30px}
+.apple-metrics span,.apple-device-status>span{font-weight:800;color:var(--admin-shell-text)}
+.apple-metrics small{color:var(--admin-shell-muted)}
+.apple-card{padding:20px}
+.apple-pipeline{display:flex;justify-content:space-between;gap:20px;align-items:center}
+.apple-pipeline h2,.apple-guide-head h2,.apple-section-head h2,.apple-empty h3,.apple-card h3{margin:4px 0;color:var(--admin-shell-text)}
+.apple-pipeline form button,.apple-device-row form button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:12px;padding:10px 12px;background:var(--admin-shell-accent);color:#fff;font-weight:800;cursor:pointer}
+.apple-pipeline form button:disabled,.apple-device-row form button:disabled{opacity:.58;cursor:not-allowed}
+.apple-pipeline svg,.apple-device-row form svg,.apple-guide-head a svg{width:16px}
+.apple-guide-head{display:flex;justify-content:space-between;gap:16px}
+.apple-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.apple-guide-grid article,.apple-guide-note{border:1px solid var(--admin-shell-border);background:var(--admin-shell-card-strong)}
+.apple-guide-grid article{padding:16px;border-radius:18px}
+.apple-guide-grid b{display:block;color:var(--admin-shell-text)}
+.apple-guide-grid ol{padding-left:20px;color:var(--admin-shell-soft);font-size:13px;line-height:1.7}
+.apple-guide-note{margin-top:14px;padding:11px 12px;border-radius:12px;color:var(--admin-shell-soft);font-size:12px}
+.apple-section-head{padding-bottom:14px;border-bottom:1px solid var(--admin-shell-border)}
+.apple-device-list{display:grid}
+.apple-device-row{display:grid;grid-template-columns:1.4fr .8fr 1fr auto;gap:16px;align-items:center;padding:18px 0;border-top:1px solid var(--admin-shell-border)}
+.apple-device-row:first-child{border-top:0}
+.apple-device-main{display:grid;gap:5px;min-width:0}
+.apple-device-main>div{display:flex;gap:8px;align-items:center}
+.apple-device-main strong{color:var(--admin-shell-text)}
+.apple-device-status,.apple-device-meta{display:grid;gap:5px;font-size:12px}
+.apple-managed{display:inline-flex;align-items:center;gap:6px;color:#047857;font-weight:800}
+.apple-managed svg{width:16px}
+.apple-ready-copy{max-width:180px;font-size:12px;line-height:1.5}
+.apple-empty{padding-top:16px}
+.apple-empty h3{margin:0 0 6px}
+.admin-shell[data-admin-theme="light"] .apple-card,.admin-shell[data-admin-theme="light"] .apple-alert,.admin-shell[data-admin-theme="light"] .apple-metrics article{box-shadow:0 10px 28px rgba(15,23,42,.055)}
+.admin-shell[data-admin-theme="light"] .apple-alert{background:#fffaf0;border-color:rgba(217,119,6,.22)}
+.admin-shell[data-admin-theme="light"] .apple-card small,.admin-shell[data-admin-theme="light"] .apple-alert small,.admin-shell[data-admin-theme="light"] .apple-metrics svg,.admin-shell[data-admin-theme="light"] .apple-device-main svg{color:#9f1239}
+.admin-shell[data-admin-theme="light"] .apple-managed{color:#166534}
+.admin-shell[data-admin-theme="dark"] .apple-alert{background:#17120c;border-color:rgba(251,191,36,.2)}
+.admin-shell[data-admin-theme="dark"] .apple-card small,.admin-shell[data-admin-theme="dark"] .apple-alert small,.admin-shell[data-admin-theme="dark"] .apple-metrics svg,.admin-shell[data-admin-theme="dark"] .apple-device-main svg{color:#fda4af}
+.admin-shell[data-admin-theme="dark"] .apple-managed{color:#a7f3d0}
+@media(max-width:1000px){.apple-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.apple-device-row{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.apple-hero,.apple-pipeline,.apple-guide-head{flex-direction:column;align-items:stretch}.apple-metrics,.apple-guide-grid,.apple-device-row{grid-template-columns:1fr}}
+

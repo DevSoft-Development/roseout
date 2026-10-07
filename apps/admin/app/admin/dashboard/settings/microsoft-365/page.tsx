@@ -1,4 +1,3 @@
-import "./microsoft-365.css";
 
 import Link from "next/link";
 import { redirect } from "next/navigation";

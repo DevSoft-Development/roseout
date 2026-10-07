@@ -12,7 +12,6 @@ import {
   AdminPageShell,
   AdminStatusBadge,
 } from "../../../../../components/admin/AdminDesignSystem";
-import "./marketing-intelligence.css";
 
 export const dynamic = "force-dynamic";
 

@@ -1,4 +1,3 @@
-import "./search-benchmark.css";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import SearchBenchmarkClient from "./SearchBenchmarkClient";
