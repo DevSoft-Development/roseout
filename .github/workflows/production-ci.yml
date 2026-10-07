@@ -104,9 +104,18 @@ jobs:
             root=true
           fi
 
+          dependency=false
+          if printf '%s\n' "$CHANGED" | grep -Eq '^(package(-lock)?\.json)$'; then
+            dependency=true
+          fi
+
           echo "root=$root" >> "$GITHUB_OUTPUT"
           echo "admin=$admin" >> "$GITHUB_OUTPUT"
-          echo "scope=targeted" >> "$GITHUB_OUTPUT"
+          if [ "$dependency" = true ]; then
+            echo "scope=targeted-dependency" >> "$GITHUB_OUTPUT"
+          else
+            echo "scope=targeted" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node.js
         if: steps.quality_scope.outputs.root == 'true' || steps.quality_scope.outputs.admin == 'true'
@@ -155,7 +164,9 @@ jobs:
           fi
 
       - name: Audit production dependencies
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          contains(steps.quality_scope.outputs.scope, 'dependency')
         run: npm audit --package-lock-only --omit=dev --audit-level=high
 
   regressions:

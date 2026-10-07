@@ -17,7 +17,7 @@ on:
       - 'package-lock.json'
   workflow_run:
     workflows:
-      - Production CI
+      - Azure consumer production
       - AWS web surfaces services
       - AWS Reserve web
     types: [completed]
@@ -71,7 +71,7 @@ jobs:
             SURFACES="${MANUAL_SURFACE:-all}"
           else
             case "${TRIGGER_WORKFLOW}" in
-              "Production CI") SURFACES="consumer" ;;
+              "Azure consumer production") SURFACES="consumer" ;;
               "AWS web surfaces services") SURFACES="admin,business" ;;
               "AWS Reserve web") SURFACES="reserve" ;;
               *) echo "Unsupported deployment workflow: ${TRIGGER_WORKFLOW}" >&2; exit 2 ;;
