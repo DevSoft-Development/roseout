@@ -120,3 +120,82 @@
   outline: 2px solid var(--admin-shell-accent) !important;
   outline-offset: 2px;
 }
+
+
+/* Targeted legacy overlay normalization.
+ * These are the recurring Admin utility classes that previously rendered as
+ * muddy gray overlays in light mode. Exact class selectors keep matching cheap.
+ */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-black\/15,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-black\/20,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-black\/25,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-black\/30,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-black\/85,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-zinc-950,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-zinc-900,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-neutral-950,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/10,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[\.03\],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[\.04\],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[0\.03\],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[0\.04\],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[0\.05\],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .bg-white\/\[0\.08\] {
+  background: #ffffff !important;
+  background-image: none !important;
+  color: var(--admin-shell-text) !important;
+  border-color: var(--admin-shell-border) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/10,
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[\.03\],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[\.04\],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[0\.03\],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[0\.04\],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[0\.05\],
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface .bg-white\/\[0\.08\] {
+  background: var(--admin-shell-card) !important;
+  background-image: none !important;
+  color: var(--admin-shell-text) !important;
+  border-color: var(--admin-shell-border) !important;
+}
+
+/* Light mode uses darker brand/status reds instead of pale pink on gray. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-rose-100,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-rose-200,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-rose-300,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-red-100,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-red-200,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-red-300 {
+  color: #9f1239 !important;
+}
+
+/* Muted white text must become dark readable copy on cleaned light cards. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/35,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/40,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/45,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/55,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/60,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/65,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/70,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/75,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-white\/80 {
+  color: var(--admin-shell-soft) !important;
+}
+
+/* Zinc-based Search Anchor tools get the same clean light surface treatment. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .border-zinc-600,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .border-zinc-700,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .border-zinc-800,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .border-zinc-900 {
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-100,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-300,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-400,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-500,
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface .text-zinc-600 {
+  color: var(--admin-shell-soft) !important;
+}
