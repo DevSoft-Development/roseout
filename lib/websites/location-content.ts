@@ -13,6 +13,7 @@ export type GeneratedWebsiteLocationSnapshot = {
   reviews:GeneratedWebsiteReview[];
   events:GeneratedWebsiteEvent[];
   experiences:GeneratedWebsiteExperience[];
+  online_ordering_enabled:boolean;
 };
 
 function stringValue(value:unknown){return typeof value==="string"&&value.trim()?value.trim():null}
@@ -26,6 +27,13 @@ export async function getGeneratedWebsiteLocationSnapshot(location:Record<string
   const metadata=objectValue(location.metadata);const id=stringValue(location.id)||"";const photos=uniqueUrls([location.image_url,location.main_image,location.photo_url,location.images,location.photos,metadata.image_url,metadata.main_image,metadata.images,metadata.photos]);
   let menu:GeneratedWebsiteLocationSnapshot["menu"]=null;
   try{const menuData=id?await getLocationMenu(id, undefined, "website"):null;const page=menuData?.page;if(page&&(page.status==="published"||page.is_active===true)){const sectionNames=new Map((menuData.sections||[]).map(section=>[String(section.id),String(section.title||section.name||"Menu")]));menu={title:String(page.title||"Menu"),description:stringValue(page.description),external_url:stringValue(page.external_url),pdf_url:stringValue(page.pdf_url),items:(menuData.items||[]).filter(item=>item.is_available!==false).slice(0,24).map(item=>({name:String(item.name||"Menu item"),description:stringValue(item.description),price:stringValue(item.price_label)||stringValue(item.price),image_url:stringValue(item.image_url),section:sectionNames.get(String(item.section_id))||null}))}}}catch(error){console.error("GENERATED_WEBSITE_MENU_LOAD_FAILED",{locationId:id,error})}
+  let onlineOrderingEnabled=false;
+  try{
+    if(id){
+      const orderingMenu=await getLocationMenu(id, undefined, "online_ordering");
+      onlineOrderingEnabled=Boolean(orderingMenu?.items?.some(item=>item.is_available!==false));
+    }
+  }catch(error){console.error("GENERATED_WEBSITE_ORDERING_LOAD_FAILED",{locationId:id,error})}
   let reviews:GeneratedWebsiteReview[]=[];
   try{if(id){const{data}=await supabaseAdmin.from("location_reviews").select("customer_name,rating,review_text").eq("location_id",id).eq("status","approved").eq("verified_visit",true).order("created_at",{ascending:false}).limit(6);reviews=(data||[]).filter(review=>stringValue(review.review_text)).map(review=>({customer_name:stringValue(review.customer_name)||"TheOutHaven Guest",rating:Math.min(5,Math.max(1,Number(review.rating||5))),review_text:stringValue(review.review_text)||""}))}}catch(error){console.error("GENERATED_WEBSITE_REVIEWS_LOAD_FAILED",{locationId:id,error})}
   let events:GeneratedWebsiteEvent[]=[];let experiences:GeneratedWebsiteExperience[]=[];
@@ -60,5 +68,6 @@ export async function getGeneratedWebsiteLocationSnapshot(location:Record<string
     reviews,
     events,
     experiences,
+    online_ordering_enabled:onlineOrderingEnabled,
   };
 }
