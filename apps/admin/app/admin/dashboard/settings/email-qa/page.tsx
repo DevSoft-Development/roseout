@@ -1,5 +1,3 @@
-import "./email-qa.css";
-
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import {
   EMAIL_TEMPLATE_GROUPS,
