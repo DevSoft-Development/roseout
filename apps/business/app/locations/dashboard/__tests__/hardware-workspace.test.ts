@@ -10,14 +10,15 @@ describe("Business hardware workspace", () => {
     expect(source).toMatch(/EDIT_PERMISSIONS[\s\S]*"hardware\.manage"/);
   });
 
-  it("exposes ThePOSHaven as the canonical POS workspace", () => {
+  it("exposes ThePOSHaven and Hardware as separate primary workspaces", () => {
     const source = readFileSync(
       "apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx",
       "utf8",
     );
     expect(source).toContain('label: "ThePOSHaven"');
     expect(source).toContain('href: "/locations/dashboard/pos"');
-    expect(source).toContain('matches: ["/locations/dashboard/hardware"]');
+    expect(source).toContain('label: "Hardware"');
+    expect(source).toContain('href: "/locations/dashboard/hardware"');
   });
 
   it("keeps the owner experience plain-language and hides network internals", () => {
