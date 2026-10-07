@@ -4,19 +4,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRole } from "@/lib/admin-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
 import { assignAppleDevicesToMdmServer, getAppleDeviceActivity, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
-import { syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
+import { applyBusinessStandardProfile, syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
 
 async function waitForAppleAssignment(activityId: string) {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     const activity = await getAppleDeviceActivity(activityId);
     const status = (activity.attributes?.status || "").toUpperCase();
     if (["COMPLETED", "SUCCEEDED", "SUCCESS"].includes(status)) return activity;
     if (["FAILED", "ERROR"].includes(status)) throw new Error(`APPLE_DEVICE_ASSIGNMENT_${status}`);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  return null;
+  throw new Error("APPLE_DEVICE_ASSIGNMENT_TIMEOUT");
 }
 
 export async function POST(request: NextRequest) {
@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid enrollment action" }, { status: 400 });
     }
 
+    await applyBusinessStandardProfile(admin.user_id);
     await syncIntuneAppleEnrollment(admin.user_id);
     revalidatePath(RETURN_PATH);
     revalidatePath("/admin/dashboard/security/devices");
