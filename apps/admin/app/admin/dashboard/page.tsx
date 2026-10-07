@@ -44,6 +44,7 @@ export default async function CentralDashboardPage() {
     ["Machine Learning", "Track learned ranking, intent scoring, pair scoring, and ML data readiness.", "/admin/dashboard/ml", `${format(mlScored)} scored · ${format(mlIntentRows)} intents · ${format(mlPairRows)} pairs`],
     ["Claims pipeline", "Review owner claims, QR codes, and claim outreach readiness.", "/admin/dashboard/claims", "Review"],
     ["Partner readiness", "Open CRM to manage partner launch, payments, portal, and next actions.", "/admin/dashboard/crm", "Operate"],
+    ["ThePOSHaven", "Manage POS hardware, merchant access, device health, command delivery, and support.", "/admin/dashboard/pos", "POS Operations"],
   ].filter(([title]) => title !== "Users" || admin.role === "superadmin");
 
   const tasks = [

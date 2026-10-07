@@ -17,6 +17,7 @@ const requiredPrimaryRoutes = [
   "/locations/dashboard/reservations",
   "/locations/dashboard/reservations/settings",
   "/locations/dashboard/profile",
+  "/locations/dashboard/pos",
   "/locations/dashboard/hardware",
   "/locations/dashboard/business-setup",
   "/locations/dashboard/customers",
@@ -42,7 +43,7 @@ const childRoutes = [
 ];
 
 const checks = {
-  exactly18PrimaryWorkspaces: primaryItemCount === 18,
+  exactly19PrimaryWorkspaces: primaryItemCount === 19,
   requiredPrimaryRoutesPresent: requiredPrimaryRoutes.every((route) => nav.includes(`href: "${route}"`)),
   consolidatedChildRoutesMapped: childRoutes.every((route) => nav.includes(route)),
   hubPagesExist: hubFiles.every((file) => fs.existsSync(file)),
