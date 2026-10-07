@@ -10,7 +10,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
-# Manual production replay trigger: verify taxonomy normalization relevance fix.
+# Manual production replay trigger: verify six-lane production ranking quality after LI V2 cleanup.
 permissions:
   contents: read
   id-token: write
