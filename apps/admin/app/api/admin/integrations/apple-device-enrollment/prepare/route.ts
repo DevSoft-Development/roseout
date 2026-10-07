@@ -2,8 +2,8 @@ import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
-import { assignAppleDevicesToMdmServer, getAppleDeviceActivity, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
-import { applyBusinessStandardProfile, syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
+import { assignAppleDevicesToMdmServer, getAppleDeviceActivity, listAppleBusinessDevices, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
+import { applyBusinessStandardProfile, assignIntuneIosEnrollmentProfileToSerial, ensureDefaultIntuneIosEnrollmentProfile, syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
 
@@ -18,6 +18,30 @@ async function waitForAppleAssignment(activityId: string) {
   throw new Error("APPLE_DEVICE_ASSIGNMENT_TIMEOUT");
 }
 
+async function assignEnrollmentProfileWithRetry(
+  userId: string,
+  depOnboardingSettingId: string,
+  enrollmentProfileId: string,
+  serialNumber: string,
+) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    try {
+      await assignIntuneIosEnrollmentProfileToSerial(
+        userId,
+        depOnboardingSettingId,
+        enrollmentProfileId,
+        serialNumber,
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("INTUNE_ADE_PROFILE_ASSIGNMENT_TIMEOUT");
+}
+
 export async function POST(request: NextRequest) {
   const admin = await requireAdminRole(["superadmin"]);
   const formData = await request.formData();
@@ -30,9 +54,17 @@ export async function POST(request: NextRequest) {
 
   try {
     let activityId = "";
+    let serialNumber = "";
     if (action === "prepare") {
-      const mdmServer = await resolveAppleIntuneMdmServer();
+      const [mdmServer, appleDevices] = await Promise.all([
+        resolveAppleIntuneMdmServer(),
+        listAppleBusinessDevices(),
+      ]);
       if (!mdmServer) throw new Error("APPLE_INTUNE_MDM_SERVER_NOT_FOUND");
+      const selectedDevice = appleDevices.find((device) => device.id === deviceId);
+      if (!selectedDevice) throw new Error("APPLE_DEVICE_NOT_FOUND");
+      serialNumber = selectedDevice.attributes?.serialNumber || selectedDevice.id;
+
       const activity = await assignAppleDevicesToMdmServer([deviceId], mdmServer.id);
       activityId = activity.id;
       await waitForAppleAssignment(activityId);
@@ -41,7 +73,20 @@ export async function POST(request: NextRequest) {
     }
 
     await applyBusinessStandardProfile(admin.user_id);
-    await syncIntuneAppleEnrollment(admin.user_id);
+    const depSetting = await syncIntuneAppleEnrollment(admin.user_id);
+
+    if (action === "prepare") {
+      const enrollmentProfile = await ensureDefaultIntuneIosEnrollmentProfile(
+        admin.user_id,
+        depSetting.id,
+      );
+      await assignEnrollmentProfileWithRetry(
+        admin.user_id,
+        depSetting.id,
+        enrollmentProfile.id,
+        serialNumber,
+      );
+    }
     revalidatePath(RETURN_PATH);
     revalidatePath("/admin/dashboard/security/devices");
 
@@ -53,6 +98,7 @@ export async function POST(request: NextRequest) {
     console.error("Apple device enrollment preparation failed", error);
     const url = new URL(RETURN_PATH, request.url);
     url.searchParams.set("status", "failed");
+    if (error instanceof Error) url.searchParams.set("error", error.message.slice(0, 180));
     return NextResponse.redirect(url, 303);
   }
 }
