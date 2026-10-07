@@ -6,6 +6,7 @@ import type { WebsiteArtifactFile } from "@/lib/websites/publish-contract";
 import { renderBespokePremiumWebsiteArtifact } from "@/lib/websites/bespoke-premium-renderer";
 import { routeGeneratedReservationArtifact } from "@/lib/websites/reservation-routing-artifact";
 import { addGeneratedWebsitePages } from "@/lib/websites/multi-page-artifact";
+import { addGeneratedOnlineOrderingArtifact } from "@/lib/websites/online-ordering-artifact";
 import { enhanceWebsiteSeoAccessibility } from "@/lib/websites/seo-accessibility-artifact";
 import { addMigrationRedirectArtifacts } from "@/lib/websites/migration-redirect-artifact";
 
@@ -22,6 +23,7 @@ export function renderEnhancedWebsiteArtifact(
   const rendered = renderBespokePremiumWebsiteArtifact(website, location);
   const routed = routeGeneratedReservationArtifact(rendered, location);
   const paged = addGeneratedWebsitePages(routed);
-  const redirected = addMigrationRedirectArtifacts(paged, website);
+  const ordered = addGeneratedOnlineOrderingArtifact(paged, location);
+  const redirected = addMigrationRedirectArtifacts(ordered, website);
   return enhanceWebsiteSeoAccessibility(redirected, website, location);
 }
