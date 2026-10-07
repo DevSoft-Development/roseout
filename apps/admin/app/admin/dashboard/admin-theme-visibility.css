@@ -1,0 +1,278 @@
+/*
+ * Admin light/dark visibility guardrail.
+ *
+ * This file is intentionally imported after admin-shell.css. It normalizes legacy
+ * Tailwind utility combinations at the isolated Admin shell boundary so every
+ * dashboard route remains readable in both appearance modes without changing
+ * route business logic.
+ */
+
+.admin-shell {
+  --admin-readable-text: var(--admin-shell-text);
+  --admin-readable-soft: var(--admin-shell-soft);
+  --admin-readable-muted: var(--admin-shell-muted);
+}
+
+.admin-shell[data-admin-theme="light"] {
+  --admin-shell-bg: #f4f6f9;
+  --admin-shell-panel: #ffffff;
+  --admin-shell-card: #ffffff;
+  --admin-shell-card-strong: #f7f8fa;
+  --admin-shell-border: rgba(15, 23, 42, 0.12);
+  --admin-shell-border-strong: rgba(15, 23, 42, 0.2);
+  --admin-shell-text: #151821;
+  --admin-shell-soft: #4b5563;
+  --admin-shell-muted: #667085;
+}
+
+.admin-shell[data-admin-theme="dark"] {
+  --admin-shell-bg: #050505;
+  --admin-shell-panel: #0b0b0d;
+  --admin-shell-card: #101012;
+  --admin-shell-card-strong: #151519;
+  --admin-shell-border: rgba(255, 255, 255, 0.1);
+  --admin-shell-border-strong: rgba(255, 255, 255, 0.18);
+  --admin-shell-text: #ffffff;
+  --admin-shell-soft: rgba(255, 255, 255, 0.76);
+  --admin-shell-muted: rgba(255, 255, 255, 0.58);
+}
+
+/* Shell chrome must follow the selected theme too, not only page content. */
+.admin-shell[data-admin-theme="light"] .admin-shell-sidebar,
+.admin-shell[data-admin-theme="light"] .admin-shell-drawer-panel {
+  background: rgba(255, 255, 255, 0.985);
+  color: var(--admin-shell-text);
+  box-shadow: 24px 0 70px rgba(15, 23, 42, 0.08);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-shell-desktop-topbar,
+.admin-shell[data-admin-theme="light"] .admin-shell-header {
+  background: rgba(244, 246, 249, 0.9);
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] :is(
+  .admin-shell-nav-group-trigger,
+  .admin-shell-nav-item,
+  .admin-shell-brand small,
+  .admin-shell-user small,
+  .admin-shell-header small,
+  .admin-shell-drawer-header small,
+  .admin-shell-environment small,
+  .admin-shell-topbar-eyebrow,
+  .admin-shell-header-status
+) {
+  color: var(--admin-shell-muted);
+}
+
+.admin-shell[data-admin-theme="light"] :is(
+  .admin-shell-nav-group-trigger:hover,
+  .admin-shell-nav-item:hover,
+  .admin-shell-nav-item.is-active
+) {
+  color: var(--admin-shell-text);
+}
+
+.admin-shell[data-admin-theme="light"] :is(
+  .admin-shell-nav-group-icon,
+  .admin-shell-environment,
+  .admin-shell-user button,
+  .admin-shell-menu,
+  .admin-shell-theme-toggle-mobile,
+  .admin-shell-topbar-action,
+  .admin-shell-topbar-runtime,
+  .admin-shell-signout
+) {
+  background: rgba(15, 23, 42, 0.035);
+  border-color: var(--admin-shell-border);
+  color: var(--admin-shell-text);
+}
+
+/* Normalize legacy light surfaces while in dark mode. */
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  .bg-white,.bg-neutral-50,.bg-neutral-100,.bg-neutral-200,
+  .bg-zinc-50,.bg-zinc-100,.bg-zinc-200,
+  .bg-stone-50,.bg-stone-100,.bg-stone-200,
+  .bg-slate-50,.bg-slate-100,.bg-slate-200,
+  .bg-gray-50,.bg-gray-100,.bg-gray-200
+),
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface [class*="bg-white/"] {
+  background-color: var(--admin-shell-card) !important;
+  background-image: none !important;
+  border-color: var(--admin-shell-border) !important;
+  color: var(--admin-shell-text) !important;
+}
+
+/* Normalize legacy dark surfaces while in light mode. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  .bg-black,.bg-neutral-950,.bg-neutral-900,.bg-neutral-800,.bg-neutral-700,
+  .bg-zinc-950,.bg-zinc-900,.bg-zinc-800,.bg-zinc-700,
+  .bg-stone-950,.bg-stone-900,.bg-stone-800,.bg-stone-700,
+  .bg-slate-950,.bg-slate-900,.bg-slate-800,.bg-slate-700,
+  .bg-gray-950,.bg-gray-900,.bg-gray-800,.bg-gray-700
+),
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-black/"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#0"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#1"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="bg-[#2"] {
+  background-color: var(--admin-shell-card) !important;
+  background-image: none !important;
+  border-color: var(--admin-shell-border) !important;
+  color: var(--admin-shell-text) !important;
+}
+
+/* Foreground normalization: headings/body text must never disappear into a flipped surface. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(
+  .text-white,.text-black,
+  .text-neutral-50,.text-neutral-100,.text-neutral-200,.text-neutral-700,.text-neutral-800,.text-neutral-900,.text-neutral-950,
+  .text-zinc-50,.text-zinc-100,.text-zinc-200,.text-zinc-700,.text-zinc-800,.text-zinc-900,.text-zinc-950,
+  .text-stone-50,.text-stone-100,.text-stone-200,.text-stone-700,.text-stone-800,.text-stone-900,.text-stone-950,
+  .text-slate-50,.text-slate-100,.text-slate-200,.text-slate-700,.text-slate-800,.text-slate-900,.text-slate-950,
+  .text-gray-50,.text-gray-100,.text-gray-200,.text-gray-700,.text-gray-800,.text-gray-900,.text-gray-950
+),
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="text-white/"],
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface [class*="text-black/"] {
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(
+  .text-black,
+  .text-neutral-700,.text-neutral-800,.text-neutral-900,.text-neutral-950,
+  .text-zinc-700,.text-zinc-800,.text-zinc-900,.text-zinc-950,
+  .text-stone-700,.text-stone-800,.text-stone-900,.text-stone-950,
+  .text-slate-700,.text-slate-800,.text-slate-900,.text-slate-950,
+  .text-gray-700,.text-gray-800,.text-gray-900,.text-gray-950
+),
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface [class*="text-black/"] {
+  color: var(--admin-shell-text) !important;
+}
+
+.admin-shell .admin-enterprise-surface :is(
+  .text-neutral-300,.text-neutral-400,.text-neutral-500,.text-neutral-600,
+  .text-zinc-300,.text-zinc-400,.text-zinc-500,.text-zinc-600,
+  .text-stone-300,.text-stone-400,.text-stone-500,.text-stone-600,
+  .text-slate-300,.text-slate-400,.text-slate-500,.text-slate-600,
+  .text-gray-300,.text-gray-400,.text-gray-500,.text-gray-600
+) {
+  color: var(--admin-shell-soft) !important;
+}
+
+/* Borders/dividers from either color system should remain perceptible. */
+.admin-shell .admin-enterprise-surface :is(
+  .border-white,.border-black,
+  .border-neutral-100,.border-neutral-200,.border-neutral-700,.border-neutral-800,
+  .border-zinc-100,.border-zinc-200,.border-zinc-700,.border-zinc-800,
+  .border-stone-100,.border-stone-200,.border-stone-700,.border-stone-800,
+  .border-slate-100,.border-slate-200,.border-slate-700,.border-slate-800,
+  .border-gray-100,.border-gray-200,.border-gray-700,.border-gray-800
+),
+.admin-shell .admin-enterprise-surface [class*="border-white/"],
+.admin-shell .admin-enterprise-surface [class*="border-black/"] {
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell .admin-enterprise-surface :is(
+  [class*="divide-white/"],[class*="divide-black/"],
+  .divide-neutral-200,.divide-neutral-800,.divide-slate-200,.divide-slate-800,.divide-gray-200,.divide-gray-800
+) > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--admin-shell-border) !important;
+}
+
+/* Form controls and native popups. */
+.admin-shell .admin-enterprise-surface :is(input,textarea,select) {
+  background: var(--admin-shell-card-strong) !important;
+  color: var(--admin-shell-text) !important;
+  border-color: var(--admin-shell-border-strong) !important;
+  caret-color: var(--admin-shell-accent);
+}
+
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(input,textarea,select) {
+  color-scheme: light;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-enterprise-surface :is(input,textarea,select) {
+  color-scheme: dark;
+}
+
+.admin-shell .admin-enterprise-surface :is(input,textarea)::placeholder {
+  color: var(--admin-shell-muted) !important;
+  opacity: 1;
+}
+
+.admin-shell .admin-enterprise-surface select option {
+  background: var(--admin-shell-card);
+  color: var(--admin-shell-text);
+}
+
+/* Tables, code, dialogs, menus, popovers and empty states are common visibility failures. */
+.admin-shell .admin-enterprise-surface table {
+  color: var(--admin-shell-soft) !important;
+}
+
+.admin-shell .admin-enterprise-surface thead {
+  background: color-mix(in srgb, var(--admin-shell-text) 4%, transparent) !important;
+}
+
+.admin-shell .admin-enterprise-surface th {
+  color: var(--admin-shell-muted) !important;
+}
+
+.admin-shell .admin-enterprise-surface :is(td,th) {
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell .admin-enterprise-surface :is(pre,code,kbd) {
+  background: var(--admin-shell-card-strong) !important;
+  color: var(--admin-shell-soft) !important;
+  border-color: var(--admin-shell-border) !important;
+}
+
+.admin-shell .admin-enterprise-surface :is(
+  [role="dialog"],[role="menu"],[role="listbox"],[role="tooltip"],
+  [data-radix-popper-content-wrapper] > *
+) {
+  color: var(--admin-shell-text);
+}
+
+/* Keep SVG/icon strokes synced with readable text unless explicitly status-colored. */
+.admin-shell .admin-enterprise-surface svg:not([class*="text-"]) {
+  color: currentColor;
+}
+
+/* Semantic statuses need different values per mode, not pale-on-pale text. */
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-emerald-100,.text-emerald-200,.text-emerald-300,.text-green-100,.text-green-200,.text-green-300) {
+  color: #166534 !important;
+}
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-amber-100,.text-amber-200,.text-amber-300,.text-yellow-100,.text-yellow-200,.text-yellow-300) {
+  color: #92400e !important;
+}
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-rose-100,.text-rose-200,.text-rose-300,.text-red-100,.text-red-200,.text-red-300) {
+  color: #9f1239 !important;
+}
+.admin-shell[data-admin-theme="light"] .admin-enterprise-surface :is(.text-sky-100,.text-sky-200,.text-sky-300,.text-blue-100,.text-blue-200,.text-blue-300) {
+  color: #075985 !important;
+}
+
+/* Inverse CTA text must survive the generic foreground rules above. */
+.admin-shell .admin-enterprise-surface :is(
+  a[class*="bg-rose-5"],button[class*="bg-rose-5"],
+  a[class*="bg-rose-6"],button[class*="bg-rose-6"],
+  a[class*="bg-red-5"],button[class*="bg-red-5"],
+  a[class*="bg-red-6"],button[class*="bg-red-6"],
+  a[class*="bg-[#e1062a]"],button[class*="bg-[#e1062a]"],
+  a[class*="bg-[#ec0b5b]"],button[class*="bg-[#ec0b5b]"]
+) {
+  color: #ffffff !important;
+}
+
+/* Disabled content remains visibly disabled, but not illegible. */
+.admin-shell .admin-enterprise-surface :is(button,input,select,textarea)[disabled],
+.admin-shell .admin-enterprise-surface [aria-disabled="true"] {
+  opacity: 0.62 !important;
+}
+
+/* Focus is visible in both themes for keyboard navigation. */
+.admin-shell .admin-enterprise-surface :focus-visible {
+  outline: 2px solid var(--admin-shell-accent) !important;
+  outline-offset: 2px;
+}
