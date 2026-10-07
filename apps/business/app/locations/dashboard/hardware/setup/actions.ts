@@ -75,6 +75,15 @@ export async function claimBusinessHardwareDevice(formData: FormData) {
   if (!certified) throw new Error("uncertified_pos_hardware");
 
   const locationHardware = await listLocationHardware(locationId);
+  const hasThePosHavenHub = locationHardware.some(
+    (item) =>
+      item.device.device_type === "network_hub" &&
+      !["retired", "lost", "replaced"].includes(String(item.device.lifecycle_status || "")),
+  );
+  if (certified.managedKit === false && !hasThePosHavenHub) {
+    throw new Error("hardware_byoh_requires_pos_hub");
+  }
+
   const replacing = replaceDeviceId
     ? locationHardware.find((item) => item.deviceId === replaceDeviceId)
     : null;
