@@ -16,7 +16,7 @@ const config = JSON.parse(
 const PAGE_SIZE = 500;
 const MAX_UPSERT_ROWS = 100;
 const MAX_UPSERT_BYTES = 512 * 1024;
-const TARGET_SCHEMA_VERSION = 6;
+const TARGET_SCHEMA_VERSION = 8;
 
 if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.isInteger(expectedEpoch) || expectedEpoch < 1) {
   throw new Error("invalid_initial_placement_configuration");
@@ -183,6 +183,42 @@ const tableSpecs = [
     filterColumn: "location_id",
     columns: ["id", "location_id", "check_id", "tender_id", "provider", "provider_payment_intent_id", "connected_account_id", "idempotency_key", "status", "amount_cents", "tip_cents", "application_fee_cents", "payment_method_type", "failure_code", "failure_message", "processed_at", "succeeded_at", "canceled_at", "metadata", "created_at", "updated_at"],
     required: ["id", "location_id", "check_id", "tender_id", "provider", "provider_payment_intent_id", "idempotency_key", "status", "amount_cents", "tip_cents", "application_fee_cents", "metadata", "created_at", "updated_at"],
+  },
+  {
+    table: "pos_inventory_items",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "catalog_item_id", "tracking_mode", "quantity_on_hand", "low_stock_threshold", "manual_sold_out", "sold_out_reason", "sold_out_until", "metadata", "created_at", "updated_at"],
+    required: ["id", "location_id", "catalog_item_id", "tracking_mode", "manual_sold_out", "metadata", "created_at", "updated_at"],
+  },
+  {
+    table: "pos_inventory_transactions",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "idempotency_key", "source_type", "source_id", "status", "created_at", "metadata"],
+    required: ["id", "location_id", "idempotency_key", "source_type", "status", "created_at", "metadata"],
+  },
+  {
+    table: "pos_inventory_adjustments",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "inventory_transaction_id", "inventory_item_id", "catalog_item_id", "quantity_delta", "reason", "source_type", "source_id", "created_at", "metadata"],
+    required: ["id", "location_id", "inventory_item_id", "catalog_item_id", "quantity_delta", "reason", "source_type", "created_at", "metadata"],
+  },
+  {
+    table: "pos_ordering_settings",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "prep_delay_minutes", "paused_until", "timezone", "slot_minutes", "max_orders_per_slot", "cutoff_minutes_before_close", "max_advance_days", "tax_rate_bps", "service_charge_bps", "ordering_hours", "pickup_instructions", "notification_settings", "metadata", "created_at", "updated_at"],
+    required: ["id", "location_id", "accepting_orders", "auto_accept", "auto_print", "default_prep_minutes", "prep_delay_minutes", "timezone", "slot_minutes", "tax_rate_bps", "service_charge_bps", "ordering_hours", "notification_settings", "metadata", "created_at", "updated_at"],
+  },
+  {
+    table: "pos_online_orders",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "check_id", "order_id", "tender_id", "source", "status", "customer_name", "customer_email", "customer_phone", "requested_pickup_at", "promised_pickup_at", "subtotal_cents", "tax_cents", "service_charge_cents", "tip_cents", "total_cents", "currency", "payment_provider", "provider_payment_intent_id", "inventory_idempotency_key", "idempotency_key", "accepted_at", "preparing_at", "ready_at", "completed_at", "canceled_at", "cancel_reason", "metadata", "created_at", "updated_at"],
+    required: ["id", "location_id", "check_id", "order_id", "tender_id", "source", "status", "customer_name", "subtotal_cents", "tax_cents", "service_charge_cents", "tip_cents", "total_cents", "currency", "payment_provider", "inventory_idempotency_key", "idempotency_key", "metadata", "created_at", "updated_at"],
+  },
+  {
+    table: "pos_online_order_events",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "online_order_id", "event_type", "actor_type", "actor_id", "metadata", "created_at"],
+    required: ["id", "location_id", "online_order_id", "event_type", "actor_type", "metadata", "created_at"],
   },
 ];
 

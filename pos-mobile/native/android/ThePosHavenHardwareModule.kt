@@ -13,6 +13,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import java.net.InetSocketAddress
+import java.io.File
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -129,6 +130,67 @@ class ThePosHavenHardwareModule(
     }
 
     mainHandler.postDelayed({ finish() }, timeout)
+  }
+
+  @ReactMethod
+  fun readState(key: String, promise: Promise) {
+    ioExecutor.execute {
+      runCatching {
+        val file = stateFile(key)
+        if (file.exists()) file.readText(Charsets.UTF_8) else null
+      }.onSuccess { value ->
+        promise.resolve(value)
+      }.onFailure { error ->
+        promise.reject("pos_state_read_failed", error.message, error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun writeState(key: String, value: String, promise: Promise) {
+    ioExecutor.execute {
+      runCatching {
+        val file = stateFile(key)
+        val temp = File(file.parentFile, "${file.name}.tmp")
+        temp.writeText(value, Charsets.UTF_8)
+        if (!temp.renameTo(file)) {
+          file.writeText(value, Charsets.UTF_8)
+          temp.delete()
+        }
+      }.onSuccess {
+        promise.resolve(null)
+      }.onFailure { error ->
+        promise.reject("pos_state_write_failed", error.message, error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun deleteState(key: String, promise: Promise) {
+    ioExecutor.execute {
+      runCatching {
+        val file = stateFile(key)
+        if (file.exists() && !file.delete()) {
+          error("Unable to delete local POS state.")
+        }
+      }.onSuccess {
+        promise.resolve(null)
+      }.onFailure { error ->
+        promise.reject("pos_state_delete_failed", error.message, error)
+      }
+    }
+  }
+
+  private fun stateFile(key: String): File {
+    val normalized = key.trim()
+    require(Regex("^[A-Za-z0-9._-]{1,80}$").matches(normalized)) {
+      "Invalid local state key."
+    }
+    val directory = File(reactContext.filesDir, "theposhaven-state")
+    if (!directory.exists() && !directory.mkdirs()) {
+      error("Unable to create ThePOSHaven state directory.")
+    }
+    return File(directory, "$normalized.json")
   }
 
   @ReactMethod

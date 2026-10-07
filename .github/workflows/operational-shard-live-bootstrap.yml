@@ -86,6 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
+          inventory_sql="$(cat infra/supabase/operational-shards/inventory-v7.sql)"
+          online_ordering_sql="$(cat infra/supabase/operational-shards/online-ordering-v8.sql)"
           fence_sql="$(cat infra/supabase/operational-shards/write-fence-v3.sql)"
 
           sql_api() {
@@ -143,6 +145,8 @@ jobs:
           apply_and_align() {
             local ref="$1" label="$2" physical="$3" active="$4" active_reason="$5" standby_reason="$6"
             sql_api "$ref" "$hardening_sql" "$RUNNER_TEMP/$label-hardening-result.json"
+            sql_api "$ref" "$inventory_sql" "$RUNNER_TEMP/$label-inventory-result.json"
+            sql_api "$ref" "$online_ordering_sql" "$RUNNER_TEMP/$label-online-ordering-result.json"
             sql_api "$ref" "$fence_sql" "$RUNNER_TEMP/$label-write-fence-result.json"
             align_physical "$ref" "$physical" "$active" "$active_reason" "$standby_reason" "$label"
           }
@@ -226,9 +230,13 @@ jobs:
             key="$(cat "$keyfile")"
             code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_checks?select=id&limit=1")"
             test "$code" = 200 || { echo "::error::${label} POS schema probe failed: HTTP ${code}"; exit 1; }
+            inventory_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-inventory-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_inventory_items?select=id&limit=1")"
+            test "$inventory_code" = 200 || { echo "::error::${label} inventory schema probe failed: HTTP ${inventory_code}"; exit 1; }
+            ordering_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-ordering-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_online_orders?select=id&limit=1")"
+            test "$ordering_code" = 200 || { echo "::error::${label} online ordering schema probe failed: HTTP ${ordering_code}"; exit 1; }
             assignment_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-assignment-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/reservation_resource_assignments?select=id&limit=1")"
             test "$assignment_code" = 200 || { echo "::error::${label} reservation assignment schema probe failed: HTTP ${assignment_code}"; exit 1; }
-            echo "${label}: reachable with POS and reservation-assignment schema" >> "$GITHUB_STEP_SUMMARY"
+            echo "${label}: reachable with POS, inventory, online-ordering, and reservation-assignment schema" >> "$GITHUB_STEP_SUMMARY"
           }
           probe "$SHARD01_REF" "$RUNNER_TEMP/shard01-secret" shard-01
           probe "$SHARD01_DR_REF" "$RUNNER_TEMP/shard01dr-secret" shard-01-dr
@@ -245,7 +253,7 @@ jobs:
                  set status='active',
                      read_enabled=true,
                      write_enabled=true,
-                     schema_version=6,
+                     schema_version=8,
                      updated_at=now()
                  where id in ('shard-01','shard-02')
                    and status in ('planned','provisioning')
@@ -253,7 +261,7 @@ jobs:
                    and failover_state='primary'
                    and replication_state in ('initializing','healthy');
                  update public.operational_shards
-                 set schema_version=6,updated_at=now()
+                 set schema_version=8,updated_at=now()
                  where id in ('shard-01','shard-02')
                    and not (
                      status in ('planned','provisioning')
@@ -267,7 +275,7 @@ jobs:
                  where id in ('shard-01','shard-02') order by id;"
           else
             sql="update public.operational_shards
-                 set schema_version=6,updated_at=now()
+                 set schema_version=8,updated_at=now()
                  where id in ('shard-01','shard-02');
                  select id,status,read_enabled,write_enabled,active_physical_shard_id,
                         failover_state,replication_state,schema_version
@@ -276,7 +284,7 @@ jobs:
           fi
           jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
           curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
-          jq -e 'length == 2 and all(.[]; .schema_version==6)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .schema_version==8)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
             jq -e 'all(.[]; (.status=="planned" or .status=="provisioning") | not)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           fi

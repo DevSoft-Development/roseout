@@ -120,6 +120,96 @@ final class ThePosHavenHardware: NSObject, RCTBridgeModule {
 
     connection.start(queue: DispatchQueue(label: "com.theposhaven.hardware.tcp"))
   }
+
+  @objc(readState:resolver:rejecter:)
+  func readState(
+    _ key: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    stateQueue.async {
+      do {
+        let url = try self.stateURL(for: key)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+          resolve(nil)
+          return
+        }
+        resolve(try String(contentsOf: url, encoding: .utf8))
+      } catch {
+        reject("pos_state_read_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(writeState:value:resolver:rejecter:)
+  func writeState(
+    _ key: String,
+    value: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    stateQueue.async {
+      do {
+        let url = try self.stateURL(for: key)
+        try value.write(to: url, atomically: true, encoding: .utf8)
+        resolve(nil)
+      } catch {
+        reject("pos_state_write_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc(deleteState:resolver:rejecter:)
+  func deleteState(
+    _ key: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    stateQueue.async {
+      do {
+        let url = try self.stateURL(for: key)
+        if FileManager.default.fileExists(atPath: url.path) {
+          try FileManager.default.removeItem(at: url)
+        }
+        resolve(nil)
+      } catch {
+        reject("pos_state_delete_failed", error.localizedDescription, error)
+      }
+    }
+  }
+
+  private func stateURL(for key: String) throws -> URL {
+    let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    let pattern = "^[A-Za-z0-9._-]{1,80}$"
+    guard normalized.range(of: pattern, options: .regularExpression) != nil else {
+      throw NSError(
+        domain: "ThePosHavenHardware",
+        code: -2,
+        userInfo: [NSLocalizedDescriptionKey: "Invalid local state key."]
+      )
+    }
+
+    let fileManager = FileManager.default
+    guard let applicationSupport = fileManager.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      throw NSError(
+        domain: "ThePosHavenHardware",
+        code: -3,
+        userInfo: [NSLocalizedDescriptionKey: "Application support directory unavailable."]
+      )
+    }
+
+    let directory = applicationSupport
+      .appendingPathComponent("ThePOSHaven", isDirectory: true)
+      .appendingPathComponent("State", isDirectory: true)
+    try fileManager.createDirectory(
+      at: directory,
+      withIntermediateDirectories: true
+    )
+    return directory.appendingPathComponent(normalized).appendingPathExtension("json")
+  }
 }
 
 private final class PosBonjourDiscoverySession: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {

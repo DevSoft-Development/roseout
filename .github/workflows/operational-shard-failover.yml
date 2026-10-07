@@ -396,7 +396,7 @@ jobs:
             alter role $FAILBACK_ROLE password '$FAILBACK_PASSWORD';
             grant connect on database postgres to $FAILBACK_ROLE;
             grant usage on schema public to $FAILBACK_ROLE;
-            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments to $FAILBACK_ROLE;" "$RUNNER_TEMP/failback-role.json"
+            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events to $FAILBACK_ROLE;" "$RUNNER_TEMP/failback-role.json"
 
             # Primary is standby/frozen, so a full replace is safe and gives a
             # deterministic final resync after the DR write stop.
@@ -408,6 +408,12 @@ jobs:
             end \$\$;" "$RUNNER_TEMP/failback-disable-old.json"
             sql_api "$PRIMARY_REF" "drop subscription if exists $FAILBACK_SUB;" "$RUNNER_TEMP/failback-drop-old.json"
             sql_api "$PRIMARY_REF" "truncate table
+              public.pos_online_order_events,
+              public.pos_online_orders,
+              public.pos_ordering_settings,
+              public.pos_inventory_adjustments,
+              public.pos_inventory_transactions,
+              public.pos_inventory_items,
               public.pos_payments,
               public.pos_order_items,
               public.pos_tenders,
@@ -443,7 +449,7 @@ jobs:
 
             # Verify exact table counts + deterministic row hashes while DR is
             # still frozen. This is the final parity gate before primary opens.
-            TABLES="locations location_reservations reserve_staff_profiles layout_items reservation_seating_resources reservation_resource_assignments pos_checks pos_check_resources pos_orders pos_order_items pos_tenders pos_payments"
+            TABLES="locations location_reservations reserve_staff_profiles layout_items reservation_seating_resources reservation_resource_assignments pos_checks pos_check_resources pos_orders pos_order_items pos_tenders pos_payments pos_inventory_items pos_inventory_transactions pos_inventory_adjustments pos_ordering_settings pos_online_orders pos_online_order_events"
             for table in $TABLES; do
               CHECKSUM_SQL="select count(*)::bigint as row_count,
                 md5(coalesce(string_agg(md5(to_jsonb(t)::text),'' order by id::text),'')) as row_hash
@@ -456,7 +462,7 @@ jobs:
 
             sql_api "$PRIMARY_REF" "alter subscription $FAILBACK_SUB disable;" "$RUNNER_TEMP/failback-disable.json"
             sql_api "$PRIMARY_REF" "drop subscription $FAILBACK_SUB;" "$RUNNER_TEMP/failback-drop.json"
-            sql_api "$DR_REF" "revoke select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments from $FAILBACK_ROLE;
+            sql_api "$DR_REF" "revoke select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events from $FAILBACK_ROLE;
               revoke usage on schema public from $FAILBACK_ROLE;
               revoke connect on database postgres from $FAILBACK_ROLE;
               drop role if exists $FAILBACK_ROLE;" "$RUNNER_TEMP/failback-drop-role.json"
