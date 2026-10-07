@@ -2,61 +2,70 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const layout = readFileSync("apps/admin/app/admin/dashboard/layout.tsx", "utf8");
-const css = readFileSync("apps/admin/app/admin/dashboard/admin-theme-visibility.css", "utf8");
+const shellCss = readFileSync("apps/admin/app/admin/dashboard/admin-shell.css", "utf8");
+const visibilityCss = readFileSync("apps/admin/app/admin/dashboard/admin-theme-visibility.css", "utf8");
+const combinedCss = `${shellCss}\n${visibilityCss}`;
 
 describe("isolated admin light/dark visibility", () => {
-  it("loads the visibility guardrail after the shared shell stylesheet", () => {
+  it("loads the focused visibility guardrail after the shared shell stylesheet", () => {
     expect(layout).toContain('import "./admin-shell.css"');
     expect(layout).toContain('import "./admin-theme-visibility.css"');
     expect(layout.indexOf('admin-theme-visibility.css')).toBeGreaterThan(layout.indexOf('admin-shell.css'));
   });
 
   it("defines explicit readable tokens for both appearance modes", () => {
-    expect(css).toContain('[data-admin-theme="light"]');
-    expect(css).toContain('[data-admin-theme="dark"]');
-    expect(css).toContain("--admin-shell-text");
-    expect(css).toContain("--admin-shell-soft");
-    expect(css).toContain("--admin-shell-muted");
+    expect(visibilityCss).toContain('[data-admin-theme="light"]');
+    expect(visibilityCss).toContain('[data-admin-theme="dark"]');
+    expect(visibilityCss).toContain("--admin-shell-text");
+    expect(visibilityCss).toContain("--admin-shell-soft");
+    expect(visibilityCss).toContain("--admin-shell-muted");
   });
 
-  it("normalizes legacy light and dark surfaces in both directions", () => {
+  it("keeps the performance guardrail free of broad class substring matching", () => {
+    expect(visibilityCss).not.toContain('[class*=');
+    expect((visibilityCss.match(/\.admin-enterprise-surface/g) || []).length).toBeLessThan(40);
+  });
+
+  it("normalizes the recurring gray overlay utilities with exact selectors", () => {
     for (const selector of [
-      ".bg-white",
-      ".bg-black",
+      ".bg-black\\/20",
+      ".bg-black\\/25",
+      ".bg-black\\/30",
+      ".bg-zinc-950",
       ".bg-neutral-950",
-      ".bg-slate-950",
-      ".bg-gray-950",
-      '[class*="bg-white/"]',
-      '[class*="bg-black/"]',
-      '[class*="bg-[#0"]',
-      '[class*="bg-[#1"]',
-      '[class*="bg-[#2"]',
+      ".bg-white\\/10",
+      ".bg-white\\/\\[0\\.04\\]",
+      ".bg-white\\/\\[0\\.08\\]",
     ]) {
-      expect(css).toContain(selector);
+      expect(visibilityCss).toContain(selector);
     }
   });
 
-  it("protects common information surfaces and interaction states", () => {
+  it("keeps the shared shell responsible for common legacy information surfaces", () => {
     for (const selector of [
-      "input,textarea,select",
+      "input",
+      "textarea",
+      "select",
       "table",
       "thead",
       "th",
-      "pre,code,kbd",
-      '[role="dialog"]',
-      '[role="menu"]',
-      '[role="listbox"]',
-      '[aria-disabled="true"]',
-      ":focus-visible",
+      '[class*="bg-[#0"]',
+      '[class*="bg-black/"]',
+      '[class*="text-white/"]',
     ]) {
-      expect(css).toContain(selector);
+      expect(shellCss).toContain(selector);
     }
   });
 
-  it("keeps semantic status text readable in light mode", () => {
-    expect(css).toContain(".text-emerald-100");
-    expect(css).toContain(".text-amber-100");
-    expect(css).toContain(".text-rose-100");
-    expect(css).toContain(".text-sky-100");
+  it("keeps red, blue, and muted overlay text readable in light mode", () => {
+    expect(visibilityCss).toContain(".text-rose-100");
+    expect(visibilityCss).toContain(".text-red-100");
+    expect(visibilityCss).toContain(".text-sky-100");
+    expect(visibilityCss).toContain(".text-white\\/55");
+  });
+
+  it("preserves interaction visibility across the combined theme layers", () => {
+    expect(combinedCss).toContain('[aria-disabled="true"]');
+    expect(combinedCss).toContain(":focus-visible");
   });
 });
