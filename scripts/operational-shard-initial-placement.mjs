@@ -16,7 +16,7 @@ const config = JSON.parse(
 const PAGE_SIZE = 500;
 const MAX_UPSERT_ROWS = 100;
 const MAX_UPSERT_BYTES = 512 * 1024;
-const TARGET_SCHEMA_VERSION = 8;
+const TARGET_SCHEMA_VERSION = 9;
 
 if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.isInteger(expectedEpoch) || expectedEpoch < 1) {
   throw new Error("invalid_initial_placement_configuration");
@@ -219,6 +219,12 @@ const tableSpecs = [
     filterColumn: "location_id",
     columns: ["id", "location_id", "online_order_id", "event_type", "actor_type", "actor_id", "metadata", "created_at"],
     required: ["id", "location_id", "online_order_id", "event_type", "actor_type", "metadata", "created_at"],
+  },
+  {
+    table: "pos_online_order_dispatches",
+    filterColumn: "location_id",
+    columns: ["id", "location_id", "online_order_id", "status", "claimed_device_id", "claimed_at", "completed_at", "attempts", "last_error", "metadata", "created_at", "updated_at"],
+    required: ["id", "location_id", "online_order_id", "status", "attempts", "metadata", "created_at", "updated_at"],
   },
 ];
 
