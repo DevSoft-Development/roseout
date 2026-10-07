@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { SearchIntentGraph } from "@/lib/search-framework";
 import { RuleBasedSearchV3IntentProvider } from "@/lib/search/v3";
 import { shouldApplyDomainFacetSqlFilters } from "@/lib/search/v3/retrieval/supabaseStructuredRetrievalProvider";
-import { constraintAppliesToSupportedDomains } from "@/lib/search/v3/eligibility/supabaseHardEligibilityProvider";
+import {
+  candidateDomainMatchesIntent,
+  constraintAppliesToSupportedDomains,
+} from "@/lib/search/v3/eligibility/supabaseHardEligibilityProvider";
 import { semanticDomains } from "@/lib/search/v3/semantic/supabaseSemanticRetrievalProvider";
 
 describe("Search V3 multi-domain intent handling", () => {
@@ -67,6 +70,42 @@ describe("Search V3 multi-domain intent handling", () => {
     expect(
       constraintAppliesToSupportedDomains("feature", activity, intent, "romantic"),
     ).toBe(false);
+  });
+
+  it("requires the primary domain for single-domain eligibility", () => {
+    expect(candidateDomainMatchesIntent(
+      "restaurant",
+      ["restaurant", "activity"],
+      ["restaurant"],
+    )).toBe(true);
+    expect(candidateDomainMatchesIntent(
+      "activity",
+      ["restaurant", "activity"],
+      ["restaurant"],
+    )).toBe(false);
+    expect(candidateDomainMatchesIntent(
+      "nightlife",
+      ["activity", "nightlife"],
+      ["activity"],
+    )).toBe(true);
+    expect(candidateDomainMatchesIntent(
+      "restaurant",
+      ["restaurant", "activity"],
+      ["activity"],
+    )).toBe(false);
+  });
+
+  it("preserves supported-domain eligibility for multi-domain intents", () => {
+    expect(candidateDomainMatchesIntent(
+      "restaurant",
+      ["restaurant", "activity"],
+      ["restaurant", "activity"],
+    )).toBe(true);
+    expect(candidateDomainMatchesIntent(
+      "activity",
+      ["restaurant", "activity"],
+      ["restaurant", "activity"],
+    )).toBe(true);
   });
 
   it("queries both semantic index domains with one multi-domain intent", () => {

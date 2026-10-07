@@ -116,16 +116,12 @@ function rejectionReasons(
     reasons.push("location_not_searchable");
   }
 
-  if (intent.domains.length > 0) {
-    const supported = new Set<string>(
-      [
-        row.primary_domain,
-        ...(row.supported_domains ?? []),
-      ].filter((value): value is string => Boolean(value)),
-    );
-    if (!intent.domains.some((domain) => supported.has(domain))) {
-      reasons.push("domain_mismatch");
-    }
+  if (!candidateDomainMatchesIntent(
+    row.primary_domain,
+    row.supported_domains,
+    intent.domains,
+  )) {
+    reasons.push("domain_mismatch");
   }
 
   const supportedDomains = new Set<string>(
@@ -234,6 +230,28 @@ function isDinnerIneligibleClassification(location: LocationRow): boolean {
   );
 }
 
+
+export function candidateDomainMatchesIntent(
+  primaryDomain: string | null,
+  supportedDomains: readonly string[] | null,
+  intentDomains: readonly string[],
+): boolean {
+  if (intentDomains.length === 0) return true;
+
+  const normalizeDomain = (domain: string | null) =>
+    domain === "nightlife" ? "activity" : domain;
+
+  if (intentDomains.length === 1) {
+    return normalizeDomain(primaryDomain) === normalizeDomain(intentDomains[0] ?? null);
+  }
+
+  const supported = new Set(
+    [primaryDomain, ...(supportedDomains ?? [])]
+      .map(normalizeDomain)
+      .filter((value): value is string => Boolean(value)),
+  );
+  return intentDomains.some((domain) => supported.has(normalizeDomain(domain) ?? domain));
+}
 
 export function constraintAppliesToSupportedDomains(
   key: string,
