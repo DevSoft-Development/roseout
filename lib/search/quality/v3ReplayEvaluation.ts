@@ -429,17 +429,21 @@ function countCandidateDomains(
 }
 
 function candidateComparisonDomains(candidate: SearchCandidate): string[] {
-  const domains = new Set(
-    [
-      candidate.intelligence.identity.primaryDomain,
-      ...candidate.intelligence.identity.supportedDomains,
-    ].map(normalizeComparisonDomain),
+  const primary = normalizeComparisonDomain(
+    candidate.intelligence.identity.primaryDomain,
   );
-  domains.delete("venue");
+  if (primary && primary !== "venue") return [primary];
+
+  const domains = new Set(
+    candidate.intelligence.identity.supportedDomains
+      .map(normalizeComparisonDomain)
+      .filter((domain) => domain && domain !== "venue"),
+  );
   return [...domains].sort();
 }
 
-function normalizeComparisonDomain(domain: string): string {
+function normalizeComparisonDomain(domain: string | null): string {
+  if (!domain) return "";
   return domain === "nightlife" ? "activity" : domain;
 }
 
