@@ -60,6 +60,32 @@ describe("Search V3 replay evaluation", () => {
     expect(result.passed).toBe(false);
   });
 
+  it("does not count secondary supported domains as served-domain leakage", () => {
+    const restaurant = candidate("restaurant", "restaurant", {
+      supportedDomains: ["restaurant", "activity"],
+    });
+    const testCase: GoldenQueryCase = {
+      id: "restaurant-only-supported-domain",
+      category: "restaurant",
+      query: "Dinner in Queens",
+      expectations: {
+        expectedDomains: ["restaurant"],
+        minimumResults: 1,
+      },
+    };
+
+    const result = evaluateV3Execution(
+      testCase,
+      execution([restaurant]),
+      { legacyCount: 1, latencyMs: 100 },
+    );
+
+    expect(result.servedDomains).toEqual(["restaurant"]);
+    expect(result.unexpectedDomains).toEqual([]);
+    expect(result.exactDomainCoveragePass).toBe(true);
+    expect(result.passed).toBe(true);
+  });
+
   it("maps nightlife to activity and accepts it as the activity stop", () => {
     const restaurant = candidate("restaurant", "restaurant");
     const nightlife = candidate("nightlife", "nightlife", {
@@ -284,6 +310,7 @@ function candidate(
     cuisines?: string[];
     mealPeriods?: string[];
     activityCategories?: string[];
+    supportedDomains?: Array<"restaurant" | "activity" | "nightlife">;
   } = {},
 ): SearchCandidate {
   const base = createEmptyLocationIntelligenceProfile({
@@ -297,6 +324,10 @@ function candidate(
     locationId: id,
     intelligence: {
       ...base,
+      identity: {
+        ...base.identity,
+        supportedDomains: overrides.supportedDomains ?? base.identity.supportedDomains,
+      },
       geo: {
         ...base.geo,
         borough: overrides.borough ?? null,
