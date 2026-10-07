@@ -41,6 +41,14 @@ type IntuneIosConfiguration = {
   "@odata.type"?: string | null;
 };
 
+export type IntuneIosEnrollmentProfile = {
+  id: string;
+  displayName?: string | null;
+  description?: string | null;
+  isDefault?: boolean | null;
+  "@odata.type"?: string | null;
+};
+
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 
 const BUSINESS_STANDARD_IOS_CONFIGURATION = {
@@ -147,6 +155,64 @@ export async function syncIntuneAppleEnrollment(userId: string, depOnboardingSet
     { method: "POST" },
   );
   return selected;
+}
+
+export async function listIntuneIosEnrollmentProfiles(userId: string, depOnboardingSettingId: string) {
+  const payload = await microsoftGraphBetaFetch<GraphCollection<IntuneIosEnrollmentProfile>>(
+    userId,
+    `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles`,
+  );
+  return (payload.value || []).filter((profile) =>
+    (profile["@odata.type"] || "").toLowerCase().includes("depiosenrollmentprofile"),
+  );
+}
+
+export async function getDefaultIntuneIosEnrollmentProfile(userId: string, depOnboardingSettingId: string) {
+  try {
+    return await microsoftGraphBetaFetch<IntuneIosEnrollmentProfile>(
+      userId,
+      `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/defaultIosEnrollmentProfile`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function ensureDefaultIntuneIosEnrollmentProfile(userId: string, depOnboardingSettingId: string) {
+  const currentDefault = await getDefaultIntuneIosEnrollmentProfile(userId, depOnboardingSettingId);
+  if (currentDefault?.id) return currentDefault;
+
+  const profiles = await listIntuneIosEnrollmentProfiles(userId, depOnboardingSettingId);
+  const preferred =
+    profiles.find((profile) => /theouthaven|standard managed/i.test(profile.displayName || "")) ||
+    profiles[0];
+  if (!preferred?.id) throw new Error("INTUNE_ADE_IOS_ENROLLMENT_PROFILE_NOT_FOUND");
+
+  await microsoftGraphBetaFetch(
+    userId,
+    `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles/${encodeURIComponent(preferred.id)}/setDefaultProfile`,
+    { method: "POST" },
+  );
+  return { ...preferred, isDefault: true };
+}
+
+export async function assignIntuneIosEnrollmentProfileToSerial(
+  userId: string,
+  depOnboardingSettingId: string,
+  enrollmentProfileId: string,
+  serialNumber: string,
+) {
+  const serial = serialNumber.trim();
+  if (!serial) throw new Error("INTUNE_ADE_DEVICE_SERIAL_REQUIRED");
+
+  await microsoftGraphBetaFetch(
+    userId,
+    `/deviceManagement/depOnboardingSettings/${encodeURIComponent(depOnboardingSettingId)}/enrollmentProfiles/${encodeURIComponent(enrollmentProfileId)}/updateDeviceProfileAssignment`,
+    {
+      method: "POST",
+      body: JSON.stringify({ deviceIds: [serial] }),
+    },
+  );
 }
 
 const REMOTE_ACTIONS = new Set(["syncDevice", "retire", "wipe"]);
