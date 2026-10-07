@@ -7,6 +7,7 @@ const home=readFileSync("pos-mobile/app/index.tsx","utf8");
 const command=readFileSync("lib/pos/device-command-service.ts","utf8");
 const root=readFileSync("app/api/pos/device/signature-plus/route.ts","utf8");
 const consumer=readFileSync("apps/consumer/app/api/pos/device/signature-plus/route.ts","utf8");
+const access=readFileSync("lib/pos/access.ts","utf8");
 
 const features=[
   ["1 hold / fire",service.includes('"hold"|"release_hold"|"fire"|"ready"')&&ui.includes("Mark Ready")&&ui.includes(">Hold<")],
@@ -24,9 +25,13 @@ const features=[
 const failed=features.filter(([,ok])=>!ok).map(([name])=>name);
 if(failed.length) throw new Error("Signature+ feature contract missing: "+failed.join(", "));
 
+if(!access.includes("requireSignaturePlusAccess")||!access.includes("business_subscriptions")) throw new Error("Signature+ entitlement resolver missing.");
 for(const route of [root,consumer]){
   for(const token of ["authenticatePosDeviceCredential","getSignaturePlusBootstrap","setSignaturePlusCourseState","moveOrMergeSignaturePlusTable","transferSignaturePlusServer","buildSignaturePlusSplit"]){
     if(!route.includes(token)) throw new Error("Signature+ route missing: "+token);
+  }
+  if(!route.includes("requireSignaturePlusAccess")) throw new Error("Signature+ route must enforce plan access.");
+  for(const token of [] ){
   }
 }
 for(const token of ["fetchSignaturePlus","updateSignaturePlusCourse","moveSignaturePlusTable","transferSignaturePlusServer","createSignaturePlusSplit"]){
