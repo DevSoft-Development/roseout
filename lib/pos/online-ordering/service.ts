@@ -427,11 +427,15 @@ export async function createWebsitePickupOrder(input: {
       }).catch(() => null);
     }
     if (draft?.online_order_id) {
-      await shard.client.rpc("pos_cancel_online_order", {
-        p_location_id: locationId,
-        p_online_order_id: draft.online_order_id,
-        p_reason: "checkout_initialization_failed",
-      }).catch(() => null);
+      try {
+        await shard.client.rpc("pos_cancel_online_order", {
+          p_location_id: locationId,
+          p_online_order_id: draft.online_order_id,
+          p_reason: "checkout_initialization_failed",
+        });
+      } catch {
+        // Best-effort checkout cleanup; inventory release below remains authoritative.
+      }
     }
     await releasePosInventory({ locationId, idempotencyKey: inventoryKey }).catch(() => null);
     throw error;
