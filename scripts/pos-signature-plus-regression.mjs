@@ -10,6 +10,7 @@ const consumer=readFileSync("apps/consumer/app/api/pos/device/signature-plus/rou
 const access=readFileSync("lib/pos/access.ts","utf8");
 const inventoryService=readFileSync("lib/pos/inventory/service.ts","utf8");
 const businessOps=readFileSync("apps/business/app/locations/dashboard/pos/operations/page.tsx","utf8");
+const businessHub=readFileSync("apps/business/app/locations/dashboard/pos/page.tsx","utf8");
 const businessActions=readFileSync("apps/business/app/locations/dashboard/pos/operations/actions.ts","utf8");
 
 const features=[
@@ -56,7 +57,10 @@ for(const token of ["createPosInventoryStockArea","transferPosInventory","wasteP
 for(const token of ["requireSignaturePlusAccess","hasLocationPermission","recordPosInventoryWaste","transferPosInventoryStock","createPosInventoryArea"]){
   if(!businessActions.includes(token)) throw new Error("Stack 6 Business action missing: "+token);
 }
-for(const token of ["Inventory + Shift","Ingredient inventory","Area balances","Reorder queue","End-of-shift report","Server performance","Inventory movement"]){
+if(!businessHub.includes("Inventory + Shift")||!businessHub.includes("/locations/dashboard/pos/operations")){
+  throw new Error("Stack 6 operations entry point is missing from the POS control center.");
+}
+for(const token of ["Ingredient inventory","Area balances","Reorder queue","End-of-shift report","Server performance","Inventory movement"]){
   if(!businessOps.includes(token)) throw new Error("Stack 6 Business operations UI missing: "+token);
 }
 
