@@ -41,8 +41,7 @@ const dailyItems: NavItem[] = [
   { label: "Messaging", href: "/locations/dashboard/messaging", icon: MessageSquare },
   { label: "Customers", href: "/locations/dashboard/customers", icon: Users, matches: ["/locations/dashboard/leads", "/locations/dashboard/offers", "/locations/dashboard/vip", "/locations/dashboard/notifications"] },
   { label: "Profile", href: "/locations/dashboard/profile", icon: Building2 },
-  { label: "ThePOSHaven", href: "/locations/dashboard/pos", icon: CreditCard, matches: ["/locations/dashboard/hardware"] },
-  { label: "Hardware", href: "/locations/dashboard/hardware", icon: Printer },
+  { label: "ThePOSHaven", href: "/locations/dashboard/pos", icon: Printer, matches: ["/locations/dashboard/hardware"] },
 ];
 
 const advancedItems: NavItem[] = [
