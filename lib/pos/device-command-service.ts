@@ -266,7 +266,7 @@ export async function getPosDeviceOutputConfig(input: {
 }) {
   const { data, error } = await supabaseAdmin
     .from("pos_hardware_assignments")
-    .select("device_id,role,station_key,updated_at,pos_hardware_devices!inner(id,serial_number,provider,provider_device_id,device_type,lifecycle_status)")
+    .select("device_id,role,station_key,metadata,updated_at,pos_hardware_devices!inner(id,serial_number,provider,provider_device_id,device_type,lifecycle_status)")
     .eq("location_id", input.locationId)
     .eq("assignment_status", "active")
     .order("role", { ascending: true });
