@@ -29,7 +29,7 @@ async function signingKey(secret: string, date: string, region: string, service:
 }
 
 function awsTimestamp(now = new Date()) {
-  return now.toISOString().replace(/[:-]|.d{3}/g, "");
+  return now.toISOString().replace(/[:-]|\.\d{3}/g, "");
 }
 
 export type RenderedReservationPage = {
