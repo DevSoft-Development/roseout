@@ -38,47 +38,17 @@ export async function claimPosDeviceCredential(input: {
   const deviceId = required(input.deviceId, "device_id");
   const claimCode = required(input.claimCode, "claim_code");
   const installationId = required(input.installationId, "installation_id");
-
-  const { data: codeRow, error: codeError } = await supabaseAdmin
-    .from("pos_device_claim_codes")
-    .select("id,device_id,expires_at,used_at")
-    .eq("device_id", deviceId)
-    .eq("code_hash", digest(claimCode))
-    .maybeSingle();
-  if (codeError) throw new Error(`pos_device_claim_lookup_failed:${codeError.message}`);
-  if (!codeRow || codeRow.used_at || Date.parse(codeRow.expires_at) <= Date.now()) {
-    throw new Error("pos_device_claim_code_invalid");
-  }
-
-  const { data: assignment, error: assignmentError } = await supabaseAdmin
-    .from("pos_hardware_assignments")
-    .select("location_id,role,station_key")
-    .eq("device_id", deviceId)
-    .eq("assignment_status", "active")
-    .maybeSingle();
-  if (assignmentError) throw new Error(`pos_device_assignment_lookup_failed:${assignmentError.message}`);
-  if (!assignment?.location_id) throw new Error("pos_device_not_assigned");
-
   const credential = randomBytes(32).toString("base64url");
-  const credentialHash = digest(credential);
 
-  const { error: credentialError } = await supabaseAdmin
-    .from("pos_device_api_credentials")
-    .upsert({
-      device_id: deviceId,
-      installation_id: installationId,
-      credential_hash: credentialHash,
-      revoked_at: null,
-      last_used_at: new Date().toISOString(),
-    }, { onConflict: "device_id,installation_id" });
-  if (credentialError) throw new Error(`pos_device_credential_create_failed:${credentialError.message}`);
-
-  const { error: consumeError } = await supabaseAdmin
-    .from("pos_device_claim_codes")
-    .update({ used_at: new Date().toISOString() })
-    .eq("id", codeRow.id)
-    .is("used_at", null);
-  if (consumeError) throw new Error(`pos_device_claim_consume_failed:${consumeError.message}`);
+  const { data, error } = await supabaseAdmin.rpc("pos_claim_device_api_credential", {
+    p_device_id: deviceId,
+    p_code_hash: digest(claimCode),
+    p_installation_id: installationId,
+    p_credential_hash: digest(credential),
+  });
+  if (error) throw new Error(error.message || "pos_device_claim_failed");
+  const assignment = Array.isArray(data) ? data[0] : data;
+  if (!assignment?.location_id) throw new Error("pos_device_not_assigned");
 
   return {
     deviceId,
@@ -96,7 +66,7 @@ export async function authenticatePosDeviceCredential(input: {
   const bearerToken = required(input.bearerToken, "credential");
   let query = supabaseAdmin
     .from("pos_device_api_credentials")
-    .select("id,device_id,installation_id,revoked_at")
+    .select("id,device_id,installation_id,revoked_at,last_used_at")
     .eq("credential_hash", digest(bearerToken))
     .is("revoked_at", null);
   if (input.deviceId) query = query.eq("device_id", required(input.deviceId, "device_id"));
@@ -113,10 +83,13 @@ export async function authenticatePosDeviceCredential(input: {
   if (assignmentError) throw new Error(`pos_device_assignment_lookup_failed:${assignmentError.message}`);
   if (!assignment?.location_id) throw new Error("pos_device_not_assigned");
 
-  await supabaseAdmin
-    .from("pos_device_api_credentials")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", credential.id);
+  const lastUsedAt = credential.last_used_at ? Date.parse(String(credential.last_used_at)) : 0;
+  if (!lastUsedAt || Date.now() - lastUsedAt > 5 * 60_000) {
+    await supabaseAdmin
+      .from("pos_device_api_credentials")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("id", credential.id);
+  }
 
   return {
     deviceId: String(credential.device_id),
