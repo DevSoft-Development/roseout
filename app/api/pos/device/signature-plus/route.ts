@@ -3,6 +3,7 @@ import { authenticatePosDeviceCredential } from "@/lib/pos/device-command-servic
 import { requireSignaturePlusAccess } from "@/lib/pos/access";
 import {
   buildSignaturePlusSplit,
+  createSignaturePlusSplitTender,
   getSignaturePlusBootstrap,
   getSignaturePlusInventory,
   getSignaturePlusReport,
@@ -81,6 +82,11 @@ export async function POST(request:Request){
     }else if(action==="transfer_server"){
       result=await transferSignaturePlusServer({
         locationId:device.locationId,checkId:String(body.checkId||""),staffProfileId:String(body.staffProfileId||""),
+      });
+    }else if(action==="split_tender"){
+      result=await createSignaturePlusSplitTender({
+        locationId:device.locationId,checkId:String(body.checkId||""),
+        allocationKey:String(body.allocationKey||""),tipCents:Number(body.tipCents||0),
       });
     }else if(action==="split"){
       result=await buildSignaturePlusSplit({
