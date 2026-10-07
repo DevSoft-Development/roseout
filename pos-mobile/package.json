@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "verify:native:ios": "node scripts/verify-ios-native-hardware.mjs",
     "verify:native:android": "node scripts/verify-android-native-hardware.mjs",
-    "verify:device-identity": "node scripts/verify-device-identity.mjs"
+    "verify:device-identity": "node scripts/verify-device-identity.mjs",
+    "verify:output-routing": "node scripts/verify-output-routing.mjs"
   },
   "dependencies": {
     "@sentry/react-native": "~7.11.0",
