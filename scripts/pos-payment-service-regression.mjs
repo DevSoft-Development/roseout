@@ -6,6 +6,8 @@ const service = read("lib/pos/payments/check-payment-service.ts");
 const route = read("app/api/business/pos/checks/[checkId]/payments/route.ts");
 const isolated = read("apps/business/app/api/business/pos/checks/[checkId]/payments/route.ts");
 const migration = read("supabase/migrations/20261005102000_pos_atomic_card_tender.sql").toLowerCase();
+const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
+const partialTenders = read("infra/supabase/operational-shards/partial-tenders-v8.sql").toLowerCase();
 const contracts = read("lib/pos/payments/contracts.ts");
 const stripe = read("lib/pos/payments/stripe.ts");
 
@@ -26,6 +28,11 @@ for (const token of [
 
 if (!service.includes('requestedAmount===null?"pos_begin_card_tender":"pos_begin_partial_card_tender"')) {
   throw new Error("POS payment service must select the full or partial atomic tender RPC server-side.");
+}
+for (const [name, sql] of [["full", hardening], ["partial", partialTenders]]) {
+  if (!sql.includes("t.amount_cents") || !sql.includes("t.amount_refunded_cents") || !sql.includes("max(t.tender_number)")) {
+    throw new Error(`Operational ${name} tender RPC must qualify tender columns to avoid PL/pgSQL output-column ambiguity.`);
+  }
 }
 if (route.includes("amount_cents") || route.includes("amountCents")) {
   throw new Error("POS payment route must not accept a client-supplied charge amount.");

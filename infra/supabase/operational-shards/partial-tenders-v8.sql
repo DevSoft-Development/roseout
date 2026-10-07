@@ -42,18 +42,18 @@ begin
     where check_id=p_check_id and location_id=p_location_id and tender_type='card' and status='initiated'
   ) then raise exception 'pos_payment_in_progress'; end if;
 
-  select coalesce(sum(greatest(0,amount_cents-amount_refunded_cents)),0)
-    into v_net_paid from public.pos_tenders
-   where check_id=p_check_id and location_id=p_location_id
-     and status in ('completed','partially_refunded','refunded');
+  select coalesce(sum(greatest(0,t.amount_cents-t.amount_refunded_cents)),0)
+    into v_net_paid from public.pos_tenders t
+   where t.check_id=p_check_id and t.location_id=p_location_id
+     and t.status in ('completed','partially_refunded','refunded');
 
   v_remaining:=greatest(0,v_check.total_cents-v_net_paid);
   if v_remaining<=0 then raise exception 'pos_check_already_paid'; end if;
   v_amount:=least(p_amount_cents,v_remaining);
   if v_amount<=0 then raise exception 'invalid_pos_partial_amount'; end if;
 
-  select coalesce(max(tender_number),0)+1 into v_tender_number
-    from public.pos_tenders where check_id=p_check_id;
+  select coalesce(max(t.tender_number),0)+1 into v_tender_number
+    from public.pos_tenders t where t.check_id=p_check_id;
 
   insert into public.pos_tenders(
     location_id,check_id,staff_profile_id,tender_number,tender_type,status,amount_cents,tip_cents,metadata
