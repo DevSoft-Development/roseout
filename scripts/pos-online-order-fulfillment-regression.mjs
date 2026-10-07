@@ -17,6 +17,11 @@ const workspace=read("pos-mobile/app/index.tsx");
 const localRouting=read("pos-mobile/lib/output/local-runtime.ts");
 const configRoute=read("app/api/pos/device/config/route.ts");
 const ordersRoute=read("app/api/pos/device/orders/route.ts");
+const businessOrderingPage=read("apps/business/app/locations/dashboard/online-ordering/page.tsx");
+const businessOrderingControls=read("apps/business/app/locations/dashboard/online-ordering/OnlineOrderingControls.tsx");
+const businessOrderingApi=read("apps/business/app/api/locations/online-ordering/settings/route.ts");
+const businessOrderingService=read("lib/pos/online-ordering/business-settings.ts");
+const businessNav=read("apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx");
 
 for(const token of [
   "create table if not exists public.pos_device_claim_codes",
@@ -84,5 +89,19 @@ for(const token of ["authenticatePosDeviceCredential","getPosDeviceOutputConfig"
 for(const token of ["authenticatePosDeviceCredential","listPosActiveOnlineOrders","Cache-Control"]) {
   if(!ordersRoute.includes(token)) throw new Error(`POS active-orders endpoint missing: ${token}`);
 }
+
+for(const token of ["Control pickup ordering from your existing website","OnlineOrderingControls","Essentials+","Existing website"]) {
+  if(!businessOrderingPage.includes(token)) throw new Error(`Business ordering page missing: ${token}`);
+}
+for(const token of ["Accept online orders","Auto-accept paid orders","Auto-print new orders","Customer SMS","[15,30,45,60]","Pause {minutes}m","Ordering hours","Max orders per slot"]) {
+  if(!businessOrderingControls.includes(token)) throw new Error(`Business ordering controls missing: ${token}`);
+}
+for(const token of ["resolveLocationAccessContext","location.edit","updateBusinessOnlineOrderingSettings","Cache-Control"]) {
+  if(!businessOrderingApi.includes(token)) throw new Error(`Business ordering API invariant missing: ${token}`);
+}
+for(const token of ["resolveOperationalShardForLocationId","mode:\"write\"","pos_ordering_settings","notification_settings","paused_until","max_orders_per_slot"]) {
+  if(!businessOrderingService.includes(token)) throw new Error(`Business ordering service invariant missing: ${token}`);
+}
+if(!businessNav.includes('matches: ["/locations/dashboard/online-ordering"]')) throw new Error("Website workspace must map the Online Ordering child route.");
 
 console.log("ThePOSHaven online-order fulfillment verified.");
