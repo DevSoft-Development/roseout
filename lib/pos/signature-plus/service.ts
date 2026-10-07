@@ -331,11 +331,61 @@ export async function getSignaturePlusReport(input:{locationId:string;from?:stri
   };
 }
 
+
+export async function getSignaturePlusOperations(locationId:string){
+  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"read"});
+  const [{data:checks,error:checkError},{data:tables,error:tableError},{data:staff,error:staffError}]=await Promise.all([
+    shard.client.from("pos_checks")
+      .select("id,guest_count,total_cents,server_staff_profile_id,opened_at,status")
+      .eq("location_id",locationId).in("status",["open","held"]).order("opened_at",{ascending:true}),
+    shard.client.from("layout_items")
+      .select("id,item_name,item_number,item_type,capacity,status,is_active,sort_order")
+      .eq("location_id",locationId).eq("is_active",true).order("sort_order",{ascending:true}),
+    shard.client.from("reserve_staff_profiles")
+      .select("id,display_name,role,is_active").eq("location_id",locationId).eq("is_active",true).order("display_name",{ascending:true}),
+  ]);
+  if(checkError) throw new Error(checkError.message||"pos_signature_operations_checks_failed");
+  if(tableError) throw new Error(tableError.message||"pos_signature_operations_tables_failed");
+  if(staffError) throw new Error(staffError.message||"pos_signature_operations_staff_failed");
+  const checkIds=(checks||[]).map((row:any)=>String(row.id));
+  const {data:resources,error:resourceError}=checkIds.length
+    ? await shard.client.from("pos_check_resources")
+        .select("check_id,layout_item_id,resource_label").eq("location_id",locationId).in("check_id",checkIds)
+    : {data:[],error:null};
+  if(resourceError) throw new Error(resourceError.message||"pos_signature_operations_resources_failed");
+  const staffById=new Map((staff||[]).map((row:any)=>[String(row.id),row]));
+  return {
+    openChecks:(checks||[]).map((check:any)=>({
+      id:String(check.id),
+      guestCount:Number(check.guest_count||1),
+      totalCents:Number(check.total_cents||0),
+      openedAt:check.opened_at,
+      tables:(resources||[]).filter((row:any)=>String(row.check_id)===String(check.id)).map((row:any)=>({
+        id:row.layout_item_id?String(row.layout_item_id):null,label:String(row.resource_label||"Table"),
+      })),
+      server:check.server_staff_profile_id?{
+        id:String(check.server_staff_profile_id),
+        name:String(staffById.get(String(check.server_staff_profile_id))?.display_name||"Staff"),
+      }:null,
+    })),
+    tables:(tables||[]).filter((row:any)=>{
+      const type=String(row.item_type||"").toLowerCase();
+      return type.includes("table")||type.includes("booth")||type.includes("bar");
+    }).map((row:any)=>({
+      id:String(row.id),label:String(row.item_name||row.item_number||"Table"),capacity:Number(row.capacity||1),status:String(row.status||"available"),
+    })),
+    staff:(staff||[]).map((row:any)=>({
+      id:String(row.id),name:String(row.display_name||"Staff"),role:String(row.role||"staff"),
+    })),
+  };
+}
+
 export async function getSignaturePlusBootstrap(locationId:string){
-  const [kds,inventory,report]=await Promise.all([
+  const [kds,operations,inventory,report]=await Promise.all([
     listSignaturePlusKds({locationId}),
+    getSignaturePlusOperations(locationId),
     getSignaturePlusInventory(locationId),
     getSignaturePlusReport({locationId}),
   ]);
-  return {kds,inventory,report};
+  return {kds,operations,inventory,report};
 }
