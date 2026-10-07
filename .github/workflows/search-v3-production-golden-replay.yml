@@ -10,7 +10,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
-# Manual production replay trigger: verify corrected primary-domain replay evaluation.
+# Manual production replay trigger: verify single-domain eligibility fix.
 permissions:
   contents: read
   id-token: write
