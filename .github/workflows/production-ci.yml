@@ -421,9 +421,7 @@ jobs:
           fi
 
       - name: Audit production dependencies
-        if: >-
-          github.event_name == 'workflow_dispatch' ||
-          contains(steps.quality_scope.outputs.scope, 'dependency')
+        if: github.event_name != 'pull_request'
         run: npm audit --package-lock-only --omit=dev --audit-level=high
 
   regressions:
