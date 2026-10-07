@@ -21,10 +21,17 @@
 -- public.pos_inventory_items
 -- public.pos_inventory_transactions
 -- public.pos_inventory_adjustments
+-- public.pos_ordering_settings
+-- public.pos_online_orders
+-- public.pos_online_order_events
 --
 -- Required functions:
 -- public.pos_reserve_inventory(uuid, jsonb, text, text, text)
 -- public.pos_adjust_inventory(uuid, uuid, integer, text, text, text)
+-- public.pos_release_inventory(uuid, text, text)
+-- public.pos_create_online_order_draft(...)
+-- public.pos_finalize_online_order_payment(uuid, uuid, text, boolean)
+-- public.pos_cancel_online_order(uuid, uuid, text)
 --
 -- Required function:
 -- public.pos_begin_card_tender(uuid, uuid, integer, uuid)
