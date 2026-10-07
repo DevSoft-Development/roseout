@@ -122,7 +122,7 @@ describe("Search V3 review intelligence lane", () => {
     expect(queried).toBe(false);
   });
 
-  it("keeps the production default at five lanes", () => {
+  it("keeps the production default at six lanes", () => {
     const client: any = {
       from() { return queryResult([]); },
       rpc() { return Promise.resolve({ data: [], error: null }); },
@@ -147,13 +147,13 @@ describe("Search V3 review intelligence lane", () => {
     )).toBe(false);
   });
 
-  it("adds the sixth lane only when explicitly enabled", () => {
+  it("allows the sixth lane to be explicitly disabled", () => {
     const client: any = {
       from() { return queryResult([]); },
       rpc() { return Promise.resolve({ data: [], error: null }); },
     };
     const providers = createDefaultRetrievalProviders(client, {
-      reviewIntelligence: { enabled: true },
+      reviewIntelligence: { enabled: false },
       semantic: {
         embeddings: {
           providerId: "test",
