@@ -10,6 +10,7 @@ export type GeneratedWebsiteExperience = { id:string; slug:string|null; title:st
 export type GeneratedWebsiteLocationSnapshot = {
   id:string; name?:string|null; title?:string|null; address?:string|null; phone?:string|null; hours?:string|null; description?:string|null; short_description?:string|null; dress_code?:string|null; parking_info?:string|null; best_for:string[]; special_features:string[]; reservation_link?:string|null; reservation_provider?:string|null; reservation_source?:string|null; uses_internal_reservations:boolean; internal_reservations_enabled:boolean; allow_external_reservations:boolean; image_url?:string|null; photos:string[];
   menu:{ title:string; description?:string|null; external_url?:string|null; pdf_url?:string|null; items:GeneratedWebsiteMenuItem[] }|null;
+  online_ordering_enabled:boolean;
   reviews:GeneratedWebsiteReview[];
   events:GeneratedWebsiteEvent[];
   experiences:GeneratedWebsiteExperience[];
@@ -24,8 +25,8 @@ export function formatWebsiteHours(value:unknown):string|null{if(typeof value===
 
 export async function getGeneratedWebsiteLocationSnapshot(location:Record<string,unknown>):Promise<GeneratedWebsiteLocationSnapshot>{
   const metadata=objectValue(location.metadata);const id=stringValue(location.id)||"";const photos=uniqueUrls([location.image_url,location.main_image,location.photo_url,location.images,location.photos,metadata.image_url,metadata.main_image,metadata.images,metadata.photos]);
-  let menu:GeneratedWebsiteLocationSnapshot["menu"]=null;
-  try{const menuData=id?await getLocationMenu(id, undefined, "website"):null;const page=menuData?.page;if(page&&(page.status==="published"||page.is_active===true)){const sectionNames=new Map((menuData.sections||[]).map(section=>[String(section.id),String(section.title||section.name||"Menu")]));menu={title:String(page.title||"Menu"),description:stringValue(page.description),external_url:stringValue(page.external_url),pdf_url:stringValue(page.pdf_url),items:(menuData.items||[]).filter(item=>item.is_available!==false).slice(0,24).map(item=>({name:String(item.name||"Menu item"),description:stringValue(item.description),price:stringValue(item.price_label)||stringValue(item.price),image_url:stringValue(item.image_url),section:sectionNames.get(String(item.section_id))||null}))}}}catch(error){console.error("GENERATED_WEBSITE_MENU_LOAD_FAILED",{locationId:id,error})}
+  let menu:GeneratedWebsiteLocationSnapshot["menu"]=null;let onlineOrderingEnabled=false;
+  try{const [menuData,orderingData]=id?await Promise.all([getLocationMenu(id, undefined, "website"),getLocationMenu(id, undefined, "online_ordering")]):[null,null];onlineOrderingEnabled=Boolean(orderingData?.page&&(orderingData.page.status==="published"||orderingData.page.is_active===true)&&(orderingData.items||[]).some(item=>item.is_available!==false));const page=menuData?.page;if(page&&(page.status==="published"||page.is_active===true)){const sectionNames=new Map((menuData.sections||[]).map(section=>[String(section.id),String(section.title||section.name||"Menu")]));menu={title:String(page.title||"Menu"),description:stringValue(page.description),external_url:stringValue(page.external_url),pdf_url:stringValue(page.pdf_url),items:(menuData.items||[]).filter(item=>item.is_available!==false).slice(0,24).map(item=>({name:String(item.name||"Menu item"),description:stringValue(item.description),price:stringValue(item.price_label)||stringValue(item.price),image_url:stringValue(item.image_url),section:sectionNames.get(String(item.section_id))||null}))}}}catch(error){console.error("GENERATED_WEBSITE_MENU_LOAD_FAILED",{locationId:id,error})}
   let reviews:GeneratedWebsiteReview[]=[];
   try{if(id){const{data}=await supabaseAdmin.from("location_reviews").select("customer_name,rating,review_text").eq("location_id",id).eq("status","approved").eq("verified_visit",true).order("created_at",{ascending:false}).limit(6);reviews=(data||[]).filter(review=>stringValue(review.review_text)).map(review=>({customer_name:stringValue(review.customer_name)||"TheOutHaven Guest",rating:Math.min(5,Math.max(1,Number(review.rating||5))),review_text:stringValue(review.review_text)||""}))}}catch(error){console.error("GENERATED_WEBSITE_REVIEWS_LOAD_FAILED",{locationId:id,error})}
   let events:GeneratedWebsiteEvent[]=[];let experiences:GeneratedWebsiteExperience[]=[];
@@ -57,6 +58,7 @@ export async function getGeneratedWebsiteLocationSnapshot(location:Record<string
     image_url:photos[0]||null,
     photos,
     menu,
+    online_ordering_enabled:onlineOrderingEnabled,
     reviews,
     events,
     experiences,
