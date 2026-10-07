@@ -5,6 +5,7 @@ import {
   claimNextOnlineOrderFulfillment,
   finishOnlineOrderFulfillment,
 } from "@/lib/pos/online-ordering/fulfillment";
+import { setOnlineOrderStatus } from "@/lib/pos/online-ordering/status";
 
 export const runtime = "nodejs";
 
@@ -62,6 +63,20 @@ export async function POST(request: NextRequest) {
   try {
     const device = await auth(request);
     const body = await request.json().catch(() => ({}));
+    if (body.action === "status") {
+      const next = String(body.status || "");
+      if (!["accepted","preparing","ready","completed","canceled"].includes(next)) {
+        return NextResponse.json({ ok: false, error: "online_order_status_invalid" }, { status: 400 });
+      }
+      const result = await setOnlineOrderStatus({
+        locationId: device.locationId,
+        onlineOrderId: String(body.onlineOrderId || ""),
+        status: next as "accepted" | "preparing" | "ready" | "completed" | "canceled",
+        actorType: "device",
+        actorId: device.deviceId,
+      });
+      return NextResponse.json({ ok: true, order: result }, { headers: { "Cache-Control": "no-store" } });
+    }
     await finishOnlineOrderFulfillment({
       locationId: device.locationId,
       deviceId: device.deviceId,
