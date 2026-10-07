@@ -64,7 +64,6 @@ export type IntuneVppToken = {
   state?: string | null;
   lastSyncStatus?: string | null;
   automaticallyUpdateApps?: boolean | null;
-  lastAppCount?: number | null;
 };
 
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
@@ -200,7 +199,7 @@ export async function getDefaultIntuneIosEnrollmentProfile(userId: string, depOn
 export async function listIntuneVppTokens(userId: string) {
   const payload = await microsoftGraphFetch<GraphCollection<IntuneVppToken>>(
     userId,
-    "/deviceAppManagement/vppTokens?$select=id,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps,lastAppCount",
+    "/deviceAppManagement/vppTokens?$select=id,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps",
   );
   return payload.value || [];
 }
