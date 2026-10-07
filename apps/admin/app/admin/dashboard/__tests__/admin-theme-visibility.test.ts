@@ -99,7 +99,7 @@ describe("Admin route CSS consolidation", () => {
       ".m365-page",
       ".apple-page",
     ]) {
-      expect(css).toContain(selector);
+      expect(visibilityCss).toContain(selector);
     }
   });
 });
