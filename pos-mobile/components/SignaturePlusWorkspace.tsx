@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import type { PosClaimSession } from "@/lib/device/identity";
 import {
   createSignaturePlusSplit,
+  createSignaturePlusSplitTender,
   fetchSignaturePlus,
   moveSignaturePlusTable,
   transferSignaturePlusServer,
@@ -22,6 +23,7 @@ export default function SignaturePlusWorkspace({session}:{session:PosClaimSessio
   const [error,setError]=useState("");
   const [station,setStation]=useState("all");
   const [selectedCheck,setSelectedCheck]=useState<string|null>(null);
+  const [splitPlan,setSplitPlan]=useState<any>(null);
 
   const load=useCallback(async(quiet=false)=>{
     if(!quiet) setBusy(true);
@@ -37,7 +39,7 @@ export default function SignaturePlusWorkspace({session}:{session:PosClaimSessio
 
   const mutate=async(operation:()=>Promise<any>)=>{
     setBusy(true);setError("");
-    try{await operation();await load(true);}
+    try{const result=await operation();await load(true);return result;}
     catch(e){setError(e instanceof Error?pretty(e.message):"Unable to update Signature+.");}
     finally{setBusy(false)}
   };
@@ -98,9 +100,15 @@ export default function SignaturePlusWorkspace({session}:{session:PosClaimSessio
 
         <Text style={styles.label}>Split Check</Text>
         <View style={styles.inlineActions}>
-          <Pressable onPress={()=>mutate(()=>createSignaturePlusSplit({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,mode:"by_guest"}))} style={styles.secondary}><Text style={styles.secondaryText}>By Guest</Text></Pressable>
-          <Pressable onPress={()=>mutate(()=>createSignaturePlusSplit({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,mode:"even",parts:currentCheck.guestCount}))} style={styles.secondary}><Text style={styles.secondaryText}>Even Split</Text></Pressable>
+          <Pressable onPress={()=>mutate(()=>createSignaturePlusSplit({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,mode:"by_guest"})).then(setSplitPlan)} style={styles.secondary}><Text style={styles.secondaryText}>By Guest</Text></Pressable>
+          <Pressable onPress={()=>mutate(()=>createSignaturePlusSplit({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,mode:"even",parts:currentCheck.guestCount})).then(setSplitPlan)} style={styles.secondary}><Text style={styles.secondaryText}>Even Split</Text></Pressable>
         </View>
+        {splitPlan?.allocations?.length?<View style={{marginTop:12,gap:8}}>
+          {splitPlan.allocations.map((part:any)=><View key={part.key} style={styles.reportRow}>
+            <View><Text style={styles.optionTitle}>{part.label}</Text><Text style={styles.muted}>{money(part.amountCents)}</Text></View>
+            <Pressable disabled={busy} onPress={()=>mutate(()=>createSignaturePlusSplitTender({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,allocationKey:part.key}))} style={styles.primary}><Text style={styles.primaryText}>Charge card</Text></Pressable>
+          </View>)}
+        </View>:null}
       </View>:<View style={styles.empty}><Text style={styles.emptyTitle}>No open table checks</Text></View>}
     </ScrollView>}
 
