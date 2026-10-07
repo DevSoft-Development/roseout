@@ -6,6 +6,7 @@ import { failLeadCheckoutPayment, refundLeadCheckoutPayment, settleLeadCheckoutP
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { failWebsitePickupOrder, finalizeWebsitePickupOrder } from "@/lib/pos/online-ordering/service";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
@@ -363,9 +364,32 @@ export async function POST(request: NextRequest) {
         } else if (type === "experience_booking") {
           const bookingId = String(object.metadata.booking_id || "").trim();
           if (bookingId) await supabaseAdmin.from("experience_bookings").update({ payment_status: "failed", status: "cancelled", updated_at: new Date().toISOString() }).eq("id", bookingId).eq("status", "pending_payment");
+        } else if (type === "pos_online_order") {
+          const onlineOrderId = String(object?.metadata?.online_order_id || "").trim();
+          if (owner.locationId && onlineOrderId) {
+            await failWebsitePickupOrder({
+              locationId: owner.locationId,
+              onlineOrderId,
+              reason: String(object.last_payment_error?.decline_code || "payment_failed"),
+            });
+            await recordConnectRisk({ event, object, owner, subjectType: "order", subjectId: onlineOrderId, signalType: "online_order_payment_failed", category: "payment_velocity", severity: 2, scoreDelta: 8, evidence: { decline_code: object.last_payment_error?.decline_code || null } });
+          }
         } else if (type === "reservation_deposit") {
           const reservationId = String(object.metadata.reservation_id || "").trim();
           if (reservationId) await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed", updated_at: new Date().toISOString() }).eq("id", reservationId).eq("deposit_status", "pending");
+        }
+        break;
+      }
+
+      case "payment_intent.succeeded": {
+        const type = String(object?.metadata?.type || "");
+        if (type === "pos_online_order") {
+          const onlineOrderId = String(object?.metadata?.online_order_id || "").trim();
+          if (!owner.locationId || !onlineOrderId) throw new Error("Paid POS online order is missing fulfillment metadata");
+          await finalizeWebsitePickupOrder({
+            locationId: owner.locationId,
+            onlineOrderId,
+          });
         }
         break;
       }
