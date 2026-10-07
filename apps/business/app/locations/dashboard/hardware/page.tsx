@@ -250,6 +250,18 @@ export default async function HardwareWorkspacePage({
             <span className="rounded-full border border-[var(--business-border)] bg-[var(--business-panel)] px-4 py-2 text-xs font-black text-[var(--business-muted)]">
               {canManage ? "Manager access" : "View-only access"}
             </span>
+            <Link
+              href="/locations/dashboard/hardware/all"
+              className="rounded-full border border-[var(--business-border)] px-4 py-2 text-xs font-black text-[var(--business-text)]"
+            >
+              All locations
+            </Link>
+            <Link
+              href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(canonicalLocationId)}`}
+              className="rounded-full border border-[var(--business-border)] px-4 py-2 text-xs font-black text-[var(--business-text)]"
+            >
+              Health center
+            </Link>
             {canManage ? (
               <Link
                 href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(canonicalLocationId)}`}
