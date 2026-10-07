@@ -82,6 +82,71 @@ function reviewProfileNeedsSync(review: any, profile: any) {
   return sourceUpdatedAt > 0 && sourceUpdatedAt > syncedAt;
 }
 
+function semanticCandidateEligible(location: any) {
+  try {
+    const document = buildLocationSemanticDocument(location as any);
+    if (!document.eligibleForPublicEmbedding) return false;
+    const classification = classifySearchLocation(location as any);
+    return classification.canonicalType !== "unsupported";
+  } catch {
+    return false;
+  }
+}
+
+async function getEmbeddingBackfillCandidateIds(limit: number) {
+  const selected: string[] = [];
+  const pageSize = 200;
+  const maxRowsToScan = 10_000;
+
+  for (
+    let from = 0;
+    selected.length < limit && from < maxRowsToScan;
+    from += pageSize
+  ) {
+    const { data: locationRows, error: locationError } = await supabaseAdmin
+      .from("locations")
+      .select("*")
+      .eq("is_searchable", true)
+      .eq("is_hidden", false)
+      .eq("active", true)
+      .is("deleted_at", null)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (locationError) throw locationError;
+    if (!locationRows?.length) break;
+
+    const ids = locationRows.map((row: any) => row.id).filter(Boolean);
+    const { data: embeddingRows, error: embeddingError } = ids.length
+      ? await supabaseAdmin
+          .from("location_search_embeddings")
+          .select("location_id,status,calculated_at")
+          .in("location_id", ids)
+      : { data: [] as any[], error: null };
+    if (embeddingError) throw embeddingError;
+
+    const embeddingByLocation = new Map(
+      (embeddingRows ?? []).map((row: any) => [String(row.location_id), row]),
+    );
+
+    for (const location of locationRows) {
+      const existing = embeddingByLocation.get(String(location.id));
+      const sourceUpdatedAt = timestampMs(location.updated_at ?? location.created_at);
+      const embeddingUpdatedAt = timestampMs(existing?.calculated_at);
+      const needsEmbedding =
+        !existing ||
+        existing.status !== "ready" ||
+        (sourceUpdatedAt > 0 && sourceUpdatedAt > embeddingUpdatedAt);
+      if (!needsEmbedding || !semanticCandidateEligible(location)) continue;
+      selected.push(String(location.id));
+      if (selected.length >= limit) break;
+    }
+
+    if (locationRows.length < pageSize) break;
+  }
+
+  return selected;
+}
+
 async function getReviewPriorityLocationIds(limit: number) {
   const selected: string[] = [];
   // Keep PostgREST .in(...) request URLs bounded. We only need enough
@@ -103,22 +168,37 @@ async function getReviewPriorityLocationIds(limit: number) {
     if (!reviewRows?.length) break;
 
     const ids = reviewRows.map((row: any) => row.location_id).filter(Boolean);
-    const { data: profiles, error: profileError } = ids.length
-      ? await supabaseAdmin
-          .from("location_search_profiles")
-          .select("location_id,evidence")
-          .in("location_id", ids)
-      : { data: [] as any[], error: null };
+    const [{ data: profiles, error: profileError }, { data: locations, error: locationError }] = ids.length
+      ? await Promise.all([
+          supabaseAdmin
+            .from("location_search_profiles")
+            .select("location_id,evidence")
+            .in("location_id", ids),
+          supabaseAdmin
+            .from("locations")
+            .select("*")
+            .in("id", ids),
+        ])
+      : [
+          { data: [] as any[], error: null },
+          { data: [] as any[], error: null },
+        ];
     if (profileError) throw profileError;
+    if (locationError) throw locationError;
 
     const profileByLocation = new Map(
       (profiles ?? []).map((row: any) => [String(row.location_id), row]),
+    );
+    const locationById = new Map(
+      (locations ?? []).map((row: any) => [String(row.id), row]),
     );
 
     for (const review of reviewRows) {
       const locationId = String(review.location_id ?? "");
       if (!locationId) continue;
       const profile = profileByLocation.get(locationId);
+      const location = locationById.get(locationId);
+      if (!location || !semanticCandidateEligible(location)) continue;
       if (!reviewProfileNeedsSync(review, profile)) continue;
       selected.push(locationId);
       if (selected.length >= limit) break;
@@ -152,12 +232,20 @@ export async function GET(request: Request) {
     }, { status: 500 });
   }
 
-  const { data: queueRows, error: queueError } = await supabaseAdmin.rpc("get_search_embedding_backfill_candidates", { p_limit: candidatePoolSize });
-  if (queueError) return NextResponse.json({ ok: false, behavior: behavior.data ?? null, error: queueError.message }, { status: 500 });
+  let embeddingBackfillLocationIds: string[] = [];
+  try {
+    embeddingBackfillLocationIds = await getEmbeddingBackfillCandidateIds(candidatePoolSize);
+  } catch (caught) {
+    return NextResponse.json({
+      ok: false,
+      behavior: behavior.data ?? null,
+      error: caught instanceof Error ? caught.message : "embedding_backfill_candidate_selection_failed",
+    }, { status: 500 });
+  }
 
   const queuedLocationIds = uniq([
     reviewPriorityLocationIds,
-    (queueRows ?? []).map((row: any) => row.location_id).filter(Boolean),
+    embeddingBackfillLocationIds,
   ]).slice(0, candidatePoolSize);
   const { data: rows, error } = queuedLocationIds.length
     ? await supabaseAdmin.from("locations").select("*").in("id", queuedLocationIds)
@@ -321,6 +409,7 @@ export async function GET(request: Request) {
       queued: queuedLocationIds.length,
       candidatePool: queuedLocationIds.length,
       reviewPriorityQueued: reviewPriorityLocationIds.length,
+      embeddingBackfillQueued: embeddingBackfillLocationIds.length,
       scanned,
       updated,
       unchanged,
