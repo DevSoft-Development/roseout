@@ -52,6 +52,13 @@ jobs:
           grep -F 'operationalShardsJson' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
           ! grep -Eq 'sb_secret_[A-Za-z0-9_-]+' .github/workflows/operational-shard-live-bootstrap.yml
           ! grep -Eq 'service_role_key[[:space:]]*:' infra/supabase/operational-shards/bootstrap.sql
+          ! grep -Fx 'as $' infra/supabase/operational-shards/inventory-v7.sql
+          ! grep -Fx '$;' infra/supabase/operational-shards/inventory-v7.sql
+          ! grep -Fx 'as $' infra/supabase/operational-shards/online-ordering-v8.sql
+          ! grep -Fx '$;' infra/supabase/operational-shards/online-ordering-v8.sql
+          grep -F 'partial-tenders-v8.sql' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
+          grep -F 'ingredient-inventory-v9.sql' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
+          grep -F 'schema_version=9' .github/workflows/operational-shard-live-bootstrap.yml >/dev/null
 
   bootstrap:
     name: Bootstrap live operational shards
@@ -88,6 +95,8 @@ jobs:
           hardening_sql="$(cat infra/supabase/operational-shards/hardening-v2.sql)"
           inventory_sql="$(cat infra/supabase/operational-shards/inventory-v7.sql)"
           online_ordering_sql="$(cat infra/supabase/operational-shards/online-ordering-v8.sql)"
+          partial_tenders_sql="$(cat infra/supabase/operational-shards/partial-tenders-v8.sql)"
+          ingredient_inventory_sql="$(cat infra/supabase/operational-shards/ingredient-inventory-v9.sql)"
           fence_sql="$(cat infra/supabase/operational-shards/write-fence-v3.sql)"
 
           sql_api() {
@@ -147,7 +156,19 @@ jobs:
             sql_api "$ref" "$hardening_sql" "$RUNNER_TEMP/$label-hardening-result.json"
             sql_api "$ref" "$inventory_sql" "$RUNNER_TEMP/$label-inventory-result.json"
             sql_api "$ref" "$online_ordering_sql" "$RUNNER_TEMP/$label-online-ordering-result.json"
+            sql_api "$ref" "$partial_tenders_sql" "$RUNNER_TEMP/$label-partial-tenders-result.json"
+            sql_api "$ref" "$ingredient_inventory_sql" "$RUNNER_TEMP/$label-ingredient-inventory-result.json"
             sql_api "$ref" "$fence_sql" "$RUNNER_TEMP/$label-write-fence-result.json"
+            sql_api "$ref" "select
+              (select max(version) from public.operational_schema_versions) as max_version,
+              to_regclass('public.pos_inventory_stock_areas') is not null as has_stock_areas,
+              to_regclass('public.pos_inventory_area_balances') is not null as has_area_balances,
+              to_regclass('public.pos_inventory_transfers') is not null as has_inventory_transfers,
+              to_regprocedure('public.pos_begin_partial_card_tender(uuid,uuid,integer,integer,uuid)') is not null as has_partial_tender,
+              to_regprocedure('public.pos_transfer_inventory(uuid,uuid,uuid,uuid,numeric,text)') is not null as has_transfer_rpc,
+              exists(select 1 from information_schema.columns
+                     where table_schema='public' and table_name='pos_inventory_items' and column_name='unit_code') as has_unit_code;" "$RUNNER_TEMP/$label-v9-proof.json"
+            jq -e 'length == 1 and .[0].max_version >= 9 and .[0].has_stock_areas == true and .[0].has_area_balances == true and .[0].has_inventory_transfers == true and .[0].has_partial_tender == true and .[0].has_transfer_rpc == true and .[0].has_unit_code == true' "$RUNNER_TEMP/$label-v9-proof.json" >/dev/null
             align_physical "$ref" "$physical" "$active" "$active_reason" "$standby_reason" "$label"
           }
 
@@ -230,8 +251,10 @@ jobs:
             key="$(cat "$keyfile")"
             code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_checks?select=id&limit=1")"
             test "$code" = 200 || { echo "::error::${label} POS schema probe failed: HTTP ${code}"; exit 1; }
-            inventory_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-inventory-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_inventory_items?select=id&limit=1")"
+            inventory_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-inventory-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_inventory_items?select=id,unit_code,reorder_point,reorder_quantity,preferred_vendor,vendor_sku&limit=1")"
             test "$inventory_code" = 200 || { echo "::error::${label} inventory schema probe failed: HTTP ${inventory_code}"; exit 1; }
+            stock_area_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-stock-area-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_inventory_stock_areas?select=id&limit=1")"
+            test "$stock_area_code" = 200 || { echo "::error::${label} v9 stock-area schema probe failed: HTTP ${stock_area_code}"; exit 1; }
             ordering_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-ordering-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_online_orders?select=id&limit=1")"
             test "$ordering_code" = 200 || { echo "::error::${label} online ordering schema probe failed: HTTP ${ordering_code}"; exit 1; }
             assignment_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-assignment-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/reservation_resource_assignments?select=id&limit=1")"
@@ -253,7 +276,7 @@ jobs:
                  set status='active',
                      read_enabled=true,
                      write_enabled=true,
-                     schema_version=8,
+                     schema_version=9,
                      updated_at=now()
                  where id in ('shard-01','shard-02')
                    and status in ('planned','provisioning')
@@ -261,7 +284,7 @@ jobs:
                    and failover_state='primary'
                    and replication_state in ('initializing','healthy');
                  update public.operational_shards
-                 set schema_version=8,updated_at=now()
+                 set schema_version=9,updated_at=now()
                  where id in ('shard-01','shard-02')
                    and not (
                      status in ('planned','provisioning')
@@ -275,7 +298,7 @@ jobs:
                  where id in ('shard-01','shard-02') order by id;"
           else
             sql="update public.operational_shards
-                 set schema_version=8,updated_at=now()
+                 set schema_version=9,updated_at=now()
                  where id in ('shard-01','shard-02');
                  select id,status,read_enabled,write_enabled,active_physical_shard_id,
                         failover_state,replication_state,schema_version
@@ -284,7 +307,7 @@ jobs:
           fi
           jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
           curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
-          jq -e 'length == 2 and all(.[]; .schema_version==8)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .schema_version==9)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
             jq -e 'all(.[]; (.status=="planned" or .status=="provisioning") | not)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           fi
@@ -294,6 +317,7 @@ jobs:
           {
             echo '### Operational shard bootstrap'
             echo '- Both shard pairs: runtime credentials verified for primary and DR'
+            echo '- Operational shard schema v9 verified on all four physical shards'
             echo '- Physical write gates aligned to authoritative active routing'
             echo '- Standby physical databases remain write-frozen'
             echo '- Reservation seat-assignment schema present on all four physical shards'
@@ -304,4 +328,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/*-hardening*.json "$RUNNER_TEMP"/*-write-fence*.json "$RUNNER_TEMP"/routing-gates*.json "$RUNNER_TEMP"/*-gate.json "$RUNNER_TEMP"/activate*.json
+        run: rm -f "$RUNNER_TEMP"/supabase-vault*.json "$RUNNER_TEMP"/dr.json "$RUNNER_TEMP"/*-keys.json "$RUNNER_TEMP"/*-secret "$RUNNER_TEMP"/operational-shards.json "$RUNNER_TEMP"/*-probe.json "$RUNNER_TEMP"/*-hardening*.json "$RUNNER_TEMP"/*-inventory-result.json "$RUNNER_TEMP"/*-online-ordering-result.json "$RUNNER_TEMP"/*-partial-tenders-result.json "$RUNNER_TEMP"/*-ingredient-inventory-result.json "$RUNNER_TEMP"/*-v9-proof.json "$RUNNER_TEMP"/*-write-fence*.json "$RUNNER_TEMP"/routing-gates*.json "$RUNNER_TEMP"/*-gate.json "$RUNNER_TEMP"/activate*.json

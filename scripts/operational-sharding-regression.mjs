@@ -317,9 +317,11 @@ for (const token of [
   "hardening-v2.sql",
   "inventory-v7.sql",
   "online-ordering-v8.sql",
+  "partial-tenders-v8.sql",
+  "ingredient-inventory-v9.sql",
   "standby-dr",
   "standby-primary",
-  "schema_version=8",
+  "schema_version=9",
   "reservation_resource_assignments",
   "restore_authoritative_gates",
   "apply_and_align",
@@ -333,7 +335,7 @@ for (const token of [
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
 }
-if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=8")) {
+if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=9")) {
   throw new Error("Bootstrap must not unconditionally reopen fail-closed shard registry writes.");
 }
 if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {

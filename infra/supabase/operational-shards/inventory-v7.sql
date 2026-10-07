@@ -270,7 +270,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $$
 declare
   v_tx public.pos_inventory_transactions%rowtype;
   v_adjustment public.pos_inventory_adjustments%rowtype;
@@ -312,7 +312,7 @@ begin
   update public.pos_inventory_transactions set status='released' where id=v_tx.id;
   return jsonb_build_object('transaction_id',v_tx.id,'status','released','released',v_released,'idempotent_replay',false);
 end;
-$;
+$$;
 
 revoke all on function public.pos_release_inventory(uuid,text) from public,anon,authenticated;
 grant execute on function public.pos_release_inventory(uuid,text) to service_role;
