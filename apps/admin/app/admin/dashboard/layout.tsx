@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import AdminShell from "./AdminShell";
 import "./admin-shell.css";
+import "./admin-theme-visibility.css";
 
 export default async function AdminDashboardLayout({ children }: { children: ReactNode }) {
   const admin = await getCurrentAdmin();
