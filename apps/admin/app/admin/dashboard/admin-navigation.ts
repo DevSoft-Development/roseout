@@ -176,6 +176,13 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
     icon: Activity,
     items: [
       {
+        label: "POS Operations",
+        href: "/admin/dashboard/pos",
+        icon: ReceiptText,
+        migrated: true,
+        roles: ["superadmin", "admin", "manager"],
+      },
+      {
         label: "Events & Experiences",
         href: "/admin/dashboard/events-experiences",
         icon: CalendarDays,
