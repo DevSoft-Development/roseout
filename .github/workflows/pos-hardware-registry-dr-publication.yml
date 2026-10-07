@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/pos-hardware-registry-dr-publication.yml'
       - 'supabase/migrations/20261006220500_pos_hardware_device_registry.sql'
+      - 'supabase/migrations/20261007022500_pos_device_api_credentials.sql'
   push:
     branches: [main]
     paths:
@@ -41,6 +42,8 @@ jobs:
           set -euo pipefail
           grep -F "pos_hardware_devices" .github/workflows/pos-hardware-registry-dr-publication.yml >/dev/null
           grep -F "pos_hardware_assignments" .github/workflows/pos-hardware-registry-dr-publication.yml >/dev/null
+          grep -F "pos_device_claim_codes" .github/workflows/pos-hardware-registry-dr-publication.yml >/dev/null
+          grep -F "pos_device_api_credentials" .github/workflows/pos-hardware-registry-dr-publication.yml >/dev/null
           grep -F "alter subscription \$SUBSCRIPTION refresh publication" .github/workflows/pos-hardware-registry-dr-publication.yml >/dev/null
 
   configure:
@@ -95,8 +98,8 @@ jobs:
             sql_api "$VIRGINIA_REF" "select count(*)::int as tables
               from information_schema.tables
               where table_schema='public'
-                and table_name in ('pos_hardware_devices','pos_hardware_assignments');" "$RUNNER_TEMP/schema-ready.json"
-            if [ "$(jq -r '.[0].tables // 0' "$RUNNER_TEMP/schema-ready.json")" = "2" ]; then
+                and table_name in ('pos_hardware_devices','pos_hardware_assignments','pos_device_claim_codes','pos_device_api_credentials');" "$RUNNER_TEMP/schema-ready.json"
+            if [ "$(jq -r '.[0].tables // 0' "$RUNNER_TEMP/schema-ready.json")" = "4" ]; then
               schema_ready=true
               break
             fi
@@ -120,6 +123,20 @@ jobs:
             ) then
               execute 'alter publication $PUBLICATION add table public.pos_hardware_assignments';
             end if;
+            if not exists (
+              select 1 from pg_publication_tables
+              where pubname='$PUBLICATION' and schemaname='public'
+                and tablename='pos_device_claim_codes'
+            ) then
+              execute 'alter publication $PUBLICATION add table public.pos_device_claim_codes';
+            end if;
+            if not exists (
+              select 1 from pg_publication_tables
+              where pubname='$PUBLICATION' and schemaname='public'
+                and tablename='pos_device_api_credentials'
+            ) then
+              execute 'alter publication $PUBLICATION add table public.pos_device_api_credentials';
+            end if;
           end
           \$\$;" "$RUNNER_TEMP/publication.json"
 
@@ -142,11 +159,11 @@ jobs:
 
           sql_api "$VIRGINIA_REF" "select tablename from pg_publication_tables
             where pubname='$PUBLICATION'
-              and tablename in ('pos_hardware_devices','pos_hardware_assignments')
+              and tablename in ('pos_hardware_devices','pos_hardware_assignments','pos_device_claim_codes','pos_device_api_credentials')
             order by tablename;" "$RUNNER_TEMP/published.json"
-          test "$(jq 'length' "$RUNNER_TEMP/published.json")" = "2"
+          test "$(jq 'length' "$RUNNER_TEMP/published.json")" = "4"
 
-          echo "POS hardware registry DR publication refreshed successfully." >> "$GITHUB_STEP_SUMMARY"
+          echo "POS hardware registry and device credential DR publication refreshed successfully." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
