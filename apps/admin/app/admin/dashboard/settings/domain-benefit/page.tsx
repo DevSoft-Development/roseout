@@ -1,5 +1,3 @@
-import "./domain-benefit.css";
-
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import DomainBenefitSettingsClient from "./DomainBenefitSettingsClient";
 import { getDomainBenefitSettings } from "@/lib/domains/benefit-settings";
