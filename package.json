@@ -90,7 +90,8 @@
     "test:pos-native-bridge": "node scripts/pos-native-hardware-bridge-regression.mjs",
     "test:business-hardware": "vitest run apps/business/app/locations/dashboard/__tests__/hardware-workspace.test.ts apps/business/app/locations/dashboard/__tests__/hardware-manage.test.ts apps/business/app/locations/dashboard/__tests__/hardware-claim-replace.test.ts",
     "test:pos-inventory": "node scripts/pos-inventory-regression.mjs",
-    "test:online-ordering": "node scripts/online-ordering-regression.mjs"
+    "test:online-ordering": "node scripts/online-ordering-regression.mjs",
+    "test:online-order-fulfillment": "node scripts/online-order-fulfillment-regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
