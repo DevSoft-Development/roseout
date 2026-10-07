@@ -271,11 +271,6 @@ export default async function AppleDeviceEnrollmentPage() {
                     <div className="apple-managed">
                       <CheckCircle2 /> Managed
                     </div>
-                  ) : assigned ? (
-                    <div className="apple-ready-copy">
-                      Erase or start the iPad. Setup Assistant will enroll it
-                      automatically.
-                    </div>
                   ) : (
                     <form
                       action="/api/admin/integrations/apple-device-enrollment/prepare"
@@ -288,7 +283,7 @@ export default async function AppleDeviceEnrollmentPage() {
                         disabled={!intuneServer || !depToken}
                       >
                         <CloudCog />
-                        Prepare for Intune
+                        Activate Device
                       </button>
                     </form>
                   )}
