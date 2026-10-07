@@ -300,7 +300,7 @@ export default async function AppleDeviceEnrollmentPage() {
                       <input type="hidden" name="action" value="prepare" />
                       <button
                         type="submit"
-                        disabled={!intuneServer || !depToken}
+                        disabled={!intuneServer || !depToken || !appsAndBooksToken}
                       >
                         <CloudCog />
                         Activate Device
