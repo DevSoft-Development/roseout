@@ -17,8 +17,8 @@ const features=[
   ["5 move / merge tables",service.includes("moveOrMergeSignaturePlusTable")&&ui.includes("Move / Merge Table")],
   ["6 transfer server",service.includes("transferSignaturePlusServer")&&ui.includes("Transfer Server")],
   ["7 advanced split check",service.includes("buildSignaturePlusSplit")&&service.includes("createSignaturePlusSplitTender")&&service.includes('"by_guest"|"even"|"custom"')&&ui.includes("Charge card")],
-  ["8 multi device synchronization",command.includes('"pos_state_changed"')&&service.includes("enqueuePosLocationCommand")&&ui.includes("4000")],
-  ["9 ingredient inventory",service.includes("inventory_role")&&service.includes("recipe_usage")&&ui.includes("Ingredient Inventory")],
+  ["8 multi device synchronization",command.includes('"pos_state_changed"')&&service.includes("enqueuePosLocationCommand")&&cloud.includes("waitSeconds")&&!ui.includes("setInterval")],
+  ["9 ingredient inventory",service.includes("inventory_role")&&service.includes("recipe_usage")&&service.includes("convertIngredientQuantity")&&ui.includes("Ingredient Inventory")],
   ["10 advanced reporting",service.includes("getSignaturePlusReport")&&ui.includes("Net Sales")&&ui.includes("Payment Methods")],
 ];
 
