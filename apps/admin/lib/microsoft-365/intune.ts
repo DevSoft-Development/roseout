@@ -81,7 +81,7 @@ const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   siriBlockedWhenLocked: false,
   voiceDialingBlocked: false,
   wallpaperBlockModification: false,
-  safariBlockFraudWarning: true,
+  safariRequireFraudWarning: true,
 } as const;
 
 async function getAllPages<T>(userId: string, path: string, maxPages = 10): Promise<T[]> {
