@@ -9,6 +9,7 @@ const catalog = read("lib/admin/credential-vault-catalog.ts");
 const adminCatalog = read("apps/admin/lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
+const inventory = read("infra/supabase/operational-shards/inventory-v7.sql").toLowerCase();
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
 const rebalance = read("scripts/operational-shard-rebalance.mjs");
 const initialPlacement = read("scripts/operational-shard-initial-placement.mjs");
@@ -45,9 +46,6 @@ for (const token of [
   "reservation_seating_resources_parent_layout_item_fk_idx",
   "reservation_resource_assignments",
   "reservation_resource_assignments_location_idx",
-  "pos_inventory_items",
-  "pos_inventory_transactions",
-  "pos_inventory_adjustments",
   "provider_call_lease_expires_at",
   "pos_expire_stale_card_tenders",
   "pos_provider_call_lease_v6",
@@ -56,6 +54,19 @@ for (const token of [
   if (!hardening.includes(token)) throw new Error(`Missing shard hardening invariant: ${token}`);
 }
 
+
+for (const token of [
+  "create table if not exists public.pos_inventory_items",
+  "create table if not exists public.pos_inventory_transactions",
+  "create table if not exists public.pos_inventory_adjustments",
+  "pos_reserve_inventory",
+  "pos_adjust_inventory",
+  "for update",
+  "20261007_pos_inventory_v7",
+  "toh_operational_dr",
+]) {
+  if (!inventory.includes(token)) throw new Error(`Missing inventory shard invariant: ${token}`);
+}
 
 for (const token of [
   "primary_location_write_fences",
@@ -120,6 +131,9 @@ for (const token of [
   "x-theouthaven-rebalance-token",
   "extensions.digest",
   "reservation_resource_assignments",
+  "pos_inventory_items",
+  "pos_inventory_transactions",
+  "pos_inventory_adjustments",
   "new-shard-standby",
   "operational_write_fence_standby_v5",
 ]) {
@@ -156,6 +170,9 @@ for (const token of [
   "targetFenceReleased",
   "target_fence_release_failed",
   "reservation_resource_assignments",
+  "pos_inventory_items",
+  "pos_inventory_transactions",
+  "pos_inventory_adjustments",
   "classifyAuthoritativeCutoverState",
   "ambiguous_cutover_state",
   "authoritativeCutoverState === \"cutover\"",
@@ -201,6 +218,9 @@ for (const token of [
   "alter subscription $SUB enable",
   "replication_state='healthy'",
   "pos_expire_stale_card_tenders",
+  "pos_inventory_items",
+  "pos_inventory_transactions",
+  "pos_inventory_adjustments",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -260,11 +280,16 @@ for (const token of [
   "standby-dr-replication",
   "reservation_resource_assignments",
   "hardening-v2.sql",
+  "inventory-v7.sql",
+  "pos_inventory_items",
+  "pos_inventory_transactions",
+  "pos_inventory_adjustments",
 ]) {
   if (!replicationWorkflow.includes(token)) throw new Error(`Missing replication standby safety invariant: ${token}`);
 }
 for (const token of [
   "hardening-v2.sql",
+  "inventory-v7.sql",
   "standby-dr",
   "standby-primary",
   "schema_version=7",
