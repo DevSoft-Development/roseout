@@ -259,3 +259,59 @@ export function addPosTableItem(input:{
 export function sendPosTableCourses(input:{deviceId:string;credential:string;checkId:string;courses?:string[]|null}){
   return mutatePosTable({...input,body:{action:"send_courses",checkId:input.checkId,courses:input.courses??null}});
 }
+
+
+export type SignaturePlusKdsTicket={
+  id:string;checkId:string;tableLabels:string[];course:string;status:string;held:boolean;
+  sentAt:string;firedAt?:string|null;elapsedSeconds:number;stations:string[];
+  lines:{id:string;name:string;seatNumber?:number|null;quantity:number;modifiers:any[];notes?:string|null;status:string;station:string}[];
+};
+
+export type SignaturePlusReport={
+  from:string;to:string;
+  metrics:{
+    grossSalesCents:number;netSalesCents:number;refundsCents:number;tipsCents:number;
+    discountsCents:number;taxCents:number;checks:number;averageCheckCents:number;
+  };
+  paymentMethods:{type:string;amountCents:number}[];
+  topItems:{name:string;quantity:number;salesCents:number}[];
+};
+
+export async function fetchSignaturePlus(input:{deviceId:string;credential:string;view?:"bootstrap"|"kds"|"inventory"|"report";station?:string|null;from?:string|null;to?:string|null}){
+  const params=new URLSearchParams();
+  if(input.view&&input.view!=="bootstrap") params.set("view",input.view);
+  if(input.station) params.set("station",input.station);
+  if(input.from) params.set("from",input.from);
+  if(input.to) params.set("to",input.to);
+  const suffix=params.toString()?("?"+params.toString()):"";
+  return jsonRequest("/api/pos/device/signature-plus"+suffix,{
+    method:"GET",
+    headers:{Authorization:`Bearer ${input.credential}`,"X-Pos-Device-Id":input.deviceId},
+  });
+}
+
+async function mutateSignaturePlus(input:{deviceId:string;credential:string;body:Record<string,unknown>}){
+  const data=await jsonRequest("/api/pos/device/signature-plus",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+      "Content-Type":"application/json",
+    },
+    body:JSON.stringify(input.body),
+  });
+  return data.result;
+}
+
+export function updateSignaturePlusCourse(input:{deviceId:string;credential:string;orderId:string;courseAction:"hold"|"release_hold"|"fire"|"ready"}){
+  return mutateSignaturePlus({...input,body:{action:"course_state",orderId:input.orderId,courseAction:input.courseAction}});
+}
+export function moveSignaturePlusTable(input:{deviceId:string;credential:string;checkId:string;targetLayoutItemId:string;merge?:boolean}){
+  return mutateSignaturePlus({...input,body:{action:input.merge?"table_merge":"table_move",checkId:input.checkId,targetLayoutItemId:input.targetLayoutItemId}});
+}
+export function transferSignaturePlusServer(input:{deviceId:string;credential:string;checkId:string;staffProfileId:string}){
+  return mutateSignaturePlus({...input,body:{action:"transfer_server",checkId:input.checkId,staffProfileId:input.staffProfileId}});
+}
+export function createSignaturePlusSplit(input:{deviceId:string;credential:string;checkId:string;mode:"by_guest"|"even"|"custom";parts?:number;custom?:Record<string,number>}){
+  return mutateSignaturePlus({...input,body:{action:"split",checkId:input.checkId,mode:input.mode,parts:input.parts,custom:input.custom}});
+}
