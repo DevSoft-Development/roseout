@@ -13,6 +13,10 @@ const status=read("app/api/pos/device/orders/status/route.ts");
 const mobileCloud=read("pos-mobile/lib/device/cloud.ts");
 const dispatcher=read("pos-mobile/lib/device/command-dispatcher.ts");
 const orderingSql=read("infra/supabase/operational-shards/online-ordering-v8.sql").toLowerCase();
+const workspace=read("pos-mobile/app/index.tsx");
+const localRouting=read("pos-mobile/lib/output/local-runtime.ts");
+const configRoute=read("app/api/pos/device/config/route.ts");
+const ordersRoute=read("app/api/pos/device/orders/route.ts");
 
 for(const token of [
   "create table if not exists public.pos_device_claim_codes",
@@ -66,6 +70,19 @@ for(const token of ["sendSms","sendRawBrandedEmail","received","preparing","read
 }
 for(const token of ["pos_update_online_order_status","online_order_invalid_transition","order_status_changed"]) {
   if(!orderingSql.includes(token)) throw new Error(`Operational order status invariant missing: ${token}`);
+}
+
+for(const token of ["Online Orders","Accept","Start preparing","Mark ready","Complete pickup","fetchPosActiveOnlineOrders","pollAndDispatchPosCommands"]) {
+  if(!workspace.includes(token)) throw new Error(`Cashier online-orders workspace missing: ${token}`);
+}
+for(const token of ["scanLocalDevices","serialNumber","providerDeviceId","savePosOutputRoutes","RoleBasedPosOutputRouter"]) {
+  if(!localRouting.includes(token)) throw new Error(`Local output resolver missing: ${token}`);
+}
+for(const token of ["authenticatePosDeviceCredential","getPosDeviceOutputConfig","Cache-Control"]) {
+  if(!configRoute.includes(token)) throw new Error(`POS config endpoint missing: ${token}`);
+}
+for(const token of ["authenticatePosDeviceCredential","listPosActiveOnlineOrders","Cache-Control"]) {
+  if(!ordersRoute.includes(token)) throw new Error(`POS active-orders endpoint missing: ${token}`);
 }
 
 console.log("ThePOSHaven online-order fulfillment verified.");
