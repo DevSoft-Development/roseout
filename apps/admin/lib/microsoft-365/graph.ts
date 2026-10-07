@@ -132,7 +132,15 @@ async function graphFetch<T>(
   }
 
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+
+  const raw = await response.text();
+  if (!raw.trim()) return undefined as T;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(`M365_GRAPH_INVALID_JSON_${response.status}:${raw.slice(0, 1200)}`);
+  }
 }
 
 export function microsoftGraphFetch<T>(
