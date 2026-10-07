@@ -51,8 +51,8 @@ export function AppleConfiguratorEnrollmentGuide({ appleConnected, managementSer
           <ol className="mt-4 space-y-3 text-sm font-semibold leading-6 text-white/55">
             <li><span className="font-black text-white">1.</span> Power on the iPhone or iPad and begin Setup Assistant.</li>
             <li><span className="font-black text-white">2.</span> Stop at the Wi-Fi selection screen before completing setup.</li>
-            <li><span className="font-black text-white">3.</span> Use the enrollment iPhone running Apple Configurator to pair and add the device to Apple Business Manager.</li>
-            <li><span className="font-black text-white">4.</span> Return here, refresh, then click <span className="font-black text-white">Prepare for Intune</span>.</li>
+            <li><span className="font-black text-white">3.</span> Use Apple Configurator to add the device to Apple Business Manager only; skip direct device-management enrollment in Configurator.</li>
+            <li><span className="font-black text-white">4.</span> Return here, refresh, then click <span className="font-black text-white">Activate Device</span>.</li>
           </ol>
           <div className="mt-4 rounded-2xl border border-emerald-300/10 bg-black/15 px-4 py-3 text-xs font-semibold leading-5 text-emerald-100/70">
             Best option for brand-new company hardware because no user data needs to be moved first.
@@ -75,7 +75,7 @@ export function AppleConfiguratorEnrollmentGuide({ appleConnected, managementSer
             <li><span className="font-black text-white">1.</span> Confirm required work data is backed up or otherwise retained.</li>
             <li><span className="font-black text-white">2.</span> Sign out or remove activation-lock dependencies as required by your company handoff process.</li>
             <li><span className="font-black text-white">3.</span> Erase the iPhone or iPad and return it to Setup Assistant.</li>
-            <li><span className="font-black text-white">4.</span> Follow the same Configurator pairing flow as a new device, then refresh this page and prepare it for Intune.</li>
+            <li><span className="font-black text-white">4.</span> Follow the same Configurator pairing flow as a new device, then refresh this page and activate it.</li>
           </ol>
         </div>
       </div>
@@ -87,7 +87,7 @@ export function AppleConfiguratorEnrollmentGuide({ appleConnected, managementSer
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-center gap-2 text-white"><ScanLine className="h-4 w-4" /><p className="text-sm font-black">2. Pair with Configurator</p></div>
-          <p className="mt-2 text-xs font-semibold leading-5 text-white/45">Open Apple Configurator on the enrollment iPhone, sign in, bring it near the device, and scan the pairing image.</p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-white/45">Use Apple Configurator to add the device to Apple Business Manager. Configurator is only the Apple bootstrap step; TheOutHaven handles Intune afterward.</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-center gap-2 text-white"><Wifi className="h-4 w-4" /><p className="text-sm font-black">3. Wait for Apple</p></div>
@@ -95,7 +95,7 @@ export function AppleConfiguratorEnrollmentGuide({ appleConnected, managementSer
         </div>
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
           <div className="flex items-center gap-2 text-white"><RefreshCw className="h-4 w-4" /><p className="text-sm font-black">4. Refresh here</p></div>
-          <p className="mt-2 text-xs font-semibold leading-5 text-white/45">The serial will appear below. Click Prepare for Intune and TheOutHaven handles assignment plus the Intune ADE sync to {managementServiceName || "your management service"}.</p>
+          <p className="mt-2 text-xs font-semibold leading-5 text-white/45">The serial will appear below. Click Activate Device and TheOutHaven assigns Apple Business Manager to {managementServiceName || "your management service"}, syncs ADE, assigns the iOS enrollment profile, and applies Standard Managed Device.</p>
         </div>
       </div>
 

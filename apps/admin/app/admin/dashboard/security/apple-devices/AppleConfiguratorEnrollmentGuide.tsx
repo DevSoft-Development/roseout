@@ -36,8 +36,8 @@ export function AppleConfiguratorEnrollmentGuide({
           <ol>
             <li>Start Setup Assistant and stop at Wi-Fi.</li>
             <li>Open Apple Configurator on the enrollment iPhone.</li>
-            <li>Pair and add the device to Apple Business Manager.</li>
-            <li>Refresh this page and choose Prepare for Intune.</li>
+            <li>Pair and add the device to Apple Business Manager only. Do not complete direct Intune enrollment in Configurator.</li>
+            <li>Refresh this page and choose Activate Device.</li>
           </ol>
         </article>
         <article>
@@ -46,7 +46,7 @@ export function AppleConfiguratorEnrollmentGuide({
             <li>Back up required company data.</li>
             <li>Remove activation-lock dependencies if needed.</li>
             <li>Erase the device and return to Setup Assistant.</li>
-            <li>Run the same Configurator pairing flow, then prepare it here.</li>
+            <li>Run the same Configurator pairing flow, then activate it here.</li>
           </ol>
         </article>
       </div>
