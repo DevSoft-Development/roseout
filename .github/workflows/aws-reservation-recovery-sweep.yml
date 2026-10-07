@@ -118,7 +118,7 @@ jobs:
             echo '- Concurrency: 8'
             echo '- Statuses: not_found only'
             echo '- Rendered fallback: first 3 eligible rows per batch'
-            echo '- Renderer concurrency cap: 2 isolated Lambda executions'
+            echo '- Renderer isolation: dedicated Lambda; worker caps rendered fallback to 3 rows per batch'
             echo '- Google calls: 0'
             echo '- Isolation: separate EventBridge schedule group; canonical 65-schedule fleet unchanged'
             echo '- Retry policy: honor reservation_discovery_next_retry_at'\n            echo '- Safety cap: schedule auto-deletes after 30 minutes'
