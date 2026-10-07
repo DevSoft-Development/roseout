@@ -39,8 +39,10 @@ export async function fetchPosDeviceCommands(input:{
   deviceId:string;
   credential:string;
   limit?:number;
+  waitSeconds?:number;
 }) {
-  const data=await jsonRequest(`/api/pos/device/commands?limit=${Math.min(Math.max(input.limit||10,1),25)}`,{
+  const waitSeconds=Math.min(Math.max(input.waitSeconds||0,0),25);
+  const data=await jsonRequest(`/api/pos/device/commands?limit=${Math.min(Math.max(input.limit||10,1),25)}&waitSeconds=${waitSeconds}`,{
     method:"GET",
     headers:{
       Authorization:`Bearer ${input.credential}`,
