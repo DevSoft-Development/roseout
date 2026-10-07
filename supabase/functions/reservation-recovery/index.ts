@@ -124,6 +124,7 @@ serve(async (req) => {
     renderedAttempted: 0,
     renderedFound: 0,
     renderedFailed: 0,
+    renderedErrors: {} as Record<string, number>,
     googleCalls: 0,
     requestedStatuses,
     providerCounts: {} as Record<string, number>,
@@ -159,6 +160,12 @@ serve(async (req) => {
           }
         } else {
           counters.renderedFailed += 1;
+          const rendererError = String(rendered.error || "renderer_unknown_error").slice(0, 160);
+          counters.renderedErrors[rendererError] = (counters.renderedErrors[rendererError] || 0) + 1;
+          discovery = {
+            ...discovery,
+            note: [discovery.note, `Rendered fallback failed: ${rendererError}`].filter(Boolean).join(" | ").slice(0, 500),
+          };
         }
       }
 
@@ -228,6 +235,8 @@ serve(async (req) => {
         renderedFallback,
         renderedAttempted: counters.renderedAttempted,
         renderedFound: counters.renderedFound,
+        renderedFailed: counters.renderedFailed,
+        renderedErrors: counters.renderedErrors,
       },
     }).eq("id", runId);
   }
