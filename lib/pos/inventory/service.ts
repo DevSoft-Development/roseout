@@ -149,3 +149,16 @@ export async function adjustPosInventory(input: {
   if (error) throw new Error(error.message || "pos_inventory_adjustment_failed");
   return normalizeAvailability(data as Record<string, any>);
 }
+
+export async function releasePosInventory(input: {
+  locationId: string;
+  idempotencyKey: string;
+}) {
+  const shard = await resolveOperationalShardForLocationId(input.locationId, { mode: "write" });
+  const { data, error } = await shard.client.rpc("pos_release_inventory", {
+    p_location_id: input.locationId,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw new Error(error.message || "pos_inventory_release_failed");
+  return data as Record<string, unknown>;
+}
