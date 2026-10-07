@@ -259,3 +259,91 @@ export async function acknowledgePosDeviceCommand(input: {
   }
   return { acknowledged:input.ok };
 }
+
+export async function getPosDeviceOutputConfig(input: {
+  deviceId: string;
+  locationId: string;
+}) {
+  const { data, error } = await supabaseAdmin
+    .from("pos_hardware_assignments")
+    .select("device_id,role,station_key,updated_at,pos_hardware_devices!inner(id,serial_number,provider,provider_device_id,device_type,lifecycle_status)")
+    .eq("location_id", input.locationId)
+    .eq("assignment_status", "active")
+    .order("role", { ascending: true });
+  if (error) throw new Error(error.message || "pos_output_config_failed");
+
+  const routes = (data || []).flatMap((row: any) => {
+    const device = row.pos_hardware_devices;
+    if (!device || !["receipt_printer","kitchen_printer","cash_drawer"].includes(String(device.device_type))) return [];
+    return [{
+      role: String(row.role),
+      deviceId: String(row.device_id),
+      stationKey: String(row.station_key || "default"),
+      priority: Number((row as any).metadata?.priority || 0),
+      serialNumber: device.serial_number ? String(device.serial_number) : null,
+      provider: device.provider ? String(device.provider) : null,
+      providerDeviceId: device.provider_device_id ? String(device.provider_device_id) : null,
+    }];
+  });
+
+  const revision = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(routes))
+    .digest("hex")
+    .slice(0, 20);
+
+  return { revision, routes };
+}
+
+export async function listPosActiveOnlineOrders(input: {
+  locationId: string;
+  limit?: number;
+}) {
+  const shard = await resolveOperationalShardForLocationId(input.locationId, { mode: "read" });
+  const limit = Math.min(Math.max(Number(input.limit || 50), 1), 100);
+  const { data: orders, error } = await shard.client
+    .from("pos_online_orders")
+    .select("id,status,customer_name,customer_email,customer_phone,promised_pickup_at,subtotal_cents,tax_cents,service_charge_cents,tip_cents,total_cents,created_at,order_id")
+    .eq("location_id", input.locationId)
+    .in("status", ["received","accepted","preparing","ready"])
+    .order("promised_pickup_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(error.message || "pos_online_orders_list_failed");
+
+  const orderIds = (orders || []).map((order: any) => order.order_id).filter(Boolean);
+  let lines: any[] = [];
+  if (orderIds.length) {
+    const { data, error: linesError } = await shard.client
+      .from("pos_order_items")
+      .select("order_id,item_name,quantity,modifiers,notes")
+      .in("order_id", orderIds)
+      .order("created_at", { ascending: true });
+    if (linesError) throw new Error(linesError.message || "pos_online_order_lines_failed");
+    lines = data || [];
+  }
+
+  return (orders || []).map((order: any) => ({
+    id: String(order.id),
+    status: String(order.status),
+    customerName: String(order.customer_name || "Guest"),
+    customerEmail: order.customer_email || null,
+    customerPhone: order.customer_phone || null,
+    promisedPickupAt: order.promised_pickup_at || null,
+    createdAt: order.created_at,
+    amounts: {
+      subtotalCents: Number(order.subtotal_cents || 0),
+      taxCents: Number(order.tax_cents || 0),
+      serviceChargeCents: Number(order.service_charge_cents || 0),
+      tipCents: Number(order.tip_cents || 0),
+      totalCents: Number(order.total_cents || 0),
+    },
+    lines: lines
+      .filter((line: any) => String(line.order_id) === String(order.order_id))
+      .map((line: any) => ({
+        name: String(line.item_name || "Item"),
+        quantity: Number(line.quantity || 1),
+        modifiers: Array.isArray(line.modifiers) ? line.modifiers : [],
+        notes: line.notes || null,
+      })),
+  }));
+}
