@@ -233,7 +233,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path=public
-as $
+as $$
 declare
   v_order public.pos_online_orders%rowtype;
   v_next_status text;
@@ -290,7 +290,7 @@ begin
 
   return jsonb_build_object('online_order_id',v_order.id,'status',v_order.status,'idempotent_replay',false);
 end;
-$;
+$$;
 
 revoke all on function public.pos_finalize_online_order_payment(uuid,uuid,text,boolean) from public,anon,authenticated;
 grant execute on function public.pos_finalize_online_order_payment(uuid,uuid,text,boolean) to service_role;
@@ -304,7 +304,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path=public
-as $
+as $$
 declare
   v_order public.pos_online_orders%rowtype;
 begin
@@ -339,7 +339,7 @@ begin
 
   return jsonb_build_object('online_order_id',v_order.id,'status','canceled','idempotent_replay',false);
 end;
-$;
+$$;
 
 revoke all on function public.pos_cancel_online_order(uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.pos_cancel_online_order(uuid,uuid,text) to service_role;
@@ -355,7 +355,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path=public
-as $
+as $$
 declare
   v_order public.pos_online_orders%rowtype;
   v_current text;
@@ -430,7 +430,7 @@ begin
     'idempotent_replay',false
   );
 end;
-$;
+$$;
 
 revoke all on function public.pos_update_online_order_status(uuid,uuid,text,text,text) from public,anon,authenticated;
 grant execute on function public.pos_update_online_order_status(uuid,uuid,text,text,text) to service_role;
