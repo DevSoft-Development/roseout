@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { buildLocationSemanticDocument, EMBEDDING_MODEL, EMBEDDING_VERSION } from "@/lib/search/enterprise/semantic";
+import { buildLocationSemanticDocument, EMBEDDING_MODEL, EMBEDDING_VERSION, isEligibleForPublicEmbedding } from "@/lib/search/enterprise/semantic";
 import { classifySearchLocation } from "@/lib/search/enterprise/classification";
 import { AzureQueryEmbeddingProvider } from "@/lib/search/v3/semantic/azureQueryEmbeddingProvider";
 
@@ -82,12 +82,47 @@ function reviewProfileNeedsSync(review: any, profile: any) {
   return sourceUpdatedAt > 0 && sourceUpdatedAt > syncedAt;
 }
 
+const CANDIDATE_LOCATION_FIELDS = [
+  "id",
+  "updated_at",
+  "created_at",
+  "is_searchable",
+  "is_hidden",
+  "active",
+  "deleted_at",
+  "status",
+  "data_status",
+  "duplicate_status",
+  "canonical_search_type",
+  "admin_canonical_search_type",
+  "location_type",
+  "source_entity_type",
+  "source_table",
+  "type",
+  "restaurant_name",
+  "cuisine",
+  "cuisine_type",
+  "activity_name",
+  "activity_type",
+  "primary_category",
+  "category",
+  "google_types",
+  "tags",
+  "vibe_tags",
+  "best_for_tags",
+  "date_style_tags",
+  "search_keywords",
+  "semantic_tags",
+  "intent_tags",
+  "description",
+  "search_document",
+  "semantic_search_text",
+].join(",");
+
 function semanticCandidateEligible(location: any) {
   try {
-    const document = buildLocationSemanticDocument(location as any);
-    if (!document.eligibleForPublicEmbedding) return false;
-    const classification = classifySearchLocation(location as any);
-    return classification.canonicalType !== "unsupported";
+    if (!isEligibleForPublicEmbedding(location as any).eligible) return false;
+    return classifySearchLocation(location as any).canonicalType !== "unsupported";
   } catch {
     return false;
   }
@@ -105,7 +140,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
   ) {
     const { data: locationRows, error: locationError } = await supabaseAdmin
       .from("locations")
-      .select("*")
+      .select(CANDIDATE_LOCATION_FIELDS)
       .eq("is_searchable", true)
       .eq("is_hidden", false)
       .eq("active", true)
@@ -176,7 +211,7 @@ async function getReviewPriorityLocationIds(limit: number) {
             .in("location_id", ids),
           supabaseAdmin
             .from("locations")
-            .select("*")
+            .select(CANDIDATE_LOCATION_FIELDS)
             .in("id", ids),
         ])
       : [
