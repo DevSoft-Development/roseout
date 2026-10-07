@@ -98,6 +98,19 @@ export async function listSignaturePlusKds(input:{locationId:string;station?:str
   return tickets;
 }
 
+const UNIT_TO_BASE:Record<string,{family:string;factor:number}>={
+  unit:{family:"count",factor:1},each:{family:"count",factor:1},portion:{family:"count",factor:1},bottle:{family:"count",factor:1},
+  oz:{family:"mass",factor:1},lb:{family:"mass",factor:16},
+  ml:{family:"volume",factor:1},l:{family:"volume",factor:1000},
+  tsp:{family:"volume",factor:4.92892},tbsp:{family:"volume",factor:14.7868},cup:{family:"volume",factor:236.588},
+};
+function convertIngredientQuantity(quantity:number,fromUnit:string,toUnit:string){
+  const from=UNIT_TO_BASE[String(fromUnit||"unit").toLowerCase()];
+  const to=UNIT_TO_BASE[String(toUnit||"unit").toLowerCase()];
+  if(!from||!to||from.family!==to.family) throw new Error("pos_signature_recipe_unit_mismatch");
+  return Number(((quantity*from.factor)/to.factor).toFixed(4));
+}
+
 async function consumeRecipeIngredients(locationId:string,orderId:string){
   const shard=await resolveOperationalShardForLocationId(locationId,{mode:"read"});
   const {data:lines,error}=await shard.client.from("pos_order_items")
@@ -113,7 +126,11 @@ async function consumeRecipeIngredients(locationId:string,orderId:string){
       const ingredientId=String(component?.catalogItemId||component?.catalog_item_id||"");
       const units=Number(component?.quantity||component?.units||0);
       if(!ingredientId||!Number.isFinite(units)||units<=0) continue;
-      deltas.set(ingredientId,(deltas.get(ingredientId)||0)-(units*Number(line.quantity||1)));
+      const ingredient=byId.get(ingredientId) as any;
+      const recipeUnit=String(component?.unit||ingredient?.metadata?.inventory_unit||"unit");
+      const inventoryUnit=String(ingredient?.metadata?.inventory_unit||recipeUnit);
+      const normalized=convertIngredientQuantity(units,recipeUnit,inventoryUnit);
+      deltas.set(ingredientId,Number(((deltas.get(ingredientId)||0)-(normalized*Number(line.quantity||1))).toFixed(4)));
     }
   }
   for(const [catalogItemId,quantityDelta] of deltas){
@@ -307,9 +324,10 @@ export async function getSignaturePlusInventory(locationId:string){
     ingredients:ingredients.map((item:any)=>{
       const stock=availability.get(item.id);
       return {
-        id:item.id,name:item.name,unit:String(item.metadata?.inventory_unit||"unit"),
+        id:item.id,name:item.name,unit:stock?.unitCode||String(item.metadata?.inventory_unit||"unit"),
         quantityOnHand:stock?.quantityOnHand??0,lowStock:stock?.lowStock===true,soldOut:stock?.soldOut===true,
-        lowStockThreshold:stock?.lowStockThreshold??null,
+        lowStockThreshold:stock?.lowStockThreshold??null,reorderPoint:stock?.reorderPoint??null,
+        reorderQuantity:stock?.reorderQuantity??null,preferredVendor:stock?.preferredVendor??null,vendorSku:stock?.vendorSku??null,
       };
     }),
     recipes,
