@@ -217,3 +217,23 @@ export async function transferPosInventory(input:{
   if(error) throw new Error(error.message||"pos_inventory_transfer_failed");
   return {transferId:String(data||"")};
 }
+
+
+export async function createPosInventoryStockArea(input:{
+  locationId:string;code:string;name:string;
+}){
+  const code=String(input.code||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+  const name=String(input.name||"").trim();
+  if(!code||!name) throw new Error("pos_inventory_invalid_stock_area");
+  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"write"});
+  const {data,error}=await shard.client.from("pos_inventory_stock_areas")
+    .upsert({
+      location_id:input.locationId,code,name,is_active:true,updated_at:new Date().toISOString(),
+    },{onConflict:"location_id,code"})
+    .select("id,code,name,is_active,updated_at").single();
+  if(error) throw new Error(error.message||"pos_inventory_stock_area_failed");
+  return {
+    id:String(data.id),code:String(data.code),name:String(data.name),
+    isActive:data.is_active===true,updatedAt:data.updated_at,
+  };
+}
