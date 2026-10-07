@@ -55,6 +55,9 @@ jobs:
       - name: Verify secure cashier device identity
         run: npm run verify:device-identity
 
+      - name: Verify role-based output routing
+        run: npm run verify:output-routing
+
       - name: Verify separate app identity and POS-only network permissions
         run: |
           set -euo pipefail
