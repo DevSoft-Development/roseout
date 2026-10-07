@@ -156,7 +156,7 @@ export function createDefaultRetrievalProviders(
     ...semantic.providers,
   ];
 
-  if (options.reviewIntelligence?.enabled === true) {
+  if (options.reviewIntelligence?.enabled !== false) {
     providers.push(
       new SupabaseReviewIntelligenceRetrievalProvider(
         client,
