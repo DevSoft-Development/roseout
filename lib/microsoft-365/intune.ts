@@ -59,7 +59,6 @@ export type IntuneIosEnrollmentProfile = {
 
 export type IntuneVppToken = {
   id: string;
-  displayName?: string | null;
   organizationName?: string | null;
   vppTokenAccountType?: string | null;
   state?: string | null;
@@ -201,7 +200,7 @@ export async function getDefaultIntuneIosEnrollmentProfile(userId: string, depOn
 export async function listIntuneVppTokens(userId: string) {
   const payload = await microsoftGraphFetch<GraphCollection<IntuneVppToken>>(
     userId,
-    "/deviceAppManagement/vppTokens?$select=id,displayName,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps,lastAppCount",
+    "/deviceAppManagement/vppTokens?$select=id,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps,lastAppCount",
   );
   return payload.value || [];
 }
