@@ -18,10 +18,16 @@ export type PosInventoryAvailability = {
   vendorSku: string | null;
 };
 
+function finiteNumber(value:unknown){
+  if(value===null||value===undefined||value==="") return null;
+  const number=Number(value);
+  return Number.isFinite(number)?number:null;
+}
+
 function normalizeAvailability(row: Record<string, any>): PosInventoryAvailability {
   const trackingMode = row.tracking_mode === "quantity" ? "quantity" : "untracked";
-  const quantityOnHand = Number.isInteger(row.quantity_on_hand) ? Number(row.quantity_on_hand) : null;
-  const lowStockThreshold = Number.isInteger(row.low_stock_threshold) ? Number(row.low_stock_threshold) : null;
+  const quantityOnHand = finiteNumber(row.quantity_on_hand);
+  const lowStockThreshold = finiteNumber(row.low_stock_threshold);
   const temporarySoldOut =
     typeof row.sold_out_until === "string" &&
     Number.isFinite(Date.parse(row.sold_out_until)) &&
@@ -45,8 +51,8 @@ function normalizeAvailability(row: Record<string, any>): PosInventoryAvailabili
       quantityOnHand <= lowStockThreshold,
     soldOut,
     unitCode:String(row.unit_code||"unit"),
-    reorderPoint:row.reorder_point==null?null:Number(row.reorder_point),
-    reorderQuantity:row.reorder_quantity==null?null:Number(row.reorder_quantity),
+    reorderPoint:finiteNumber(row.reorder_point),
+    reorderQuantity:finiteNumber(row.reorder_quantity),
     preferredVendor:row.preferred_vendor==null?null:String(row.preferred_vendor),
     vendorSku:row.vendor_sku==null?null:String(row.vendor_sku),
   };
@@ -210,4 +216,24 @@ export async function transferPosInventory(input:{
   });
   if(error) throw new Error(error.message||"pos_inventory_transfer_failed");
   return {transferId:String(data||"")};
+}
+
+
+export async function createPosInventoryStockArea(input:{
+  locationId:string;code:string;name:string;
+}){
+  const code=String(input.code||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+  const name=String(input.name||"").trim();
+  if(!code||!name) throw new Error("pos_inventory_invalid_stock_area");
+  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"write"});
+  const {data,error}=await shard.client.from("pos_inventory_stock_areas")
+    .upsert({
+      location_id:input.locationId,code,name,is_active:true,updated_at:new Date().toISOString(),
+    },{onConflict:"location_id,code"})
+    .select("id,code,name,is_active,updated_at").single();
+  if(error) throw new Error(error.message||"pos_inventory_stock_area_failed");
+  return {
+    id:String(data.id),code:String(data.code),name:String(data.name),
+    isActive:data.is_active===true,updatedAt:data.updated_at,
+  };
 }

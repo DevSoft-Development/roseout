@@ -8,6 +8,10 @@ const command=readFileSync("lib/pos/device-command-service.ts","utf8");
 const root=readFileSync("app/api/pos/device/signature-plus/route.ts","utf8");
 const consumer=readFileSync("apps/consumer/app/api/pos/device/signature-plus/route.ts","utf8");
 const access=readFileSync("lib/pos/access.ts","utf8");
+const inventoryService=readFileSync("lib/pos/inventory/service.ts","utf8");
+const businessOps=readFileSync("apps/business/app/locations/dashboard/pos/operations/page.tsx","utf8");
+const businessHub=readFileSync("apps/business/app/locations/dashboard/pos/page.tsx","utf8");
+const businessActions=readFileSync("apps/business/app/locations/dashboard/pos/operations/actions.ts","utf8");
 
 const features=[
   ["1 hold / fire",service.includes('"hold"|"release_hold"|"fire"|"ready"')&&ui.includes("Mark Ready")&&ui.includes(">Hold<")],
@@ -20,6 +24,10 @@ const features=[
   ["8 multi device synchronization",command.includes('"pos_state_changed"')&&service.includes("enqueuePosLocationCommand")&&cloud.includes("waitSeconds")&&!ui.includes("setInterval")],
   ["9 ingredient inventory",service.includes("inventory_role")&&service.includes("recipe_usage")&&service.includes("convertIngredientQuantity")&&ui.includes("Ingredient Inventory")],
   ["10 advanced reporting",service.includes("getSignaturePlusReport")&&ui.includes("Net Sales")&&ui.includes("Payment Methods")],
+  ["11 stock area operations",service.includes("pos_inventory_stock_areas")&&service.includes("recentTransfers")&&businessOps.includes("Stock areas")&&businessActions.includes("transferPosInventory")],
+  ["12 waste operations",service.includes("recentWaste")&&businessOps.includes("Log waste")&&businessActions.includes("wastePosInventory")],
+  ["13 reorder visibility",service.includes("reorderNeeded")&&businessOps.includes("Reorder queue")],
+  ["14 end of shift reporting",service.includes("serverPerformance")&&service.includes("courseMix")&&service.includes("inventoryMetrics")&&businessOps.includes("End-of-shift report")],
 ];
 
 const failed=features.filter(([,ok])=>!ok).map(([name])=>name);
@@ -40,5 +48,20 @@ for(const token of ["fetchSignaturePlus","updateSignaturePlusCourse","moveSignat
 if(!home.includes('workspaceMode==="signature"')||!home.includes("SignaturePlusWorkspace")){
   throw new Error("Signature+ must be reachable from the POS shell.");
 }
+if(inventoryService.includes("Number.isInteger(row.quantity_on_hand)")||inventoryService.includes("Number.isInteger(row.low_stock_threshold)")){
+  throw new Error("Fractional ingredient inventory must not be normalized as integer-only.");
+}
+for(const token of ["createPosInventoryStockArea","transferPosInventory","wastePosInventory"]){
+  if(!inventoryService.includes(token)) throw new Error("Stack 6 inventory service missing: "+token);
+}
+for(const token of ["requireSignaturePlusAccess","hasLocationPermission","recordPosInventoryWaste","transferPosInventoryStock","createPosInventoryArea"]){
+  if(!businessActions.includes(token)) throw new Error("Stack 6 Business action missing: "+token);
+}
+if(!businessHub.includes("Inventory + Shift")||!businessHub.includes("/locations/dashboard/pos/operations")){
+  throw new Error("Stack 6 operations entry point is missing from the POS control center.");
+}
+for(const token of ["Ingredient inventory","Area balances","Reorder queue","End-of-shift report","Server performance","Inventory movement"]){
+  if(!businessOps.includes(token)) throw new Error("Stack 6 Business operations UI missing: "+token);
+}
 
-console.log("ThePOSHaven Signature+ features 1-10 verified.");
+console.log("ThePOSHaven Signature+ features 1-14 verified.");
