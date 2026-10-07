@@ -155,6 +155,9 @@ const tables = [
   ["pos_order_items", "location_id"],
   ["pos_tenders", "location_id"],
   ["pos_payments", "location_id"],
+  ["pos_inventory_items", "location_id"],
+  ["pos_inventory_transactions", "location_id"],
+  ["pos_inventory_adjustments", "location_id"],
 ];
 
 const deletionOrder = [...tables].reverse();
