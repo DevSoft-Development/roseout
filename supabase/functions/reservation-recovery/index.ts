@@ -124,6 +124,7 @@ serve(async (req) => {
     renderedAttempted: 0,
     renderedFound: 0,
     renderedFailed: 0,
+    renderedErrorCounts: {} as Record<string, number>,
     googleCalls: 0,
     requestedStatuses,
     providerCounts: {} as Record<string, number>,
@@ -159,6 +160,8 @@ serve(async (req) => {
           }
         } else {
           counters.renderedFailed += 1;
+          const renderedError = String(rendered.error || "renderer_failed");
+          counters.renderedErrorCounts[renderedError] = (counters.renderedErrorCounts[renderedError] || 0) + 1;
         }
       }
 
