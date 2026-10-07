@@ -16,7 +16,7 @@ type Tab="kds"|"tables"|"inventory"|"reports";
 function money(cents:number){return "$"+(Number(cents||0)/100).toFixed(2);}
 function pretty(value:string){return String(value||"").replace(/_/g," ").replace(/w/g,m=>m.toUpperCase());}
 
-export default function SignaturePlusWorkspace({session}:{session:PosClaimSession}){
+export default function SignaturePlusWorkspace({session,refreshToken=0}:{session:PosClaimSession;refreshToken?:number}){
   const [tab,setTab]=useState<Tab>("kds");
   const [data,setData]=useState<any>(null);
   const [busy,setBusy]=useState(false);
@@ -35,7 +35,8 @@ export default function SignaturePlusWorkspace({session}:{session:PosClaimSessio
     finally{if(!quiet)setBusy(false)}
   },[session.deviceId,session.credential,selectedCheck]);
 
-  useEffect(()=>{void load();const id=setInterval(()=>{void load(true)},4000);return()=>clearInterval(id)},[session.deviceId]);
+  useEffect(()=>{void load();},[session.deviceId]);
+  useEffect(()=>{if(refreshToken>0) void load(true);},[refreshToken]);
 
   const mutate=async(operation:()=>Promise<any>)=>{
     setBusy(true);setError("");
