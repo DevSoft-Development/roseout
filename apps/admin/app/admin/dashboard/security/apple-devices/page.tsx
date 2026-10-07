@@ -1,5 +1,3 @@
-import "./apple-devices.css";
-
 import {
   CheckCircle2,
   CloudCog,
