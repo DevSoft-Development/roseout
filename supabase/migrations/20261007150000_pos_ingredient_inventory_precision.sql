@@ -1,4 +1,5 @@
 -- Signature+ ingredient inventory precision and purchasing metadata.
+-- toh:replicated-dml-reviewed
 -- Keeps Essentials+ item counts compatible while allowing fractional ingredient quantities.
 
 alter table public.pos_inventory_items
