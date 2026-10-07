@@ -92,3 +92,63 @@ export async function updatePosOnlineOrderStatus(input:{
   });
   return data.order as Record<string,unknown>;
 }
+
+export type PosActiveOnlineOrder = {
+  id:string;
+  status:"received"|"accepted"|"preparing"|"ready";
+  customerName:string;
+  customerEmail?:string|null;
+  customerPhone?:string|null;
+  promisedPickupAt?:string|null;
+  createdAt:string;
+  amounts:{
+    subtotalCents:number;
+    taxCents:number;
+    serviceChargeCents:number;
+    tipCents:number;
+    totalCents:number;
+  };
+  lines:{name:string;quantity:number;modifiers:any[];notes?:string|null}[];
+};
+
+export async function fetchPosActiveOnlineOrders(input:{
+  deviceId:string;
+  credential:string;
+  limit?:number;
+}) {
+  const data=await jsonRequest(`/api/pos/device/orders?limit=${Math.min(Math.max(input.limit||50,1),100)}`,{
+    method:"GET",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+    },
+  });
+  return (Array.isArray(data.orders)?data.orders:[]) as PosActiveOnlineOrder[];
+}
+
+export type PosOutputConfigRoute={
+  role:string;
+  deviceId:string;
+  stationKey:string;
+  priority:number;
+  serialNumber?:string|null;
+  provider?:string|null;
+  providerDeviceId?:string|null;
+};
+
+export async function fetchPosOutputConfig(input:{
+  deviceId:string;
+  credential:string;
+}) {
+  const data=await jsonRequest("/api/pos/device/config",{
+    method:"GET",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+    },
+  });
+  return {
+    revision:String(data.config?.revision||""),
+    routes:(Array.isArray(data.config?.routes)?data.config.routes:[]) as PosOutputConfigRoute[],
+  };
+}
