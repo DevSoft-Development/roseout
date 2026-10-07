@@ -57,7 +57,7 @@ export type IntuneIosEnrollmentProfile = {
   "@odata.type"?: string | null;
 };
 
-type IntuneVppToken = {
+export type IntuneVppToken = {
   id: string;
   displayName?: string | null;
   organizationName?: string | null;
