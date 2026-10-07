@@ -10,6 +10,7 @@ export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
     .from("location_intelligence_profiles_v2")
     .select("location_id,classification,search_v3_ready")
     .eq("search_v3_ready", false)
+    .order("updated_at", { ascending: true, nullsFirst: true })
     .limit(safeLimit);
   if (error) throw new Error(`LI V2 readiness repair plan failed: ${error.message}`);
 
