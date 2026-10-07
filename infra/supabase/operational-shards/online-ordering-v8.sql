@@ -219,6 +219,127 @@ grant execute on function public.pos_create_online_order_draft(
   uuid,text,text,text,text,text,timestamptz,timestamptz,integer,integer,integer,integer,text,jsonb,text
 ) to service_role;
 
+create or replace function public.pos_finalize_online_order_payment(
+  p_location_id uuid,
+  p_online_order_id uuid,
+  p_provider_payment_intent_id text,
+  p_auto_accept boolean
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path=public
+as $
+declare
+  v_order public.pos_online_orders%rowtype;
+  v_next_status text;
+begin
+  select * into v_order
+    from public.pos_online_orders
+   where id=p_online_order_id and location_id=p_location_id
+   for update;
+  if not found then raise exception 'online_order_not_found'; end if;
+  if v_order.status in ('completed','canceled') then
+    return jsonb_build_object('online_order_id',v_order.id,'status',v_order.status,'idempotent_replay',true);
+  end if;
+
+  v_next_status := case when p_auto_accept then 'accepted' else 'received' end;
+
+  update public.pos_tenders
+     set status='completed',completed_at=coalesce(completed_at,now()),updated_at=now()
+   where id=v_order.tender_id and location_id=p_location_id and status in ('initiated','completed');
+
+  update public.pos_payments
+     set status='succeeded',succeeded_at=coalesce(succeeded_at,now()),processed_at=coalesce(processed_at,now()),updated_at=now()
+   where tender_id=v_order.tender_id
+     and location_id=p_location_id
+     and provider_payment_intent_id=p_provider_payment_intent_id;
+
+  update public.pos_checks
+     set status='open',
+         amount_paid_cents=greatest(amount_paid_cents,v_order.subtotal_cents+v_order.tax_cents+v_order.service_charge_cents),
+         updated_at=now()
+   where id=v_order.check_id;
+
+  update public.pos_orders
+     set status='sent',sent_at=coalesce(sent_at,now()),updated_at=now()
+   where id=v_order.order_id;
+
+  update public.pos_order_items
+     set status='sent',updated_at=now()
+   where order_id=v_order.order_id and status='active';
+
+  update public.pos_online_orders
+     set provider_payment_intent_id=p_provider_payment_intent_id,
+         status=v_next_status,
+         accepted_at=case when p_auto_accept then coalesce(accepted_at,now()) else accepted_at end,
+         updated_at=now()
+   where id=v_order.id
+   returning * into v_order;
+
+  insert into public.pos_online_order_events(location_id,online_order_id,event_type,metadata)
+  values(p_location_id,v_order.id,'payment_succeeded',jsonb_build_object('provider_payment_intent_id',p_provider_payment_intent_id));
+  if p_auto_accept then
+    insert into public.pos_online_order_events(location_id,online_order_id,event_type,metadata)
+    values(p_location_id,v_order.id,'order_accepted',jsonb_build_object('automatic',true));
+  end if;
+
+  return jsonb_build_object('online_order_id',v_order.id,'status',v_order.status,'idempotent_replay',false);
+end;
+$;
+
+revoke all on function public.pos_finalize_online_order_payment(uuid,uuid,text,boolean) from public,anon,authenticated;
+grant execute on function public.pos_finalize_online_order_payment(uuid,uuid,text,boolean) to service_role;
+
+create or replace function public.pos_cancel_online_order(
+  p_location_id uuid,
+  p_online_order_id uuid,
+  p_reason text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path=public
+as $
+declare
+  v_order public.pos_online_orders%rowtype;
+begin
+  select * into v_order
+    from public.pos_online_orders
+   where id=p_online_order_id and location_id=p_location_id
+   for update;
+  if not found then raise exception 'online_order_not_found'; end if;
+  if v_order.status='canceled' then
+    return jsonb_build_object('online_order_id',v_order.id,'status','canceled','idempotent_replay',true);
+  end if;
+  if v_order.status='completed' then raise exception 'online_order_already_completed'; end if;
+
+  update public.pos_online_orders
+     set status='canceled',canceled_at=coalesce(canceled_at,now()),cancel_reason=coalesce(nullif(btrim(p_reason),''),'canceled'),updated_at=now()
+   where id=v_order.id;
+  update public.pos_orders
+     set status='voided',voided_at=coalesce(voided_at,now()),void_reason=coalesce(nullif(btrim(p_reason),''),'canceled'),updated_at=now()
+   where id=v_order.order_id and status <> 'fulfilled';
+  update public.pos_order_items
+     set status='voided',void_reason=coalesce(nullif(btrim(p_reason),''),'canceled'),updated_at=now()
+   where order_id=v_order.order_id and status <> 'fulfilled';
+  update public.pos_tenders
+     set status='voided',voided_at=coalesce(voided_at,now()),updated_at=now()
+   where id=v_order.tender_id and status='initiated';
+  update public.pos_checks
+     set status='voided',voided_at=coalesce(voided_at,now()),updated_at=now()
+   where id=v_order.check_id and status <> 'closed';
+
+  insert into public.pos_online_order_events(location_id,online_order_id,event_type,metadata)
+  values(p_location_id,v_order.id,'order_canceled',jsonb_build_object('reason',coalesce(nullif(btrim(p_reason),''),'canceled')));
+
+  return jsonb_build_object('online_order_id',v_order.id,'status','canceled','idempotent_replay',false);
+end;
+$;
+
+revoke all on function public.pos_cancel_online_order(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.pos_cancel_online_order(uuid,uuid,text) to service_role;
+
 insert into public.operational_schema_versions(version,migration_key,checksum,metadata)
 values(8,'20261007_online_ordering_v8','sha256:online-ordering-v8','{"scope":"website_pickup_orders_and_settings"}'::jsonb)
 on conflict(version) do update set migration_key=excluded.migration_key,checksum=excluded.checksum,metadata=excluded.metadata;
