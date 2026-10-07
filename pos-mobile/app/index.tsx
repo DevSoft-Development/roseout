@@ -65,6 +65,7 @@ export default function CashierHome() {
   const [busyOrderId,setBusyOrderId]=useState<string|null>(null);
   const [outputSummary,setOutputSummary]=useState("Printer routing not synced");
   const [workspaceMode,setWorkspaceMode]=useState<"tables"|"signature"|"online">("tables");
+  const [posStateVersion,setPosStateVersion]=useState(0);
   const routerRef=useRef<RoleBasedPosOutputRouter|null>(null);
 
   const loadOrders=useCallback(async (activeSession:PosClaimSession,quiet=false)=>{
@@ -124,20 +125,27 @@ export default function CashierHome() {
 
   useEffect(()=>{
     if(!session) return;
-    const orderTimer=setInterval(()=>{void loadOrders(session,true)},5000);
-    const commandTimer=setInterval(()=>{
-      const router=routerRef.current;
-      if(!router) return;
-      void pollAndDispatchPosCommands({session,router,maxCommands:10})
-        .then(results=>{
-          if(results.some(result=>result.ok)) void loadOrders(session,true);
-        })
-        .catch(()=>null);
-    },3500);
-    return()=>{
-      clearInterval(orderTimer);
-      clearInterval(commandTimer);
+    let cancelled=false;
+    const run=async()=>{
+      while(!cancelled){
+        const router=routerRef.current;
+        if(!router){await new Promise(resolve=>setTimeout(resolve,500));continue;}
+        try{
+          const results=await pollAndDispatchPosCommands({session,router,maxCommands:10,waitSeconds:25});
+          if(cancelled) return;
+          if(results.some(result=>result.commandType==="pos_state_changed")){
+            setPosStateVersion(version=>version+1);
+          }
+          if(results.some(result=>result.commandType==="online_order_received"||result.commandType==="online_order_status_changed")){
+            await loadOrders(session,true);
+          }
+        }catch{
+          if(!cancelled) await new Promise(resolve=>setTimeout(resolve,1000));
+        }
+      }
     };
+    void run();
+    return()=>{cancelled=true};
   },[session,loadOrders]);
 
   const claim=async()=>{
@@ -258,7 +266,7 @@ export default function CashierHome() {
           </View>
         </View>
         {!!message&&<Text style={styles.errorBanner}>{message}</Text>}
-        <SignaturePlusWorkspace session={session}/>
+        <SignaturePlusWorkspace session={session} refreshToken={posStateVersion}/>
       </SafeAreaView>
     );
   }
