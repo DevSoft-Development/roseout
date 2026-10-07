@@ -116,17 +116,18 @@ export default async function HardwareHealthPage({
     locationId,
   });
   if (
-    !access.canonicalLocationId ||
+    !canonicalLocationId ||
     !hasLocationPermission(access, "hardware.view")
   ) {
     redirect("/locations/dashboard/hardware");
   }
 
+  const canonicalLocationId = access.canonicalLocationId;
   const canManage = hasLocationPermission(access, "hardware.manage");
   let hardware: Awaited<ReturnType<typeof listLocationHardware>> = [];
   let unavailable = false;
   try {
-    hardware = await listLocationHardware(access.canonicalLocationId);
+    hardware = await listLocationHardware(canonicalLocationId);
   } catch {
     unavailable = true;
   }
@@ -141,13 +142,13 @@ export default async function HardwareHealthPage({
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
-            href={`/locations/dashboard/hardware?locationId=${encodeURIComponent(access.canonicalLocationId)}`}
+            href={`/locations/dashboard/hardware?locationId=${encodeURIComponent(canonicalLocationId)}`}
             className="text-sm font-black text-[var(--business-muted)] hover:text-[var(--business-text)]"
           >
             ← Hardware & POS
           </Link>
           <Link
-            href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(access.canonicalLocationId)}`}
+            href={`/locations/dashboard/hardware/health?locationId=${encodeURIComponent(canonicalLocationId)}`}
             className="rounded-full border border-[var(--business-border)] px-4 py-2 text-xs font-black"
           >
             Refresh status
@@ -224,14 +225,14 @@ export default async function HardwareHealthPage({
                 {item.device.health_status !== "ready" ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Link
-                      href={`/locations/dashboard/hardware/${item.deviceId}?locationId=${encodeURIComponent(access.canonicalLocationId)}`}
+                      href={`/locations/dashboard/hardware/${item.deviceId}?locationId=${encodeURIComponent(canonicalLocationId)}`}
                       className="rounded-full border border-[var(--business-border)] px-4 py-2 text-xs font-black"
                     >
                       Review device
                     </Link>
                     {canManage ? (
                       <Link
-                        href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(access.canonicalLocationId)}&replaceDeviceId=${encodeURIComponent(item.deviceId)}`}
+                        href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(canonicalLocationId)}&replaceDeviceId=${encodeURIComponent(item.deviceId)}`}
                         className="rounded-full border border-[#ff2142]/30 bg-[#e1062a]/10 px-4 py-2 text-xs font-black text-[#ff91a5]"
                       >
                         Replace device
