@@ -58,6 +58,9 @@ jobs:
       - name: Verify role-based output routing
         run: npm run verify:output-routing
 
+      - name: Verify durable offline runtime
+        run: npm run verify:offline-runtime
+
       - name: Verify separate app identity and POS-only network permissions
         run: |
           set -euo pipefail
