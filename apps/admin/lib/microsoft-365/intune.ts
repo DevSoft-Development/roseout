@@ -223,6 +223,7 @@ function standardManagedAdeProfilePayload(companyPortalVppTokenId: string) {
     description:
       "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
     requiresUserAuthentication: true,
+    enableAuthenticationViaCompanyPortal: false,
     supervisedModeEnabled: true,
     isMandatory: true,
     profileRemovalDisabled: true,
