@@ -10,7 +10,7 @@ on:
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
-# Manual production replay trigger: verify six-lane production ranking quality after LI V2 cleanup.
+# Manual production replay trigger: verify corrected primary-domain replay evaluation.
 permissions:
   contents: read
   id-token: write
