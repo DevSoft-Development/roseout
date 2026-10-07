@@ -27,6 +27,7 @@ for (const token of [
   "setPosInventoryItem",
   "adjustPosInventory",
   "releasePosInventory",
+  "releasePosInventory",
 ]) {
   if (!service.includes(token)) throw new Error(`Missing POS inventory service invariant: ${token}`);
 }
