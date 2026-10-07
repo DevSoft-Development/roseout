@@ -18,11 +18,14 @@ export async function GET(request: Request) {
   try {
     const device=await auth(request);
     const url=new URL(request.url);
-    const commands=await leasePosDeviceCommands({
-      deviceId:device.deviceId,
-      locationId:device.locationId,
-      limit:Number(url.searchParams.get("limit")||10),
-    });
+    const limit=Number(url.searchParams.get("limit")||10);
+    const waitSeconds=Math.max(0,Math.min(25,Number(url.searchParams.get("waitSeconds")||0)));
+    const deadline=Date.now()+waitSeconds*1000;
+    let commands=await leasePosDeviceCommands({deviceId:device.deviceId,locationId:device.locationId,limit});
+    while(!commands.length&&Date.now()<deadline){
+      await new Promise(resolve=>setTimeout(resolve,500));
+      commands=await leasePosDeviceCommands({deviceId:device.deviceId,locationId:device.locationId,limit});
+    }
     return NextResponse.json({ok:true,commands},{headers:{"Cache-Control":"no-store"}});
   } catch(error) {
     const message=error instanceof Error?error.message:"pos_command_fetch_failed";
