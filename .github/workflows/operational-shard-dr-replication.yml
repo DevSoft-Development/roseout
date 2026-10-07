@@ -132,14 +132,14 @@ jobs:
             alter role $role password '$password';
             grant connect on database postgres to $role;
             grant usage on schema public to $role;
-            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments to $role;
+            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments to $role;
             do \$\$
             begin
               if not exists (select 1 from pg_publication where pubname='toh_operational_dr') then
                 execute 'create publication toh_operational_dr for table public.locations';
               end if;
             end \$\$;
-            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments;"
+            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments;"
             sql_api "$source" "$source_sql" "$RUNNER_TEMP/$logical-source.json"
 
             target_check="select exists(select 1 from pg_subscription where subname='$sub') as exists;"
