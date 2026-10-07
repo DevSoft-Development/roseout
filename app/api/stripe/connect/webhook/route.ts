@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
 import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
+import { failWebsitePickupOrderPayment, fulfillPaidWebsitePickupOrder } from "@/lib/pos/online-ordering/payment-fulfillment";
 import { failLeadCheckoutPayment, refundLeadCheckoutPayment, settleLeadCheckoutPayment } from "@/lib/leads/commercial";
 import { linkFraudIdentity, recordFraudSignal } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
@@ -353,7 +354,16 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.expired": {
         const type = String(object?.metadata?.type || "");
-        if (type === "location_lead_payment") {
+        if (type === "pos_online_order") {
+          const onlineOrderId = String(object?.metadata?.online_order_id || "").trim();
+          if (owner.locationId && onlineOrderId) {
+            await failWebsitePickupOrderPayment({
+              locationId: owner.locationId,
+              onlineOrderId,
+              reason: String(object.last_payment_error?.decline_code || "payment_failed"),
+            });
+          }
+        } else if (type === "location_lead_payment") {
           const leadId = String(object.metadata.lead_id || "").trim();
           const paymentKind = String(object.metadata.payment_kind || "").trim();
           if (leadId && ["deposit", "balance"].includes(paymentKind)) await failLeadCheckoutPayment(leadId, paymentKind as "deposit" | "balance", "checkout_expired");
@@ -366,6 +376,20 @@ export async function POST(request: NextRequest) {
         } else if (type === "reservation_deposit") {
           const reservationId = String(object.metadata.reservation_id || "").trim();
           if (reservationId) await supabaseAdmin.from("location_reservations").update({ deposit_status: "failed", updated_at: new Date().toISOString() }).eq("id", reservationId).eq("deposit_status", "pending");
+        }
+        break;
+      }
+
+      case "payment_intent.succeeded": {
+        const type = String(object?.metadata?.type || "");
+        if (type === "pos_online_order") {
+          const onlineOrderId = String(object?.metadata?.online_order_id || "").trim();
+          if (!owner.locationId || !onlineOrderId) throw new Error("Paid online order is missing location/order metadata");
+          await fulfillPaidWebsitePickupOrder({
+            locationId: owner.locationId,
+            onlineOrderId,
+            paymentIntentId: String(object.id || ""),
+          });
         }
         break;
       }
