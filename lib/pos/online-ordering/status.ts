@@ -45,7 +45,7 @@ export async function notifyOnlineOrderCustomer(input: {
         .maybeSingle(),
       shard.client
         .from("pos_ordering_settings")
-        .select("customer_notification_settings")
+        .select("customer_notification_settings,timezone")
         .eq("location_id", input.locationId)
         .maybeSingle(),
       supabaseAdmin
@@ -73,7 +73,7 @@ export async function notifyOnlineOrderCustomer(input: {
         weekday: "short",
         hour: "numeric",
         minute: "2-digit",
-        timeZone: "America/New_York",
+        timeZone: typeof settings?.timezone === "string" && settings.timezone ? settings.timezone : "America/New_York",
       })
     : null;
   const detail = pickup && !["completed", "canceled"].includes(input.status)
