@@ -3,6 +3,9 @@ name: ThePOSHaven mobile CI
 on:
   pull_request:
     paths:
+      - 'apps/business/app/locations/dashboard/online-ordering/**'
+      - 'apps/business/app/api/locations/online-ordering/**'
+      - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
       - 'lib/pos/device-command-service.ts'
       - 'lib/pos/online-ordering/**'
       - 'app/api/pos/device/**'
@@ -18,6 +21,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'apps/business/app/locations/dashboard/online-ordering/**'
+      - 'apps/business/app/api/locations/online-ordering/**'
+      - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
       - 'lib/pos/device-command-service.ts'
       - 'lib/pos/online-ordering/**'
       - 'app/api/pos/device/**'
