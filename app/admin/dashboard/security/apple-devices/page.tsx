@@ -192,14 +192,12 @@ export default async function AppleDeviceEnrollmentPage() {
 
                   {enrolled ? (
                     <div className="inline-flex min-h-10 items-center gap-2 text-sm font-black text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Managed</div>
-                  ) : assigned ? (
-                    <div className="max-w-40 text-xs font-semibold leading-5 text-white/45">Erase or start the iPad. Setup Assistant will enroll it automatically.</div>
                   ) : (
                     <form action="/api/admin/integrations/apple-device-enrollment/prepare" method="post" className="xl:justify-self-end">
                       <input type="hidden" name="device_id" value={device.id} />
                       <input type="hidden" name="action" value="prepare" />
                       <button disabled={!intuneServer || !depToken} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#ec0b5b] px-4 py-2 text-xs font-black text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40">
-                        <CloudCog className="h-4 w-4" /> Prepare for Intune
+                        <CloudCog className="h-4 w-4" /> Activate Device
                       </button>
                     </form>
                   )}
