@@ -122,7 +122,14 @@ export default async function HardwareHealthPage({
     redirect("/locations/dashboard/hardware");
   }
 
-  const hardware = await listLocationHardware(access.canonicalLocationId);
+  const canManage = hasLocationPermission(access, "hardware.manage");
+  let hardware: Awaited<ReturnType<typeof listLocationHardware>> = [];
+  let unavailable = false;
+  try {
+    hardware = await listLocationHardware(access.canonicalLocationId);
+  } catch {
+    unavailable = true;
+  }
   const needsAttention = hardware.filter(
     (item) => item.device.health_status !== "ready",
   );
@@ -175,6 +182,15 @@ export default async function HardwareHealthPage({
           ))}
         </section>
 
+        {unavailable ? (
+          <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
+            <h2 className="font-black text-amber-100">Hardware status is temporarily unavailable.</h2>
+            <p className="mt-1 text-sm font-semibold leading-6 text-amber-100/65">
+              Your POS can continue operating while ThePOSHaven reconnects to the hardware service.
+            </p>
+          </section>
+        ) : null}
+
         <section className="mt-6 space-y-3">
           {hardware.map((item) => {
             const copy = healthCopy(item.device.health_status);
@@ -213,12 +229,14 @@ export default async function HardwareHealthPage({
                     >
                       Review device
                     </Link>
-                    <Link
-                      href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(access.canonicalLocationId)}&replaceDeviceId=${encodeURIComponent(item.deviceId)}`}
-                      className="rounded-full border border-[#ff2142]/30 bg-[#e1062a]/10 px-4 py-2 text-xs font-black text-[#ff91a5]"
-                    >
-                      Replace device
-                    </Link>
+                    {canManage ? (
+                      <Link
+                        href={`/locations/dashboard/hardware/setup?locationId=${encodeURIComponent(access.canonicalLocationId)}&replaceDeviceId=${encodeURIComponent(item.deviceId)}`}
+                        className="rounded-full border border-[#ff2142]/30 bg-[#e1062a]/10 px-4 py-2 text-xs font-black text-[#ff91a5]"
+                      >
+                        Replace device
+                      </Link>
+                    ) : null}
                   </div>
                 ) : null}
               </article>
