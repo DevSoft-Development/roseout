@@ -61,6 +61,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
     ["Hardware","Registers, payment terminals, printers, drawers, KDS screens, and device roles.",href("/locations/dashboard/hardware"),"Manage devices"],
     ["Menu / Catalog","Control the same catalog used by the POS, website, profile, and online ordering.",href("/locations/dashboard/menu"),"Edit catalog"],
     ["Online Ordering","Pickup ordering, prep time, capacity, alerts, automatic printing, and customer updates.",href("/locations/dashboard/online-ordering"),"Manage ordering"],
+    ["Inventory + Shift","Signature+ ingredient inventory, stock areas, waste, transfers, reorder visibility, and end-of-shift reporting.",href("/locations/dashboard/pos/operations"),"Open operations"],
     ["Analytics","Review location performance and operating trends from the business dashboard.",href("/locations/dashboard/analytics"),"View analytics"],
   ] as const;
 
