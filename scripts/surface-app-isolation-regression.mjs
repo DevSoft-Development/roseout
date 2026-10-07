@@ -953,8 +953,9 @@ if (microsoftSyncRoute.includes("@/lib/admin-auth") || microsoftSyncRoute.includ
   throw new Error("Microsoft 365 sync route must not import root monolith auth helpers.");
 }
 
-const microsoftSettingsTheme = read("apps/admin/app/admin/dashboard/settings/microsoft-365/microsoft-365.css");
+const microsoftSettingsTheme = read("apps/admin/app/admin/dashboard/admin-theme-visibility.css");
 for (const marker of [
+  ".m365-page",
   "var(--admin-shell-card)",
   "var(--admin-shell-text)",
   "var(--admin-shell-muted)",
