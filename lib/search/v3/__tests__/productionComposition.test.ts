@@ -20,7 +20,7 @@ const client = {
 };
 
 describe("Search V3 TheOutHaven composition", () => {
-  it("assembles the five default swappable retrieval lanes", () => {
+  it("assembles the six default swappable retrieval lanes", () => {
     const embeddings: SearchQueryEmbeddingProvider = {
       providerId: "test.embedding",
       async embed() {
@@ -42,6 +42,7 @@ describe("Search V3 TheOutHaven composition", () => {
       "theouthaven.supabase-semantic-dense.v1",
       "theouthaven.supabase-semantic-food.azure.v1",
       "theouthaven.supabase-semantic-menu.azure.v1",
+      "theouthaven.supabase-review-intelligence.v1",
     ]);
   });
 
