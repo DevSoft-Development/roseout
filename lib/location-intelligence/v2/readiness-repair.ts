@@ -13,23 +13,25 @@ export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
     .limit(safeLimit);
   if (error) throw new Error(`LI V2 readiness repair plan failed: ${error.message}`);
 
-  const rows = (data || []).filter((row: any) =>
-    row?.classification?.negativeClassificationKnown !== true
-  );
+  const rows = data || [];
   const results: Array<Record<string, unknown>> = [];
 
   for (const row of rows) {
     const locationId = String((row as any).location_id || "");
     if (!locationId) continue;
     try {
-      const classification = await refreshLocationClassificationV2(locationId);
+      const classificationMissing = (row as any)?.classification?.negativeClassificationKnown !== true;
+      const classification = classificationMissing
+        ? await refreshLocationClassificationV2(locationId)
+        : (row as any).classification;
       const readiness = await refreshLocationReadiness(locationId);
       results.push({
         locationId,
         repaired: true,
+        classificationRefreshed: classificationMissing,
         searchV3Ready: readiness.searchV3Ready,
         qualityScore: readiness.qualityScore,
-        classificationDomain: classification.domain,
+        classificationDomain: classification?.domain || null,
       });
     } catch (error) {
       results.push({
