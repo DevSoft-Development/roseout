@@ -10,6 +10,7 @@ const adminCatalog = read("apps/admin/lib/admin/credential-vault-catalog.ts");
 const runtimeSource = read("lib/admin/credential-vault-runtime-source.ts");
 const hardening = read("infra/supabase/operational-shards/hardening-v2.sql").toLowerCase();
 const inventory = read("infra/supabase/operational-shards/inventory-v7.sql").toLowerCase();
+const onlineOrdering = read("infra/supabase/operational-shards/online-ordering-v8.sql").toLowerCase();
 const writeFence = read("infra/supabase/operational-shards/write-fence-v3.sql").toLowerCase();
 const rebalance = read("scripts/operational-shard-rebalance.mjs");
 const initialPlacement = read("scripts/operational-shard-initial-placement.mjs");
@@ -69,6 +70,19 @@ for (const token of [
 }
 
 for (const token of [
+  "create table if not exists public.pos_ordering_settings",
+  "create table if not exists public.pos_online_orders",
+  "create table if not exists public.pos_online_order_events",
+  "pos_create_online_order_draft",
+  "pos_finalize_online_order_payment",
+  "pos_cancel_online_order",
+  "20261007_online_ordering_v8",
+  "toh_operational_dr",
+]) {
+  if (!onlineOrdering.includes(token)) throw new Error(`Missing online-ordering shard invariant: ${token}`);
+}
+
+for (const token of [
   "primary_location_write_fences",
   "enforce_primary_location_write_fence",
   "for share",
@@ -81,7 +95,7 @@ for (const token of [
 }
 
 for (const token of [
-  "TARGET_SCHEMA_VERSION = 7",
+  "TARGET_SCHEMA_VERSION = 8",
   "location_not_on_primary",
   "setPrimaryFence",
   "drainPrimaryCardTenders",
@@ -134,6 +148,9 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "pos_ordering_settings",
+  "pos_online_orders",
+  "pos_online_order_events",
   "new-shard-standby",
   "operational_write_fence_standby_v5",
 ]) {
@@ -173,6 +190,9 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "pos_ordering_settings",
+  "pos_online_orders",
+  "pos_online_order_events",
   "classifyAuthoritativeCutoverState",
   "ambiguous_cutover_state",
   "authoritativeCutoverState === \"cutover\"",
@@ -221,6 +241,9 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "pos_ordering_settings",
+  "pos_online_orders",
+  "pos_online_order_events",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -284,15 +307,19 @@ for (const token of [
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "pos_ordering_settings",
+  "pos_online_orders",
+  "pos_online_order_events",
 ]) {
   if (!replicationWorkflow.includes(token)) throw new Error(`Missing replication standby safety invariant: ${token}`);
 }
 for (const token of [
   "hardening-v2.sql",
   "inventory-v7.sql",
+  "online-ordering-v8.sql",
   "standby-dr",
   "standby-primary",
-  "schema_version=7",
+  "schema_version=8",
   "reservation_resource_assignments",
   "restore_authoritative_gates",
   "apply_and_align",
@@ -306,7 +333,7 @@ for (const token of [
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
 }
-if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=7")) {
+if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=8")) {
   throw new Error("Bootstrap must not unconditionally reopen fail-closed shard registry writes.");
 }
 if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {
