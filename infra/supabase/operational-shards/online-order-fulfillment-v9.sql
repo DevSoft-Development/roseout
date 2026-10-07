@@ -160,31 +160,38 @@ revoke all on function public.pos_finish_online_order_dispatch(uuid,uuid,uuid,bo
 grant execute on function public.pos_claim_online_order_dispatch(uuid,uuid) to service_role;
 grant execute on function public.pos_finish_online_order_dispatch(uuid,uuid,uuid,boolean,text,jsonb) to service_role;
 
--- Make paid-order dispatch durable and transactionally coupled to payment finalization.
-create or replace function public.pos_enqueue_online_order_dispatch()
+-- Queue local fulfillment only after the persisted payment reaches succeeded.
+create or replace function public.pos_enqueue_paid_online_order_dispatch()
 returns trigger
 language plpgsql
 set search_path=public
 as $$
+declare
+  v_online_order_id uuid;
 begin
-  if new.provider_payment_intent_id is not null
-     and new.status in ('received','accepted')
-     and (
-       old.provider_payment_intent_id is distinct from new.provider_payment_intent_id
-       or old.status is distinct from new.status
-     ) then
-    insert into public.pos_online_order_dispatches(location_id,online_order_id,status)
-    values(new.location_id,new.id,'queued')
-    on conflict(online_order_id) do nothing;
+  if new.status='succeeded'
+     and (old.status is distinct from new.status) then
+    select id into v_online_order_id
+      from public.pos_online_orders
+     where tender_id=new.tender_id
+       and location_id=new.location_id
+     limit 1;
+
+    if v_online_order_id is not null then
+      insert into public.pos_online_order_dispatches(location_id,online_order_id,status)
+      values(new.location_id,v_online_order_id,'queued')
+      on conflict(online_order_id) do nothing;
+    end if;
   end if;
   return new;
 end;
 $$;
 
 drop trigger if exists pos_online_order_dispatch_after_payment on public.pos_online_orders;
-create trigger pos_online_order_dispatch_after_payment
-after update on public.pos_online_orders
-for each row execute function public.pos_enqueue_online_order_dispatch();
+drop trigger if exists pos_online_order_dispatch_after_payment_success on public.pos_payments;
+create trigger pos_online_order_dispatch_after_payment_success
+after update on public.pos_payments
+for each row execute function public.pos_enqueue_paid_online_order_dispatch();
 
 insert into public.operational_schema_versions(version,migration_key,checksum,metadata)
 values(9,'20261007_online_order_fulfillment_v9','sha256:online-order-fulfillment-v9','{"scope":"durable_cashier_dispatch_and_auto_print"}'::jsonb)
