@@ -123,7 +123,7 @@ export default async function AppleDeviceEnrollmentPage() {
         <AdminSectionCard className="border-amber-300/20 p-5 sm:p-6">
           <div className="flex gap-3">
             <TriangleAlert className="mt-0.5 h-5 w-5 text-amber-200" />
-            <div><p className="font-black text-white">Intune enrollment connection needs attention</p><p className="mt-1 text-sm font-semibold text-white/50">Reconnect Microsoft 365 after granting the Intune service configuration ReadWrite permissions required for ADE synchronization.</p></div>
+            <div><p className="font-black text-white">Intune enrollment connection needs attention</p><p className="mt-1 text-sm font-semibold text-white/50">Reconnect Microsoft 365 after granting the Intune service configuration ReadWrite permissions required for ADE synchronization.</p><p className="mt-2 break-words text-xs font-mono text-amber-100/80"><strong>Graph error:</strong> {intuneError}</p></div>
           </div>
         </AdminSectionCard>
       ) : null}

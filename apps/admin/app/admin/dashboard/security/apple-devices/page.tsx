@@ -158,6 +158,7 @@ export default async function AppleDeviceEnrollmentPage() {
               Reconnect Microsoft 365 after granting the Intune service
               configuration permissions required for ADE synchronization.
             </p>
+            <p><strong>Graph error:</strong> {intuneError}</p>
           </div>
         </section>
       ) : null}
