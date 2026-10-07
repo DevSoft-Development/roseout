@@ -83,6 +83,12 @@ export default async function PosHardwareInventoryPage({
               Provisioning status
             </Link>
             <Link
+              href="/admin/dashboard/settings/location-tools/pos-hardware"
+              className="rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80"
+            >
+              Diagnostics
+            </Link>
+            <Link
               href="/admin/dashboard/settings/location-tools"
               className="rounded-full border border-white/15 px-4 py-2 text-sm font-black text-white/80"
             >
