@@ -10,7 +10,9 @@ const contracts = read("lib/pos/payments/contracts.ts");
 const stripe = read("lib/pos/payments/stripe.ts");
 
 for (const token of [
-  'rpc("pos_begin_card_tender"',
+  '"pos_begin_card_tender"',
+  '"pos_begin_partial_card_tender"',
+  "shardclient.rpc(rpcname,args)",
   "stripe_connect_account_id",
   "stripe_connect_charges_enabled",
   "getpospaymentprovider",
@@ -22,6 +24,9 @@ for (const token of [
   if (!service.toLowerCase().includes(token.toLowerCase())) throw new Error(`Missing POS payment service invariant: ${token}`);
 }
 
+if (!service.includes('requestedAmount===null?"pos_begin_card_tender":"pos_begin_partial_card_tender"')) {
+  throw new Error("POS payment service must select the full or partial atomic tender RPC server-side.");
+}
 if (route.includes("amount_cents") || route.includes("amountCents")) {
   throw new Error("POS payment route must not accept a client-supplied charge amount.");
 }
