@@ -315,3 +315,7 @@ export function transferSignaturePlusServer(input:{deviceId:string;credential:st
 export function createSignaturePlusSplit(input:{deviceId:string;credential:string;checkId:string;mode:"by_guest"|"even"|"custom";parts?:number;custom?:Record<string,number>}){
   return mutateSignaturePlus({...input,body:{action:"split",checkId:input.checkId,mode:input.mode,parts:input.parts,custom:input.custom}});
 }
+
+export function createSignaturePlusSplitTender(input:{deviceId:string;credential:string;checkId:string;allocationKey:string;tipCents?:number}){
+  return mutateSignaturePlus({...input,body:{action:"split_tender",checkId:input.checkId,allocationKey:input.allocationKey,tipCents:input.tipCents||0}});
+}
