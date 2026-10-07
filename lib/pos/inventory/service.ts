@@ -11,6 +11,11 @@ export type PosInventoryAvailability = {
   soldOutUntil: string | null;
   lowStock: boolean;
   soldOut: boolean;
+  unitCode: string;
+  reorderPoint: number | null;
+  reorderQuantity: number | null;
+  preferredVendor: string | null;
+  vendorSku: string | null;
 };
 
 function normalizeAvailability(row: Record<string, any>): PosInventoryAvailability {
@@ -39,6 +44,11 @@ function normalizeAvailability(row: Record<string, any>): PosInventoryAvailabili
       quantityOnHand !== null &&
       quantityOnHand <= lowStockThreshold,
     soldOut,
+    unitCode:String(row.unit_code||"unit"),
+    reorderPoint:row.reorder_point==null?null:Number(row.reorder_point),
+    reorderQuantity:row.reorder_quantity==null?null:Number(row.reorder_quantity),
+    preferredVendor:row.preferred_vendor==null?null:String(row.preferred_vendor),
+    vendorSku:row.vendor_sku==null?null:String(row.vendor_sku),
   };
 }
 
@@ -49,7 +59,7 @@ export async function getPosInventoryAvailability(
   const shard = await resolveOperationalShardForLocationId(locationId, { mode: "read" });
   let query = shard.client
     .from("pos_inventory_items")
-    .select("catalog_item_id,tracking_mode,quantity_on_hand,low_stock_threshold,manual_sold_out,sold_out_until")
+    .select("catalog_item_id,tracking_mode,quantity_on_hand,low_stock_threshold,manual_sold_out,sold_out_until,unit_code,reorder_point,reorder_quantity,preferred_vendor,vendor_sku")
     .eq("location_id", locationId);
 
   const ids = (catalogItemIds || []).map(String).filter(Boolean);
@@ -103,6 +113,11 @@ export async function setPosInventoryItem(input: {
   manualSoldOut?: boolean;
   soldOutReason?: string | null;
   soldOutUntil?: string | null;
+  unitCode?: string;
+  reorderPoint?: number | null;
+  reorderQuantity?: number | null;
+  preferredVendor?: string | null;
+  vendorSku?: string | null;
 }) {
   const shard = await resolveOperationalShardForLocationId(input.locationId, { mode: "write" });
   const row = {
@@ -116,6 +131,11 @@ export async function setPosInventoryItem(input: {
     manual_sold_out: input.manualSoldOut === true,
     sold_out_reason: input.soldOutReason || null,
     sold_out_until: input.soldOutUntil || null,
+    unit_code: String(input.unitCode||"unit").trim().toLowerCase(),
+    reorder_point: input.reorderPoint==null?null:Math.max(0,Number(input.reorderPoint)),
+    reorder_quantity: input.reorderQuantity==null?null:Math.max(0,Number(input.reorderQuantity)),
+    preferred_vendor: input.preferredVendor||null,
+    vendor_sku: input.vendorSku||null,
     updated_at: new Date().toISOString(),
   };
 
@@ -137,6 +157,7 @@ export async function adjustPosInventory(input: {
   sourceType?: string;
   sourceId?: string | null;
 }) {
+  if(!Number.isFinite(input.quantityDelta)||input.quantityDelta===0) throw new Error("pos_inventory_invalid_adjustment");
   const shard = await resolveOperationalShardForLocationId(input.locationId, { mode: "write" });
   const { data, error } = await shard.client.rpc("pos_adjust_inventory", {
     p_location_id: input.locationId,
@@ -162,4 +183,31 @@ export async function releasePosInventory(input: {
   });
   if (error) throw new Error(error.message || "pos_inventory_release_failed");
   return data as Record<string, unknown>;
+}
+
+
+export async function wastePosInventory(input:{
+  locationId:string;catalogItemId:string;quantity:number;sourceId?:string|null;reason?:string|null;
+}){
+  const quantity=Number(input.quantity);
+  if(!Number.isFinite(quantity)||quantity<=0) throw new Error("pos_inventory_invalid_waste_quantity");
+  return adjustPosInventory({
+    locationId:input.locationId,catalogItemId:input.catalogItemId,quantityDelta:-quantity,
+    reason:input.reason||"waste",sourceType:"waste",sourceId:input.sourceId||null,
+  });
+}
+
+export async function transferPosInventory(input:{
+  locationId:string;catalogItemId:string;fromStockAreaId:string;toStockAreaId:string;quantity:number;sourceId?:string|null;
+}){
+  const quantity=Number(input.quantity);
+  if(!Number.isFinite(quantity)||quantity<=0) throw new Error("pos_inventory_invalid_transfer_quantity");
+  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"write"});
+  const {data,error}=await shard.client.rpc("pos_transfer_inventory",{
+    p_location_id:input.locationId,p_catalog_item_id:input.catalogItemId,
+    p_from_area_id:input.fromStockAreaId,p_to_area_id:input.toStockAreaId,
+    p_quantity:quantity,p_source_id:input.sourceId||null,
+  });
+  if(error) throw new Error(error.message||"pos_inventory_transfer_failed");
+  return {transferId:String(data||"")};
 }
