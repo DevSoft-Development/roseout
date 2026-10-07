@@ -2,6 +2,7 @@ import { processMaterialChangeVerificationBatch } from "@/lib/location-intellige
 import { collectPendingDataForSeoReviewRefreshes, submitDueDataForSeoReviewRefreshes } from "@/lib/location-intelligence/v2/review-worker";
 import { refreshLocationIntelligenceProviderHealth } from "@/lib/location-intelligence/v2/provider-runtime";
 import { normalizeExistingGoogleEnrichmentBatch } from "@/lib/location-intelligence/v2/google-normalization";
+import { repairLocationIntelligenceV2ReadinessBatch } from "@/lib/location-intelligence/v2/readiness-repair";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,10 +46,11 @@ async function run(request: Request) {
     const normalizationConcurrency = limitParam(request, "normalizationConcurrency", 10, 20);
     const runPaidReviews = shouldRunPaidReviewCycle();
 
-    const [providerHealth, collectedReviews, normalization] = await Promise.all([
+    const [providerHealth, collectedReviews, normalization, readinessRepair] = await Promise.all([
       refreshLocationIntelligenceProviderHealth(),
       runPaidReviews ? collectPendingDataForSeoReviewRefreshes(reviewLimit) : Promise.resolve([]),
       normalizeExistingGoogleEnrichmentBatch(normalizationLimit, normalizationConcurrency),
+      repairLocationIntelligenceV2ReadinessBatch(50),
     ]);
     const [materialChanges, submittedReviews] = await Promise.all([
       processMaterialChangeVerificationBatch(materialLimit),
@@ -84,6 +86,7 @@ async function run(request: Request) {
       ...(reviewError ? { error: reviewError } : {}),
       providerHealth,
       normalization,
+      readinessRepair,
       materialChanges,
       reviews: {
         cycleRan: runPaidReviews,
