@@ -122,38 +122,12 @@ describe("Search V3 review intelligence lane", () => {
     expect(queried).toBe(false);
   });
 
-  it("keeps the production default at five lanes", () => {
+  it("keeps the production default at six lanes", () => {
     const client: any = {
       from() { return queryResult([]); },
       rpc() { return Promise.resolve({ data: [], error: null }); },
     };
     const providers = createDefaultRetrievalProviders(client, {
-      semantic: {
-        embeddings: {
-          providerId: "test",
-          async embed() {
-            return {
-              vector: [0.1],
-              model: "text-embedding-3-small",
-              version: "search-embedding:v1",
-            };
-          },
-        },
-      },
-    });
-    expect(providers).toHaveLength(5);
-    expect(providers.some((provider) =>
-      provider.providerId.includes("review-intelligence")
-    )).toBe(false);
-  });
-
-  it("adds the sixth lane only when explicitly enabled", () => {
-    const client: any = {
-      from() { return queryResult([]); },
-      rpc() { return Promise.resolve({ data: [], error: null }); },
-    };
-    const providers = createDefaultRetrievalProviders(client, {
-      reviewIntelligence: { enabled: true },
       semantic: {
         embeddings: {
           providerId: "test",
@@ -171,5 +145,31 @@ describe("Search V3 review intelligence lane", () => {
     expect(providers[5].providerId).toBe(
       "theouthaven.supabase-review-intelligence.v1",
     );
+  });
+
+  it("allows the sixth lane to be explicitly disabled", () => {
+    const client: any = {
+      from() { return queryResult([]); },
+      rpc() { return Promise.resolve({ data: [], error: null }); },
+    };
+    const providers = createDefaultRetrievalProviders(client, {
+      reviewIntelligence: { enabled: false },
+      semantic: {
+        embeddings: {
+          providerId: "test",
+          async embed() {
+            return {
+              vector: [0.1],
+              model: "text-embedding-3-small",
+              version: "search-embedding:v1",
+            };
+          },
+        },
+      },
+    });
+    expect(providers).toHaveLength(5);
+    expect(providers.some((provider) =>
+      provider.providerId.includes("review-intelligence")
+    )).toBe(false);
   });
 });
