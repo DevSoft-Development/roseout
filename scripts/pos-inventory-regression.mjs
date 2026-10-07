@@ -11,6 +11,7 @@ for (const token of [
   "pos_reserve_inventory",
   "for update",
   "pos_inventory_insufficient",
+  "pos_release_inventory",
   "manual_sold_out",
   "low_stock_threshold",
   "toh_operational_dr",
@@ -25,6 +26,7 @@ for (const token of [
   "reservePosInventory",
   "setPosInventoryItem",
   "adjustPosInventory",
+  "releasePosInventory",
 ]) {
   if (!service.includes(token)) throw new Error(`Missing POS inventory service invariant: ${token}`);
 }
