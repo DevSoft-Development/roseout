@@ -287,8 +287,8 @@ jobs:
         if: steps.changes.outputs.hardware == 'true'
         run: |
           npx vitest run apps/business/app/locations/dashboard/__tests__/hardware-*.test.ts
-          if [ -f apps/admin/app/admin/dashboard/settings/location-tools/__tests__/pos-hardware-diagnostics.test.ts ]; then
-            npx vitest run apps/admin/app/admin/dashboard/settings/location-tools/__tests__/pos-hardware-diagnostics.test.ts
+          if compgen -G "apps/admin/app/admin/dashboard/settings/location-tools/__tests__/pos-hardware-*.test.ts" > /dev/null; then
+            npx vitest run apps/admin/app/admin/dashboard/settings/location-tools/__tests__/pos-hardware-*.test.ts
           fi
 
       - name: Report targeted PR validation
