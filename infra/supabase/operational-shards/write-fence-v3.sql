@@ -136,7 +136,8 @@ begin
     'pos_inventory_adjustments',
     'pos_ordering_settings',
     'pos_online_orders',
-    'pos_online_order_events'
+    'pos_online_order_events',
+    'pos_online_order_dispatches'
   ]
   loop
     execute format('drop trigger if exists operational_location_write_fence on public.%I', t);
