@@ -29,7 +29,8 @@
     },
     "plugins": [
       "expo-router",
-      "./plugins/withThePosHavenHardware"
+      "./plugins/withThePosHavenHardware",
+      "./plugins/withThePosHavenAndroidHardware"
     ],
     "experiments": {
       "typedRoutes": true
