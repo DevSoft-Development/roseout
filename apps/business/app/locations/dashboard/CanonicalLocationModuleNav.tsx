@@ -20,6 +20,7 @@ import {
   MessageSquareText,
   Printer,
   SearchCheck,
+  ShoppingBag,
   Settings,
   Sparkles,
   Star,
@@ -42,6 +43,7 @@ const dailyItems: NavItem[] = [
   { label: "Customers", href: "/locations/dashboard/customers", icon: Users, matches: ["/locations/dashboard/leads", "/locations/dashboard/offers", "/locations/dashboard/vip", "/locations/dashboard/notifications"] },
   { label: "Profile", href: "/locations/dashboard/profile", icon: Building2 },
   { label: "Hardware & POS", href: "/locations/dashboard/hardware", icon: Printer },
+  { label: "Online Ordering", href: "/locations/dashboard/online-ordering", icon: ShoppingBag },
 ];
 
 const advancedItems: NavItem[] = [
