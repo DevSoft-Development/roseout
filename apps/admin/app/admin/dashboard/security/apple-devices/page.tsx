@@ -1,4 +1,3 @@
-import "./apple-devices.css";
 
 import {
   CheckCircle2,
