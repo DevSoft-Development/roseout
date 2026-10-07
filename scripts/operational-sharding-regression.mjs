@@ -304,9 +304,14 @@ for (const token of [
   "reservation_resource_assignments",
   "hardening-v2.sql",
   "inventory-v7.sql",
+  "partial-tenders-v8.sql",
+  "ingredient-inventory-v9.sql",
   "pos_inventory_items",
   "pos_inventory_transactions",
   "pos_inventory_adjustments",
+  "pos_inventory_stock_areas",
+  "pos_inventory_area_balances",
+  "pos_inventory_transfers",
   "pos_ordering_settings",
   "pos_online_orders",
   "pos_online_order_events",
@@ -331,6 +336,12 @@ for (const token of [
   "replication_state in ('initializing','healthy')",
 ]) {
   if (!liveBootstrap.includes(token)) throw new Error(`Missing bootstrap standby/schema invariant: ${token}`);
+}
+if (!replicationWorkflow.includes("subscription-refresh.json") || !replicationWorkflow.includes("refresh publication with (copy_data=true)")) {
+  throw new Error("Operational shard DR refresh must run as a dedicated subscription statement.");
+}
+if (replicationWorkflow.includes("alter subscription $sub connection '$conn'; alter subscription $sub enable; alter subscription $sub refresh publication")) {
+  throw new Error("Operational shard DR refresh must not be batched into a transaction-blocked multi-statement request.");
 }
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
