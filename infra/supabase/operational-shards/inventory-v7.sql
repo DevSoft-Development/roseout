@@ -262,6 +262,61 @@ begin
 end;
 $$;
 
+create or replace function public.pos_release_inventory(
+  p_location_id uuid,
+  p_idempotency_key text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $
+declare
+  v_tx public.pos_inventory_transactions%rowtype;
+  v_adjustment public.pos_inventory_adjustments%rowtype;
+  v_released integer := 0;
+begin
+  select * into v_tx
+    from public.pos_inventory_transactions
+   where location_id=p_location_id and idempotency_key=p_idempotency_key
+   for update;
+
+  if not found then
+    return jsonb_build_object('status','not_found','released',0);
+  end if;
+  if v_tx.status='released' then
+    return jsonb_build_object('transaction_id',v_tx.id,'status','released','released',0,'idempotent_replay',true);
+  end if;
+
+  for v_adjustment in
+    select * from public.pos_inventory_adjustments
+     where inventory_transaction_id=v_tx.id and quantity_delta < 0
+     order by created_at asc, id asc
+  loop
+    update public.pos_inventory_items
+       set quantity_on_hand=coalesce(quantity_on_hand,0)+abs(v_adjustment.quantity_delta),
+           updated_at=now()
+     where id=v_adjustment.inventory_item_id;
+
+    insert into public.pos_inventory_adjustments(
+      location_id,inventory_transaction_id,inventory_item_id,catalog_item_id,
+      quantity_delta,reason,source_type,source_id,metadata
+    ) values (
+      p_location_id,v_tx.id,v_adjustment.inventory_item_id,v_adjustment.catalog_item_id,
+      abs(v_adjustment.quantity_delta),'reservation_release','system',v_tx.source_id,
+      jsonb_build_object('reverses_adjustment_id',v_adjustment.id)
+    );
+    v_released := v_released + abs(v_adjustment.quantity_delta);
+  end loop;
+
+  update public.pos_inventory_transactions set status='released' where id=v_tx.id;
+  return jsonb_build_object('transaction_id',v_tx.id,'status','released','released',v_released,'idempotent_replay',false);
+end;
+$;
+
+revoke all on function public.pos_release_inventory(uuid,text) from public,anon,authenticated;
+grant execute on function public.pos_release_inventory(uuid,text) to service_role;
+
 revoke all on function public.pos_adjust_inventory(uuid,uuid,integer,text,text,text)
   from public,anon,authenticated;
 grant execute on function public.pos_adjust_inventory(uuid,uuid,integer,text,text,text)
