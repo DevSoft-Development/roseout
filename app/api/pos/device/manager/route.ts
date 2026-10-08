@@ -7,6 +7,7 @@ import {
   closePosCashDrawerSession,
   getPosManagerOperations,
   openPosCashDrawerSession,
+  queuePosCheckReceipt,
   recordPosCashTender,
   refundPosTender,
   voidPosOrderItem,
@@ -117,6 +118,12 @@ export async function POST(request:Request){
         locationId:device.locationId,
         sessionId:String(body.sessionId||""),
         countedCashCents:Number(body.countedCashCents||0),
+      });
+    }else if(action==="receipt_reprint"){
+      result=await queuePosCheckReceipt({
+        locationId:device.locationId,
+        checkId:String(body.checkId||""),
+        reprint:true,
       });
     }else{
       throw new Error("pos_manager_invalid_action");
