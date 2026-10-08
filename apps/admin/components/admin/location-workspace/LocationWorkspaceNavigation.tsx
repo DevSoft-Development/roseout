@@ -4,10 +4,7 @@ import {
   getLocationWorkspaceGroupForTab,
   getLocationWorkspaceHref,
 } from "@/lib/admin/location-workspace";
-import {
-  buildOutreachHref,
-  buildTasksHref,
-} from "@/lib/crm/context";
+import { buildOutreachHref } from "@/lib/crm/context";
 
 export default function LocationWorkspaceNavigation({
   locationId,
