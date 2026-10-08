@@ -298,6 +298,12 @@ begin
    where location_id=p_location_id and idempotency_key=trim(p_idempotency_key)
    limit 1;
   if found then
+    if v_existing.tender_id<>p_tender_id or v_existing.amount_cents<>p_amount_cents then
+      raise exception 'pos_refund_idempotency_conflict';
+    end if;
+    if v_existing.status='failed' then
+      raise exception 'pos_refund_retry_requires_new_idempotency_key';
+    end if;
     return query select
       v_existing.id,
       (select t.tender_type from public.pos_tenders t where t.id=v_existing.tender_id),
