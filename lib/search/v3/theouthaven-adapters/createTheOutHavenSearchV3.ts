@@ -1,3 +1,4 @@
+import { readSearchV3Controls, wrapSearchV3RetrievalProviders } from "../controls/searchV3Controls";
 import type {
   LocationIntelligenceProvider,
   SearchEligibilityProvider,
@@ -99,8 +100,10 @@ export function createTheOutHavenSearchV3(
       ? new GraphEntityResolver(knowledgeGraph)
       : options.entityResolution;
 
-  const retrievalProviders =
-    options.retrievalProviders ?? createDefaultRetrievalProviders(client, options);
+  const retrievalProviders = options.retrievalProviders ?? wrapSearchV3RetrievalProviders(
+    createDefaultRetrievalProviders(client, options),
+    () => readSearchV3Controls(client as any),
+  );
 
   const fusion =
     options.fusion === undefined
