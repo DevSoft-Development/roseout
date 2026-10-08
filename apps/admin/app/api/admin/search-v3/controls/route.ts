@@ -15,9 +15,11 @@ export async function GET(){
   const latest=phase?.[0]??null, golden=replay?.[0]??null;
   const v3=golden?.metrics?.v3??null, comparison=golden?.metrics?.v3VsV2??null;
   const e=latest?.details?.embeddings??{};
-  const phasePass=latest?.status==="success"&&Number(e.failed)===0&&Number(e.scanned)>0&&Number(e.skippedIneligible)<Number(e.candidatePool)&&Number(e.ready)>=4961&&Number(e.remainingApprox)<=50&&e.timeBudgetReached!==true;
+  const phaseFresh=latest?.started_at && Date.now()-Date.parse(latest.started_at)<=30*60*1000;
+  const replayFresh=golden?.completed_at && Date.now()-Date.parse(golden.completed_at)<=60*60*1000;
+  const phasePass=Boolean(phaseFresh)&&latest?.status==="success"&&Number(e.failed)===0&&Number(e.scanned)>0&&Number(e.skippedIneligible)<Number(e.candidatePool)&&Number(e.ready)>=4961&&Number(e.remainingApprox)<=50&&e.timeBudgetReached!==true;
   const noRegression=comparison?.noRegressions??{};
-  const replayPass=golden?.status==="completed"&&!!v3&&!!comparison&&Number(v3.successRate)>=90&&Number(v3.pairSuccessRate)>=90&&Number(v3.noResultRegressionRate)===0&&Number(v3.contractFailureCount)===0&&Number(v3.p95LatencyMs)<=5000&&["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>noRegression[k]===true);
+  const replayPass=Boolean(replayFresh)&&golden?.status==="completed"&&!!v3&&!!comparison&&Number(v3.successRate)>=90&&Number(v3.pairSuccessRate)>=90&&Number(v3.noResultRegressionRate)===0&&Number(v3.contractFailureCount)===0&&Number(v3.p95LatencyMs)<=5000&&["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>noRegression[k]===true);
   const coreHealthy=Object.entries(DEFAULT_SEARCH_V3_CONTROLS.lanes).filter(([id])=>id!=="review_intelligence").every(([id])=>controls.lanes[id as keyof typeof controls.lanes]?.enabled&&!controls.lanes[id as keyof typeof controls.lanes]?.forceOpen);
   return NextResponse.json({controls,phase:latest,golden:{id:golden?.id??null,completedAt:golden?.completed_at??null,v3,comparison},gates:{phasePass,replayPass,coreHealthy,canaryEligible:phasePass&&replayPass&&coreHealthy},runnerUrl:"/admin/dashboard/search-health/profile-rollout"});
  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Failed to load V3 status"},{status:503});}
@@ -30,12 +32,12 @@ export async function PATCH(request:Request){
   const db=getAdminDatabaseClient(),previous=await readSearchV3Controls(db),next=validateSearchV3Controls(body.config);
   if(next.mode!=="shadow"){
    const [{data:phase},{data:replay}]=await Promise.all([
-    db.from("cron_job_runs").select("status,details").eq("job_key","search-phase13-maintenance").order("started_at",{ascending:false}).limit(1),
+    db.from("cron_job_runs").select("status,started_at,details").eq("job_key","search-phase13-maintenance").order("started_at",{ascending:false}).limit(1),
     db.from("search_quality_replay_runs").select("status,metrics,completed_at").eq("source","golden").order("created_at",{ascending:false}).limit(1)
    ]);
    const e=phase?.[0]?.details?.embeddings??{},v3=replay?.[0]?.metrics?.v3,compar=replay?.[0]?.metrics?.v3VsV2;
    const core=Object.entries(next.lanes).filter(([id])=>id!=="review_intelligence").every(([,v])=>v.enabled&&!v.forceOpen);
-   if(!core||phase?.[0]?.status!=="success"||Number(e.failed)!==0||Number(e.scanned)<=0||Number(e.remainingApprox)>50||!v3||!compar||Number(v3.successRate)<90||Number(v3.pairSuccessRate)<90||Number(v3.contractFailureCount)!==0||Number(v3.noResultRegressionRate)!==0||Number(v3.p95LatencyMs)>5000||Object.values(compar.noRegressions??{}).some(v=>v!==true)||!["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>compar.noRegressions?.[k]===true))throw new Error("Production promotion gate not satisfied; keep V3 shadow");
+   if(!core||!phase?.[0]?.started_at||Date.now()-Date.parse(phase[0].started_at)>30*60*1000||!replay?.[0]?.completed_at||Date.now()-Date.parse(replay[0].completed_at)>60*60*1000||phase?.[0]?.status!=="success"||Number(e.failed)!==0||Number(e.scanned)<=0||Number(e.remainingApprox)>50||!v3||!compar||Number(v3.successRate)<90||Number(v3.pairSuccessRate)<90||Number(v3.contractFailureCount)!==0||Number(v3.noResultRegressionRate)!==0||Number(v3.p95LatencyMs)>5000||Object.values(compar.noRegressions??{}).some(v=>v!==true)||!["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>compar.noRegressions?.[k]===true))throw new Error("Production promotion gate not satisfied; keep V3 shadow");
    if(next.mode==="primary")throw new Error("Primary rollout requires a separate controlled approval");
    if(next.canaryPercent>5&&previous.mode==="shadow")throw new Error("Initial canary cannot exceed 5%");
   }
