@@ -14,9 +14,7 @@ export const MICROSOFT_365_SCOPES = [
   "Tasks.ReadWrite",
   "DeviceManagementManagedDevices.ReadWrite.All",
   "DeviceManagementConfiguration.ReadWrite.All",
-  "DeviceManagementApps.ReadWrite.All",
-  "Group.ReadWrite.All",
-  "Device.Read.All",
+  "DeviceManagementApps.Read.All",
   "DeviceManagementServiceConfig.ReadWrite.All",
 ] as const;
 
