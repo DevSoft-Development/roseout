@@ -314,8 +314,6 @@ export default function CashierHome() {
         <SignaturePlusWorkspace
           session={session}
           refreshToken={posStateVersion}
-          onOpenCashDrawer={openCashDrawer}
-          onPrintReceipt={printReceipt}
         />
       </SafeAreaView>
     );
