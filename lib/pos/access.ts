@@ -39,3 +39,10 @@ export async function requireSignaturePlusAccess(locationId:string){
   if(plan!=="signature_plus") throw new Error("pos_signature_plus_required");
   return {plan};
 }
+
+
+export async function requirePosAccess(locationId:string){
+  const plan=await getPosPlanForLocation(locationId);
+  if(plan==="none") throw new Error("pos_access_required");
+  return {plan};
+}
