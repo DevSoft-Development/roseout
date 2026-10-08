@@ -350,10 +350,35 @@ export async function runOutingSearch(
           : null,
       supabase,
     });
-  if (coreAssignment.engine === "v2")
+  if (coreAssignment.engine === "v2") {
+    // Opt-in V3 shadow execution exercises the real public-search entry point.
+    // Never serve the V3 alpha execution through the V2 response contract.
+    if (process.env.SEARCH_V3_PUBLIC_SHADOW_EXECUTION === "true") {
+      void import("@/lib/search/v3").then(async ({ createTheOutHavenSearchV3, resolveSearchV3DatabaseRolloutPolicy }) => {
+        const requestId = String(input.body?.requestId ?? crypto.randomUUID());
+        const policy = await resolveSearchV3DatabaseRolloutPolicy(requestId, supabase);
+        if (!policy.runV3Shadow) return;
+        const v3 = createTheOutHavenSearchV3(supabase as any);
+        const execution = await v3.orchestrator.execute({
+          requestId,
+          query,
+          selectedMarketId: typeof selectedMarketId === "string" ? selectedMarketId : null,
+          userLocation: effectiveUserLocation?.latitude != null && effectiveUserLocation.longitude != null
+            ? { latitude: effectiveUserLocation.latitude, longitude: effectiveUserLocation.longitude }
+            : null,
+          limit: displayLimit,
+        });
+        console.info("SEARCH_V3_PUBLIC_SHADOW", JSON.stringify({
+          requestId, laneCount: execution.retrieval.length,
+          candidates: execution.candidates.length, outings: execution.outings.length,
+          failures: execution.metadata.retrievalFailureCount ?? 0,
+        }));
+      }).catch((error: unknown) => console.error("SEARCH_V3_PUBLIC_SHADOW_FAILED", error));
+    }
     return adaptV2ResponseToCurrentPublicContract(
       await runV2(),
     ) as unknown as EnterpriseSearchResult;
+  }
   if (
     !input.suppressSearchCoreShadow &&
     (coreConfig.shadowEnabled || coreConfig.mode === "shadow")
