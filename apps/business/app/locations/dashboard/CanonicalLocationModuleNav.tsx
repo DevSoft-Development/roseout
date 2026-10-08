@@ -83,7 +83,7 @@ function NavLink({ item, pathname, query, onNavigate }: { item: NavItem; pathnam
     <Link
       href={buildDestination(item, query)}
       onClick={onNavigate}
-      className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 text-[13px] font-bold transition ${active ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-[var(--business-text)]" : "border-transparent text-[var(--business-text)]/60 hover:border-white/10 hover:bg-white/[0.05] hover:text-[var(--business-text)]"}`}
+      className={`flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2 text-[13px] font-semibold transition ${active ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-[var(--business-text)]" : "border-transparent text-[var(--business-text)]/60 hover:border-white/10 hover:bg-white/[0.05] hover:text-[var(--business-text)]"}`}
     >
       <Icon size={16} className={active ? "text-[#ff6b86]" : "text-[var(--business-text)]/35"} />
       <span className="min-w-0 truncate">{item.label}</span>
@@ -109,7 +109,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
             <p className="truncate text-base font-black text-[var(--business-text)]">TheOutHaven</p>
             <p className="text-[11px] font-bold text-[var(--business-muted)]">Business dashboard</p>
           </div>
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-[#ff2142]/40 bg-[#e1062a]/15 text-[#ff6b86]"><Building2 size={15} /></span>
+          <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-lg"><img src="/toh_enterprise_mark.webp" alt="TheOutHaven" width={28} height={28} className="h-7 w-7 object-contain" /></span>
         </div>
       </div>
 
@@ -123,7 +123,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
           <button
             type="button"
             onClick={() => setAdvancedOpen((current) => !current)}
-            className="flex min-h-10 w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em] text-[var(--business-text)]/38 hover:bg-white/[0.04] hover:text-[var(--business-text)]/65"
+            className="flex min-h-10 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.16em] text-[var(--business-text)]/38 hover:bg-white/[0.04] hover:text-[var(--business-text)]/65"
             aria-expanded={advancedOpen || advancedActive}
           >
             <span>Advanced</span>
@@ -140,7 +140,7 @@ function SidebarContents({ onNavigate }: { onNavigate?: () => void }) {
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-[var(--business-border)] bg-[var(--business-panel-strong)] px-3 py-2 text-sm font-black text-[var(--business-text)] transition hover:opacity-90"
+          className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-[var(--business-border)] bg-[var(--business-panel)] px-3 py-2 text-sm font-black text-[var(--business-text)] transition hover:opacity-90"
           aria-label={theme === "dark" ? "Switch to daytime mode" : "Switch to nighttime mode"}
         >
           {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
@@ -157,14 +157,14 @@ function TabletRail({ openNavigation }: { openNavigation: () => void }) {
   const query = searchParams.toString();
   return (
     <aside className="sticky top-0 hidden h-screen w-[76px] shrink-0 flex-col items-center overflow-hidden border-r border-[var(--business-border)] bg-[var(--business-sidebar)] py-4 text-[var(--business-text)] md:flex xl:hidden">
-      <button type="button" onClick={openNavigation} aria-label="Open location workspace navigation" className="mb-4 grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.05] text-[var(--business-text)]"><Menu size={19} /></button>
+      <button type="button" onClick={openNavigation} aria-label="Open location workspace navigation" className="mb-4 grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.05] text-[var(--business-text)]"><Menu size={19} /></button>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4 [scrollbar-gutter:stable]">
         <div className="flex flex-col items-center gap-2">
           {dailyItems.map((item) => {
             const Icon = item.icon;
             const active = isItemActive(pathname, item);
             return (
-              <Link key={item.href} href={buildDestination(item, query)} title={item.label} aria-label={item.label} className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border transition ${active ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-[#ff6b86]" : "border-transparent text-[var(--business-text)]/40 hover:border-white/10 hover:bg-white/[0.05] hover:text-[var(--business-text)]"}`}>
+              <Link key={item.href} href={buildDestination(item, query)} title={item.label} aria-label={item.label} className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg border transition ${active ? "border-[#ff2142]/45 bg-[#e1062a]/20 text-[#ff6b86]" : "border-transparent text-[var(--business-text)]/40 hover:border-white/10 hover:bg-white/[0.05] hover:text-[var(--business-text)]"}`}>
                 <Icon size={19} />
               </Link>
             );
@@ -183,7 +183,7 @@ export default function CanonicalLocationModuleNav() {
 
   return (
     <>
-      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col overflow-hidden border-r border-[var(--business-border)] bg-[var(--business-sidebar)] text-[var(--business-text)] xl:flex"><SidebarContents /></aside>
+      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col overflow-hidden border-r border-[var(--business-border)] bg-[var(--business-sidebar)] text-[var(--business-text)] xl:flex"><SidebarContents /></aside>
       <TabletRail openNavigation={() => setMobileOpen(true)} />
       <button type="button" onClick={() => setMobileOpen(true)} aria-label="Open location workspace navigation" className="fixed left-3 top-[4.65rem] z-[70] grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-[#090b0e]/95 text-[var(--business-text)] shadow-xl shadow-black/35 backdrop-blur-xl md:hidden"><Menu size={19} /></button>
 
