@@ -95,7 +95,7 @@ for (const token of [
 }
 
 for (const token of [
-  "TARGET_SCHEMA_VERSION = 8",
+  "TARGET_SCHEMA_VERSION = 10",
   "location_not_on_primary",
   "setPrimaryFence",
   "drainPrimaryCardTenders",
