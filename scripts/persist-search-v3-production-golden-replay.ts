@@ -65,8 +65,8 @@ async function persist() {
       const v3 = rowsById.get(testCase.id)!;
       // The standalone V3 artifact evaluates legacyCount=0; restore the actual
       // V2 result count so no-result regressions cannot be hidden at promotion.
-      const v2ResultCount = Number(v2Canonical.counts?.restaurants ?? 0) +
-        Number(v2Canonical.counts?.activities ?? 0) +
+      const v2ResultCount = Number(v2Canonical.counts?.restaurantCards ?? 0) +
+        Number(v2Canonical.counts?.activityCards ?? 0) +
         Number(v2Canonical.counts?.pairs ?? 0);
       const noResultRegression = v2ResultCount > 0 && Number(v3.comparison?.resultCount ?? 0) === 0;
       const comparedV3 = v3.comparison ? {
