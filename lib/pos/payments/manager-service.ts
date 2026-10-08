@@ -60,6 +60,36 @@ async function requireActiveStaff(locationId: string, staffProfileId: string, op
   return data;
 }
 
+export async function verifyPosManagerPin(input: {
+  locationId: string;
+  approverStaffProfileId: string;
+  pin: string;
+}) {
+  const locationId = required(input.locationId, "location_id");
+  const approverStaffProfileId = required(input.approverStaffProfileId, "approver");
+  const pin = String(input.pin || "").trim();
+  if (!/^\d{4,6}$/.test(pin)) throw new Error("pos_manager_pin_invalid");
+
+  const profile = await supabaseAdmin
+    .from("reserve_staff_profiles")
+    .select("id,location_id,display_name,role,is_active,can_quick_switch")
+    .eq("id", approverStaffProfileId)
+    .eq("location_id", locationId)
+    .maybeSingle();
+  if (profile.error || !profile.data || profile.data.is_active === false) {
+    throw new Error("pos_manager_not_found");
+  }
+  if (!["manager", "location_admin"].includes(String(profile.data.role || ""))) {
+    throw new Error("pos_manager_approval_required");
+  }
+  const verify = await supabaseAdmin.rpc("reserve_verify_staff_pin", {
+    p_staff_profile_id: approverStaffProfileId,
+    p_pin: pin,
+  });
+  if (verify.error || verify.data !== true) throw new Error("pos_manager_pin_incorrect");
+  return profile.data;
+}
+
 async function requireManagerActionStaff(input: {
   locationId: string;
   actorStaffProfileId: string;
