@@ -1,0 +1,104 @@
+/*
+ * TheOutHaven Enterprise SaaS foundation.
+ * Shared design tokens for Admin. Keep product-specific layout in later stack layers.
+ */
+.admin-shell {
+  --toh-brand: #e1062a;
+  --toh-brand-hover: #c91531;
+  --toh-brand-strong: #b80f2b;
+  --toh-brand-soft: rgba(225, 6, 42, 0.08);
+  --toh-brand-border: rgba(225, 6, 42, 0.22);
+
+  --toh-space-1: 4px;
+  --toh-space-2: 8px;
+  --toh-space-3: 12px;
+  --toh-space-4: 16px;
+  --toh-space-5: 20px;
+  --toh-space-6: 24px;
+  --toh-space-8: 32px;
+  --toh-space-10: 40px;
+  --toh-space-12: 48px;
+
+  --toh-radius-xs: 6px;
+  --toh-radius-sm: 8px;
+  --toh-radius-md: 10px;
+  --toh-radius-lg: 12px;
+  --toh-radius-xl: 16px;
+
+  --toh-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --toh-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.03);
+  --toh-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.07);
+  --toh-shadow-overlay: 0 18px 48px rgba(15, 23, 42, 0.16);
+
+  --toh-control-height-sm: 32px;
+  --toh-control-height: 38px;
+  --toh-control-height-lg: 44px;
+
+  --toh-font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --toh-text-xs: 11px;
+  --toh-text-sm: 13px;
+  --toh-text-md: 14px;
+  --toh-text-lg: 16px;
+  --toh-text-xl: 20px;
+  --toh-text-2xl: 28px;
+  --toh-line-tight: 1.25;
+  --toh-line-normal: 1.5;
+
+  --toh-surface-page: var(--admin-shell-bg);
+  --toh-surface-panel: var(--admin-shell-panel);
+  --toh-surface-card: var(--admin-shell-card);
+  --toh-surface-subtle: var(--admin-shell-card-strong);
+  --toh-border: var(--admin-shell-border);
+  --toh-border-strong: var(--admin-shell-border-strong);
+  --toh-text: var(--admin-shell-text);
+  --toh-text-soft: var(--admin-shell-soft);
+  --toh-text-muted: var(--admin-shell-muted);
+
+  font-family: var(--toh-font-sans);
+  font-size: var(--toh-text-md);
+  line-height: var(--toh-line-normal);
+}
+
+.admin-shell[data-admin-theme="light"] {
+  --toh-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.035);
+  --toh-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.055), 0 1px 2px rgba(15, 23, 42, 0.025);
+  --toh-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.admin-shell[data-admin-theme="dark"] {
+  --toh-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --toh-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.22);
+  --toh-shadow-md: 0 10px 30px rgba(0, 0, 0, 0.24);
+  --toh-shadow-overlay: 0 20px 56px rgba(0, 0, 0, 0.45);
+}
+
+.admin-enterprise-surface :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+.admin-enterprise-surface :where(input, select, textarea) {
+  border-radius: var(--toh-radius-sm);
+}
+
+.admin-enterprise-surface :where(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.admin-enterprise-surface :where(th) {
+  font-size: var(--toh-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-enterprise-surface :where(td, th) {
+  vertical-align: middle;
+}
+
+.admin-enterprise-surface :where([role="dialog"], [role="menu"], [role="listbox"]) {
+  border-color: var(--toh-border);
+  border-radius: var(--toh-radius-lg);
+  box-shadow: var(--toh-shadow-overlay);
+}
