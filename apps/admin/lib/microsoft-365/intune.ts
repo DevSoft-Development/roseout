@@ -100,6 +100,8 @@ const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   iCloudRequireEncryptedBackup: true,
   messagesBlocked: false,
   notificationsBlockSettingsModification: false,
+  passcodeRequired: true,
+  passcodeMinutesOfInactivityBeforeLock: 0,
   passcodeBlockFingerprintUnlock: false,
   passcodeBlockFingerprintModification: false,
   passcodeBlockModification: false,
