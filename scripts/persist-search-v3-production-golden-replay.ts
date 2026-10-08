@@ -63,6 +63,17 @@ async function persist() {
       }
 
       const v3 = rowsById.get(testCase.id)!;
+      // The standalone V3 artifact evaluates legacyCount=0; restore the actual
+      // V2 result count so no-result regressions cannot be hidden at promotion.
+      const v2ResultCount = Number(v2Canonical.counts?.restaurants ?? 0) +
+        Number(v2Canonical.counts?.activities ?? 0) +
+        Number(v2Canonical.counts?.pairs ?? 0);
+      const noResultRegression = v2ResultCount > 0 && Number(v3.comparison?.resultCount ?? 0) === 0;
+      const comparedV3 = v3.comparison ? {
+        ...v3.comparison,
+        noResultRegression,
+        passed: v3.comparison.passed && !noResultRegression,
+      } : null;
       const v3CoreOk = v3.laneValidation?.passed === true;
       const v3Error = v3.error || (!v3CoreOk ? "v3_core_lane_validation_failed" : null);
       rows.push({
@@ -74,7 +85,7 @@ async function persist() {
         canonical_result: { v2Counts: v2Canonical.counts, v3: v3.execution },
         comparison: {
           ...comparison,
-          v3: v3.comparison,
+          v3: comparedV3,
           v3Error,
           v3ContractFailure: Boolean(v3Error),
         },
