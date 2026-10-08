@@ -82,3 +82,21 @@ revoke all on function public.search_v3_breaker_finish(text, uuid, boolean, inte
 grant execute on function public.search_v3_breaker_enter(text, integer) to service_role;
 grant execute on function public.search_v3_breaker_finish(text, uuid, boolean, integer, integer) to service_role;
 grant select on public.search_v3_lane_breakers to service_role;
+
+-- Audited Admin recovery calls this privileged operation via service role only.
+create or replace function public.search_v3_breaker_reset(p_lane text)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if p_lane not in (
+    'structured','bm25','semantic_dense_li','food_semantic',
+    'menu_semantic','review_intelligence'
+  ) then
+    raise exception 'invalid_search_v3_breaker_lane';
+  end if;
+  update public.search_v3_lane_breakers
+    set failures=0, open_until=null, probe_lease=null,
+        probe_until=null, updated_at=clock_timestamp()
+    where lane_id=p_lane;
+end; $$;
+revoke all on function public.search_v3_breaker_reset(text) from public, anon, authenticated;
+grant execute on function public.search_v3_breaker_reset(text) to service_role;
