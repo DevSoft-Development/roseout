@@ -270,7 +270,9 @@ returns table(
   amount_cents integer,
   provider text,
   provider_payment_intent_id text,
-  connected_account_id text
+  connected_account_id text,
+  request_status text,
+  provider_refund_id text
 )
 language plpgsql
 security invoker
@@ -284,11 +286,29 @@ declare
   v_provider text;
   v_payment_intent text;
   v_connected_account text;
+  v_existing public.pos_refund_requests%rowtype;
 begin
   if coalesce(p_amount_cents,0)<=0 then raise exception 'invalid_pos_refund_amount'; end if;
   if nullif(trim(coalesce(p_reason,'')),'') is null then raise exception 'pos_manager_reason_required'; end if;
   if p_approver_staff_profile_id is null then raise exception 'pos_manager_approval_required'; end if;
   if nullif(trim(coalesce(p_idempotency_key,'')),'') is null then raise exception 'pos_refund_idempotency_required'; end if;
+
+  select * into v_existing
+    from public.pos_refund_requests
+   where location_id=p_location_id and idempotency_key=trim(p_idempotency_key)
+   limit 1;
+  if found then
+    return query select
+      v_existing.id,
+      (select t.tender_type from public.pos_tenders t where t.id=v_existing.tender_id),
+      v_existing.amount_cents,
+      v_existing.provider,
+      v_existing.provider_payment_intent_id,
+      v_existing.connected_account_id,
+      v_existing.status,
+      v_existing.provider_refund_id;
+    return;
+  end if;
 
   select * into v_tender from public.pos_tenders
    where id=p_tender_id and location_id=p_location_id for update;
@@ -329,7 +349,9 @@ begin
     v_request_id,v_tender.tender_type,p_amount_cents,
     case when v_tender.tender_type='card' then v_provider else null end,
     case when v_tender.tender_type='card' then v_payment_intent else null end,
-    case when v_tender.tender_type='card' then v_connected_account else null end;
+    case when v_tender.tender_type='card' then v_connected_account else null end,
+    'initiated'::text,
+    null::text;
 end;
 $$;
 
