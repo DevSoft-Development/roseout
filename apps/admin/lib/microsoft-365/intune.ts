@@ -129,6 +129,7 @@ const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   notificationsBlockSettingsModification: false,
   passcodeRequired: true,
   passcodeMinutesOfInactivityBeforeLock: 0,
+  passcodeMinutesOfInactivityBeforeScreenTimeout: 1,
   passcodeBlockFingerprintUnlock: false,
   passcodeBlockFingerprintModification: false,
   passcodeBlockModification: false,
