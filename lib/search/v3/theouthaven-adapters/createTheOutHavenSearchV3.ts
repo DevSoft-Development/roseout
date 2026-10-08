@@ -1,4 +1,4 @@
-import { readSearchV3Controls, wrapSearchV3RetrievalProviders } from "../controls/searchV3Controls";
+import { readSearchV3RuntimeControls, wrapSearchV3RetrievalProviders } from "../controls/searchV3Controls";
 import type {
   LocationIntelligenceProvider,
   SearchEligibilityProvider,
@@ -102,7 +102,7 @@ export function createTheOutHavenSearchV3(
 
   const retrievalProviders = options.retrievalProviders ?? wrapSearchV3RetrievalProviders(
     createDefaultRetrievalProviders(client, options),
-    () => readSearchV3Controls(client as any),
+    () => readSearchV3RuntimeControls(client as any),
   );
 
   const fusion =
