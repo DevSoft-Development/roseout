@@ -15,6 +15,7 @@ import {
 } from "@/lib/search/quality/v3ReplayEvaluation";
 import { buildLaunchGates, percentile, type SearchQualityMetrics } from "@/lib/search/quality/launchGates";
 import { countResponseResults, responseDomainInventory, type ServedDomain } from "@/lib/search/quality/replayEvaluation";
+import { compareSearchV3ToV2 } from "@/lib/search/quality/v3VsV2Comparison";
 
 const BATCH_SIZE = 3;
 const retrievalCalls = (response: any) => Array.isArray(response?.debug?.retrievalCalls) ? response.debug.retrievalCalls : [];
@@ -327,6 +328,22 @@ export async function POST(request: Request) {
     v3: row.comparison?.v3 ?? null,
     contractFailure: Boolean(row.comparison?.v3ContractFailure),
   })));
+  const v3VsV2 = compareSearchV3ToV2(
+    {
+      successRate: metrics.successRate,
+      pairSuccessRate: metrics.pairedQuerySuccessRate,
+      noResultRegressionRate: metrics.noResultRegressionRate,
+      p95LatencyMs: metrics.p95LatencyMs,
+      contractFailureCount: metrics.contractFailureCount,
+    },
+    {
+      successRate: v3Metrics.successRate,
+      pairSuccessRate: v3Metrics.pairSuccessRate,
+      noResultRegressionRate: v3Metrics.noResultRegressionRate,
+      p95LatencyMs: v3Metrics.p95LatencyMs,
+      contractFailureCount: v3Metrics.contractFailureCount,
+    },
+  );
 
   await supabaseAdmin
     .from("search_quality_replay_runs")
@@ -343,6 +360,7 @@ export async function POST(request: Request) {
         exactDomainPurity: true,
         v3Shadow: true,
         v3: v3Metrics,
+        v3VsV2,
       },
       completed_at: new Date().toISOString(),
     })
@@ -358,5 +376,6 @@ export async function POST(request: Request) {
     persistedRowCount: persisted,
     v3Shadow: true,
     v3: v3Metrics,
+    v3VsV2,
   });
 }
