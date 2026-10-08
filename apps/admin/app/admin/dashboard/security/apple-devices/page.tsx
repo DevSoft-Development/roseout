@@ -291,7 +291,7 @@ export default async function AppleDeviceEnrollmentPage() {
                     <strong>{app.displayName || "Unnamed Apple app"}</strong>
                   </div>
                   <span>{app.publisher || "Publisher unavailable"}</span>
-                  <small>{app.isAssigned ? "Has Intune assignments" : "Not assigned yet"}</small>
+                  <small>Ready for Intune assignment</small>
                 </div>
 
                 <form
