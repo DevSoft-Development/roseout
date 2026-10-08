@@ -321,3 +321,67 @@ export function createSignaturePlusSplit(input:{deviceId:string;credential:strin
 export function createSignaturePlusSplitTender(input:{deviceId:string;credential:string;checkId:string;allocationKey:string;tipCents?:number}){
   return mutateSignaturePlus({...input,body:{action:"split_tender",checkId:input.checkId,allocationKey:input.allocationKey,tipCents:input.tipCents||0}});
 }
+
+
+async function mutatePosManager(input:{deviceId:string;credential:string;body:Record<string,unknown>}){
+  const data=await jsonRequest("/api/pos/device/manager",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+      "Content-Type":"application/json",
+    },
+    body:JSON.stringify(input.body),
+  });
+  return data.result;
+}
+
+export function recordPosCashTender(input:{
+  deviceId:string;credential:string;checkId:string;cashReceivedCents:number;
+  amountCents?:number|null;tipCents?:number;staffProfileId?:string|null;
+}){
+  return mutatePosManager({...input,body:{
+    action:"cash_tender",checkId:input.checkId,cashReceivedCents:input.cashReceivedCents,
+    amountCents:input.amountCents??null,tipCents:input.tipCents||0,staffProfileId:input.staffProfileId||null,
+  }});
+}
+
+export function applyPosManagerDiscount(input:{
+  deviceId:string;credential:string;checkId:string;discountCents:number;
+  actorStaffProfileId:string;approverStaffProfileId:string;reason:string;
+}){
+  return mutatePosManager({...input,body:{action:"discount_check",checkId:input.checkId,
+    discountCents:input.discountCents,actorStaffProfileId:input.actorStaffProfileId,
+    approverStaffProfileId:input.approverStaffProfileId,reason:input.reason}});
+}
+
+export function voidPosManagerItem(input:{
+  deviceId:string;credential:string;orderItemId:string;
+  actorStaffProfileId:string;approverStaffProfileId:string;reason:string;
+}){
+  return mutatePosManager({...input,body:{action:"void_item",orderItemId:input.orderItemId,
+    actorStaffProfileId:input.actorStaffProfileId,approverStaffProfileId:input.approverStaffProfileId,reason:input.reason}});
+}
+
+export function refundPosManagerTender(input:{
+  deviceId:string;credential:string;tenderId:string;amountCents:number;
+  actorStaffProfileId:string;approverStaffProfileId:string;reason:string;idempotencyKey:string;
+}){
+  return mutatePosManager({...input,body:{action:"refund_tender",tenderId:input.tenderId,
+    amountCents:input.amountCents,actorStaffProfileId:input.actorStaffProfileId,
+    approverStaffProfileId:input.approverStaffProfileId,reason:input.reason,idempotencyKey:input.idempotencyKey}});
+}
+
+export function openPosDrawerSession(input:{
+  deviceId:string;credential:string;openingCashCents:number;staffProfileId?:string|null;
+}){
+  return mutatePosManager({...input,body:{action:"open_drawer",openingCashCents:input.openingCashCents,
+    staffProfileId:input.staffProfileId||null}});
+}
+
+export function closePosDrawerSession(input:{
+  deviceId:string;credential:string;sessionId:string;countedCashCents:number;
+}){
+  return mutatePosManager({...input,body:{action:"close_drawer",sessionId:input.sessionId,
+    countedCashCents:input.countedCashCents}});
+}
