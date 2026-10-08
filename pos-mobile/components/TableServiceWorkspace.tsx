@@ -12,9 +12,17 @@ import {
 import type { PosClaimSession } from "@/lib/device/identity";
 import {
   addPosTableItem,
+  applyPosManagerDiscount,
+  closePosDrawerSession,
+  fetchPosManagerOperations,
   fetchPosTableService,
   fetchPosTableWorkspace,
+  openPosDrawerSession,
   openPosTableCheck,
+  recordPosCashTender,
+  refundPosManagerTender,
+  reprintPosReceipt,
+  voidPosManagerItem,
   sendPosTableCourses,
   updatePosTableGuestCount,
   type PosTableCatalogItem,
@@ -27,7 +35,7 @@ const COURSES=[
 ] as const;
 
 function money(cents:number){return "$"+(Number(cents||0)/100).toFixed(2);}
-function readable(value:string){return value.replace(/_/g," ").replace(/w/g,m=>m.toUpperCase());}
+function readable(value:string){return value.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase());}
 
 function GuestPill({label,selected,onPress,compact=false}:{label:string;selected:boolean;onPress:()=>void;compact?:boolean}){
   return <Pressable onPress={onPress} style={[styles.guestPill,compact&&styles.guestPillCompact,selected&&styles.guestPillActive]}>
@@ -35,7 +43,11 @@ function GuestPill({label,selected,onPress,compact=false}:{label:string;selected
   </Pressable>;
 }
 
-export default function TableServiceWorkspace({session}:{session:PosClaimSession}){
+export default function TableServiceWorkspace({
+  session,
+}:{
+  session:PosClaimSession;
+}){
   const {width}=useWindowDimensions();
   const tablet=width>=900;
   const [tables,setTables]=useState<PosTableSummary[]>([]);
@@ -54,12 +66,27 @@ export default function TableServiceWorkspace({session}:{session:PosClaimSession
   const [overview,setOverview]=useState(false);
   const [modifierItem,setModifierItem]=useState<PosTableCatalogItem|null>(null);
   const [modifierIds,setModifierIds]=useState<string[]>([]);
+  const [cashReceived,setCashReceived]=useState("");
+  const [cashAmount,setCashAmount]=useState("");
+  const [lastCashResult,setLastCashResult]=useState<any>(null);
+  const [managerOps,setManagerOps]=useState<{drawers:any[];events:any[]}>({drawers:[],events:[]});
+  const [managerStaffProfileId,setManagerStaffProfileId]=useState("");
+  const [managerPin,setManagerPin]=useState("");
+  const [managerReason,setManagerReason]=useState("Guest request");
+  const [discountAmount,setDiscountAmount]=useState("");
+  const [refundTenderId,setRefundTenderId]=useState<string|null>(null);
+  const [refundAmount,setRefundAmount]=useState("");
+  const [openingCash,setOpeningCash]=useState("");
+  const [countedCash,setCountedCash]=useState("");
 
   const refresh=useCallback(async()=>{
     setLoading(true);setError("");
     try{
-      const data=await fetchPosTableService({deviceId:session.deviceId,credential:session.credential});
-      setTables(data.tables);setCatalog(data.catalog);
+      const [data,manager]=await Promise.all([
+        fetchPosTableService({deviceId:session.deviceId,credential:session.credential}),
+        fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}).catch(()=>({drawers:[],events:[]})),
+      ]);
+      setTables(data.tables);setCatalog(data.catalog);setManagerOps(manager);
       if(!sectionId&&data.catalog?.sections?.length) setSectionId(data.catalog.sections[0].id);
       if(workspace) setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
     }catch(e){setError(e instanceof Error?readable(e.message):"Unable to load tables.");}
@@ -174,6 +201,9 @@ export default function TableServiceWorkspace({session}:{session:PosClaimSession
   }));
   const sharedItems=workspace.items.filter(item=>item.shared);
   const unsentCourses=Array.from(new Set(workspace.items.filter(item=>item.status==="active").map(item=>item.course)));
+  const managers=(workspace.staff||[]).filter(staff=>staff.role==="manager");
+  const effectiveManagerId=managerStaffProfileId||managers[0]?.id||"";
+  const openDrawer=(managerOps.drawers||[]).find((drawer:any)=>drawer.status==="open"&&String(drawer.device_id||"")===session.deviceId)||null;
 
   const guestBar=<View style={styles.guestBar}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guestScroll}>
@@ -197,6 +227,132 @@ export default function TableServiceWorkspace({session}:{session:PosClaimSession
       </View>)}
       {!!sharedItems.length&&<View style={styles.guestGroup}><View style={styles.rowBetween}><Text style={styles.guestHeading}>Shared</Text><Text style={styles.groupMeta}>{sharedItems.length} items</Text></View>{sharedItems.map(item=><View key={item.id} style={styles.summaryItem}><View style={styles.summaryItemMain}><Text style={styles.itemName}>{item.quantity}× {item.name}</Text><Text style={styles.itemMeta}>{readable(item.course)} · {item.status==="active"?"Not sent":readable(item.status)}</Text></View><Text style={styles.itemPrice}>{money(item.lineTotalCents)}</Text></View>)}</View>}
     </ScrollView>
+    <View style={styles.paymentPanel}>
+      <View style={styles.rowBetween}>
+        <View><Text style={styles.paymentTitle}>Payment</Text><Text style={styles.muted}>Paid {money(workspace.amounts.amountPaidCents||0)} · Refunded {money(workspace.amounts.amountRefundedCents||0)}</Text></View>
+        <View style={{alignItems:"flex-end"}}><Text style={styles.paymentLabel}>Remaining</Text><Text style={styles.total}>{money(workspace.amounts.remainingCents||0)}</Text></View>
+      </View>
+      <View style={styles.cashRow}>
+        <TextInput value={cashReceived} onChangeText={setCashReceived} keyboardType="decimal-pad" placeholder="Cash received" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <TextInput value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" placeholder="Partial amount" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!cashReceived||workspace.amounts.remainingCents<=0} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            const result=await recordPosCashTender({
+              deviceId:session.deviceId,credential:session.credential,checkId:workspace.id,
+              cashReceivedCents:Math.round(Number(cashReceived||0)*100),
+              amountCents:cashAmount?Math.round(Number(cashAmount)*100):null,
+            });
+            setLastCashResult(result);setCashReceived("");setCashAmount("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}).catch(()=>managerOps));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to take cash.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Take cash</Text></Pressable>
+      </View>
+      {lastCashResult?<Text style={styles.cashSuccess}>Change due {money(Number(lastCashResult.cash_change_cents||0))} · Remaining {money(Number(lastCashResult.remaining_cents||0))}</Text>:null}
+      <Pressable onPress={async()=>{
+        setBusy(true);setError("");
+        try{await reprintPosReceipt({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id});}
+        catch(e){setError(e instanceof Error?readable(e.message):"Unable to print receipt.");}
+        finally{setBusy(false)}
+      }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Print / reprint receipt</Text></Pressable>
+    </View>
+
+    <View style={styles.paymentPanel}>
+      <Text style={styles.paymentTitle}>Manager controls</Text>
+      <Text style={styles.muted}>Refunds, voids, discounts, and drawer closeout require a manager PIN.</Text>
+      <View style={[styles.cashRow,{marginTop:10}]}>
+        {managers.map(manager=><Pressable key={manager.id} onPress={()=>setManagerStaffProfileId(manager.id)} style={[styles.receiptButton,effectiveManagerId===manager.id&&styles.cashButton]}><Text style={styles.smallButtonText}>{manager.name}</Text></Pressable>)}
+      </View>
+      <TextInput value={managerPin} onChangeText={setManagerPin} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="Manager PIN" placeholderTextColor="#756f73" style={[styles.cashInput,{marginTop:10}]}/>
+      <TextInput value={managerReason} onChangeText={setManagerReason} placeholder="Reason required" placeholderTextColor="#756f73" style={[styles.cashInput,{marginTop:8}]}/>
+
+      <View style={[styles.cashRow,{marginTop:10}]}>
+        <TextInput value={discountAmount} onChangeText={setDiscountAmount} keyboardType="decimal-pad" placeholder="Discount $" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!discountAmount||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await applyPosManagerDiscount({
+              deviceId:session.deviceId,credential:session.credential,checkId:workspace.id,
+              discountCents:Math.round(Number(discountAmount||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+            });
+            setDiscountAmount("");setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to apply discount.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Apply discount</Text></Pressable>
+      </View>
+
+      {workspace.items.map(item=><View key={item.id} style={styles.summaryItem}>
+        <View style={styles.summaryItemMain}><Text style={styles.itemName}>{item.quantity}× {item.name}</Text><Text style={styles.itemMeta}>{money(item.lineTotalCents)}{item.status==="voided"?" · VOIDED":""}</Text></View>
+        {item.status!=="voided"?<Pressable disabled={busy||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await voidPosManagerItem({
+              deviceId:session.deviceId,credential:session.credential,orderItemId:item.id,
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+            });
+            setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to void item.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Void</Text></Pressable>:null}
+      </View>)}
+
+      {workspace.tenders.map(tender=><Pressable key={tender.id} onPress={()=>{setRefundTenderId(tender.id);setRefundAmount((Number(tender.refundableCents||0)/100).toFixed(2));}} style={styles.summaryItem}>
+        <View style={styles.summaryItemMain}><Text style={styles.itemName}>#{tender.number} · {readable(tender.type)}</Text><Text style={styles.itemMeta}>{money(tender.amountCents)} · refundable {money(tender.refundableCents)}</Text></View>
+        <Text style={styles.itemPrice}>{readable(tender.status)}</Text>
+      </Pressable>)}
+      {refundTenderId?<View style={styles.cashRow}>
+        <TextInput value={refundAmount} onChangeText={setRefundAmount} keyboardType="decimal-pad" placeholder="Refund $" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!refundAmount||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            const selected=workspace.tenders.find(tender=>tender.id===refundTenderId);
+            await refundPosManagerTender({
+              deviceId:session.deviceId,credential:session.credential,tenderId:refundTenderId,
+              amountCents:Math.round(Number(refundAmount||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+              idempotencyKey:`pos-refund:${session.deviceId}:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${selected?.amountRefundedCents||0}`,
+            });
+            setRefundTenderId(null);setRefundAmount("");setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to refund tender.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Refund</Text></Pressable>
+      </View>:null}
+
+      {!openDrawer?<View style={styles.cashRow}>
+        <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" placeholder="Opening cash" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!openingCash} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await openPosDrawerSession({deviceId:session.deviceId,credential:session.credential,openingCashCents:Math.round(Number(openingCash||0)*100)});
+            setOpeningCash("");
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to open drawer shift.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Open drawer shift</Text></Pressable>
+      </View>:<View style={styles.cashRow}>
+        <TextInput value={countedCash} onChangeText={setCountedCash} keyboardType="decimal-pad" placeholder="Counted cash" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!countedCash||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await closePosDrawerSession({
+              deviceId:session.deviceId,credential:session.credential,sessionId:String(openDrawer.id),
+              countedCashCents:Math.round(Number(countedCash||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,
+            });
+            setCountedCash("");setManagerPin("");
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to close drawer shift.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Close drawer shift</Text></Pressable>
+      </View>}
+    </View>
+
     <View style={styles.sendGrid}>
       {unsentCourses.includes("drinks")&&<Pressable onPress={()=>sendCourses(["drinks"])} style={styles.sendButton}><Text style={styles.sendText}>Send Drinks</Text></Pressable>}
       {unsentCourses.includes("appetizers")&&<Pressable onPress={()=>sendCourses(["appetizers"])} style={styles.sendButton}><Text style={styles.sendText}>Send Apps</Text></Pressable>}
@@ -279,6 +435,11 @@ const styles=StyleSheet.create({
   total:{color:"#fff",fontSize:23,fontWeight:"900"},summaryScroll:{maxHeight:520},guestGroup:{marginTop:13,paddingTop:11,borderTopWidth:1,borderTopColor:"#20242a"},
   guestHeading:{color:"#fff",fontSize:13,fontWeight:"900"},groupMeta:{color:"#7f828a",fontSize:10,fontWeight:"700"},summaryItem:{flexDirection:"row",gap:8,paddingVertical:7},
   summaryItemMain:{flex:1},itemName:{color:"#ececef",fontSize:12,fontWeight:"800"},itemMeta:{color:"#858890",fontSize:9,fontWeight:"700",marginTop:2},itemPrice:{color:"#d9d9dc",fontSize:11,fontWeight:"900"},
+  paymentPanel:{marginTop:14,borderRadius:14,borderWidth:1,borderColor:"#2c3037",backgroundColor:"#11141a",padding:12},
+  paymentTitle:{color:"#fff",fontSize:15,fontWeight:"900"},paymentLabel:{color:"#858890",fontSize:9,fontWeight:"900",textTransform:"uppercase"},
+  cashRow:{flexDirection:"row",flexWrap:"wrap",gap:7,marginTop:10},cashInput:{minWidth:110,flexGrow:1,borderRadius:10,borderWidth:1,borderColor:"#30343b",backgroundColor:"#0d1014",color:"#fff",paddingHorizontal:10,paddingVertical:9,fontSize:11,fontWeight:"700"},
+  cashButton:{borderRadius:10,backgroundColor:"#b91d33",paddingHorizontal:13,paddingVertical:10,alignItems:"center",justifyContent:"center"},
+  cashSuccess:{color:"#77d69b",fontSize:11,fontWeight:"800",marginTop:8},receiptButton:{marginTop:8,borderRadius:10,borderWidth:1,borderColor:"#343840",paddingHorizontal:12,paddingVertical:10,alignItems:"center"},
   sendGrid:{flexDirection:"row",flexWrap:"wrap",gap:7,marginTop:14},sendButton:{flexGrow:1,minWidth:100,borderRadius:11,backgroundColor:"#b91d33",paddingHorizontal:10,paddingVertical:12,alignItems:"center"},
   sendAll:{backgroundColor:"#253143"},sendText:{color:"#fff",fontSize:10,fontWeight:"900"},overviewPanel:{margin:12,borderRadius:18,borderWidth:1,borderColor:"#343841",backgroundColor:"#101319",padding:14},
   overviewGrid:{flexDirection:"row",flexWrap:"wrap",gap:8,marginTop:12},overviewGuest:{minWidth:120,flexGrow:1,borderRadius:12,backgroundColor:"#171a20",padding:12},
