@@ -26,7 +26,7 @@ function nonNegativeInt(value: unknown, field: string) {
   return number;
 }
 
-const POS_MANAGER_ROLES = new Set(["location_admin", "manager"]);
+const POS_MANAGER_ROLES = new Set(["manager"]);
 
 async function requireManagerApproval(locationId: string, staffProfileId: string) {
   const id = required(staffProfileId, "approver");
@@ -345,4 +345,76 @@ export async function getPosManagerOperations(locationId: string) {
   if (drawerError) throw new Error(drawerError.message || "pos_drawer_sessions_failed");
   if (eventError) throw new Error(eventError.message || "pos_manager_events_failed");
   return { drawers: drawers || [], events: events || [] };
+}
+
+
+export async function queuePosCheckReceipt(input:{
+  locationId:string;
+  checkId:string;
+  reprint?:boolean;
+}){
+  const locationId=required(input.locationId,"location_id");
+  const checkId=required(input.checkId,"check_id");
+  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"read"});
+  const [
+    {data:check,error:checkError},
+    {data:items,error:itemError},
+    {data:tenders,error:tenderError},
+    {data:resources,error:resourceError},
+  ]=await Promise.all([
+    shard.client.from("pos_checks")
+      .select("id,subtotal_cents,discount_cents,tax_cents,service_charge_cents,total_cents,amount_paid_cents,amount_refunded_cents,tip_cents,status")
+      .eq("location_id",locationId).eq("id",checkId).maybeSingle(),
+    shard.client.from("pos_order_items")
+      .select("item_name,quantity,line_total_cents,status")
+      .eq("location_id",locationId).eq("check_id",checkId).order("created_at",{ascending:true}),
+    shard.client.from("pos_tenders")
+      .select("tender_number,tender_type,status,amount_cents,tip_cents,amount_refunded_cents")
+      .eq("location_id",locationId).eq("check_id",checkId).order("tender_number",{ascending:true}),
+    shard.client.from("pos_check_resources")
+      .select("resource_label").eq("location_id",locationId).eq("check_id",checkId),
+  ]);
+  if(checkError||!check) throw new Error(checkError?.message||"pos_check_not_found");
+  if(itemError) throw new Error(itemError.message||"pos_receipt_items_failed");
+  if(tenderError) throw new Error(tenderError.message||"pos_receipt_tenders_failed");
+  if(resourceError) throw new Error(resourceError.message||"pos_receipt_resources_failed");
+
+  const money=(value:unknown)=>`$${(Number(value||0)/100).toFixed(2)}`;
+  const lines:string[]=[];
+  const labels=(resources||[]).map((row:any)=>String(row.resource_label||"")).filter(Boolean);
+  if(labels.length) lines.push(labels.join(" + "));
+  for(const item of items||[]){
+    if(String(item.status)==="voided") continue;
+    lines.push(`${Number(item.quantity||1)} x ${String(item.item_name||"Item")}  ${money(item.line_total_cents)}`);
+  }
+  lines.push("------------------------------------------");
+  lines.push(`Subtotal  ${money(check.subtotal_cents)}`);
+  if(Number(check.discount_cents||0)) lines.push(`Discount  -${money(check.discount_cents)}`);
+  if(Number(check.tax_cents||0)) lines.push(`Tax  ${money(check.tax_cents)}`);
+  if(Number(check.service_charge_cents||0)) lines.push(`Service  ${money(check.service_charge_cents)}`);
+  lines.push(`TOTAL  ${money(check.total_cents)}`);
+  for(const tender of tenders||[]){
+    if(!["completed","partially_refunded","refunded"].includes(String(tender.status))) continue;
+    const net=Math.max(0,Number(tender.amount_cents||0)-Number(tender.amount_refunded_cents||0));
+    lines.push(`#${Number(tender.tender_number||0)} ${String(tender.tender_type||"other").toUpperCase()}  ${money(net)}`);
+  }
+  if(Number(check.amount_refunded_cents||0)) lines.push(`Refunded  ${money(check.amount_refunded_cents)}`);
+  lines.push(`Paid  ${money(check.amount_paid_cents)}`);
+
+  const key=input.reprint
+    ? `pos-receipt:reprint:${checkId}:${Date.now()}`
+    : `pos-receipt:check:${checkId}`;
+  await enqueuePosLocationCommand({
+    locationId,
+    commandType:"pos_receipt_print",
+    sourceType:"pos_check",
+    sourceId:checkId,
+    dedupeKey:key,
+    payload:{
+      header:input.reprint?"THEPOSHAVEN RECEIPT · REPRINT":"THEPOSHAVEN RECEIPT",
+      lines,
+      footer:"Thank you.",
+    },
+  });
+  return {checkId,queued:true};
 }
