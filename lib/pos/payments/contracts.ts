@@ -39,6 +39,25 @@ export type CancelPosPaymentIntentInput = {
   reason?: "duplicate" | "fraudulent" | "requested_by_customer" | "abandoned";
 };
 
+export type RefundPosPaymentIntentInput = {
+  connectedAccountId: string;
+  providerPaymentIntentId: string;
+  amountCents: number;
+  idempotencyKey: string;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
+};
+
+export type PosRefundStatus = "pending" | "succeeded" | "failed" | "canceled" | "unknown";
+
+export type PosRefund = {
+  provider: PosPaymentProviderId;
+  providerRefundId: string;
+  providerPaymentIntentId: string;
+  connectedAccountId: string;
+  amountCents: number;
+  status: PosRefundStatus;
+};
+
 export type PosPaymentIntent = {
   provider: PosPaymentProviderId;
   providerPaymentIntentId: string;
@@ -53,4 +72,5 @@ export interface PosPaymentProvider {
   readonly id: PosPaymentProviderId;
   createPaymentIntent(input: CreatePosPaymentIntentInput): Promise<PosPaymentIntent>;
   cancelPaymentIntent(input: CancelPosPaymentIntentInput): Promise<PosPaymentIntent>;
+  refundPaymentIntent(input: RefundPosPaymentIntentInput): Promise<PosRefund>;
 }
