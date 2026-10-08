@@ -47,7 +47,7 @@ export async function PATCH(request:Request){
    const core=Object.entries(next.lanes).filter(([id])=>id!=="review_intelligence").every(([,v])=>v.enabled&&!v.forceOpen);
    if(replay?.[0]?.metrics?.coreLaneValidationPassed!==true||Number(replay?.[0]?.metrics?.persistedRowCount)<20||Number(replay?.[0]?.metrics?.persistedRowCount)!==Number(replay?.[0]?.metrics?.queryCount)||!core||!phase?.[0]?.started_at||Date.now()-Date.parse(phase[0].started_at)>30*60*1000||!replay?.[0]?.completed_at||Date.now()-Date.parse(replay[0].completed_at)>60*60*1000||phase?.[0]?.status!=="success"||Number(e.failed)!==0||Number(e.scanned)<=0||Number(e.remainingApprox)>50||!v3||!compar||Number(v3.successRate)<90||Number(v3.pairSuccessRate)<90||Number(v3.contractFailureCount)!==0||Number(v3.noResultRegressionRate)!==0||Number(v3.p95LatencyMs)>5000||Object.values(compar.noRegressions??{}).some(v=>v!==true)||!["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>compar.noRegressions?.[k]===true))throw new Error("Production promotion gate not satisfied; keep V3 shadow");
    if(next.mode==="primary")throw new Error("Primary rollout requires a separate controlled approval");
-   if(next.canaryPercent>5&&previous.mode==="shadow")throw new Error("Initial canary cannot exceed 5%");
+   if(next.canaryPercent>5)throw new Error("Canary is capped at 5% until a separately approved expansion");
   }
   const now=new Date().toISOString();
   const {error}=await db.from("app_settings").upsert({key:SEARCH_V3_CONTROLS_KEY,value:next,updated_by:auth.adminUser!.user_id,updated_at:now});if(error)throw error;
