@@ -44,6 +44,34 @@ async function requireManagerApproval(locationId: string, staffProfileId: string
   return data;
 }
 
+async function requireActiveStaff(locationId: string, staffProfileId: string, options?: { manager?: boolean }) {
+  const shard = await resolveOperationalShardForLocationId(locationId, { mode: "read" });
+  const { data, error } = await shard.client
+    .from("reserve_staff_profiles")
+    .select("id,display_name,role,is_active")
+    .eq("location_id", locationId)
+    .eq("id", required(staffProfileId, options?.manager ? "approver" : "actor"))
+    .maybeSingle();
+  if (error) throw new Error(error.message || "pos_staff_lookup_failed");
+  if (!data || data.is_active !== true) throw new Error("pos_staff_not_active");
+  if (options?.manager && !["manager", "location_admin"].includes(String(data.role || ""))) {
+    throw new Error("pos_manager_approval_required");
+  }
+  return data;
+}
+
+async function requireManagerActionStaff(input: {
+  locationId: string;
+  actorStaffProfileId: string;
+  approverStaffProfileId: string;
+}) {
+  const [actor, approver] = await Promise.all([
+    requireActiveStaff(input.locationId, input.actorStaffProfileId),
+    requireActiveStaff(input.locationId, input.approverStaffProfileId, { manager: true }),
+  ]);
+  return { actor, approver };
+}
+
 async function rpcOne(locationId: string, name: string, args: Record<string, unknown>) {
   const shard = await resolveOperationalShardForLocationId(locationId, { mode: "write" });
   const { data, error } = await shard.client.rpc(name, args);
@@ -337,24 +365,66 @@ export async function refundPosTender(input: {
 export async function getPosManagerOperations(locationId: string) {
   const id = required(locationId, "location_id");
   const shard = await resolveOperationalShardForLocationId(id, { mode: "read" });
-  const [{ data: drawers, error: drawerError }, { data: events, error: eventError }] =
-    await Promise.all([
-      shard.client
-        .from("pos_cash_drawer_sessions")
-        .select("*")
-        .eq("location_id", id)
-        .order("opened_at", { ascending: false })
-        .limit(20),
-      shard.client
-        .from("pos_manager_events")
-        .select("*")
-        .eq("location_id", id)
-        .order("created_at", { ascending: false })
-        .limit(50),
-    ]);
+  const [
+    { data: drawers, error: drawerError },
+    { data: events, error: eventError },
+    { data: checks, error: checkError },
+    { data: tenders, error: tenderError },
+    { data: items, error: itemError },
+    { data: staff, error: staffError },
+  ] = await Promise.all([
+    shard.client
+      .from("pos_cash_drawer_sessions")
+      .select("*")
+      .eq("location_id", id)
+      .order("opened_at", { ascending: false })
+      .limit(20),
+    shard.client
+      .from("pos_manager_events")
+      .select("*")
+      .eq("location_id", id)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    shard.client
+      .from("pos_checks")
+      .select("id,status,guest_count,subtotal_cents,discount_cents,tax_cents,service_charge_cents,total_cents,amount_paid_cents,amount_refunded_cents,tip_cents,opened_at,closed_at")
+      .eq("location_id", id)
+      .order("opened_at", { ascending: false })
+      .limit(50),
+    shard.client
+      .from("pos_tenders")
+      .select("id,check_id,tender_number,tender_type,status,amount_cents,tip_cents,amount_refunded_cents,cash_received_cents,cash_change_cents,completed_at,created_at")
+      .eq("location_id", id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    shard.client
+      .from("pos_order_items")
+      .select("id,check_id,item_name,quantity,line_total_cents,status,void_reason,created_at")
+      .eq("location_id", id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    shard.client
+      .from("reserve_staff_profiles")
+      .select("id,display_name,role,is_active")
+      .eq("location_id", id)
+      .eq("is_active", true)
+      .order("display_name", { ascending: true }),
+  ]);
   if (drawerError) throw new Error(drawerError.message || "pos_drawer_sessions_failed");
   if (eventError) throw new Error(eventError.message || "pos_manager_events_failed");
-  return { drawers: drawers || [], events: events || [] };
+  if (checkError) throw new Error(checkError.message || "pos_manager_checks_failed");
+  if (tenderError) throw new Error(tenderError.message || "pos_manager_tenders_failed");
+  if (itemError) throw new Error(itemError.message || "pos_manager_items_failed");
+  if (staffError) throw new Error(staffError.message || "pos_manager_staff_failed");
+  return {
+    drawers: drawers || [],
+    events: events || [],
+    checks: checks || [],
+    tenders: tenders || [],
+    items: items || [],
+    staff: staff || [],
+    managers: (staff || []).filter((row: any) => ["manager", "location_admin"].includes(String(row.role || ""))),
+  };
 }
 
 
