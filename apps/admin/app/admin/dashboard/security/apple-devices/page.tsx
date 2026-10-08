@@ -27,6 +27,7 @@ import {
 } from "@/lib/apple-business/api";
 import {
   getIntuneOverview,
+  listIntuneAppleAppAssignmentStates,
   listIntuneAppleApps,
   listIntuneDepOnboardingSettings,
   listIntuneSecurityGroups,
@@ -34,6 +35,19 @@ import {
 } from "@/lib/microsoft-365/intune";
 
 export const dynamic = "force-dynamic";
+
+type SearchValue = string | string[] | undefined;
+
+function first(value: SearchValue) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function assignmentLabel(value?: string) {
+  if (value === "available") return "Available";
+  if (value === "required") return "Installed";
+  if (value === "removed") return "Removed";
+  return "Not assigned";
+}
 
 function formatDate(value?: string | null) {
   if (!value) return "Never";
@@ -45,7 +59,17 @@ function formatDate(value?: string | null) {
   }).format(date);
 }
 
-export default async function AppleDeviceEnrollmentPage() {
+export default async function AppleDeviceEnrollmentPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, SearchValue>>;
+}) {
+  const params = searchParams ? await searchParams : {};
+  const appStatus = first(params.app_status) || "";
+  const appName = first(params.app_name) || "Apple app";
+  const appTarget = first(params.target) || "selected target";
+  const appError = first(params.app_error) || "";
+
   const admin = await requireAdminRole(["superadmin"]);
   const appleConfigured = isAppleBusinessApiConfigured();
 
@@ -60,6 +84,7 @@ export default async function AppleDeviceEnrollmentPage() {
   let vppTokens: Awaited<ReturnType<typeof listIntuneVppTokens>> = [];
   let appleApps: Awaited<ReturnType<typeof listIntuneAppleApps>> = [];
   let securityGroups: Awaited<ReturnType<typeof listIntuneSecurityGroups>> = [];
+  let appAssignmentStates: Awaited<ReturnType<typeof listIntuneAppleAppAssignmentStates>> = [];
 
   if (appleConfigured) {
     try {
@@ -98,6 +123,11 @@ export default async function AppleDeviceEnrollmentPage() {
         listIntuneAppleApps(admin.user_id),
         listIntuneSecurityGroups(admin.user_id),
       ]);
+      appAssignmentStates = await listIntuneAppleAppAssignmentStates(
+        admin.user_id,
+        appleApps,
+        securityGroups,
+      );
     } catch (error) {
       appCatalogError =
         error instanceof Error ? error.message : "The Intune app catalog could not be reached.";
@@ -126,6 +156,10 @@ export default async function AppleDeviceEnrollmentPage() {
   const enrolledIosDevices = (intuneOverview?.devices || []).filter((device) =>
     ["iOS", "iPadOS"].includes(device.operatingSystem || ""),
   );
+  const appAssignmentStateById = new Map(
+    appAssignmentStates.map((state) => [state.appId, state]),
+  );
+  const appActionSucceeded = ["available-requested", "install-requested", "remove-requested"].includes(appStatus);
 
   return (
     <AdminPageShell>
@@ -268,6 +302,36 @@ export default async function AppleDeviceEnrollmentPage() {
           </AdminStatusBadge>
         </header>
 
+        {appActionSucceeded ? (
+          <div className="apple-app-feedback is-success" role="status">
+            <CheckCircle2 />
+            <div>
+              <strong>
+                {appStatus === "remove-requested"
+                  ? "Removal applied"
+                  : appStatus === "install-requested"
+                    ? "Install applied"
+                    : "Profile assignment applied"}
+              </strong>
+              <span>
+                {appStatus === "remove-requested"
+                  ? `${appName} is now marked removed from ${appTarget}.`
+                  : appStatus === "install-requested"
+                    ? `${appName} is now assigned to install on ${appTarget}.`
+                    : `${appName} is now available to ${appTarget}.`}
+              </span>
+            </div>
+          </div>
+        ) : appStatus === "failed" ? (
+          <div className="apple-app-feedback is-error" role="alert">
+            <TriangleAlert />
+            <div>
+              <strong>App change failed</strong>
+              <span>{appError || "Intune did not accept the requested app change."}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div className="apple-profile-summary">
           <article>
             <UsersRound />
@@ -314,6 +378,25 @@ export default async function AppleDeviceEnrollmentPage() {
                   <div>
                     <strong>{app.displayName || "Unnamed Apple app"}</strong>
                     <span>{app.publisher || "Publisher unavailable"}</span>
+                    <div className="apple-app-assignment-state">
+                      <span>
+                        Standard: {assignmentLabel(appAssignmentStateById.get(app.id)?.standard)}
+                      </span>
+                      <span>
+                        Executive: {assignmentLabel(appAssignmentStateById.get(app.id)?.executive)}
+                      </span>
+                      {(appAssignmentStateById.get(app.id)?.deviceInstalls || []).map((device) => (
+                        <span key={`install-${device}`}>Device install: {device}</span>
+                      ))}
+                      {(appAssignmentStateById.get(app.id)?.deviceRemovals || []).map((device) => (
+                        <span key={`remove-${device}`}>Removed from device: {device}</span>
+                      ))}
+                      {(appAssignmentStateById.get(app.id)?.customGroups || []).map((group) => (
+                        <span key={`${group.name}-${group.intent}`}>
+                          {group.name}: {group.intent === "uninstall" ? "Removed" : group.intent}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -323,6 +406,7 @@ export default async function AppleDeviceEnrollmentPage() {
                   className="apple-app-profile-form"
                 >
                   <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="app_name" value={app.displayName || "Apple app"} />
                   <input type="hidden" name="target_type" value="profile" />
                   <label>
                     <span className="sr-only">Employee profile</span>
@@ -353,6 +437,7 @@ export default async function AppleDeviceEnrollmentPage() {
                       className="apple-app-target-form"
                     >
                       <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="app_name" value={app.displayName || "Apple app"} />
                       <input type="hidden" name="target_type" value="devices" />
                       <label>
                         <span>Specific devices</span>
@@ -386,6 +471,7 @@ export default async function AppleDeviceEnrollmentPage() {
                       className="apple-app-target-form"
                     >
                       <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="app_name" value={app.displayName || "Apple app"} />
                       <input type="hidden" name="target_type" value="group" />
                       <label>
                         <span>Custom Entra group</span>
