@@ -241,7 +241,7 @@ export default function AdminShell({
     <div className="admin-shell" data-admin-theme={resolvedTheme} data-admin-theme-mode={appearance.mode}>
       <aside className="admin-shell-sidebar">
         <div className="admin-shell-brand">
-          <span className="admin-shell-logo">OH</span>
+          <span className="admin-shell-logo" aria-label="TheOutHaven"><img src="/toh_enterprise_mark.webp" alt="" width={28} height={28} /></span>
           <div className="admin-shell-brand-copy">
             <strong>TheOutHaven</strong>
             <small>Administration Cloud</small>
@@ -325,8 +325,8 @@ export default function AdminShell({
           <aside className="admin-shell-drawer-panel">
             <div className="admin-shell-drawer-header">
               <div>
-                <small>TheOutHaven</small>
-                <strong>Administration Cloud</strong>
+                <small className="admin-shell-drawer-brand"><img src="/toh_enterprise_mark.webp" alt="" width={24} height={24} /> TheOutHaven</small>
+                <strong>Administration</strong>
               </div>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close admin navigation">
                 <X size={20} />
