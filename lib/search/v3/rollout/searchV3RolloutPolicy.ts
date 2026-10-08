@@ -68,7 +68,25 @@ export async function resolveSearchV3DatabaseRolloutPolicy(
   const coreHealthy = Object.entries(controls.lanes)
     .filter(([lane]) => lane !== "review_intelligence")
     .every(([, config]) => config.enabled && !config.forceOpen);
-  const mode: SearchV3RolloutMode = coreHealthy ? controls.mode : "shadow";
+  // Every Azure instance consults the shared circuit ledger before serving V3.
+  // Missing migrations, unavailable replicas, or open core breakers must never
+  // silently become permission to serve a degraded V3 result.
+  const coreLaneIds = Object.keys(controls.lanes).filter((id) => id !== "review_intelligence");
+  let distributedHealthy = false;
+  try {
+    const { data, error } = await client.from("search_v3_lane_breakers")
+      .select("lane_id,open_until,probe_until")
+      .in("lane_id", coreLaneIds);
+    if (!error && Array.isArray(data)) {
+      const now = Date.now();
+      distributedHealthy = !data.some((row: { open_until?: string | null; probe_until?: string | null }) =>
+        (row.open_until != null && Date.parse(row.open_until) > now) ||
+        (row.probe_until != null && Date.parse(row.probe_until) > now));
+    }
+  } catch {
+    distributedHealthy = false;
+  }
+  const mode: SearchV3RolloutMode = coreHealthy && distributedHealthy ? controls.mode : "shadow";
   const serveV3 = mode === "primary" || (mode === "canary" && bucket < canaryPercent);
   return {
     mode,
