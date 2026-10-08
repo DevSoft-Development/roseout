@@ -77,49 +77,43 @@ export async function readSearchV3RuntimeControls(db: SettingsClient): Promise<S
   }
 }
 export function invalidateSearchV3RuntimeControlsCache() { cached = null; }
-type BreakerState = { failures: number; openUntil: number; probe: boolean };
-const breaker = new Map<string, BreakerState>();
-export function resetLocalSearchV3Breakers() { breaker.clear(); }
-export function wrapSearchV3RetrievalProviders(
+export type SearchV3BreakerClient = {
+ rpc(name: string, args: Record<string, unknown>): Promise<{ data: unknown; error: { message: string } | null }>;
+};
+export function wrapSearchV3SharedRetrievalProviders(
  providers: readonly SearchRetrievalProvider[],
+ db: SearchV3BreakerClient,
  load: () => Promise<SearchV3Controls>,
 ): SearchRetrievalProvider[] {
- return providers.map((provider) => {
-  const lane = SEARCH_V3_LANES.find((entry) => entry.providerId === provider.providerId);
+ return providers.map(provider => {
+  const lane = SEARCH_V3_LANES.find(entry => entry.providerId === provider.providerId);
   if (!lane) return provider;
   return {
    providerId: provider.providerId,
    async retrieve(args) {
     const cfg = (await load()).lanes[lane.id];
     if (!cfg.enabled || cfg.forceOpen) throw new Error("v3_lane_manually_open:" + lane.id);
-    const state = breaker.get(lane.id) ?? { failures: 0, openUntil: 0, probe: false };
-    const now = Date.now();
-    if (state.openUntil > now || state.probe) throw new Error("v3_lane_circuit_open:" + lane.id);
-    const halfOpen = state.openUntil > 0;
-    // Take the half-open probe lease synchronously before any await.
-    if (halfOpen) {
-     state.probe = true;
-     breaker.set(lane.id, state);
-    }
+    const admission = await db.rpc("search_v3_breaker_enter", {
+      p_lane: lane.id, p_cooldown_ms: cfg.cooldownMs,
+    });
+    // Database/RPC failure is a safety failure, not permission to bypass the circuit.
+    if (admission.error) throw new Error("v3_lane_breaker_unavailable:" + lane.id);
+    if (typeof admission.data !== "string" || !admission.data)
+      throw new Error("v3_lane_circuit_open:" + lane.id);
+    const token = admission.data;
+    let success = false;
     try {
-     const result = await provider.retrieve(args);
-     breaker.set(lane.id, { failures: 0, openUntil: 0, probe: false });
-     return result;
-    } catch (error) {
-     const failures = state.failures + 1;
-     breaker.set(lane.id, {
-      failures,
-      openUntil: halfOpen || failures >= cfg.threshold ? Date.now() + cfg.cooldownMs : 0,
-      probe: false,
-     });
-     throw error;
+      const result = await provider.retrieve(args);
+      success = true;
+      return result;
+    } finally {
+      const completion = await db.rpc("search_v3_breaker_finish", {
+        p_lane: lane.id, p_token: token, p_success: success,
+        p_threshold: cfg.threshold, p_cooldown_ms: cfg.cooldownMs,
+      });
+      if (completion.error && success) throw new Error("v3_lane_breaker_finish_unavailable:" + lane.id);
     }
    },
   };
  });
-}
-export function localSearchV3BreakerSnapshot() {
- return Object.fromEntries([...breaker.entries()].map(([id, state]) => [
-  id, { failures: state.failures, openUntil: state.openUntil, halfOpen: state.probe },
- ]));
 }
