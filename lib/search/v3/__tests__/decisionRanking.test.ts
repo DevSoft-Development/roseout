@@ -134,7 +134,7 @@ describe("Search V3 deterministic decision ranking", () => {
       ranked[1].frameworkScore ?? 0,
     );
     expect(ranked[0].metadata.ranking).toMatchObject({
-      provider: "search-v3.deterministic-decision-ranker.v1",
+      provider: "search-v3.deterministic-decision-ranker.v2",
     });
   });
 

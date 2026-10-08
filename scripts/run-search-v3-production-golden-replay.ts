@@ -149,39 +149,6 @@ function evaluateBaselinePromotionGate(result: VariantResult) {
   };
 }
 
-function envNumber(name: string, fallback: number) {
-  const value = Number(process.env[name] ?? fallback);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function evaluateBaselinePromotionGate(result: VariantResult) {
-  const thresholds = {
-    minimumSuccessRate: envNumber("SEARCH_V3_GOLDEN_MIN_SUCCESS_RATE", 90),
-    minimumPairSuccessRate: envNumber("SEARCH_V3_GOLDEN_MIN_PAIR_SUCCESS_RATE", 90),
-    maximumNoResultRegressionRate: envNumber("SEARCH_V3_GOLDEN_MAX_NO_RESULT_REGRESSION_RATE", 0),
-    maximumContractFailures: envNumber("SEARCH_V3_GOLDEN_MAX_CONTRACT_FAILURES", 0),
-    maximumP95LatencyMs: envNumber("SEARCH_V3_GOLDEN_MAX_P95_LATENCY_MS", 5000),
-  };
-
-  const checks = {
-    successRate: Number(result.metrics.successRate ?? 0) >= thresholds.minimumSuccessRate,
-    pairSuccessRate:
-      Number(result.metrics.pairSuccessRate ?? 0) >= thresholds.minimumPairSuccessRate,
-    noResultRegressionRate:
-      Number(result.metrics.noResultRegressionRate ?? 0) <= thresholds.maximumNoResultRegressionRate,
-    contractFailures:
-      Number(result.metrics.contractFailureCount ?? 0) <= thresholds.maximumContractFailures,
-    p95Latency:
-      Number(result.metrics.p95LatencyMs ?? Number.MAX_SAFE_INTEGER) <= thresholds.maximumP95LatencyMs,
-  };
-
-  return {
-    thresholds,
-    checks,
-    passed: Object.values(checks).every(Boolean),
-  };
-}
-
 function compareVariants(baseline: VariantResult, review: VariantResult) {
   const baselineById = new Map(baseline.rows.map((row) => [row.id, row]));
   const reviewById = new Map(review.rows.map((row) => [row.id, row]));
