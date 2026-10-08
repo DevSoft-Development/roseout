@@ -16,7 +16,7 @@ const config = JSON.parse(
 const PAGE_SIZE = 500;
 const MAX_UPSERT_ROWS = 100;
 const MAX_UPSERT_BYTES = 512 * 1024;
-const TARGET_SCHEMA_VERSION = 8;
+const TARGET_SCHEMA_VERSION = 10;
 
 if (!globalUrl || !globalKey || !locationId || !targetLogicalShard || !Number.isInteger(expectedEpoch) || expectedEpoch < 1) {
   throw new Error("invalid_initial_placement_configuration");
