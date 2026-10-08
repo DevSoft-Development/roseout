@@ -201,8 +201,12 @@ export type PosTableWorkspace={
   resources:any[];
   amounts:{
     subtotalCents:number;discountCents:number;taxCents:number;serviceChargeCents:number;
-    totalCents:number;amountPaidCents:number;tipCents:number;
+    totalCents:number;amountPaidCents:number;amountRefundedCents:number;remainingCents:number;tipCents:number;
   };
+  tenders:{
+    id:string;number:number;type:string;status:string;amountCents:number;tipCents:number;
+    amountRefundedCents:number;refundableCents:number;cashReceivedCents?:number|null;cashChangeCents?:number|null;
+  }[];
   items:{
     id:string;orderId:string;catalogItemId?:string|null;name:string;seatNumber?:number|null;shared:boolean;
     course:"drinks"|"appetizers"|"entrees"|"desserts"|"other";quantity:number;
