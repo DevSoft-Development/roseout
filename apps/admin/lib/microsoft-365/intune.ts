@@ -66,6 +66,31 @@ export type IntuneVppToken = {
   automaticallyUpdateApps?: boolean | null;
 };
 
+export type IntuneAppleApp = {
+  id: string;
+  displayName?: string | null;
+  publisher?: string | null;
+  description?: string | null;
+  lastModifiedDateTime?: string | null;
+  isAssigned?: boolean | null;
+  "@odata.type"?: string | null;
+};
+
+export type IntuneDirectoryGroup = {
+  id: string;
+  displayName?: string | null;
+  securityEnabled?: boolean | null;
+};
+
+type IntuneMobileAppAssignment = {
+  id: string;
+  intent?: string | null;
+  target?: {
+    "@odata.type"?: string | null;
+    groupId?: string | null;
+  } | null;
+};
+
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 export const THEOUTHAVEN_ADE_PROFILE = "TheOutHaven - Standard Managed Device ADE";
 
@@ -204,6 +229,203 @@ export async function listIntuneVppTokens(userId: string) {
     "/deviceAppManagement/vppTokens?$select=id,organizationName,vppTokenAccountType,state,lastSyncStatus,automaticallyUpdateApps",
   );
   return payload.value || [];
+}
+
+export async function listIntuneAppleApps(userId: string) {
+  const apps = await getAllPages<IntuneAppleApp>(
+    userId,
+    "/deviceAppManagement/mobileApps?$select=id,displayName,publisher,description,lastModifiedDateTime,isAssigned&$top=200",
+  );
+
+  return apps
+    .filter((app) => {
+      const type = (app["@odata.type"] || "").toLowerCase();
+      return type.includes("iosvppapp") || type.includes("iosstoreapp");
+    })
+    .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+}
+
+export async function listIntuneSecurityGroups(userId: string) {
+  const groups = await getAllPages<IntuneDirectoryGroup>(
+    userId,
+    "/groups?$select=id,displayName,securityEnabled&$top=200",
+  );
+  return groups
+    .filter((group) => group.securityEnabled && group.displayName)
+    .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+}
+
+function appAssignmentSettings(app: IntuneAppleApp) {
+  const type = (app["@odata.type"] || "").toLowerCase();
+  if (type.includes("iosvppapp")) {
+    return {
+      "@odata.type": "#microsoft.graph.iosVppAppAssignmentSettings",
+      useDeviceLicensing: true,
+    };
+  }
+  return {
+    "@odata.type": "#microsoft.graph.iosStoreAppAssignmentSettings",
+  };
+}
+
+async function upsertIntuneAppGroupAssignment(
+  userId: string,
+  app: IntuneAppleApp,
+  groupId: string,
+  intent: "required" | "uninstall",
+) {
+  const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
+    userId,
+    `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
+  );
+  const existing = (payload.value || []).find(
+    (assignment) => assignment.target?.groupId === groupId,
+  );
+  const body = {
+    "@odata.type": "#microsoft.graph.mobileAppAssignment",
+    intent,
+    target: {
+      "@odata.type": "#microsoft.graph.groupAssignmentTarget",
+      groupId,
+    },
+    settings: appAssignmentSettings(app),
+  };
+
+  if (existing?.id) {
+    await microsoftGraphFetch(
+      userId,
+      `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments/${encodeURIComponent(existing.id)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+  } else {
+    await microsoftGraphFetch(
+      userId,
+      `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+}
+
+async function getIntuneAppleApp(userId: string, appId: string) {
+  const apps = await listIntuneAppleApps(userId);
+  const app = apps.find((candidate) => candidate.id === appId);
+  if (!app) throw new Error("INTUNE_APP_NOT_FOUND");
+  return app;
+}
+
+export async function assignIntuneAppleAppToGroup(
+  userId: string,
+  appId: string,
+  groupId: string,
+  intent: "required" | "uninstall",
+) {
+  const app = await getIntuneAppleApp(userId, appId);
+  const groups = await listIntuneSecurityGroups(userId);
+  if (!groups.some((group) => group.id === groupId)) {
+    throw new Error("INTUNE_GROUP_NOT_FOUND");
+  }
+  await upsertIntuneAppGroupAssignment(userId, app, groupId, intent);
+}
+
+async function getOrCreateAppDeviceTargetGroup(
+  userId: string,
+  app: IntuneAppleApp,
+  intent: "required" | "uninstall",
+) {
+  const suffix = intent === "required" ? "Install" : "Remove";
+  const displayName = `TheOutHaven App ${suffix} · ${app.displayName || app.id}`.slice(0, 120);
+  const existing = (await listIntuneSecurityGroups(userId)).find(
+    (group) => group.displayName === displayName,
+  );
+  if (existing) return existing;
+
+  return microsoftGraphFetch<IntuneDirectoryGroup>(userId, "/groups", {
+    method: "POST",
+    body: JSON.stringify({
+      displayName,
+      description: `Managed by TheOutHaven Admin for Intune app ${suffix.toLowerCase()} targets.`,
+      mailEnabled: false,
+      mailNickname: `toh-app-${intent}-${app.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)}`,
+      securityEnabled: true,
+      groupTypes: [],
+    }),
+  });
+}
+
+async function resolveEntraDeviceObjectId(userId: string, azureAdDeviceId: string) {
+  const escaped = azureAdDeviceId.replace(/'/g, "''");
+  const payload = await microsoftGraphFetch<GraphCollection<{ id: string }>>(
+    userId,
+    `/devices?$filter=deviceId eq '${encodeURIComponent(escaped)}'&$select=id&$top=1`,
+  );
+  const objectId = payload.value?.[0]?.id;
+  if (!objectId) throw new Error("ENTRA_DEVICE_NOT_FOUND");
+  return objectId;
+}
+
+async function listGroupMemberIds(userId: string, groupId: string) {
+  const members = await getAllPages<{ id: string }>(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members?$select=id&$top=200`,
+  );
+  return new Set(members.map((member) => member.id));
+}
+
+async function addDeviceToGroup(userId: string, groupId: string, objectId: string) {
+  const members = await listGroupMemberIds(userId, groupId);
+  if (members.has(objectId)) return;
+  await microsoftGraphFetch(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members/$ref`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        "@odata.id": `https://graph.microsoft.com/v1.0/directoryObjects/${objectId}`,
+      }),
+    },
+  );
+}
+
+async function removeDeviceFromGroup(userId: string, groupId: string, objectId: string) {
+  const members = await listGroupMemberIds(userId, groupId);
+  if (!members.has(objectId)) return;
+  await microsoftGraphFetch(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(objectId)}/$ref`,
+    { method: "DELETE" },
+  );
+}
+
+export async function assignIntuneAppleAppToDevices(
+  userId: string,
+  appId: string,
+  managedDeviceIds: string[],
+  intent: "required" | "uninstall",
+) {
+  const app = await getIntuneAppleApp(userId, appId);
+  const devices = await listIntuneManagedDevices(userId);
+  const selected = devices.filter(
+    (device) =>
+      managedDeviceIds.includes(device.id) &&
+      ["iOS", "iPadOS"].includes(device.operatingSystem || "") &&
+      device.azureADDeviceId,
+  );
+  if (!selected.length) throw new Error("INTUNE_APP_DEVICE_TARGET_REQUIRED");
+
+  const desiredGroup = await getOrCreateAppDeviceTargetGroup(userId, app, intent);
+  const oppositeIntent = intent === "required" ? "uninstall" : "required";
+  const oppositeGroup = await getOrCreateAppDeviceTargetGroup(userId, app, oppositeIntent);
+
+  await Promise.all([
+    upsertIntuneAppGroupAssignment(userId, app, desiredGroup.id, intent),
+    upsertIntuneAppGroupAssignment(userId, app, oppositeGroup.id, oppositeIntent),
+  ]);
+
+  for (const device of selected) {
+    const objectId = await resolveEntraDeviceObjectId(userId, device.azureADDeviceId as string);
+    await addDeviceToGroup(userId, desiredGroup.id, objectId);
+    await removeDeviceFromGroup(userId, oppositeGroup.id, objectId);
+  }
 }
 
 async function getPreferredCompanyPortalVppToken(userId: string) {
