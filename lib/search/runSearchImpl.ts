@@ -351,23 +351,55 @@ export async function runOutingSearch(
       supabase,
     });
   if (coreAssignment.engine === "v2") {
-    // Opt-in V3 shadow execution exercises the real public-search entry point.
-    // Never serve the V3 alpha execution through the V2 response contract.
+    const requestId = String(input.body?.requestId ?? crypto.randomUUID());
+    const v3Request = {
+      requestId,
+      query,
+      selectedMarketId: typeof selectedMarketId === "string" ? selectedMarketId : null,
+      userLocation: effectiveUserLocation?.latitude != null && effectiveUserLocation.longitude != null
+        ? { latitude: effectiveUserLocation.latitude, longitude: effectiveUserLocation.longitude }
+        : null,
+      limit: displayLimit,
+    };
+    // V3 is not eligible to serve until both the Admin promotion interlock and
+    // the Azure runtime release interlock have been explicitly enabled.
+    if (process.env.SEARCH_V3_CANARY_RELEASE_ENABLED === "true") {
+      try {
+        const { createTheOutHavenSearchV3, resolveSearchV3DatabaseRolloutPolicy } =
+          await import("@/lib/search/v3");
+        const policy = await resolveSearchV3DatabaseRolloutPolicy(requestId, supabase);
+        if (policy.serveV3 && policy.allowV2Fallback) {
+          const execution = await createTheOutHavenSearchV3(supabase as any)
+            .orchestrator.execute(v3Request);
+          const { validateSearchV3CoreLanes } =
+            await import("@/lib/search/quality/v3LaneValidation");
+          if (!validateSearchV3CoreLanes(execution.retrieval).passed) {
+            throw new Error("v3_required_core_lane_failed");
+          }
+          const { adaptV3ExecutionToEnterpriseResult } =
+            await import("@/lib/search/v3/response/v3EnterpriseAdapter");
+          const response = await adaptV3ExecutionToEnterpriseResult(execution, supabase as any);
+          console.info("SEARCH_V3_PUBLIC_CANARY_SERVED", JSON.stringify({
+            requestId, bucket: policy.bucket, candidates: execution.candidates.length,
+            outingCount: execution.outings.length,
+          }));
+          return response;
+        }
+      } catch (error) {
+        console.error("SEARCH_V3_PUBLIC_CANARY_FALLBACK_TO_V2", {
+          requestId, error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    // Optional side-by-side V3 execution never blocks or replaces a V2 response.
     if (process.env.SEARCH_V3_PUBLIC_SHADOW_EXECUTION === "true") {
-      void import("@/lib/search/v3").then(async ({ createTheOutHavenSearchV3, resolveSearchV3DatabaseRolloutPolicy }) => {
-        const requestId = String(input.body?.requestId ?? crypto.randomUUID());
+      void import("@/lib/search/v3").then(async ({
+        createTheOutHavenSearchV3, resolveSearchV3DatabaseRolloutPolicy,
+      }) => {
         const policy = await resolveSearchV3DatabaseRolloutPolicy(requestId, supabase);
         if (!policy.runV3Shadow) return;
-        const v3 = createTheOutHavenSearchV3(supabase as any);
-        const execution = await v3.orchestrator.execute({
-          requestId,
-          query,
-          selectedMarketId: typeof selectedMarketId === "string" ? selectedMarketId : null,
-          userLocation: effectiveUserLocation?.latitude != null && effectiveUserLocation.longitude != null
-            ? { latitude: effectiveUserLocation.latitude, longitude: effectiveUserLocation.longitude }
-            : null,
-          limit: displayLimit,
-        });
+        const execution = await createTheOutHavenSearchV3(supabase as any)
+          .orchestrator.execute(v3Request);
         console.info("SEARCH_V3_PUBLIC_SHADOW", JSON.stringify({
           requestId, laneCount: execution.retrieval.length,
           candidates: execution.candidates.length, outings: execution.outings.length,
