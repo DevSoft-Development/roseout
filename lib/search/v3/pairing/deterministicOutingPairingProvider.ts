@@ -205,6 +205,9 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
 
         if (withinTravelLimit === false) return [];
 
+        const graphEvidenceAvailable =
+          graphContext.entityByLocationId.has(restaurant.locationId) &&
+          graphContext.entityByLocationId.has(activity.locationId);
         const components = {
           relevance: pairRelevance(restaurant, activity),
           proximity: pairProximity(distanceMiles, travelLimit?.maxDistanceMiles ?? null),
@@ -214,16 +217,21 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
             candidateQualityScore(activity)
           ) / 2,
           diversity: sameVenue ? 0.5 : 1,
-          graph: pairGraphAffinity(restaurant, activity, graphContext),
+          graph: graphEvidenceAvailable
+            ? pairGraphAffinity(restaurant, activity, graphContext)
+            : 0,
         };
+        const pairWeights = graphEvidenceAvailable
+          ? weights
+          : normalizeWeights({ ...weights, graph: 0 });
 
         const score =
-          components.relevance * weights.relevance +
-          components.proximity * weights.proximity +
-          components.intent * weights.intent +
-          components.quality * weights.quality +
-          components.diversity * weights.diversity +
-          components.graph * weights.graph;
+          components.relevance * pairWeights.relevance +
+          components.proximity * pairWeights.proximity +
+          components.intent * pairWeights.intent +
+          components.quality * pairWeights.quality +
+          components.diversity * pairWeights.diversity +
+          components.graph * pairWeights.graph;
 
         const sequence = resolveSequence(args.intent, restaurant, activity);
 
@@ -249,7 +257,8 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
           metadata: {
             pairingProvider: this.providerId,
             scoreComponents: components,
-            scoreWeights: weights,
+            scoreWeights: pairWeights,
+            graphEvidenceAvailable,
             withinTravelLimit,
             routeSource,
             routeConfidence,
