@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { assignAppleDevicesToMdmServer, getAppleDeviceActivity, listAppleBusinessDevices, resolveAppleIntuneMdmServer } from "@/lib/apple-business/api";
-import { applyBusinessStandardProfile, assignIntuneIosEnrollmentProfileToSerial, ensureDefaultIntuneIosEnrollmentProfile, syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
+import { applyBusinessStandardProfile, assignIntuneIosEnrollmentProfileToSerial, ensureDefaultIntuneIosEnrollmentProfile, listIntuneManagedDevices, runIntuneDeviceAction, syncIntuneAppleEnrollment } from "@/lib/microsoft-365/intune";
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
 
@@ -87,6 +87,17 @@ export async function POST(request: NextRequest) {
 
     await applyBusinessStandardProfile(admin.user_id);
     const depSetting = await syncIntuneAppleEnrollment(admin.user_id);
+
+    if (action === "sync-intune") {
+      const enrolledAppleDevices = (await listIntuneManagedDevices(admin.user_id)).filter((device) =>
+        ["iOS", "iPadOS"].includes(device.operatingSystem || ""),
+      );
+      await Promise.all(
+        enrolledAppleDevices.map((device) =>
+          runIntuneDeviceAction(admin.user_id, device.id, "syncDevice"),
+        ),
+      );
+    }
 
     if (action === "prepare") {
       const enrollmentProfile = await ensureDefaultIntuneIosEnrollmentProfile(
