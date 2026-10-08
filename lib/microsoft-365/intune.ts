@@ -354,9 +354,10 @@ async function getOrCreateAppDeviceTargetGroup(
 
 async function resolveEntraDeviceObjectId(userId: string, azureAdDeviceId: string) {
   const escaped = azureAdDeviceId.replace(/'/g, "''");
+  const filter = encodeURIComponent(`deviceId eq '${escaped}'`);
   const payload = await microsoftGraphFetch<GraphCollection<{ id: string }>>(
     userId,
-    `/devices?$filter=deviceId eq '${encodeURIComponent(escaped)}'&$select=id&$top=1`,
+    `/devices?$filter=${filter}&$select=id&$top=1`,
   );
   const objectId = payload.value?.[0]?.id;
   if (!objectId) throw new Error("ENTRA_DEVICE_NOT_FOUND");
