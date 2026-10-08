@@ -123,6 +123,7 @@ export {
 
 export {
   resolveSearchV3RolloutPolicy,
+  resolveSearchV3DatabaseRolloutPolicy,
   type SearchV3RolloutMode,
   type SearchV3RolloutPolicy,
 } from "./rollout/searchV3RolloutPolicy";
