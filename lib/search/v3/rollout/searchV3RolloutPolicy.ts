@@ -50,3 +50,32 @@ function stableBucket(value: string) {
   }
   return (hash >>> 0) % 100;
 }
+
+/**
+ * Server-side DB-backed rollout resolution. Keep this separate from the legacy
+ * env-only function for backwards-compatible tests and shadow-mode consumers.
+ * A serving handler must explicitly await this function before choosing V3.
+ */
+export async function resolveSearchV3DatabaseRolloutPolicy(
+  requestId: string,
+  client: { from(table: string): any },
+): Promise<SearchV3RolloutPolicy> {
+  // Dynamic import avoids importing DB controls into client/browser bundles.
+  const { readSearchV3RuntimeControls } = await import("../controls/searchV3Controls");
+  const controls = await readSearchV3RuntimeControls(client);
+  const bucket = stableBucket(requestId);
+  const canaryPercent = clampPercent(controls.canaryPercent);
+  const coreHealthy = Object.entries(controls.lanes)
+    .filter(([lane]) => lane !== "review_intelligence")
+    .every(([, config]) => config.enabled && !config.forceOpen);
+  const mode: SearchV3RolloutMode = coreHealthy ? controls.mode : "shadow";
+  const serveV3 = mode === "primary" || (mode === "canary" && bucket < canaryPercent);
+  return {
+    mode,
+    bucket,
+    canaryPercent: mode === "shadow" ? 0 : canaryPercent,
+    serveV3,
+    runV3Shadow: mode === "shadow" || (mode === "canary" && !serveV3),
+    allowV2Fallback: true,
+  };
+}
