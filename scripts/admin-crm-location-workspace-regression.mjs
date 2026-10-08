@@ -24,6 +24,9 @@ const communicationCenterRoute = read("apps/admin/app/api/admin/crm/communicatio
 const tasksRedirect = read("apps/admin/app/admin/dashboard/crm/tasks/page.tsx");
 const myWork = read("apps/admin/app/admin/dashboard/crm/my-work/page.tsx");
 const salesWorkspace = read("apps/admin/app/admin/dashboard/crm/sales/page.tsx");
+const communicationPanel = read("apps/admin/app/admin/dashboard/crm/[id]/CommunicationPanel.tsx");
+const crmEmailComposer = read("apps/admin/app/admin/dashboard/crm/[id]/CrmEmailComposer.tsx");
+const crmEmailSendRoute = read("apps/admin/app/api/admin/crm/email/send/route.ts");
 
 requireText(nav, 'label: "Locations CRM"', "Admin navigation must expose the canonical Locations CRM.");
 forbidText(nav, 'label: "Locations"', "Admin navigation must not expose a competing Locations workspace.");
@@ -71,3 +74,11 @@ requireText(tasksRedirect, 'next.set("location", selectedLocation)', "Tasks redi
 requireText(myWork, 'location_id=', "Selected-location task creation and detail links must preserve location context.");
 requireText(salesWorkspace, 'type="hidden" name="location_id"', "Sales filters must preserve selected location context.");
 requireText(salesWorkspace, 'Clear search', "Selected-location Sales must clear search without clearing location scope.");
+
+requireText(communicationPanel, '/call', "Selected-location Communications must expose the 3CX call action.");
+requireText(communicationPanel, 'Send SMS', "Selected-location Communications must expose SMS for the active location.");
+requireText(communicationPanel, 'Email this location', "Selected-location Communications must expose email for the active location.");
+requireText(crmEmailComposer, '/api/admin/crm/email/send', "Selected-location email composer must use the CRM email endpoint.");
+requireText(crmEmailSendRoute, '.eq("id", locationId)', "CRM email endpoint must resolve only the selected location.");
+requireText(crmEmailSendRoute, 'recipient_type: "location"', "CRM email sends must be logged against the selected location.");
+requireText(crmEmailSendRoute, 'requireAdminRole(CRM_WRITE_ROLES)', "CRM email endpoint must require CRM write permission.");
