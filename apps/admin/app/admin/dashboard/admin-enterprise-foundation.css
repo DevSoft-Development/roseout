@@ -102,3 +102,151 @@
   border-radius: var(--toh-radius-lg);
   box-shadow: var(--toh-shadow-overlay);
 }
+
+
+/* Core enterprise primitives */
+.admin-ui-page {
+  background: var(--toh-surface-page);
+  color: var(--toh-text);
+}
+
+.admin-ui-page-header {
+  border-bottom: 1px solid var(--toh-border);
+  background: transparent;
+}
+
+.admin-ui-card {
+  border: 1px solid var(--toh-border);
+  border-radius: var(--toh-radius-lg);
+  background: var(--toh-surface-card);
+  color: var(--toh-text);
+  box-shadow: var(--toh-shadow-sm);
+}
+
+.admin-ui-kpi-card,
+.admin-ui-section-card,
+.admin-ui-detail-panel {
+  background-image: none;
+}
+
+.admin-ui-subcard,
+.admin-ui-data-card,
+.admin-ui-table-frame,
+.admin-ui-control {
+  border: 1px solid var(--toh-border);
+  border-radius: var(--toh-radius-md);
+  background: var(--toh-surface-subtle);
+  color: var(--toh-text);
+}
+
+.admin-ui-data-card.is-active {
+  border-color: var(--toh-brand-border);
+  background: var(--toh-brand-soft);
+}
+
+.admin-ui-button {
+  display: inline-flex;
+  min-height: var(--toh-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: var(--toh-space-2);
+  border-radius: var(--toh-radius-sm);
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  font-size: var(--toh-text-sm);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, box-shadow .14s ease;
+}
+
+.admin-ui-button-primary {
+  background: var(--toh-brand);
+  border-color: var(--toh-brand);
+  color: #fff;
+  box-shadow: var(--toh-shadow-xs);
+}
+
+.admin-ui-button-primary:hover {
+  background: var(--toh-brand-hover);
+  border-color: var(--toh-brand-hover);
+}
+
+.admin-ui-button-secondary {
+  background: var(--toh-surface-card);
+  border-color: var(--toh-border-strong);
+  color: var(--toh-text);
+}
+
+.admin-ui-button-secondary:hover,
+.admin-ui-button-ghost:hover {
+  background: var(--toh-surface-subtle);
+}
+
+.admin-ui-button-ghost {
+  background: transparent;
+  color: var(--toh-text-soft);
+}
+
+.admin-ui-button:focus-visible,
+.admin-ui-icon-button:focus-visible {
+  outline: 2px solid var(--toh-brand);
+  outline-offset: 2px;
+}
+
+.admin-ui-badge {
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: var(--toh-text-xs);
+  font-weight: 700;
+}
+
+.admin-ui-empty-state {
+  border: 1px dashed var(--toh-border-strong);
+  border-radius: var(--toh-radius-lg);
+  background: var(--toh-surface-card);
+  color: var(--toh-text);
+}
+
+.admin-ui-control {
+  min-height: var(--toh-control-height);
+  box-shadow: none;
+}
+
+.admin-ui-control:focus-within {
+  border-color: var(--toh-brand-border);
+  box-shadow: 0 0 0 3px var(--toh-brand-soft);
+}
+
+.admin-ui-table-frame {
+  overflow: hidden;
+  background: var(--toh-surface-card);
+}
+
+.admin-ui-table-frame table thead {
+  background: var(--toh-surface-subtle);
+}
+
+.admin-ui-table-frame table th,
+.admin-ui-table-frame table td {
+  border-bottom: 1px solid var(--toh-border);
+  padding: 10px 12px;
+}
+
+.admin-ui-table-frame table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-ui-icon-button {
+  border: 1px solid var(--toh-border);
+  border-radius: var(--toh-radius-sm);
+  background: var(--toh-surface-card);
+  color: var(--toh-text-soft);
+}
+
+.admin-ui-icon-button:hover {
+  border-color: var(--toh-brand-border);
+  color: var(--toh-text);
+}
