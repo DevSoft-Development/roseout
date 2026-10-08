@@ -13,7 +13,7 @@
   --admin-shell-accent-soft: rgba(225, 6, 42, 0.12);
   --admin-shell-accent-border: rgba(225, 6, 42, 0.34);
   --admin-shell-success: #2dd4bf;
-  --admin-shell-sidebar-width: 292px;
+  --admin-shell-sidebar-width: 260px;
 }
 
 * { box-sizing: border-box; }
@@ -28,10 +28,7 @@ body {
 .admin-shell {
   min-height: 100vh;
   color: var(--admin-shell-text);
-  background:
-    radial-gradient(circle at 86% -8%, rgba(225, 6, 42, 0.085), transparent 34rem),
-    radial-gradient(circle at 24% 110%, rgba(225, 6, 42, 0.035), transparent 36rem),
-    var(--admin-shell-bg);
+  background: var(--admin-shell-bg);
 }
 
 .admin-shell-sidebar {
@@ -42,17 +39,15 @@ body {
   width: var(--admin-shell-sidebar-width);
   flex-direction: column;
   border-right: 1px solid var(--admin-shell-border);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.025), transparent 18rem),
-    rgba(9, 9, 11, 0.985);
-  box-shadow: 24px 0 70px rgba(0,0,0,.2);
+  background: var(--admin-shell-panel);
+  box-shadow: none;
 }
 
 .admin-shell-brand {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 20px 18px 14px;
+  padding: 18px 16px 12px;
 }
 
 .admin-shell-brand-copy,
@@ -87,14 +82,14 @@ body {
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1px solid var(--admin-shell-accent-border);
-  border-radius: 13px;
-  background:
-    linear-gradient(145deg, rgba(225,6,42,.24), rgba(225,6,42,.07));
+  border: 0;
+  border-radius: var(--toh-radius-md);
+  background: transparent;
   color: #fff;
   font-size: 13px;
   font-weight: 900;
-  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 10px 30px rgba(225,6,42,.08);
+  overflow: hidden;
+  box-shadow: none;
 }
 
 .admin-shell-environment {
@@ -1020,4 +1015,110 @@ body {
   a[class*="bg-red-6"],button[class*="bg-red-6"]
 ) {
   color: #ffffff !important;
+}
+
+
+/* Enterprise shell refinement: flatter, denser, and more restrained. */
+.admin-shell-logo img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.admin-shell-brand-copy strong {
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.admin-shell-environment {
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  border-radius: var(--toh-radius-sm);
+  background: transparent;
+  box-shadow: none;
+}
+
+.admin-shell-nav {
+  gap: 2px;
+}
+
+.admin-shell-nav-group {
+  border-radius: var(--toh-radius-sm);
+}
+
+.admin-shell-nav-group.is-active {
+  border-color: transparent;
+  background: transparent;
+}
+
+.admin-shell-nav-group-trigger {
+  min-height: 36px;
+  grid-template-columns: 24px minmax(0,1fr) 18px;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.admin-shell-nav-group-icon {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--toh-radius-xs);
+  background: transparent;
+}
+
+.admin-shell-nav-group.is-active .admin-shell-nav-group-icon {
+  border: 0;
+  background: transparent;
+  color: var(--admin-shell-accent);
+}
+
+.admin-shell-nav-item {
+  min-height: 34px;
+  gap: 9px;
+  padding: 7px 9px 7px 12px;
+  border-radius: var(--toh-radius-sm);
+  font-size: 12.5px;
+  font-weight: 650;
+  transform: none;
+}
+
+.admin-shell-nav-item:hover {
+  transform: none;
+}
+
+.admin-shell-nav-item.is-active {
+  background: var(--admin-shell-accent-soft);
+  box-shadow: inset 2px 0 var(--admin-shell-accent);
+}
+
+.admin-shell-desktop-topbar {
+  min-height: 58px;
+  padding: 8px 22px;
+  box-shadow: none;
+}
+
+.admin-shell-content {
+  padding-top: 0;
+}
+
+.admin-shell-drawer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-shell-drawer-brand img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+@media (max-width: 1180px) {
+  .admin-shell-desktop-topbar {
+    padding-inline: 18px;
+  }
 }
