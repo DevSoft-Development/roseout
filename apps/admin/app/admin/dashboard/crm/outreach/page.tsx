@@ -51,11 +51,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
         <CommunicationCenter scope="crm" locationId={p.location_id} />
 
-        <div className="flex flex-wrap gap-2">
+        {!p.location_id ? <div className="flex flex-wrap gap-2">
           <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>
           <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Unmatched SMS</Link>
           <Link href="/admin/dashboard/crm/communications/automation" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Automation</Link>
-        </div>
+        </div> : null}
 
         <form className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-4">
           {contextFields.map((name) => p[name] ? <input key={name} type="hidden" name={name} value={p[name]} /> : null)}
