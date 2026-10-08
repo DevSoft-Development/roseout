@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   const appId = String(formData.get("app_id") || "").trim();
   const action = String(formData.get("action") || "").trim();
   const targetType = String(formData.get("target_type") || "").trim();
+  const appName = String(formData.get("app_name") || "Apple app").trim().slice(0, 120);
 
   if (!appId || !["available", "install", "remove"].includes(action)) {
     return NextResponse.json({ error: "App and action are required" }, { status: 400 });
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
   const intent = action === "install" ? "required" : "uninstall";
 
   try {
+    let targetLabel = "selected target";
+
     if (targetType === "profile") {
       if (!["available", "remove"].includes(action)) {
         return NextResponse.json({ error: "Invalid profile app action" }, { status: 400 });
@@ -54,6 +57,7 @@ export async function POST(request: NextRequest) {
         profile as "standard" | "executive",
         action === "available" ? "available" : "uninstall",
       );
+      targetLabel = `${profile === "executive" ? "Executive" : "Standard"} profile`;
     } else if (targetType === "executive") {
       if (!["available", "remove"].includes(action)) {
         return NextResponse.json({ error: "Invalid executive app action" }, { status: 400 });
@@ -63,6 +67,7 @@ export async function POST(request: NextRequest) {
         appId,
         action === "available" ? "available" : "uninstall",
       );
+      targetLabel = "Executive profile";
     } else if (targetType === "group") {
       if (!["install", "remove"].includes(action)) {
         return NextResponse.json({ error: "Invalid group app action" }, { status: 400 });
@@ -72,6 +77,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Group is required" }, { status: 400 });
       }
       await assignIntuneAppleAppToGroup(admin.user_id, appId, groupId, intent);
+      targetLabel = String(formData.get("group_name") || "selected group").trim().slice(0, 120);
     } else if (targetType === "devices") {
       const deviceIds = formData
         .getAll("device_ids")
@@ -81,6 +87,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Select at least one device" }, { status: 400 });
       }
       await assignIntuneAppleAppToDevices(admin.user_id, appId, deviceIds, intent);
+      targetLabel = `${deviceIds.length} selected device${deviceIds.length === 1 ? "" : "s"}`;
     } else {
       return NextResponse.json({ error: "Invalid target type" }, { status: 400 });
     }
@@ -90,6 +97,8 @@ export async function POST(request: NextRequest) {
 
     const url = new URL(RETURN_PATH, getRequestOrigin(request));
     url.searchParams.set("app_status", action === "available" ? "available-requested" : action === "install" ? "install-requested" : "remove-requested");
+    url.searchParams.set("app_name", appName);
+    url.searchParams.set("target", targetLabel);
     return NextResponse.redirect(url, 303);
   } catch (error) {
     console.error("Apple app catalog action failed", error);
