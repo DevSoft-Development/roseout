@@ -6,6 +6,7 @@ import {
   assignIntuneAppleAppToDevices,
   assignIntuneAppleAppToExecutives,
   assignIntuneAppleAppToGroup,
+  assignIntuneAppleAppToProfile,
 } from "@/lib/microsoft-365/intune";
 
 const RETURN_PATH = "/admin/dashboard/security/apple-devices";
@@ -39,7 +40,21 @@ export async function POST(request: NextRequest) {
   const intent = action === "install" ? "required" : "uninstall";
 
   try {
-    if (targetType === "executive") {
+    if (targetType === "profile") {
+      if (!["available", "remove"].includes(action)) {
+        return NextResponse.json({ error: "Invalid profile app action" }, { status: 400 });
+      }
+      const profile = String(formData.get("profile") || "").trim();
+      if (!["standard", "executive"].includes(profile)) {
+        return NextResponse.json({ error: "Valid profile is required" }, { status: 400 });
+      }
+      await assignIntuneAppleAppToProfile(
+        admin.user_id,
+        appId,
+        profile as "standard" | "executive",
+        action === "available" ? "available" : "uninstall",
+      );
+    } else if (targetType === "executive") {
       if (!["available", "remove"].includes(action)) {
         return NextResponse.json({ error: "Invalid executive app action" }, { status: 400 });
       }

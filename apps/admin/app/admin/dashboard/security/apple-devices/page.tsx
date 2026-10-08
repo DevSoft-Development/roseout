@@ -27,7 +27,6 @@ import {
 } from "@/lib/apple-business/api";
 import {
   getIntuneOverview,
-  THEOUTHAVEN_EXECUTIVE_GROUP,
   listIntuneAppleApps,
   listIntuneDepOnboardingSettings,
   listIntuneSecurityGroups,
@@ -127,9 +126,6 @@ export default async function AppleDeviceEnrollmentPage() {
   const enrolledIosDevices = (intuneOverview?.devices || []).filter((device) =>
     ["iOS", "iPadOS"].includes(device.operatingSystem || ""),
   );
-  const executiveGroup = securityGroups.find(
-    (group) => group.displayName === THEOUTHAVEN_EXECUTIVE_GROUP,
-  ) || null;
 
   return (
     <AdminPageShell>
@@ -257,17 +253,39 @@ export default async function AppleDeviceEnrollmentPage() {
         managementServiceName={intuneServer?.attributes?.serverName}
       />
 
-      <section className="apple-card">
-        <header className="apple-section-head">
+      <section className="apple-card apple-app-catalog">
+        <header className="apple-section-head apple-app-catalog-head">
           <div>
             <small>Company app catalog</small>
-            <h2>Install and remove managed apps</h2>
+            <h2>Manage apps by employee profile</h2>
             <p>
-              Select enrolled Apple devices or an Entra security group. Device targets are
-              maintained through TheOutHaven-managed groups so Intune remains the system of record.
+              Choose an app, select Standard or Executive, then add or remove it.
+              Advanced device and Entra group targeting stays available when you need an exception.
             </p>
           </div>
+          <AdminStatusBadge tone={appleApps.length ? "green" : "muted"}>
+            {appleApps.length} {appleApps.length === 1 ? "app" : "apps"} synced
+          </AdminStatusBadge>
         </header>
+
+        <div className="apple-profile-summary">
+          <article>
+            <UsersRound />
+            <div>
+              <strong>Standard</strong>
+              <span>Default employee profile</span>
+              <small>Apps available to standard managed-device users</small>
+            </div>
+          </article>
+          <article>
+            <ShieldCheck />
+            <div>
+              <strong>Executive</strong>
+              <span>Executive employee profile</span>
+              <small>Apps reserved for TheOutHaven Executives</small>
+            </div>
+          </article>
+        </div>
 
         {appCatalogError ? (
           <section className="apple-alert">
@@ -282,102 +300,115 @@ export default async function AppleDeviceEnrollmentPage() {
             </div>
           </section>
         ) : appleApps.length ? (
-          <div className="apple-device-list">
+          <div className="apple-app-table">
+            <div className="apple-app-table-head" aria-hidden="true">
+              <span>App</span>
+              <span>Profile</span>
+              <span>Actions</span>
+            </div>
+
             {appleApps.map((app) => (
-              <article key={app.id} className="apple-device-row">
-                <div className="apple-device-main">
+              <article key={app.id} className="apple-app-row">
+                <div className="apple-app-identity">
+                  <span className="apple-app-icon"><PackagePlus /></span>
                   <div>
-                    <PackagePlus />
                     <strong>{app.displayName || "Unnamed Apple app"}</strong>
+                    <span>{app.publisher || "Publisher unavailable"}</span>
                   </div>
-                  <span>{app.publisher || "Publisher unavailable"}</span>
-                  <small>Ready for Intune assignment</small>
                 </div>
 
                 <form
                   action="/api/admin/integrations/apple-device-enrollment/apps"
                   method="post"
-                  className="apple-device-meta"
+                  className="apple-app-profile-form"
                 >
                   <input type="hidden" name="app_id" value={app.id} />
-                  <input type="hidden" name="target_type" value="devices" />
+                  <input type="hidden" name="target_type" value="profile" />
                   <label>
-                    <span>Devices</span>
-                    <select
-                      name="device_ids"
-                      multiple
-                      size={Math.min(4, Math.max(2, enrolledIosDevices.length))}
-                      disabled={!enrolledIosDevices.length}
-                    >
-                      {enrolledIosDevices.map((device) => (
-                        <option key={device.id} value={device.id}>
-                          {device.deviceName || device.model || "Apple device"} · {device.userDisplayName || device.userPrincipalName || device.serialNumber || "Unassigned"}
-                        </option>
-                      ))}
+                    <span className="sr-only">Employee profile</span>
+                    <select name="profile" defaultValue="standard" aria-label="Employee profile">
+                      <option value="standard">Standard</option>
+                      <option value="executive">Executive</option>
                     </select>
                   </label>
-                  <small>Use Command/Ctrl to select multiple devices.</small>
-                  <div>
-                    <button type="submit" name="action" value="install" disabled={!enrolledIosDevices.length}>
-                      Install
+                  <div className="apple-app-actions">
+                    <button type="submit" name="action" value="available">
+                      Add to profile
                     </button>
-                    <button type="submit" name="action" value="remove" disabled={!enrolledIosDevices.length}>
+                    <button type="submit" name="action" value="remove" className="apple-app-remove">
                       Remove
                     </button>
                   </div>
                 </form>
 
-                <form
-                  action="/api/admin/integrations/apple-device-enrollment/apps"
-                  method="post"
-                  className="apple-device-meta"
-                >
-                  <input type="hidden" name="app_id" value={app.id} />
-                  <input type="hidden" name="target_type" value="group" />
-                  <label>
-                    <span><UsersRound /> Group</span>
-                    <select name="group_id" required disabled={!securityGroups.length}>
-                      <option value="">Select group</option>
-                      {securityGroups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div>
-                    <button type="submit" name="action" value="install" disabled={!securityGroups.length}>
-                      Install
-                    </button>
-                    <button type="submit" name="action" value="remove" disabled={!securityGroups.length}>
-                      Remove
-                    </button>
+                <details className="apple-app-advanced">
+                  <summary>Advanced targeting</summary>
+                  <p>
+                    Use this only for a one-off device or a custom Entra security group.
+                  </p>
+                  <div className="apple-app-advanced-grid">
+                    <form
+                      action="/api/admin/integrations/apple-device-enrollment/apps"
+                      method="post"
+                      className="apple-app-target-form"
+                    >
+                      <input type="hidden" name="app_id" value={app.id} />
+                      <input type="hidden" name="target_type" value="devices" />
+                      <label>
+                        <span>Specific devices</span>
+                        <select
+                          name="device_ids"
+                          multiple
+                          size={Math.min(4, Math.max(2, enrolledIosDevices.length))}
+                          disabled={!enrolledIosDevices.length}
+                        >
+                          {enrolledIosDevices.map((device) => (
+                            <option key={device.id} value={device.id}>
+                              {device.deviceName || device.model || "Apple device"} · {device.userDisplayName || device.userPrincipalName || device.serialNumber || "Unassigned"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <small>Command/Ctrl selects multiple devices.</small>
+                      <div>
+                        <button type="submit" name="action" value="install" disabled={!enrolledIosDevices.length}>
+                          Install
+                        </button>
+                        <button type="submit" name="action" value="remove" className="apple-app-remove" disabled={!enrolledIosDevices.length}>
+                          Remove
+                        </button>
+                      </div>
+                    </form>
+
+                    <form
+                      action="/api/admin/integrations/apple-device-enrollment/apps"
+                      method="post"
+                      className="apple-app-target-form"
+                    >
+                      <input type="hidden" name="app_id" value={app.id} />
+                      <input type="hidden" name="target_type" value="group" />
+                      <label>
+                        <span>Custom Entra group</span>
+                        <select name="group_id" required disabled={!securityGroups.length}>
+                          <option value="">Select group</option>
+                          {securityGroups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div>
+                        <button type="submit" name="action" value="install" disabled={!securityGroups.length}>
+                          Install
+                        </button>
+                        <button type="submit" name="action" value="remove" className="apple-app-remove" disabled={!securityGroups.length}>
+                          Remove
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                </form>
-                <form
-                  action="/api/admin/integrations/apple-device-enrollment/apps"
-                  method="post"
-                  className="apple-device-meta"
-                >
-                  <input type="hidden" name="app_id" value={app.id} />
-                  <input type="hidden" name="target_type" value="executive" />
-                  <label>
-                    <span><UsersRound /> Executive access</span>
-                    <small>
-                      {executiveGroup
-                        ? "TheOutHaven Executives group is ready."
-                        : "TheOutHaven Executives will be created automatically on first use."}
-                    </small>
-                  </label>
-                  <div>
-                    <button type="submit" name="action" value="available">
-                      Available to Executives
-                    </button>
-                    <button type="submit" name="action" value="remove">
-                      Remove from Executives
-                    </button>
-                  </div>
-                </form>
+                </details>
               </article>
             ))}
           </div>
