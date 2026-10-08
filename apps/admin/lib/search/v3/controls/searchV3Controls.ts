@@ -1,4 +1,3 @@
-import type { SearchRetrievalProvider } from "@/lib/search-framework";
 export const SEARCH_V3_LANES = [
   {
     "id": "structured",
@@ -63,29 +62,3 @@ export async function readSearchV3Controls(db:SettingsClient):Promise<SearchV3Co
  if(!data) return DEFAULT_SEARCH_V3_CONTROLS;
  return {...validateSearchV3Controls(data.value),updatedAt:data.updated_at};
 }
-const breaker=new Map<string,{failures:number;openUntil:number;probe:boolean}>();
-export function wrapSearchV3RetrievalProviders(providers:readonly SearchRetrievalProvider[], load:()=>Promise<SearchV3Controls>):SearchRetrievalProvider[]{
- return providers.map(provider=>{
-  const lane=SEARCH_V3_LANES.find(l=>l.providerId===provider.providerId);
-  if(!lane) return provider;
-  return {providerId:provider.providerId,async retrieve(args){
-   const cfg=(await load()).lanes[lane.id];
-   if(!cfg.enabled||cfg.forceOpen) throw new Error("v3_lane_manually_open:"+lane.id);
-   const state=breaker.get(lane.id)??{failures:0,openUntil:0,probe:false};
-   const now=Date.now();
-   if(state.openUntil>now||state.probe) throw new Error("v3_lane_circuit_open:"+lane.id);
-   const halfOpen=state.openUntil>0;
-   if(halfOpen){state.probe=true;breaker.set(lane.id,state);}
-   try{
-    const result=await provider.retrieve(args);
-    breaker.set(lane.id,{failures:0,openUntil:0,probe:false});
-    return result;
-   }catch(e){
-    const failures=state.failures+1;
-    breaker.set(lane.id,{failures,openUntil:halfOpen||failures>=cfg.threshold?Date.now()+cfg.cooldownMs:0,probe:false});
-    throw e;
-   }
-  }};
- });
-}
-export function localSearchV3BreakerSnapshot(){return Object.fromEntries([...breaker.entries()].map(([id,s])=>[id,{failures:s.failures,openUntil:s.openUntil,halfOpen:s.probe}]));}
