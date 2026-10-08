@@ -7,9 +7,10 @@ export async function GET(){
  const auth=await requireAdminApiRole(READ_ROLES); if(auth.error)return auth.error;
  try {
   const db=getAdminDatabaseClient();
-  const [{data:phase},{data:replay},controls]=await Promise.all([
+  const [{data:phase},{data:replay},{data:breakerRows,error:breakerError},controls]=await Promise.all([
    db.from("cron_job_runs").select("started_at,status,details").eq("job_key","search-phase13-maintenance").order("started_at",{ascending:false}).limit(1),
    db.from("search_quality_replay_runs").select("id,created_at,completed_at,status,metrics").eq("source","golden").order("created_at",{ascending:false}).limit(1),
+   db.from("search_v3_lane_breakers").select("lane_id,failures,open_until,probe_until,updated_at").limit(6),
    readSearchV3Controls(db),
   ]);
   const latest=phase?.[0]??null, golden=replay?.[0]??null;
@@ -22,7 +23,7 @@ export async function GET(){
   const replayPass=Boolean(replayFresh)&&golden?.status==="completed"&&!!v3&&!!comparison&&Number(v3.successRate)>=90&&Number(v3.pairSuccessRate)>=90&&Number(v3.noResultRegressionRate)===0&&Number(v3.contractFailureCount)===0&&Number(v3.p95LatencyMs)<=5000&&["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>noRegression[k]===true);
   const rolloutWired=process.env.SEARCH_V3_CANARY_RELEASE_ENABLED==="true"; // Explicit release verification prerequisite.
   const coreHealthy=Object.entries(DEFAULT_SEARCH_V3_CONTROLS.lanes).filter(([id])=>id!=="review_intelligence").every(([id])=>controls.lanes[id as keyof typeof controls.lanes]?.enabled&&!controls.lanes[id as keyof typeof controls.lanes]?.forceOpen);
-  return NextResponse.json({controls,phase:latest,golden:{id:golden?.id??null,completedAt:golden?.completed_at??null,v3,comparison},gates:{phasePass,replayPass,coreHealthy,rolloutWired,canaryEligible:phasePass&&replayPass&&coreHealthy&&rolloutWired},runnerUrl:null,promotionWorkflowUrl:"https://github.com/DevSoft-Development/roseout/actions/workflows/search-v3-promotion-gate.yml"});
+  return NextResponse.json({controls,breakerHealth:{available:!breakerError,rows:breakerError?[]:breakerRows??[],error:breakerError?"Shared breaker migration or permissions unavailable":null},phase:latest,golden:{id:golden?.id??null,completedAt:golden?.completed_at??null,v3,comparison},gates:{phasePass,replayPass,coreHealthy,rolloutWired,canaryEligible:phasePass&&replayPass&&coreHealthy&&rolloutWired},runnerUrl:null,promotionWorkflowUrl:"https://github.com/DevSoft-Development/roseout/actions/workflows/search-v3-promotion-gate.yml"});
  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Failed to load V3 status"},{status:503});}
 }
 export async function PATCH(request:Request){
