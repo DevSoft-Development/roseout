@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createTheOutHavenSearchV3, type TheOutHavenSearchV3Client } from "@/lib/search/v3";
 import { GOLDEN_SEARCH_QUERIES } from "@/lib/search/quality/goldenQueries";
 import { buildV3ReplayMetrics, evaluateV3Execution, snapshotV3Execution } from "@/lib/search/quality/v3ReplayEvaluation";
+import { validateSearchV3CoreLanes } from "@/lib/search/quality/v3LaneValidation";
 
 type Variant = "five_lane" | "six_lane_review";
 
@@ -16,6 +17,7 @@ type Row = {
   error: string | null;
   comparison: ReturnType<typeof evaluateV3Execution> | null;
   execution: ReturnType<typeof snapshotV3Execution> | null;
+  laneValidation: ReturnType<typeof validateSearchV3CoreLanes> | null;
 };
 
 type VariantResult = {
@@ -57,6 +59,7 @@ async function runVariant(variant: Variant): Promise<VariantResult> {
         error: null,
         comparison,
         execution: snapshotV3Execution(execution),
+        laneValidation: validateSearchV3CoreLanes(execution.retrieval),
       });
 
       console.log(JSON.stringify({
@@ -83,6 +86,7 @@ async function runVariant(variant: Variant): Promise<VariantResult> {
         error: message,
         comparison: null,
         execution: null,
+        laneValidation: null,
       });
       console.error(JSON.stringify({ variant, id: testCase.id, error: message, stack }));
     }
@@ -96,7 +100,19 @@ async function runVariant(variant: Variant): Promise<VariantResult> {
     })),
   );
 
-  return { variant, rows, metrics };
+  const laneFailures = rows.filter((row) => row.laneValidation && !row.laneValidation.passed);
+  return {
+    variant,
+    rows,
+    metrics: {
+      ...metrics,
+      coreLaneValidationPassed: laneFailures.length === 0,
+      coreLaneFailureCount: laneFailures.length,
+    } as ReturnType<typeof buildV3ReplayMetrics> & {
+      coreLaneValidationPassed: boolean;
+      coreLaneFailureCount: number;
+    },
+  };
 }
 
 function envNumber(name: string, fallback: number) {
@@ -123,6 +139,7 @@ function evaluateBaselinePromotionGate(result: VariantResult) {
       Number(result.metrics.contractFailureCount ?? 0) <= thresholds.maximumContractFailures,
     p95Latency:
       Number(result.metrics.p95LatencyMs ?? Number.MAX_SAFE_INTEGER) <= thresholds.maximumP95LatencyMs,
+    coreLanes: (result.metrics as any).coreLaneValidationPassed === true,
   };
 
   return {
