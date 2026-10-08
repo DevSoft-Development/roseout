@@ -63,6 +63,20 @@ export async function readSearchV3Controls(db:SettingsClient):Promise<SearchV3Co
  if(!data) return DEFAULT_SEARCH_V3_CONTROLS;
  return {...validateSearchV3Controls(data.value),updatedAt:data.updated_at};
 }
+// Keep the last known good setting briefly across concurrent lane requests.
+let cached: { value: SearchV3Controls; until: number } | null = null;
+export async function readSearchV3RuntimeControls(db: SettingsClient): Promise<SearchV3Controls> {
+  if (cached && cached.until > Date.now()) return cached.value;
+  try {
+    const value = await readSearchV3Controls(db);
+    cached = { value, until: Date.now() + 5000 };
+    return value;
+  } catch {
+    // Fail closed: no serving V3 if the configuration database cannot be reached.
+    return { ...DEFAULT_SEARCH_V3_CONTROLS, mode: "shadow", canaryPercent: 0 };
+  }
+}
+export function invalidateSearchV3RuntimeControlsCache() { cached = null; }
 const breaker=new Map<string,{failures:number;openUntil:number;probe:boolean}>();
 export function wrapSearchV3RetrievalProviders(providers:readonly SearchRetrievalProvider[], load:()=>Promise<SearchV3Controls>):SearchRetrievalProvider[]{
  return providers.map(provider=>{
