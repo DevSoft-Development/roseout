@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import {
   assignIntuneAppleAppToDevices,
+  assignIntuneAppleAppToExecutives,
   assignIntuneAppleAppToGroup,
 } from "@/lib/microsoft-365/intune";
 
@@ -31,14 +32,26 @@ export async function POST(request: NextRequest) {
   const action = String(formData.get("action") || "").trim();
   const targetType = String(formData.get("target_type") || "").trim();
 
-  if (!appId || !["install", "remove"].includes(action)) {
+  if (!appId || !["available", "install", "remove"].includes(action)) {
     return NextResponse.json({ error: "App and action are required" }, { status: 400 });
   }
 
   const intent = action === "install" ? "required" : "uninstall";
 
   try {
-    if (targetType === "group") {
+    if (targetType === "executive") {
+      if (!["available", "remove"].includes(action)) {
+        return NextResponse.json({ error: "Invalid executive app action" }, { status: 400 });
+      }
+      await assignIntuneAppleAppToExecutives(
+        admin.user_id,
+        appId,
+        action === "available" ? "available" : "uninstall",
+      );
+    } else if (targetType === "group") {
+      if (!["install", "remove"].includes(action)) {
+        return NextResponse.json({ error: "Invalid group app action" }, { status: 400 });
+      }
       const groupId = String(formData.get("group_id") || "").trim();
       if (!groupId) {
         return NextResponse.json({ error: "Group is required" }, { status: 400 });
@@ -61,7 +74,7 @@ export async function POST(request: NextRequest) {
     revalidatePath("/admin/dashboard/security/devices");
 
     const url = new URL(RETURN_PATH, getRequestOrigin(request));
-    url.searchParams.set("app_status", action === "install" ? "install-requested" : "remove-requested");
+    url.searchParams.set("app_status", action === "available" ? "available-requested" : action === "install" ? "install-requested" : "remove-requested");
     return NextResponse.redirect(url, 303);
   } catch (error) {
     console.error("Apple app catalog action failed", error);
