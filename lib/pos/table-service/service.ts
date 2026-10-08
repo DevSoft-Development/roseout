@@ -35,6 +35,8 @@ function moneyFields(check:any){
     serviceChargeCents:Number(check?.service_charge_cents||0),
     totalCents:Number(check?.total_cents||0),
     amountPaidCents:Number(check?.amount_paid_cents||0),
+    amountRefundedCents:Number(check?.amount_refunded_cents||0),
+    remainingCents:Math.max(0,Number(check?.total_cents||0)-Number(check?.amount_paid_cents||0)+Number(check?.amount_refunded_cents||0)),
     tipCents:Number(check?.tip_cents||0),
   };
 }
@@ -193,12 +195,16 @@ export async function getPosTableCheckWorkspace(locationId:string,checkId:string
     .select("*").eq("location_id",locationId).eq("id",checkId).maybeSingle();
   if(error) throw new Error(error.message||"pos_table_check_failed");
   if(!check) throw new Error("pos_table_check_not_found");
-  const [{data:resources,error:resourceError},{data:orders,error:ordersError}]=await Promise.all([
+  const [{data:resources,error:resourceError},{data:orders,error:ordersError},{data:tenders,error:tenderError},{data:staff,error:staffError}]=await Promise.all([
     shard.client.from("pos_check_resources").select("layout_item_id,resource_label").eq("location_id",locationId).eq("check_id",checkId),
     shard.client.from("pos_orders").select("id,status,course_name,sent_at,created_at").eq("location_id",locationId).eq("check_id",checkId).order("created_at",{ascending:true}),
+    shard.client.from("pos_tenders").select("id,tender_number,tender_type,status,amount_cents,tip_cents,amount_refunded_cents,cash_received_cents,cash_change_cents,created_at").eq("location_id",locationId).eq("check_id",checkId).order("tender_number",{ascending:true}),
+    shard.client.from("reserve_staff_profiles").select("id,display_name,role,is_active").eq("location_id",locationId).eq("is_active",true).order("display_name",{ascending:true}),
   ]);
   if(resourceError) throw new Error(resourceError.message||"pos_table_resource_failed");
   if(ordersError) throw new Error(ordersError.message||"pos_table_orders_failed");
+  if(tenderError) throw new Error(tenderError.message||"pos_table_tenders_failed");
+  if(staffError) throw new Error(staffError.message||"pos_table_staff_failed");
   const orderIds=(orders||[]).map((row:any)=>String(row.id));
   const {data:items,error:itemError}=orderIds.length
     ? await shard.client.from("pos_order_items")
@@ -229,6 +235,16 @@ export async function getPosTableCheckWorkspace(locationId:string,checkId:string
     }:null,
     resources:resources||[],
     amounts:moneyFields(check),
+    staff:(staff||[]).map((row:any)=>({
+      id:String(row.id),name:String(row.display_name||"Staff"),role:String(row.role||"staff"),
+    })),
+    tenders:(tenders||[]).map((row:any)=>({
+      id:String(row.id),number:Number(row.tender_number||0),type:String(row.tender_type||"other"),status:String(row.status||""),
+      amountCents:Number(row.amount_cents||0),tipCents:Number(row.tip_cents||0),amountRefundedCents:Number(row.amount_refunded_cents||0),
+      refundableCents:Math.max(0,Number(row.amount_cents||0)-Number(row.amount_refunded_cents||0)),
+      cashReceivedCents:row.cash_received_cents==null?null:Number(row.cash_received_cents),
+      cashChangeCents:row.cash_change_cents==null?null:Number(row.cash_change_cents),
+    })),
     items:(items||[]).map((item:any)=>({
       id:String(item.id),
       orderId:String(item.order_id),
