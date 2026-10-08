@@ -94,6 +94,7 @@ type IntuneMobileAppAssignment = {
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 export const THEOUTHAVEN_ADE_PROFILE = "TheOutHaven - Standard Managed Device ADE";
 export const THEOUTHAVEN_EXECUTIVE_GROUP = "TheOutHaven Executives";
+export const THEOUTHAVEN_STANDARD_DEVICE_GROUP = "TheOutHaven Standard";
 
 const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
@@ -346,6 +347,109 @@ export async function getOrCreateIntuneExecutiveGroup(userId: string) {
       groupTypes: [],
     }),
   });
+}
+
+async function getOrCreateNamedUserSecurityGroup(
+  userId: string,
+  displayName: string,
+  mailNickname: string,
+  description: string,
+) {
+  const existing = (await listIntuneSecurityGroups(userId)).find(
+    (group) => group.displayName === displayName,
+  );
+  if (existing) return existing;
+
+  return microsoftGraphFetch<IntuneDirectoryGroup>(userId, "/groups", {
+    method: "POST",
+    body: JSON.stringify({
+      displayName,
+      description,
+      mailEnabled: false,
+      mailNickname,
+      securityEnabled: true,
+      groupTypes: [],
+    }),
+  });
+}
+
+async function resolveMicrosoftUserObjectId(userId: string, email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) throw new Error("MICROSOFT_USER_EMAIL_REQUIRED");
+
+  try {
+    const direct = await microsoftGraphFetch<{ id?: string }>(
+      userId,
+      `/users/${encodeURIComponent(normalized)}?$select=id`,
+    );
+    if (direct?.id) return direct.id;
+  } catch {
+    // Fall back to mail/UPN lookup below.
+  }
+
+  const escaped = normalized.replace(/'/g, "''");
+  const filter = encodeURIComponent(
+    `userPrincipalName eq '${escaped}' or mail eq '${escaped}'`,
+  );
+  const payload = await microsoftGraphFetch<GraphCollection<{ id: string }>>(
+    userId,
+    `/users?$filter=${filter}&$select=id&$top=2`,
+  );
+  const objectId = payload.value?.[0]?.id;
+  if (!objectId) throw new Error("MICROSOFT_USER_NOT_FOUND");
+  return objectId;
+}
+
+async function addDirectoryObjectToGroup(userId: string, groupId: string, objectId: string) {
+  const members = await listGroupMemberIds(userId, groupId);
+  if (members.has(objectId)) return;
+  await microsoftGraphFetch(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members/$ref`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        "@odata.id": `https://graph.microsoft.com/v1.0/directoryObjects/${objectId}`,
+      }),
+    },
+  );
+}
+
+async function removeDirectoryObjectFromGroup(userId: string, groupId: string, objectId: string) {
+  const members = await listGroupMemberIds(userId, groupId);
+  if (!members.has(objectId)) return;
+  await microsoftGraphFetch(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(objectId)}/$ref`,
+    { method: "DELETE" },
+  );
+}
+
+export async function assignMicrosoftUserToDeviceGroup(
+  userId: string,
+  email: string,
+  group: "standard" | "executive",
+) {
+  const [standardGroup, executiveGroup, objectId] = await Promise.all([
+    getOrCreateNamedUserSecurityGroup(
+      userId,
+      THEOUTHAVEN_STANDARD_DEVICE_GROUP,
+      "theouthaven-standard",
+      "TheOutHaven standard managed-device user group.",
+    ),
+    getOrCreateIntuneExecutiveGroup(userId),
+    resolveMicrosoftUserObjectId(userId, email),
+  ]);
+
+  if (group === "executive") {
+    await addDirectoryObjectToGroup(userId, executiveGroup.id, objectId);
+    await removeDirectoryObjectFromGroup(userId, standardGroup.id, objectId);
+    return executiveGroup;
+  }
+
+  await addDirectoryObjectToGroup(userId, standardGroup.id, objectId);
+  await removeDirectoryObjectFromGroup(userId, executiveGroup.id, objectId);
+  return standardGroup;
 }
 
 export async function assignIntuneAppleAppToExecutives(
