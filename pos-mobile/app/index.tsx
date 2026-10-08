@@ -54,6 +54,18 @@ function statusLabel(value:string){
   return value.toUpperCase();
 }
 
+function receiptBytes(lines:string[]){
+  const encoder=new TextEncoder();
+  const text=encoder.encode(lines.join("\n")+"\n\n\n");
+  const bytes=new Uint8Array(2+text.length+3);
+  bytes.set([0x1b,0x40],0);
+  bytes.set(text,2);
+  bytes.set([0x1d,0x56,0x00],2+text.length);
+  return bytes;
+}
+
+const cashDrawerBytes=Uint8Array.from([0x1b,0x70,0x00,0x3c,0x78]);
+
 export default function CashierHome() {
   const [session,setSession]=useState<PosClaimSession|null>(null);
   const [pairingCode,setPairingCode]=useState("");
@@ -67,6 +79,18 @@ export default function CashierHome() {
   const [workspaceMode,setWorkspaceMode]=useState<"tables"|"signature"|"online">("tables");
   const [posStateVersion,setPosStateVersion]=useState(0);
   const routerRef=useRef<RoleBasedPosOutputRouter|null>(null);
+
+  const openCashDrawer=useCallback(async()=>{
+    const router=routerRef.current;
+    if(!router) throw new Error("pos_output_router_unavailable");
+    await router.send("cash_drawer",cashDrawerBytes);
+  },[]);
+
+  const printReceipt=useCallback(async(lines:string[])=>{
+    const router=routerRef.current;
+    if(!router) throw new Error("pos_output_router_unavailable");
+    await router.send("receipt",receiptBytes(lines));
+  },[]);
 
   const loadOrders=useCallback(async (activeSession:PosClaimSession,quiet=false)=>{
     if(!quiet) setRefreshing(true);
@@ -266,7 +290,12 @@ export default function CashierHome() {
           </View>
         </View>
         {!!message&&<Text style={styles.errorBanner}>{message}</Text>}
-        <SignaturePlusWorkspace session={session} refreshToken={posStateVersion}/>
+        <SignaturePlusWorkspace
+          session={session}
+          refreshToken={posStateVersion}
+          onOpenCashDrawer={openCashDrawer}
+          onPrintReceipt={printReceipt}
+        />
       </SafeAreaView>
     );
   }
