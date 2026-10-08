@@ -5,6 +5,8 @@ import {
   validateSearchV3Controls,
   readSearchV3RuntimeControls,
   invalidateSearchV3RuntimeControlsCache,
+  wrapSearchV3RetrievalProviders,
+  resetLocalSearchV3Breakers,
 } from "../controls/searchV3Controls";
 
 describe("Search V3 six-lane operations", () => {
@@ -37,6 +39,24 @@ describe("Search V3 six-lane operations", () => {
     const controls = await readSearchV3RuntimeControls(db);
     expect(controls.mode).toBe("shadow");
     expect(controls.v2Fallback).toBe(true);
+  });
+
+  it("opens after the configured failure threshold and blocks subsequent requests", async () => {
+    resetLocalSearchV3Breakers();
+    const provider = {
+      providerId: SEARCH_V3_LANES[0].providerId,
+      retrieve: async () => { throw new Error("upstream unavailable"); },
+    } as any;
+    const controls = {
+      ...DEFAULT_SEARCH_V3_CONTROLS,
+      lanes: {
+        ...DEFAULT_SEARCH_V3_CONTROLS.lanes,
+        structured: { enabled: true, forceOpen: false, threshold: 1, cooldownMs: 60000 },
+      },
+    };
+    const wrapped = wrapSearchV3RetrievalProviders([provider], async () => controls);
+    await expect(wrapped[0].retrieve({} as any)).rejects.toThrow("upstream unavailable");
+    await expect(wrapped[0].retrieve({} as any)).rejects.toThrow("v3_lane_circuit_open:structured");
   });
 
   it("rejects incomplete lane configuration", () => {
