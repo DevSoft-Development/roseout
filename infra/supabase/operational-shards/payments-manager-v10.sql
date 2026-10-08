@@ -562,4 +562,4 @@ begin
     select 1 from pg_publication_tables
     where pubname='toh_operational_dr' and schemaname='public' and tablename='pos_refund_requests'
   ) then execute 'alter publication toh_operational_dr add table public.pos_refund_requests'; end if;
-end $;
+end $$;
