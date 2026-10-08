@@ -11,11 +11,12 @@ export interface DeterministicDecisionRankingOptions {
   intentWeight?: number;
   geoWeight?: number;
   qualityWeight?: number;
+  consensusWeight?: number;
 }
 
 export class DeterministicDecisionRankingProvider
 implements SearchRankingProvider {
-  readonly providerId = "search-v3.deterministic-decision-ranker.v1";
+  readonly providerId = "search-v3.deterministic-decision-ranker.v2";
 
   constructor(
     private readonly options: DeterministicDecisionRankingOptions = {},
@@ -26,12 +27,13 @@ implements SearchRankingProvider {
     intent: SearchIntentGraph;
     candidates: readonly SearchCandidate[];
   }): Promise<readonly SearchCandidate[]> {
-    const weights = {
-      retrieval: this.options.retrievalWeight ?? 0.45,
+    const weights = normalizeWeights({
+      retrieval: this.options.retrievalWeight ?? 0.35,
       intent: this.options.intentWeight ?? 0.3,
       geo: this.options.geoWeight ?? 0.15,
       quality: this.options.qualityWeight ?? 0.1,
-    };
+      consensus: this.options.consensusWeight ?? 0.1,
+    });
 
     return args.candidates
       .map((candidate) => {
@@ -40,13 +42,15 @@ implements SearchRankingProvider {
           intent: intentScore(candidate.intelligence, args.intent),
           geo: geoScore(candidate.intelligence, args.request, args.intent),
           quality: qualityScore(candidate.intelligence),
+          consensus: retrievalConsensusScore(candidate),
         };
 
         const total =
           components.retrieval * weights.retrieval +
           components.intent * weights.intent +
           components.geo * weights.geo +
-          components.quality * weights.quality;
+          components.quality * weights.quality +
+          components.consensus * weights.consensus;
 
         return {
           ...candidate,
@@ -68,6 +72,48 @@ implements SearchRankingProvider {
         a.locationId.localeCompare(b.locationId)
       );
   }
+}
+
+function retrievalConsensusScore(candidate: SearchCandidate): number {
+  const coreLanes = new Set([
+    "structured",
+    "bm25",
+    "semantic_dense",
+    "semantic_food",
+    "semantic_menu",
+  ]);
+  const observed = new Set(
+    candidate.retrieval
+      .map((item) => item.lane)
+      .filter((lane) => coreLanes.has(lane)),
+  );
+  return clamp01(observed.size / coreLanes.size);
+}
+
+function normalizeWeights(weights: {
+  retrieval: number;
+  intent: number;
+  geo: number;
+  quality: number;
+  consensus: number;
+}) {
+  const safe = Object.fromEntries(
+    Object.entries(weights).map(([key, value]) => [
+      key,
+      Number.isFinite(value) && value >= 0 ? value : 0,
+    ]),
+  ) as typeof weights;
+  const total = Object.values(safe).reduce((sum, value) => sum + value, 0);
+  if (total <= 0) {
+    return { retrieval: 0.35, intent: 0.3, geo: 0.15, quality: 0.1, consensus: 0.1 };
+  }
+  return {
+    retrieval: safe.retrieval / total,
+    intent: safe.intent / total,
+    geo: safe.geo / total,
+    quality: safe.quality / total,
+    consensus: safe.consensus / total,
+  };
 }
 
 function retrievalScore(candidate: SearchCandidate): number {
