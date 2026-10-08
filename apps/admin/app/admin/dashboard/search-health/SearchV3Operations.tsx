@@ -34,7 +34,18 @@ async function resetBreaker(laneId:string){
  finally{setBusy(false);}
 }
 async function save(){setBusy(true);setMessage("");try{const r=await fetch("/api/admin/search-v3/controls",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({config,reason})});const j=await r.json();if(!r.ok)throw Error(j.error);setMessage("Saved and audited. Runtime configuration refresh may take a short interval.");await refresh();}catch(e){setMessage(String(e));}finally{setBusy(false)}}
- function laneChange(id:string,patch:object){setConfig((c:any)=>({...c,lanes:{...c.lanes,[id]:{...c.lanes[id],...patch}}}));}
+ function laneChange(id:string,patch:object){
+  setConfig((current:any)=>{
+    const isCore=LANES.find(lane=>lane.id===id)?.core===true;
+    const controls=patch as {enabled?:boolean;forceOpen?:boolean};
+    const fallback=isCore&&(controls.enabled===false||controls.forceOpen===true);
+    return {
+      ...current,
+      ...(fallback?{mode:"shadow",canaryPercent:0}:{}),
+      lanes:{...current.lanes,[id]:{...current.lanes[id],...patch}},
+    };
+  });
+ }
  const gate=payload?.gates;
  return <section className="mt-6 rounded-2xl border border-white/10 bg-[#111114] p-5 text-white" aria-label="Search V3 operations">
  <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-widest text-rose-300">Search V3 operations</p><h3 className="mt-1 text-xl font-black">Golden replay, promotion & six lane breakers</h3></div><button className="rounded-xl border border-white/20 px-4 py-2" onClick={()=>void refresh()}>Refresh status</button></div>
