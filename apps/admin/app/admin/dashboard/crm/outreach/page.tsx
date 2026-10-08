@@ -7,6 +7,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { listOutreach } from "@/lib/crm/outreach";
 import { listLocationCrmCommunications } from "@/lib/crm/location-outreach-communications";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
 
 export const dynamic = "force-dynamic";
 const channels = [
@@ -39,7 +40,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
 
   return (
     <CrmWorkspaceShell>
-      <main className="space-y-5 text-white">
+      <main className="space-y-5 text-[var(--admin-shell-text)]">
+        {p.location_id ? <LocationWorkspaceNavigation locationId={p.location_id} activeTab="communication" /> : null}
         <CrmContextBanner context={context} />
         <header>
           <p className="text-xs font-black uppercase tracking-[.25em] text-rose-300">CRM</p>
