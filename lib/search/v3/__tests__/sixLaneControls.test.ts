@@ -5,8 +5,7 @@ import {
   validateSearchV3Controls,
   readSearchV3RuntimeControls,
   invalidateSearchV3RuntimeControlsCache,
-  wrapSearchV3RetrievalProviders,
-  resetLocalSearchV3Breakers,
+  wrapSearchV3SharedRetrievalProviders,
 } from "../controls/searchV3Controls";
 
 describe("Search V3 six-lane operations", () => {
@@ -41,22 +40,27 @@ describe("Search V3 six-lane operations", () => {
     expect(controls.v2Fallback).toBe(true);
   });
 
-  it("opens after the configured failure threshold and blocks subsequent requests", async () => {
-    resetLocalSearchV3Breakers();
+  it("rejects a remote open circuit before calling its provider", async () => {
+    let invoked = false;
     const provider = {
       providerId: SEARCH_V3_LANES[0].providerId,
-      retrieve: async () => { throw new Error("upstream unavailable"); },
+      retrieve: async () => { invoked = true; throw new Error("should not run"); },
     } as any;
-    const controls = {
-      ...DEFAULT_SEARCH_V3_CONTROLS,
-      lanes: {
-        ...DEFAULT_SEARCH_V3_CONTROLS.lanes,
-        structured: { enabled: true, forceOpen: false, threshold: 1, cooldownMs: 60000 },
-      },
-    };
-    const wrapped = wrapSearchV3RetrievalProviders([provider], async () => controls);
-    await expect(wrapped[0].retrieve({} as any)).rejects.toThrow("upstream unavailable");
+    const db = { rpc: async () => ({ data: null, error: null }) };
+    const wrapped = wrapSearchV3SharedRetrievalProviders(
+      [provider], db, async () => DEFAULT_SEARCH_V3_CONTROLS,
+    );
     await expect(wrapped[0].retrieve({} as any)).rejects.toThrow("v3_lane_circuit_open:structured");
+    expect(invoked).toBe(false);
+  });
+
+  it("fails closed when the shared breaker RPC is unavailable", async () => {
+    const provider = {providerId: SEARCH_V3_LANES[0].providerId, retrieve: async () => ({})} as any;
+    const db = {rpc: async () => ({data:null,error:{message:"network unavailable"}})};
+    const wrapped = wrapSearchV3SharedRetrievalProviders(
+      [provider], db, async () => DEFAULT_SEARCH_V3_CONTROLS,
+    );
+    await expect(wrapped[0].retrieve({} as any)).rejects.toThrow("v3_lane_breaker_unavailable:structured");
   });
 
   it("rejects incomplete lane configuration", () => {
