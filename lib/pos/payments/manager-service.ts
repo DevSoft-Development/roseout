@@ -25,6 +25,24 @@ function nonNegativeInt(value: unknown, field: string) {
   return number;
 }
 
+const POS_MANAGER_ROLES = new Set(["location_admin", "manager"]);
+
+async function requireManagerApproval(locationId: string, staffProfileId: string) {
+  const id = required(staffProfileId, "approver");
+  const shard = await resolveOperationalShardForLocationId(locationId, { mode: "read" });
+  const { data, error } = await shard.client
+    .from("reserve_staff_profiles")
+    .select("id,role,is_active")
+    .eq("location_id", locationId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) throw new Error(error?.message || "pos_manager_approver_not_found");
+  if (data.is_active === false || !POS_MANAGER_ROLES.has(String(data.role || ""))) {
+    throw new Error("pos_manager_approval_required");
+  }
+  return data;
+}
+
 async function rpcOne(locationId: string, name: string, args: Record<string, unknown>) {
   const shard = await resolveOperationalShardForLocationId(locationId, { mode: "write" });
   const { data, error } = await shard.client.rpc(name, args);
@@ -74,6 +92,7 @@ export async function applyPosCheckDiscount(input: {
   reason: string;
 }) {
   const locationId = required(input.locationId, "location_id");
+  await requireManagerApproval(locationId, input.approverStaffProfileId);
   const { data } = await rpcOne(locationId, "pos_apply_check_discount", {
     p_location_id: locationId,
     p_check_id: required(input.checkId, "check_id"),
@@ -93,6 +112,7 @@ export async function voidPosOrderItem(input: {
   reason: string;
 }) {
   const locationId = required(input.locationId, "location_id");
+  await requireManagerApproval(locationId, input.approverStaffProfileId);
   const { data } = await rpcOne(locationId, "pos_void_order_item", {
     p_location_id: locationId,
     p_order_item_id: required(input.orderItemId, "order_item_id"),
@@ -144,6 +164,7 @@ export async function refundPosTender(input: {
   idempotencyKey: string;
 }) {
   const locationId = required(input.locationId, "location_id");
+  await requireManagerApproval(locationId, input.approverStaffProfileId);
   const shard = await resolveOperationalShardForLocationId(locationId, { mode: "write" });
   const args = {
     p_location_id: locationId,
@@ -158,6 +179,18 @@ export async function refundPosTender(input: {
   if (error) throw new Error(error.message || "pos_refund_reservation_failed");
   const reservation = (Array.isArray(data) ? data[0] : data) as RpcRow | null;
   if (!reservation?.refund_request_id) throw new Error("pos_refund_reservation_failed");
+
+  if (String(reservation.request_status) === "completed") {
+    return {
+      refundRequestId: String(reservation.refund_request_id),
+      amountCents: Number(reservation.amount_cents),
+      tenderType: String(reservation.tender_type),
+      providerRefundId: reservation.provider_refund_id ? String(reservation.provider_refund_id) : null,
+    };
+  }
+  if (String(reservation.request_status) === "failed") {
+    throw new Error("pos_refund_request_failed");
+  }
 
   let providerRefundId: string | null = null;
   try {
