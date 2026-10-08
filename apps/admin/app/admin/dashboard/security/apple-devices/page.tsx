@@ -263,7 +263,7 @@ export default async function AppleDeviceEnrollmentPage() {
               Advanced device and Entra group targeting stays available when you need an exception.
             </p>
           </div>
-          <AdminStatusBadge tone={appleApps.length ? "green" : "neutral"}>
+          <AdminStatusBadge tone={appleApps.length ? "green" : "muted"}>
             {appleApps.length} {appleApps.length === 1 ? "app" : "apps"} synced
           </AdminStatusBadge>
         </header>
