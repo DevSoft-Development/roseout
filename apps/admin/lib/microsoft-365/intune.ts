@@ -685,9 +685,9 @@ function standardManagedAdeProfilePayload(companyPortalVppTokenId: string) {
     "@odata.type": "#microsoft.graph.depIOSEnrollmentProfile",
     displayName: THEOUTHAVEN_ADE_PROFILE,
     description:
-      "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
+      "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, Setup Assistant with modern Microsoft authentication, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
     requiresUserAuthentication: true,
-    enableAuthenticationViaCompanyPortal: false,
+    enableAuthenticationViaCompanyPortal: true,
     supervisedModeEnabled: true,
     isMandatory: true,
     profileRemovalDisabled: true,
