@@ -79,13 +79,23 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const requestedScope = String(url.searchParams.get("scope") || "crm").toLowerCase();
     const scope: CommunicationScope = requestedScope === "reservations" || requestedScope === "support" ? requestedScope : "crm";
+    const requestedLocationId = String(url.searchParams.get("location_id") || "").trim() || null;
     await authorize(scope);
     const db = getAdminDatabaseClient();
 
     if (platformCoreApiConfigured()) {
       try {
         const payload = await readCrmCommunicationCenterViaCoreApi(scope);
-        return NextResponse.json(payload);
+        if (!requestedLocationId) return NextResponse.json(payload);
+        const items = payload.items.filter((item) => item.locationId === requestedLocationId);
+        return NextResponse.json({
+          ...payload,
+          items,
+          unreadCount: items.filter((item) => item.unread).length,
+          waitingCount: items.filter((item) =>
+            item.unread || ["waiting_on_rep", "waiting_on_team", "open", "new"].includes(String(item.status || "").toLowerCase()),
+          ).length,
+        });
       } catch (error) {
         console.warn("[crm-communication-center] Core API read failed; using Vercel fallback.", error);
       }
@@ -100,7 +110,10 @@ export async function GET(req: Request) {
 
     if (conversationError) throw conversationError;
 
-    const scopedConversations = (conversations || []).filter((row: any) => conversationScope(row) === scope);
+    const scopedConversations = (conversations || []).filter((row: any) =>
+      conversationScope(row) === scope
+      && (!requestedLocationId || String(row.location_id || "") === requestedLocationId)
+    );
     const scopedConversationIds = scopedConversations.map((row: any) => String(row.id));
     const conversationMap = new Map(scopedConversations.map((row: any) => [String(row.id), row]));
 
@@ -131,9 +144,13 @@ export async function GET(req: Request) {
     if (messageError) throw messageError;
     if (activityError) throw activityError;
 
+    const scopedActivities = (activities || []).filter((row: any) =>
+      !requestedLocationId || String(row.location_id || "") === requestedLocationId
+    );
+
     const locationIds = Array.from(new Set([
       ...(messages || []).map((row: any) => conversationMap.get(String(row.conversation_id))?.location_id),
-      ...(activities || []).map((row: any) => row.location_id),
+      ...scopedActivities.map((row: any) => row.location_id),
     ].filter(Boolean).map(String)));
 
     const { data: locations } = locationIds.length
@@ -209,7 +226,7 @@ export async function GET(req: Request) {
       });
     }
 
-    for (const row of activities || []) {
+    for (const row of scopedActivities) {
       const locationId = (row as any).location_id ? String((row as any).location_id) : null;
       const activityType = String((row as any).activity_type || "activity");
       feed.push({

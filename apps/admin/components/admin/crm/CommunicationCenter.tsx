@@ -75,11 +75,13 @@ export default function CommunicationCenter({
   heading,
   description,
   className = "",
+  locationId,
 }: {
   scope?: CommunicationScope;
   heading?: string;
   description?: string;
   className?: string;
+  locationId?: string;
 }) {
   const defaults = scopeDefaults[scope];
   const [data, setData] = useState<FeedPayload>({ items: [], unreadCount: 0, waitingCount: 0 });
@@ -91,7 +93,9 @@ export default function CommunicationCenter({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/admin/crm/communication-center?scope=${encodeURIComponent(scope)}`, { cache: "no-store" });
+      const params = new URLSearchParams({ scope });
+      if (locationId) params.set("location_id", locationId);
+      const response = await fetch(`/api/admin/crm/communication-center?${params.toString()}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not load communications.");
       setData(payload);
@@ -106,7 +110,11 @@ export default function CommunicationCenter({
     void load();
     const timer = window.setInterval(() => void load(), 60_000);
     return () => window.clearInterval(timer);
-  }, [scope]);
+  }, [scope, locationId]);
+
+  const openHref = locationId && scope === "crm"
+    ? `/admin/dashboard/crm/${encodeURIComponent(locationId)}?tab=communication&commTab=inbox`
+    : defaults.openHref;
 
   const filtered = useMemo(() => {
     if (filter === "all") return data.items;
@@ -138,7 +146,7 @@ export default function CommunicationCenter({
           <button type="button" onClick={() => void load()} disabled={loading} className="rounded-xl border border-white/10 p-2.5 text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-50" aria-label="Refresh communications">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <Link href={defaults.openHref} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
+          <Link href={openHref} className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-black text-white transition hover:bg-rose-500">
             Open {scope === "crm" ? "Communications" : scope === "reservations" ? "Reservations" : "Support"}
           </Link>
         </div>
