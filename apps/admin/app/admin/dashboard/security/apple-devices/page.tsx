@@ -27,6 +27,7 @@ import {
 } from "@/lib/apple-business/api";
 import {
   getIntuneOverview,
+  THEOUTHAVEN_EXECUTIVE_GROUP,
   listIntuneAppleApps,
   listIntuneDepOnboardingSettings,
   listIntuneSecurityGroups,
@@ -126,6 +127,9 @@ export default async function AppleDeviceEnrollmentPage() {
   const enrolledIosDevices = (intuneOverview?.devices || []).filter((device) =>
     ["iOS", "iPadOS"].includes(device.operatingSystem || ""),
   );
+  const executiveGroup = securityGroups.find(
+    (group) => group.displayName === THEOUTHAVEN_EXECUTIVE_GROUP,
+  ) || null;
 
   return (
     <AdminPageShell>
@@ -347,6 +351,30 @@ export default async function AppleDeviceEnrollmentPage() {
                     </button>
                     <button type="submit" name="action" value="remove" disabled={!securityGroups.length}>
                       Remove
+                    </button>
+                  </div>
+                </form>
+                <form
+                  action="/api/admin/integrations/apple-device-enrollment/apps"
+                  method="post"
+                  className="apple-device-meta"
+                >
+                  <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="target_type" value="executive" />
+                  <label>
+                    <span><UsersRound /> Executive access</span>
+                    <small>
+                      {executiveGroup
+                        ? "TheOutHaven Executives group is ready."
+                        : "TheOutHaven Executives will be created automatically on first use."}
+                    </small>
+                  </label>
+                  <div>
+                    <button type="submit" name="action" value="available">
+                      Available to Executives
+                    </button>
+                    <button type="submit" name="action" value="remove">
+                      Remove from Executives
                     </button>
                   </div>
                 </form>
