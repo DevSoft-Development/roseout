@@ -1,0 +1,106 @@
+name: Enterprise dashboard visual QA
+
+on:
+  workflow_run:
+    workflows:
+      - AWS web surfaces services
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Visual QA scope
+        required: true
+        default: full
+        type: choice
+        options:
+          - critical
+          - full
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enterprise-dashboard-visual-qa-${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  visual:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        surface: [admin, business]
+
+    env:
+      ADMIN_BASE_URL: https://admin.theouthaven.com
+      BUSINESS_BASE_URL: https://business.theouthaven.com
+      ADMIN_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_ADMIN_STORAGE_STATE_B64 }}
+      BUSINESS_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_BUSINESS_STORAGE_STATE_B64 }}
+      ENTERPRISE_VISUAL_DYNAMIC_ROUTE_MAP_JSON: ${{ vars.ENTERPRISE_VISUAL_DYNAMIC_ROUTE_MAP_JSON }}
+
+    steps:
+      - name: Resolve QA scope
+        shell: bash
+        env:
+          MANUAL_SCOPE: ${{ github.event.inputs.scope }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SCOPE="${MANUAL_SCOPE:-full}"
+          else
+            SCOPE="critical"
+          fi
+          echo "ENTERPRISE_VISUAL_SCOPE=${SCOPE}" >> "$GITHUB_ENV"
+          echo "ENTERPRISE_VISUAL_SURFACE=${{ matrix.surface }}" >> "$GITHUB_ENV"
+
+      - name: Check out verification commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare authenticated browser states
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/browser-auth"
+
+          if [ -n "${ADMIN_STORAGE_STATE_B64:-}" ]; then
+            printf '%s' "$ADMIN_STORAGE_STATE_B64" | base64 --decode > "$RUNNER_TEMP/browser-auth/admin.json"
+            chmod 600 "$RUNNER_TEMP/browser-auth/admin.json"
+            echo "PLAYWRIGHT_ADMIN_STORAGE_STATE=$RUNNER_TEMP/browser-auth/admin.json" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${BUSINESS_STORAGE_STATE_B64:-}" ]; then
+            printf '%s' "$BUSINESS_STORAGE_STATE_B64" | base64 --decode > "$RUNNER_TEMP/browser-auth/business.json"
+            chmod 600 "$RUNNER_TEMP/browser-auth/business.json"
+            echo "PLAYWRIGHT_BUSINESS_STORAGE_STATE=$RUNNER_TEMP/browser-auth/business.json" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run enterprise dashboard visual QA
+        run: npx playwright test tests/e2e/enterprise-dashboard-visual.spec.ts --project=chromium
+
+      - name: Upload enterprise visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enterprise-dashboard-visual-${{ matrix.surface }}-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 30
