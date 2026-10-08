@@ -3,10 +3,12 @@ import {
   CheckCircle2,
   CloudCog,
   MonitorSmartphone,
+  PackagePlus,
   RefreshCw,
   ShieldCheck,
   Smartphone,
   TriangleAlert,
+  UsersRound,
 } from "lucide-react";
 
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
@@ -25,7 +27,9 @@ import {
 } from "@/lib/apple-business/api";
 import {
   getIntuneOverview,
+  listIntuneAppleApps,
   listIntuneDepOnboardingSettings,
+  listIntuneSecurityGroups,
   listIntuneVppTokens,
 } from "@/lib/microsoft-365/intune";
 
@@ -47,12 +51,15 @@ export default async function AppleDeviceEnrollmentPage() {
 
   let appleError = "";
   let intuneError = "";
+  let appCatalogError = "";
   let devices: Awaited<ReturnType<typeof listAppleBusinessDevices>> = [];
   let intuneServer: Awaited<ReturnType<typeof resolveAppleIntuneMdmServer>> = null;
   let assignedDeviceIds = new Set<string>();
   let intuneOverview: Awaited<ReturnType<typeof getIntuneOverview>> | null = null;
   let depSettings: Awaited<ReturnType<typeof listIntuneDepOnboardingSettings>> = [];
   let vppTokens: Awaited<ReturnType<typeof listIntuneVppTokens>> = [];
+  let appleApps: Awaited<ReturnType<typeof listIntuneAppleApps>> = [];
+  let securityGroups: Awaited<ReturnType<typeof listIntuneSecurityGroups>> = [];
 
   if (appleConfigured) {
     try {
@@ -85,6 +92,18 @@ export default async function AppleDeviceEnrollmentPage() {
       error instanceof Error ? error.message : "Intune could not be reached.";
   }
 
+  if (!intuneError) {
+    try {
+      [appleApps, securityGroups] = await Promise.all([
+        listIntuneAppleApps(admin.user_id),
+        listIntuneSecurityGroups(admin.user_id),
+      ]);
+    } catch (error) {
+      appCatalogError =
+        error instanceof Error ? error.message : "The Intune app catalog could not be reached.";
+    }
+  }
+
   const managedBySerial = new Map(
     (intuneOverview?.devices || [])
       .filter((device) => device.serialNumber)
@@ -104,6 +123,9 @@ export default async function AppleDeviceEnrollmentPage() {
   const depToken = depSettings[0] || null;
   const appsAndBooksToken =
     vppTokens.find((token) => (token.state || "").toLowerCase() === "valid") || null;
+  const enrolledIosDevices = (intuneOverview?.devices || []).filter((device) =>
+    ["iOS", "iPadOS"].includes(device.operatingSystem || ""),
+  );
 
   return (
     <AdminPageShell>
@@ -230,6 +252,117 @@ export default async function AppleDeviceEnrollmentPage() {
         appleConnected={appleConfigured && !appleError}
         managementServiceName={intuneServer?.attributes?.serverName}
       />
+
+      <section className="apple-card">
+        <header className="apple-section-head">
+          <div>
+            <small>Company app catalog</small>
+            <h2>Install and remove managed apps</h2>
+            <p>
+              Select enrolled Apple devices or an Entra security group. Device targets are
+              maintained through TheOutHaven-managed groups so Intune remains the system of record.
+            </p>
+          </div>
+        </header>
+
+        {appCatalogError ? (
+          <section className="apple-alert">
+            <TriangleAlert />
+            <div>
+              <h3>App catalog needs Microsoft 365 reauthorization</h3>
+              <p>
+                Reconnect Microsoft 365 and grant DeviceManagementApps.ReadWrite.All,
+                Group.ReadWrite.All, and Device.Read.All.
+              </p>
+              <p><strong>Graph error:</strong> {appCatalogError}</p>
+            </div>
+          </section>
+        ) : appleApps.length ? (
+          <div className="apple-device-list">
+            {appleApps.map((app) => (
+              <article key={app.id} className="apple-device-row">
+                <div className="apple-device-main">
+                  <div>
+                    <PackagePlus />
+                    <strong>{app.displayName || "Unnamed Apple app"}</strong>
+                  </div>
+                  <span>{app.publisher || "Publisher unavailable"}</span>
+                  <small>{app.isAssigned ? "Has Intune assignments" : "Not assigned yet"}</small>
+                </div>
+
+                <form
+                  action="/api/admin/integrations/apple-device-enrollment/apps"
+                  method="post"
+                  className="apple-device-meta"
+                >
+                  <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="target_type" value="devices" />
+                  <label>
+                    <span>Devices</span>
+                    <select
+                      name="device_ids"
+                      multiple
+                      size={Math.min(4, Math.max(2, enrolledIosDevices.length))}
+                      disabled={!enrolledIosDevices.length}
+                    >
+                      {enrolledIosDevices.map((device) => (
+                        <option key={device.id} value={device.id}>
+                          {device.deviceName || device.model || "Apple device"} · {device.userDisplayName || device.userPrincipalName || device.serialNumber || "Unassigned"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <small>Use Command/Ctrl to select multiple devices.</small>
+                  <div>
+                    <button type="submit" name="action" value="install" disabled={!enrolledIosDevices.length}>
+                      Install
+                    </button>
+                    <button type="submit" name="action" value="remove" disabled={!enrolledIosDevices.length}>
+                      Remove
+                    </button>
+                  </div>
+                </form>
+
+                <form
+                  action="/api/admin/integrations/apple-device-enrollment/apps"
+                  method="post"
+                  className="apple-device-meta"
+                >
+                  <input type="hidden" name="app_id" value={app.id} />
+                  <input type="hidden" name="target_type" value="group" />
+                  <label>
+                    <span><UsersRound /> Group</span>
+                    <select name="group_id" required disabled={!securityGroups.length}>
+                      <option value="">Select group</option>
+                      {securityGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div>
+                    <button type="submit" name="action" value="install" disabled={!securityGroups.length}>
+                      Install
+                    </button>
+                    <button type="submit" name="action" value="remove" disabled={!securityGroups.length}>
+                      Remove
+                    </button>
+                  </div>
+                </form>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="apple-empty">
+            <h3>No Apple apps are synced into Intune yet</h3>
+            <p>
+              Acquire apps in Apple Business Manager Apps and Books, sync the VPP token in Intune,
+              then refresh this page.
+            </p>
+          </div>
+        )}
+      </section>
 
       <section className="apple-card">
         <header className="apple-section-head">
