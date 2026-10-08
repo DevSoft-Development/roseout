@@ -8,19 +8,9 @@ import type {
   PosPaymentProvider,
   PosPaymentRefund,
   RefundPosPaymentIntentInput,
-  PosRefund,
-  PosRefundStatus,
-  RefundPosPaymentIntentInput,
 } from "@/lib/pos/payments/contracts";
 import { validateCreatePosPaymentIntentInput } from "@/lib/pos/payments/validation";
 import { stripeRequest, type StripeMode } from "@/lib/stripe/server";
-
-type StripeRefundResponse = {
-  id: string;
-  amount: number;
-  payment_intent?: string | null;
-  status?: string | null;
-};
 
 type StripeRefundResponse = {
   id: string;
@@ -47,18 +37,6 @@ function normalizeStripePaymentIntentStatus(value: unknown): PosPaymentIntentSta
     case "succeeded":
     case "canceled":
       return String(value) as PosPaymentIntentStatus;
-    default:
-      return "unknown";
-  }
-}
-
-function normalizeStripeRefundStatus(value: unknown): PosRefundStatus {
-  switch (String(value || "")) {
-    case "pending":
-    case "succeeded":
-    case "failed":
-    case "canceled":
-      return String(value) as PosRefundStatus;
     default:
       return "unknown";
   }
@@ -137,38 +115,6 @@ export class StripePosPaymentProvider implements PosPaymentProvider {
     });
 
     return toPosPaymentIntent(paymentIntent, validated.connectedAccountId, validated.amountCents, validated.currency);
-  }
-
-  async refundPaymentIntent(input: RefundPosPaymentIntentInput): Promise<PosRefund> {
-    const connectedAccountId = String(input.connectedAccountId || "").trim();
-    const providerPaymentIntentId = String(input.providerPaymentIntentId || "").trim();
-    const amountCents = Number(input.amountCents || 0);
-    if (!connectedAccountId) throw new Error("missing_connected_account_id");
-    if (!providerPaymentIntentId) throw new Error("missing_provider_payment_intent_id");
-    if (!Number.isInteger(amountCents) || amountCents <= 0) throw new Error("invalid_pos_refund_amount");
-
-    const body = new URLSearchParams({
-      payment_intent: providerPaymentIntentId,
-      amount: String(amountCents),
-    });
-    appendMetadata(body, input.metadata || {});
-
-    const refund = await stripeRequest<StripeRefundResponse>("/refunds", {
-      method: "POST",
-      mode: this.mode,
-      stripeAccount: connectedAccountId,
-      idempotencyKey: input.idempotencyKey,
-      body,
-    });
-
-    return {
-      provider: "stripe",
-      providerRefundId: String(refund.id || ""),
-      providerPaymentIntentId: String(refund.payment_intent || providerPaymentIntentId),
-      connectedAccountId,
-      amountCents: Number(refund.amount || amountCents),
-      status: normalizeStripeRefundStatus(refund.status),
-    };
   }
 
   async refundPaymentIntent(input: RefundPosPaymentIntentInput): Promise<PosPaymentRefund> {
