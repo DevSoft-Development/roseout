@@ -10,8 +10,10 @@ on:
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'infra/supabase/operational-shards/partial-tenders-v8.sql'
       - 'infra/supabase/operational-shards/ingredient-inventory-v9.sql'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
       - 'infra/supabase/operational-shards/partial-tenders-v8.sql'
       - 'infra/supabase/operational-shards/ingredient-inventory-v9.sql'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
   push:
     branches: [main]
     paths:
