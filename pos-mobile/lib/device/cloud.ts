@@ -404,3 +404,10 @@ export async function fetchPosManagerOperations(input:{deviceId:string;credentia
   });
   return data.operations as {drawers:any[];events:any[]};
 }
+
+
+export function reprintPosReceipt(input:{
+  deviceId:string;credential:string;checkId:string;
+}){
+  return mutatePosManager({...input,body:{action:"receipt_reprint",checkId:input.checkId}});
+}
