@@ -42,7 +42,7 @@ describe("Search V3 six-lane operations", () => {
   it("rejects incomplete lane configuration", () => {
     expect(() => validateSearchV3Controls({
       ...DEFAULT_SEARCH_V3_CONTROLS,
-      lanes: { ...DEFAULT_SEARCH_V3_CONTROLS.lanes, menu_semantic: undefined },
+      lanes: { ...DEFAULT_SEARCH_V3_CONTROLS.lanes, menu_semantic: undefined } as any,
     })).toThrow(/Missing lane/);
   });
 });
