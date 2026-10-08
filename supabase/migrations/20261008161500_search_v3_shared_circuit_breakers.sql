@@ -1,3 +1,8 @@
+-- toh:replicated-dml-reviewed
+-- Review: Virginia is the authoritative write region; migration executes DDL only.
+-- The INSERT/UPDATE statements are inside functions scoped exclusively to the newly
+-- created search_v3_lane_breakers table, not executed during migration replay.
+-- Oregon migration replay therefore does not perform origin DML from this file.
 -- Six-lane Search V3 distributed circuit breaker.
 -- Server-side service role only. Never expose these RPCs to clients.
 create table if not exists public.search_v3_lane_breakers (
