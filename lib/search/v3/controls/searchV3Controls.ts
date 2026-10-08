@@ -77,29 +77,49 @@ export async function readSearchV3RuntimeControls(db: SettingsClient): Promise<S
   }
 }
 export function invalidateSearchV3RuntimeControlsCache() { cached = null; }
-const breaker=new Map<string,{failures:number;openUntil:number;probe:boolean}>();
-export function wrapSearchV3RetrievalProviders(providers:readonly SearchRetrievalProvider[], load:()=>Promise<SearchV3Controls>):SearchRetrievalProvider[]{
- return providers.map(provider=>{
-  const lane=SEARCH_V3_LANES.find(l=>l.providerId===provider.providerId);
-  if(!lane) return provider;
-  return {providerId:provider.providerId,async retrieve(args){
-   const cfg=(await load()).lanes[lane.id];
-   if(!cfg.enabled||cfg.forceOpen) throw new Error("v3_lane_manually_open:"+lane.id);
-   const state=breaker.get(lane.id)??{failures:0,openUntil:0,probe:false};
-   const now=Date.now();
-   if(state.openUntil>now||state.probe) throw new Error("v3_lane_circuit_open:"+lane.id);
-   const halfOpen=state.openUntil>0;
-   if(halfOpen){state.probe=true;breaker.set(lane.id,state);}
-   try{
-    const result=await provider.retrieve(args);
-    breaker.set(lane.id,{failures:0,openUntil:0,probe:false});
-    return result;
-   }catch(e){
-    const failures=state.failures+1;
-    breaker.set(lane.id,{failures,openUntil:halfOpen||failures>=cfg.threshold?Date.now()+cfg.cooldownMs:0,probe:false});
-    throw e;
-   }
-  }};
+type BreakerState = { failures: number; openUntil: number; probe: boolean };
+const breaker = new Map<string, BreakerState>();
+export function resetLocalSearchV3Breakers() { breaker.clear(); }
+export function wrapSearchV3RetrievalProviders(
+ providers: readonly SearchRetrievalProvider[],
+ load: () => Promise<SearchV3Controls>,
+): SearchRetrievalProvider[] {
+ return providers.map((provider) => {
+  const lane = SEARCH_V3_LANES.find((entry) => entry.providerId === provider.providerId);
+  if (!lane) return provider;
+  return {
+   providerId: provider.providerId,
+   async retrieve(args) {
+    const cfg = (await load()).lanes[lane.id];
+    if (!cfg.enabled || cfg.forceOpen) throw new Error("v3_lane_manually_open:" + lane.id);
+    const state = breaker.get(lane.id) ?? { failures: 0, openUntil: 0, probe: false };
+    const now = Date.now();
+    if (state.openUntil > now || state.probe) throw new Error("v3_lane_circuit_open:" + lane.id);
+    const halfOpen = state.openUntil > 0;
+    // Take the half-open probe lease synchronously before any await.
+    if (halfOpen) {
+     state.probe = true;
+     breaker.set(lane.id, state);
+    }
+    try {
+     const result = await provider.retrieve(args);
+     breaker.set(lane.id, { failures: 0, openUntil: 0, probe: false });
+     return result;
+    } catch (error) {
+     const failures = state.failures + 1;
+     breaker.set(lane.id, {
+      failures,
+      openUntil: halfOpen || failures >= cfg.threshold ? Date.now() + cfg.cooldownMs : 0,
+      probe: false,
+     });
+     throw error;
+    }
+   },
+  };
  });
 }
-export function localSearchV3BreakerSnapshot(){return Object.fromEntries([...breaker.entries()].map(([id,s])=>[id,{failures:s.failures,openUntil:s.openUntil,halfOpen:s.probe}]));}
+export function localSearchV3BreakerSnapshot() {
+ return Object.fromEntries([...breaker.entries()].map(([id, state]) => [
+  id, { failures: state.failures, openUntil: state.openUntil, halfOpen: state.probe },
+ ]));
+}
