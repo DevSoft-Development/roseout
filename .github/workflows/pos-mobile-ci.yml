@@ -15,8 +15,10 @@ on:
       - 'apps/consumer/app/api/stripe/connect/webhook/route.ts'
       - 'supabase/migrations/*pos_device_command_queue.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'scripts/pos-signature-plus-regression.mjs'
+      - 'scripts/pos-payments-manager-regression.mjs'
       - 'pos-mobile/**'
       - 'pos-mobile/components/**'
       - '.github/workflows/pos-mobile-ci.yml'
@@ -36,8 +38,10 @@ on:
       - 'apps/consumer/app/api/stripe/connect/webhook/route.ts'
       - 'supabase/migrations/*pos_device_command_queue.sql'
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'scripts/pos-signature-plus-regression.mjs'
+      - 'scripts/pos-payments-manager-regression.mjs'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'azure-pipelines-pos-mobile.yml'
@@ -97,6 +101,10 @@ jobs:
       - name: Verify Signature+ operations contract
         working-directory: .
         run: node scripts/pos-signature-plus-regression.mjs
+
+      - name: Verify payment + manager controls contract
+        working-directory: .
+        run: node scripts/pos-payments-manager-regression.mjs
 
       - name: Verify separate app identity and POS-only network permissions
         run: |
