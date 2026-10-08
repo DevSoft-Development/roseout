@@ -1,0 +1,54 @@
+name: Search V3 promotion gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/verify-search-v3-promotion.ts'
+      - 'lib/search/quality/**'
+      - 'lib/search/v3/**'
+      - '.github/workflows/search-v3-promotion-gate.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  promote:
+    name: Verify Search V3 promotion readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Configure AWS access
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load production Supabase credentials
+        run: |
+          set -euo pipefail
+          SECRET="$(aws secretsmanager get-secret-value --secret-id /theouthaven/credential-vault/production/supabase --query SecretString --output text)"
+          URL="$(jq -r '.url // empty' <<<"$SECRET")"
+          ANON="$(jq -r '.publishableKey // empty' <<<"$SECRET")"
+          SERVICE="$(jq -r '.serviceRoleKey // empty' <<<"$SECRET")"
+          test -n "$URL" && test -n "$ANON" && test -n "$SERVICE"
+          echo "::add-mask::$ANON"
+          echo "::add-mask::$SERVICE"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$URL"
+            echo "SUPABASE_URL=$URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
+          } >> "$GITHUB_ENV"
+      - name: Verify V3 promotion gate
+        run: npx tsx scripts/verify-search-v3-promotion.ts
