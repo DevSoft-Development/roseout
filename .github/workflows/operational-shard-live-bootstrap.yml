@@ -267,7 +267,9 @@ jobs:
             test "$ordering_code" = 200 || { echo "::error::${label} online ordering schema probe failed: HTTP ${ordering_code}"; exit 1; }
             assignment_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-assignment-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/reservation_resource_assignments?select=id&limit=1")"
             test "$assignment_code" = 200 || { echo "::error::${label} reservation assignment schema probe failed: HTTP ${assignment_code}"; exit 1; }
-            echo "${label}: reachable with POS, inventory, online-ordering, and reservation-assignment schema" >> "$GITHUB_STEP_SUMMARY"
+            manager_code="$(curl --silent --show-error --output "$RUNNER_TEMP/${label}-manager-probe.json" --write-out '%{http_code}'               -H "apikey: $key"               "https://${ref}.supabase.co/rest/v1/pos_manager_events?select=id&limit=1")"
+            test "$manager_code" = 200 || { echo "::error::${label} v10 manager schema probe failed: HTTP ${manager_code}"; exit 1; }
+            echo "${label}: reachable with POS, inventory, online-ordering, reservation-assignment, and manager-controls schema" >> "$GITHUB_STEP_SUMMARY"
           }
           probe "$SHARD01_REF" "$RUNNER_TEMP/shard01-secret" shard-01
           probe "$SHARD01_DR_REF" "$RUNNER_TEMP/shard01dr-secret" shard-01-dr
