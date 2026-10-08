@@ -49,7 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, follow-ups, and communication operations in one place.</p>
         </header>
 
-        <CommunicationCenter scope="crm" />
+        <CommunicationCenter scope="crm" locationId={p.location_id} />
 
         <div className="flex flex-wrap gap-2">
           <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>

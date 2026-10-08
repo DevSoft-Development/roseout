@@ -18,6 +18,9 @@ const rootLegacyEdit = read("app/admin/dashboard/locations/edit/[type]/[location
 const claimTools = read("apps/admin/app/admin/dashboard/claim-tools/ClaimToolsClient.tsx");
 const workspaceNav = read("apps/admin/components/admin/location-workspace/LocationWorkspaceNavigation.tsx");
 const profileEditor = read("apps/admin/components/admin/LocationProfileEditor.tsx");
+const outreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.tsx");
+const communicationCenter = read("apps/admin/components/admin/crm/CommunicationCenter.tsx");
+const communicationCenterRoute = read("apps/admin/app/api/admin/crm/communication-center/route.ts");
 
 requireText(nav, 'label: "Locations CRM"', "Admin navigation must expose the canonical Locations CRM.");
 forbidText(nav, 'label: "Locations"', "Admin navigation must not expose a competing Locations workspace.");
@@ -40,6 +43,12 @@ requireText(workspaceNav, 'activeTab === "sales"', "CRM workspace navigation mus
 requireText(workspaceNav, 'activeTab === "tasks"', "CRM workspace navigation must highlight Tasks for the selected CRM location.");
 requireText(workspaceNav, 'location=', "CRM task navigation must remain scoped to the selected CRM location.");
 requireText(workspaceNav, 'location_id=', "CRM sales navigation must remain scoped to the selected CRM location.");
+requireText(outreachPage, 'locationId={p.location_id}', "Selected-location Communications must pass location context into the communication center.");
+requireText(communicationCenter, 'params.set("location_id", locationId)', "Communication Center requests must preserve selected location context.");
+requireText(communicationCenter, 'const openHref = locationId && scope === "crm"', "Communication Center actions must remain scoped to the selected CRM location.");
+requireText(communicationCenterRoute, 'url.searchParams.get("location_id")', "Communication Center API must accept selected location context.");
+requireText(communicationCenterRoute, 'item.locationId === requestedLocationId', "Core API communication results must be filtered to the selected location.");
+requireText(communicationCenterRoute, 'String(row.location_id || "") === requestedLocationId', "Database communication results must be filtered to the selected location.");
 
 requireText(crmNew, '.from("locations")', "Location creation must write the canonical locations model.");
 requireText(crmNew, 'created_source: "admin_crm"', "CRM-created locations must have canonical source provenance.");

@@ -61,19 +61,35 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Detect visual QA spec
+        id: visual-spec
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f tests/e2e/enterprise-dashboard-visual.spec.ts ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Visual QA spec is not present in the deployed commit; skipping this compatibility run."
+          fi
+
       - name: Use Node.js
+        if: steps.visual-spec.outputs.available == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install dependencies
+        if: steps.visual-spec.outputs.available == 'true'
         run: npm ci
 
       - name: Install Chromium
+        if: steps.visual-spec.outputs.available == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Prepare authenticated browser states
+        if: steps.visual-spec.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -92,10 +108,11 @@ jobs:
           fi
 
       - name: Run enterprise dashboard visual QA
+        if: steps.visual-spec.outputs.available == 'true'
         run: npx playwright test tests/e2e/enterprise-dashboard-visual.spec.ts --project=chromium
 
       - name: Upload enterprise visual evidence
-        if: always()
+        if: always() && steps.visual-spec.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: enterprise-dashboard-visual-${{ matrix.surface }}-${{ github.run_id }}
