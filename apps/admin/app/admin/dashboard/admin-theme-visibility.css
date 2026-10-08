@@ -510,12 +510,18 @@
 .apple-guide-note{margin-top:14px;padding:11px 12px;border-radius:12px;color:var(--admin-shell-soft);font-size:12px}
 .apple-section-head{padding-bottom:14px;border-bottom:1px solid var(--admin-shell-border)}
 .apple-device-list{display:grid}
-.apple-device-row{display:grid;grid-template-columns:1.4fr .8fr 1fr auto;gap:16px;align-items:center;padding:18px 0;border-top:1px solid var(--admin-shell-border)}
+.apple-device-row{display:grid;grid-template-columns:minmax(220px,1.25fr) minmax(180px,.8fr) minmax(200px,1fr) minmax(240px,1fr);gap:16px;align-items:start;padding:18px 0;border-top:1px solid var(--admin-shell-border)}
 .apple-device-row:first-child{border-top:0}
-.apple-device-main{display:grid;gap:5px;min-width:0}
-.apple-device-main>div{display:flex;gap:8px;align-items:center}
-.apple-device-main strong{color:var(--admin-shell-text)}
-.apple-device-status,.apple-device-meta{display:grid;gap:5px;font-size:12px}
+.apple-device-main{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
+.apple-device-main>div{display:flex;gap:8px;align-items:center;min-width:0}
+.apple-device-main strong{color:var(--admin-shell-text);min-width:0;overflow-wrap:anywhere}
+.apple-device-status,.apple-device-meta{display:grid;gap:8px;min-width:0;font-size:12px}
+.apple-device-meta label{display:grid;gap:6px;min-width:0}
+.apple-device-meta select{width:100%;min-width:0;max-width:100%;border:1px solid var(--admin-shell-border);border-radius:10px;padding:9px 10px;background:var(--admin-shell-card-strong);color:var(--admin-shell-text)}
+.apple-device-meta select[multiple]{min-height:92px}
+.apple-device-meta>div{display:flex;flex-wrap:wrap;gap:8px}
+.apple-device-meta small{display:block;max-width:36ch;letter-spacing:0;text-transform:none;line-height:1.45;color:var(--admin-shell-soft)}
+.apple-device-meta span{overflow-wrap:anywhere}
 .apple-managed{display:inline-flex;align-items:center;gap:6px;color:#047857;font-weight:800}
 .apple-managed svg{width:16px}
 .apple-ready-copy{max-width:180px;font-size:12px;line-height:1.5}
@@ -528,6 +534,7 @@
 .admin-shell[data-admin-theme="dark"] .apple-alert{background:#17120c;border-color:rgba(251,191,36,.2)}
 .admin-shell[data-admin-theme="dark"] .apple-card small,.admin-shell[data-admin-theme="dark"] .apple-alert small,.admin-shell[data-admin-theme="dark"] .apple-metrics svg,.admin-shell[data-admin-theme="dark"] .apple-device-main svg{color:#fda4af}
 .admin-shell[data-admin-theme="dark"] .apple-managed{color:#a7f3d0}
-@media(max-width:1000px){.apple-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.apple-device-row{grid-template-columns:1fr 1fr}}
+@media(max-width:1180px){.apple-device-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1000px){.apple-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.apple-hero,.apple-pipeline,.apple-guide-head{flex-direction:column;align-items:stretch}.apple-metrics,.apple-guide-grid,.apple-device-row{grid-template-columns:1fr}}
 
