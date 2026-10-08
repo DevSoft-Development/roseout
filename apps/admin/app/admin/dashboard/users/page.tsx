@@ -4,6 +4,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import { listAdminUsersRead } from "@/lib/admin/admin-users-read";
 import BetaAccessSelect from "./BetaAccessSelect";
+import DeviceGroupSelect from "./DeviceGroupSelect";
 import {
   AdminActionButton,
   AdminKpiCard,
@@ -174,7 +175,7 @@ export default async function UsersPage({
                       <div className="rounded-xl border border-white/10 p-2"><span className="text-white/40">Booked</span><p className="font-black">{user.booked_outings_count || 0}</p></div>
                       <div className="rounded-xl border border-white/10 p-2"><span className="text-white/40">Tickets</span><p className="font-black">{user.open_tickets_count || 0}</p></div>
                     </div>
-                    <div className="mt-4"><BetaAccessSelect userId={user.id} value={user.beta_status || "none"} /></div>
+                    <div className="mt-4 grid gap-3"><DeviceGroupSelect email={user.email} /><BetaAccessSelect userId={user.id} value={user.beta_status || "none"} /></div>
                   </article>
                 ))}
               </div>
@@ -216,6 +217,7 @@ export default async function UsersPage({
                               <Link href={user.detailHref || `/admin/dashboard/users/${user.id}`} className="rounded-lg border border-rose-300/25 bg-rose-500/10 px-3 py-1.5 text-xs font-black text-rose-100">View</Link>
                               {user.hasAccount ? <Link href={`/admin/dashboard/users/${user.id}#profile`} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-black">Edit</Link> : null}
                             </div>
+                            <DeviceGroupSelect email={user.email} />
                             <BetaAccessSelect userId={user.id} value={user.beta_status || "none"} />
                           </div>
                         </td>
