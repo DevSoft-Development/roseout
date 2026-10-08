@@ -12,10 +12,17 @@ import {
 import type { PosClaimSession } from "@/lib/device/identity";
 import {
   addPosTableItem,
+  applyPosManagerDiscount,
+  closePosDrawerSession,
+  fetchPosManagerOperations,
   fetchPosTableService,
   fetchPosTableWorkspace,
+  openPosDrawerSession,
   openPosTableCheck,
   recordPosCashTender,
+  refundPosManagerTender,
+  reprintPosReceipt,
+  voidPosManagerItem,
   sendPosTableCourses,
   updatePosTableGuestCount,
   type PosTableCatalogItem,
@@ -28,7 +35,7 @@ const COURSES=[
 ] as const;
 
 function money(cents:number){return "$"+(Number(cents||0)/100).toFixed(2);}
-function readable(value:string){return value.replace(/_/g," ").replace(/w/g,m=>m.toUpperCase());}
+function readable(value:string){return value.replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase());}
 
 function GuestPill({label,selected,onPress,compact=false}:{label:string;selected:boolean;onPress:()=>void;compact?:boolean}){
   return <Pressable onPress={onPress} style={[styles.guestPill,compact&&styles.guestPillCompact,selected&&styles.guestPillActive]}>
@@ -37,11 +44,9 @@ function GuestPill({label,selected,onPress,compact=false}:{label:string;selected
 }
 
 export default function TableServiceWorkspace({
-  session,onOpenCashDrawer,onPrintReceipt,
+  session,
 }:{
   session:PosClaimSession;
-  onOpenCashDrawer?:()=>Promise<void>;
-  onPrintReceipt?:(lines:string[])=>Promise<void>;
 }){
   const {width}=useWindowDimensions();
   const tablet=width>=900;
@@ -64,12 +69,24 @@ export default function TableServiceWorkspace({
   const [cashReceived,setCashReceived]=useState("");
   const [cashAmount,setCashAmount]=useState("");
   const [lastCashResult,setLastCashResult]=useState<any>(null);
+  const [managerOps,setManagerOps]=useState<{drawers:any[];events:any[]}>({drawers:[],events:[]});
+  const [managerStaffProfileId,setManagerStaffProfileId]=useState("");
+  const [managerPin,setManagerPin]=useState("");
+  const [managerReason,setManagerReason]=useState("Guest request");
+  const [discountAmount,setDiscountAmount]=useState("");
+  const [refundTenderId,setRefundTenderId]=useState<string|null>(null);
+  const [refundAmount,setRefundAmount]=useState("");
+  const [openingCash,setOpeningCash]=useState("");
+  const [countedCash,setCountedCash]=useState("");
 
   const refresh=useCallback(async()=>{
     setLoading(true);setError("");
     try{
-      const data=await fetchPosTableService({deviceId:session.deviceId,credential:session.credential});
-      setTables(data.tables);setCatalog(data.catalog);
+      const [data,manager]=await Promise.all([
+        fetchPosTableService({deviceId:session.deviceId,credential:session.credential}),
+        fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}).catch(()=>({drawers:[],events:[]})),
+      ]);
+      setTables(data.tables);setCatalog(data.catalog);setManagerOps(manager);
       if(!sectionId&&data.catalog?.sections?.length) setSectionId(data.catalog.sections[0].id);
       if(workspace) setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
     }catch(e){setError(e instanceof Error?readable(e.message):"Unable to load tables.");}
@@ -184,6 +201,9 @@ export default function TableServiceWorkspace({
   }));
   const sharedItems=workspace.items.filter(item=>item.shared);
   const unsentCourses=Array.from(new Set(workspace.items.filter(item=>item.status==="active").map(item=>item.course)));
+  const managers=(workspace.staff||[]).filter(staff=>staff.role==="manager");
+  const effectiveManagerId=managerStaffProfileId||managers[0]?.id||"";
+  const openDrawer=(managerOps.drawers||[]).find((drawer:any)=>drawer.status==="open"&&String(drawer.device_id||"")===session.deviceId)||null;
 
   const guestBar=<View style={styles.guestBar}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guestScroll}>
@@ -224,24 +244,115 @@ export default function TableServiceWorkspace({
               amountCents:cashAmount?Math.round(Number(cashAmount)*100):null,
             });
             setLastCashResult(result);setCashReceived("");setCashAmount("");
-            await onOpenCashDrawer?.();
             setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}).catch(()=>managerOps));
           }catch(e){setError(e instanceof Error?readable(e.message):"Unable to take cash.");}
           finally{setBusy(false)}
         }} style={styles.cashButton}><Text style={styles.sendText}>Take cash</Text></Pressable>
       </View>
       {lastCashResult?<Text style={styles.cashSuccess}>Change due {money(Number(lastCashResult.cash_change_cents||0))} · Remaining {money(Number(lastCashResult.remaining_cents||0))}</Text>:null}
-      <Pressable onPress={()=>onPrintReceipt?.([
-        "THEPOSHAVEN RECEIPT",
-        selectedTable?.label||workspace.resources?.[0]?.resource_label||"Table",
-        ...workspace.items.filter(item=>item.status!=="voided").map(item=>`${item.quantity} x ${item.name}  ${money(item.lineTotalCents)}`),
-        `Subtotal  ${money(workspace.amounts.subtotalCents)}`,
-        workspace.amounts.discountCents?`Discount  -${money(workspace.amounts.discountCents)}`:"",
-        `Tax  ${money(workspace.amounts.taxCents)}`,
-        `Total  ${money(workspace.amounts.totalCents)}`,
-        `Paid  ${money(workspace.amounts.amountPaidCents)}`,
-      ].filter(Boolean))} style={styles.receiptButton}><Text style={styles.smallButtonText}>Print / reprint receipt</Text></Pressable>
+      <Pressable onPress={async()=>{
+        setBusy(true);setError("");
+        try{await reprintPosReceipt({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id});}
+        catch(e){setError(e instanceof Error?readable(e.message):"Unable to print receipt.");}
+        finally{setBusy(false)}
+      }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Print / reprint receipt</Text></Pressable>
     </View>
+
+    <View style={styles.paymentPanel}>
+      <Text style={styles.paymentTitle}>Manager controls</Text>
+      <Text style={styles.muted}>Refunds, voids, discounts, and drawer closeout require a manager PIN.</Text>
+      <View style={[styles.cashRow,{marginTop:10}]}>
+        {managers.map(manager=><Pressable key={manager.id} onPress={()=>setManagerStaffProfileId(manager.id)} style={[styles.receiptButton,effectiveManagerId===manager.id&&styles.cashButton]}><Text style={styles.smallButtonText}>{manager.name}</Text></Pressable>)}
+      </View>
+      <TextInput value={managerPin} onChangeText={setManagerPin} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="Manager PIN" placeholderTextColor="#756f73" style={[styles.cashInput,{marginTop:10}]}/>
+      <TextInput value={managerReason} onChangeText={setManagerReason} placeholder="Reason required" placeholderTextColor="#756f73" style={[styles.cashInput,{marginTop:8}]}/>
+
+      <View style={[styles.cashRow,{marginTop:10}]}>
+        <TextInput value={discountAmount} onChangeText={setDiscountAmount} keyboardType="decimal-pad" placeholder="Discount $" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!discountAmount||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await applyPosManagerDiscount({
+              deviceId:session.deviceId,credential:session.credential,checkId:workspace.id,
+              discountCents:Math.round(Number(discountAmount||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+            });
+            setDiscountAmount("");setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to apply discount.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Apply discount</Text></Pressable>
+      </View>
+
+      {workspace.items.map(item=><View key={item.id} style={styles.summaryItem}>
+        <View style={styles.summaryItemMain}><Text style={styles.itemName}>{item.quantity}× {item.name}</Text><Text style={styles.itemMeta}>{money(item.lineTotalCents)}{item.status==="voided"?" · VOIDED":""}</Text></View>
+        {item.status!=="voided"?<Pressable disabled={busy||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await voidPosManagerItem({
+              deviceId:session.deviceId,credential:session.credential,orderItemId:item.id,
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+            });
+            setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to void item.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Void</Text></Pressable>:null}
+      </View>)}
+
+      {workspace.tenders.map(tender=><Pressable key={tender.id} onPress={()=>{setRefundTenderId(tender.id);setRefundAmount((Number(tender.refundableCents||0)/100).toFixed(2));}} style={styles.summaryItem}>
+        <View style={styles.summaryItemMain}><Text style={styles.itemName}>#{tender.number} · {readable(tender.type)}</Text><Text style={styles.itemMeta}>{money(tender.amountCents)} · refundable {money(tender.refundableCents)}</Text></View>
+        <Text style={styles.itemPrice}>{readable(tender.status)}</Text>
+      </Pressable>)}
+      {refundTenderId?<View style={styles.cashRow}>
+        <TextInput value={refundAmount} onChangeText={setRefundAmount} keyboardType="decimal-pad" placeholder="Refund $" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!refundAmount||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            const selected=workspace.tenders.find(tender=>tender.id===refundTenderId);
+            await refundPosManagerTender({
+              deviceId:session.deviceId,credential:session.credential,tenderId:refundTenderId,
+              amountCents:Math.round(Number(refundAmount||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,reason:managerReason,
+              idempotencyKey:`pos-refund:${session.deviceId}:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${selected?.amountRefundedCents||0}`,
+            });
+            setRefundTenderId(null);setRefundAmount("");setManagerPin("");
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to refund tender.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Refund</Text></Pressable>
+      </View>:null}
+
+      {!openDrawer?<View style={styles.cashRow}>
+        <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" placeholder="Opening cash" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!openingCash} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await openPosDrawerSession({deviceId:session.deviceId,credential:session.credential,openingCashCents:Math.round(Number(openingCash||0)*100)});
+            setOpeningCash("");
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to open drawer shift.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Open drawer shift</Text></Pressable>
+      </View>:<View style={styles.cashRow}>
+        <TextInput value={countedCash} onChangeText={setCountedCash} keyboardType="decimal-pad" placeholder="Counted cash" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!countedCash||!effectiveManagerId||managerPin.length<4} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            await closePosDrawerSession({
+              deviceId:session.deviceId,credential:session.credential,sessionId:String(openDrawer.id),
+              countedCashCents:Math.round(Number(countedCash||0)*100),
+              managerStaffProfileId:effectiveManagerId,managerPin,
+            });
+            setCountedCash("");setManagerPin("");
+            setManagerOps(await fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to close drawer shift.");}
+          finally{setBusy(false)}
+        }} style={styles.receiptButton}><Text style={styles.smallButtonText}>Close drawer shift</Text></Pressable>
+      </View>}
+    </View>
+
     <View style={styles.sendGrid}>
       {unsentCourses.includes("drinks")&&<Pressable onPress={()=>sendCourses(["drinks"])} style={styles.sendButton}><Text style={styles.sendText}>Send Drinks</Text></Pressable>}
       {unsentCourses.includes("appetizers")&&<Pressable onPress={()=>sendCourses(["appetizers"])} style={styles.sendButton}><Text style={styles.sendText}>Send Apps</Text></Pressable>}
