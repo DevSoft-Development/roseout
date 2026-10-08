@@ -19,8 +19,7 @@ async function main() {
         .from("search_quality_replay_runs")
         .select("id,completed_at,status,source,metrics")
         .eq("source", "golden")
-        .eq("status", "completed")
-        .order("completed_at", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(1),
     ]);
 
@@ -52,6 +51,7 @@ async function main() {
 
   const checks = {
     phase13Succeeded: phase.status === "success",
+    latestGoldenReplayCompleted: replay.status === "completed",
     phase13Fresh: typeof phase.started_at === "string" &&
       Date.now() - Date.parse(phase.started_at) <= 30 * 60 * 1000,
     goldenReplayFresh: typeof replay.completed_at === "string" &&
