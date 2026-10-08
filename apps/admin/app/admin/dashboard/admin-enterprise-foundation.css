@@ -250,3 +250,86 @@
   border-color: var(--toh-brand-border);
   color: var(--toh-text);
 }
+
+
+/* Admin route migration layer */
+.admin-crm-enterprise {
+  color: var(--toh-text);
+}
+
+.admin-crm-enterprise main {
+  color: var(--toh-text) !important;
+}
+
+.admin-crm-enterprise header h1,
+.admin-crm-enterprise header h2,
+.admin-crm-enterprise header h3 {
+  color: var(--toh-text);
+  letter-spacing: -0.02em;
+}
+
+.admin-crm-enterprise header p {
+  color: var(--toh-text-soft);
+}
+
+.admin-crm-enterprise form {
+  border: 1px solid var(--toh-border) !important;
+  border-radius: var(--toh-radius-lg) !important;
+  background: var(--toh-surface-card) !important;
+  box-shadow: var(--toh-shadow-xs);
+}
+
+.admin-crm-enterprise form :is(input, select, textarea) {
+  min-height: var(--toh-control-height);
+  border: 1px solid var(--toh-border) !important;
+  border-radius: var(--toh-radius-sm) !important;
+  background: var(--toh-surface-subtle) !important;
+  color: var(--toh-text) !important;
+  outline: none;
+}
+
+.admin-crm-enterprise form :is(input, select, textarea):focus {
+  border-color: var(--toh-brand-border) !important;
+  box-shadow: 0 0 0 3px var(--toh-brand-soft);
+}
+
+.admin-crm-enterprise nav a {
+  border-radius: var(--toh-radius-sm) !important;
+}
+
+.admin-crm-enterprise section:has(> table),
+.admin-crm-enterprise section:has(> div > table) {
+  border: 1px solid var(--toh-border) !important;
+  border-radius: var(--toh-radius-lg) !important;
+  background: var(--toh-surface-card);
+  box-shadow: var(--toh-shadow-xs);
+}
+
+.admin-crm-enterprise table thead {
+  background: var(--toh-surface-subtle) !important;
+  color: var(--toh-text-muted) !important;
+}
+
+.admin-crm-enterprise table tr {
+  border-color: var(--toh-border) !important;
+}
+
+.admin-crm-enterprise table td,
+.admin-crm-enterprise table th {
+  color: var(--toh-text);
+}
+
+.admin-crm-enterprise a[class*="text-rose"],
+.admin-crm-enterprise p[class*="text-rose"] {
+  color: var(--toh-brand) !important;
+}
+
+.admin-crm-enterprise [class*="text-white/"] {
+  color: var(--toh-text-muted) !important;
+}
+
+.admin-shell[data-admin-theme="dark"] .admin-crm-enterprise form,
+.admin-shell[data-admin-theme="dark"] .admin-crm-enterprise section:has(> table),
+.admin-shell[data-admin-theme="dark"] .admin-crm-enterprise section:has(> div > table) {
+  background: var(--toh-surface-card) !important;
+}

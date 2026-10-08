@@ -14,5 +14,5 @@ export default function CrmWorkspaceShell({ children }: { children: React.ReactN
   }, [isPlainCrmRoot, router]);
 
   if (isPlainCrmRoot) return null;
-  return <section className="min-w-0 space-y-5">{children}</section>;
+  return <section className="admin-crm-enterprise min-w-0 space-y-5">{children}</section>;
 }
