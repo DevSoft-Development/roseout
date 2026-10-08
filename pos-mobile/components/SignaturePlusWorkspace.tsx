@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { PosClaimSession } from "@/lib/device/identity";
 import {
   createSignaturePlusSplit,
   createSignaturePlusSplitTender,
+  fetchPosManagerOperations,
   fetchSignaturePlus,
+  recordPosCashTender,
+  applyPosManagerDiscount,
+  refundPosManagerTender,
+  voidPosManagerItem,
+  reprintPosReceipt,
+  openPosDrawerSession,
+  closePosDrawerSession,
   moveSignaturePlusTable,
   transferSignaturePlusServer,
   updateSignaturePlusCourse,
@@ -14,9 +22,14 @@ import {
 
 type Tab="kds"|"tables"|"inventory"|"reports";
 function money(cents:number){return "$"+(Number(cents||0)/100).toFixed(2);}
-function pretty(value:string){return String(value||"").replace(/_/g," ").replace(/w/g,m=>m.toUpperCase());}
+function pretty(value:string){return String(value||"").replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase());}
 
-export default function SignaturePlusWorkspace({session,refreshToken=0}:{session:PosClaimSession;refreshToken?:number}){
+export default function SignaturePlusWorkspace({
+  session,refreshToken=0,
+}:{
+  session:PosClaimSession;
+  refreshToken?:number;
+}){
   const [tab,setTab]=useState<Tab>("kds");
   const [data,setData]=useState<any>(null);
   const [busy,setBusy]=useState(false);
@@ -24,12 +37,27 @@ export default function SignaturePlusWorkspace({session,refreshToken=0}:{session
   const [station,setStation]=useState("all");
   const [selectedCheck,setSelectedCheck]=useState<string|null>(null);
   const [splitPlan,setSplitPlan]=useState<any>(null);
+  const [managerOps,setManagerOps]=useState<{drawers:any[];events:any[]}>({drawers:[],events:[]});
+  const [cashReceived,setCashReceived]=useState("");
+  const [cashAmount,setCashAmount]=useState("");
+  const [discountAmount,setDiscountAmount]=useState("");
+  const [refundAmount,setRefundAmount]=useState("");
+  const [refundTenderId,setRefundTenderId]=useState<string|null>(null);
+  const [managerReason,setManagerReason]=useState("Guest request");
+  const [approverId,setApproverId]=useState("");
+  const [managerPin,setManagerPin]=useState("");
+  const [openingCash,setOpeningCash]=useState("");
+  const [countedCash,setCountedCash]=useState("");
+  const [lastCashResult,setLastCashResult]=useState<any>(null);
 
   const load=useCallback(async(quiet=false)=>{
     if(!quiet) setBusy(true);
     try{
-      const next=await fetchSignaturePlus({deviceId:session.deviceId,credential:session.credential});
-      setData(next);setError("");
+      const [next,manager]=await Promise.all([
+        fetchSignaturePlus({deviceId:session.deviceId,credential:session.credential}),
+        fetchPosManagerOperations({deviceId:session.deviceId,credential:session.credential}).catch(()=>({drawers:[],events:[]})),
+      ]);
+      setData(next);setManagerOps(manager);setError("");
       if(!selectedCheck&&next.operations?.openChecks?.length) setSelectedCheck(next.operations.openChecks[0].id);
     }catch(e){setError(e instanceof Error?pretty(e.message):"Unable to load Signature+.");}
     finally{if(!quiet)setBusy(false)}
@@ -50,6 +78,10 @@ export default function SignaturePlusWorkspace({session,refreshToken=0}:{session
   const visibleKds=station==="all"?kds:kds.filter(ticket=>ticket.lines.some(line=>line.station===station));
   const ops=data?.operations||{openChecks:[],tables:[],staff:[]};
   const currentCheck=ops.openChecks?.find((check:any)=>check.id===selectedCheck)||ops.openChecks?.[0]||null;
+  const managerStaff=(ops.staff||[]).filter((staff:any)=>String(staff.role||"")==="manager");
+  const actorStaffId=String(currentCheck?.server?.id||ops.staff?.[0]?.id||"");
+  const effectiveApproverId=approverId||String(managerStaff[0]?.id||"");
+  const openDrawer=(managerOps.drawers||[]).find((drawer:any)=>drawer.status==="open"&&String(drawer.device_id||"")===session.deviceId)||null;
   const inventory=data?.inventory||{ingredients:[],recipes:[]};
   const report=(data?.report||null) as SignaturePlusReport|null;
 
@@ -110,6 +142,97 @@ export default function SignaturePlusWorkspace({session,refreshToken=0}:{session
             <Pressable disabled={busy} onPress={()=>mutate(()=>createSignaturePlusSplitTender({deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,allocationKey:part.key}))} style={styles.primary}><Text style={styles.primaryText}>Charge card</Text></Pressable>
           </View>)}
         </View>:null}
+
+        <Text style={styles.label}>Payment + Manager Controls</Text>
+        <View style={styles.managerCard}>
+          <View style={styles.rowBetween}>
+            <View><Text style={styles.optionTitle}>Remaining</Text><Text style={styles.muted}>Paid {money(currentCheck.amountPaidCents||0)} · Refunded {money(currentCheck.amountRefundedCents||0)}</Text></View>
+            <Text style={styles.total}>{money(currentCheck.remainingCents||0)}</Text>
+          </View>
+
+          <Text style={styles.subLabel}>Cash payment</Text>
+          <View style={styles.inlineActions}>
+            <TextInput value={cashReceived} onChangeText={setCashReceived} keyboardType="decimal-pad" placeholder="Cash received" placeholderTextColor="#676c75" style={styles.input}/>
+            <TextInput value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" placeholder="Partial amount (optional)" placeholderTextColor="#676c75" style={styles.input}/>
+            <Pressable disabled={busy||!cashReceived} onPress={()=>mutate(async()=>{
+              const result=await recordPosCashTender({
+                deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
+                cashReceivedCents:Math.round(Number(cashReceived||0)*100),
+                amountCents:cashAmount?Math.round(Number(cashAmount)*100):null,
+                actorStaffProfileId:actorStaffId||null,
+              });
+              setLastCashResult(result);setCashReceived("");setCashAmount("");
+              return result;
+            })} style={styles.primary}><Text style={styles.primaryText}>Take cash</Text></Pressable>
+          </View>
+          {lastCashResult?<Text style={styles.success}>Change due {money(lastCashResult.cash_change_cents||0)} · Remaining {money(lastCashResult.remaining_cents||0)}</Text>:null}
+
+          <Text style={styles.subLabel}>Drawer shift</Text>
+          {!openDrawer?<View style={styles.inlineActions}>
+            <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" placeholder="Opening cash" placeholderTextColor="#676c75" style={styles.input}/>
+            <Pressable disabled={busy||!openingCash} onPress={()=>mutate(async()=>{
+              const id=await openPosDrawerSession({deviceId:session.deviceId,credential:session.credential,openingCashCents:Math.round(Number(openingCash||0)*100),actorStaffProfileId:actorStaffId||null});
+              setOpeningCash("");return id;
+            })} style={styles.secondary}><Text style={styles.secondaryText}>Open drawer shift</Text></Pressable>
+          </View>:<View style={styles.inlineActions}>
+            <TextInput value={countedCash} onChangeText={setCountedCash} keyboardType="decimal-pad" placeholder="Counted cash" placeholderTextColor="#676c75" style={styles.input}/>
+            <Pressable disabled={busy||!countedCash||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await closePosDrawerSession({deviceId:session.deviceId,credential:session.credential,sessionId:String(openDrawer.id),countedCashCents:Math.round(Number(countedCash||0)*100),managerStaffProfileId:effectiveApproverId,managerPin});
+              setCountedCash("");return result;
+            })} style={styles.secondary}><Text style={styles.secondaryText}>Close drawer shift</Text></Pressable>
+          </View>}
+
+          <Text style={styles.subLabel}>Manager approval</Text>
+          <View style={styles.inlineActions}>
+            {managerStaff.map((staff:any)=><Pressable key={staff.id} onPress={()=>setApproverId(String(staff.id))} style={[styles.chip,effectiveApproverId===String(staff.id)&&styles.chipActive]}><Text style={styles.chipText}>{staff.name}</Text></Pressable>)}
+          </View>
+          <TextInput value={managerPin} onChangeText={setManagerPin} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="Manager PIN" placeholderTextColor="#676c75" style={[styles.input,{marginTop:8}]}/>
+          <TextInput value={managerReason} onChangeText={setManagerReason} placeholder="Reason required" placeholderTextColor="#676c75" style={[styles.input,{marginTop:8}]}/>
+
+          <Text style={styles.subLabel}>Discount / comp</Text>
+          <View style={styles.inlineActions}>
+            <TextInput value={discountAmount} onChangeText={setDiscountAmount} keyboardType="decimal-pad" placeholder="Discount $" placeholderTextColor="#676c75" style={styles.input}/>
+            <Pressable disabled={busy||!discountAmount||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await applyPosManagerDiscount({
+                deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
+                discountCents:Math.round(Number(discountAmount||0)*100),actorStaffProfileId:actorStaffId||null,
+                managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
+              });setDiscountAmount("");setManagerPin("");return result;
+            })} style={styles.secondary}><Text style={styles.secondaryText}>Apply discount</Text></Pressable>
+          </View>
+
+          <Text style={styles.subLabel}>Items</Text>
+          {(currentCheck.items||[]).map((item:any)=><View key={item.id} style={styles.reportRow}>
+            <View style={{flex:1}}><Text style={styles.optionTitle}>{item.quantity}× {item.name}</Text><Text style={styles.muted}>{money(item.lineTotalCents)}{item.status==="voided"?" · VOIDED":""}</Text></View>
+            {item.status!=="voided"?<Pressable disabled={busy||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await voidPosManagerItem({
+                deviceId:session.deviceId,credential:session.credential,orderItemId:item.id,
+                actorStaffProfileId:actorStaffId||null,managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
+              });setManagerPin("");return result;
+            })} style={styles.danger}><Text style={styles.primaryText}>Void</Text></Pressable>:null}
+          </View>)}
+
+          <Text style={styles.subLabel}>Tenders + refunds</Text>
+          {(currentCheck.tenders||[]).map((tender:any)=><Pressable key={tender.id} onPress={()=>{setRefundTenderId(tender.id);setRefundAmount((Number(tender.refundableCents||0)/100).toFixed(2));}} style={[styles.reportRow,refundTenderId===tender.id&&styles.selectedRow]}>
+            <View><Text style={styles.optionTitle}>#{tender.number} · {pretty(tender.type)}</Text><Text style={styles.muted}>{money(tender.amountCents)} · refundable {money(tender.refundableCents||0)}</Text></View>
+            <Text style={styles.reportValue}>{pretty(tender.status)}</Text>
+          </Pressable>)}
+          {refundTenderId?<View style={styles.inlineActions}>
+            <TextInput value={refundAmount} onChangeText={setRefundAmount} keyboardType="decimal-pad" placeholder="Refund $" placeholderTextColor="#676c75" style={styles.input}/>
+            <Pressable disabled={busy||!refundAmount||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await refundPosManagerTender({
+                deviceId:session.deviceId,credential:session.credential,tenderId:refundTenderId,
+                amountCents:Math.round(Number(refundAmount||0)*100),actorStaffProfileId:actorStaffId||null,
+                managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
+                idempotencyKey:`pos-refund:${session.deviceId}:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${Number((currentCheck.tenders||[]).find((row:any)=>row.id===refundTenderId)?.amountRefundedCents||0)}`,
+              });setRefundTenderId(null);setRefundAmount("");setManagerPin("");return result;
+            })} style={styles.danger}><Text style={styles.primaryText}>Refund selected</Text></Pressable>
+          </View>:null}
+
+          <Pressable disabled={busy} onPress={()=>mutate(()=>reprintPosReceipt({
+            deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
+          }))} style={[styles.secondary,{marginTop:12}]}><Text style={styles.secondaryText}>Print / reprint receipt</Text></Pressable>
+        </View>
       </View>:<View style={styles.empty}><Text style={styles.emptyTitle}>No open table checks</Text></View>}
     </ScrollView>}
 
@@ -159,4 +282,9 @@ const styles=StyleSheet.create({
   metricValue:{color:"#fff",fontSize:20,fontWeight:"900"},metricLabel:{color:"#81858e",fontSize:9,fontWeight:"900",textTransform:"uppercase",marginTop:3},inventoryRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",borderBottomWidth:1,borderBottomColor:"#22262c",paddingVertical:11},
   stock:{color:"#77d69b",fontSize:9,fontWeight:"900"},stockOut:{color:"#ff6c7d"},recipeCard:{borderRadius:12,borderWidth:1,borderColor:"#2c3037",backgroundColor:"#11141a",padding:12},
   reportRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingVertical:8,borderBottomWidth:1,borderBottomColor:"#22262c"},reportValue:{color:"#fff",fontSize:12,fontWeight:"900"},
+  managerCard:{borderRadius:14,borderWidth:1,borderColor:"#30343a",backgroundColor:"#0d1015",padding:12},
+  subLabel:{color:"#8d9098",fontSize:9,fontWeight:"900",letterSpacing:.8,textTransform:"uppercase",marginTop:14,marginBottom:5},
+  input:{minWidth:120,flexGrow:1,borderRadius:10,borderWidth:1,borderColor:"#343840",backgroundColor:"#12151a",paddingHorizontal:10,paddingVertical:9,color:"#fff",fontSize:11,fontWeight:"700"},
+  danger:{borderRadius:10,backgroundColor:"#8f1727",paddingHorizontal:12,paddingVertical:10,alignItems:"center"},
+  selectedRow:{backgroundColor:"#1c2129"},success:{color:"#77d69b",fontSize:11,fontWeight:"800",marginTop:8},
 });
