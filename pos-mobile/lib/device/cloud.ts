@@ -199,6 +199,7 @@ export type PosTableWorkspace={
   guestCount:number;
   reservation?:PosTableReservation|null;
   resources:any[];
+  staff:{id:string;name:string;role:string}[];
   amounts:{
     subtotalCents:number;discountCents:number;taxCents:number;serviceChargeCents:number;
     totalCents:number;amountPaidCents:number;amountRefundedCents:number;remainingCents:number;tipCents:number;
