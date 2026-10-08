@@ -36,6 +36,10 @@ requireText(profileEditor, "Search & matching", "Location profile editor must re
 requireText(profileEditor, "AI profile helper", "Location profile editor must retain the AI helper.");
 requireText(profileEditor, "primarySectionsOpen", "Location profile editor must support visible primary controls.");
 requireText(workspaceNav, '"Location Details"', "CRM workspace navigation must expose Location Details.");
+requireText(workspaceNav, 'activeTab === "sales"', "CRM workspace navigation must highlight Sales for the selected CRM location.");
+requireText(workspaceNav, 'activeTab === "tasks"', "CRM workspace navigation must highlight Tasks for the selected CRM location.");
+requireText(workspaceNav, 'location=', "CRM task navigation must remain scoped to the selected CRM location.");
+requireText(workspaceNav, 'location_id=', "CRM sales navigation must remain scoped to the selected CRM location.");
 
 requireText(crmNew, '.from("locations")', "Location creation must write the canonical locations model.");
 requireText(crmNew, 'created_source: "admin_crm"', "CRM-created locations must have canonical source provenance.");

@@ -4,6 +4,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { queryWorkQueue, SYSTEM_VIEWS } from "@/lib/crm/tasks/queries";
 import type { QueueFilters } from "@/lib/crm/tasks/types";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,9 @@ export default async function Page({
   const actor = await requireAdminRole(CRM_READ_ROLES);
   const p = await searchParams;
   const view = SYSTEM_VIEWS.includes(p.view as any) ? p.view! : "my-queue";
-  const result = await queryWorkQueue(actor.user_id, view, p as QueueFilters);
+  const selectedLocation = p.location || p.location_id;
+  const queueFilters = { ...(p as QueueFilters), location: selectedLocation };
+  const result = await queryWorkQueue(actor.user_id, view, queueFilters);
   const manager = ["superadmin", "admin", "manager"].includes(actor.role);
   const counts = {
     overdue: result.tasks.filter((t: any) => t.due_at && new Date(t.due_at) < new Date() && !["completed", "cancelled"].includes(t.status)).length,
@@ -42,7 +45,8 @@ export default async function Page({
 
   return (
     <CrmWorkspaceShell>
-      <main className="space-y-5 text-white">
+      <main className="space-y-5 text-[var(--admin-shell-text)]">
+        {selectedLocation ? <LocationWorkspaceNavigation locationId={selectedLocation} activeTab="tasks" /> : null}
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-rose-300">CRM</p>
@@ -62,13 +66,18 @@ export default async function Page({
         </section>
 
         <nav className="flex gap-2 overflow-x-auto pb-1">
-          {SYSTEM_VIEWS.filter((v) => manager || !["team-queue", "unowned-work", "sla-risk", "recently-reopened"].includes(v)).map((v) => (
-            <Link key={v} href={`?view=${v}`} className={`shrink-0 rounded-full px-3 py-2 text-sm font-bold ${v === view ? "bg-white text-black" : "border border-white/15 text-white/70"}`}>{labels[v]}</Link>
-          ))}
+          {SYSTEM_VIEWS.filter((v) => manager || !["team-queue", "unowned-work", "sla-risk", "recently-reopened"].includes(v)).map((v) => {
+            const params = new URLSearchParams({ view: v });
+            if (selectedLocation) params.set("location", selectedLocation);
+            if (p.return_to) params.set("return_to", p.return_to);
+            return <Link key={v} href={`?${params.toString()}`} className={`shrink-0 rounded-full px-3 py-2 text-sm font-bold ${v === view ? "bg-[var(--admin-shell-accent-soft)] text-[var(--admin-shell-accent)] ring-1 ring-inset ring-[var(--admin-shell-accent-border)]" : "border border-[var(--admin-shell-border)] text-[var(--admin-shell-soft)]"}`}>{labels[v]}</Link>;
+          })}
         </nav>
 
         <form className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-4">
           <input type="hidden" name="view" value={view} />
+          {selectedLocation ? <input type="hidden" name="location" value={selectedLocation} /> : null}
+          {p.return_to ? <input type="hidden" name="return_to" value={p.return_to} /> : null}
           <input name="search" defaultValue={p.search} placeholder="Search work" className="rounded-xl bg-black/30 p-3" />
           <select name="priority" defaultValue={p.priority || ""} className="rounded-xl bg-black/30 p-3"><option value="">All priorities</option>{["urgent", "high", "normal", "low"].map((x) => <option key={x}>{x}</option>)}</select>
           <select name="status" defaultValue={p.status || ""} className="rounded-xl bg-black/30 p-3"><option value="">All statuses</option>{["open", "in_progress", "blocked", "completed", "cancelled"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}</select>
