@@ -385,3 +385,12 @@ export function closePosDrawerSession(input:{
   return mutatePosManager({...input,body:{action:"close_drawer",sessionId:input.sessionId,
     countedCashCents:input.countedCashCents}});
 }
+
+
+export async function fetchPosManagerOperations(input:{deviceId:string;credential:string}){
+  const data=await jsonRequest("/api/pos/device/manager",{
+    method:"GET",
+    headers:{Authorization:`Bearer ${input.credential}`,"X-Pos-Device-Id":input.deviceId},
+  });
+  return data.operations as {drawers:any[];events:any[]};
+}
