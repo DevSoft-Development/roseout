@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import CanonicalLocationModuleNav from "./CanonicalLocationModuleNav";
 import BusinessThemeProvider from "./BusinessThemeProvider";
+import "../../business-enterprise-foundation.css";
 import { ADMIN_DEMO_HANDOFF_COOKIE, verifyAdminDemoHandoff } from "@theouthaven/auth/admin-demo-handoff";
 import { BUSINESS_RESERVE_HANDOFF_COOKIE, verifyBusinessReserveHandoff } from "@theouthaven/auth/business-reserve-handoff";
 
