@@ -272,10 +272,10 @@ function normalizeAssignmentIntent(intent?: string | null) {
   return "none" as const;
 }
 
-async function listGroupMemberDisplayNames(userId: string, groupId: string) {
+async function listGroupDeviceMemberDisplayNames(userId: string, groupId: string) {
   const members = await getAllPages<{ id: string; displayName?: string | null }>(
     userId,
-    `/groups/${encodeURIComponent(groupId)}/members?$select=id,displayName&$top=200`,
+    `/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.device?$select=id,displayName&$top=200`,
   );
   return members.map((member) => member.displayName || member.id);
 }
@@ -317,11 +317,11 @@ export async function listIntuneAppleAppAssignmentStates(
         }
 
         if (groupName.startsWith("TheOutHaven App Install ·")) {
-          deviceInstalls.push(...(await listGroupMemberDisplayNames(userId, groupId)));
+          deviceInstalls.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
           continue;
         }
         if (groupName.startsWith("TheOutHaven App Remove ·")) {
-          deviceRemovals.push(...(await listGroupMemberDisplayNames(userId, groupId)));
+          deviceRemovals.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
           continue;
         }
 
