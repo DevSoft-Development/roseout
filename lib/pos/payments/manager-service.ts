@@ -159,13 +159,23 @@ export async function openPosCashDrawerSession(input: {
   openingCashCents: number;
 }) {
   const locationId = required(input.locationId, "location_id");
+  const deviceId=required(input.deviceId, "device_id");
   const { data } = await rpcOne(locationId, "pos_open_cash_drawer_session", {
     p_location_id: locationId,
-    p_device_id: required(input.deviceId, "device_id"),
+    p_device_id: deviceId,
     p_staff_profile_id: input.staffProfileId || null,
     p_opening_cash_cents: nonNegativeInt(input.openingCashCents, "opening_cash"),
   });
-  return String(data || "");
+  const sessionId=String(data||"");
+  await enqueuePosLocationCommand({
+    locationId,
+    commandType:"pos_cash_drawer_open",
+    sourceType:"pos_cash_drawer_session",
+    sourceId:sessionId,
+    dedupeKey:`pos-drawer:session:${sessionId}`,
+    payload:{session_id:sessionId,device_id:deviceId},
+  }).catch(()=>null);
+  return sessionId;
 }
 
 export async function closePosCashDrawerSession(input: {
