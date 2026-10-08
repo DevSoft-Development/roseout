@@ -272,7 +272,7 @@ jobs:
           cat "$RUNNER_TEMP/evidence.json"
 
       - name: Upload certification evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: oregon-dr-post-prepare-resume-certification
           path: ${{ runner.temp }}/evidence.json

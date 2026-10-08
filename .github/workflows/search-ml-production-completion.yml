@@ -376,7 +376,7 @@ jobs:
           cp "$RUNNER_TEMP/final-qa.json" "$GITHUB_WORKSPACE/final-search-ml-production-qa.json"
 
       - name: Upload final production QA evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: final-search-ml-production-qa
           path: final-search-ml-production-qa.json

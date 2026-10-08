@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload enterprise visual evidence
         if: always() && steps.visual-spec.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: enterprise-dashboard-visual-${{ matrix.surface }}-${{ github.run_id }}
           path: |

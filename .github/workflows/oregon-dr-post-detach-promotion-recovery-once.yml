@@ -315,7 +315,7 @@ jobs:
           jq -n --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg source_sha "$GITHUB_SHA" --rawfile runs "$RUNNER_TEMP/runs.txt" '{completed_at:$completed_at,source_sha:$source_sha,result:"PASS",final_primary:"virginia",base_schedules_enabled:65,forward_dr_schedules_enabled:2,workflow_runs:($runs|split("\n")|map(select(length>0)))}' > "$RUNNER_TEMP/evidence.json"
           cat "$RUNNER_TEMP/evidence.json"
       - name: Upload certification evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: oregon-dr-post-detach-recovery-certification
           path: ${{ runner.temp }}/evidence.json
