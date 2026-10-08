@@ -93,6 +93,7 @@ type IntuneMobileAppAssignment = {
 
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 export const THEOUTHAVEN_ADE_PROFILE = "TheOutHaven - Standard Managed Device ADE";
+export const THEOUTHAVEN_EXECUTIVE_GROUP = "TheOutHaven Executives";
 
 const BUSINESS_STANDARD_IOS_CONFIGURATION = {
   "@odata.type": "#microsoft.graph.iosGeneralDeviceConfiguration",
@@ -272,7 +273,7 @@ async function upsertIntuneAppGroupAssignment(
   userId: string,
   app: IntuneAppleApp,
   groupId: string,
-  intent: "required" | "uninstall",
+  intent: "available" | "required" | "uninstall",
 ) {
   const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
     userId,
@@ -317,7 +318,7 @@ export async function assignIntuneAppleAppToGroup(
   userId: string,
   appId: string,
   groupId: string,
-  intent: "required" | "uninstall",
+  intent: "available" | "required" | "uninstall",
 ) {
   const app = await getIntuneAppleApp(userId, appId);
   const groups = await listIntuneSecurityGroups(userId);
@@ -325,6 +326,36 @@ export async function assignIntuneAppleAppToGroup(
     throw new Error("INTUNE_GROUP_NOT_FOUND");
   }
   await upsertIntuneAppGroupAssignment(userId, app, groupId, intent);
+}
+
+export async function getOrCreateIntuneExecutiveGroup(userId: string) {
+  const existing = (await listIntuneSecurityGroups(userId)).find(
+    (group) => group.displayName === THEOUTHAVEN_EXECUTIVE_GROUP,
+  );
+  if (existing) return existing;
+
+  return microsoftGraphFetch<IntuneDirectoryGroup>(userId, "/groups", {
+    method: "POST",
+    body: JSON.stringify({
+      displayName: THEOUTHAVEN_EXECUTIVE_GROUP,
+      description:
+        "TheOutHaven executive user group for apps and policies restricted to executive staff.",
+      mailEnabled: false,
+      mailNickname: "theouthaven-executives",
+      securityEnabled: true,
+      groupTypes: [],
+    }),
+  });
+}
+
+export async function assignIntuneAppleAppToExecutives(
+  userId: string,
+  appId: string,
+  intent: "available" | "uninstall",
+) {
+  const app = await getIntuneAppleApp(userId, appId);
+  const group = await getOrCreateIntuneExecutiveGroup(userId);
+  await upsertIntuneAppGroupAssignment(userId, app, group.id, intent);
 }
 
 async function getOrCreateAppDeviceTargetGroup(
