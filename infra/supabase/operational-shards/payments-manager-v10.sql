@@ -52,6 +52,7 @@ create table if not exists public.pos_refund_requests (
   approver_staff_profile_id uuid null,
   provider text null,
   provider_payment_intent_id text null,
+  connected_account_id text null,
   provider_refund_id text null,
   status text not null default 'initiated' check (status in ('initiated','completed','failed')),
   idempotency_key text not null,
@@ -268,7 +269,8 @@ returns table(
   tender_type text,
   amount_cents integer,
   provider text,
-  provider_payment_intent_id text
+  provider_payment_intent_id text,
+  connected_account_id text
 )
 language plpgsql
 security invoker
@@ -281,6 +283,7 @@ declare
   v_request_id uuid;
   v_provider text;
   v_payment_intent text;
+  v_connected_account text;
 begin
   if coalesce(p_amount_cents,0)<=0 then raise exception 'invalid_pos_refund_amount'; end if;
   if nullif(trim(coalesce(p_reason,'')),'') is null then raise exception 'pos_manager_reason_required'; end if;
@@ -299,8 +302,8 @@ begin
   v_available:=greatest(0,v_tender.amount_cents-v_tender.amount_refunded_cents-v_pending);
   if p_amount_cents>v_available then raise exception 'pos_refund_exceeds_available'; end if;
 
-  select p.provider,p.provider_payment_intent_id
-    into v_provider,v_payment_intent
+  select p.provider,p.provider_payment_intent_id,p.connected_account_id
+    into v_provider,v_payment_intent,v_connected_account
     from public.pos_payments p
    where p.tender_id=p_tender_id
    order by p.created_at desc
@@ -309,12 +312,13 @@ begin
   insert into public.pos_refund_requests(
     location_id,check_id,tender_id,amount_cents,reason,
     actor_staff_profile_id,approver_staff_profile_id,provider,
-    provider_payment_intent_id,idempotency_key
+    provider_payment_intent_id,connected_account_id,idempotency_key
   ) values (
     p_location_id,v_tender.check_id,p_tender_id,p_amount_cents,trim(p_reason),
     p_actor_staff_profile_id,p_approver_staff_profile_id,
     case when v_tender.tender_type='card' then v_provider else null end,
     case when v_tender.tender_type='card' then v_payment_intent else null end,
+    case when v_tender.tender_type='card' then v_connected_account else null end,
     trim(p_idempotency_key)
   )
   on conflict(location_id,idempotency_key) do update
@@ -324,7 +328,8 @@ begin
   return query select
     v_request_id,v_tender.tender_type,p_amount_cents,
     case when v_tender.tender_type='card' then v_provider else null end,
-    case when v_tender.tender_type='card' then v_payment_intent else null end;
+    case when v_tender.tender_type='card' then v_payment_intent else null end,
+    case when v_tender.tender_type='card' then v_connected_account else null end;
 end;
 $$;
 
@@ -455,7 +460,7 @@ begin
   if not found then raise exception 'pos_cash_drawer_session_not_found'; end if;
   if v_session.status<>'open' then raise exception 'pos_cash_drawer_session_closed'; end if;
 
-  select coalesce(sum(t.amount_cents+t.tip_cents-t.cash_change_cents),0)
+  select coalesce(sum(t.amount_cents+t.tip_cents),0)
     into v_cash_sales
     from public.pos_tenders t
    where t.location_id=p_location_id and t.tender_type='cash'
@@ -515,6 +520,18 @@ begin
   end if;
 end $$;
 
-alter publication toh_operational_dr add table public.pos_manager_events;
-alter publication toh_operational_dr add table public.pos_cash_drawer_sessions;
-alter publication toh_operational_dr add table public.pos_refund_requests;
+do $
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='toh_operational_dr' and schemaname='public' and tablename='pos_manager_events'
+  ) then execute 'alter publication toh_operational_dr add table public.pos_manager_events'; end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='toh_operational_dr' and schemaname='public' and tablename='pos_cash_drawer_sessions'
+  ) then execute 'alter publication toh_operational_dr add table public.pos_cash_drawer_sessions'; end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname='toh_operational_dr' and schemaname='public' and tablename='pos_refund_requests'
+  ) then execute 'alter publication toh_operational_dr add table public.pos_refund_requests'; end if;
+end $;
