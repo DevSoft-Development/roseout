@@ -90,6 +90,15 @@ type IntuneMobileAppAssignment = {
   } | null;
 };
 
+export type IntuneAppleAppAssignmentState = {
+  appId: string;
+  standard: "available" | "required" | "removed" | "none";
+  executive: "available" | "required" | "removed" | "none";
+  deviceInstalls: string[];
+  deviceRemovals: string[];
+  customGroups: Array<{ name: string; intent: string }>;
+};
+
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
 export const THEOUTHAVEN_ADE_PROFILE = "TheOutHaven - Standard Managed Device ADE";
 export const THEOUTHAVEN_EXECUTIVE_GROUP = "TheOutHaven Executives";
@@ -254,6 +263,81 @@ export async function listIntuneSecurityGroups(userId: string) {
   return groups
     .filter((group) => group.securityEnabled && group.displayName)
     .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+}
+
+function normalizeAssignmentIntent(intent?: string | null) {
+  if (intent === "uninstall") return "removed" as const;
+  if (intent === "required") return "required" as const;
+  if (intent === "available") return "available" as const;
+  return "none" as const;
+}
+
+async function listGroupMemberDisplayNames(userId: string, groupId: string) {
+  const members = await getAllPages<{ id: string; displayName?: string | null }>(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members?$select=id,displayName&$top=200`,
+  );
+  return members.map((member) => member.displayName || member.id);
+}
+
+export async function listIntuneAppleAppAssignmentStates(
+  userId: string,
+  apps: IntuneAppleApp[],
+  groups: IntuneDirectoryGroup[],
+) {
+  const groupById = new Map(groups.map((group) => [group.id, group.displayName || group.id]));
+
+  return Promise.all(
+    apps.map(async (app): Promise<IntuneAppleAppAssignmentState> => {
+      const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
+        userId,
+        `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
+      );
+      const assignments = payload.value || [];
+
+      let standard: IntuneAppleAppAssignmentState["standard"] = "none";
+      let executive: IntuneAppleAppAssignmentState["executive"] = "none";
+      const deviceInstalls: string[] = [];
+      const deviceRemovals: string[] = [];
+      const customGroups: Array<{ name: string; intent: string }> = [];
+
+      for (const assignment of assignments) {
+        const groupId = assignment.target?.groupId;
+        if (!groupId) continue;
+        const groupName = groupById.get(groupId) || groupId;
+        const intent = normalizeAssignmentIntent(assignment.intent);
+
+        if (groupName === THEOUTHAVEN_STANDARD_DEVICE_GROUP) {
+          standard = intent;
+          continue;
+        }
+        if (groupName === THEOUTHAVEN_EXECUTIVE_GROUP) {
+          executive = intent;
+          continue;
+        }
+
+        if (groupName.startsWith("TheOutHaven App Install ·")) {
+          deviceInstalls.push(...(await listGroupMemberDisplayNames(userId, groupId)));
+          continue;
+        }
+        if (groupName.startsWith("TheOutHaven App Remove ·")) {
+          deviceRemovals.push(...(await listGroupMemberDisplayNames(userId, groupId)));
+          continue;
+        }
+
+        customGroups.push({ name: groupName, intent: assignment.intent || "unknown" });
+      }
+
+      return {
+        appId: app.id,
+        standard,
+        executive,
+        deviceInstalls,
+        deviceRemovals,
+        customGroups,
+      };
+    }),
+  );
 }
 
 function appAssignmentSettings(app: IntuneAppleApp) {
