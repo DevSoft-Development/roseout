@@ -58,6 +58,23 @@ export type PosRefund = {
   status: PosRefundStatus;
 };
 
+export type RefundPosPaymentIntentInput = {
+  connectedAccountId: string;
+  providerPaymentIntentId: string;
+  amountCents: number;
+  idempotencyKey: string;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
+};
+
+export type PosPaymentRefund = {
+  provider: PosPaymentProviderId;
+  providerRefundId: string;
+  providerPaymentIntentId: string;
+  connectedAccountId: string;
+  amountCents: number;
+  status: "pending" | "succeeded" | "failed" | "canceled" | "unknown";
+};
+
 export type PosPaymentIntent = {
   provider: PosPaymentProviderId;
   providerPaymentIntentId: string;
