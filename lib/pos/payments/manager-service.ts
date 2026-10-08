@@ -1,6 +1,7 @@
 import "server-only";
 
 import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
+import { enqueuePosLocationCommand } from "@/lib/pos/device-command-service";
 import { getPosPaymentProvider } from "@/lib/pos/payments/provider";
 import { getStripeModeForLocation } from "@/lib/stripe/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -80,6 +81,34 @@ export async function recordPosCashTender(input: {
     p_device_id: input.deviceId || null,
   });
   if (!row?.tender_id) throw new Error("pos_cash_tender_failed");
+
+  const receiptLines = [
+    `Check ${checkId.slice(0,8).toUpperCase()}`,
+    `Cash: ${(Number(row.amount_cents||0)/100).toFixed(2)}`,
+    Number(row.tip_cents||0) ? `Tip: ${(Number(row.tip_cents)/100).toFixed(2)}` : "",
+    `Received: ${(Number(row.cash_received_cents||0)/100).toFixed(2)}`,
+    `Change: ${(Number(row.cash_change_cents||0)/100).toFixed(2)}`,
+  ].filter(Boolean);
+
+  await Promise.all([
+    enqueuePosLocationCommand({
+      locationId,
+      commandType:"pos_cash_drawer_open",
+      sourceType:"pos_tender",
+      sourceId:String(row.tender_id),
+      dedupeKey:`pos-drawer:tender:${row.tender_id}`,
+      payload:{tender_id:row.tender_id,device_id:input.deviceId||null},
+    }).catch(()=>null),
+    enqueuePosLocationCommand({
+      locationId,
+      commandType:"pos_receipt_print",
+      sourceType:"pos_tender",
+      sourceId:String(row.tender_id),
+      dedupeKey:`pos-receipt:tender:${row.tender_id}`,
+      payload:{header:"THEPOSHAVEN PAYMENT",lines:receiptLines,footer:"Thank you."},
+    }).catch(()=>null),
+  ]);
+
   return row;
 }
 
@@ -239,9 +268,38 @@ export async function refundPosTender(input: {
       },
     );
     if (finalizeError) throw new Error(finalizeError.message || "pos_refund_finalize_failed");
+    const amountCents = Number(finalized || reservation.amount_cents);
+    await Promise.all([
+      String(reservation.tender_type)==="cash"
+        ? enqueuePosLocationCommand({
+            locationId,
+            commandType:"pos_cash_drawer_open",
+            sourceType:"pos_refund",
+            sourceId:String(reservation.refund_request_id),
+            dedupeKey:`pos-drawer:refund:${reservation.refund_request_id}`,
+            payload:{refund_request_id:reservation.refund_request_id},
+          }).catch(()=>null)
+        : Promise.resolve(null),
+      enqueuePosLocationCommand({
+        locationId,
+        commandType:"pos_receipt_print",
+        sourceType:"pos_refund",
+        sourceId:String(reservation.refund_request_id),
+        dedupeKey:`pos-receipt:refund:${reservation.refund_request_id}`,
+        payload:{
+          header:"THEPOSHAVEN REFUND",
+          lines:[
+            `Refund: ${(amountCents/100).toFixed(2)}`,
+            `Tender: ${String(reservation.tender_type).toUpperCase()}`,
+            `Reason: ${String(input.reason).trim()}`,
+          ],
+          footer:"Refund processed.",
+        },
+      }).catch(()=>null),
+    ]);
     return {
       refundRequestId: String(reservation.refund_request_id),
-      amountCents: Number(finalized || reservation.amount_cents),
+      amountCents,
       tenderType: String(reservation.tender_type),
       providerRefundId,
     };
