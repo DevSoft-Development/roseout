@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - 'scripts/run-search-v3-production-golden-replay.ts'
+      - 'scripts/persist-search-v3-production-golden-replay.ts'
       - '.github/workflows/search-v3-production-golden-replay.yml'
   workflow_dispatch:
 
@@ -120,6 +121,12 @@ jobs:
 
       - name: Run production-backed V3 golden replay
         run: npx tsx scripts/run-search-v3-production-golden-replay.ts
+
+      - name: Persist V3-vs-V2 production Golden Replay evidence
+        if: always()
+        run: |
+          test -f artifacts/search-v3-golden-replay.json
+          npx tsx scripts/persist-search-v3-production-golden-replay.ts
 
       - name: Upload replay diagnostics
         if: always()
