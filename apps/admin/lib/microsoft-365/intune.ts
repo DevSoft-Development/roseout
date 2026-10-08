@@ -348,6 +348,15 @@ export async function getOrCreateIntuneExecutiveGroup(userId: string) {
   });
 }
 
+export async function getOrCreateIntuneStandardGroup(userId: string) {
+  return getOrCreateNamedUserSecurityGroup(
+    userId,
+    THEOUTHAVEN_STANDARD_DEVICE_GROUP,
+    "theouthaven-standard",
+    "TheOutHaven standard managed-device user group.",
+  );
+}
+
 async function getOrCreateNamedUserSecurityGroup(
   userId: string,
   displayName: string,
@@ -458,6 +467,20 @@ export async function assignIntuneAppleAppToExecutives(
 ) {
   const app = await getIntuneAppleApp(userId, appId);
   const group = await getOrCreateIntuneExecutiveGroup(userId);
+  await upsertIntuneAppGroupAssignment(userId, app, group.id, intent);
+}
+
+export async function assignIntuneAppleAppToProfile(
+  userId: string,
+  appId: string,
+  profile: "standard" | "executive",
+  intent: "available" | "uninstall",
+) {
+  const app = await getIntuneAppleApp(userId, appId);
+  const group =
+    profile === "executive"
+      ? await getOrCreateIntuneExecutiveGroup(userId)
+      : await getOrCreateIntuneStandardGroup(userId);
   await upsertIntuneAppGroupAssignment(userId, app, group.id, intent);
 }
 
