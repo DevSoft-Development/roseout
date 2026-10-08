@@ -222,7 +222,7 @@ export default function SignaturePlusWorkspace({
                 deviceId:session.deviceId,credential:session.credential,tenderId:refundTenderId,
                 amountCents:Math.round(Number(refundAmount||0)*100),actorStaffProfileId:actorStaffId,
                 approverStaffProfileId:effectiveApproverId,reason:managerReason,
-                idempotencyKey:`pos-refund:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${Date.now()}`,
+                idempotencyKey:`pos-refund:${session.deviceId}:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${Number((currentCheck.tenders||[]).find((row:any)=>row.id===refundTenderId)?.amountRefundedCents||0)}`,
               });setRefundTenderId(null);setRefundAmount("");return result;
             })} style={styles.danger}><Text style={styles.primaryText}>Refund selected</Text></Pressable>
           </View>:null}
