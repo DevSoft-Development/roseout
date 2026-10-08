@@ -67,10 +67,10 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
         <h1 className="mt-1 text-3xl font-black">Sales Workspace</h1>
         <p className="mt-1 max-w-4xl text-[var(--admin-shell-muted)]">One page for every assigned location: customer journey, product gaps, what to sell, why to sell it, how to sell it, contacts, opportunities, follow-ups and the next best action.</p>
       </div>
-      <div className="flex flex-wrap gap-2">
+      {!p.location_id ? <div className="flex flex-wrap gap-2">
         {leadership?<Link href="/admin/dashboard/crm/sales/leadership" className="rounded-xl bg-[var(--admin-shell-accent)] px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-[var(--admin-shell-accent-hover)]">Leadership view</Link>:null}
         <Link href="/admin/dashboard/crm/locations" className="rounded-xl border border-[var(--admin-shell-border)] px-4 py-2 text-sm font-black">Find location</Link>
-      </div>
+      </div> : null}
     </header>
 
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -85,10 +85,14 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
     </section>
 
     <form className="flex flex-col gap-2 rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-3 sm:flex-row">
+      {p.location_id ? <input type="hidden" name="location_id" value={p.location_id} /> : null}
+      {p.return_to ? <input type="hidden" name="return_to" value={p.return_to} /> : null}
       <input name="q" defaultValue={p.q||""} placeholder="Search location, city or business" className="min-h-11 flex-1 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-card-strong)] px-4 text-sm text-[var(--admin-shell-text)] placeholder:text-[var(--admin-shell-muted)]"/>
       <select name="pageSize" defaultValue={String(pageSize)} className="min-h-11 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-card-strong)] px-3 text-sm text-[var(--admin-shell-text)]"><option value="25">25 per page</option><option value="50">50 per page</option><option value="100">100 per page</option></select>
       <button className="min-h-11 rounded-xl bg-[var(--admin-shell-accent)] px-5 text-sm font-black text-white hover:bg-[var(--admin-shell-accent-hover)]">Search</button>
-      {(p.q||p.location_id)?<Link href="/admin/dashboard/crm/sales" className="min-h-11 rounded-xl border border-[var(--admin-shell-border)] px-4 py-3 text-center text-sm font-black">Clear</Link>:null}
+      {p.q ? <Link href={p.location_id
+        ? `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(p.location_id)}${p.return_to ? `&return_to=${encodeURIComponent(p.return_to)}` : ""}`
+        : "/admin/dashboard/crm/sales"} className="min-h-11 rounded-xl border border-[var(--admin-shell-border)] px-4 py-3 text-center text-sm font-black">Clear search</Link> : null}
     </form>
 
     <section className="space-y-3">
