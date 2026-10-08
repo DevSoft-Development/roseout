@@ -10,6 +10,7 @@ import {
   applyPosManagerDiscount,
   refundPosManagerTender,
   voidPosManagerItem,
+  reprintPosReceipt,
   openPosDrawerSession,
   closePosDrawerSession,
   moveSignaturePlusTable,
@@ -21,15 +22,13 @@ import {
 
 type Tab="kds"|"tables"|"inventory"|"reports";
 function money(cents:number){return "$"+(Number(cents||0)/100).toFixed(2);}
-function pretty(value:string){return String(value||"").replace(/_/g," ").replace(/w/g,m=>m.toUpperCase());}
+function pretty(value:string){return String(value||"").replace(/_/g," ").replace(/\b\w/g,m=>m.toUpperCase());}
 
 export default function SignaturePlusWorkspace({
-  session,refreshToken=0,onOpenCashDrawer,onPrintReceipt,
+  session,refreshToken=0,
 }:{
   session:PosClaimSession;
   refreshToken?:number;
-  onOpenCashDrawer?:()=>Promise<void>;
-  onPrintReceipt?:(lines:string[])=>Promise<void>;
 }){
   const [tab,setTab]=useState<Tab>("kds");
   const [data,setData]=useState<any>(null);
@@ -46,6 +45,7 @@ export default function SignaturePlusWorkspace({
   const [refundTenderId,setRefundTenderId]=useState<string|null>(null);
   const [managerReason,setManagerReason]=useState("Guest request");
   const [approverId,setApproverId]=useState("");
+  const [managerPin,setManagerPin]=useState("");
   const [openingCash,setOpeningCash]=useState("");
   const [countedCash,setCountedCash]=useState("");
   const [lastCashResult,setLastCashResult]=useState<any>(null);
@@ -78,7 +78,7 @@ export default function SignaturePlusWorkspace({
   const visibleKds=station==="all"?kds:kds.filter(ticket=>ticket.lines.some(line=>line.station===station));
   const ops=data?.operations||{openChecks:[],tables:[],staff:[]};
   const currentCheck=ops.openChecks?.find((check:any)=>check.id===selectedCheck)||ops.openChecks?.[0]||null;
-  const managerStaff=(ops.staff||[]).filter((staff:any)=>["manager","location_admin"].includes(String(staff.role||"")));
+  const managerStaff=(ops.staff||[]).filter((staff:any)=>String(staff.role||"")==="manager");
   const actorStaffId=String(currentCheck?.server?.id||ops.staff?.[0]?.id||"");
   const effectiveApproverId=approverId||String(managerStaff[0]?.id||"");
   const openDrawer=(managerOps.drawers||[]).find((drawer:any)=>drawer.status==="open"&&String(drawer.device_id||"")===session.deviceId)||null;
@@ -159,10 +159,9 @@ export default function SignaturePlusWorkspace({
                 deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
                 cashReceivedCents:Math.round(Number(cashReceived||0)*100),
                 amountCents:cashAmount?Math.round(Number(cashAmount)*100):null,
-                staffProfileId:actorStaffId||null,
+                actorStaffProfileId:actorStaffId||null,
               });
               setLastCashResult(result);setCashReceived("");setCashAmount("");
-              await onOpenCashDrawer?.();
               return result;
             })} style={styles.primary}><Text style={styles.primaryText}>Take cash</Text></Pressable>
           </View>
@@ -172,13 +171,13 @@ export default function SignaturePlusWorkspace({
           {!openDrawer?<View style={styles.inlineActions}>
             <TextInput value={openingCash} onChangeText={setOpeningCash} keyboardType="decimal-pad" placeholder="Opening cash" placeholderTextColor="#676c75" style={styles.input}/>
             <Pressable disabled={busy||!openingCash} onPress={()=>mutate(async()=>{
-              const id=await openPosDrawerSession({deviceId:session.deviceId,credential:session.credential,openingCashCents:Math.round(Number(openingCash||0)*100),staffProfileId:actorStaffId||null});
+              const id=await openPosDrawerSession({deviceId:session.deviceId,credential:session.credential,openingCashCents:Math.round(Number(openingCash||0)*100),actorStaffProfileId:actorStaffId||null});
               setOpeningCash("");return id;
             })} style={styles.secondary}><Text style={styles.secondaryText}>Open drawer shift</Text></Pressable>
           </View>:<View style={styles.inlineActions}>
             <TextInput value={countedCash} onChangeText={setCountedCash} keyboardType="decimal-pad" placeholder="Counted cash" placeholderTextColor="#676c75" style={styles.input}/>
-            <Pressable disabled={busy||!countedCash} onPress={()=>mutate(async()=>{
-              const result=await closePosDrawerSession({deviceId:session.deviceId,credential:session.credential,sessionId:String(openDrawer.id),countedCashCents:Math.round(Number(countedCash||0)*100)});
+            <Pressable disabled={busy||!countedCash||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await closePosDrawerSession({deviceId:session.deviceId,credential:session.credential,sessionId:String(openDrawer.id),countedCashCents:Math.round(Number(countedCash||0)*100),managerStaffProfileId:effectiveApproverId,managerPin});
               setCountedCash("");return result;
             })} style={styles.secondary}><Text style={styles.secondaryText}>Close drawer shift</Text></Pressable>
           </View>}
@@ -187,27 +186,30 @@ export default function SignaturePlusWorkspace({
           <View style={styles.inlineActions}>
             {managerStaff.map((staff:any)=><Pressable key={staff.id} onPress={()=>setApproverId(String(staff.id))} style={[styles.chip,effectiveApproverId===String(staff.id)&&styles.chipActive]}><Text style={styles.chipText}>{staff.name}</Text></Pressable>)}
           </View>
+          <TextInput value={managerPin} onChangeText={setManagerPin} keyboardType="number-pad" secureTextEntry maxLength={6} placeholder="Manager PIN" placeholderTextColor="#676c75" style={[styles.input,{marginTop:8}]}/>
           <TextInput value={managerReason} onChangeText={setManagerReason} placeholder="Reason required" placeholderTextColor="#676c75" style={[styles.input,{marginTop:8}]}/>
 
           <Text style={styles.subLabel}>Discount / comp</Text>
           <View style={styles.inlineActions}>
             <TextInput value={discountAmount} onChangeText={setDiscountAmount} keyboardType="decimal-pad" placeholder="Discount $" placeholderTextColor="#676c75" style={styles.input}/>
-            <Pressable disabled={busy||!discountAmount||!effectiveApproverId||!actorStaffId} onPress={()=>mutate(async()=>{
+            <Pressable disabled={busy||!discountAmount||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
               const result=await applyPosManagerDiscount({
                 deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
-                discountCents:Math.round(Number(discountAmount||0)*100),actorStaffProfileId:actorStaffId,
-                approverStaffProfileId:effectiveApproverId,reason:managerReason,
-              });setDiscountAmount("");return result;
+                discountCents:Math.round(Number(discountAmount||0)*100),actorStaffProfileId:actorStaffId||null,
+                managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
+              });setDiscountAmount("");setManagerPin("");return result;
             })} style={styles.secondary}><Text style={styles.secondaryText}>Apply discount</Text></Pressable>
           </View>
 
           <Text style={styles.subLabel}>Items</Text>
           {(currentCheck.items||[]).map((item:any)=><View key={item.id} style={styles.reportRow}>
             <View style={{flex:1}}><Text style={styles.optionTitle}>{item.quantity}× {item.name}</Text><Text style={styles.muted}>{money(item.lineTotalCents)}{item.status==="voided"?" · VOIDED":""}</Text></View>
-            {item.status!=="voided"?<Pressable disabled={busy||!effectiveApproverId||!actorStaffId} onPress={()=>mutate(()=>voidPosManagerItem({
-              deviceId:session.deviceId,credential:session.credential,orderItemId:item.id,
-              actorStaffProfileId:actorStaffId,approverStaffProfileId:effectiveApproverId,reason:managerReason,
-            }))} style={styles.danger}><Text style={styles.primaryText}>Void</Text></Pressable>:null}
+            {item.status!=="voided"?<Pressable disabled={busy||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
+              const result=await voidPosManagerItem({
+                deviceId:session.deviceId,credential:session.credential,orderItemId:item.id,
+                actorStaffProfileId:actorStaffId||null,managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
+              });setManagerPin("");return result;
+            })} style={styles.danger}><Text style={styles.primaryText}>Void</Text></Pressable>:null}
           </View>)}
 
           <Text style={styles.subLabel}>Tenders + refunds</Text>
@@ -217,26 +219,19 @@ export default function SignaturePlusWorkspace({
           </Pressable>)}
           {refundTenderId?<View style={styles.inlineActions}>
             <TextInput value={refundAmount} onChangeText={setRefundAmount} keyboardType="decimal-pad" placeholder="Refund $" placeholderTextColor="#676c75" style={styles.input}/>
-            <Pressable disabled={busy||!refundAmount||!effectiveApproverId||!actorStaffId} onPress={()=>mutate(async()=>{
+            <Pressable disabled={busy||!refundAmount||!effectiveApproverId||managerPin.length<4} onPress={()=>mutate(async()=>{
               const result=await refundPosManagerTender({
                 deviceId:session.deviceId,credential:session.credential,tenderId:refundTenderId,
-                amountCents:Math.round(Number(refundAmount||0)*100),actorStaffProfileId:actorStaffId,
-                approverStaffProfileId:effectiveApproverId,reason:managerReason,
+                amountCents:Math.round(Number(refundAmount||0)*100),actorStaffProfileId:actorStaffId||null,
+                managerStaffProfileId:effectiveApproverId,managerPin,reason:managerReason,
                 idempotencyKey:`pos-refund:${session.deviceId}:${refundTenderId}:${Math.round(Number(refundAmount||0)*100)}:${Number((currentCheck.tenders||[]).find((row:any)=>row.id===refundTenderId)?.amountRefundedCents||0)}`,
-              });setRefundTenderId(null);setRefundAmount("");return result;
+              });setRefundTenderId(null);setRefundAmount("");setManagerPin("");return result;
             })} style={styles.danger}><Text style={styles.primaryText}>Refund selected</Text></Pressable>
           </View>:null}
 
-          <Pressable disabled={busy} onPress={()=>onPrintReceipt?.([
-            "THEPOSHAVEN RECEIPT",
-            currentCheck.tables?.map((t:any)=>t.label).join(" + ")||"Check",
-            ...(currentCheck.items||[]).filter((item:any)=>item.status!=="voided").map((item:any)=>`${item.quantity} x ${item.name}  ${money(item.lineTotalCents)}`),
-            `Subtotal  ${money(currentCheck.subtotalCents||0)}`,
-            currentCheck.discountCents?`Discount  -${money(currentCheck.discountCents)}`:"",
-            `Tax  ${money(currentCheck.taxCents||0)}`,
-            `Total  ${money(currentCheck.totalCents||0)}`,
-            `Paid  ${money(currentCheck.amountPaidCents||0)}`,
-          ].filter(Boolean))} style={[styles.secondary,{marginTop:12}]}><Text style={styles.secondaryText}>Print / reprint receipt</Text></Pressable>
+          <Pressable disabled={busy} onPress={()=>mutate(()=>reprintPosReceipt({
+            deviceId:session.deviceId,credential:session.credential,checkId:currentCheck.id,
+          }))} style={[styles.secondary,{marginTop:12}]}><Text style={styles.secondaryText}>Print / reprint receipt</Text></Pressable>
         </View>
       </View>:<View style={styles.empty}><Text style={styles.emptyTitle}>No open table checks</Text></View>}
     </ScrollView>}
