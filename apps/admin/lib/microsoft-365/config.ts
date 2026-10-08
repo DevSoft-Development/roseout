@@ -8,6 +8,7 @@ export const MICROSOFT_365_SCOPES = [
   "email",
   "offline_access",
   "User.Read",
+  "User.Read.All",
   "Mail.ReadWrite",
   "Mail.Send",
   "Calendars.ReadWrite",
