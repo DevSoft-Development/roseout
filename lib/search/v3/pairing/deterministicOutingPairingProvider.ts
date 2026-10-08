@@ -184,15 +184,11 @@ export class DeterministicOutingPairingProvider implements SearchPairingProvider
           routeDistanceMiles = routeEntry.distanceMiles;
           distanceMiles = routeEntry.distanceMiles;
           travelMinutes = routeEntry.durationMinutes;
-        } else if (
-          travelMode === "walking" &&
-          this.routingProvider &&
-          routingState === "not_requested"
-        ) {
+        } else if (travelMode === "walking") {
+          // Explicit walking intent is a hard route constraint. Cross-venue
+          // pairs must have a verified routing result; never silently fall
+          // back to straight-line estimates when Mapbox is unavailable/fails.
           return [];
-        } else if (travelMode === "walking" && routingState === "failed") {
-          routeSource = "haversine_fallback";
-          routeConfidence = "estimated";
         }
 
         const withinTravelLimit = isWithinTravelLimit({
