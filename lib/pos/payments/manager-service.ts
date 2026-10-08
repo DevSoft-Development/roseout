@@ -222,6 +222,7 @@ export async function refundPosTender(input: {
   }
 
   let providerRefundId: string | null = null;
+  let providerRefundStatus: string | null = null;
   try {
     if (String(reservation.tender_type) === "card") {
       const connectedAccountId = required(reservation.connected_account_id, "connected_account_id");
@@ -254,7 +255,11 @@ export async function refundPosTender(input: {
         },
       });
       providerRefundId = refund.providerRefundId;
-      if (!["succeeded", "pending"].includes(refund.status)) {
+      providerRefundStatus = refund.status;
+      if (refund.status === "pending") {
+        throw new Error("pos_provider_refund_pending");
+      }
+      if (refund.status !== "succeeded") {
         throw new Error("pos_provider_refund_not_accepted");
       }
     }
@@ -304,11 +309,17 @@ export async function refundPosTender(input: {
       providerRefundId,
     };
   } catch (error) {
-    await shard.client.rpc("pos_fail_tender_refund", {
-      p_location_id: locationId,
-      p_refund_request_id: reservation.refund_request_id,
-      p_error_message: error instanceof Error ? error.message : "pos_refund_failed",
-    });
+    const providerMayHaveAccepted =
+      String(reservation.tender_type) === "card" &&
+      Boolean(providerRefundId) &&
+      (providerRefundStatus === "pending" || providerRefundStatus === "succeeded");
+    if (!providerMayHaveAccepted) {
+      await shard.client.rpc("pos_fail_tender_refund", {
+        p_location_id: locationId,
+        p_refund_request_id: reservation.refund_request_id,
+        p_error_message: error instanceof Error ? error.message : "pos_refund_failed",
+      });
+    }
     throw error;
   }
 }
