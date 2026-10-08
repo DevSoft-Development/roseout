@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { getCurrentAdmin } from "@theouthaven/auth/admin-session";
 import AdminShell from "./AdminShell";
+import "./admin-enterprise-foundation.css";
 import "./admin-shell.css";
 import "./admin-theme-visibility.css";
 

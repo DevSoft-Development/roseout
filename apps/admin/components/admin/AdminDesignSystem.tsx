@@ -39,7 +39,7 @@ export function getReadinessTone(score: number | null | undefined) {
 
 export function AdminPageShell({ children }: { children: ReactNode }) {
   return (
-    <main className="admin-page-shell w-full min-w-0 overflow-x-hidden bg-[radial-gradient(circle_at_top_right,rgba(236,11,91,0.08),transparent_26%),#050505] text-white">
+    <main className="admin-page-shell admin-ui-page w-full min-w-0 overflow-x-hidden">
       <div className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-6 sm:px-6 lg:px-8">
         <div className="min-w-0 space-y-6">{children}</div>
       </div>
@@ -61,7 +61,7 @@ export function AdminPageHeader({
   badge?: ReactNode;
 }) {
   return (
-    <section className="rounded-[1.25rem] border-b border-white/10 bg-transparent py-2">
+    <section className="admin-ui-page-header py-2">
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           {eyebrow ? (
@@ -102,10 +102,10 @@ export function AdminActionButton({
 }) {
   const className =
     variant === "primary"
-      ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#e1062a] px-4 py-2 text-sm font-black text-white shadow-lg shadow-rose-950/30 hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-300/60"
+      ? "admin-ui-button admin-ui-button-primary"
       : variant === "ghost"
-        ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black text-white/70 hover:bg-white/[0.06] hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50"
-        : "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/80 hover:border-rose-200/30 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50";
+        ? "admin-ui-button admin-ui-button-ghost"
+        : "admin-ui-button admin-ui-button-secondary";
   return href ? (
     <Link href={href} className={className}>
       {children}
@@ -137,7 +137,7 @@ export function AdminKpiCard({
   icon?: IconType;
 }) {
   return (
-    <div className="min-w-0 rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,0.10),transparent_35%),linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-4 shadow-xl shadow-black/20">
+    <div className="admin-ui-card admin-ui-kpi-card min-w-0 p-4">
       <div className="flex items-start justify-between gap-3">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/45">
           {label}
@@ -170,7 +170,7 @@ export function AdminSectionCard({
   return (
     <section
       id={id}
-      className={`min-w-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(236,11,91,0.055),transparent_34%),#101012] shadow-xl shadow-black/20 ${className}`}
+      className={`admin-ui-card admin-ui-section-card min-w-0 overflow-hidden ${className}`}
     >
       {children}
     </section>
@@ -194,7 +194,7 @@ export function AdminStatusBadge({
   };
   return (
     <span
-      className={`inline-flex max-w-full items-center truncate whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black capitalize ${tones[tone]}`}
+      className={`admin-ui-badge inline-flex max-w-full items-center truncate whitespace-nowrap capitalize ${tones[tone]}`}
     >
       {children}
     </span>
@@ -211,7 +211,7 @@ export function AdminEmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-[1.35rem] border border-dashed border-white/15 bg-black/20 p-10 text-center">
+    <div className="admin-ui-empty-state p-10 text-center">
       <h2 className="text-2xl font-black text-white">{title}</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm text-white/55">{body}</p>
       {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
@@ -234,18 +234,18 @@ export function AdminFilterChip({ active, children, href }: { active?: boolean; 
 }
 
 export function AdminSearchInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <label className="flex min-h-10 min-w-0 items-center gap-2 rounded-xl border border-white/10 bg-[#0b0b0d] px-3 text-sm text-white focus-within:border-rose-300/50 focus-within:ring-4 focus-within:ring-rose-300/10"><Search className="h-4 w-4 shrink-0 text-white/35" /><input {...props} className={`min-w-0 flex-1 bg-transparent py-2 font-semibold outline-none placeholder:text-white/35 ${props.className || ""}`} /></label>;
+  return <label className="admin-ui-control flex min-h-10 min-w-0 items-center gap-2 px-3 text-sm"><Search className="h-4 w-4 shrink-0 text-white/35" /><input {...props} className={`min-w-0 flex-1 bg-transparent py-2 font-semibold outline-none placeholder:text-white/35 ${props.className || ""}`} /></label>;
 }
 
 export function AdminToolbar({ children }: { children: ReactNode }) { return <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">{children}</div>; }
-export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`rounded-2xl border p-4 transition ${active ? "border-[#e1062a]/70 bg-rose-500/[0.045]" : "border-white/10 bg-white/[0.025] hover:bg-white/[0.045]"}`}>{children}</div>; }
-export function AdminDataTableShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="w-full max-w-full overflow-x-auto rounded-2xl border border-white/10 bg-black/20">{children}</div>{footer ? <div className="border-t border-white/10 px-1 pt-4 sm:px-2">{footer}</div> : null}</AdminSectionCard>; }
-export function AdminDetailPanel({ children, className = "" }: { children: ReactNode; className?: string }) { return <aside className={`min-w-0 rounded-[1.35rem] border border-white/10 bg-[#101012] p-5 shadow-2xl shadow-black/30 xl:sticky xl:top-6 xl:h-fit ${className}`}>{children}</aside>; }
-export function AdminDetailSection({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black text-white">{title}</h3>{action}</div><div className="mt-3">{children}</div></section>; }
+export function AdminDataCard({ children, active }: { children: ReactNode; active?: boolean }) { return <div className={`admin-ui-data-card p-4 transition${active ? " is-active" : ""}`}>{children}</div>; }
+export function AdminDataTableShell({ children, footer }: { children: ReactNode; footer?: ReactNode }) { return <AdminSectionCard className="w-full max-w-full p-3 sm:p-4"><div className="admin-ui-table-frame w-full max-w-full overflow-x-auto">{children}</div>{footer ? <div className="border-t border-white/10 px-1 pt-4 sm:px-2">{footer}</div> : null}</AdminSectionCard>; }
+export function AdminDetailPanel({ children, className = "" }: { children: ReactNode; className?: string }) { return <aside className={`admin-ui-card admin-ui-detail-panel min-w-0 p-5 xl:sticky xl:top-6 xl:h-fit ${className}`}>{children}</aside>; }
+export function AdminDetailSection({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <section className="admin-ui-subcard p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black text-white">{title}</h3>{action}</div><div className="mt-3">{children}</div></section>; }
 export function AdminPagination({ children }: { children: ReactNode }) { return <div className="flex flex-wrap items-center gap-2">{children}</div>; }
 export function AdminReadinessIndicator({ score }: { score: number }) { const tone=getReadinessTone(score); return <div className="w-28"><div className="flex items-baseline gap-2"><span className="text-2xl font-black">{score}%</span><span className={`text-xs font-black ${tone === "green" ? "text-emerald-200" : tone === "amber" ? "text-amber-200" : "text-red-200"}`}>{getReadinessLabel(score)}</span></div><div className="mt-2 h-2 rounded-full bg-white/10"><div className={`h-2 rounded-full ${tone === "green" ? "bg-emerald-400" : tone === "amber" ? "bg-amber-400" : "bg-red-400"}`} style={{ width: `${Math.max(5, Math.min(100, score))}%` }} /></div></div>; }
-export function AdminIconButton({ children, label }: { children: ReactNode; label: string }) { return <button type="button" aria-label={label} className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-white/70 hover:border-rose-300/40 hover:text-white focus:outline-none focus:ring-2 focus:ring-rose-300/50">{children}</button>; }
-export function AdminSkeletonCard() { return <div className="h-32 animate-pulse rounded-[1.35rem] border border-white/10 bg-white/[0.04]" />; }
+export function AdminIconButton({ children, label }: { children: ReactNode; label: string }) { return <button type="button" aria-label={label} className="admin-ui-icon-button inline-flex h-10 w-10 items-center justify-center">{children}</button>; }
+export function AdminSkeletonCard() { return <div className="admin-ui-card h-32 animate-pulse" />; }
 export function AdminErrorCard({ title = "Something went wrong", body = "We could not load this admin data. Please try again." }: { title?: string; body?: string }) { return <div className="rounded-[1.35rem] border border-red-300/20 bg-red-500/10 p-5"><h2 className="font-black text-red-100">{title}</h2><p className="mt-1 text-sm text-red-100/70">{body}</p></div>; }
 
 export const AdminMetricGrid = AdminKpiGrid;

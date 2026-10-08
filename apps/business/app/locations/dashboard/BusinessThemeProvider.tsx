@@ -49,30 +49,30 @@ export default function BusinessThemeProvider({ children }: { children: ReactNod
         {children}
         <style>{`
           .business-dashboard-theme {
-            --business-bg: #050607;
-            --business-panel: #0b0d11;
-            --business-panel-strong: #11141a;
-            --business-border: rgba(255,255,255,.10);
+            --business-bg: #0b0d10;
+            --business-panel: #111318;
+            --business-panel-strong: #171a20;
+            --business-border: rgba(255,255,255,.09);
             --business-text: #ffffff;
-            --business-soft: rgba(255,255,255,.72);
-            --business-muted: rgba(255,255,255,.58);
+            --business-soft: rgba(255,255,255,.76);
+            --business-muted: rgba(255,255,255,.56);
             --business-muted-strong: rgba(255,255,255,.78);
-            --business-sidebar: #06080b;
+            --business-sidebar: #0d0f13;
             background: var(--business-bg);
             color: var(--business-text);
             color-scheme: dark;
           }
 
           .business-dashboard-theme.business-theme-light {
-            --business-bg: #f6f3f0;
+            --business-bg: #f7f8fa;
             --business-panel: #ffffff;
-            --business-panel-strong: #f1ebe7;
-            --business-border: rgba(60,38,32,.16);
-            --business-text: #211714;
-            --business-soft: rgba(57,41,36,.78);
-            --business-muted: rgba(57,41,36,.62);
-            --business-muted-strong: rgba(57,41,36,.82);
-            --business-sidebar: #fffdfb;
+            --business-panel-strong: #f2f4f7;
+            --business-border: rgba(15,23,42,.12);
+            --business-text: #151821;
+            --business-soft: #4b5563;
+            --business-muted: #667085;
+            --business-muted-strong: #374151;
+            --business-sidebar: #ffffff;
             color-scheme: light;
           }
 

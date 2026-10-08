@@ -2303,7 +2303,7 @@ export default async function CRMDetailPage({
       {activeTab === "overview" ? (
         <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 grid gap-4 lg:grid-cols-2">
-            <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+            <article className="rounded-3xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-5">
               <h2 className="text-xl font-black">Location command center</h2>
               <p className="mt-2 text-sm leading-6 text-white/60">
                 Owner, claim, plan, analytics, Experience Inbox, logs, and data
@@ -2342,7 +2342,7 @@ export default async function CRMDetailPage({
                   {related.logs.slice(0, 6).map((log: any) => (
                     <li
                       key={log.id}
-                      className="rounded-2xl border border-white/10 bg-black/20 p-3"
+                      className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] p-3"
                     >
                       <b>{log.action || log.category}</b> · {log.message}
                       <span className="block text-xs text-white/40">
@@ -4092,7 +4092,7 @@ function NextRecommendedActions({
   return (
     <article className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
       <h2 className="text-xl font-black">Next recommended action</h2>
-      <p className="mt-2 text-sm text-white/55">
+      <p className="mt-2 text-sm text-[var(--admin-shell-soft)]">
         Use these shortcuts to act on the highest-impact CRM tasks for this
         location.
       </p>
@@ -4101,13 +4101,13 @@ function NextRecommendedActions({
           <Link
             key={item.label}
             href={item.href}
-            className="rounded-full border border-white/10 bg-black/25 px-4 py-2 text-sm font-black text-white/80 hover:bg-rose-600"
+            className="rounded-full border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] px-4 py-2 text-sm font-black text-[var(--admin-shell-text)] hover:border-[var(--admin-shell-accent-border)] hover:bg-[var(--admin-shell-accent-soft)] hover:text-[var(--admin-shell-accent)]"
           >
             {item.label}
           </Link>
         ))}
       </div>
-      <ul className="mt-4 space-y-2 text-sm text-white/60">
+      <ul className="mt-4 space-y-2 text-sm text-[var(--admin-shell-soft)]">
         {(flags.length
           ? flags
           : ["Monitor weekly", "Keep profile fresh", "Review search visibility"]

@@ -72,7 +72,6 @@ export type IntuneAppleApp = {
   publisher?: string | null;
   description?: string | null;
   lastModifiedDateTime?: string | null;
-  isAssigned?: boolean | null;
   "@odata.type"?: string | null;
 };
 
@@ -89,6 +88,15 @@ type IntuneMobileAppAssignment = {
     "@odata.type"?: string | null;
     groupId?: string | null;
   } | null;
+};
+
+export type IntuneAppleAppAssignmentState = {
+  appId: string;
+  standard: "available" | "required" | "removed" | "none";
+  executive: "available" | "required" | "removed" | "none";
+  deviceInstalls: string[];
+  deviceRemovals: string[];
+  customGroups: Array<{ name: string; intent: string }>;
 };
 
 export const THEOUTHAVEN_BUSINESS_STANDARD_PROFILE = "TheOutHaven - Standard Managed Device";
@@ -236,7 +244,7 @@ export async function listIntuneVppTokens(userId: string) {
 export async function listIntuneAppleApps(userId: string) {
   const apps = await getAllPages<IntuneAppleApp>(
     userId,
-    "/deviceAppManagement/mobileApps?$select=id,displayName,publisher,description,lastModifiedDateTime,isAssigned&$top=200",
+    "/deviceAppManagement/mobileApps?$select=id,displayName,publisher,description,lastModifiedDateTime&$top=200",
   );
 
   return apps
@@ -255,6 +263,81 @@ export async function listIntuneSecurityGroups(userId: string) {
   return groups
     .filter((group) => group.securityEnabled && group.displayName)
     .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
+}
+
+function normalizeAssignmentIntent(intent?: string | null) {
+  if (intent === "uninstall") return "removed" as const;
+  if (intent === "required") return "required" as const;
+  if (intent === "available") return "available" as const;
+  return "none" as const;
+}
+
+async function listGroupDeviceMemberDisplayNames(userId: string, groupId: string) {
+  const members = await getAllPages<{ id: string; displayName?: string | null }>(
+    userId,
+    `/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.device?$select=id,displayName&$top=200`,
+  );
+  return members.map((member) => member.displayName || member.id);
+}
+
+export async function listIntuneAppleAppAssignmentStates(
+  userId: string,
+  apps: IntuneAppleApp[],
+  groups: IntuneDirectoryGroup[],
+) {
+  const groupById = new Map(groups.map((group) => [group.id, group.displayName || group.id]));
+
+  return Promise.all(
+    apps.map(async (app): Promise<IntuneAppleAppAssignmentState> => {
+      const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
+        userId,
+        `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
+      );
+      const assignments = payload.value || [];
+
+      let standard: IntuneAppleAppAssignmentState["standard"] = "none";
+      let executive: IntuneAppleAppAssignmentState["executive"] = "none";
+      const deviceInstalls: string[] = [];
+      const deviceRemovals: string[] = [];
+      const customGroups: Array<{ name: string; intent: string }> = [];
+
+      for (const assignment of assignments) {
+        const groupId = assignment.target?.groupId;
+        if (!groupId) continue;
+        const groupName = groupById.get(groupId) || groupId;
+        const intent = normalizeAssignmentIntent(assignment.intent);
+
+        if (groupName === THEOUTHAVEN_STANDARD_DEVICE_GROUP) {
+          standard = intent;
+          continue;
+        }
+        if (groupName === THEOUTHAVEN_EXECUTIVE_GROUP) {
+          executive = intent;
+          continue;
+        }
+
+        if (groupName.startsWith("TheOutHaven App Install ·")) {
+          deviceInstalls.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
+          continue;
+        }
+        if (groupName.startsWith("TheOutHaven App Remove ·")) {
+          deviceRemovals.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
+          continue;
+        }
+
+        customGroups.push({ name: groupName, intent: assignment.intent || "unknown" });
+      }
+
+      return {
+        appId: app.id,
+        standard,
+        executive,
+        deviceInstalls,
+        deviceRemovals,
+        customGroups,
+      };
+    }),
+  );
 }
 
 function appAssignmentSettings(app: IntuneAppleApp) {
@@ -347,6 +430,15 @@ export async function getOrCreateIntuneExecutiveGroup(userId: string) {
       groupTypes: [],
     }),
   });
+}
+
+export async function getOrCreateIntuneStandardGroup(userId: string) {
+  return getOrCreateNamedUserSecurityGroup(
+    userId,
+    THEOUTHAVEN_STANDARD_DEVICE_GROUP,
+    "theouthaven-standard",
+    "TheOutHaven standard managed-device user group.",
+  );
 }
 
 async function getOrCreateNamedUserSecurityGroup(
@@ -459,6 +551,20 @@ export async function assignIntuneAppleAppToExecutives(
 ) {
   const app = await getIntuneAppleApp(userId, appId);
   const group = await getOrCreateIntuneExecutiveGroup(userId);
+  await upsertIntuneAppGroupAssignment(userId, app, group.id, intent);
+}
+
+export async function assignIntuneAppleAppToProfile(
+  userId: string,
+  appId: string,
+  profile: "standard" | "executive",
+  intent: "available" | "uninstall",
+) {
+  const app = await getIntuneAppleApp(userId, appId);
+  const group =
+    profile === "executive"
+      ? await getOrCreateIntuneExecutiveGroup(userId)
+      : await getOrCreateIntuneStandardGroup(userId);
   await upsertIntuneAppGroupAssignment(userId, app, group.id, intent);
 }
 
@@ -579,9 +685,9 @@ function standardManagedAdeProfilePayload(companyPortalVppTokenId: string) {
     "@odata.type": "#microsoft.graph.depIOSEnrollmentProfile",
     displayName: THEOUTHAVEN_ADE_PROFILE,
     description:
-      "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
+      "TheOutHaven employee iPhone/iPad ADE profile: supervised company ownership, user affinity, Setup Assistant with modern Microsoft authentication, no personal Apple Account setup, and Company Portal delivered with Apple Apps and Books.",
     requiresUserAuthentication: true,
-    enableAuthenticationViaCompanyPortal: false,
+    enableAuthenticationViaCompanyPortal: true,
     supervisedModeEnabled: true,
     isMandatory: true,
     profileRemovalDisabled: true,

@@ -5,6 +5,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { listUnifiedSalesLocations, SALES_PLAYBOOKS } from "@/lib/crm/unified-sales";
 import { qualifyProductOpportunityAction } from "./actions";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
 
 export const dynamic="force-dynamic";
 
@@ -26,10 +27,10 @@ function Journey({stage}:{stage:string}){
   const active=Math.max(0,JOURNEY.indexOf(stage));
   return <div className="overflow-x-auto pb-2"><div className="flex min-w-[1150px] items-center gap-1">
     {JOURNEY.map((label,index)=><div key={label} className="flex min-w-0 flex-1 items-center">
-      <div className={`w-full rounded-xl border px-3 py-2 text-center text-[11px] font-black ${index===active?"border-rose-400 bg-rose-500/15 text-rose-100":index<active?"border-emerald-300/20 bg-emerald-400/[.08] text-emerald-100":"border-white/10 bg-white/[.025] text-white/35"}`}>
+      <div className={`w-full rounded-xl border px-3 py-2 text-center text-[11px] font-black ${index===active?"border-[var(--admin-shell-accent-border)] bg-[var(--admin-shell-accent-soft)] text-[var(--admin-shell-accent)]":index<active?"border-emerald-500/25 bg-emerald-500/[.08] text-emerald-700 dark:text-emerald-200":"border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] text-[var(--admin-shell-muted)]"}`}>
         {index<active?"✓ ":""}{label}
       </div>
-      {index<JOURNEY.length-1?<span className="mx-1 text-white/15">→</span>:null}
+      {index<JOURNEY.length-1?<span className="mx-1 text-[var(--admin-shell-muted)]">→</span>:null}
     </div>)}
   </div></div>;
 }
@@ -59,6 +60,7 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
   const pageHref=(next:number)=>{const q=new URLSearchParams(base);q.set("page",String(next));return`/admin/dashboard/crm/sales?${q.toString()}`;};
 
   return <CrmWorkspaceShell><main className="space-y-5 text-[var(--admin-shell-text)]">
+    {p.location_id ? <LocationWorkspaceNavigation locationId={p.location_id} activeTab="sales" /> : null}
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-black uppercase tracking-[.2em] text-[var(--admin-shell-accent)]">TheOutHaven Sales</p>
@@ -93,7 +95,7 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
       {result.rows.map((row)=>{
         const top=row.recommendations.find((r)=>r.status==="sell_now")||row.recommendations.find((r)=>r.status==="review")||row.recommendations[0];
         return <details key={row.id} id={`location-${row.id}`} open={p.location_id===row.id} className="group overflow-hidden rounded-3xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]">
-          <summary className="cursor-pointer list-none p-5 transition hover:bg-[var(--admin-shell-soft)]">
+          <summary className="cursor-pointer list-none p-5 transition hover:bg-[var(--admin-shell-card-strong)]">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_160px_210px_minmax(220px,.8fr)] xl:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-black">{row.name}</h2><span className="rounded-full border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] px-2 py-1 text-[10px] font-black uppercase text-[var(--admin-shell-soft)]">{row.lifecycleStage}</span></div>

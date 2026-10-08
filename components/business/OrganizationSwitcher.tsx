@@ -24,10 +24,10 @@ export default function OrganizationSwitcher({
             <Link
               key={organization.id}
               href={`/business/dashboard?organizationId=${encodeURIComponent(organization.id)}`}
-              className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
                 active
-                  ? "border-[#ec0b5b]/40 bg-[#ec0b5b]/15 text-[var(--business-text)]"
-                  : "border-[var(--business-border)] bg-white/[0.04] text-[var(--business-soft)] hover:text-[var(--business-text)]"
+                  ? "border-[var(--toh-brand-border)] bg-[var(--toh-brand-soft)] text-[var(--business-text)]"
+                  : "border-[var(--business-border)] bg-[var(--business-panel)] text-[var(--business-soft)] hover:bg-[var(--business-panel-strong)] hover:text-[var(--business-text)]"
               }`}
             >
               {organization.name}
@@ -40,14 +40,14 @@ export default function OrganizationSwitcher({
         {currentOrganizationId && canManageVerification ? (
           <Link
             href={`/business/dashboard/verification?organizationId=${encodeURIComponent(currentOrganizationId)}`}
-            className="ml-auto rounded-full border border-[#ec0b5b]/25 bg-[#ec0b5b]/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#ec0b5b]/15"
+            className="ml-auto rounded-lg border border-[var(--toh-brand-border)] bg-[var(--toh-brand-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--toh-brand)]"
           >
             Verification
           </Link>
         ) : null}
         <Link
           href="/business/onboarding?new=1"
-          className={`${currentOrganizationId && canManageVerification ? "" : "ml-auto"} rounded-full border border-[var(--business-border)] px-3 py-1.5 text-xs font-bold text-[var(--business-muted)] hover:text-[var(--business-text)]`}
+          className={`${currentOrganizationId && canManageVerification ? "" : "ml-auto"} rounded-lg border border-[var(--business-border)] bg-[var(--business-panel)] px-3 py-1.5 text-xs font-semibold text-[var(--business-muted)] hover:text-[var(--business-text)]`}
         >
           + New organization
         </Link>
