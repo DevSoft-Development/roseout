@@ -20,7 +20,7 @@ export async function GET(){
   const phasePass=Boolean(phaseFresh)&&latest?.status==="success"&&Number(e.failed)===0&&Number(e.scanned)>0&&Number(e.skippedIneligible)<Number(e.candidatePool)&&Number(e.ready)>=4961&&Number(e.remainingApprox)<=50&&e.timeBudgetReached!==true;
   const noRegression=comparison?.noRegressions??{};
   const replayPass=Boolean(replayFresh)&&golden?.status==="completed"&&!!v3&&!!comparison&&Number(v3.successRate)>=90&&Number(v3.pairSuccessRate)>=90&&Number(v3.noResultRegressionRate)===0&&Number(v3.contractFailureCount)===0&&Number(v3.p95LatencyMs)<=5000&&["successRate","pairSuccessRate","noResultRegressionRate","contractFailures"].every(k=>noRegression[k]===true);
-  const rolloutWired=false; // A serving-path integration proof is required before V3 canary can be enabled.\n  const coreHealthy=Object.entries(DEFAULT_SEARCH_V3_CONTROLS.lanes).filter(([id])=>id!=="review_intelligence").every(([id])=>controls.lanes[id as keyof typeof controls.lanes]?.enabled&&!controls.lanes[id as keyof typeof controls.lanes]?.forceOpen);
+  const rolloutWired=process.env.SEARCH_V3_CANARY_RELEASE_ENABLED==="true"; // Explicit release verification prerequisite.\n  const coreHealthy=Object.entries(DEFAULT_SEARCH_V3_CONTROLS.lanes).filter(([id])=>id!=="review_intelligence").every(([id])=>controls.lanes[id as keyof typeof controls.lanes]?.enabled&&!controls.lanes[id as keyof typeof controls.lanes]?.forceOpen);
   return NextResponse.json({controls,phase:latest,golden:{id:golden?.id??null,completedAt:golden?.completed_at??null,v3,comparison},gates:{phasePass,replayPass,coreHealthy,rolloutWired,canaryEligible:phasePass&&replayPass&&coreHealthy&&rolloutWired},runnerUrl:"/admin/dashboard/search-health/profile-rollout"});
  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Failed to load V3 status"},{status:503});}
 }
@@ -30,7 +30,7 @@ export async function PATCH(request:Request){
  try{
   if(typeof body.reason!=="string"||body.reason.trim().length<8)throw new Error("An audit reason (8+ characters) is required");
   const db=getAdminDatabaseClient(),previous=await readSearchV3Controls(db),next=validateSearchV3Controls(body.config);
-  if(next.mode!=="shadow"){\n   throw new Error("V3 canary is locked until consumer serving-path integration and production deployment verification complete");
+  if(next.mode!=="shadow" && process.env.SEARCH_V3_CANARY_RELEASE_ENABLED!=="true") throw new Error("V3 canary is locked until serving-path integration and deployment are verified");\n  if(next.mode!=="shadow"){
    const [{data:phase},{data:replay}]=await Promise.all([
     db.from("cron_job_runs").select("status,started_at,details").eq("job_key","search-phase13-maintenance").order("started_at",{ascending:false}).limit(1),
     db.from("search_quality_replay_runs").select("status,metrics,completed_at").eq("source","golden").order("created_at",{ascending:false}).limit(1)
