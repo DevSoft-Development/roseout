@@ -15,6 +15,7 @@ import {
   fetchPosTableService,
   fetchPosTableWorkspace,
   openPosTableCheck,
+  recordPosCashTender,
   sendPosTableCourses,
   updatePosTableGuestCount,
   type PosTableCatalogItem,
@@ -35,7 +36,13 @@ function GuestPill({label,selected,onPress,compact=false}:{label:string;selected
   </Pressable>;
 }
 
-export default function TableServiceWorkspace({session}:{session:PosClaimSession}){
+export default function TableServiceWorkspace({
+  session,onOpenCashDrawer,onPrintReceipt,
+}:{
+  session:PosClaimSession;
+  onOpenCashDrawer?:()=>Promise<void>;
+  onPrintReceipt?:(lines:string[])=>Promise<void>;
+}){
   const {width}=useWindowDimensions();
   const tablet=width>=900;
   const [tables,setTables]=useState<PosTableSummary[]>([]);
@@ -54,6 +61,9 @@ export default function TableServiceWorkspace({session}:{session:PosClaimSession
   const [overview,setOverview]=useState(false);
   const [modifierItem,setModifierItem]=useState<PosTableCatalogItem|null>(null);
   const [modifierIds,setModifierIds]=useState<string[]>([]);
+  const [cashReceived,setCashReceived]=useState("");
+  const [cashAmount,setCashAmount]=useState("");
+  const [lastCashResult,setLastCashResult]=useState<any>(null);
 
   const refresh=useCallback(async()=>{
     setLoading(true);setError("");
@@ -197,6 +207,41 @@ export default function TableServiceWorkspace({session}:{session:PosClaimSession
       </View>)}
       {!!sharedItems.length&&<View style={styles.guestGroup}><View style={styles.rowBetween}><Text style={styles.guestHeading}>Shared</Text><Text style={styles.groupMeta}>{sharedItems.length} items</Text></View>{sharedItems.map(item=><View key={item.id} style={styles.summaryItem}><View style={styles.summaryItemMain}><Text style={styles.itemName}>{item.quantity}× {item.name}</Text><Text style={styles.itemMeta}>{readable(item.course)} · {item.status==="active"?"Not sent":readable(item.status)}</Text></View><Text style={styles.itemPrice}>{money(item.lineTotalCents)}</Text></View>)}</View>}
     </ScrollView>
+    <View style={styles.paymentPanel}>
+      <View style={styles.rowBetween}>
+        <View><Text style={styles.paymentTitle}>Payment</Text><Text style={styles.muted}>Paid {money(workspace.amounts.amountPaidCents||0)} · Refunded {money(workspace.amounts.amountRefundedCents||0)}</Text></View>
+        <View style={{alignItems:"flex-end"}}><Text style={styles.paymentLabel}>Remaining</Text><Text style={styles.total}>{money(workspace.amounts.remainingCents||0)}</Text></View>
+      </View>
+      <View style={styles.cashRow}>
+        <TextInput value={cashReceived} onChangeText={setCashReceived} keyboardType="decimal-pad" placeholder="Cash received" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <TextInput value={cashAmount} onChangeText={setCashAmount} keyboardType="decimal-pad" placeholder="Partial amount" placeholderTextColor="#756f73" style={styles.cashInput}/>
+        <Pressable disabled={busy||!cashReceived||workspace.amounts.remainingCents<=0} onPress={async()=>{
+          setBusy(true);setError("");
+          try{
+            const result=await recordPosCashTender({
+              deviceId:session.deviceId,credential:session.credential,checkId:workspace.id,
+              cashReceivedCents:Math.round(Number(cashReceived||0)*100),
+              amountCents:cashAmount?Math.round(Number(cashAmount)*100):null,
+            });
+            setLastCashResult(result);setCashReceived("");setCashAmount("");
+            await onOpenCashDrawer?.();
+            setWorkspace(await fetchPosTableWorkspace({deviceId:session.deviceId,credential:session.credential,checkId:workspace.id}));
+          }catch(e){setError(e instanceof Error?readable(e.message):"Unable to take cash.");}
+          finally{setBusy(false)}
+        }} style={styles.cashButton}><Text style={styles.sendText}>Take cash</Text></Pressable>
+      </View>
+      {lastCashResult?<Text style={styles.cashSuccess}>Change due {money(Number(lastCashResult.cash_change_cents||0))} · Remaining {money(Number(lastCashResult.remaining_cents||0))}</Text>:null}
+      <Pressable onPress={()=>onPrintReceipt?.([
+        "THEPOSHAVEN RECEIPT",
+        selectedTable?.label||workspace.resources?.[0]?.resource_label||"Table",
+        ...workspace.items.filter(item=>item.status!=="voided").map(item=>`${item.quantity} x ${item.name}  ${money(item.lineTotalCents)}`),
+        `Subtotal  ${money(workspace.amounts.subtotalCents)}`,
+        workspace.amounts.discountCents?`Discount  -${money(workspace.amounts.discountCents)}`:"",
+        `Tax  ${money(workspace.amounts.taxCents)}`,
+        `Total  ${money(workspace.amounts.totalCents)}`,
+        `Paid  ${money(workspace.amounts.amountPaidCents)}`,
+      ].filter(Boolean))} style={styles.receiptButton}><Text style={styles.smallButtonText}>Print / reprint receipt</Text></Pressable>
+    </View>
     <View style={styles.sendGrid}>
       {unsentCourses.includes("drinks")&&<Pressable onPress={()=>sendCourses(["drinks"])} style={styles.sendButton}><Text style={styles.sendText}>Send Drinks</Text></Pressable>}
       {unsentCourses.includes("appetizers")&&<Pressable onPress={()=>sendCourses(["appetizers"])} style={styles.sendButton}><Text style={styles.sendText}>Send Apps</Text></Pressable>}
@@ -279,6 +324,11 @@ const styles=StyleSheet.create({
   total:{color:"#fff",fontSize:23,fontWeight:"900"},summaryScroll:{maxHeight:520},guestGroup:{marginTop:13,paddingTop:11,borderTopWidth:1,borderTopColor:"#20242a"},
   guestHeading:{color:"#fff",fontSize:13,fontWeight:"900"},groupMeta:{color:"#7f828a",fontSize:10,fontWeight:"700"},summaryItem:{flexDirection:"row",gap:8,paddingVertical:7},
   summaryItemMain:{flex:1},itemName:{color:"#ececef",fontSize:12,fontWeight:"800"},itemMeta:{color:"#858890",fontSize:9,fontWeight:"700",marginTop:2},itemPrice:{color:"#d9d9dc",fontSize:11,fontWeight:"900"},
+  paymentPanel:{marginTop:14,borderRadius:14,borderWidth:1,borderColor:"#2c3037",backgroundColor:"#11141a",padding:12},
+  paymentTitle:{color:"#fff",fontSize:15,fontWeight:"900"},paymentLabel:{color:"#858890",fontSize:9,fontWeight:"900",textTransform:"uppercase"},
+  cashRow:{flexDirection:"row",flexWrap:"wrap",gap:7,marginTop:10},cashInput:{minWidth:110,flexGrow:1,borderRadius:10,borderWidth:1,borderColor:"#30343b",backgroundColor:"#0d1014",color:"#fff",paddingHorizontal:10,paddingVertical:9,fontSize:11,fontWeight:"700"},
+  cashButton:{borderRadius:10,backgroundColor:"#b91d33",paddingHorizontal:13,paddingVertical:10,alignItems:"center",justifyContent:"center"},
+  cashSuccess:{color:"#77d69b",fontSize:11,fontWeight:"800",marginTop:8},receiptButton:{marginTop:8,borderRadius:10,borderWidth:1,borderColor:"#343840",paddingHorizontal:12,paddingVertical:10,alignItems:"center"},
   sendGrid:{flexDirection:"row",flexWrap:"wrap",gap:7,marginTop:14},sendButton:{flexGrow:1,minWidth:100,borderRadius:11,backgroundColor:"#b91d33",paddingHorizontal:10,paddingVertical:12,alignItems:"center"},
   sendAll:{backgroundColor:"#253143"},sendText:{color:"#fff",fontSize:10,fontWeight:"900"},overviewPanel:{margin:12,borderRadius:18,borderWidth:1,borderColor:"#343841",backgroundColor:"#101319",padding:14},
   overviewGrid:{flexDirection:"row",flexWrap:"wrap",gap:8,marginTop:12},overviewGuest:{minWidth:120,flexGrow:1,borderRadius:12,backgroundColor:"#171a20",padding:12},
