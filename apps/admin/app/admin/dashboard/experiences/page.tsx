@@ -59,9 +59,9 @@ export default async function AdminExperiencesPage({ searchParams }: { searchPar
         <AdminKpiCard label="Bookings" value={bookings || 0} helper="All experience bookings" />
       </AdminKpiGrid>
 
-      <form className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[.03] p-4">
-        <input name="q" defaultValue={q} placeholder="Search experiences" className="min-w-64 flex-1 rounded-xl border border-white/10 bg-black/30 p-3" />
-        <select name="status" defaultValue={status} className="rounded-xl border border-white/10 bg-black/30 p-3">
+      <form className="admin-ui-subcard flex flex-wrap gap-2 p-4">
+        <input name="q" defaultValue={q} placeholder="Search experiences" className="min-w-64 flex-1 rounded-lg border border-[var(--toh-border)] bg-[var(--toh-surface-subtle)] p-3 text-[var(--toh-text)]" />
+        <select name="status" defaultValue={status} className="rounded-lg border border-[var(--toh-border)] bg-[var(--toh-surface-subtle)] p-3 text-[var(--toh-text)]">
           <option value="">All statuses</option>
           <option>draft</option><option>published</option><option>paused</option><option>archived</option>
         </select>
@@ -70,7 +70,7 @@ export default async function AdminExperiencesPage({ searchParams }: { searchPar
 
       <div className="grid gap-3">
         {(data || []).map((row) => (
-          <article key={row.id} className="rounded-2xl border border-white/10 bg-white/[.035] p-4">
+          <article key={row.id} className="admin-ui-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-black uppercase tracking-[.14em] text-rose-200">{row.category || "Experience"}</p>
