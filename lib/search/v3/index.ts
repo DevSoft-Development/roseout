@@ -120,3 +120,9 @@ export {
   createMapboxSearchRoutingProviderFromEnvironment,
   type MapboxSearchRoutingProviderOptions,
 } from "./routing/mapboxRoutingProvider";
+
+export {
+  resolveSearchV3RolloutPolicy,
+  type SearchV3RolloutMode,
+  type SearchV3RolloutPolicy,
+} from "./rollout/searchV3RolloutPolicy";
