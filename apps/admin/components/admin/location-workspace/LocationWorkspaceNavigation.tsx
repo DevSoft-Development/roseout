@@ -19,7 +19,7 @@ export default function LocationWorkspaceNavigation({
   const reservationsHref = `/admin/dashboard/crm/${locationId}?tab=reservations`;
   const communicationsHref = buildOutreachHref(context);
   const salesHref = `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(locationId)}&return_to=${encodeURIComponent(returnTo)}`;
-  const tasksHref = `/admin/dashboard/crm/my-work?location=${encodeURIComponent(locationId)}&return_to=${encodeURIComponent(returnTo)}`;
+  const tasksHref = `/admin/dashboard/crm/tasks?location_id=${encodeURIComponent(locationId)}&return_to=${encodeURIComponent(returnTo)}`;
   const tabs = [
     ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview" && activeTab !== "sales" && activeTab !== "tasks"],
     ["Communications", communicationsHref, activeTab === "communication"],

@@ -53,7 +53,12 @@ export default async function Page({
             <h1 className="text-3xl font-black">My Work</h1>
             <p className="mt-1 text-white/60">{labels[view]} · {result.count} items</p>
           </div>
-          <Link href="/admin/dashboard/crm/work-queue/new" className="rounded-xl bg-rose-600 px-4 py-2 font-black text-white">Create Task</Link>
+          <Link
+            href={selectedLocation
+              ? `/admin/dashboard/crm/work-queue/new?location_id=${encodeURIComponent(selectedLocation)}${p.return_to ? `&return_to=${encodeURIComponent(p.return_to)}` : ""}`
+              : "/admin/dashboard/crm/work-queue/new"}
+            className="rounded-xl bg-rose-600 px-4 py-2 font-black text-white"
+          >Create Task</Link>
         </header>
 
         <section className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -87,7 +92,13 @@ export default async function Page({
         <section className="overflow-hidden rounded-2xl border border-white/10">
           <div className="hidden grid-cols-[2fr_1fr_1fr_1fr] gap-3 bg-white/5 p-3 text-xs uppercase text-white/50 md:grid"><span>Task</span><span>Owner</span><span>Due</span><span>Status</span></div>
           {result.tasks.length ? result.tasks.map((t: any) => (
-            <Link href={`/admin/dashboard/crm/work-queue/${t.id}`} key={t.id} className="grid gap-3 border-t border-white/10 p-4 hover:bg-white/5 md:grid-cols-[2fr_1fr_1fr_1fr]">
+            <Link
+              href={selectedLocation
+                ? `/admin/dashboard/crm/work-queue/${t.id}?location_id=${encodeURIComponent(selectedLocation)}${p.return_to ? `&return_to=${encodeURIComponent(p.return_to)}` : ""}`
+                : `/admin/dashboard/crm/work-queue/${t.id}`}
+              key={t.id}
+              className="grid gap-3 border-t border-white/10 p-4 hover:bg-white/5 md:grid-cols-[2fr_1fr_1fr_1fr]"
+            >
               <div><b>{t.title}</b><small className="block text-white/50">{t.crm_accounts?.name || t.locations?.name || "CRM record"}</small></div>
               <span>{t.assigned_to_user_id ? "Assigned" : "Unassigned"}</span>
               <span>{t.due_at ? new Date(t.due_at).toLocaleDateString() : "No due date"}</span>
