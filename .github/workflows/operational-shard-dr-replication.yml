@@ -103,6 +103,7 @@ jobs:
           online_ordering_sql="$(cat infra/supabase/operational-shards/online-ordering-v8.sql)"
           partial_tenders_sql="$(cat infra/supabase/operational-shards/partial-tenders-v8.sql)"
           ingredient_inventory_sql="$(cat infra/supabase/operational-shards/ingredient-inventory-v9.sql)"
+          payments_manager_sql="$(cat infra/supabase/operational-shards/payments-manager-v10.sql)"
           sql_api "$SHARD01_REF" "$hardening_sql" "$RUNNER_TEMP/shard01-hardening.json"
           sql_api "$SHARD01_DR_REF" "$hardening_sql" "$RUNNER_TEMP/shard01dr-hardening.json"
           sql_api "$SHARD02_REF" "$hardening_sql" "$RUNNER_TEMP/shard02-hardening.json"
@@ -123,6 +124,10 @@ jobs:
           sql_api "$SHARD01_DR_REF" "$ingredient_inventory_sql" "$RUNNER_TEMP/shard01dr-ingredient-inventory.json"
           sql_api "$SHARD02_REF" "$ingredient_inventory_sql" "$RUNNER_TEMP/shard02-ingredient-inventory.json"
           sql_api "$SHARD02_DR_REF" "$ingredient_inventory_sql" "$RUNNER_TEMP/shard02dr-ingredient-inventory.json"
+          sql_api "$SHARD01_REF" "$payments_manager_sql" "$RUNNER_TEMP/shard01-payments-manager.json"
+          sql_api "$SHARD01_DR_REF" "$payments_manager_sql" "$RUNNER_TEMP/shard01dr-payments-manager.json"
+          sql_api "$SHARD02_REF" "$payments_manager_sql" "$RUNNER_TEMP/shard02-payments-manager.json"
+          sql_api "$SHARD02_DR_REF" "$payments_manager_sql" "$RUNNER_TEMP/shard02dr-payments-manager.json"
 
           configure_pair() {
             local logical="$1" source="$2" target="$3" role="$4" sub="$5"
@@ -160,14 +165,14 @@ jobs:
             alter role $role password '$password';
             grant connect on database postgres to $role;
             grant usage on schema public to $role;
-            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_inventory_stock_areas,public.pos_inventory_area_balances,public.pos_inventory_transfers to $role;
+            grant select on public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_inventory_stock_areas,public.pos_inventory_area_balances,public.pos_inventory_transfers,public.pos_manager_events,public.pos_cash_drawer_sessions,public.pos_refund_requests to $role;
             do \$\$
             begin
               if not exists (select 1 from pg_publication where pubname='toh_operational_dr') then
                 execute 'create publication toh_operational_dr for table public.locations';
               end if;
             end \$\$;
-            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_inventory_stock_areas,public.pos_inventory_area_balances,public.pos_inventory_transfers;"
+            alter publication toh_operational_dr set table public.locations,public.location_reservations,public.reserve_staff_profiles,public.layout_items,public.reservation_seating_resources,public.reservation_resource_assignments,public.pos_checks,public.pos_check_resources,public.pos_orders,public.pos_order_items,public.pos_tenders,public.pos_payments,public.pos_inventory_items,public.pos_inventory_transactions,public.pos_inventory_adjustments,public.pos_ordering_settings,public.pos_online_orders,public.pos_online_order_events,public.pos_inventory_stock_areas,public.pos_inventory_area_balances,public.pos_inventory_transfers,public.pos_manager_events,public.pos_cash_drawer_sessions,public.pos_refund_requests;"
             sql_api "$source" "$source_sql" "$RUNNER_TEMP/$logical-source.json"
 
             target_check="select exists(select 1 from pg_subscription where subname='$sub') as exists;"
@@ -234,7 +239,7 @@ jobs:
             from public.operational_shards
             where id in ('shard-01','shard-02')
             order by id;" "$RUNNER_TEMP/final-replication-state.json"
-          jq -e 'length == 2 and all(.[]; .replication_state=="healthy" and .schema_version>=9)' "$RUNNER_TEMP/final-replication-state.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .replication_state=="healthy" and .schema_version>=10)' "$RUNNER_TEMP/final-replication-state.json" >/dev/null
 
 
       - name: Cleanup
