@@ -72,7 +72,6 @@ export type IntuneAppleApp = {
   publisher?: string | null;
   description?: string | null;
   lastModifiedDateTime?: string | null;
-  isAssigned?: boolean | null;
   "@odata.type"?: string | null;
 };
 
@@ -236,7 +235,7 @@ export async function listIntuneVppTokens(userId: string) {
 export async function listIntuneAppleApps(userId: string) {
   const apps = await getAllPages<IntuneAppleApp>(
     userId,
-    "/deviceAppManagement/mobileApps?$select=id,displayName,publisher,description,lastModifiedDateTime,isAssigned&$top=200",
+    "/deviceAppManagement/mobileApps?$select=id,displayName,publisher,description,lastModifiedDateTime&$top=200",
   );
 
   return apps
