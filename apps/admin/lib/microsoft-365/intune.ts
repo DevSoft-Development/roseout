@@ -286,58 +286,62 @@ export async function listIntuneAppleAppAssignmentStates(
   groups: IntuneDirectoryGroup[],
 ) {
   const groupById = new Map(groups.map((group) => [group.id, group.displayName || group.id]));
+  const states: IntuneAppleAppAssignmentState[] = [];
 
-  return Promise.all(
-    apps.map(async (app): Promise<IntuneAppleAppAssignmentState> => {
-      const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
-        userId,
-        `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
-      );
-      const assignments = payload.value || [];
+  // Intentionally process apps sequentially. Microsoft Graph can return
+  // ConcurrentInvocationLimitExceeded for this delegated user when the catalog
+  // fans out assignment/member reads for many apps at once.
+  for (const app of apps) {
+    const payload = await microsoftGraphFetch<GraphCollection<IntuneMobileAppAssignment>>(
+      userId,
+      `/deviceAppManagement/mobileApps/${encodeURIComponent(app.id)}/assignments`,
+    );
+    const assignments = payload.value || [];
 
-      let standard: IntuneAppleAppAssignmentState["standard"] = "none";
-      let executive: IntuneAppleAppAssignmentState["executive"] = "none";
-      const deviceInstalls: string[] = [];
-      const deviceRemovals: string[] = [];
-      const customGroups: Array<{ name: string; intent: string }> = [];
+    let standard: IntuneAppleAppAssignmentState["standard"] = "none";
+    let executive: IntuneAppleAppAssignmentState["executive"] = "none";
+    const deviceInstalls: string[] = [];
+    const deviceRemovals: string[] = [];
+    const customGroups: Array<{ name: string; intent: string }> = [];
 
-      for (const assignment of assignments) {
-        const groupId = assignment.target?.groupId;
-        if (!groupId) continue;
-        const groupName = groupById.get(groupId) || groupId;
-        const intent = normalizeAssignmentIntent(assignment.intent);
+    for (const assignment of assignments) {
+      const groupId = assignment.target?.groupId;
+      if (!groupId) continue;
+      const groupName = groupById.get(groupId) || groupId;
+      const intent = normalizeAssignmentIntent(assignment.intent);
 
-        if (groupName === THEOUTHAVEN_STANDARD_DEVICE_GROUP) {
-          standard = intent;
-          continue;
-        }
-        if (groupName === THEOUTHAVEN_EXECUTIVE_GROUP) {
-          executive = intent;
-          continue;
-        }
-
-        if (groupName.startsWith("TheOutHaven App Install ·")) {
-          deviceInstalls.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
-          continue;
-        }
-        if (groupName.startsWith("TheOutHaven App Remove ·")) {
-          deviceRemovals.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
-          continue;
-        }
-
-        customGroups.push({ name: groupName, intent: assignment.intent || "unknown" });
+      if (groupName === THEOUTHAVEN_STANDARD_DEVICE_GROUP) {
+        standard = intent;
+        continue;
+      }
+      if (groupName === THEOUTHAVEN_EXECUTIVE_GROUP) {
+        executive = intent;
+        continue;
       }
 
-      return {
-        appId: app.id,
-        standard,
-        executive,
-        deviceInstalls,
-        deviceRemovals,
-        customGroups,
-      };
-    }),
-  );
+      if (groupName.startsWith("TheOutHaven App Install ·")) {
+        deviceInstalls.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
+        continue;
+      }
+      if (groupName.startsWith("TheOutHaven App Remove ·")) {
+        deviceRemovals.push(...(await listGroupDeviceMemberDisplayNames(userId, groupId)));
+        continue;
+      }
+
+      customGroups.push({ name: groupName, intent: assignment.intent || "unknown" });
+    }
+
+    states.push({
+      appId: app.id,
+      standard,
+      executive,
+      deviceInstalls,
+      deviceRemovals,
+      customGroups,
+    });
+  }
+
+  return states;
 }
 
 function appAssignmentSettings(app: IntuneAppleApp) {
