@@ -347,7 +347,7 @@ jobs:
           printf '%s' "$session_strategy" > "$RUNNER_TEMP/failback-session-strategy"
 
       - name: Configure AWS credentials for reverse reconcile evidence
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: ${{ env.AWS_REGION }}
