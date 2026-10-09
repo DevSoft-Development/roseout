@@ -6,9 +6,7 @@ on:
       - 'apps/business/app/locations/dashboard/online-ordering/**'
       - 'apps/business/app/api/locations/online-ordering/**'
       - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
-      - 'lib/pos/device-command-service.ts'
-      - 'lib/pos/online-ordering/**'
-      - 'lib/pos/signature-plus/**'
+      - 'lib/pos/**'
       - 'app/api/pos/device/**'
       - 'apps/consumer/app/api/pos/device/**'
       - 'app/api/stripe/connect/webhook/route.ts'
@@ -18,7 +16,6 @@ on:
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'scripts/pos-signature-plus-regression.mjs'
       - 'pos-mobile/**'
-      - 'pos-mobile/components/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'azure-pipelines-pos-mobile.yml'
   push:
@@ -27,9 +24,7 @@ on:
       - 'apps/business/app/locations/dashboard/online-ordering/**'
       - 'apps/business/app/api/locations/online-ordering/**'
       - 'apps/business/app/locations/dashboard/CanonicalLocationModuleNav.tsx'
-      - 'lib/pos/device-command-service.ts'
-      - 'lib/pos/signature-plus/**'
-      - 'lib/pos/online-ordering/**'
+      - 'lib/pos/**'
       - 'app/api/pos/device/**'
       - 'apps/consumer/app/api/pos/device/**'
       - 'app/api/stripe/connect/webhook/route.ts'
@@ -47,8 +42,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: theposhaven-mobile-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: theposhaven-mobile-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -58,8 +53,194 @@ jobs:
         working-directory: pos-mobile
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect POS validation scope
+        id: scope
+        working-directory: .
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mobile=true
+          backend=true
+          if [ "$EVENT_NAME" != workflow_dispatch ] && [ -n "${BASE_SHA:-}" ] && ! printf '%s' "$BASE_SHA" | grep -Eq '^0{40}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: pos-mobile/package-lock.json
+
+      - name: Install locked dependencies
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Typecheck
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run typecheck
+
+      - name: Validate Expo configuration
+        if: steps.scope.outputs.mobile == 'true'
+        run: npx expo config --type public >/tmp/theposhaven-pos-config.json
+
+      - name: Verify iOS native hardware module
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run verify:native:ios
+
+      - name: Verify Android native hardware module
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run verify:native:android
+
+      - name: Verify secure cashier device identity
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run verify:device-identity
+
+      - name: Verify role-based output routing
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run verify:output-routing
+
+      - name: Verify durable offline runtime
+        if: steps.scope.outputs.mobile == 'true'
+        run: npm run verify:offline-runtime
+
+      - name: Verify online-order fulfillment contract
+        if: steps.scope.outputs.backend == 'true'
+        working-directory: .
+        run: node scripts/pos-online-order-fulfillment-regression.mjs
+
+      - name: Verify Signature+ operations contract
+        if: steps.scope.outputs.backend == 'true'
+        working-directory: .
+        run: node scripts/pos-signature-plus-regression.mjs
+
+      - name: Verify separate app identity and POS-only network permissions
+        if: steps.scope.outputs.mobile == 'true'
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          if (app?.name !== 'ThePOSHaven') throw new Error('Unexpected app name');
+          if (app?.ios?.bundleIdentifier !== 'com.theposhaven.app') throw new Error('Unexpected iOS bundle identifier');
+          if (app?.android?.package !== 'com.theposhaven.app') throw new Error('Unexpected Android package');
+          if (!app?.ios?.infoPlist?.NSLocalNetworkUsageDescription) throw new Error('iOS local-network usage description missing');
+          const bonjour = app?.ios?.infoPlist?.NSBonjourServices || [];
+          for (const service of ['_pdl-datastream._tcp', '_printer._tcp', '_ipp._tcp']) {
+            if (!bonjour.includes(service)) throw new Error('Missing Bonjour service: ' + service);
+          }
+          const permissions = app?.android?.permissions || [];
+          for (const permission of [
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_NETWORK_STATE',
+            'android.permission.ACCESS_WIFI_STATE',
+            'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+          ]) {
+            if (!permissions.includes(permission)) throw new Error('Missing Android permission: ' + permission);
+          }
+          NODE
+
+      - name: Verify consumer app remains isolated
+        if: steps.scope.outputs.mobile == 'true'
+        working-directory: .
+        run: |
+          set -euo pipefail
+          grep -F '"bundleIdentifier": "com.theouthaven.app"' mobile/app.json >/dev/null
+          grep -F '"package": "com.theouthaven.app"' mobile/app.json >/dev/null
+          ! grep -F 'com.theposhaven.app' mobile/app.json >/dev/null
+; then
+            CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")" || CHANGED=""
+            if [ -n "$CHANGED" ]; then
+              mobile=false
+              backend=false
+              if printf '%s\\n' "$CHANGED" | grep -Eq '^(pos-mobile/|azure-pipelines-pos-mobile\\.yml$)'; then mobile=true; fi
+              if printf '%s\\n' "$CHANGED" | grep -Eq '^(apps/business/|apps/consumer/app/api/pos/|app/api/(pos/|stripe/connect/webhook/)|lib/pos/|supabase/migrations/.*pos_|infra/supabase/operational-shards/online-ordering-|scripts/pos-)'; then backend=true; fi
+              # Mobile runtime changes can affect fulfillment contracts; keep backend regressions.\n              if [ "$mobile" = true ]; then backend=true; fi\n              # Workflow changes and unknown paths require both lanes.
+              if printf '%s\\n' "$CHANGED" | grep -Eq '^\\.github/workflows/pos-mobile-ci\\.yml
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: pos-mobile/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate Expo configuration
+        run: npx expo config --type public >/tmp/theposhaven-pos-config.json
+
+      - name: Verify iOS native hardware module
+        run: npm run verify:native:ios
+
+      - name: Verify Android native hardware module
+        run: npm run verify:native:android
+
+      - name: Verify secure cashier device identity
+        run: npm run verify:device-identity
+
+      - name: Verify role-based output routing
+        run: npm run verify:output-routing
+
+      - name: Verify durable offline runtime
+        run: npm run verify:offline-runtime
+
+      - name: Verify online-order fulfillment contract
+        working-directory: .
+        run: node scripts/pos-online-order-fulfillment-regression.mjs
+
+      - name: Verify Signature+ operations contract
+        working-directory: .
+        run: node scripts/pos-signature-plus-regression.mjs
+
+      - name: Verify separate app identity and POS-only network permissions
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = JSON.parse(fs.readFileSync('app.json', 'utf8')).expo;
+          if (app?.name !== 'ThePOSHaven') throw new Error('Unexpected app name');
+          if (app?.ios?.bundleIdentifier !== 'com.theposhaven.app') throw new Error('Unexpected iOS bundle identifier');
+          if (app?.android?.package !== 'com.theposhaven.app') throw new Error('Unexpected Android package');
+          if (!app?.ios?.infoPlist?.NSLocalNetworkUsageDescription) throw new Error('iOS local-network usage description missing');
+          const bonjour = app?.ios?.infoPlist?.NSBonjourServices || [];
+          for (const service of ['_pdl-datastream._tcp', '_printer._tcp', '_ipp._tcp']) {
+            if (!bonjour.includes(service)) throw new Error('Missing Bonjour service: ' + service);
+          }
+          const permissions = app?.android?.permissions || [];
+          for (const permission of [
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_NETWORK_STATE',
+            'android.permission.ACCESS_WIFI_STATE',
+            'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+          ]) {
+            if (!permissions.includes(permission)) throw new Error('Missing Android permission: ' + permission);
+          }
+          NODE
+
+      - name: Verify consumer app remains isolated
+        working-directory: .
+        run: |
+          set -euo pipefail
+          grep -F '"bundleIdentifier": "com.theouthaven.app"' mobile/app.json >/dev/null
+          grep -F '"package": "com.theouthaven.app"' mobile/app.json >/dev/null
+          ! grep -F 'com.theposhaven.app' mobile/app.json >/dev/null
+ || [ "$mobile" = false ] && [ "$backend" = false ]; then
+                mobile=true
+                backend=true
+              fi
+            fi
+          fi
+          echo "mobile=$mobile" >> "$GITHUB_OUTPUT"
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+          echo "POS validation: mobile=$mobile backend=$backend" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Use Node 22
+        if: steps.scope.outputs.mobile == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22.13.1'
