@@ -9,7 +9,7 @@ This is the second part of ThePOSHaven's shift certification and per-location mo
 - Conservative existing location `operating_hours` parser: `lib/pos/hardware/health/operating-hours.ts`.
 - Explicit IANA timezone configuration: `locations.metadata.pos_monitoring_timezone`. If missing, mark **unknown**; never guess a timezone, infer open hours, or send an offline alert.
 - Business hardware health page exposes expected offline, awaiting startup, needs attention, and unknown states. No live device or merchant data is modified.
-- Cron-authenticated read-only fleet endpoint `GET /api/cron/pos-location-readiness?offset=0`. Maximum 1,050 active assignments per invocation, with a `nextOffset` cursor when more exist. It returns counts and up to 50 attention examples for inspection; it does not yet persist alerts.
+- Cron-authenticated read-only fleet endpoint `GET /api/cron/pos-location-readiness?offset=0`. Maximum 12,000 active assignments per invocation, subject to a 100-second soft deadline, with a `nextOffset` cursor when more exist. Incomplete scans return HTTP 503 and `complete: false`, preventing a false green AWS tracked-cron result. It returns counts and up to 50 attention examples for inspection; it does not yet persist alerts.
 - EventBridge candidate `pos-location-readiness` is **not** in staged or active AWS schedules: Batch 15 explicitly requires an empty staged manifest. Provision only in a future scheduler activation batch after multi-page handling, timezone coverage, storage and deduplicated alerting are verified.
 - On CI: vitest hours/readiness regressions alongside the simulated shift and payment safety invariants.
 
@@ -26,7 +26,7 @@ This is the second part of ThePOSHaven's shift certification and per-location mo
 ## Remaining rollout work before daily startup activation
 
 1. Provide verified time zones and operating schedules for onboarded POS locations, including exceptions and holidays (special hours override normal hours).
-2. Wire authenticated, paginated scanning across **all** location assignments rather than one batch window; the job is already registered with the managed cron control plane, but the AWS schedule is not activated.
+2. Validate complete coverage for the expected device fleet size. The scanner now loops through up to 80 pages; if it reaches its page/time budget, the result fails closed and includes the continuation cursor. Before enabling daily scheduling, implement durable cross-invocation continuation for fleets larger than the single-run budget and verify multi-shard data placement. The job is registered with the managed cron control plane but is not activated.
 3. Persist aggregate daily results and actionable device issues in Admin; implement notification deduplication and escalation limits for owners.
 4. Verify the schedule against the live AWS scheduler manifest and perform dry-run probes before adding it to `activation.json`.
 5. Benchmark 100 / 1,000 / 10,000 device scenarios and confirm the monitoring runtime budget.
