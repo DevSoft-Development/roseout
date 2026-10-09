@@ -33,6 +33,17 @@ export default async function PosOperationsPage(){
     countRows("pos_location_commands",(q)=>q.eq("status","dead_letter")),
   ]);
   const healthy=(deadLetters||0)===0;
+  let monitoring: Record<string,any>|null=null;
+  try {
+    const {data,error}=await getAdminDatabaseClient().from("cron_job_runs")
+      .select("status,started_at,details,error_message")
+      .eq("job_key","pos-location-readiness")
+      .order("started_at",{ascending:false}).limit(1).maybeSingle();
+    if(!error && data) monitoring=data;
+  } catch { /* Monitoring remains unavailable until staged activation. */ }
+  const runDetails = (monitoring?.details && typeof monitoring.details==="object")
+    ? monitoring.details as Record<string,any> : {};
+  const monitorCounts = (runDetails.counts || runDetails.response?.counts || null) as Record<string,number>|null;
 
   const workspaces=[
     ["POS Hardware Inventory","Receive, assign, replace, and track ThePOSHaven devices.","/admin/dashboard/settings/location-tools/pos-hardware/inventory","Hardware"],
@@ -61,6 +72,18 @@ export default async function PosOperationsPage(){
       <AdminKpiCard label="Command queue" value={pendingCommands==null?"—":pendingCommands.toLocaleString()} helper="Pending or currently leased" />
       <AdminKpiCard label="Dead letters" value={deadLetters==null?"—":deadLetters.toLocaleString()} helper="Delivery failures requiring support" />
     </AdminKpiGrid>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+      <h2 className="text-xl font-black">Opening-aware POS fleet readiness</h2>
+      <p className="mt-2 text-sm text-white/60">Closed restaurants are expected offline; unknown operating hours never generate an alert.</p>
+      {monitoring ? (
+        <div className="mt-3 text-sm">
+          <p>Latest monitored run: {String(monitoring.status)} · {String(monitoring.started_at||"Time unavailable")}</p>
+          {monitorCounts ? <p>Healthy {monitorCounts.healthy??0} · Expected offline {monitorCounts.expected_offline??0} · Awaiting startup {monitorCounts.awaiting_startup??0} · Needs attention {monitorCounts.needs_attention??0} · Unknown {monitorCounts.unknown??0}</p> : <p>Awaiting monitoring summary.</p>}
+          {monitoring.error_message ? <p className="text-amber-300">{String(monitoring.error_message)}</p> : null}
+        </div>
+      ) : <p className="mt-3 text-sm text-amber-200">Monitoring is staged; awaiting the first AWS-managed run.</p>}
+    </section>
 
     <section className="grid gap-4 md:grid-cols-2">
       {workspaces.map(([title,body,href,badge])=><Link key={href} href={href} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 transition hover:border-rose-200/30 hover:bg-white/[0.065]">
