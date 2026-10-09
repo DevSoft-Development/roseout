@@ -34,6 +34,12 @@ test.describe("public product readiness", () => {
     const officialLogo = page.getByRole("link", { name: "TheOutHaven home" }).locator("img");
     await expect(officialLogo).toBeVisible();
     await expect(officialLogo).toHaveAttribute("src", "/toh_logo_wordmark_white.webp");
+    const logoResponse = await page.request.get("/toh_logo_wordmark_white.webp");
+    expect(logoResponse.status(), "Official logo must be served as a static asset").toBe(200);
+    expect(logoResponse.headers()["content-type"], "Official logo must be a WebP image").toMatch(/image\\/webp/i);
+    const logoBytes = await logoResponse.body();
+    expect(logoBytes.subarray(0, 4).toString("ascii"), "Official logo RIFF signature").toBe("RIFF");
+    expect(logoBytes.subarray(8, 12).toString("ascii"), "Official logo WEBP signature").toBe("WEBP");
     await expect.poll(async () => officialLogo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await expect(page.getByRole("heading", { name: "Plan better OUTings." })).toBeVisible();
     await expect(page.getByRole("region", { name: "Plan your outing" })).toBeVisible();
