@@ -31,6 +31,10 @@ test.describe("public product readiness", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
+    const officialLogo = page.getByRole("link", { name: "TheOutHaven home" }).locator("img");
+    await expect(officialLogo).toBeVisible();
+    await expect(officialLogo).toHaveAttribute("src", "/toh_logo_wordmark_white.webp");
+    await expect.poll(async () => officialLogo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await expect(page.getByRole("heading", { name: "Plan better OUTings." })).toBeVisible();
     await expect(page.getByRole("region", { name: "Plan your outing" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
