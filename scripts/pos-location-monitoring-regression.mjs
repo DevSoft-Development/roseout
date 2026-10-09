@@ -26,8 +26,7 @@ assert(endpoint.includes("pos_monitoring_hours_fingerprint"),"Fleet monitoring m
 assert(admin.includes('pos-location-readiness'),"Admin monitoring visibility missing");
 const row=registry.find(x=>x.jobKey==="pos-location-readiness");
 assert(row?.delivery==="managed"&&row.targetPath==="/api/cron/pos-location-readiness","Managed cron registration missing");
-const schedule=staged.find(x=>x.name==="pos-location-readiness");
-assert(schedule?.function==="node:/api/cron/managed?job=pos-location-readiness","Staged AWS schedule is not routed through tracked cron");
+assert(!staged.some(x=>x.name==="pos-location-readiness"),"Batch 15 forbids staged scheduler additions before a new activation batch");
 assert(!schedules.some(x=>x.name==="pos-location-readiness"),"POS monitor must not silently join active manifest");
 assert(!activation.enabled.includes("pos-location-readiness"),"POS monitor must remain off until validated");
 console.log("POS location monitoring staging, safety, privacy and AWS scheduling invariants passed.");
