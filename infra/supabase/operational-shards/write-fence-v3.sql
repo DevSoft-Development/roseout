@@ -134,6 +134,12 @@ begin
     'pos_inventory_items',
     'pos_inventory_transactions',
     'pos_inventory_adjustments',
+    'pos_inventory_stock_areas',
+    'pos_inventory_area_balances',
+    'pos_inventory_transfers',
+    'pos_manager_events',
+    'pos_cash_drawer_sessions',
+    'pos_refund_requests',
     'pos_ordering_settings',
     'pos_online_orders',
     'pos_online_order_events'

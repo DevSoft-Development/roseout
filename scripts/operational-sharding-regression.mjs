@@ -95,7 +95,7 @@ for (const token of [
 }
 
 for (const token of [
-  "TARGET_SCHEMA_VERSION = 8",
+  "TARGET_SCHEMA_VERSION = 10",
   "location_not_on_primary",
   "setPrimaryFence",
   "drainPrimaryCardTenders",
@@ -244,6 +244,10 @@ for (const token of [
   "pos_ordering_settings",
   "pos_online_orders",
   "pos_online_order_events",
+  "payments-manager-v10.sql",
+  "pos_manager_events",
+  "pos_cash_drawer_sessions",
+  "pos_refund_requests",
 ]) {
   if (!failover.includes(token)) throw new Error(`Missing failover RPO invariant: ${token}`);
 }
@@ -319,9 +323,13 @@ for (const token of [
   "online-ordering-v8.sql",
   "partial-tenders-v8.sql",
   "ingredient-inventory-v9.sql",
+  "payments-manager-v10.sql",
+  "pos_manager_events",
+  "pos_cash_drawer_sessions",
+  "pos_refund_requests",
   "standby-dr",
   "standby-primary",
-  "schema_version=9",
+  "schema_version=10",
   "reservation_resource_assignments",
   "restore_authoritative_gates",
   "apply_and_align",
@@ -335,7 +343,7 @@ for (const token of [
 if (liveBootstrap.indexOf("routing-gates.json") > liveBootstrap.indexOf('apply_and_align "$SHARD01_REF"')) {
   throw new Error("Bootstrap must resolve authoritative routing before applying fail-closed shard gates.");
 }
-if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=9")) {
+if (liveBootstrap.includes("set status='active', read_enabled=true, write_enabled=true, schema_version=10")) {
   throw new Error("Bootstrap must not unconditionally reopen fail-closed shard registry writes.");
 }
 if (!liveBootstrap.includes('if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]')) {

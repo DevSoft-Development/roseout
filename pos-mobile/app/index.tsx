@@ -26,6 +26,7 @@ import { createSyncedPosOutputRouter } from "@/lib/output/local-runtime";
 import type { RoleBasedPosOutputRouter } from "@/lib/output/routing";
 import TableServiceWorkspace from "@/components/TableServiceWorkspace";
 import SignaturePlusWorkspace from "@/components/SignaturePlusWorkspace";
+import ManagerControlsWorkspace from "@/components/ManagerControlsWorkspace";
 
 const NEXT_STATUS:Record<string,{label:string;status:"accepted"|"preparing"|"ready"|"completed"}>={
   received:{label:"Accept",status:"accepted"},
@@ -54,6 +55,18 @@ function statusLabel(value:string){
   return value.toUpperCase();
 }
 
+function receiptBytes(lines:string[]){
+  const encoder=new TextEncoder();
+  const text=encoder.encode(lines.join("\n")+"\n\n\n");
+  const bytes=new Uint8Array(2+text.length+3);
+  bytes.set([0x1b,0x40],0);
+  bytes.set(text,2);
+  bytes.set([0x1d,0x56,0x00],2+text.length);
+  return bytes;
+}
+
+const cashDrawerBytes=Uint8Array.from([0x1b,0x70,0x00,0x3c,0x78]);
+
 export default function CashierHome() {
   const [session,setSession]=useState<PosClaimSession|null>(null);
   const [pairingCode,setPairingCode]=useState("");
@@ -64,9 +77,21 @@ export default function CashierHome() {
   const [message,setMessage]=useState("");
   const [busyOrderId,setBusyOrderId]=useState<string|null>(null);
   const [outputSummary,setOutputSummary]=useState("Printer routing not synced");
-  const [workspaceMode,setWorkspaceMode]=useState<"tables"|"signature"|"online">("tables");
+  const [workspaceMode,setWorkspaceMode]=useState<"tables"|"payments"|"signature"|"online">("tables");
   const [posStateVersion,setPosStateVersion]=useState(0);
   const routerRef=useRef<RoleBasedPosOutputRouter|null>(null);
+
+  const openCashDrawer=useCallback(async()=>{
+    const router=routerRef.current;
+    if(!router) throw new Error("pos_output_router_unavailable");
+    await router.send("cash_drawer",cashDrawerBytes);
+  },[]);
+
+  const printReceipt=useCallback(async(lines:string[])=>{
+    const router=routerRef.current;
+    if(!router) throw new Error("pos_output_router_unavailable");
+    await router.send("receipt",receiptBytes(lines));
+  },[]);
 
   const loadOrders=useCallback(async (activeSession:PosClaimSession,quiet=false)=>{
     if(!quiet) setRefreshing(true);
@@ -243,6 +268,7 @@ export default function CashierHome() {
           <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
           <View style={styles.modeSwitch}>
             <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Tables</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("payments")} style={styles.modeButton}><Text style={styles.modeButtonText}>Payments</Text></Pressable>
             <Pressable onPress={()=>setWorkspaceMode("signature")} style={styles.modeButton}><Text style={styles.modeButtonText}>Signature+</Text></Pressable>
             <Pressable onPress={()=>setWorkspaceMode("online")} style={styles.modeButton}><Text style={styles.modeButtonText}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
           </View>
@@ -254,6 +280,24 @@ export default function CashierHome() {
   }
 
 
+  if(workspaceMode==="payments"){
+    return(
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.modeHeader}>
+          <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
+          <View style={styles.modeSwitch}>
+            <Pressable onPress={()=>setWorkspaceMode("tables")} style={styles.modeButton}><Text style={styles.modeButtonText}>Tables</Text></Pressable>
+            <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Payments</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("signature")} style={styles.modeButton}><Text style={styles.modeButtonText}>Signature+</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("online")} style={styles.modeButton}><Text style={styles.modeButtonText}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
+          </View>
+        </View>
+        {!!message&&<Text style={styles.errorBanner}>{message}</Text>}
+        <ManagerControlsWorkspace session={session} router={routerRef.current} refreshToken={posStateVersion}/>
+      </SafeAreaView>
+    );
+  }
+
   if(workspaceMode==="signature"){
     return(
       <SafeAreaView style={styles.safe}>
@@ -261,12 +305,16 @@ export default function CashierHome() {
           <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
           <View style={styles.modeSwitch}>
             <Pressable onPress={()=>setWorkspaceMode("tables")} style={styles.modeButton}><Text style={styles.modeButtonText}>Tables</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("payments")} style={styles.modeButton}><Text style={styles.modeButtonText}>Payments</Text></Pressable>
             <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Signature+</Text></Pressable>
             <Pressable onPress={()=>setWorkspaceMode("online")} style={styles.modeButton}><Text style={styles.modeButtonText}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
           </View>
         </View>
         {!!message&&<Text style={styles.errorBanner}>{message}</Text>}
-        <SignaturePlusWorkspace session={session} refreshToken={posStateVersion}/>
+        <SignaturePlusWorkspace
+          session={session}
+          refreshToken={posStateVersion}
+        />
       </SafeAreaView>
     );
   }
@@ -277,7 +325,8 @@ export default function CashierHome() {
         <View><Text style={styles.brand}>ThePOSHaven</Text><Text style={styles.modeLocation}>{session.locationName||"This location"} · {outputSummary}</Text></View>
         <View style={styles.modeSwitch}>
           <Pressable onPress={()=>setWorkspaceMode("tables")} style={styles.modeButton}><Text style={styles.modeButtonText}>Tables</Text></Pressable>
-          <Pressable onPress={()=>setWorkspaceMode("signature")} style={styles.modeButton}><Text style={styles.modeButtonText}>Signature+</Text></Pressable>
+          <Pressable onPress={()=>setWorkspaceMode("payments")} style={styles.modeButton}><Text style={styles.modeButtonText}>Payments</Text></Pressable>
+            <Pressable onPress={()=>setWorkspaceMode("signature")} style={styles.modeButton}><Text style={styles.modeButtonText}>Signature+</Text></Pressable>
           <Pressable style={[styles.modeButton,styles.modeButtonActive]}><Text style={[styles.modeButtonText,styles.modeButtonTextActive]}>Online {counts.new?("· "+counts.new):""}</Text></Pressable>
         </View>
       </View>

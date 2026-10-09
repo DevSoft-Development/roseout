@@ -15,6 +15,8 @@ on:
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'scripts/pos-signature-plus-regression.mjs'
+      - 'scripts/pos-payments-manager-regression.mjs'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'scripts/ci/pos-change-scope.mjs'
@@ -34,6 +36,8 @@ on:
       - 'infra/supabase/operational-shards/online-ordering-v8.sql'
       - 'scripts/pos-online-order-fulfillment-regression.mjs'
       - 'scripts/pos-signature-plus-regression.mjs'
+      - 'scripts/pos-payments-manager-regression.mjs'
+      - 'infra/supabase/operational-shards/payments-manager-v10.sql'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
       - 'scripts/ci/pos-change-scope.mjs'
@@ -149,3 +153,5 @@ jobs:
         run: node scripts/pos-online-order-fulfillment-regression.mjs
       - name: Verify Signature+ operations contract
         run: node scripts/pos-signature-plus-regression.mjs
+      - name: Verify payment + manager controls contract
+        run: node scripts/pos-payments-manager-regression.mjs
