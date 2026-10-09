@@ -211,12 +211,12 @@ export default function CredentialsVaultClient() {
           return (
             <section key={provider.id} className="rounded-3xl border border-white/10 bg-[#120d0b] p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
-                <div><p className="text-xs font-black uppercase tracking-[0.18em] text-rose-300/80">{provider.category}</p><h3 className="mt-1 text-xl font-black text-white">{provider.label}</h3><p className="mt-2 text-sm leading-6 text-white/60">{provider.description}</p></div>
+                <div><p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--toh-brand)]">{provider.category}</p><h3 className="mt-1 text-xl font-black text-white">{provider.label}</h3><p className="mt-2 text-sm leading-6 text-white/60">{provider.description}</p></div>
                 <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider ${stateClass(state)}`}>{stateLabel(state)}</span>
               </div>
 
               {status?.externalSource && state !== "vault_managed" ? <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/55">Current source: <span className="font-bold text-white/80">{status.externalSource}</span></div> : null}
-              {provider.note ? <div className="mt-4 rounded-2xl border border-amber-300/15 bg-amber-500/[0.06] px-4 py-3 text-xs leading-5 text-amber-100/80">{provider.note}</div> : null}
+              {provider.note ? <div className="mt-4 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-xs font-semibold leading-5 text-[var(--admin-shell-text)]">{provider.note}</div> : null}
               {provider.id === "meta" && environment === "production" ? <div className="mt-4 rounded-2xl border border-fuchsia-300/15 bg-fuchsia-500/[0.07] p-4"><p className="text-sm font-black text-white">Instagram account authorization</p><p className="mt-1 text-xs leading-5 text-white/50">After the Meta / Instagram app credentials are configured, use Instagram&apos;s own login screen. TheOutHaven never receives the Instagram password.</p><a href="/api/admin/settings/credentials/instagram" className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-black"><ShieldCheck className="h-4 w-4" />Connect Instagram</a></div> : null}
 
               <div className="mt-5 space-y-4">
