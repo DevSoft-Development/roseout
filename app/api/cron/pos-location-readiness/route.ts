@@ -73,13 +73,13 @@ export async function GET(request:NextRequest){
       hasMore=true;
     }
     const complete=!hasMore;
-    return NextResponse.json({success:true,complete,readOnly:true,checked,counts,attention,
+    return NextResponse.json({success:complete,complete,readOnly:true,checked,counts,attention,
       // A partial scan is not a green fleet readiness gate. No owner notifications.
       scope:start===0?"fleet_from_start":"continuation",
       incompleteReason:complete?null:(incompleteReason||"page_limit_reached"),
       nextOffset:hasMore?offset:null,hasMore,checkedAt:now.toISOString(),
       productionCertification:false,
-      note:"Heartbeat and hours assessment only. No physical-device probe or payment test."});
+      note:"Heartbeat and hours assessment only. No physical-device probe or payment test."}, {status:complete?200:503});
   }catch(error){
     return NextResponse.json({success:false,error:"pos_monitor_read_failed",details:error instanceof Error?error.message:"unknown"},{status:503});
   }
