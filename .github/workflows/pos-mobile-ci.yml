@@ -17,6 +17,7 @@ on:
       - 'scripts/pos-signature-plus-regression.mjs'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
+      - 'scripts/ci/pos-change-scope.mjs'
       - 'azure-pipelines-pos-mobile.yml'
   push:
     branches: [main]
@@ -35,6 +36,7 @@ on:
       - 'scripts/pos-signature-plus-regression.mjs'
       - 'pos-mobile/**'
       - '.github/workflows/pos-mobile-ci.yml'
+      - 'scripts/ci/pos-change-scope.mjs'
       - 'azure-pipelines-pos-mobile.yml'
   workflow_dispatch:
 
