@@ -1,0 +1,85 @@
+name: ThePOSHaven Shift Certification
+
+on:
+  pull_request:
+    paths:
+      - 'lib/pos/**'
+      - 'pos-mobile/**'
+      - 'app/api/pos/**'
+      - 'apps/consumer/app/api/pos/**'
+      - 'apps/business/app/api/business/pos/**'
+      - 'infra/supabase/operational-shards/**'
+      - 'scripts/pos-*.mjs'
+      - '.github/workflows/pos-shift-certification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/pos/**'
+      - 'pos-mobile/**'
+      - 'app/api/pos/**'
+      - 'apps/consumer/app/api/pos/**'
+      - 'apps/business/app/api/business/pos/**'
+      - 'infra/supabase/operational-shards/**'
+      - 'scripts/pos-*.mjs'
+      - '.github/workflows/pos-shift-certification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pos-shift-certification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  simulated-shift:
+    name: Isolated shift simulation + POS contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      POS_SHIFT_REPORT: artifacts/pos-shift-certification.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.1'
+      - name: Run full simulated shift
+        run: node scripts/pos-shift-certification.mjs
+      - name: Payment provider and atomic tender invariants
+        run: node scripts/pos-payment-service-regression.mjs
+      - name: Payment, manager approval, refunds and drawer invariants
+        run: node scripts/pos-payments-manager-regression.mjs
+      - name: Signature+ shift and operations invariants
+        run: node scripts/pos-signature-plus-regression.mjs
+      - name: Operational shard and DR safety invariants
+        run: node scripts/operational-sharding-regression.mjs
+      - name: Publish test summary
+        if: always()
+        run: |
+          if [ -f "$POS_SHIFT_REPORT" ]; then
+            node --input-type=module -e '
+              import fs from "node:fs";
+              const r=JSON.parse(fs.readFileSync(process.env.POS_SHIFT_REPORT,"utf8"));
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                "## POS shift certification (simulation only)\n\n"+
+                "| Metric | Result |\n|---|---|\n"+
+                "| Scenarios | "+r.total+" |\n"+
+                "| Passed | "+r.passed+" |\n"+
+                "| Failed | "+r.failed+" |\n"+
+                "| Expected drawer | $"+(r.reconciliation.expectedClosingCashCents/100).toFixed(2)+" |\n"+
+                "| Drawer variance | $"+(r.reconciliation.varianceCents/100).toFixed(2)+" |\n"+
+                "| Production certified | **NO** — test-mode integration and physical acceptance outstanding |\n\n"+
+                "This job never connects to Stripe or live databases. A green check certifies the deterministic simulation and static regression contracts only.\n");
+            '
+          else
+            echo '## Shift certification report missing (test failed before report generation)' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-shift-certification-${{ github.run_id }}
+          path: artifacts/pos-shift-certification.json
+          if-no-files-found: warn
+          retention-days: 30
