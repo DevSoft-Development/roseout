@@ -157,7 +157,7 @@ jobs:
               backend=false
               if printf '%s\\n' "$CHANGED" | grep -Eq '^(pos-mobile/|azure-pipelines-pos-mobile\\.yml$)'; then mobile=true; fi
               if printf '%s\\n' "$CHANGED" | grep -Eq '^(apps/business/|apps/consumer/app/api/pos/|app/api/(pos/|stripe/connect/webhook/)|lib/pos/|supabase/migrations/.*pos_|infra/supabase/operational-shards/online-ordering-|scripts/pos-)'; then backend=true; fi
-              # Workflow changes and unknown paths require both lanes.
+              # Mobile runtime changes can affect fulfillment contracts; keep backend regressions.\n              if [ "$mobile" = true ]; then backend=true; fi\n              # Workflow changes and unknown paths require both lanes.
               if printf '%s\\n' "$CHANGED" | grep -Eq '^\\.github/workflows/pos-mobile-ci\\.yml
         uses: actions/setup-node@v4
         with:
