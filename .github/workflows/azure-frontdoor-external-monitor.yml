@@ -53,7 +53,7 @@ jobs:
 
       - name: Resolve Azure consumer proof targets
         id: azure
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
