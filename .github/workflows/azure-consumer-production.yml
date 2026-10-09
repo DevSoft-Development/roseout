@@ -271,7 +271,7 @@ jobs:
           echo "Azure AI infrastructure changed: $AI_CHANGED"
 
       - name: Login to Azure with GitHub OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -439,7 +439,7 @@ jobs:
           git checkout --detach "$IMAGE_SHA"
 
       - name: Refresh Azure OIDC before ACR login
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
