@@ -10,6 +10,7 @@ import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
 import { evaluatePosDeviceReadiness, summarizePosReadiness } from "@/lib/pos/hardware/health/location-readiness";
 import { scheduleFromLocationHours } from "@/lib/pos/hardware/health/operating-hours";
+import { confirmPosMonitoringHours } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -134,7 +135,8 @@ export default async function HardwareHealthPage({
   }
   const locationData = (access.location || {}) as Record<string, unknown>;
   const locationMetadata = (locationData.metadata || {}) as Record<string, unknown>;
-  const schedule = scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone);
+  const hoursConfirmed = locationMetadata.pos_monitoring_hours_fingerprint === JSON.stringify(locationData.operating_hours);
+  const schedule = hoursConfirmed ? scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone) : null;
   const states = hardware.map(item => {
     try {
       return evaluatePosDeviceReadiness({
@@ -203,6 +205,29 @@ export default async function HardwareHealthPage({
             Equipment powered down while closed is not a failure.
           </p>
         </section>
+        {canManage ? (
+          <form action={confirmPosMonitoringHours} className="mt-4 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
+            <h2 className="font-black">Confirm POS opening hours</h2>
+            <p className="mt-1 text-sm text-[var(--business-muted)]">
+              Check the restaurant operating hours in its Business profile first. Enter its IANA time zone
+              (for example America/New_York). Confirming allows opening-aware health evaluation.
+              When operating hours change, confirmation expires automatically.
+            </p>
+            <input type="hidden" name="locationId" value={canonicalLocationId} />
+            <label className="mt-4 block text-sm font-semibold" htmlFor="pos-monitor-timezone">Location time zone</label>
+            <input id="pos-monitor-timezone" name="timeZone" required
+              defaultValue={String(locationMetadata.pos_monitoring_timezone||"")}
+              placeholder="America/New_York"
+              className="mt-2 w-full rounded-lg border border-[var(--business-border)] bg-[var(--business-bg)] p-3" />
+            <label className="mt-4 flex items-center gap-2 text-sm">
+              <input type="checkbox" name="confirmHours" value="yes" required />
+              I have reviewed this location’s published operating hours and confirmed they are accurate.
+            </label>
+            <button type="submit" className="mt-4 rounded-xl bg-[#e1062a] px-5 py-3 text-sm font-black text-white">
+              Save monitoring hours
+            </button>
+          </form>
+        ) : null}
         {unavailable ? (
           <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
             <h2 className="font-black text-amber-100">Hardware status is temporarily unavailable.</h2>
