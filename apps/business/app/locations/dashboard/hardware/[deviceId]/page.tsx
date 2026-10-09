@@ -8,6 +8,7 @@ import {
 import { getCertifiedHardware } from "@/lib/pos/hardware/catalog";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
 import { updateBusinessHardwareRole } from "../actions";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,10 @@ export default async function HardwareDevicePage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+  const internalDemoAccess = !user
+    ? await getInternalDemoLocationAccess({ locationId })
+    : null;
+  if (!user && !internalDemoAccess) {
     redirect(
       `/business/login?next=${encodeURIComponent(
         `/locations/dashboard/hardware/${deviceId}?locationId=${locationId}`,
@@ -70,25 +74,29 @@ export default async function HardwareDevicePage({
     );
   }
 
-  const access = await resolveLocationAccessContext({
-    userId: user.id,
-    userEmail: user.email,
-    locationId,
-  });
+  const access = user
+    ? await resolveLocationAccessContext({
+        userId: user.id,
+        userEmail: user.email,
+        locationId,
+      })
+    : null;
   if (
-    !access.canonicalLocationId ||
-    !hasLocationPermission(access, "hardware.view")
+    !internalDemoAccess &&
+    (!access?.canonicalLocationId ||
+      !hasLocationPermission(access, "hardware.view"))
   ) {
     redirect("/locations/dashboard/hardware");
   }
 
-  const hardware = await listLocationHardware(access.canonicalLocationId);
+  const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess!.locationId);
+  const hardware = await listLocationHardware(canonicalLocationId);
   const item = hardware.find((candidate) => candidate.deviceId === deviceId);
   if (!item) redirect(`/locations/dashboard/hardware?locationId=${locationId}`);
 
   const certified = getCertifiedHardware(item.hardwareId);
   const roles = certified?.supportedPrinterRoles || [];
-  const canManage = hasLocationPermission(access, "hardware.manage");
+  const canManage = internalDemoAccess ? true : Boolean(access && hasLocationPermission(access, "hardware.manage"));
 
   return (
     <main className="min-h-screen bg-[var(--business-bg)] px-4 py-8 text-[var(--business-text)] sm:px-6 lg:px-8">
