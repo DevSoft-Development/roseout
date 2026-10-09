@@ -81,3 +81,22 @@ for(const [label,source] of [["Hardware",businessHardware],["Menu",businessMenu]
 if(businessMenu.includes('if (!user) redirect("/login")')||businessOrdering.includes('if(!user) redirect("/login")')||businessOps.includes('if(!user) redirect("/business/login?next=/locations/dashboard/pos/operations")')){
   throw new Error("ThePOSHaven demo card destinations must not force a separate Business login before validating the signed demo handoff.");
 }
+
+const internalDemoLocationAccess=readFileSync("lib/demo/internal-demo-location-access.ts","utf8");
+const businessHardwareDevice=readFileSync("apps/business/app/locations/dashboard/hardware/[deviceId]/page.tsx","utf8");
+const businessHardwareHealth=readFileSync("apps/business/app/locations/dashboard/hardware/health/page.tsx","utf8");
+const businessHardwareSetup=readFileSync("apps/business/app/locations/dashboard/hardware/setup/page.tsx","utf8");
+if(!internalDemoLocationAccess.includes("signedDemoContext")||!internalDemoLocationAccess.includes("demoHandoff")){
+  throw new Error("Signed Admin demo handoff must survive deep Business links when query demo flags are dropped.");
+}
+for(const [label,source] of [["Hardware device",businessHardwareDevice],["Hardware health",businessHardwareHealth],["Hardware setup",businessHardwareSetup]]){
+  if(!source.includes("getInternalDemoLocationAccess")){
+    throw new Error(label+" must accept the signed internal demo handoff before Business login.");
+  }
+}
+if(!businessOrdering.includes("internalDemoAccess")||!businessOrdering.includes("getInternalDemoLocationAccess")){
+  throw new Error("Online Ordering must honor the signed internal demo handoff.");
+}
+if(!businessOps.includes('plan!=="signature_plus"&&!internalDemoAccess')||!businessOps.includes("emptyInventory")){
+  throw new Error("Inventory + Shift must render safely for the protected internal demo even when Signature+ fixture data is incomplete.");
+}

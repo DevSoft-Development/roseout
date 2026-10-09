@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/locationOwnerAccess";
 import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -96,33 +97,41 @@ export default async function HardwareHealthPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+  const requestedLocationId = stringParam(query, "locationId");
+  const internalDemoAccess = !user && requestedLocationId
+    ? await getInternalDemoLocationAccess({ locationId: requestedLocationId })
+    : null;
+  if (!user && !internalDemoAccess) {
     redirect("/business/login?next=/locations/dashboard/hardware/health");
   }
 
-  const ownerAccess = await getLocationOwnerAccess(user.id, user.email);
+  const ownerAccess = user
+    ? await getLocationOwnerAccess(user.id, user.email)
+    : null;
   const locationId =
-    stringParam(query, "locationId") ||
-    ownerAccess.ownedLocationIds[0] ||
-    ownerAccess.ownedSourceLocationIds[0];
+    requestedLocationId ||
+    ownerAccess?.ownedLocationIds[0] ||
+    ownerAccess?.ownedSourceLocationIds[0];
 
   if (!locationId) {
     redirect("/locations/dashboard/hardware");
   }
 
-  const access = await resolveLocationAccessContext({
-    userId: user.id,
-    userEmail: user.email,
-    locationId,
-  });
-  const canonicalLocationId = access.canonicalLocationId;
+  const access = user
+    ? await resolveLocationAccessContext({
+        userId: user.id,
+        userEmail: user.email,
+        locationId,
+      })
+    : null;
+  const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess?.locationId || "");
   if (
     !canonicalLocationId ||
-    !hasLocationPermission(access, "hardware.view")
+    (!internalDemoAccess && (!access || !hasLocationPermission(access, "hardware.view")))
   ) {
     redirect("/locations/dashboard/hardware");
   }
-  const canManage = hasLocationPermission(access, "hardware.manage");
+  const canManage = internalDemoAccess ? true : Boolean(access && hasLocationPermission(access, "hardware.manage"));
   let hardware: Awaited<ReturnType<typeof listLocationHardware>> = [];
   let unavailable = false;
   try {
@@ -134,7 +143,7 @@ export default async function HardwareHealthPage({
     (item) => item.device.health_status !== "ready",
   );
   const ready = hardware.length - needsAttention.length;
-  const locationName = getLocationName(access.location || {}, "Your location");
+  const locationName = getLocationName(access?.location || internalDemoAccess?.location || {}, "Your location");
 
   return (
     <main className="min-h-screen bg-[var(--business-bg)] px-4 py-8 text-[var(--business-text)] sm:px-6 lg:px-8">

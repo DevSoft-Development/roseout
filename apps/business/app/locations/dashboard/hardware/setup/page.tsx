@@ -12,6 +12,7 @@ import {
   listLocationHardware,
 } from "@/lib/pos/hardware/device-registry";
 import { claimBusinessHardwareDevice } from "./actions";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -51,18 +52,25 @@ export default async function HardwareSetupPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+  const internalDemoAccess = !user
+    ? await getInternalDemoLocationAccess({ locationId })
+    : null;
+  if (!user && !internalDemoAccess) {
     redirect("/business/login?next=/locations/dashboard/hardware/setup");
   }
 
-  const access = await resolveLocationAccessContext({
-    userId: user.id,
-    userEmail: user.email,
-    locationId,
-  });
+  const access = user
+    ? await resolveLocationAccessContext({
+        userId: user.id,
+        userEmail: user.email,
+        locationId,
+      })
+    : null;
   if (
-    access.canonicalLocationId !== locationId ||
-    !hasLocationPermission(access, "hardware.manage")
+    !internalDemoAccess &&
+    (access?.canonicalLocationId !== locationId ||
+      !access ||
+      !hasLocationPermission(access, "hardware.manage"))
   ) {
     redirect(`/locations/dashboard/hardware?locationId=${locationId}`);
   }
