@@ -5086,7 +5086,6 @@ const crmOutreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.t
 if (
   !crmOutreachPage.includes("@theouthaven/auth/admin-session")
   || !crmOutreachPage.includes("@/lib/crm/outreach")
-  || !crmOutreachPage.includes("@/lib/crm/location-outreach-communications")
   || crmOutreachPage.includes("@/lib/admin-auth")
   || crmOutreachPage.includes("@/lib/admin-permissions")
   || crmOutreachPage.includes("@/lib/crm/core-modules")
