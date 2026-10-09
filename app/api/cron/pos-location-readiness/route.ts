@@ -45,7 +45,8 @@ export async function GET(request:NextRequest){
       for(const row of assignments){
         const device=devices.get(row.device_id),location=locations.get(row.location_id);
         const meta=location?.metadata||{};
-        const schedule=scheduleFromLocationHours(location?.operating_hours,meta.pos_monitoring_timezone);
+        const confirmed=Boolean(location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours));
+        const schedule=confirmed?scheduleFromLocationHours(location?.operating_hours,meta.pos_monitoring_timezone):null;
         let result;
         try{
           result=evaluatePosDeviceReadiness({
