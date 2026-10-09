@@ -79,11 +79,39 @@ async function tryOutput(router:RoleBasedPosOutputRouter,role:PosOutputRole,payl
   }
 }
 
+function receiptText(command:PosCloudCommand){
+  const p=command.payload||{};
+  const lines=Array.isArray(p.lines)?p.lines.map((value:any)=>String(value)):[];
+  return [
+    String(p.header||"THEPOSHAVEN RECEIPT"),
+    "==========================================",
+    ...lines,
+    p.footer?String(p.footer):"",
+    "",
+  ].filter(Boolean).join("\n");
+}
+
 export async function dispatchPosCloudCommand(input:{
   command:PosCloudCommand;
   router:RoleBasedPosOutputRouter;
 }) {
   const command=input.command;
+  if(command.command_type==="pos_cash_drawer_open"){
+    try{
+      const deviceId=await input.router.openCashDrawer();
+      return {ok:true,outputs:[{role:"cash_drawer",ok:true,deviceId}]};
+    }catch(error){
+      return {ok:false,outputs:[],error:error instanceof Error?error.message:String(error)};
+    }
+  }
+  if(command.command_type==="pos_receipt_print"){
+    const result=await tryOutput(input.router,"receipt",escPos(receiptText(command)));
+    return {
+      ok:result.ok!==false,
+      outputs:[result],
+      error:result.ok===false?result.error:null,
+    };
+  }
   if(command.command_type!=="online_order_received"&&command.command_type!=="online_order_status_changed"){
     return {ok:true,outputs:[]};
   }

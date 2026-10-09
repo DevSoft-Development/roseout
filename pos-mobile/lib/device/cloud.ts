@@ -199,10 +199,15 @@ export type PosTableWorkspace={
   guestCount:number;
   reservation?:PosTableReservation|null;
   resources:any[];
+  staff:{id:string;name:string;role:string}[];
   amounts:{
     subtotalCents:number;discountCents:number;taxCents:number;serviceChargeCents:number;
-    totalCents:number;amountPaidCents:number;tipCents:number;
+    totalCents:number;amountPaidCents:number;amountRefundedCents:number;remainingCents:number;tipCents:number;
   };
+  tenders:{
+    id:string;number:number;type:string;status:string;amountCents:number;tipCents:number;
+    amountRefundedCents:number;refundableCents:number;cashReceivedCents?:number|null;cashChangeCents?:number|null;
+  }[];
   items:{
     id:string;orderId:string;catalogItemId?:string|null;name:string;seatNumber?:number|null;shared:boolean;
     course:"drinks"|"appetizers"|"entrees"|"desserts"|"other";quantity:number;
@@ -320,4 +325,179 @@ export function createSignaturePlusSplit(input:{deviceId:string;credential:strin
 
 export function createSignaturePlusSplitTender(input:{deviceId:string;credential:string;checkId:string;allocationKey:string;tipCents?:number}){
   return mutateSignaturePlus({...input,body:{action:"split_tender",checkId:input.checkId,allocationKey:input.allocationKey,tipCents:input.tipCents||0}});
+}
+
+
+async function mutatePosManager(input:{deviceId:string;credential:string;body:Record<string,unknown>}){
+  const data=await jsonRequest("/api/pos/device/manager",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+      "Content-Type":"application/json",
+    },
+    body:JSON.stringify(input.body),
+  });
+  return data.result;
+}
+
+export function recordPosCashTender(input:{
+  deviceId:string;credential:string;checkId:string;cashReceivedCents:number;
+  amountCents?:number|null;tipCents?:number;actorStaffProfileId?:string|null;
+}){
+  return mutatePosManager({...input,body:{
+    action:"cash_tender",checkId:input.checkId,cashReceivedCents:input.cashReceivedCents,
+    amountCents:input.amountCents??null,tipCents:input.tipCents||0,
+    actorStaffProfileId:input.actorStaffProfileId||null,
+  }});
+}
+
+export function applyPosManagerDiscount(input:{
+  deviceId:string;credential:string;checkId:string;discountCents:number;
+  actorStaffProfileId?:string|null;managerStaffProfileId:string;managerPin:string;reason:string;
+}){
+  return mutatePosManager({...input,body:{action:"discount_check",checkId:input.checkId,
+    discountCents:input.discountCents,actorStaffProfileId:input.actorStaffProfileId||null,
+    managerStaffProfileId:input.managerStaffProfileId,managerPin:input.managerPin,reason:input.reason}});
+}
+
+export function voidPosManagerItem(input:{
+  deviceId:string;credential:string;orderItemId:string;
+  actorStaffProfileId?:string|null;managerStaffProfileId:string;managerPin:string;reason:string;
+}){
+  return mutatePosManager({...input,body:{action:"void_item",orderItemId:input.orderItemId,
+    actorStaffProfileId:input.actorStaffProfileId||null,
+    managerStaffProfileId:input.managerStaffProfileId,managerPin:input.managerPin,reason:input.reason}});
+}
+
+export function refundPosManagerTender(input:{
+  deviceId:string;credential:string;tenderId:string;amountCents:number;
+  actorStaffProfileId?:string|null;managerStaffProfileId:string;managerPin:string;
+  reason:string;idempotencyKey:string;
+}){
+  return mutatePosManager({...input,body:{action:"refund_tender",tenderId:input.tenderId,
+    amountCents:input.amountCents,actorStaffProfileId:input.actorStaffProfileId||null,
+    managerStaffProfileId:input.managerStaffProfileId,managerPin:input.managerPin,
+    reason:input.reason,idempotencyKey:input.idempotencyKey}});
+}
+
+export function openPosDrawerSession(input:{
+  deviceId:string;credential:string;openingCashCents:number;actorStaffProfileId?:string|null;
+}){
+  return mutatePosManager({...input,body:{action:"open_drawer",openingCashCents:input.openingCashCents,
+    actorStaffProfileId:input.actorStaffProfileId||null}});
+}
+
+export function closePosDrawerSession(input:{
+  deviceId:string;credential:string;sessionId:string;countedCashCents:number;
+  managerStaffProfileId:string;managerPin:string;
+}){
+  return mutatePosManager({...input,body:{action:"close_drawer",sessionId:input.sessionId,
+    countedCashCents:input.countedCashCents,
+    managerStaffProfileId:input.managerStaffProfileId,managerPin:input.managerPin}});
+}
+
+
+export async function fetchPosManagerOperations(input:{deviceId:string;credential:string}){
+  const data=await jsonRequest("/api/pos/device/manager",{
+    method:"GET",
+    headers:{Authorization:`Bearer ${input.credential}`,"X-Pos-Device-Id":input.deviceId},
+  });
+  return data.operations as {drawers:any[];events:any[]};
+}
+
+
+export function reprintPosReceipt(input:{
+  deviceId:string;credential:string;checkId:string;
+}){
+  return mutatePosManager({...input,body:{action:"receipt_reprint",checkId:input.checkId}});
+}
+
+
+export type PosManagerControlData={
+  drawers:any[];
+  events:any[];
+  checks:any[];
+  tenders:any[];
+  items:any[];
+  staff:any[];
+  managers:any[];
+};
+
+export async function fetchPosManagerControls(input:{deviceId:string;credential:string}){
+  const data=await jsonRequest("/api/pos/device/manager-controls",{
+    method:"GET",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+    },
+  });
+  return data.operations as PosManagerControlData;
+}
+
+async function mutatePosManagerControls(input:{deviceId:string;credential:string;body:Record<string,unknown>}){
+  const data=await jsonRequest("/api/pos/device/manager-controls",{
+    method:"POST",
+    headers:{
+      Authorization:`Bearer ${input.credential}`,
+      "X-Pos-Device-Id":input.deviceId,
+      "Content-Type":"application/json",
+    },
+    body:JSON.stringify(input.body),
+  });
+  return data.result;
+}
+
+export function recordPosCashTenderCloud(input:{
+  deviceId:string;credential:string;checkId:string;cashReceivedCents:number;amountCents?:number|null;
+  tipCents?:number;actorStaffProfileId?:string|null;
+}){
+  return mutatePosManagerControls({...input,body:{
+    action:"cash_tender",checkId:input.checkId,cashReceivedCents:input.cashReceivedCents,
+    amountCents:input.amountCents??null,tipCents:input.tipCents||0,
+    actorStaffProfileId:input.actorStaffProfileId||null,
+  }});
+}
+
+export function applyPosDiscountCloud(input:{
+  deviceId:string;credential:string;checkId:string;discountCents:number;actorStaffProfileId:string;
+  approverStaffProfileId:string;managerPin:string;reason:string;
+}){
+  return mutatePosManagerControls({...input,body:{action:"discount",checkId:input.checkId,discountCents:input.discountCents,
+    actorStaffProfileId:input.actorStaffProfileId,approverStaffProfileId:input.approverStaffProfileId,
+    managerPin:input.managerPin,reason:input.reason}});
+}
+
+export function voidPosItemCloud(input:{
+  deviceId:string;credential:string;orderItemId:string;actorStaffProfileId:string;
+  approverStaffProfileId:string;managerPin:string;reason:string;
+}){
+  return mutatePosManagerControls({...input,body:{action:"void_item",orderItemId:input.orderItemId,
+    actorStaffProfileId:input.actorStaffProfileId,approverStaffProfileId:input.approverStaffProfileId,
+    managerPin:input.managerPin,reason:input.reason}});
+}
+
+export function refundPosTenderCloud(input:{
+  deviceId:string;credential:string;tenderId:string;amountCents:number;actorStaffProfileId:string;
+  approverStaffProfileId:string;managerPin:string;reason:string;idempotencyKey:string;
+}){
+  return mutatePosManagerControls({...input,body:{action:"refund",tenderId:input.tenderId,amountCents:input.amountCents,
+    actorStaffProfileId:input.actorStaffProfileId,approverStaffProfileId:input.approverStaffProfileId,
+    managerPin:input.managerPin,reason:input.reason,idempotencyKey:input.idempotencyKey}});
+}
+
+export function openPosDrawerSessionCloud(input:{
+  deviceId:string;credential:string;openingCashCents:number;actorStaffProfileId?:string|null;
+}){
+  return mutatePosManagerControls({...input,body:{action:"drawer_open",openingCashCents:input.openingCashCents,
+    actorStaffProfileId:input.actorStaffProfileId||null}});
+}
+
+export function closePosDrawerSessionCloud(input:{
+  deviceId:string;credential:string;sessionId:string;countedCashCents:number;
+  approverStaffProfileId:string;managerPin:string;
+}){
+  return mutatePosManagerControls({...input,body:{action:"drawer_close",sessionId:input.sessionId,
+    countedCashCents:input.countedCashCents,approverStaffProfileId:input.approverStaffProfileId,
+    managerPin:input.managerPin}});
 }

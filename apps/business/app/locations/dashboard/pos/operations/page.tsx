@@ -6,6 +6,7 @@ import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/au
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 import { getPosPlanForLocation } from "@/lib/pos/access";
 import { getSignaturePlusInventory, getSignaturePlusReport } from "@/lib/pos/signature-plus/service";
+import { getPosManagerOperations } from "@/lib/pos/payments/manager-service";
 import { createPosInventoryArea, recordPosInventoryWaste, transferPosInventoryStock } from "./actions";
 
 export const dynamic="force-dynamic";
@@ -55,9 +56,10 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
 
   const from=first(params.from)||null;
   const to=first(params.to)||null;
-  const [inventory,report]=await Promise.all([
+  const [inventory,report,managerOps]=await Promise.all([
     getSignaturePlusInventory(canonicalLocationId),
     getSignaturePlusReport({locationId:canonicalLocationId,from,to}),
+    getPosManagerOperations(canonicalLocationId),
   ]);
 
   const location=access.location||{};
@@ -72,8 +74,8 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
     <BusinessPageHeader
       eyebrow="ThePOSHaven · Signature+"
       title={`Inventory + shift operations for ${locationName}`}
-      subtitle="Run ingredient inventory, stock-area transfers, waste logging, reorder visibility, and end-of-shift reporting from one operating screen."
-      badge={<><BusinessStatusBadge tone="blue">Signature+</BusinessStatusBadge><BusinessStatusBadge tone="green">Live shard v9</BusinessStatusBadge></>}
+      subtitle="Run ingredient inventory, stock-area transfers, payment oversight, drawer reconciliation, manager audit, and end-of-shift reporting from one operating screen."
+      badge={<><BusinessStatusBadge tone="blue">Signature+</BusinessStatusBadge><BusinessStatusBadge tone="green">Live shard v10</BusinessStatusBadge></>}
       actions={<Link href={backHref} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--business-border)] px-4 text-sm font-black text-[var(--business-text)]">Back to POS</Link>}
     />
 
@@ -237,6 +239,34 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
       </div>
     </section>
 
+    <section className="mt-6 grid gap-5 xl:grid-cols-2">
+      <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Cash drawer closeout</p>
+        <h2 className="mt-2 text-xl font-black text-[var(--business-text)]">Expected vs counted cash</h2>
+        <div className="mt-4 space-y-2">{(managerOps.drawers||[]).slice(0,12).map((drawer:any)=><div key={drawer.id} className="rounded-xl border border-white/7 bg-black/10 px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div><p className="font-black text-[var(--business-text)]">{drawer.status==="open"?"Open drawer":"Closed drawer"}</p><p className="text-xs font-semibold text-[var(--business-muted)]">{drawer.device_id} · {new Date(drawer.opened_at).toLocaleString()}</p></div>
+            <span className="text-xs font-black text-[var(--business-text)]">{drawer.status==="open"?"OPEN":money(Number(drawer.over_short_cents||0))}</span>
+          </div>
+          {drawer.status==="closed"?<div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+            <div><p className="font-semibold text-[var(--business-muted)]">Expected</p><p className="font-black text-[var(--business-text)]">{money(Number(drawer.expected_cash_cents||0))}</p></div>
+            <div><p className="font-semibold text-[var(--business-muted)]">Counted</p><p className="font-black text-[var(--business-text)]">{money(Number(drawer.counted_cash_cents||0))}</p></div>
+            <div><p className="font-semibold text-[var(--business-muted)]">Over / short</p><p className="font-black text-[var(--business-text)]">{money(Number(drawer.over_short_cents||0))}</p></div>
+          </div>:null}
+        </div>)}</div>
+        {!(managerOps.drawers||[]).length?<p className="mt-4 text-sm font-semibold text-[var(--business-muted)]">No drawer sessions yet.</p>:null}
+      </div>
+
+      <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Manager audit</p>
+        <h2 className="mt-2 text-xl font-black text-[var(--business-text)]">Voids, discounts, and refunds</h2>
+        <div className="mt-4 space-y-2">{(managerOps.events||[]).slice(0,20).map((event:any)=><div key={event.id} className="border-b border-white/5 py-3">
+          <div className="flex items-center justify-between gap-3"><p className="font-black text-[var(--business-text)]">{title(String(event.action||"manager action"))}</p><p className="font-black text-[#ff8da0]">{event.amount_cents==null?"":money(Number(event.amount_cents))}</p></div>
+          <p className="mt-1 text-xs font-semibold text-[var(--business-muted)]">{event.reason} · {new Date(event.created_at).toLocaleString()}</p>
+        </div>)}</div>
+        {!(managerOps.events||[]).length?<p className="mt-4 text-sm font-semibold text-[var(--business-muted)]">No manager events yet.</p>:null}
+      </div>
+    </section>
     <section className="mt-6 grid gap-5 xl:grid-cols-2">
       <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[var(--business-muted)]">Recent waste</p>

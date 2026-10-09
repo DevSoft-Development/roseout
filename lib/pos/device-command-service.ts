@@ -124,7 +124,7 @@ export async function authenticatePosDeviceCredential(input: {
 
 export async function enqueuePosLocationCommand(input: {
   locationId: string;
-  commandType: "online_order_received"|"online_order_status_changed"|"device_config_refresh"|"pos_state_changed";
+  commandType: "online_order_received"|"online_order_status_changed"|"device_config_refresh"|"pos_state_changed"|"pos_cash_drawer_open"|"pos_receipt_print";
   sourceType?: string | null;
   sourceId?: string | null;
   dedupeKey: string;
