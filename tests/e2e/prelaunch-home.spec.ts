@@ -36,7 +36,7 @@ test.describe("public product readiness", () => {
     await expect(officialLogo).toHaveAttribute("src", "/toh_logo_wordmark_white.webp");
     const logoResponse = await page.request.get("/toh_logo_wordmark_white.webp");
     expect(logoResponse.status(), "Official logo must be served as a static asset").toBe(200);
-    expect(logoResponse.headers()["content-type"], "Official logo must be a WebP image").toMatch(/image\\/webp/i);
+    expect(logoResponse.headers()["content-type"], "Official logo must be a WebP image").toMatch(new RegExp("image/webp", "i"));
     const logoBytes = await logoResponse.body();
     expect(logoBytes.subarray(0, 4).toString("ascii"), "Official logo RIFF signature").toBe("RIFF");
     expect(logoBytes.subarray(8, 12).toString("ascii"), "Official logo WEBP signature").toBe("WEBP");
