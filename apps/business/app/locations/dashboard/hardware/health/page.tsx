@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/locationOwnerAccess";
 import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
+import { evaluatePosDeviceReadiness, summarizePosReadiness, type PosOpeningSchedule } from "@/lib/pos/hardware/health/location-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -130,10 +131,22 @@ export default async function HardwareHealthPage({
   } catch {
     unavailable = true;
   }
-  const needsAttention = hardware.filter(
-    (item) => item.device.health_status !== "ready",
-  );
-  const ready = hardware.length - needsAttention.length;
+  const locationData = (access.location || {}) as Record<string, unknown>;
+  const config = locationData.pos_monitoring_schedule;
+  const schedule: PosOpeningSchedule | null = config && typeof config === "object" ? config as PosOpeningSchedule : null;
+  const states = hardware.map(item => {
+    try {
+      return evaluatePosDeviceReadiness({
+        schedule,
+        device: { lastSeenAt: item.device.last_seen_at, health: item.device.health_status, required: true },
+      });
+    } catch {
+      return {state:"unknown" as const, reason:"invalid_operating_schedule", operating:false, opensWithinMinutes:null};
+    }
+  });
+  const counts = summarizePosReadiness(states);
+  const needsAttention = hardware.filter((_,index) => states[index].state === "needs_attention");
+  const ready = counts.healthy;
   const locationName = getLocationName(access.location || {}, "Your location");
 
   return (
@@ -182,6 +195,13 @@ export default async function HardwareHealthPage({
           ))}
         </section>
 
+        <section className="mt-5 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-4 text-sm">
+          <p className="font-black">Opening-aware readiness</p>
+          <p className="mt-1 text-[var(--business-muted)]">
+            {counts.expected_offline} expected offline · {counts.awaiting_startup} awaiting startup · {counts.unknown} unknown.
+            Equipment powered down while closed is not a failure.
+          </p>
+        </section>
         {unavailable ? (
           <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
             <h2 className="font-black text-amber-100">Hardware status is temporarily unavailable.</h2>
@@ -192,8 +212,15 @@ export default async function HardwareHealthPage({
         ) : null}
 
         <section className="mt-6 space-y-3">
-          {hardware.map((item) => {
-            const copy = healthCopy(item.device.health_status);
+          {hardware.map((item,index) => {
+            const state = states[index];
+            const copy = state.state === "expected_offline"
+              ? {label:"Expected offline",detail:"Outside operating hours; no alert.",action:"No action needed",tone:"border-white/10 bg-white/[0.035] text-[var(--business-text)]"}
+              : state.state === "awaiting_startup"
+              ? {label:"Awaiting startup",detail:"The opening window or startup grace period is underway.",action:"Start device before service",tone:"border-amber-300/20 bg-amber-300/[0.06] text-amber-100"}
+              : state.state === "unknown"
+              ? {label:"Unknown",detail:"A valid monitoring schedule is needed to avoid false alarms.",action:"Review operating hours",tone:"border-white/10 bg-white/[0.035] text-[var(--business-text)]"}
+              : healthCopy(state.state === "healthy" ? "ready" : item.device.health_status === "ready" ? "offline" : item.device.health_status);
             return (
               <article
                 key={item.deviceId}
