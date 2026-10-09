@@ -128,7 +128,7 @@ jobs:
           gh issue create --title "$TITLE" --body "$BODY"
 
       - name: Upload quota evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: azure-ai-reasoning-quota-${{ github.run_id }}
           path: |

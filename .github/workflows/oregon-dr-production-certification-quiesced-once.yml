@@ -296,7 +296,7 @@ jobs:
 
       - name: Upload certification evidence
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: oregon-production-dr-certification-quiesced-2026-09-03
           path: ${{ runner.temp }}/certification-evidence.json
