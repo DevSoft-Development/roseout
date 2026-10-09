@@ -1,7 +1,7 @@
 import {NextRequest,NextResponse} from "next/server";
 import {requireCronRequest} from "@/lib/cron-auth";
 import {supabaseAdmin} from "@/lib/supabase-admin";
-import {evaluatePosDeviceReadiness,summarizePosReadiness} from "@/lib/pos/hardware/health/location-readiness";
+import {evaluatePosDeviceReadiness} from "@/lib/pos/hardware/health/location-readiness";
 import {scheduleFromLocationHours} from "@/lib/pos/hardware/health/operating-hours";
 
 export const runtime="nodejs";
