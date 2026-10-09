@@ -2,7 +2,7 @@
 
 Run `node scripts/pos-shift-certification.mjs` from the repository root.
 
-The GitHub Actions workflow `ThePOSHaven Shift Certification` runs on POS-impacting pull requests, pushes to main, a nightly schedule, and manual dispatch. It runs a deterministic 18-scenario shift simulation plus existing POS payments, manager-control, Signature+, and operational-shard contract regressions.
+The GitHub Actions workflow `ThePOSHaven Shift Certification` runs on POS-impacting pull requests, pushes to main, and manual dispatch. Recurring scheduling must be provisioned through AWS rather than GitHub Actions cron. It runs a deterministic 18-scenario shift simulation plus existing POS payments, manager-control, Signature+, and operational-shard contract regressions.
 
 **Scope:** simulation-only. The JSON evidence artifact contains scenario pass/fail results and drawer reconciliation. A green job does **not** mean Stripe payments, live Supabase RPCs, kitchen printer hardware, or production DR failover have been exercised. This workflow has read-only repository access, no production secrets, no network-backed payment execution, and no live database writes.
 
