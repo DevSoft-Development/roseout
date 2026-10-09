@@ -86,7 +86,7 @@ export default async function LocationMenuPage({
 
   const access = user
     ? await resolveEditableLocationContext({
-        userId: user?.id || internalDemoAccess!.viewer.user.id,
+        userId: user.id,
         userEmail: user.email ?? null,
         locationId,
         adminLocationId,

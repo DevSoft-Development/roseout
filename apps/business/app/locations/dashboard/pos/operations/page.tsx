@@ -42,10 +42,19 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
   }
   if(!locationId) redirect("/locations/dashboard");
 
-  const access=user?await resolveEditableLocationContext({
-    userId:user.id,userEmail:user.email??null,locationId,
-    adminLocationId,demoLocationId,sourceId,type,demo,fromDemoCenter,
-  }):null;
+  const access = user
+    ? await resolveEditableLocationContext({
+        userId: user.id,
+        userEmail: user.email ?? null,
+        locationId,
+        adminLocationId,
+        demoLocationId,
+        sourceId,
+        type,
+        demo,
+        fromDemoCenter,
+      })
+    : null;
   const internalDemoAccess=access?null:await getInternalDemoLocationAccess({
     locationId,adminLocationId,demoLocationId,demo,fromDemoCenter,
   });
