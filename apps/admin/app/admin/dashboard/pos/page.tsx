@@ -68,7 +68,7 @@ export default async function PosOperationsPage(){
       <AdminKpiCard label="POS devices" value={devices==null?"—":devices.toLocaleString()} helper="Registered hardware" />
       <AdminKpiCard label="Active assignments" value={activeAssignments==null?"—":activeAssignments.toLocaleString()} helper="Devices assigned to locations" />
       <AdminKpiCard label="Ready" value={readyDevices==null?"—":readyDevices.toLocaleString()} helper="Reporting healthy" />
-      <AdminKpiCard label="Offline" value={offlineDevices==null?"—":offlineDevices.toLocaleString()} helper="Need reconnection or review" />
+      <AdminKpiCard label="Raw offline" value={offlineDevices==null?"—":offlineDevices.toLocaleString()} helper="May be expected while restaurant is closed" />
       <AdminKpiCard label="Command queue" value={pendingCommands==null?"—":pendingCommands.toLocaleString()} helper="Pending or currently leased" />
       <AdminKpiCard label="Dead letters" value={deadLetters==null?"—":deadLetters.toLocaleString()} helper="Delivery failures requiring support" />
     </AdminKpiGrid>
