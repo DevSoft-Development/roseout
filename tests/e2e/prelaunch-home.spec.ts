@@ -33,10 +33,10 @@ test.describe("public product readiness", () => {
 
     const officialLogo = page.getByRole("link", { name: "TheOutHaven home" }).locator("img");
     await expect(officialLogo).toBeVisible();
-    await expect(officialLogo).toHaveAttribute("src", "/toh_logo_wordmark_white.webp");
-    const logoResponse = await page.request.get("/toh_logo_wordmark_white.webp");
+    await expect(officialLogo).toHaveAttribute("src", "/theouthaven-official-logo.png");
+    const logoResponse = await page.request.get("/theouthaven-official-logo.png");
     expect(logoResponse.status(), "Official logo must be served as a static asset").toBe(200);
-    expect(logoResponse.headers()["content-type"], "Official logo must be a WebP image").toMatch(new RegExp("image/webp", "i"));
+    expect(logoResponse.headers()["content-type"], "Official logo must be a PNG image").toMatch(new RegExp("image/png", "i"));
     const logoBytes = await logoResponse.body();
     expect(logoBytes.subarray(0, 4).toString("ascii"), "Official logo RIFF signature").toBe("RIFF");
     expect(logoBytes.subarray(8, 12).toString("ascii"), "Official logo WEBP signature").toBe("WEBP");
