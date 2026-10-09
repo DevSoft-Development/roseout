@@ -21,7 +21,7 @@ export default function TheOutHavenBrandLogo({
     <span className="inline-flex min-w-0 max-w-full flex-col">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/toh_logo_wordmark_white.webp"
+        src="/theouthaven-official-logo.png"
         alt="TheOutHaven official logo"
         width={width}
         height={height}
