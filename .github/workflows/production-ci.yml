@@ -119,7 +119,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.quality_scope.outputs.root == 'true' || steps.quality_scope.outputs.admin == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -240,7 +240,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.changes.outputs.security == 'true' || steps.changes.outputs.search == 'true' || steps.changes.outputs.reserve == 'true' || steps.changes.outputs.billing == 'true' || steps.changes.outputs.beta == 'true' || steps.changes.outputs.location == 'true' || steps.changes.outputs.business_revenue == 'true' || steps.changes.outputs.hardware == 'true' || steps.changes.outputs.catalog == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -358,7 +358,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.browser.outputs.run == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
