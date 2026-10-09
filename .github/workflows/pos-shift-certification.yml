@@ -52,6 +52,8 @@ jobs:
         run: node scripts/pos-payments-manager-regression.mjs
       - name: Signature+ shift and operations invariants
         run: node scripts/pos-signature-plus-regression.mjs
+      - name: POS fleet monitoring safety and staged scheduler contract
+        run: node scripts/pos-location-monitoring-regression.mjs
       - name: Opening-hours and device-readiness regressions
         run: |
           npm ci --include=dev --no-audit --no-fund
