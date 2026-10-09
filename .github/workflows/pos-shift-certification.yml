@@ -52,6 +52,12 @@ jobs:
         run: node scripts/pos-payments-manager-regression.mjs
       - name: Signature+ shift and operations invariants
         run: node scripts/pos-signature-plus-regression.mjs
+      - name: POS fleet monitoring safety and staged scheduler contract
+        run: node scripts/pos-location-monitoring-regression.mjs
+      - name: Opening-hours and device-readiness regressions
+        run: |
+          npm ci --include=dev --no-audit --no-fund
+          npx vitest run lib/pos/hardware/health/__tests__/location-readiness.test.ts lib/pos/hardware/health/__tests__/operating-hours.test.ts
       - name: Operational shard and DR safety invariants
         run: node scripts/operational-sharding-regression.mjs
       - name: Publish test summary

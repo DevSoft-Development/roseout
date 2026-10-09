@@ -8,6 +8,9 @@ import {
 } from "@/lib/auth/locationOwnerAccess";
 import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
+import { evaluatePosDeviceReadiness, summarizePosReadiness } from "@/lib/pos/hardware/health/location-readiness";
+import { scheduleFromLocationHours } from "@/lib/pos/hardware/health/operating-hours";
+import { confirmPosMonitoringHours } from "./actions";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
@@ -139,10 +142,24 @@ export default async function HardwareHealthPage({
   } catch {
     unavailable = true;
   }
-  const needsAttention = hardware.filter(
-    (item) => item.device.health_status !== "ready",
-  );
-  const ready = hardware.length - needsAttention.length;
+  const locationData = (access?.location || internalDemoAccess?.location || {}) as Record<string, unknown>;
+  const locationMetadata = (locationData.metadata || {}) as Record<string, unknown>;
+  const hoursConfirmed = locationMetadata.pos_monitoring_hours_fingerprint === JSON.stringify(locationData.operating_hours);
+  const schedule = hoursConfirmed ? scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone) : null;
+  const states = hardware.map(item => {
+    try {
+      return evaluatePosDeviceReadiness({
+        schedule,
+        device: { lastSeenAt: item.device.last_seen_at, health: item.device.health_status, required: true },
+      });
+    } catch {
+      return {state:"unknown" as const, reason:"invalid_operating_schedule", operating:false, opensWithinMinutes:null};
+    }
+  });
+  const counts = summarizePosReadiness(states);
+  const needsAttention = hardware.filter((_,index) => states[index].state === "needs_attention");
+  const ready = counts.healthy;
+
   const locationName = getLocationName(access?.location || internalDemoAccess?.location || {}, "Your location");
 
   return (
@@ -191,6 +208,36 @@ export default async function HardwareHealthPage({
           ))}
         </section>
 
+        <section className="mt-5 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-4 text-sm">
+          <p className="font-black">Opening-aware readiness</p>
+          <p className="mt-1 text-[var(--business-muted)]">
+            {counts.expected_offline} expected offline · {counts.awaiting_startup} awaiting startup · {counts.unknown} unknown.
+            Equipment powered down while closed is not a failure.
+          </p>
+        </section>
+        {canManage && Boolean(user) ? (
+          <form action={confirmPosMonitoringHours} className="mt-4 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
+            <h2 className="font-black">Confirm POS opening hours</h2>
+            <p className="mt-1 text-sm text-[var(--business-muted)]">
+              Check the restaurant operating hours in its Business profile first. Enter its IANA time zone
+              (for example America/New_York). Confirming allows opening-aware health evaluation.
+              When operating hours change, confirmation expires automatically.
+            </p>
+            <input type="hidden" name="locationId" value={canonicalLocationId} />
+            <label className="mt-4 block text-sm font-semibold" htmlFor="pos-monitor-timezone">Location time zone</label>
+            <input id="pos-monitor-timezone" name="timeZone" required
+              defaultValue={String(locationMetadata.pos_monitoring_timezone||"")}
+              placeholder="America/New_York"
+              className="mt-2 w-full rounded-lg border border-[var(--business-border)] bg-[var(--business-bg)] p-3" />
+            <label className="mt-4 flex items-center gap-2 text-sm">
+              <input type="checkbox" name="confirmHours" value="yes" required />
+              I have reviewed this location’s published operating hours and confirmed they are accurate.
+            </label>
+            <button type="submit" className="mt-4 rounded-xl bg-[#e1062a] px-5 py-3 text-sm font-black text-white">
+              Save monitoring hours
+            </button>
+          </form>
+        ) : null}
         {unavailable ? (
           <section className="mt-6 rounded-[1.35rem] border border-amber-300/20 bg-amber-300/[0.06] p-5">
             <h2 className="font-black text-amber-100">Hardware status is temporarily unavailable.</h2>
@@ -201,8 +248,15 @@ export default async function HardwareHealthPage({
         ) : null}
 
         <section className="mt-6 space-y-3">
-          {hardware.map((item) => {
-            const copy = healthCopy(item.device.health_status);
+          {hardware.map((item,index) => {
+            const state = states[index];
+            const copy = state.state === "expected_offline"
+              ? {label:"Expected offline",detail:"Outside operating hours; no alert.",action:"No action needed",tone:"border-white/10 bg-white/[0.035] text-[var(--business-text)]"}
+              : state.state === "awaiting_startup"
+              ? {label:"Awaiting startup",detail:"The opening window or startup grace period is underway.",action:"Start device before service",tone:"border-amber-300/20 bg-amber-300/[0.06] text-amber-100"}
+              : state.state === "unknown"
+              ? {label:"Unknown",detail:"A valid monitoring schedule is needed to avoid false alarms.",action:"Review operating hours",tone:"border-white/10 bg-white/[0.035] text-[var(--business-text)]"}
+              : healthCopy(state.state === "healthy" ? "ready" : item.device.health_status === "ready" ? "offline" : item.device.health_status);
             return (
               <article
                 key={item.deviceId}
