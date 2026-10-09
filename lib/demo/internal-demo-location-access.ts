@@ -21,9 +21,6 @@ export async function getInternalDemoLocationAccess(input: {
   demo?: unknown;
   fromDemoCenter?: unknown;
 }): Promise<InternalDemoLocationAccess | null> {
-  const demoContext = toBoolean(input.demo) || toBoolean(input.fromDemoCenter);
-  if (!demoContext) return null;
-
   const locationId = String(
     input.demoLocationId || input.adminLocationId || input.locationId || "",
   ).trim();
@@ -31,6 +28,15 @@ export async function getInternalDemoLocationAccess(input: {
 
   const viewer = await getInternalDemoViewer();
   if (!viewer) return null;
+
+  const explicitDemoContext =
+    toBoolean(input.demo) || toBoolean(input.fromDemoCenter);
+  const signedHandoffLocationId = String(
+    "demoHandoff" in viewer ? viewer.demoHandoff?.locationId || "" : "",
+  ).trim();
+  const signedDemoContext =
+    Boolean(signedHandoffLocationId) && signedHandoffLocationId === locationId;
+  if (!explicitDemoContext && !signedDemoContext) return null;
 
   const { data: location, error } = await supabaseAdmin
     .from("locations")

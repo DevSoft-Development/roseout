@@ -63,15 +63,31 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
 
   const canonicalLocationId=String(access?.canonicalLocationId||internalDemoAccess!.locationId);
   const plan=await getPosPlanForLocation(canonicalLocationId);
-  if(plan!=="signature_plus") redirect(`/locations/dashboard/pos?locationId=${encodeURIComponent(canonicalLocationId)}&signatureRequired=1`);
+  if(plan!=="signature_plus"&&!internalDemoAccess) redirect(`/locations/dashboard/pos?locationId=${encodeURIComponent(canonicalLocationId)}&signatureRequired=1`);
 
   const from=first(params.from)||null;
   const to=first(params.to)||null;
-  const [inventory,report,managerOps]=await Promise.all([
-    getSignaturePlusInventory(canonicalLocationId),
-    getSignaturePlusReport({locationId:canonicalLocationId,from,to}),
-    getPosManagerOperations(canonicalLocationId),
-  ]);
+  const emptyInventory={
+    stockAreas:[],ingredients:[],balances:[],recentWaste:[],recentTransfers:[],
+    summary:{ingredientCount:0,lowStockCount:0,reorderCount:0,wasteEvents:0,transferEvents:0},
+  };
+  const emptyReport={
+    metrics:{netSalesCents:0,checks:0,averageCheckCents:0,splitTenderCount:0,grossSalesCents:0,discountsCents:0,refundsCents:0,taxCents:0,tipsCents:0},
+    inventoryMetrics:{wasteQuantity:0,transferQuantity:0,recipeUsageQuantity:0,wasteEvents:0,transferEvents:0},
+    paymentMethods:[],courseMix:[],serverPerformance:[],topItems:[],
+  };
+  const emptyManagerOps={drawers:[],events:[],checks:[],tenders:[],items:[],staff:[],managers:[]};
+  const [inventory,report,managerOps]=internalDemoAccess
+    ? await Promise.all([
+        getSignaturePlusInventory(canonicalLocationId).catch(()=>emptyInventory as any),
+        getSignaturePlusReport({locationId:canonicalLocationId,from,to}).catch(()=>emptyReport as any),
+        getPosManagerOperations(canonicalLocationId).catch(()=>emptyManagerOps as any),
+      ])
+    : await Promise.all([
+        getSignaturePlusInventory(canonicalLocationId),
+        getSignaturePlusReport({locationId:canonicalLocationId,from,to}),
+        getPosManagerOperations(canonicalLocationId),
+      ]);
 
   const location=access?.location||internalDemoAccess!.location||{};
   const locationName=String(location.name||location.location_name||location.restaurant_name||location.activity_name||"Your location");

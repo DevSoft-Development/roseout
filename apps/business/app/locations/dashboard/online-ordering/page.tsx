@@ -47,10 +47,13 @@ export default async function OnlineOrderingPage({searchParams}:{searchParams?:P
     demo,
     fromDemoCenter,
   }):null;
-  if(!access) redirect("/locations/dashboard");
+  const internalDemoAccess=access?null:await getInternalDemoLocationAccess({
+    locationId,adminLocationId,demoLocationId,demo,fromDemoCenter,
+  });
+  if(!access&&!internalDemoAccess) redirect(user?"/locations/dashboard":"/business/login?next=/locations/dashboard/online-ordering");
 
-  const canonicalLocationId=String(access.canonicalLocationId);
-  const location=access.location||{};
+  const canonicalLocationId=String(access?.canonicalLocationId||internalDemoAccess!.locationId);
+  const location=access?.location||internalDemoAccess!.location||{};
   const locationName=String(location.name||location.location_name||location.restaurant_name||location.activity_name||"Your location");
 
   return <BusinessPageShell>
