@@ -8,7 +8,8 @@ import {
 } from "@/lib/auth/locationOwnerAccess";
 import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
-import { evaluatePosDeviceReadiness, summarizePosReadiness, type PosOpeningSchedule } from "@/lib/pos/hardware/health/location-readiness";
+import { evaluatePosDeviceReadiness, summarizePosReadiness } from "@/lib/pos/hardware/health/location-readiness";
+import { scheduleFromLocationHours } from "@/lib/pos/hardware/health/operating-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -132,8 +133,8 @@ export default async function HardwareHealthPage({
     unavailable = true;
   }
   const locationData = (access.location || {}) as Record<string, unknown>;
-  const config = locationData.pos_monitoring_schedule;
-  const schedule: PosOpeningSchedule | null = config && typeof config === "object" ? config as PosOpeningSchedule : null;
+  const locationMetadata = (locationData.metadata || {}) as Record<string, unknown>;
+  const schedule = scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone);
   const states = hardware.map(item => {
     try {
       return evaluatePosDeviceReadiness({
