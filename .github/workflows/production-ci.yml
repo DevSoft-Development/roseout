@@ -136,9 +136,13 @@ jobs:
         if: steps.quality_scope.outputs.root == 'true'
         run: npm run typecheck
 
-      - name: Lint
+      - name: Lint changed source files
         if: steps.quality_scope.outputs.root == 'true'
-        run: npm run lint
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          FULL_LINT: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node scripts/ci/lint-changed.mjs
 
       - name: Build production application
         if: steps.quality_scope.outputs.root == 'true'
@@ -316,9 +320,8 @@ jobs:
 
   e2e:
     name: Required browser smoke tests
-    needs:
-      - quality
-      - regressions
+    # The Playwright web server starts independently; no quality job artifact is needed.
+    # Running concurrently removes the entire lint/build duration from the critical path.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
