@@ -32,7 +32,7 @@ jobs:
           test -n "$AWS_BACKUP_BUCKET" || { echo "Missing repository variable AWS_BACKUP_BUCKET" >&2; exit 1; }
 
       - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v2.1.1
+        uses: supabase/setup-cli@v3
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
           github-token: ${{ github.token }}
