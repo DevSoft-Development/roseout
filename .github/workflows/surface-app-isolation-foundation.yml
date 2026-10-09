@@ -24,6 +24,11 @@ on:
 permissions:
   contents: read
 
+# Stop stale PR builds when a newer commit is pushed; keep main deployments independent.
+concurrency:
+  group: surface-isolation-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -70,6 +75,15 @@ jobs:
 
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
+          # Test-only edits still run isolation tests, but need not rebuild Next.js.
+          build=$run
+          if [ "$run" = true ] && [ -n "$CHANGED" ]; then
+            if ! printf '%s\\n' "$CHANGED" | grep -Evq '^(apps/[^/]+/(__tests__/|tests/|.*\\.(test|spec)\\.[cm]?[jt]sx?$)|scripts/(surface-app-isolation-regression|consumer-route-migration-regression)\\.mjs$)'; then
+              build=false
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node.js
         if: steps.surface_scope.outputs.run == 'true'
         uses: actions/setup-node@v4
@@ -86,11 +100,11 @@ jobs:
         run: npm run test:surface-app-isolation
 
       - name: Validate consumer route ownership
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'consumer'
+        if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'consumer'
         run: npm run test:consumer-surface-migration
 
       - name: Build isolated Admin surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'admin'
+        if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'admin'
         run: npm run build:surface:admin
 
       - name: Build isolated Consumer surface
@@ -103,7 +117,7 @@ jobs:
         run: npm run build:surface:consumer
 
       - name: Build isolated Business surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'business'
+        if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'business'
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: business-ci-placeholder
@@ -111,7 +125,7 @@ jobs:
         run: npm run build:surface:business
 
       - name: Build isolated Reserve surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'reserve'
+        if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'reserve'
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: reserve-ci-placeholder
