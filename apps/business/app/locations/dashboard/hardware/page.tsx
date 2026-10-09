@@ -7,6 +7,7 @@ import {
   resolveLocationAccessContext,
 } from "@/lib/auth/locationOwnerAccess";
 import { getLocationName } from "@/lib/locationName";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import {
   listLocationHardware,
   type PosLocationHardware,
@@ -173,35 +174,53 @@ export default async function HardwareWorkspacePage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/business/login?next=/locations/dashboard/hardware");
-  }
-
   const requestedLocationId =
     stringParam(params, "locationId") ||
     stringParam(params, "adminLocationId") ||
     stringParam(params, "demoLocationId");
 
-  const ownerAccess = await getLocationOwnerAccess(user.id, user.email);
+  const internalDemoAccess = !user
+    ? await getInternalDemoLocationAccess({
+        locationId: stringParam(params, "locationId"),
+        adminLocationId: stringParam(params, "adminLocationId"),
+        demoLocationId: stringParam(params, "demoLocationId"),
+        demo: boolParam(params, "demo"),
+        fromDemoCenter: boolParam(params, "fromDemoCenter"),
+      })
+    : null;
+
+  if (!user && !internalDemoAccess) {
+    redirect("/business/login?next=/locations/dashboard/hardware");
+  }
+
+  const ownerAccess = user
+    ? await getLocationOwnerAccess(user.id, user.email)
+    : null;
   const fallbackLocationId =
-    ownerAccess.ownedLocationIds[0] ||
-    ownerAccess.ownedSourceLocationIds[0] ||
+    ownerAccess?.ownedLocationIds[0] ||
+    ownerAccess?.ownedSourceLocationIds[0] ||
     undefined;
 
-  const access = await resolveLocationAccessContext({
-    userId: user.id,
-    userEmail: user.email,
-    locationId: stringParam(params, "locationId") || (!requestedLocationId ? fallbackLocationId : undefined),
-    adminLocationId: stringParam(params, "adminLocationId"),
-    demoLocationId: stringParam(params, "demoLocationId"),
-    sourceId: stringParam(params, "sourceId"),
-    type: stringParam(params, "type"),
-    demo: boolParam(params, "demo"),
-    fromDemoCenter: boolParam(params, "fromDemoCenter"),
-    allowDemoPreview: true,
-  });
+  const access = user
+    ? await resolveLocationAccessContext({
+        userId: user.id,
+        userEmail: user.email,
+        locationId: stringParam(params, "locationId") || (!requestedLocationId ? fallbackLocationId : undefined),
+        adminLocationId: stringParam(params, "adminLocationId"),
+        demoLocationId: stringParam(params, "demoLocationId"),
+        sourceId: stringParam(params, "sourceId"),
+        type: stringParam(params, "type"),
+        demo: boolParam(params, "demo"),
+        fromDemoCenter: boolParam(params, "fromDemoCenter"),
+        allowDemoPreview: true,
+      })
+    : null;
 
-  if (!access.canonicalLocationId || !hasLocationPermission(access, "hardware.view")) {
+  const canViewHardware = internalDemoAccess
+    ? true
+    : Boolean(access?.canonicalLocationId && hasLocationPermission(access, "hardware.view"));
+
+  if (!canViewHardware) {
     return (
       <main className="min-h-screen bg-[var(--business-bg)] px-4 py-8 text-[var(--business-text)] sm:px-6 lg:px-8">
         <div className="mx-auto max-w-4xl rounded-[1.5rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
@@ -215,7 +234,7 @@ export default async function HardwareWorkspacePage({
     );
   }
 
-  const canonicalLocationId = access.canonicalLocationId;
+  const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess!.locationId);
 
   let hardware: PosLocationHardware[] = [];
   let unavailable = false;
@@ -225,8 +244,8 @@ export default async function HardwareWorkspacePage({
     unavailable = true;
   }
 
-  const canManage = hasLocationPermission(access, "hardware.manage");
-  const locationName = getLocationName(access.location || {}, "Your location");
+  const canManage = internalDemoAccess ? true : Boolean(access && hasLocationPermission(access, "hardware.manage"));
+  const locationName = getLocationName(access?.location || internalDemoAccess?.location || {}, "Your location");
   const ready = hardware.filter((item) => item.device.health_status === "ready").length;
   const offline = hardware.filter((item) => item.device.health_status === "offline").length;
   const attention = hardware.filter((item) =>
