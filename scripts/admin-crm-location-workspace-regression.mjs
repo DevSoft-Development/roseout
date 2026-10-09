@@ -115,3 +115,12 @@ requireText(crmDirectCallButton, "navigator.sendBeacon", "3CX call launcher must
 if (crmDirectCallButton.includes("await fetch")) {
   throw new Error("3CX call launcher must not await logging before opening the native calling handler.");
 }
+
+const crmOutreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.tsx");
+if (crmOutreachPage.includes("Communication history")) {
+  throw new Error("Selected-location Communications must not render a second duplicate communication-history section below CommunicationCenter.");
+}
+requireText(crmOutreachPage, "bg-rose-600 px-4 py-3 font-black text-white", "Communication filters need a visible dark-mode Apply filters action.");
+
+const crmCommunicationCenter = read("apps/admin/components/admin/crm/CommunicationCenter.tsx");
+requireText(crmCommunicationCenter, "border border-rose-500 bg-rose-600 text-white", "Communication tabs need a high-contrast active state in dark mode.");

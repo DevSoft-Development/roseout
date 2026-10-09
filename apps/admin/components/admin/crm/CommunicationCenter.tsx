@@ -154,7 +154,7 @@ export default function CommunicationCenter({
 
       <div className="flex gap-1 overflow-x-auto border-b border-white/[0.07] px-4 py-3">
         {[["all", "All"], ["unread", "Unread"], ["sms", "Texts"], ["email", "Email"], ...(scope === "crm" ? [["calls", "Calls"]] : [])].map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${filter === value ? "bg-white text-black" : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"}`}>
+          <button key={value} type="button" onClick={() => setFilter(value)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-black transition ${filter === value ? "border border-rose-500 bg-rose-600 text-white shadow-sm" : "border border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/[0.07] hover:text-white"}`}>
             {label}
           </button>
         ))}
