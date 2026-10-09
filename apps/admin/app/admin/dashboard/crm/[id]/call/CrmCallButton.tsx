@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 export default function CrmCallButton({
   locationId,
   callHref,
@@ -11,34 +9,35 @@ export default function CrmCallButton({
   callHref: string;
   phone: string;
 }) {
-  const [starting, setStarting] = useState(false);
+  function logCallStart() {
+    const payload = JSON.stringify({ locationId, phone });
 
-  async function startCall() {
-    if (starting) return;
-    setStarting(true);
     try {
-      await fetch("/api/admin/crm/calls/initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locationId, phone }),
-        keepalive: true,
-      });
+      if (navigator.sendBeacon) {
+        const body = new Blob([payload], { type: "application/json" });
+        const queued = navigator.sendBeacon("/api/admin/crm/calls/initiate", body);
+        if (queued) return;
+      }
     } catch {
-      // Do not block the user's call if activity logging is temporarily unavailable.
-    } finally {
-      window.location.href = callHref;
-      window.setTimeout(() => setStarting(false), 1500);
+      // Fall through to keepalive fetch.
     }
+
+    void fetch("/api/admin/crm/calls/initiate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+      credentials: "same-origin",
+    }).catch(() => undefined);
   }
 
   return (
-    <button
-      type="button"
-      onClick={startCall}
-      disabled={starting}
-      className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30 disabled:opacity-60"
+    <a
+      href={callHref}
+      onClick={logCallStart}
+      className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30"
     >
-      {starting ? "Opening 3CX…" : "Call now"}
-    </button>
+      Call now
+    </a>
   );
 }
