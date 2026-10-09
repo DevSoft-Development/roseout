@@ -9,6 +9,7 @@ type TheOutHavenBrandLogoProps = {
   label?: string;
 };
 
+/** Shared across separately deployed surfaces; the image asset must ship with each app. */
 export default function TheOutHavenBrandLogo({
   className = "h-auto w-[190px] max-w-full object-contain",
   width = 600,
@@ -18,7 +19,7 @@ export default function TheOutHavenBrandLogo({
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <span className="inline-flex min-w-0 flex-col">
+    <span className="inline-flex min-w-0 max-w-full flex-col">
       {!imageFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -27,19 +28,24 @@ export default function TheOutHavenBrandLogo({
           width={width}
           height={height}
           className={className}
+          loading="eager"
+          decoding="async"
           onError={() => setImageFailed(true)}
+          onLoad={(event) => {
+            if (!event.currentTarget.naturalWidth || !event.currentTarget.naturalHeight) {
+              setImageFailed(true);
+            }
+          }}
         />
       ) : (
-        <span className="text-xl font-black tracking-tight text-white" aria-label="TheOutHaven">
+        <span role="img" aria-label="TheOutHaven" className="inline-block text-xl font-black tracking-tight text-white">
           <span className="text-white/75">The</span>
           <span className="text-[#e1062a]">Out</span>
-          <span className="text-white">Haven</span>
+          <span>Haven</span>
         </span>
       )}
       {label ? (
-        <span className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-white/40">
-          {label}
-        </span>
+        <span className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-white/60">{label}</span>
       ) : null}
     </span>
   );

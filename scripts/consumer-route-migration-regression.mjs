@@ -99,7 +99,7 @@ if (!consumerProxy.includes("https://business.theouthaven.com")) {
 if (consumerHeader.includes('{ href: "/reservations", label: "Reservations" }')) {
   throw new Error("Consumer global header must not expose a standalone Reservations destination.");
 }
-if (!consumerFooter.includes("https://theouthaven.com/status") || !consumerFooter.includes("System Status")) {
+if (!consumerFooter.includes("https://theouthaven.com/status") || !consumerFooter.includes("System status")) {
   throw new Error("Consumer footer must expose public system status.");
 }
 
@@ -127,8 +127,8 @@ for (const [name, source] of [
     throw new Error(`${name} must not render the legacy route-local Plan footer.`);
   }
 }
-if (!consumerFooter.includes("TheOutHavenBrandLogo")) {
-  throw new Error("Consumer shared footer must render the official TheOutHaven logo.");
+if (!consumerFooter.includes('aria-label="Footer navigation"') || !consumerFooter.includes('aria-label="TheOutHaven site footer"')) {
+  throw new Error("Consumer shared footer must provide accessible shared navigation.");
 }
 
 console.log(`Consumer-only surface parity passed for ${publicFiles.length} public files; private Admin/Business/Reserve routes excluded.`);

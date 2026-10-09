@@ -1,121 +1,67 @@
 import Link from "next/link";
-import TheOutHavenBrandLogo from "@/components/TheOutHavenBrandLogo";
+
+type FooterLink = { label: string; href: string };
+const groups: { title: string; links: FooterLink[] }[] = [
+  { title: "Explore", links: [
+    { label: "Explore outings", href: "https://theouthaven.com/explore" },
+    { label: "Plan an outing", href: "https://theouthaven.com/create" },
+    { label: "New York City", href: "https://theouthaven.com/explore" },
+  ] },
+  { title: "Business", links: [
+    { label: "For businesses", href: "https://business.theouthaven.com/business" },
+    { label: "Claim your listing", href: "https://business.theouthaven.com/business/claim" },
+  ] },
+  { title: "Company", links: [
+    { label: "About us", href: "https://theouthaven.com/about" },
+    { label: "Careers", href: "https://theouthaven.com/careers" },
+    { label: "Contact", href: "https://theouthaven.com/contact" },
+  ] },
+  { title: "Help & legal", links: [
+    { label: "Get help", href: "https://theouthaven.com/support" },
+    { label: "FAQ", href: "https://theouthaven.com/faq" },
+    { label: "Trust Center", href: "https://theouthaven.com/trust" },
+    { label: "Privacy", href: "https://theouthaven.com/privacy" },
+    { label: "Terms", href: "https://theouthaven.com/terms" },
+  ] },
+];
 
 export default function TheOutHavenFooter() {
   return (
-    <footer className="relative overflow-hidden border-t border-white/10 bg-[#050505] px-6 py-14 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(225,6,42,0.16),transparent_28%),linear-gradient(180deg,#050505,#000)]" />
-
-      <div className="relative mx-auto flex max-w-7xl flex-col gap-10">
-        <div>
-          <TheOutHavenBrandLogo className="h-auto w-[220px] max-w-full object-contain" />
-          <p className="mt-6 max-w-md text-sm leading-7 text-white/45">
-            TheOutHaven LLC is a New York-based technology company helping people
-            plan restaurants, activities, nightlife, and complete outings across
-            NYC and Long Island.
-          </p>
-
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <Link
-              href="https://theouthaven.com/create"
-              className="rounded-2xl bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500 hover:shadow-lg hover:shadow-red-500/20"
-            >
-              Start Planning
-            </Link>
-            <Link
-              href="https://theouthaven.com/about"
-              className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"
-            >
-              About TheOutHaven
+    <footer aria-label="TheOutHaven site footer" className="border-t border-white/10 bg-[#09090b] px-6 py-10 text-white sm:py-12">
+      <div className="mx-auto max-w-7xl">
+        <div className="grid gap-10 border-b border-white/10 pb-10 md:grid-cols-[minmax(0,1.3fr)_minmax(0,2.7fr)] lg:gap-16">
+          <div>
+            <p className="text-lg font-bold tracking-tight">TheOutHaven</p>
+            <p className="mt-3 max-w-sm text-sm leading-6 text-white/65">
+              Find your next restaurant, activity, or night out. Plan the whole outing in one place.
+            </p>
+            <Link href="https://theouthaven.com/create" className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#e1062a] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#bd0524] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              Plan an outing
             </Link>
           </div>
+          <nav aria-label="Footer navigation" className="grid grid-cols-2 gap-x-5 gap-y-9 lg:grid-cols-4">
+            {groups.map((group) => (
+              <div key={group.title}>
+                <h2 className="text-xs font-bold uppercase tracking-widest text-white/85">{group.title}</h2>
+                <ul className="mt-4 space-y-3">
+                  {group.links.map((link) => (
+                    <li key={link.href}>
+                      <Link href={link.href} className="text-sm leading-6 text-white/65 transition hover:text-white focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </div>
-
-        <FooterColumn
-          title="Explore"
-          links={[
-            { label: "Home", href: "https://theouthaven.com/" },
-            { label: "Explore", href: "https://theouthaven.com/explore" },
-            { label: "Plan Outing", href: "https://theouthaven.com/create" },
-            { label: "Queens", href: "https://theouthaven.com/explore/queens" },
-            { label: "Brooklyn", href: "https://theouthaven.com/explore/brooklyn" },
-            { label: "Long Island", href: "https://theouthaven.com/explore/long-island" },
-          ]}
-        />
-
-        <FooterColumn
-          title="Company"
-          links={[
-            { label: "About", href: "https://theouthaven.com/about" },
-            { label: "For Businesses", href: "https://business.theouthaven.com/business" },
-            { label: "Claim Listing", href: "https://business.theouthaven.com/business/claim" },
-            { label: "Careers", href: "https://theouthaven.com/careers" },
-          ]}
-        />
-
-        <FooterColumn
-          title="Support"
-          links={[
-            { label: "Get Help", href: "https://theouthaven.com/support" },
-            { label: "Knowledge Base", href: "https://theouthaven.com/help" },
-            { label: "FAQ", href: "https://theouthaven.com/faq" },
-            { label: "Trust Center", href: "https://theouthaven.com/trust" },
-            { label: "Status", href: "https://theouthaven.com/status" },
-            { label: "Contact", href: "https://theouthaven.com/contact" },
-          ]}
-        />
-
-        <FooterColumn
-          title="Legal"
-          links={[
-            { label: "Terms", href: "https://theouthaven.com/terms" },
-            { label: "Privacy", href: "https://theouthaven.com/privacy" },
-            { label: "Contact", href: "https://theouthaven.com/contact" },
-          ]}
-        />
-      </div>
-
-      <div className="relative mx-auto mt-12 flex max-w-7xl flex-col gap-4 border-t border-white/10 pt-6 text-xs text-white/35">
-        <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
-        <p className="max-w-xl leading-6">
-          Recommendations may include third-party listings. Always confirm details
-          directly with the business.
-        </p>
-        <Link
-          href="https://theouthaven.com/status"
-          className="inline-flex w-fit items-center gap-2 text-sm font-black text-white/65 transition hover:text-white"
-        >
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-          System Status
-        </Link>
+        <div className="flex flex-col gap-3 pt-6 text-xs leading-5 text-white/55 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+          <p>© {new Date().getFullYear()} TheOutHaven LLC. All rights reserved.</p>
+          <p className="max-w-lg">Listings and availability may change. Confirm details with the business.</p>
+          <Link href="https://theouthaven.com/status" className="shrink-0 font-semibold text-white/75 underline-offset-4 hover:text-white hover:underline">System status</Link>
+        </div>
       </div>
     </footer>
-  );
-}
-
-function FooterColumn({
-  title,
-  links,
-}: {
-  title: string;
-  links: { label: string; href: string }[];
-}) {
-  return (
-    <div>
-      <p className="text-xs font-black uppercase tracking-[0.28em] text-[#e1062a]">
-        {title}
-      </p>
-      <div className="mt-5 flex flex-col gap-3">
-        {links.map((link) => (
-          <Link
-            key={`${link.label}-${link.href}`}
-            href={link.href}
-            className="text-sm font-semibold text-white/45 transition hover:text-white"
-          >
-            {link.label}
-          </Link>
-        ))}
-      </div>
-    </div>
   );
 }
