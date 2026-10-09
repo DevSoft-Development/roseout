@@ -4,6 +4,7 @@ const read=(path)=>fs.readFileSync(path,"utf8");
 const endpoint=read("app/api/cron/pos-location-readiness/route.ts");
 const classifier=read("lib/pos/hardware/health/location-readiness.ts");
 const parser=read("lib/pos/hardware/health/operating-hours.ts");
+const confirm=read("apps/business/app/locations/dashboard/hardware/health/actions.ts");
 const admin=read("apps/admin/app/admin/dashboard/pos/page.tsx");
 const business=read("apps/business/app/locations/dashboard/hardware/health/page.tsx");
 const registry=JSON.parse(read("config/cron-jobs.json"));
@@ -20,6 +21,8 @@ assert(classifier.includes('state:"expected_offline"'),"Closed restaurants must 
 assert(classifier.includes('state:"awaiting_startup"'),"Opening grace must be supported");
 assert(parser.includes("pos_monitoring_timezone")===false,"Parser must not guess time zones internally");
 assert(business.includes("scheduleFromLocationHours"),"Business health page must use location hours");
+assert(confirm.includes("hardware.manage") && confirm.includes("pos_monitoring_hours_fingerprint"),"Owner confirmation must require permissions and bind to hours");
+assert(endpoint.includes("pos_monitoring_hours_fingerprint"),"Fleet monitoring must require schedule verification");
 assert(admin.includes('pos-location-readiness'),"Admin monitoring visibility missing");
 const row=registry.find(x=>x.jobKey==="pos-location-readiness");
 assert(row?.delivery==="managed"&&row.targetPath==="/api/cron/pos-location-readiness","Managed cron registration missing");
