@@ -58,6 +58,12 @@ jobs:
       PRODUCTION_BUSINESS_DEMO_PATH: ${{ vars.PRODUCTION_BUSINESS_DEMO_PATH }}
 
     steps:
+      - name: Check out verification commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
       - name: Resolve production surface
         shell: bash
         env:
@@ -66,7 +72,31 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            SURFACES="all"
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            CHANGED="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")" || { echo "Cannot determine PR scope; verify all."; CHANGED=""; }
+            # Shared tooling and surface contracts must fail safely to all surfaces.
+            if [ -z "$CHANGED" ] || printf '%s\\n' "$CHANGED" | grep -Eq '^(components/|packages/|tests/e2e/production-|playwright\\.config\\.ts$|package(-lock)?\\.json$|\\.github/workflows/production-browser-verification\\.yml$)'; then
+              SURFACES="all"
+            else
+              SURFACES=""
+              for surface in consumer admin business reserve; do
+                case "$surface" in
+                  consumer) match='^(app/|apps/consumer/)' ;;
+                  admin) match='^apps/admin/' ;;
+                  business) match='^apps/business/' ;;
+                  reserve) match='^apps/reserve/' ;;
+                esac
+                if printf '%s\\n' "$CHANGED" | grep -Eq "$match"; then
+                  SURFACES="${SURFACES:+$SURFACES,}$surface"
+                fi
+              done
+              # Unknown changed paths are verified conservatively.
+              if printf '%s\\n' "$CHANGED" | grep -Evq '^(app/|apps/(consumer|admin|business|reserve)/)'; then
+                SURFACES="all"
+              fi
+              SURFACES="${SURFACES:-all}"
+            fi
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SURFACES="${MANUAL_SURFACE:-all}"
           else
@@ -79,11 +109,6 @@ jobs:
           fi
           echo "PRODUCTION_BROWSER_SURFACES=${SURFACES}" >> "$GITHUB_ENV"
           echo "Verifying production surfaces: ${SURFACES}"
-
-      - name: Check out verification commit
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Use Node.js
         uses: actions/setup-node@v4
