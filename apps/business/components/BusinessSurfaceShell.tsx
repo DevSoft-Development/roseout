@@ -13,13 +13,14 @@ function isPublicBusinessPath(pathname: string) {
 
 export default function BusinessSurfaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "";
-  const showSharedPublicChrome = isPublicBusinessPath(pathname);
+  const showSharedHeader = isPublicBusinessPath(pathname);
+  const showSharedFooter = showSharedHeader || pathname.startsWith("/business/login");
 
   return (
     <>
-      {showSharedPublicChrome ? <TheOutHavenHeader surface="business" /> : null}
+      {showSharedHeader ? <TheOutHavenHeader surface="business" /> : null}
       {children}
-      {showSharedPublicChrome ? <TheOutHavenFooter /> : null}
+      {showSharedFooter ? <TheOutHavenFooter /> : null}
     </>
   );
 }
