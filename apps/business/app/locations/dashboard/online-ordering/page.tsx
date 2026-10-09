@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import OnlineOrderingControls from "./OnlineOrderingControls";
 
 export const dynamic="force-dynamic";
@@ -14,8 +15,6 @@ export default async function OnlineOrderingPage({searchParams}:{searchParams?:P
   const params=(await searchParams)||{};
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
-  if(!user) redirect("/login");
-
   const cookieStore=await cookies();
   const adminLocationId=first(params.adminLocationId);
   const demoLocationId=first(params.demoLocationId);
