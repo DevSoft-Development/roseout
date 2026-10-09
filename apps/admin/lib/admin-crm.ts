@@ -1547,6 +1547,7 @@ export async function getLocationCrmRelatedData(locationId: string) {
     waitlist,
     walkIns,
     resources,
+    callActivities,
   ] = await Promise.all([
     safeSelect("business_crm_notes", (q) =>
       q
@@ -1698,12 +1699,36 @@ export async function getLocationCrmRelatedData(locationId: string) {
         .order("created_at", { ascending: false })
         .limit(100),
     ),
+    safeSelect("crm_activities", (q) =>
+      q
+        .select("id,summary,body,direction,channel,source_system,created_at,occurred_at,metadata")
+        .eq("location_id", locationId)
+        .eq("source_system", "3cx")
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ),
   ]);
 
   return {
     notes,
     reminders,
-    communications: [...businessComms, ...comms],
+    communications: [
+      ...businessComms,
+      ...comms,
+      ...callActivities.map((row: any) => ({
+        ...row,
+        channel: row.channel || "phone",
+        direction: row.direction || "outbound",
+        subject: "3CX call",
+        body: row.body || row.summary,
+        message: row.summary,
+        status: row.metadata?.state || "recorded",
+        delivery_status: row.metadata?.state || "recorded",
+        sent_at: row.occurred_at || row.created_at,
+        created_at: row.created_at || row.occurred_at,
+        to_address: row.metadata?.to || row.metadata?.dialPhone || null,
+      })),
+    ],
     logs,
     claims: [
       ...businessClaims.map((row: any) =>

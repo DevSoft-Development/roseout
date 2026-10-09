@@ -82,3 +82,29 @@ requireText(crmEmailComposer, '/api/admin/crm/email/send', "Selected-location em
 requireText(crmEmailSendRoute, '.eq("id", locationId)', "CRM email endpoint must resolve only the selected location.");
 requireText(crmEmailSendRoute, 'recipient_type: "location"', "CRM email sends must be logged against the selected location.");
 requireText(crmEmailSendRoute, 'requireAdminRole(CRM_WRITE_ROLES)', "CRM email endpoint must require CRM write permission.");
+
+const crmCallButton = read("apps/admin/app/admin/dashboard/crm/[id]/call/CrmCallButton.tsx");
+const crmCallInitiateRoute = read("apps/admin/app/api/admin/crm/calls/initiate/route.ts");
+const crmSmsRecipientsRoute = read("apps/admin/app/api/admin/crm/sms/recipients/route.ts");
+const crmSmsSendRoute = read("apps/admin/app/api/admin/crm/sms/send/route.ts");
+const isolatedAdminCrm = read("apps/admin/lib/admin-crm.ts");
+
+requireText(crmCallButton, "/api/admin/crm/calls/initiate", "3CX call action must record a location-scoped call before opening the dialer.");
+requireText(crmCallInitiateRoute, 'source_system: "3cx"', "3CX call initiation must write CRM call activity.");
+requireText(crmCallInitiateRoute, 'recipient_type: "location"', "3CX call initiation must write the selected location communication history.");
+requireText(crmSmsRecipientsRoute, 'crm_account_locations', "Location SMS recipients must be resolved from the selected location account.");
+requireText(crmSmsSendRoute, 'sendCrmSms', "Selected-location SMS must use the CRM Telnyx channel.");
+requireText(crmSmsSendRoute, 'recipient_type: "location"', "Selected-location SMS must write location communication history.");
+requireText(crmSmsSendRoute, 'source_system: "crm_sms"', "Selected-location SMS must write CRM activity history.");
+requireText(isolatedAdminCrm, '.eq("source_system", "3cx")', "Location Communications must include 3CX activity rows.");
+
+const threeCxTemplate = read("docs/integrations/3cx/TheOutHaven.xml");
+const threeCxJournal = read("apps/consumer/app/api/integrations/3cx/journal/route.ts");
+requireText(threeCxTemplate, 'Scenario Id="ReportCall"', "3CX template must include the reserved ReportCall scenario.");
+requireText(threeCxTemplate, 'Scenario Id=""', "3CX template must include the reserved phone lookup scenario.");
+requireText(threeCxTemplate, 'Type="EntityId"', "3CX lookup must return the location UUID as EntityId.");
+requireText(threeCxTemplate, 'Key="x-3cx-api-key"', "3CX template must authenticate with a header instead of a query-string secret.");
+requireText(threeCxJournal, 'source_record_id', "3CX journal must persist a stable provider/source record id.");
+requireText(threeCxJournal, 'duplicate: true', "3CX journal must be idempotent on retried callbacks.");
+requireText(threeCxJournal, 'state: "completed"', "3CX journal must complete initiated call state.");
+requireText(threeCxJournal, 'findInitiatedActivity', "3CX journal must merge a completed callback into a recent initiated call when possible.");
