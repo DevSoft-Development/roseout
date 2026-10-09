@@ -11,6 +11,7 @@ on:
       - 'components/**'
       - 'tests/e2e/production-browser-helpers.ts'
       - 'tests/e2e/production-surfaces.spec.ts'
+      - 'tests/e2e/production-turnstile.spec.ts'
       - '.github/workflows/production-browser-verification.yml'
       - 'playwright.config.ts'
       - 'package.json'
@@ -116,7 +117,7 @@ jobs:
           fi
 
       - name: Run production browser verification
-        run: npx playwright test tests/e2e/production-surfaces.spec.ts --project=chromium
+        run: npx playwright test tests/e2e/production-surfaces.spec.ts tests/e2e/production-turnstile.spec.ts --project=chromium
 
       - name: Upload browser evidence
         if: always()
