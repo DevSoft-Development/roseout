@@ -108,3 +108,10 @@ requireText(threeCxJournal, 'source_record_id', "3CX journal must persist a stab
 requireText(threeCxJournal, 'duplicate: true', "3CX journal must be idempotent on retried callbacks.");
 requireText(threeCxJournal, 'state: "completed"', "3CX journal must complete initiated call state.");
 requireText(threeCxJournal, 'findInitiatedActivity', "3CX journal must merge a completed callback into a recent initiated call when possible.");
+
+const crmDirectCallButton = read("apps/admin/app/admin/dashboard/crm/[id]/call/CrmCallButton.tsx");
+requireText(crmDirectCallButton, "href={callHref}", "3CX call launcher must remain a direct tel: link so the browser preserves the user gesture.");
+requireText(crmDirectCallButton, "navigator.sendBeacon", "3CX call launcher must log call initiation without awaiting before the tel: handoff.");
+if (crmDirectCallButton.includes("await fetch")) {
+  throw new Error("3CX call launcher must not await logging before opening the native calling handler.");
+}
