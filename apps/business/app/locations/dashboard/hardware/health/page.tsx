@@ -11,6 +11,7 @@ import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
 import { evaluatePosDeviceReadiness, summarizePosReadiness } from "@/lib/pos/hardware/health/location-readiness";
 import { scheduleFromLocationHours } from "@/lib/pos/hardware/health/operating-hours";
 import { confirmPosMonitoringHours } from "./actions";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic = "force-dynamic";
 
@@ -99,33 +100,41 @@ export default async function HardwareHealthPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
+  const requestedLocationId = stringParam(query, "locationId");
+  const internalDemoAccess = !user && requestedLocationId
+    ? await getInternalDemoLocationAccess({ locationId: requestedLocationId })
+    : null;
+  if (!user && !internalDemoAccess) {
     redirect("/business/login?next=/locations/dashboard/hardware/health");
   }
 
-  const ownerAccess = await getLocationOwnerAccess(user.id, user.email);
+  const ownerAccess = user
+    ? await getLocationOwnerAccess(user.id, user.email)
+    : null;
   const locationId =
-    stringParam(query, "locationId") ||
-    ownerAccess.ownedLocationIds[0] ||
-    ownerAccess.ownedSourceLocationIds[0];
+    requestedLocationId ||
+    ownerAccess?.ownedLocationIds[0] ||
+    ownerAccess?.ownedSourceLocationIds[0];
 
   if (!locationId) {
     redirect("/locations/dashboard/hardware");
   }
 
-  const access = await resolveLocationAccessContext({
-    userId: user.id,
-    userEmail: user.email,
-    locationId,
-  });
-  const canonicalLocationId = access.canonicalLocationId;
+  const access = user
+    ? await resolveLocationAccessContext({
+        userId: user.id,
+        userEmail: user.email,
+        locationId,
+      })
+    : null;
+  const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess?.locationId || "");
   if (
     !canonicalLocationId ||
-    !hasLocationPermission(access, "hardware.view")
+    (!internalDemoAccess && (!access || !hasLocationPermission(access, "hardware.view")))
   ) {
     redirect("/locations/dashboard/hardware");
   }
-  const canManage = hasLocationPermission(access, "hardware.manage");
+  const canManage = internalDemoAccess ? true : Boolean(access && hasLocationPermission(access, "hardware.manage"));
   let hardware: Awaited<ReturnType<typeof listLocationHardware>> = [];
   let unavailable = false;
   try {
@@ -133,7 +142,7 @@ export default async function HardwareHealthPage({
   } catch {
     unavailable = true;
   }
-  const locationData = (access.location || {}) as Record<string, unknown>;
+  const locationData = (access?.location || internalDemoAccess?.location || {}) as Record<string, unknown>;
   const locationMetadata = (locationData.metadata || {}) as Record<string, unknown>;
   const hoursConfirmed = locationMetadata.pos_monitoring_hours_fingerprint === JSON.stringify(locationData.operating_hours);
   const schedule = hoursConfirmed ? scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone) : null;
@@ -150,7 +159,8 @@ export default async function HardwareHealthPage({
   const counts = summarizePosReadiness(states);
   const needsAttention = hardware.filter((_,index) => states[index].state === "needs_attention");
   const ready = counts.healthy;
-  const locationName = getLocationName(access.location || {}, "Your location");
+
+  const locationName = getLocationName(access?.location || internalDemoAccess?.location || {}, "Your location");
 
   return (
     <main className="min-h-screen bg-[var(--business-bg)] px-4 py-8 text-[var(--business-text)] sm:px-6 lg:px-8">
@@ -205,7 +215,7 @@ export default async function HardwareHealthPage({
             Equipment powered down while closed is not a failure.
           </p>
         </section>
-        {canManage ? (
+        {canManage && Boolean(user) ? (
           <form action={confirmPosMonitoringHours} className="mt-4 rounded-[1.25rem] border border-[var(--business-border)] bg-[var(--business-panel)] p-5">
             <h2 className="font-black">Confirm POS opening hours</h2>
             <p className="mt-1 text-sm text-[var(--business-muted)]">
