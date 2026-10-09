@@ -27,7 +27,7 @@ jobs:
       TARGET_MODEL: ${{ inputs.model }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2

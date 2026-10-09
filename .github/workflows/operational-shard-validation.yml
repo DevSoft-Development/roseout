@@ -68,7 +68,7 @@ jobs:
     name: Shard routing contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate shard routing invariants
         run: node scripts/operational-sharding-regression.mjs
       - name: Validate shard-aware POS payment invariants
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure AWS access to Credential Vault
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
