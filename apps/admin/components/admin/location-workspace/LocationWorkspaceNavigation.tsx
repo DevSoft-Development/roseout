@@ -4,10 +4,7 @@ import {
   getLocationWorkspaceGroupForTab,
   getLocationWorkspaceHref,
 } from "@/lib/admin/location-workspace";
-import {
-  buildOutreachHref,
-  buildTasksHref,
-} from "@/lib/crm/context";
+import { buildOutreachHref } from "@/lib/crm/context";
 
 export default function LocationWorkspaceNavigation({
   locationId,
@@ -20,11 +17,14 @@ export default function LocationWorkspaceNavigation({
   const returnTo = getLocationWorkspaceHref(locationId, activeGroup.id);
   const context = { locationId, returnTo };
   const reservationsHref = `/admin/dashboard/crm/${locationId}?tab=reservations`;
+  const communicationsHref = buildOutreachHref(context);
+  const salesHref = `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(locationId)}&return_to=${encodeURIComponent(returnTo)}`;
+  const tasksHref = `/admin/dashboard/crm/tasks?location_id=${encodeURIComponent(locationId)}&return_to=${encodeURIComponent(returnTo)}`;
   const tabs = [
-    ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview"],
-    ["Communications", buildOutreachHref(context), false],
-    ["Sales", `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(locationId)}`, false],
-    ["Tasks", buildTasksHref(context), false],
+    ["Overview", getLocationWorkspaceHref(locationId, "overview"), activeGroup.id === "overview" && activeTab !== "sales" && activeTab !== "tasks"],
+    ["Communications", communicationsHref, activeTab === "communication"],
+    ["Sales", salesHref, activeTab === "sales"],
+    ["Tasks", tasksHref, activeTab === "tasks"],
     ["Reservations", reservationsHref, activeGroup.id === "operations" && activeTab === "reservations"],
     ["Activity", getLocationWorkspaceHref(locationId, "activity"), activeGroup.id === "activity"],
     ["Location Details", getLocationWorkspaceHref(locationId, "profile"), activeGroup.id === "profile" || activeGroup.id === "settings" || activeGroup.id === "menu"],
@@ -36,7 +36,7 @@ export default function LocationWorkspaceNavigation({
       data-overview={activeGroup.id === "overview" ? "true" : "false"}
       className="sticky top-[116px] z-30"
     >
-      <div className="rounded-2xl border border-white/10 bg-[#0d0d10]/95 p-2 shadow-2xl shadow-black/35 backdrop-blur-xl">
+      <div className="rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]/95 p-2 shadow-sm backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2">
           <nav aria-label="Location record" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
             {tabs.map(([label, href, active]) => (
@@ -46,8 +46,8 @@ export default function LocationWorkspaceNavigation({
                 aria-current={active ? "page" : undefined}
                 className={`shrink-0 rounded-xl px-3.5 py-2.5 text-sm font-bold transition ${
                   active
-                    ? "bg-white text-black"
-                    : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"
+                    ? "bg-[var(--admin-shell-accent-soft)] text-[var(--admin-shell-accent)] ring-1 ring-inset ring-[var(--admin-shell-accent-border)]"
+                    : "text-[var(--admin-shell-soft)] hover:bg-[var(--admin-shell-card-strong)] hover:text-[var(--admin-shell-text)]"
                 }`}
               >
                 {label}

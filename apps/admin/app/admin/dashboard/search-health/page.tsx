@@ -19,6 +19,7 @@ import SearchHealthIssueQueue from "./SearchHealthIssueQueue";
 import SearchHealthTrendChart from "./SearchHealthTrendChart";
 import SearchQualityReviewPanel from "./SearchQualityReviewPanel";
 import SearchLabClient from "@/app/admin/dashboard/beta/search-lab/SearchLabClient";
+import SearchV3Operations from "./SearchV3Operations";
 import {
   AdminActionButton,
   AdminPageHeader,
@@ -337,6 +338,7 @@ export default async function SearchHealthPage({ searchParams }: { searchParams:
                 <p className="mt-2 max-w-4xl text-sm leading-6 text-white/55">Run a single search or a bulk set of up to 100 searches. Inspect normalized intent, parser behavior, restaurant and activity terms, result counts, fallback behavior, timing, warnings, errors, suspicious flags, and complete JSON responses.</p>
               </div>
               <BatchQaRunner />
+              <SearchV3Operations />
               <div className="mt-8 border-t border-white/10 pt-6">
                 <SearchLabClient initialQuery={first(resolvedSearchParams.q) ?? ""} />
               </div>

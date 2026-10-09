@@ -13,6 +13,7 @@ import {
   type CommunicationChildTab,
 } from "@/lib/admin/communications-workspace";
 import CrmSmsComposer from "./CrmSmsComposer";
+import CrmEmailComposer from "./CrmEmailComposer";
 
 type Template = {
   id: string;
@@ -207,6 +208,32 @@ export default function CommunicationPanel({
   return (
     <section className="min-w-0 space-y-5" aria-labelledby="communications-title">
       <div className="rounded-3xl border border-white/10 bg-[#120d0b] p-5">
+        <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          <Link
+            href={`/admin/dashboard/crm/${locationId}/call`}
+            className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 transition hover:border-rose-300/40 hover:bg-white/[0.08]"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-200">3CX</p>
+            <p className="mt-1 font-black text-white">Call this location</p>
+            <p className="mt-1 text-xs text-white/50">{defaultPhone || "No phone on file"}</p>
+          </Link>
+          <Link
+            href={`${base}sms`}
+            className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 transition hover:border-rose-300/40 hover:bg-white/[0.08]"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-200">Text</p>
+            <p className="mt-1 font-black text-white">Send SMS</p>
+            <p className="mt-1 text-xs text-white/50">Use this location's CRM contacts only.</p>
+          </Link>
+          <Link
+            href={`${base}email`}
+            className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 transition hover:border-rose-300/40 hover:bg-white/[0.08]"
+          >
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-200">Email</p>
+            <p className="mt-1 font-black text-white">Email this location</p>
+            <p className="mt-1 text-xs text-white/50">{defaultEmail || "No owner email on file"}</p>
+          </Link>
+        </div>
         <p className="text-xs font-black uppercase tracking-[0.25em] text-rose-200">Enterprise Communications Workspace</p>
         <h2 id="communications-title" className="mt-2 text-2xl font-black">{childLabels[active]}</h2>
         <p className="mt-2 text-sm leading-6 text-white/60">
@@ -280,21 +307,12 @@ export default function CommunicationPanel({
       ) : null}
 
       {active === "email" ? (
-        <section className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <Card title="Email Composer">
-            <div className="mt-4 grid gap-3">
-              <input aria-label="Subject" value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} placeholder="Subject" className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3" />
-              <textarea aria-label="Message body" rows={8} value={draftBody} onChange={(event) => setDraftBody(event.target.value)} placeholder="Draft editable copy. AI output is never sent automatically." className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3" />
-              <p className="text-xs text-white/55">Variables unresolved: {hasUnresolvedTemplateVariables(draftSubject + draftBody) ? "yes — sending blocked" : "no"}.</p>
-              <div className="flex flex-wrap gap-2">
-                {["Generate editable AI draft", "Preview", "Send test", "Save draft", "Submit for approval", "Schedule after validation"].map((action) => <button disabled={!canSend} type="button" key={action} className="rounded-full border border-white/10 px-3 py-2 text-xs font-black disabled:opacity-40">{action}</button>)}
-              </div>
-            </div>
-          </Card>
-          <Card title="Email Records">
-            <WorkspaceTable rows={logs.filter((log) => String(log.channel || "email").toLowerCase() === "email")} fields={["recipient", "to_address", "subject", "status", "sent_at", "delivered_at", "opened_at", "clicked_at", "failure_reason"]} />
-          </Card>
-        </section>
+        <CrmEmailComposer
+          locationId={locationId}
+          defaultEmail={defaultEmail}
+          canSend={canSend}
+          logs={logs}
+        />
       ) : null}
 
       {active === "sms" ? <CrmSmsComposer locationId={locationId} defaultPhone={defaultPhone} canSend={canSend} logs={logs} /> : null}

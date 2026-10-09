@@ -6,7 +6,7 @@ import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { listOutreach } from "@/lib/crm/outreach";
-import { listLocationCrmCommunications } from "@/lib/crm/location-outreach-communications";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
 
 export const dynamic = "force-dynamic";
 const channels = [
@@ -23,23 +23,16 @@ function channelLabel(value?: string | null) {
   return channels.find(([id]) => id === value)?.[1] || String(value || "Communication").replaceAll("_", " ");
 }
 
-function formatCommunicationDate(value?: string | null) {
-  if (!value) return "Unknown time";
-  return new Date(value).toLocaleString();
-}
-
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requireAdminRole(CRM_READ_ROLES);
   const p = await searchParams;
   const context = parseCrmContextSearchParams(p);
-  const [r, communications] = await Promise.all([
-    listOutreach(p),
-    p.location_id ? listLocationCrmCommunications(p.location_id) : Promise.resolve([]),
-  ]);
+  const r = await listOutreach(p);
 
   return (
     <CrmWorkspaceShell>
-      <main className="space-y-5 text-white">
+      <main className="space-y-5 text-[var(--admin-shell-text)]">
+        {p.location_id ? <LocationWorkspaceNavigation locationId={p.location_id} activeTab="communication" /> : null}
         <CrmContextBanner context={context} />
         <header>
           <p className="text-xs font-black uppercase tracking-[.25em] text-rose-300">CRM</p>
@@ -47,13 +40,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <p className="mt-1 text-white/60">Manage phone, email, social outreach, visits, follow-ups, and communication operations in one place.</p>
         </header>
 
-        <CommunicationCenter scope="crm" />
+        <CommunicationCenter scope="crm" locationId={p.location_id} />
 
-        <div className="flex flex-wrap gap-2">
+        {!p.location_id ? <div className="flex flex-wrap gap-2">
           <Link href="/admin/dashboard/crm/calls" className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-black text-white">Start a call</Link>
           <Link href="/admin/dashboard/crm/communications/unmatched" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Unmatched SMS</Link>
           <Link href="/admin/dashboard/crm/communications/automation" className="rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-black text-white/80">Automation</Link>
-        </div>
+        </div> : null}
 
         <form className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-4">
           {contextFields.map((name) => p[name] ? <input key={name} type="hidden" name={name} value={p[name]} /> : null)}
@@ -66,44 +59,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
             <option value="">All statuses</option>
             {["open", "in_progress", "completed", "blocked", "cancelled"].map((x) => <option key={x} value={x}>{x.replaceAll("_", " ")}</option>)}
           </select>
-          <button className="rounded-xl bg-white font-black text-black">Apply filters</button>
+          <button className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white transition hover:bg-rose-500">Apply filters</button>
         </form>
-
-        {p.location_id ? (
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[.2em] text-rose-200">Location CRM</p>
-                <h2 className="mt-1 text-xl font-black">Communication history</h2>
-                <p className="mt-1 text-sm text-white/55">Actual CRM messages sent to and received from this location. Reservation and support traffic is excluded here.</p>
-              </div>
-              <Link href={`/admin/dashboard/crm/${p.location_id}?tab=communication`} className="rounded-xl border border-white/15 px-3 py-2 text-sm font-black text-white/80">Open full location communications</Link>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {communications.map((message) => (
-                <article key={message.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-wide text-white/55">
-                      <span>{message.channel || "message"}</span>
-                      <span>·</span>
-                      <span>{message.direction || "outbound"}</span>
-                      <span>·</span>
-                      <span>{message.status || "sent"}</span>
-                    </div>
-                    <time className="text-xs text-white/40">{formatCommunicationDate(message.created_at)}</time>
-                  </div>
-                  {message.subject ? <p className="mt-2 font-black text-white">{message.subject}</p> : null}
-                  {message.body ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-white/70">{message.body}</p> : null}
-                  <p className="mt-3 text-xs text-white/40">
-                    {message.direction === "inbound" ? message.from_address : message.to_address || message.from_address || "CRM contact"}
-                  </p>
-                </article>
-              ))}
-              {!communications.length ? <p className="rounded-xl border border-dashed border-white/15 p-6 text-center text-sm text-white/55">No CRM messages have been logged for this location yet.</p> : null}
-            </div>
-          </section>
-        ) : null}
 
         <section className="space-y-3">
           <div>

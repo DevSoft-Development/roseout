@@ -65,3 +65,7 @@ for(const token of ["Ingredient inventory","Area balances","Reorder queue","End-
 }
 
 console.log("ThePOSHaven Signature+ features 1-14 verified.");
+
+if(!businessHub.includes("getInternalDemoLocationAccess")||!businessHub.includes("if(!user)")||!businessHub.includes("internalDemoAccess")){
+  throw new Error("ThePOSHaven business hub must accept the signed internal demo handoff without requiring a separate Business login.");
+}

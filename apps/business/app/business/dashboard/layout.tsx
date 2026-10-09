@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
 import BusinessThemeProvider from "../../locations/dashboard/BusinessThemeProvider";
 import BusinessThemeToggle from "@/components/business/BusinessThemeToggle";
+import "../../business-enterprise-foundation.css";
 
 export const metadata: Metadata = buildMetadata({
   title: "Business Dashboard",

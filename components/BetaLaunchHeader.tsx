@@ -1,4 +1,4 @@
-import Image from "next/image";
+import TheOutHavenBrandLogo from "@/components/TheOutHavenBrandLogo";
 import Link from "next/link";
 
 type BetaLaunchHeaderProps = {
@@ -10,20 +10,12 @@ export default function BetaLaunchHeader({ launchListHref = "#launch-list" }: Be
     <header className="sticky top-0 z-30 border-b border-white/10 bg-black/90 px-4 py-4 text-white backdrop-blur-xl sm:px-6 lg:px-8">
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4" aria-label="Prelaunch header">
         <Link href="/" className="flex min-w-0 items-center" aria-label="TheOutHaven home">
-          <Image
-            src="/toh_logo_wordmark_white.webp"
-            alt="TheOutHaven"
-            width={600}
-            height={200}
-            className="h-auto w-[170px] max-w-[46vw] object-contain sm:w-[205px]"
-            priority
-            unoptimized
-          />
+          <TheOutHavenBrandLogo className="h-auto w-[170px] max-w-[46vw] object-contain sm:w-[205px]" />
         </Link>
 
         <div className="hidden items-center gap-8 text-sm font-bold text-white/75 md:flex">
           <a href="#how-it-works" className="transition hover:text-white">How It Works</a>
-          <Link href="/business" className="transition hover:text-white">For Businesses</Link>
+          <Link href="https://business.theouthaven.com/business" className="transition hover:text-white">For Businesses</Link>
           <Link href="/about" className="transition hover:text-white">About Us</Link>
         </div>
 

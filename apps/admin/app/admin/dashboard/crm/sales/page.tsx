@@ -5,6 +5,7 @@ import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { listUnifiedSalesLocations, SALES_PLAYBOOKS } from "@/lib/crm/unified-sales";
 import { qualifyProductOpportunityAction } from "./actions";
+import LocationWorkspaceNavigation from "@/components/admin/location-workspace/LocationWorkspaceNavigation";
 
 export const dynamic="force-dynamic";
 
@@ -26,10 +27,10 @@ function Journey({stage}:{stage:string}){
   const active=Math.max(0,JOURNEY.indexOf(stage));
   return <div className="overflow-x-auto pb-2"><div className="flex min-w-[1150px] items-center gap-1">
     {JOURNEY.map((label,index)=><div key={label} className="flex min-w-0 flex-1 items-center">
-      <div className={`w-full rounded-xl border px-3 py-2 text-center text-[11px] font-black ${index===active?"border-rose-400 bg-rose-500/15 text-rose-100":index<active?"border-emerald-300/20 bg-emerald-400/[.08] text-emerald-100":"border-white/10 bg-white/[.025] text-white/35"}`}>
+      <div className={`w-full rounded-xl border px-3 py-2 text-center text-[11px] font-black ${index===active?"border-[var(--admin-shell-accent-border)] bg-[var(--admin-shell-accent-soft)] text-[var(--admin-shell-accent)]":index<active?"border-emerald-500/25 bg-emerald-500/[.08] text-emerald-700 dark:text-emerald-200":"border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] text-[var(--admin-shell-muted)]"}`}>
         {index<active?"✓ ":""}{label}
       </div>
-      {index<JOURNEY.length-1?<span className="mx-1 text-white/15">→</span>:null}
+      {index<JOURNEY.length-1?<span className="mx-1 text-[var(--admin-shell-muted)]">→</span>:null}
     </div>)}
   </div></div>;
 }
@@ -59,16 +60,17 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
   const pageHref=(next:number)=>{const q=new URLSearchParams(base);q.set("page",String(next));return`/admin/dashboard/crm/sales?${q.toString()}`;};
 
   return <CrmWorkspaceShell><main className="space-y-5 text-[var(--admin-shell-text)]">
+    {p.location_id ? <LocationWorkspaceNavigation locationId={p.location_id} activeTab="sales" /> : null}
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p className="text-xs font-black uppercase tracking-[.2em] text-[var(--admin-shell-accent)]">TheOutHaven Sales</p>
         <h1 className="mt-1 text-3xl font-black">Sales Workspace</h1>
         <p className="mt-1 max-w-4xl text-[var(--admin-shell-muted)]">One page for every assigned location: customer journey, product gaps, what to sell, why to sell it, how to sell it, contacts, opportunities, follow-ups and the next best action.</p>
       </div>
-      <div className="flex flex-wrap gap-2">
+      {!p.location_id ? <div className="flex flex-wrap gap-2">
         {leadership?<Link href="/admin/dashboard/crm/sales/leadership" className="rounded-xl bg-[var(--admin-shell-accent)] px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-[var(--admin-shell-accent-hover)]">Leadership view</Link>:null}
         <Link href="/admin/dashboard/crm/locations" className="rounded-xl border border-[var(--admin-shell-border)] px-4 py-2 text-sm font-black">Find location</Link>
-      </div>
+      </div> : null}
     </header>
 
     <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -83,17 +85,21 @@ export default async function SalesWorkspacePage({searchParams}:{searchParams:Pr
     </section>
 
     <form className="flex flex-col gap-2 rounded-2xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)] p-3 sm:flex-row">
+      {p.location_id ? <input type="hidden" name="location_id" value={p.location_id} /> : null}
+      {p.return_to ? <input type="hidden" name="return_to" value={p.return_to} /> : null}
       <input name="q" defaultValue={p.q||""} placeholder="Search location, city or business" className="min-h-11 flex-1 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-card-strong)] px-4 text-sm text-[var(--admin-shell-text)] placeholder:text-[var(--admin-shell-muted)]"/>
       <select name="pageSize" defaultValue={String(pageSize)} className="min-h-11 rounded-xl border border-[var(--admin-shell-border-strong)] bg-[var(--admin-shell-card-strong)] px-3 text-sm text-[var(--admin-shell-text)]"><option value="25">25 per page</option><option value="50">50 per page</option><option value="100">100 per page</option></select>
       <button className="min-h-11 rounded-xl bg-[var(--admin-shell-accent)] px-5 text-sm font-black text-white hover:bg-[var(--admin-shell-accent-hover)]">Search</button>
-      {(p.q||p.location_id)?<Link href="/admin/dashboard/crm/sales" className="min-h-11 rounded-xl border border-[var(--admin-shell-border)] px-4 py-3 text-center text-sm font-black">Clear</Link>:null}
+      {p.q ? <Link href={p.location_id
+        ? `/admin/dashboard/crm/sales?location_id=${encodeURIComponent(p.location_id)}${p.return_to ? `&return_to=${encodeURIComponent(p.return_to)}` : ""}`
+        : "/admin/dashboard/crm/sales"} className="min-h-11 rounded-xl border border-[var(--admin-shell-border)] px-4 py-3 text-center text-sm font-black">Clear search</Link> : null}
     </form>
 
     <section className="space-y-3">
       {result.rows.map((row)=>{
         const top=row.recommendations.find((r)=>r.status==="sell_now")||row.recommendations.find((r)=>r.status==="review")||row.recommendations[0];
         return <details key={row.id} id={`location-${row.id}`} open={p.location_id===row.id} className="group overflow-hidden rounded-3xl border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card)]">
-          <summary className="cursor-pointer list-none p-5 transition hover:bg-[var(--admin-shell-soft)]">
+          <summary className="cursor-pointer list-none p-5 transition hover:bg-[var(--admin-shell-card-strong)]">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_160px_210px_minmax(220px,.8fr)] xl:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-lg font-black">{row.name}</h2><span className="rounded-full border border-[var(--admin-shell-border)] bg-[var(--admin-shell-card-strong)] px-2 py-1 text-[10px] font-black uppercase text-[var(--admin-shell-soft)]">{row.lifecycleStage}</span></div>

@@ -77,6 +77,25 @@ function initials(name: string) {
   );
 }
 
+function TheOutHavenMark({ size }: { size: number }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 64 64"
+      width={size}
+      height={size}
+      className="admin-shell-brand-mark"
+    >
+      <circle cx="32" cy="32" r="32" fill="#e1062a" />
+      <circle cx="32" cy="32" r="24.5" fill="none" stroke="#fff" strokeWidth="5.5" />
+      <path
+        d="M23.5 17.5 18 46.5h7.2l2.1-10.8h9.4l-2.1 10.8h7.2l5.6-29h-7.2l-2.1 10.8h-9.4l2.1-10.8z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}
+
 function isRouteActive(pathname: string, href?: string) {
   if (!href) return false;
   return href === "/admin/dashboard" ? pathname === href : pathname.startsWith(href);
@@ -241,7 +260,7 @@ export default function AdminShell({
     <div className="admin-shell" data-admin-theme={resolvedTheme} data-admin-theme-mode={appearance.mode}>
       <aside className="admin-shell-sidebar">
         <div className="admin-shell-brand">
-          <span className="admin-shell-logo">OH</span>
+          <span className="admin-shell-logo" aria-label="TheOutHaven"><TheOutHavenMark size={28} /></span>
           <div className="admin-shell-brand-copy">
             <strong>TheOutHaven</strong>
             <small>Administration Cloud</small>
@@ -325,8 +344,8 @@ export default function AdminShell({
           <aside className="admin-shell-drawer-panel">
             <div className="admin-shell-drawer-header">
               <div>
-                <small>TheOutHaven</small>
-                <strong>Administration Cloud</strong>
+                <small className="admin-shell-drawer-brand"><TheOutHavenMark size={24} /> TheOutHaven</small>
+                <strong>Administration</strong>
               </div>
               <button type="button" onClick={() => setOpen(false)} aria-label="Close admin navigation">
                 <X size={20} />

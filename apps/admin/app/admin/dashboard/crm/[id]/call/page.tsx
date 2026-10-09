@@ -5,6 +5,7 @@ import { CRM_READ_ROLES } from "@/lib/crm/permissions";
 import { normalizePhoneForDial } from "@/lib/integrations/three-cx";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
 import CrmWorkspaceShell from "@/components/admin/crm/CrmWorkspaceShell";
+import CrmCallButton from "./CrmCallButton";
 
 export const dynamic = "force-dynamic";
 
@@ -89,12 +90,11 @@ export default async function CrmCallPage({
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               {callHref ? (
-                <a
-                  href={callHref}
-                  className="rounded-full bg-rose-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-rose-950/30"
-                >
-                  Call now
-                </a>
+                <CrmCallButton
+                  locationId={location.id}
+                  callHref={callHref}
+                  phone={phone}
+                />
               ) : (
                 <span className="rounded-full border border-amber-300/20 bg-amber-500/10 px-5 py-3 text-sm font-black text-amber-100">
                   Add a phone number before calling

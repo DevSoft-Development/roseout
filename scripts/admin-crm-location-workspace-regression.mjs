@@ -18,6 +18,15 @@ const rootLegacyEdit = read("app/admin/dashboard/locations/edit/[type]/[location
 const claimTools = read("apps/admin/app/admin/dashboard/claim-tools/ClaimToolsClient.tsx");
 const workspaceNav = read("apps/admin/components/admin/location-workspace/LocationWorkspaceNavigation.tsx");
 const profileEditor = read("apps/admin/components/admin/LocationProfileEditor.tsx");
+const outreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.tsx");
+const communicationCenter = read("apps/admin/components/admin/crm/CommunicationCenter.tsx");
+const communicationCenterRoute = read("apps/admin/app/api/admin/crm/communication-center/route.ts");
+const tasksRedirect = read("apps/admin/app/admin/dashboard/crm/tasks/page.tsx");
+const myWork = read("apps/admin/app/admin/dashboard/crm/my-work/page.tsx");
+const salesWorkspace = read("apps/admin/app/admin/dashboard/crm/sales/page.tsx");
+const communicationPanel = read("apps/admin/app/admin/dashboard/crm/[id]/CommunicationPanel.tsx");
+const crmEmailComposer = read("apps/admin/app/admin/dashboard/crm/[id]/CrmEmailComposer.tsx");
+const crmEmailSendRoute = read("apps/admin/app/api/admin/crm/email/send/route.ts");
 
 requireText(nav, 'label: "Locations CRM"', "Admin navigation must expose the canonical Locations CRM.");
 forbidText(nav, 'label: "Locations"', "Admin navigation must not expose a competing Locations workspace.");
@@ -36,6 +45,17 @@ requireText(profileEditor, "Search & matching", "Location profile editor must re
 requireText(profileEditor, "AI profile helper", "Location profile editor must retain the AI helper.");
 requireText(profileEditor, "primarySectionsOpen", "Location profile editor must support visible primary controls.");
 requireText(workspaceNav, '"Location Details"', "CRM workspace navigation must expose Location Details.");
+requireText(workspaceNav, 'activeTab === "sales"', "CRM workspace navigation must highlight Sales for the selected CRM location.");
+requireText(workspaceNav, 'activeTab === "tasks"', "CRM workspace navigation must highlight Tasks for the selected CRM location.");
+requireText(workspaceNav, 'location=', "CRM task navigation must remain scoped to the selected CRM location.");
+requireText(workspaceNav, 'location_id=', "CRM sales navigation must remain scoped to the selected CRM location.");
+requireText(workspaceNav, '/admin/dashboard/crm/tasks?location_id=', "CRM task navigation must carry the selected location through the Tasks compatibility route.");
+requireText(outreachPage, 'locationId={p.location_id}', "Selected-location Communications must pass location context into the communication center.");
+requireText(communicationCenter, 'params.set("location_id", locationId)', "Communication Center requests must preserve selected location context.");
+requireText(communicationCenter, 'const openHref = locationId && scope === "crm"', "Communication Center actions must remain scoped to the selected CRM location.");
+requireText(communicationCenterRoute, 'url.searchParams.get("location_id")', "Communication Center API must accept selected location context.");
+requireText(communicationCenterRoute, 'item.locationId === requestedLocationId', "Core API communication results must be filtered to the selected location.");
+requireText(communicationCenterRoute, 'String(row.location_id || "") === requestedLocationId', "Database communication results must be filtered to the selected location.");
 
 requireText(crmNew, '.from("locations")', "Location creation must write the canonical locations model.");
 requireText(crmNew, 'created_source: "admin_crm"', "CRM-created locations must have canonical source provenance.");
@@ -48,3 +68,59 @@ requireText(rootLegacyEdit, "?tab=profile", "Legacy location edit must route to 
 requireText(claimTools, "?tab=profile", "Claim tools must edit locations through CRM.");
 
 console.log("Admin CRM location workspace consolidation checks passed.");
+
+requireText(tasksRedirect, 'params.location_id || params.location', "Tasks redirect must preserve the selected CRM location.");
+requireText(tasksRedirect, 'next.set("location", selectedLocation)', "Tasks redirect must pass selected location into My Work.");
+requireText(myWork, 'location_id=', "Selected-location task creation and detail links must preserve location context.");
+requireText(salesWorkspace, 'type="hidden" name="location_id"', "Sales filters must preserve selected location context.");
+requireText(salesWorkspace, 'Clear search', "Selected-location Sales must clear search without clearing location scope.");
+
+requireText(communicationPanel, '/call', "Selected-location Communications must expose the 3CX call action.");
+requireText(communicationPanel, 'Send SMS', "Selected-location Communications must expose SMS for the active location.");
+requireText(communicationPanel, 'Email this location', "Selected-location Communications must expose email for the active location.");
+requireText(crmEmailComposer, '/api/admin/crm/email/send', "Selected-location email composer must use the CRM email endpoint.");
+requireText(crmEmailSendRoute, '.eq("id", locationId)', "CRM email endpoint must resolve only the selected location.");
+requireText(crmEmailSendRoute, 'recipient_type: "location"', "CRM email sends must be logged against the selected location.");
+requireText(crmEmailSendRoute, 'requireAdminRole(CRM_WRITE_ROLES)', "CRM email endpoint must require CRM write permission.");
+
+const crmCallButton = read("apps/admin/app/admin/dashboard/crm/[id]/call/CrmCallButton.tsx");
+const crmCallInitiateRoute = read("apps/admin/app/api/admin/crm/calls/initiate/route.ts");
+const crmSmsRecipientsRoute = read("apps/admin/app/api/admin/crm/sms/recipients/route.ts");
+const crmSmsSendRoute = read("apps/admin/app/api/admin/crm/sms/send/route.ts");
+const isolatedAdminCrm = read("apps/admin/lib/admin-crm.ts");
+
+requireText(crmCallButton, "/api/admin/crm/calls/initiate", "3CX call action must record a location-scoped call before opening the dialer.");
+requireText(crmCallInitiateRoute, 'source_system: "3cx"', "3CX call initiation must write CRM call activity.");
+requireText(crmCallInitiateRoute, 'recipient_type: "location"', "3CX call initiation must write the selected location communication history.");
+requireText(crmSmsRecipientsRoute, 'crm_account_locations', "Location SMS recipients must be resolved from the selected location account.");
+requireText(crmSmsSendRoute, 'sendCrmSms', "Selected-location SMS must use the CRM Telnyx channel.");
+requireText(crmSmsSendRoute, 'recipient_type: "location"', "Selected-location SMS must write location communication history.");
+requireText(crmSmsSendRoute, 'source_system: "crm_sms"', "Selected-location SMS must write CRM activity history.");
+requireText(isolatedAdminCrm, '.eq("source_system", "3cx")', "Location Communications must include 3CX activity rows.");
+
+const threeCxTemplate = read("docs/integrations/3cx/TheOutHaven.xml");
+const threeCxJournal = read("apps/consumer/app/api/integrations/3cx/journal/route.ts");
+requireText(threeCxTemplate, 'Scenario Id="ReportCall"', "3CX template must include the reserved ReportCall scenario.");
+requireText(threeCxTemplate, 'Scenario Id=""', "3CX template must include the reserved phone lookup scenario.");
+requireText(threeCxTemplate, 'Type="EntityId"', "3CX lookup must return the location UUID as EntityId.");
+requireText(threeCxTemplate, 'Key="x-3cx-api-key"', "3CX template must authenticate with a header instead of a query-string secret.");
+requireText(threeCxJournal, 'source_record_id', "3CX journal must persist a stable provider/source record id.");
+requireText(threeCxJournal, 'duplicate: true', "3CX journal must be idempotent on retried callbacks.");
+requireText(threeCxJournal, 'state: "completed"', "3CX journal must complete initiated call state.");
+requireText(threeCxJournal, 'findInitiatedActivity', "3CX journal must merge a completed callback into a recent initiated call when possible.");
+
+const crmDirectCallButton = read("apps/admin/app/admin/dashboard/crm/[id]/call/CrmCallButton.tsx");
+requireText(crmDirectCallButton, "href={callHref}", "3CX call launcher must remain a direct tel: link so the browser preserves the user gesture.");
+requireText(crmDirectCallButton, "navigator.sendBeacon", "3CX call launcher must log call initiation without awaiting before the tel: handoff.");
+if (crmDirectCallButton.includes("await fetch")) {
+  throw new Error("3CX call launcher must not await logging before opening the native calling handler.");
+}
+
+const crmOutreachPage = read("apps/admin/app/admin/dashboard/crm/outreach/page.tsx");
+if (crmOutreachPage.includes("Communication history")) {
+  throw new Error("Selected-location Communications must not render a second duplicate communication-history section below CommunicationCenter.");
+}
+requireText(crmOutreachPage, "bg-rose-600 px-4 py-3 font-black text-white", "Communication filters need a visible dark-mode Apply filters action.");
+
+const crmCommunicationCenter = read("apps/admin/components/admin/crm/CommunicationCenter.tsx");
+requireText(crmCommunicationCenter, "border border-rose-500 bg-rose-600 text-white", "Communication tabs need a high-contrast active state in dark mode.");
