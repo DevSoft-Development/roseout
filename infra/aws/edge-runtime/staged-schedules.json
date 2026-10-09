@@ -1,11 +1,1 @@
-[
-  {
-    "name": "pos-location-readiness",
-    "expression": "cron(10 8 * * ? *)",
-    "function": "node:/api/cron/managed?job=pos-location-readiness",
-    "body": {
-      "source": "aws_eventbridge",
-      "offset": 0
-    }
-  }
-]
+[]
