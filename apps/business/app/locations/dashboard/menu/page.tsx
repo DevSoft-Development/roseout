@@ -62,8 +62,6 @@ export default async function LocationMenuPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/login");
-
   const adminLocationId = first(params.adminLocationId);
   const demoLocationId = first(params.demoLocationId);
   const sourceId = first(params.sourceId);
@@ -79,24 +77,26 @@ export default async function LocationMenuPage({
     cookieStore.get("theouthaven_impersonate_location_id")?.value ||
     "";
 
-  if (!locationId) {
+  if (!locationId && user) {
     const ownerAccess = await getLocationOwnerAccess(user.id, user.email ?? null);
     locationId = ownerAccess.ownedLocationIds[0] || ownerAccess.ownedSourceLocationIds[0] || "";
   }
 
   if (!locationId) redirect("/locations/dashboard");
 
-  const access = await resolveEditableLocationContext({
-    userId: user.id,
-    userEmail: user.email ?? null,
-    locationId,
-    adminLocationId,
-    demoLocationId,
-    sourceId,
-    type,
-    demo,
-    fromDemoCenter,
-  });
+  const access = user
+    ? await resolveEditableLocationContext({
+        userId: user.id,
+        userEmail: user.email ?? null,
+        locationId,
+        adminLocationId,
+        demoLocationId,
+        sourceId,
+        type,
+        demo,
+        fromDemoCenter,
+      })
+    : null;
 
   const internalDemoAccess = access
     ? null
@@ -112,7 +112,7 @@ export default async function LocationMenuPage({
 
   const canonicalLocationId = access?.canonicalLocationId || internalDemoAccess!.locationId;
   const menuAccess = access || {
-    userId: user.id,
+    userId: internalDemoAccess!.viewer.user.id,
     canonicalLocationId,
     location: internalDemoAccess!.location,
     isAdmin: false,

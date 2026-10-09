@@ -69,3 +69,15 @@ console.log("ThePOSHaven Signature+ features 1-14 verified.");
 if(!businessHub.includes("getInternalDemoLocationAccess")||!businessHub.includes("if(!user)")||!businessHub.includes("internalDemoAccess")){
   throw new Error("ThePOSHaven business hub must accept the signed internal demo handoff without requiring a separate Business login.");
 }
+
+const businessHardware=readFileSync("apps/business/app/locations/dashboard/hardware/page.tsx","utf8");
+const businessMenu=readFileSync("apps/business/app/locations/dashboard/menu/page.tsx","utf8");
+const businessOrdering=readFileSync("apps/business/app/locations/dashboard/online-ordering/page.tsx","utf8");
+for(const [label,source] of [["Hardware",businessHardware],["Menu",businessMenu],["Online Ordering",businessOrdering],["Inventory + Shift",businessOps]]){
+  if(!source.includes("getInternalDemoLocationAccess")){
+    throw new Error(label+" POS card destination must accept the signed internal demo handoff.");
+  }
+}
+if(businessMenu.includes('if (!user) redirect("/login")')||businessOrdering.includes('if(!user) redirect("/login")')||businessOps.includes('if(!user) redirect("/business/login?next=/locations/dashboard/pos/operations")')){
+  throw new Error("ThePOSHaven demo card destinations must not force a separate Business login before validating the signed demo handoff.");
+}

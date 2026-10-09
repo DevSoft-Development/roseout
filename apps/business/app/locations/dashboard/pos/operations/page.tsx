@@ -8,6 +8,7 @@ import { getPosPlanForLocation } from "@/lib/pos/access";
 import { getSignaturePlusInventory, getSignaturePlusReport } from "@/lib/pos/signature-plus/service";
 import { getPosManagerOperations } from "@/lib/pos/payments/manager-service";
 import { createPosInventoryArea, recordPosInventoryWaste, transferPosInventoryStock } from "./actions";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic="force-dynamic";
 
@@ -22,8 +23,6 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
   const params=(await searchParams)||{};
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
-  if(!user) redirect("/business/login?next=/locations/dashboard/pos/operations");
-
   const cookieStore=await cookies();
   const adminLocationId=first(params.adminLocationId);
   const demoLocationId=first(params.demoLocationId);
@@ -38,19 +37,31 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
     cookieStore.get("theouthaven_impersonate_location_id")?.value||
     "";
 
-  if(!locationId){
+  if(!locationId&&user){
     const owner=await getLocationOwnerAccess(user.id,user.email??null);
     locationId=owner.ownedLocationIds[0]||owner.ownedSourceLocationIds[0]||"";
   }
   if(!locationId) redirect("/locations/dashboard");
 
-  const access=await resolveEditableLocationContext({
-    userId:user.id,userEmail:user.email??null,locationId,
-    adminLocationId,demoLocationId,sourceId,type,demo,fromDemoCenter,
+  const access = user
+    ? await resolveEditableLocationContext({
+        userId: user.id,
+        userEmail: user.email ?? null,
+        locationId,
+        adminLocationId,
+        demoLocationId,
+        sourceId,
+        type,
+        demo,
+        fromDemoCenter,
+      })
+    : null;
+  const internalDemoAccess=access?null:await getInternalDemoLocationAccess({
+    locationId,adminLocationId,demoLocationId,demo,fromDemoCenter,
   });
-  if(!access) redirect("/locations/dashboard");
+  if(!access&&!internalDemoAccess) redirect(user?"/locations/dashboard":"/business/login?next=/locations/dashboard/pos/operations");
 
-  const canonicalLocationId=String(access.canonicalLocationId);
+  const canonicalLocationId=String(access?.canonicalLocationId||internalDemoAccess!.locationId);
   const plan=await getPosPlanForLocation(canonicalLocationId);
   if(plan!=="signature_plus") redirect(`/locations/dashboard/pos?locationId=${encodeURIComponent(canonicalLocationId)}&signatureRequired=1`);
 
@@ -62,7 +73,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
     getPosManagerOperations(canonicalLocationId),
   ]);
 
-  const location=access.location||{};
+  const location=access?.location||internalDemoAccess!.location||{};
   const locationName=String(location.name||location.location_name||location.restaurant_name||location.activity_name||"Your location");
   const stockAreas=inventory.stockAreas||[];
   const ingredients=inventory.ingredients||[];
