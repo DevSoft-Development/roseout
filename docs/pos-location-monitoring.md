@@ -10,7 +10,7 @@ This is the second part of ThePOSHaven's shift certification and per-location mo
 - Explicit IANA timezone configuration: `locations.metadata.pos_monitoring_timezone`. If missing, mark **unknown**; never guess a timezone, infer open hours, or send an offline alert.
 - Business hardware health page exposes expected offline, awaiting startup, needs attention, and unknown states. No live device or merchant data is modified.
 - Cron-authenticated read-only fleet endpoint `GET /api/cron/pos-location-readiness?offset=0`. Maximum 1,050 active assignments per invocation, with a `nextOffset` cursor when more exist. It returns counts and up to 50 attention examples for inspection; it does not yet persist alerts.
-- EventBridge candidate `pos-location-readiness` in `infra/aws/edge-runtime/staged-schedules.json`, **not** active canonical schedules. It must not be enabled until multi-page handling, timezone coverage, storage and deduplicated alerting are verified.
+- EventBridge candidate `pos-location-readiness` is **not** in staged or active AWS schedules: Batch 15 explicitly requires an empty staged manifest. Provision only in a future scheduler activation batch after multi-page handling, timezone coverage, storage and deduplicated alerting are verified.
 - On CI: vitest hours/readiness regressions alongside the simulated shift and payment safety invariants.
 
 ## Safe operating policy
@@ -26,7 +26,7 @@ This is the second part of ThePOSHaven's shift certification and per-location mo
 ## Remaining rollout work before daily startup activation
 
 1. Provide verified time zones and operating schedules for onboarded POS locations, including exceptions and holidays (special hours override normal hours).
-2. Wire authenticated, paginated scanning across **all** location assignments rather than one batch window and integrate run results into the existing AWS cron-run audit trail.
+2. Wire authenticated, paginated scanning across **all** location assignments rather than one batch window; the job is already registered with the managed cron control plane, but the AWS schedule is not activated.
 3. Persist aggregate daily results and actionable device issues in Admin; implement notification deduplication and escalation limits for owners.
 4. Verify the schedule against the live AWS scheduler manifest and perform dry-run probes before adding it to `activation.json`.
 5. Benchmark 100 / 1,000 / 10,000 device scenarios and confirm the monitoring runtime budget.
