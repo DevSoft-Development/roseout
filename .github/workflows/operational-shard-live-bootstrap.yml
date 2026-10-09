@@ -317,7 +317,7 @@ jobs:
           fi
           jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/activate.json"
           curl --fail --silent --show-error --request POST             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"             -H 'Content-Type: application/json'             --data-binary "@$RUNNER_TEMP/activate.json"             "https://api.supabase.com/v1/projects/${GLOBAL_REF}/database/query" > "$RUNNER_TEMP/activate-result.json"
-          jq -e 'length == 2 and all(.[]; .schema_version==9)' "$RUNNER_TEMP/activate-result.json" >/dev/null
+          jq -e 'length == 2 and all(.[]; .schema_version==10)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           if [ "$ACTIVATE_INITIAL_PROVISIONING" = true ]; then
             jq -e 'all(.[]; (.status=="planned" or .status=="provisioning") | not)' "$RUNNER_TEMP/activate-result.json" >/dev/null
           fi
@@ -327,7 +327,7 @@ jobs:
           {
             echo '### Operational shard bootstrap'
             echo '- Both shard pairs: runtime credentials verified for primary and DR'
-            echo '- Operational shard schema v9 verified on all four physical shards'
+            echo '- Operational shard schema v10 verified on all four physical shards'
             echo '- Physical write gates aligned to authoritative active routing'
             echo '- Standby physical databases remain write-frozen'
             echo '- Reservation seat-assignment schema present on all four physical shards'
