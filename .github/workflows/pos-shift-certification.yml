@@ -22,8 +22,6 @@ on:
       - 'infra/supabase/operational-shards/**'
       - 'scripts/pos-*.mjs'
       - '.github/workflows/pos-shift-certification.yml'
-  schedule:
-    - cron: '15 7 * * *'
   workflow_dispatch:
 
 permissions:
