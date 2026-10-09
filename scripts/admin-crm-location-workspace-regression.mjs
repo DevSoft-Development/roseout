@@ -97,3 +97,14 @@ requireText(crmSmsSendRoute, 'sendCrmSms', "Selected-location SMS must use the C
 requireText(crmSmsSendRoute, 'recipient_type: "location"', "Selected-location SMS must write location communication history.");
 requireText(crmSmsSendRoute, 'source_system: "crm_sms"', "Selected-location SMS must write CRM activity history.");
 requireText(isolatedAdminCrm, '.eq("source_system", "3cx")', "Location Communications must include 3CX activity rows.");
+
+const threeCxTemplate = read("docs/integrations/3cx/TheOutHaven.xml");
+const threeCxJournal = read("apps/consumer/app/api/integrations/3cx/journal/route.ts");
+requireText(threeCxTemplate, 'Scenario Id="ReportCall"', "3CX template must include the reserved ReportCall scenario.");
+requireText(threeCxTemplate, 'Scenario Id=""', "3CX template must include the reserved phone lookup scenario.");
+requireText(threeCxTemplate, 'Type="EntityId"', "3CX lookup must return the location UUID as EntityId.");
+requireText(threeCxTemplate, 'Key="x-3cx-api-key"', "3CX template must authenticate with a header instead of a query-string secret.");
+requireText(threeCxJournal, 'source_record_id', "3CX journal must persist a stable provider/source record id.");
+requireText(threeCxJournal, 'duplicate: true', "3CX journal must be idempotent on retried callbacks.");
+requireText(threeCxJournal, 'state: "completed"', "3CX journal must complete initiated call state.");
+requireText(threeCxJournal, 'findInitiatedActivity', "3CX journal must merge a completed callback into a recent initiated call when possible.");

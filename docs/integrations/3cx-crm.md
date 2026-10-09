@@ -103,3 +103,23 @@ The server-side 3CX lookup and call-journaling integration remains unchanged and
 9. Confirm the CRM location's Call page shows the new 3CX activity.
 10. Test inbound caller matching and no-match/malformed-number/invalid-secret cases.
 11. Rotate the integration secret before final production launch if it was shared during setup.
+
+
+## Importable 3CX V20 template
+
+The repository now includes `docs/integrations/3cx/TheOutHaven.xml`.
+
+In 3CX Admin Console:
+
+1. Open **Integrations > CRM**.
+2. Import `TheOutHaven.xml`.
+3. Enter the same server-side secret stored as `THREE_CX_CRM_API_KEY` in the **TheOutHaven CRM API Key** field.
+4. Keep **Enable Call Journaling** enabled.
+5. Use **Test** with a phone number that exists on a TheOutHaven location and confirm the returned contact includes a unique Contact URL and Entity ID.
+6. Save/activate the template and test an outbound and inbound call.
+
+The template sends the secret as `x-3cx-api-key`; it does not place the secret in the URL.
+
+The number lookup scenario returns the location UUID as `EntityId`. 3CX carries that value into the reserved `ReportCall` scenario when the call ends. The callback includes call type/direction, external number, agent, duration, UTC start/end timestamps, and, when enabled by 3CX, recording/transcription metadata.
+
+The journal endpoint is retry-safe. If 3CX does not provide a native call ID, TheOutHaven derives a stable journal ID from the location, UTC call start, agent, external number, and call type. A journal callback first attempts to complete the matching recently initiated Admin call record; otherwise it creates a new completed 3CX activity.

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Crm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+     Country="US"
+     Name="TheOutHaven"
+     Version="1"
+     SupportsEmojis="true"
+     SupportsTranscription="true">
+  <Number Prefix="AsIs" MaxLength="15" />
+  <Connection MaxConcurrentRequests="10" />
+
+  <Parameters>
+    <Parameter Name="ApiKey"
+               Type="Password"
+               Parent="General Configuration"
+               Editor="String"
+               Title="TheOutHaven CRM API Key:" />
+    <Parameter Name="ReportCallEnabled"
+               Type="Boolean"
+               Parent="General Configuration"
+               Editor="String"
+               Title="Enable Call Journaling"
+               Default="True" />
+  </Parameters>
+
+  <Authentication Type="No" />
+
+  <Scenarios>
+    <!-- Phone lookup. An empty Scenario Id is the reserved 3CX number-lookup scenario. -->
+    <Scenario Id="" Type="REST" EntityId="Contacts" EntityOrder="">
+      <Request SkipIf=""
+               Url="https://www.theouthaven.com/api/integrations/3cx/lookup?phone=[Number]"
+               MessagePasses="0"
+               RequestContentType="application/json"
+               RequestEncoding="UrlEncoded"
+               RequestType="Get"
+               ResponseType="Json">
+        <Headers>
+          <Value Key="x-3cx-api-key" Passes="1" Type="String">[ApiKey]</Value>
+        </Headers>
+      </Request>
+
+      <Rules>
+        <Rule Type="Any">contacts.id</Rule>
+      </Rules>
+
+      <Variables>
+        <Variable Name="ContactID" Path="contacts.id"><Filter /></Variable>
+        <Variable Name="FirstName" Path="contacts.firstName"><Filter /></Variable>
+        <Variable Name="LastName" Path="contacts.lastName"><Filter /></Variable>
+        <Variable Name="CompanyName" Path="contacts.company"><Filter /></Variable>
+        <Variable Name="Email" Path="contacts.email"><Filter /></Variable>
+        <Variable Name="PhoneBusiness" Path="contacts.businessPhone"><Filter /></Variable>
+        <Variable Name="ContactUrl" Path="contacts.profileUrl"><Filter /></Variable>
+        <Variable Name="EntityId" Path="contacts.id"><Filter /></Variable>
+      </Variables>
+
+      <Outputs AllowEmpty="false">
+        <Output Type="ContactID" Passes="1" Value="[ContactID]" />
+        <Output Type="FirstName" Passes="1" Value="[FirstName]" />
+        <Output Type="LastName" Passes="1" Value="[LastName]" />
+        <Output Type="CompanyName" Passes="1" Value="[CompanyName]" />
+        <Output Type="Email" Passes="1" Value="[Email]" />
+        <Output Type="PhoneBusiness" Passes="1" Value="[PhoneBusiness]" />
+        <Output Type="ContactUrl" Passes="1" Value="[ContactUrl]" />
+        <Output Type="EntityId" Passes="1" Value="[EntityId]" />
+        <Output Type="EntityType" Passes="1" Value="Contacts" />
+      </Outputs>
+    </Scenario>
+
+    <!-- Reserved 3CX V20 call-journaling scenario. No Rules/Variables/Outputs by design. -->
+    <Scenario Id="ReportCall" Type="REST" EntityId="" EntityOrder="">
+      <Request SkipIf="[ReportCallEnabled]!=True"
+               Url="https://www.theouthaven.com/api/integrations/3cx/journal"
+               MessagePasses="0"
+               RequestContentType="application/json"
+               RequestEncoding="Json"
+               RequestType="Post"
+               ResponseType="Json">
+        <Headers>
+          <Value Key="x-3cx-api-key" Passes="1" Type="String">[ApiKey]</Value>
+        </Headers>
+        <PostValues Key="">
+          <Value Key="locationId" Passes="1" Type="String">[EntityId]</Value>
+          <Value Key="callType" Passes="1" Type="String">[CallType]</Value>
+          <Value Key="direction" Passes="1" Type="String">[CallDirection]</Value>
+          <Value Key="status" Passes="1" Type="String">[CallType]</Value>
+          <Value Key="duration" Passes="1" Type="String">[Duration]</Value>
+          <Value Key="number" Passes="1" Type="String">[Number]</Value>
+          <Value Key="from" Passes="1" Type="String">[IIf([CallDirection]==Inbound,[Number],[Agent])]</Value>
+          <Value Key="to" Passes="1" Type="String">[IIf([CallDirection]==Outbound,[Number],[Agent])]</Value>
+          <Value Key="agent" Passes="1" Type="String">[Agent]</Value>
+          <Value Key="agentFirstName" Passes="1" Type="String">[AgentFirstName]</Value>
+          <Value Key="agentLastName" Passes="1" Type="String">[AgentLastName]</Value>
+          <Value Key="agentEmail" Passes="1" Type="String">[AgentEmail]</Value>
+          <Value Key="callStartUtcMillis" Passes="1" Type="String">[CallStartTimeUTCMillis]</Value>
+          <Value Key="callEndUtcMillis" Passes="1" Type="String">[CallEndTimeUTCMillis]</Value>
+          <Value Key="recordingUrl" Passes="1" Type="String">[RecordingUrl]</Value>
+          <Value Key="transcription" Passes="1" Type="String">[Transcription]</Value>
+          <Value Key="summary" Passes="1" Type="String">[Summary]</Value>
+        </PostValues>
+      </Request>
+    </Scenario>
+  </Scenarios>
+</Crm>
