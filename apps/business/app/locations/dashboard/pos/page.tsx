@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
 export const dynamic="force-dynamic";
 
@@ -12,10 +13,6 @@ function first(value:string|string[]|undefined){return Array.isArray(value)?valu
 
 export default async function PosWorkspacePage({searchParams}:{searchParams?:Promise<SearchParams>}){
   const params=(await searchParams)||{};
-  const supabase=await createClient();
-  const {data:{user}}=await supabase.auth.getUser();
-  if(!user) redirect("/business/login?next=/locations/dashboard/pos");
-
   const cookieStore=await cookies();
   const adminLocationId=first(params.adminLocationId);
   const demoLocationId=first(params.demoLocationId);
@@ -23,6 +20,10 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
   const type=first(params.type);
   const demo=first(params.demo)==="1";
   const fromDemoCenter=first(params.fromDemoCenter)==="1";
+
+  const supabase=await createClient();
+  const {data:{user}}=await supabase.auth.getUser();
+
   let locationId=
     first(params.locationId)||
     adminLocationId||
@@ -30,20 +31,33 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
     cookieStore.get("theouthaven_impersonate_location_id")?.value||
     "";
 
-  if(!locationId){
+  let internalDemoAccess = null;
+  if(!user){
+    internalDemoAccess=await getInternalDemoLocationAccess({
+      locationId,
+      adminLocationId,
+      demoLocationId,
+      demo,
+      fromDemoCenter,
+    });
+    if(!internalDemoAccess) redirect("/business/login?next=/locations/dashboard/pos");
+    locationId=internalDemoAccess.locationId;
+  }
+
+  if(!locationId&&user){
     const owner=await getLocationOwnerAccess(user.id,user.email??null);
     locationId=owner.ownedLocationIds[0]||owner.ownedSourceLocationIds[0]||"";
   }
   if(!locationId) redirect("/locations/dashboard");
 
-  const access=await resolveEditableLocationContext({
+  const access=user?await resolveEditableLocationContext({
     userId:user.id,userEmail:user.email??null,locationId,
     adminLocationId,demoLocationId,sourceId,type,demo,fromDemoCenter,
-  });
-  if(!access) redirect("/locations/dashboard");
+  }):null;
+  if(!access&&!internalDemoAccess) redirect("/locations/dashboard");
 
-  const canonicalLocationId=String(access.canonicalLocationId);
-  const location=access.location||{};
+  const canonicalLocationId=String(access?.canonicalLocationId||internalDemoAccess!.locationId);
+  const location=access?.location||internalDemoAccess!.location||{};
   const locationName=String(location.name||location.location_name||location.restaurant_name||location.activity_name||"Your location");
 
   const query=new URLSearchParams();
