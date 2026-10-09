@@ -112,7 +112,7 @@ export default async function LocationMenuPage({
 
   const canonicalLocationId = access?.canonicalLocationId || internalDemoAccess!.locationId;
   const menuAccess = access || {
-    userId: user.id,
+    userId: internalDemoAccess!.viewer.user.id,
     canonicalLocationId,
     location: internalDemoAccess!.location,
     isAdmin: false,

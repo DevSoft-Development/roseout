@@ -30,13 +30,13 @@ export default async function OnlineOrderingPage({searchParams}:{searchParams?:P
     cookieStore.get("theouthaven_impersonate_location_id")?.value||
     "";
 
-  if(!locationId){
+  if(!locationId&&user){
     const owner=await getLocationOwnerAccess(user.id,user.email??null);
     locationId=owner.ownedLocationIds[0]||owner.ownedSourceLocationIds[0]||"";
   }
   if(!locationId) redirect("/locations/dashboard");
 
-  const access=await resolveEditableLocationContext({
+  const access=user?await resolveEditableLocationContext({
     userId:user.id,
     userEmail:user.email??null,
     locationId,
@@ -46,7 +46,7 @@ export default async function OnlineOrderingPage({searchParams}:{searchParams?:P
     type,
     demo,
     fromDemoCenter,
-  });
+  }):null;
   if(!access) redirect("/locations/dashboard");
 
   const canonicalLocationId=String(access.canonicalLocationId);
