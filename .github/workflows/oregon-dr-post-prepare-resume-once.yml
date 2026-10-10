@@ -47,7 +47,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate prepared-boundary resume contract
         run: |
           set -euo pipefail
@@ -73,7 +73,7 @@ jobs:
     environment: production
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -196,7 +196,7 @@ jobs:
     environment: production
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:

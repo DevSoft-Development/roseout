@@ -33,7 +33,7 @@ jobs:
     name: Validate brand redirect contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate safety contract
         run: |
           set -euo pipefail
@@ -52,7 +52,7 @@ jobs:
     environment: production
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve AWS deploy role
         id: config

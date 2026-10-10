@@ -46,7 +46,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cfn-lint
         run: python -m pip install --disable-pip-version-check cfn-lint
@@ -75,7 +75,7 @@ jobs:
       group: aws-deploy-role-inline-policy-mutation-production
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve deployment configuration
         id: config
