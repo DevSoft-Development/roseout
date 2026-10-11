@@ -10,6 +10,9 @@ export const LOCATION_PLAN_CATALOG = {
 }>;
 
 /** For display/eligibility only; actual Stripe prices must resolve server-side. */
-export function getRestaurantPlanConfig(plan: BusinessPlanKey) {
-  return RESTAURANT_PLAN_CATALOG[plan];
+export function getLocationPlanConfig(plan: BusinessPlanKey) {
+  return LOCATION_PLAN_CATALOG[plan];
 }
+
+/** Compatibility alias for legacy callers during migration. */
+export const getRestaurantPlanConfig = getLocationPlanConfig;
