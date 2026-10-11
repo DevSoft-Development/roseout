@@ -75,3 +75,54 @@ begin
 end $$;
 revoke all on function public.pos_monitor_reconcile_incidents(jsonb) from public,anon,authenticated;
 grant execute on function public.pos_monitor_reconcile_incidents(jsonb) to service_role;
+
+-- Idempotent per-assignment snapshots. Replayed pages overwrite observations,
+-- never inflate the final per-location aggregate.
+create table if not exists public.pos_monitor_device_observations (
+ scan_id uuid not null references public.pos_monitor_scan_runs(id) on delete cascade,
+ assignment_id text not null,
+ location_id text not null,
+ device_id text not null,
+ state text not null check(state in ('healthy','expected_offline','awaiting_startup','needs_attention','unknown')),
+ reason text not null,
+ observed_at timestamptz not null default now(),
+ primary key(scan_id,assignment_id)
+);
+create index if not exists pos_monitor_device_observations_location_idx
+ on public.pos_monitor_device_observations(scan_id,location_id);
+alter table public.pos_monitor_device_observations enable row level security;
+revoke all on public.pos_monitor_device_observations from anon,authenticated;
+grant select,insert,update,delete on public.pos_monitor_device_observations to service_role;
+
+create or replace function public.pos_monitor_finalize_scan(p_scan_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare summary jsonb;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'pos_monitor_service_role_required'; end if;
+ insert into public.pos_monitor_location_history(scan_id,location_id,observed_at,state,device_count,attention_count)
+ select p_scan_id, location_id,max(observed_at),
+ case when bool_or(state='needs_attention') then 'needs_attention'
+      when bool_or(state='unknown') then 'unknown'
+      when bool_or(state='awaiting_startup') then 'awaiting_startup'
+      when bool_or(state='expected_offline') then 'expected_offline'
+      else 'healthy' end,
+ count(*)::integer,count(*) filter(where state='needs_attention')::integer
+ from public.pos_monitor_device_observations
+ where scan_id=p_scan_id group by location_id
+ on conflict(scan_id,location_id) do update set observed_at=excluded.observed_at,
+ state=excluded.state,device_count=excluded.device_count,attention_count=excluded.attention_count;
+ select jsonb_build_object(
+ 'healthy',count(*) filter(where state='healthy'),
+ 'expected_offline',count(*) filter(where state='expected_offline'),
+ 'awaiting_startup',count(*) filter(where state='awaiting_startup'),
+ 'needs_attention',count(*) filter(where state='needs_attention'),
+ 'unknown',count(*) filter(where state='unknown')
+ ) into summary from public.pos_monitor_device_observations where scan_id=p_scan_id;
+ update public.pos_monitor_scan_runs set counts=summary,
+ scanned=(select count(*) from public.pos_monitor_device_observations where scan_id=p_scan_id),
+ status='complete',finished_at=now(),updated_at=now()
+ where id=p_scan_id;
+ return summary;
+end $$;
+revoke all on function public.pos_monitor_finalize_scan(uuid) from public,anon,authenticated;
+grant execute on function public.pos_monitor_finalize_scan(uuid) to service_role;
