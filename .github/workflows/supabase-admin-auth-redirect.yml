@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
           grep -F 'managementAccessToken' .github/workflows/supabase-admin-auth-redirect.yml >/dev/null
           grep -F 'configure-aws-credentials@' .github/workflows/supabase-admin-auth-redirect.yml >/dev/null
-          if grep -F 'secrets.SUPABASE_ACCESS_TOKEN' .github/workflows/supabase-admin-auth-redirect.yml; then
+          if grep -Eq 'SUPABASE_ACCESS_TOKEN:[[:space:]]*\\$\\{\\{' .github/workflows/supabase-admin-auth-redirect.yml; then
             echo 'Direct GitHub Supabase tokens are forbidden; use Credential Vault.' >&2
             exit 1
           fi
@@ -68,11 +68,11 @@ jobs:
           if not isinstance(token, str) or not token.strip():
               raise SystemExit("Supabase managementAccessToken missing in production Credential Vault")
           token = token.strip()
-          if "\\n" in token or "\\r" in token:
+          if "\n" in token or "\r" in token:
               raise SystemExit("Invalid multiline Supabase management token")
           print("::add-mask::" + token)
           with open(env_file, "a", encoding="utf-8") as f:
-              f.write("SUPABASE_ACCESS_TOKEN=" + token + "\\n")
+              f.write("SUPABASE_ACCESS_TOKEN=" + token + "\n")
           PY
           rm -f "$RUNNER_TEMP/supabase-vault.json"
 
