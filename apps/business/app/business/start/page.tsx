@@ -20,7 +20,7 @@ export default async function BusinessStart({ searchParams }: { searchParams?: P
   const entry = parseBusinessEntryIntent(q);
   const canonical = buildBusinessEntryQuery(entry);
   const selection = entry.plan ? plans[entry.plan] : null;
-  const postAuth = `/business/start?${canonical}`;
+  const postAuth = `/business/onboarding?${canonical}`;
   const signIn = `/business/login?next=${encodeURIComponent(postAuth)}`;
 
   return (
