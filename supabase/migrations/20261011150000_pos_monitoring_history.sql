@@ -40,3 +40,38 @@ alter table public.pos_monitor_device_incidents enable row level security;
 revoke all on public.pos_monitor_scan_runs,public.pos_monitor_location_history,public.pos_monitor_device_incidents from anon,authenticated;
 grant select,insert,update,delete on public.pos_monitor_scan_runs,public.pos_monitor_location_history,public.pos_monitor_device_incidents to service_role;
 grant usage,select on sequence public.pos_monitor_location_history_id_seq to service_role;
+
+-- Batch incident lifecycle: preserve original creation and notification timestamps,
+-- resolve recovered devices, and never send notifications from this function.
+create or replace function public.pos_monitor_reconcile_incidents(p_observations jsonb)
+returns integer language plpgsql security definer set search_path=public as $$
+declare entry jsonb; changed integer:=0; v_state text; v_device text; v_location text;
+begin
+ if auth.role() is distinct from 'service_role' then
+   raise exception 'pos_monitor_service_role_required';
+ end if;
+ if jsonb_typeof(p_observations) is distinct from 'array' or jsonb_array_length(p_observations)>150 then
+   raise exception 'pos_monitor_invalid_batch';
+ end if;
+ for entry in select value from jsonb_array_elements(p_observations) loop
+   v_device:=nullif(entry->>'device_id','');
+   v_location:=nullif(entry->>'location_id','');
+   v_state:=entry->>'state';
+   if v_device is null or v_location is null then continue; end if;
+   if v_state='needs_attention' then
+     insert into public.pos_monitor_device_incidents(device_id,location_id,state,reason)
+     values(v_device,v_location,'open',coalesce(entry->>'reason','required_device_offline'))
+     on conflict(device_id) do update set
+       state='open',location_id=excluded.location_id,reason=excluded.reason,
+       last_seen_at=now(),resolved_at=null,
+       first_seen_at=case when public.pos_monitor_device_incidents.state='resolved' then now() else public.pos_monitor_device_incidents.first_seen_at end;
+     changed:=changed+1;
+   elsif v_state in ('healthy','expected_offline') then
+     update public.pos_monitor_device_incidents set state='resolved',resolved_at=now(),last_seen_at=now()
+     where device_id=v_device and state='open';
+   end if;
+ end loop;
+ return changed;
+end $$;
+revoke all on function public.pos_monitor_reconcile_incidents(jsonb) from public,anon,authenticated;
+grant execute on function public.pos_monitor_reconcile_incidents(jsonb) to service_role;
