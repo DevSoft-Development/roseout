@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@theouthaven/auth/server-client";
+import { createAdminOAuthSession } from "@theouthaven/auth/server-client";
 import { sanitizeIntendedPath } from "@theouthaven/auth/redirect";
 import { resolveWebSurfaceAuthOrigin } from "@theouthaven/config/web-surface-origin";
 
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   try {
     const callback = new URL("/auth/admin/callback", origin);
 
-    const supabase = await createServerSupabaseClient();
+    const {supabase,redirect} = createAdminOAuthSession(request);
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "azure",
       options: {
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       return loginError(request, requestUrl);
     }
 
-    const response = NextResponse.redirect(data.url);
+    const response = redirect(data.url);
     response.cookies.set("toh_admin_next", next, {
       httpOnly: true,
       secure: true,
