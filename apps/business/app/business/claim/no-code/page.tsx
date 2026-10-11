@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { parseBusinessEntryIntent } from "@/lib/business/entry-intent";
+import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import GoogleAddressAutocomplete, {
@@ -301,7 +301,7 @@ function NoCodeClaimPageInner() {
           </Link>
 
           {success ? (
-            <SuccessPanel success={success} signedIn={signedIn} />
+            <SuccessPanel success={success} signedIn={signedIn} planReviewHref={entry.plan ? `/business/plan-review?${buildBusinessEntryQuery(entry)}` : null} />
           ) : (
             <div className="mt-8 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <div>
@@ -608,9 +608,11 @@ function Field({
 function SuccessPanel({
   success,
   signedIn,
+  planReviewHref,
 }: {
   success: NonNullable<SuccessState>;
   signedIn: boolean;
+  planReviewHref: string | null;
 }) {
   const matched = success.matchedExistingLocation;
   return (
@@ -626,6 +628,7 @@ function SuccessPanel({
         to access your location dashboard and add details such as photos,
         descriptions, hours, contact information, and plan options.
       </p>
+      {planReviewHref && <p className="mt-4 text-sm text-white/70">Your selected software plan is saved. Ownership approval is required before checkout or activation.</p>}
       <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
         <Link
           href="/business"
@@ -633,7 +636,9 @@ function SuccessPanel({
         >
           Back to Business
         </Link>
-        {signedIn ? (
+        {signedIn && planReviewHref ? (
+          <Link href={planReviewHref} className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black">Review selected plan</Link>
+        ) : signedIn ? (
           <Link
             href="/locations/dashboard"
             className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black"
