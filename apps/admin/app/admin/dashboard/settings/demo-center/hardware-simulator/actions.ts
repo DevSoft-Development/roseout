@@ -91,3 +91,7 @@ export async function resetSimulator():Promise<SimulatorResult>{
    refresh();return {ok:true,message:"Simulation records cleared. Physical hardware was not touched."};
  }catch(error){return {ok:false,message:error instanceof Error?error.message:"reset_failed"};}
 }
+
+export async function provisionSimulatorForm(_state:SimulatorResult,_formData:FormData){return provisionSimulator();}
+export async function scenarioSimulatorForm(_state:SimulatorResult,formData:FormData){return runSimulatorScenario(formData);}
+export async function resetSimulatorForm(_state:SimulatorResult,_formData:FormData){return resetSimulator();}
