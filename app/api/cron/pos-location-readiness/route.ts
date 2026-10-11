@@ -8,7 +8,8 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=120;
 const PAGE_SIZE=150;
-const MAX_PAGES=7; // strict bound: 1050 active assignments per invocation
+const MAX_PAGES=80; // up to 12,000 active assignments; continuation is explicitly reported
+const SOFT_DEADLINE_MS=100_000; // stop before the 120-second route deadline
 type Assignment={location_id:string;device_id:string;metadata:Record<string,unknown>|null};
 type Device={id:string;health_status:string;last_seen_at:string|null};
 type Location={id:string;operating_hours:unknown;metadata:Record<string,unknown>|null};
@@ -23,9 +24,14 @@ export async function GET(request:NextRequest){
   const now=new Date();
   const counts={healthy:0,expected_offline:0,awaiting_startup:0,needs_attention:0,unknown:0};
   let checked=0,offset=start,hasMore=false;
+  const startedMs=Date.now();
+  let incompleteReason:string|null=null;
   const attention:{locationId:string;deviceId:string;reason:string}[]=[];
   try{
     for(let page=0;page<MAX_PAGES;page++){
+      if(page>0 && Date.now()-startedMs>=SOFT_DEADLINE_MS){
+        incompleteReason="time_budget_exceeded";hasMore=true;break;
+      }
       const {data:rows,error}=await supabaseAdmin.from("pos_hardware_assignments")
         .select("location_id,device_id,metadata")
         .eq("assignment_status","active").order("id")
@@ -66,10 +72,14 @@ export async function GET(request:NextRequest){
       if(assignments.length<PAGE_SIZE){hasMore=false;break;}
       hasMore=true;
     }
-    return NextResponse.json({success:true,readOnly:true,checked,counts,attention,
+    const complete=!hasMore;
+    return NextResponse.json({success:complete,complete,readOnly:true,checked,counts,attention,
+      // A partial scan is not a green fleet readiness gate. No owner notifications.
+      scope:start===0?"fleet_from_start":"continuation",
+      incompleteReason:complete?null:(incompleteReason||"page_limit_reached"),
       nextOffset:hasMore?offset:null,hasMore,checkedAt:now.toISOString(),
       productionCertification:false,
-      note:"Heartbeat and hours assessment only. No physical-device probe or payment test."});
+      note:"Heartbeat and hours assessment only. No physical-device probe or payment test."}, {status:complete?200:503});
   }catch(error){
     return NextResponse.json({success:false,error:"pos_monitor_read_failed",details:error instanceof Error?error.message:"unknown"},{status:503});
   }
