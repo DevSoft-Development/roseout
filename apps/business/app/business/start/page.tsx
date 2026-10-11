@@ -21,6 +21,7 @@ export default async function BusinessStart({ searchParams }: { searchParams?: P
   const canonical = buildBusinessEntryQuery(entry);
   const selection = entry.plan ? plans[entry.plan] : null;
   const postAuth = `/business/onboarding?${canonical}`;
+  const claimUrl = `/business/claim/no-code?${canonical}`;
   const signIn = `/business/login?next=${encodeURIComponent(postAuth)}`;
 
   return (
@@ -36,7 +37,7 @@ export default async function BusinessStart({ searchParams }: { searchParams?: P
           </div>
         )}
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <Link className="rounded-xl border border-white/20 p-5 hover:border-white/60" href="/business/claim/no-code">
+          <Link className="rounded-xl border border-white/20 p-5 hover:border-white/60" href={claimUrl}>
             <h2 className="font-bold">Claim my business</h2>
             <p className="mt-2 text-sm text-white/70">Use the existing secure ownership verification. Claiming a listing is free.</p>
           </Link>
