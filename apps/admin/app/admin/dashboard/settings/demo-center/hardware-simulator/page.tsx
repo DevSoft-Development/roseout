@@ -15,6 +15,10 @@ const SCENARIOS=[
  ["repeat_outage","Repeat same outage","Replay identical outage; counters must not increase again"]
 ] as const;
 
+async function provisionAction(){ "use server"; await provisionSimulator(); }
+async function scenarioAction(formData:FormData){ "use server"; await runSimulatorScenario(formData); }
+async function resetAction(){ "use server"; await resetSimulator(); }
+
 export default async function HardwareSimulatorPage(){
  await requireAdminRole(["superadmin","admin"]);
  const db=getAdminDatabaseClient();
@@ -44,14 +48,14 @@ export default async function HardwareSimulatorPage(){
    <section className="rounded-2xl border border-white/15 p-5">
      <h2 className="text-lg font-bold">Provision test equipment</h2>
      <p className="my-2 text-sm opacity-70">Create 20 virtual registers, printers, handhelds, hubs, and kitchen displays, each with unique simulator-only IDs.</p>
-     <form action={provisionSimulator}><button className="rounded-xl bg-rose-600 px-4 py-2 font-bold text-white" type="submit">Provision 20 devices</button></form>
+     <form action={provisionAction}><button className="rounded-xl bg-rose-600 px-4 py-2 font-bold text-white" type="submit">Provision 20 devices</button></form>
    </section>
    <section className="rounded-2xl border border-white/15 p-5">
      <h2 className="text-lg font-bold">Run device scenarios</h2>
      <p className="my-2 text-sm opacity-70">Simulated time is UTC: service hours 09:00–22:00 every day. Each scenario updates only test fixtures.</p>
      <div className="grid gap-3 md:grid-cols-2">
        {SCENARIOS.map(([scenario,title,description])=>
-        <form key={scenario} action={runSimulatorScenario} className="rounded-xl border border-white/10 p-3">
+        <form key={scenario} action={scenarioAction} className="rounded-xl border border-white/10 p-3">
           <input type="hidden" name="scenario" value={scenario}/>
           <h3 className="font-bold">{title}</h3><p className="my-2 text-xs opacity-70">{description}</p>
           <button type="submit" className="rounded-lg border border-rose-400/40 px-3 py-2 text-sm font-semibold">Run scenario</button>
@@ -71,7 +75,7 @@ export default async function HardwareSimulatorPage(){
    <section className="rounded-2xl border border-red-300/20 p-5">
      <h2 className="font-bold">Reset simulation</h2>
      <p className="my-2 text-xs opacity-70">Remove virtual fixtures for the hidden demo location only. Live hardware is not touched.</p>
-     <form action={resetSimulator}><button type="submit" className="rounded-lg border border-red-400/40 px-3 py-2 text-sm">Delete simulated devices</button></form>
+     <form action={resetAction}><button type="submit" className="rounded-lg border border-red-400/40 px-3 py-2 text-sm">Delete simulated devices</button></form>
    </section>
  </AdminPageShell>;
 }
