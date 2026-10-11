@@ -9,7 +9,7 @@ import {
 import { getLocationName } from "@/lib/locationName";
 import { listLocationHardware } from "@/lib/pos/hardware/device-registry";
 import { evaluatePosDeviceReadiness, summarizePosReadiness } from "@/lib/pos/hardware/health/location-readiness";
-import { scheduleFromLocationHours } from "@/lib/pos/hardware/health/operating-hours";
+import { effectivePosSchedule, isPosSpecialClosure } from "@/lib/pos/hardware/health/special-hours";
 import { confirmPosMonitoringHours } from "./actions";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 
@@ -144,14 +144,16 @@ export default async function HardwareHealthPage({
   }
   const locationData = (access?.location || internalDemoAccess?.location || {}) as Record<string, unknown>;
   const locationMetadata = (locationData.metadata || {}) as Record<string, unknown>;
-  const hoursConfirmed = locationMetadata.pos_monitoring_hours_fingerprint === JSON.stringify(locationData.operating_hours);
-  const schedule = hoursConfirmed ? scheduleFromLocationHours(locationData.operating_hours, locationMetadata.pos_monitoring_timezone) : null;
+  const hoursConfirmed = locationMetadata.pos_monitoring_hours_fingerprint === JSON.stringify(locationData.operating_hours)
+    && locationMetadata.pos_monitoring_special_hours_fingerprint === JSON.stringify(locationData.special_hours??null);
+  const schedule = hoursConfirmed ? effectivePosSchedule({regularHours:locationData.operating_hours,specialHours:locationData.special_hours,timeZone:locationMetadata.pos_monitoring_timezone,now:new Date(),confirmedFingerprint:locationMetadata.pos_monitoring_hours_fingerprint}) : null;
   const states = hardware.map(item => {
     try {
-      return evaluatePosDeviceReadiness({
+      const result = evaluatePosDeviceReadiness({
         schedule,
         device: { lastSeenAt: item.device.last_seen_at, health: item.device.health_status, required: true },
       });
+      return isPosSpecialClosure(schedule)?{...result,state:result.state==="healthy"?"healthy" as const:"expected_offline" as const,reason:"special_closure"}:result;
     } catch {
       return {state:"unknown" as const, reason:"invalid_operating_schedule", operating:false, opensWithinMinutes:null};
     }
