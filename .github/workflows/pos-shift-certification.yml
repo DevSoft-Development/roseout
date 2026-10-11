@@ -57,7 +57,7 @@ jobs:
       - name: Opening-hours and device-readiness regressions
         run: |
           npm ci --include=dev --no-audit --no-fund
-          npx vitest run lib/pos/hardware/health/__tests__/location-readiness.test.ts lib/pos/hardware/health/__tests__/operating-hours.test.ts
+          npx vitest run lib/pos/hardware/health/__tests__/location-readiness.test.ts lib/pos/hardware/health/__tests__/operating-hours.test.ts lib/pos/hardware/health/__tests__/fleet-benchmark.test.ts
       - name: Operational shard and DR safety invariants
         run: node scripts/operational-sharding-regression.mjs
       - name: Publish test summary

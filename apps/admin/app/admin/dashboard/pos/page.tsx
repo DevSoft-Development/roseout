@@ -22,7 +22,7 @@ async function countRows(table:string, configure?:(query:any)=>any){
   }catch{return null;}
 }
 
-export default async function PosOperationsPage(){
+export default async function PosOperationsPage({searchParams}:{searchParams?:Promise<{monitorState?:string;monitorLocation?:string}>}){
   await requireAdminRole(["superadmin","admin","manager"]);
   const [devices,activeAssignments,readyDevices,offlineDevices,pendingCommands,deadLetters]=await Promise.all([
     countRows("pos_hardware_devices"),
@@ -32,6 +32,25 @@ export default async function PosOperationsPage(){
     countRows("pos_location_commands",(q)=>q.in("status",["pending","leased"])),
     countRows("pos_location_commands",(q)=>q.eq("status","dead_letter")),
   ]);
+  const filterValue=(await searchParams)?.monitorState||"needs_attention";
+  const monitorState=["healthy","expected_offline","awaiting_startup","needs_attention","unknown"].includes(filterValue)?filterValue:"needs_attention";
+  const requestedLocation=(await searchParams)?.monitorLocation?.trim()||"";
+  const monitorLocation=/^[0-9a-f-]{36}$/i.test(requestedLocation)?requestedLocation:"";
+  let monitorHistory:Array<{location_id:string;state:string;device_count:number;attention_count:number;observed_at:string}>=[];
+  let latestScan:{status:string;scan_day:string;scanned:number;counts:Record<string,number>;next_offset:number}|null=null;
+  try{
+    const db=getAdminDatabaseClient();
+    let historyQuery=db.from("pos_monitor_location_history")
+      .select("location_id,state,device_count,attention_count,observed_at").eq("state",monitorState);
+    if(monitorLocation)historyQuery=historyQuery.eq("location_id",monitorLocation);
+    const [runs,history]=await Promise.all([
+      db.from("pos_monitor_scan_runs").select("status,scan_day,scanned,counts,next_offset").order("scan_day",{ascending:false}).limit(1).maybeSingle(),
+      historyQuery.order("observed_at",{ascending:false}).limit(40),
+    ]);
+    if(!runs.error&&runs.data)latestScan=runs.data;
+    if(!history.error)monitorHistory=history.data||[];
+  }catch{/* Database migration may not be deployed yet. */}
+  const openMonitoringIncidents=await countRows("pos_monitor_device_incidents",(q)=>q.eq("state","open"));
   const healthy=(deadLetters||0)===0;
   let monitoring: Record<string,any>|null=null;
   try {
@@ -71,6 +90,7 @@ export default async function PosOperationsPage(){
       <AdminKpiCard label="Raw offline" value={offlineDevices==null?"—":offlineDevices.toLocaleString()} helper="May be expected while restaurant is closed" />
       <AdminKpiCard label="Command queue" value={pendingCommands==null?"—":pendingCommands.toLocaleString()} helper="Pending or currently leased" />
       <AdminKpiCard label="Dead letters" value={deadLetters==null?"—":deadLetters.toLocaleString()} helper="Delivery failures requiring support" />
+      <AdminKpiCard label="Monitoring incidents" value={openMonitoringIncidents==null?"—":openMonitoringIncidents.toLocaleString()} helper="Distinct required devices under review; owner alerts held" />
     </AdminKpiGrid>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
@@ -83,6 +103,39 @@ export default async function PosOperationsPage(){
           {monitoring.error_message ? <p className="text-amber-300">{String(monitoring.error_message)}</p> : null}
         </div>
       ) : <p className="mt-3 text-sm text-amber-200">Monitoring is staged; awaiting the first AWS-managed run.</p>}
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+      <h2 className="text-xl font-black">POS daily fleet history</h2>
+      {latestScan ? (
+        <p className="mt-2 text-sm text-white/65">
+          {latestScan.scan_day} · {latestScan.status} · {latestScan.scanned} device assignments checked
+          {latestScan.status!=="complete"?" · Incomplete scan; no green certification":""}
+        </p>
+      ) : <p className="mt-2 text-sm text-white/65">No durable monitoring runs recorded yet.</p>}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(["healthy","expected_offline","awaiting_startup","needs_attention","unknown"] as const).map(state=>(
+          <Link key={state} href={`/admin/dashboard/pos?monitorState=${state}`}
+            className={`rounded-full border px-3 py-2 text-xs font-bold ${monitorState===state?"border-rose-300 text-rose-200":"border-white/10 text-white/60"}`}>
+            {state.replaceAll("_"," ")}
+          </Link>
+        ))}
+      </div>
+      <form method="get" action="/admin/dashboard/pos" className="mt-3 flex flex-wrap gap-2">
+        <input type="hidden" name="monitorState" value={monitorState} />
+        <input name="monitorLocation" defaultValue={monitorLocation} aria-label="Filter by location UUID"
+          placeholder="Location ID (optional)" className="min-w-64 flex-1 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-sm" />
+        <button type="submit" className="rounded-lg border border-rose-300/30 px-4 py-2 text-sm font-bold text-rose-100">Filter</button>
+      </form>
+      <div className="mt-4 space-y-2">
+        {monitorHistory.map((row,index)=>(
+          <div key={row.location_id+row.observed_at+index} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-xs">
+            <span>Location {row.location_id} · {row.state.replaceAll("_"," ")}</span>
+            <span>{row.device_count} devices · {row.attention_count} need attention · {row.observed_at}</span>
+          </div>
+        ))}
+        {!monitorHistory.length ? <p className="text-sm text-white/55">No historical results for this filter.</p> : null}
+      </div>
     </section>
 
     <section className="grid gap-4 md:grid-cols-2">

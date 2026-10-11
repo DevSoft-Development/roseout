@@ -22,7 +22,7 @@ export async function confirmPosMonitoringHours(formData:FormData){
     throw new Error("pos_monitor_forbidden");
 
   const {data:row,error:readError}=await supabaseAdmin.from("locations")
-    .select("id,operating_hours,metadata,updated_at")
+    .select("id,operating_hours,special_hours,metadata,updated_at")
     .eq("id",locationId).maybeSingle();
   if(readError||!row)throw new Error("pos_monitor_location_unavailable");
   if(!scheduleFromLocationHours(row.operating_hours,timeZone))
@@ -35,6 +35,7 @@ export async function confirmPosMonitoringHours(formData:FormData){
         ...metadata,
         pos_monitoring_timezone:timeZone,
         pos_monitoring_hours_fingerprint:JSON.stringify(row.operating_hours),
+        pos_monitoring_special_hours_fingerprint:JSON.stringify(row.special_hours??null),
         pos_monitoring_confirmed_at:new Date().toISOString(),
         pos_monitoring_confirmed_by:user.id,
       },

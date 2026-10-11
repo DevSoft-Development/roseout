@@ -1,86 +1,144 @@
 import {NextRequest,NextResponse} from "next/server";
 import {requireCronRequest} from "@/lib/cron-auth";
 import {supabaseAdmin} from "@/lib/supabase-admin";
-import {evaluatePosDeviceReadiness} from "@/lib/pos/hardware/health/location-readiness";
-import {scheduleFromLocationHours} from "@/lib/pos/hardware/health/operating-hours";
+import {evaluatePosDeviceReadiness,type PosReadinessState} from "@/lib/pos/hardware/health/location-readiness";
+import {effectivePosSchedule,isPosSpecialClosure} from "@/lib/pos/hardware/health/special-hours";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export const maxDuration=120;
 const PAGE_SIZE=150;
-const MAX_PAGES=80; // up to 12,000 active assignments; continuation is explicitly reported
-const SOFT_DEADLINE_MS=100_000; // stop before the 120-second route deadline
-type Assignment={location_id:string;device_id:string;metadata:Record<string,unknown>|null};
+const MAX_PAGES=80;
+const SOFT_DEADLINE_MS=100_000;
+type Assignment={id:string;location_id:string;device_id:string;metadata:Record<string,unknown>|null};
 type Device={id:string;health_status:string;last_seen_at:string|null};
-type Location={id:string;operating_hours:unknown;metadata:Record<string,unknown>|null};
+type Location={id:string;operating_hours:unknown;special_hours:unknown;metadata:Record<string,unknown>|null};
+const emptyCounts=()=>({healthy:0,expected_offline:0,awaiting_startup:0,needs_attention:0,unknown:0});
+type Counts=ReturnType<typeof emptyCounts>;
+type ScanRun={id:string;started_at:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string};
 
 export async function GET(request:NextRequest){
   const authError=requireCronRequest(request);
   if(authError)return authError;
-  const start=Number(request.nextUrl.searchParams.get("offset")||0);
-  if(!Number.isSafeInteger(start)||start<0||start>1000000||start%PAGE_SIZE!==0){
-    return NextResponse.json({success:false,error:"invalid_offset"},{status:400});
-  }
+  // A new day starts a new run. Partial runs resume at the last committed page.
+  // "dry_run" avoids persistent state and notifications completely.
+  const dryRun=request.nextUrl.searchParams.get("dry_run")==="1";
   const now=new Date();
-  const counts={healthy:0,expected_offline:0,awaiting_startup:0,needs_attention:0,unknown:0};
-  let checked=0,offset=start,hasMore=false;
-  const startedMs=Date.now();
-  let incompleteReason:string|null=null;
+  const day=now.toISOString().slice(0,10);
+  let run: ScanRun|null=null;
+  if(!dryRun){
+    const {data:existing,error:lookupError}=await supabaseAdmin.from("pos_monitor_scan_runs")
+      .select("id,started_at,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").eq("scan_day",day).maybeSingle();
+    if(lookupError)return NextResponse.json({success:false,error:"monitor_run_lookup_failed"},{status:503});
+    if(existing?.status==="complete")return NextResponse.json({success:true,complete:true,skipped:true,reason:"already_completed",runId:existing.id,counts:existing.counts});
+    if(existing)run=existing as ScanRun;
+    else {
+      const {data:upper,error:upperError}=await supabaseAdmin.from("pos_hardware_assignments")
+        .select("id").eq("assignment_status","active").order("id",{ascending:false}).limit(1).maybeSingle();
+      if(upperError)return NextResponse.json({success:false,error:"monitor_high_watermark_failed"},{status:503});
+      const {data:created,error}=await supabaseAdmin.from("pos_monitor_scan_runs").insert({scan_day:day,max_assignment_id:upper?.id||null})
+        .select("id,started_at,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").maybeSingle();
+      if(error||!created)return NextResponse.json({success:false,error:"monitor_run_create_failed"},{status:503});
+      run=created as ScanRun;
+    }
+  }
+  let offset=run?.next_offset||0;
+  let cursor=run?.cursor_assignment_id||null;
+  let scanned=run?.scanned||0;
+  let counts:Counts={...emptyCounts(),...(run?.counts||{})};
+  const started=Date.now();
+  let complete=false;
+  let pages=0;
   const attention:{locationId:string;deviceId:string;reason:string}[]=[];
   try{
-    for(let page=0;page<MAX_PAGES;page++){
-      if(page>0 && Date.now()-startedMs>=SOFT_DEADLINE_MS){
-        incompleteReason="time_budget_exceeded";hasMore=true;break;
-      }
-      const {data:rows,error}=await supabaseAdmin.from("pos_hardware_assignments")
-        .select("location_id,device_id,metadata")
-        .eq("assignment_status","active").order("id")
-        .range(offset,offset+PAGE_SIZE-1);
-      if(error)throw Error("assignment_read_failed:"+error.message);
+    for(;pages<MAX_PAGES;pages++){
+      if(pages>0 && Date.now()-started>=SOFT_DEADLINE_MS)break;
+      let query=supabaseAdmin.from("pos_hardware_assignments")
+        .select("id,location_id,device_id,metadata").eq("assignment_status","active")
+        .order("id").limit(PAGE_SIZE);
+      if(cursor)query=query.gt("id",cursor);
+      if(run?.started_at)query=query.lte("assigned_at",run.started_at);
+      if(run?.max_assignment_id)query=query.lte("id",run.max_assignment_id);
+      const {data:rows,error}=run&&!run.max_assignment_id
+        ? {data:[] as Assignment[],error:null}
+        : await query;
+      if(error)throw Error("monitor_assignments_read_failed");
       const assignments=(rows||[]) as Assignment[];
-      if(!assignments.length){hasMore=false;break;}
-      const ids=[...new Set(assignments.map(a=>a.device_id))];
-      const locationIds=[...new Set(assignments.map(a=>a.location_id))];
-      const [deviceQuery,locationQuery]=await Promise.all([
-        supabaseAdmin.from("pos_hardware_devices").select("id,health_status,last_seen_at").in("id",ids),
-        supabaseAdmin.from("locations").select("id,operating_hours,metadata").in("id",locationIds),
+      if(!assignments.length){complete=true;break;}
+      const deviceIds=[...new Set(assignments.map(x=>x.device_id))];
+      const locationIds=[...new Set(assignments.map(x=>x.location_id))];
+      const [dq,lq]=await Promise.all([
+        supabaseAdmin.from("pos_hardware_devices").select("id,health_status,last_seen_at").in("id",deviceIds),
+        supabaseAdmin.from("locations").select("id,operating_hours,special_hours,metadata").in("id",locationIds),
       ]);
-      if(deviceQuery.error||locationQuery.error)throw Error("monitor_read_failed:"+(deviceQuery.error?.message||locationQuery.error?.message));
-      const devices=new Map(((deviceQuery.data||[]) as Device[]).map(d=>[d.id,d]));
-      const locations=new Map(((locationQuery.data||[]) as Location[]).map(l=>[l.id,l]));
-      for(const row of assignments){
-        const device=devices.get(row.device_id),location=locations.get(row.location_id);
+      if(dq.error||lq.error)throw Error("monitor_dependencies_read_failed");
+      const devices=new Map(((dq.data||[]) as Device[]).map(x=>[x.id,x]));
+      const locations=new Map(((lq.data||[]) as Location[]).map(x=>[x.id,x]));
+      const pageCounts=emptyCounts();
+      const observationsForHistory:{scan_id:string;assignment_id:string;location_id:string;device_id:string;state:PosReadinessState;reason:string;observed_at:string}[]=[];
+      const observations:{device_id:string;location_id:string;state:PosReadinessState;reason:string}[]=[];
+      for(const assignment of assignments){
+        const location=locations.get(assignment.location_id),device=devices.get(assignment.device_id);
         const meta=location?.metadata||{};
-        const confirmed=Boolean(location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours));
-        const schedule=confirmed?scheduleFromLocationHours(location?.operating_hours,meta.pos_monitoring_timezone):null;
-        let result;
+        const confirmed=!!location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours)
+          && meta.pos_monitoring_special_hours_fingerprint===JSON.stringify(location.special_hours??null);
+        let state:PosReadinessState="unknown",reason="hours_unverified";
         try{
-          result=evaluatePosDeviceReadiness({
-            schedule,device:{
-              health:device?.health_status||"unknown",
-              lastSeenAt:device?.last_seen_at||null,
-              required:row.metadata?.monitoring_required!==false,
-            },now,
-          });
-        }catch{result={state:"unknown" as const,reason:"invalid_monitoring_config",operating:false,opensWithinMinutes:null};}
-        counts[result.state]++;
-        if(result.state==="needs_attention"&&attention.length<50)
-          attention.push({locationId:row.location_id,deviceId:row.device_id,reason:result.reason});
-        checked++;
+          const schedule=confirmed?effectivePosSchedule({regularHours:location?.operating_hours,specialHours:location?.special_hours,timeZone:meta.pos_monitoring_timezone,now,confirmedFingerprint:meta.pos_monitoring_hours_fingerprint}):null;
+          const result=evaluatePosDeviceReadiness({schedule,device:{
+            lastSeenAt:device?.last_seen_at||null,health:device?.health_status||"unknown",
+            required:assignment.metadata?.monitoring_required!==false,
+          },now});
+          state=isPosSpecialClosure(schedule)?(result.state==="healthy"?"healthy":"expected_offline"):result.state;
+          reason=isPosSpecialClosure(schedule)?"special_closure":result.reason;
+        }catch{state="unknown";reason="invalid_monitoring_config";}
+        pageCounts[state]++;
+        if(run&&!dryRun)observationsForHistory.push({
+          scan_id:run.id,assignment_id:assignment.id,location_id:assignment.location_id,
+          device_id:assignment.device_id,state,reason,observed_at:now.toISOString(),
+        });
+        if(state==="needs_attention"&&attention.length<50)attention.push({locationId:assignment.location_id,deviceId:assignment.device_id,reason});
+        // Incidents are recorded, never delivered as owner notifications in this phase.
+        if(!dryRun)observations.push({
+          device_id:assignment.device_id,location_id:assignment.location_id,state,reason,
+        });
       }
+      if(!dryRun&&observations.length){
+        const {error}=await supabaseAdmin.rpc("pos_monitor_reconcile_incidents",{p_observations:observations});
+        if(error)throw Error("monitor_incident_reconcile_failed");
+      }
+      if(!dryRun&&run&&observationsForHistory.length){
+        const {error}=await supabaseAdmin.from("pos_monitor_device_observations")
+          .upsert(observationsForHistory,{onConflict:"scan_id,assignment_id"});
+        if(error)throw Error("monitor_observations_write_failed");
+      }
+      for(const key of Object.keys(pageCounts) as (keyof Counts)[])counts[key]+=pageCounts[key];
+      scanned+=assignments.length;
       offset+=assignments.length;
-      if(assignments.length<PAGE_SIZE){hasMore=false;break;}
-      hasMore=true;
+      cursor=assignments[assignments.length-1].id;
+      if(!dryRun&&run){
+        const {error:progressError}=await supabaseAdmin.from("pos_monitor_scan_runs")
+          .update({next_offset:offset,cursor_assignment_id:cursor,scanned,counts,updated_at:new Date().toISOString()}).eq("id",run.id);
+        if(progressError)throw Error("monitor_progress_write_failed");
+      }
+      if(assignments.length<PAGE_SIZE){complete=true;break;}
     }
-    const complete=!hasMore;
-    return NextResponse.json({success:complete,complete,readOnly:true,checked,counts,attention,
-      // A partial scan is not a green fleet readiness gate. No owner notifications.
-      scope:start===0?"fleet_from_start":"continuation",
-      incompleteReason:complete?null:(incompleteReason||"page_limit_reached"),
-      nextOffset:hasMore?offset:null,hasMore,checkedAt:now.toISOString(),
-      productionCertification:false,
-      note:"Heartbeat and hours assessment only. No physical-device probe or payment test."}, {status:complete?200:503});
+    if(!dryRun&&run&&complete){
+      // The SQL finalizer recomputes history/counts from uniquely keyed observations.
+      // Replay-safe even if a prior attempt stopped after writing some pages.
+      const {data,error}=await supabaseAdmin.rpc("pos_monitor_finalize_scan",{p_scan_id:run.id});
+      if(error)throw Error("monitor_finalization_failed");
+      if(data&&typeof data==="object")counts={...emptyCounts(),...data};
+    }
+    return NextResponse.json({
+      success:complete,complete,dryRun,runId:run?.id||null,scanned,counts,pages,
+      nextOffset:complete?null:offset,nextCursor:complete?null:cursor,attention,notificationsSent:0,
+      incompleteReason:complete?null:"scan_budget_exhausted",
+      note:"No payments, device actions, or merchant alerts."
+    },{status:complete?200:503});
   }catch(error){
-    return NextResponse.json({success:false,error:"pos_monitor_read_failed",details:error instanceof Error?error.message:"unknown"},{status:503});
+    if(run&&!dryRun)await supabaseAdmin.from("pos_monitor_scan_runs")
+      .update({status:"failed",error:error instanceof Error?error.message:"unknown",updated_at:new Date().toISOString()}).eq("id",run.id);
+    return NextResponse.json({success:false,complete:false,scanned,nextOffset:offset,nextCursor:cursor,error:"pos_monitor_scan_failed"},{status:503});
   }
 }
