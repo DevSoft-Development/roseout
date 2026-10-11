@@ -111,8 +111,8 @@ export async function getBusinessOnboardingState(locationId: string): Promise<Bu
   };
 
   const definitions: Array<Omit<BusinessOnboardingStep, "status">> = [
-    { key: "profile", title: "Profile", description: "Confirm the customer-facing details guests need to trust and find your business.", href: "/locations/dashboard/profile", action: "Finish profile", optional: false },
-    { key: "plan", title: "Plan", description: "Confirm your TheOutHaven plan and billing.", href: "/locations/dashboard/billing", action: "Review plan", optional: false },
+    { key: "profile", title: "Discovery Profile", description: "Help people discover your location with accurate categories, photos, hours, contact details and public information.", href: "/locations/dashboard/profile", action: "Finish profile", optional: false },
+    { key: "plan", title: "Optional Software", description: "Explore reservations, marketing, AI and operations when your location needs them. No purchase is required to manage your discovery listing.", href: "/locations/dashboard/billing", action: "Explore plans", optional: true },
     { key: "reservations", title: "Reservations", description: "Set up how guests reserve, or skip this for now and return later.", href: "/locations/dashboard/reservations", action: "Set up reservations", optional: true },
     { key: "events_experiences", title: "Events & Experiences", description: "Create bookable offerings, or skip this for now and return later.", href: "/locations/dashboard/events-experiences", action: "Add offerings", optional: true },
   ];
@@ -125,9 +125,9 @@ export async function getBusinessOnboardingState(locationId: string): Promise<Bu
   const resolvedCount = steps.filter((step) => step.status !== "needs_setup").length;
   const completedCount = steps.filter((step) => step.status === "complete").length;
   const requiredReady = steps.filter((step) => !step.optional).every((step) => step.status === "complete");
-  const optionalResolved = steps.filter((step) => step.optional).every((step) => step.status === "complete" || step.status === "skipped");
-  const readyForCustomers = requiredReady && optionalResolved;
-  const nextBestAction = steps.find((step) => step.status === "needs_setup") || null;
+  // Free discovery readiness must never depend on purchasing software or enabling bookings.
+  const readyForCustomers = requiredReady;
+  const nextBestAction = steps.find((step) => !step.optional && step.status === "needs_setup") || null;
 
   return {
     locationId,
