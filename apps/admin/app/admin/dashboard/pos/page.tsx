@@ -22,7 +22,7 @@ async function countRows(table:string, configure?:(query:any)=>any){
   }catch{return null;}
 }
 
-export default async function PosOperationsPage({searchParams}:{searchParams?:Promise<{monitorState?:string}>}){
+export default async function PosOperationsPage({searchParams}:{searchParams?:Promise<{monitorState?:string;monitorLocation?:string}>}){
   await requireAdminRole(["superadmin","admin","manager"]);
   const [devices,activeAssignments,readyDevices,offlineDevices,pendingCommands,deadLetters]=await Promise.all([
     countRows("pos_hardware_devices"),
@@ -34,14 +34,18 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
   ]);
   const filterValue=(await searchParams)?.monitorState||"needs_attention";
   const monitorState=["healthy","expected_offline","awaiting_startup","needs_attention","unknown"].includes(filterValue)?filterValue:"needs_attention";
+  const requestedLocation=(await searchParams)?.monitorLocation?.trim()||"";
+  const monitorLocation=/^[0-9a-f-]{36}$/i.test(requestedLocation)?requestedLocation:"";
   let monitorHistory:Array<{location_id:string;state:string;device_count:number;attention_count:number;observed_at:string}>=[];
   let latestScan:{status:string;scan_day:string;scanned:number;counts:Record<string,number>;next_offset:number}|null=null;
   try{
     const db=getAdminDatabaseClient();
+    let historyQuery=db.from("pos_monitor_location_history")
+      .select("location_id,state,device_count,attention_count,observed_at").eq("state",monitorState);
+    if(monitorLocation)historyQuery=historyQuery.eq("location_id",monitorLocation);
     const [runs,history]=await Promise.all([
       db.from("pos_monitor_scan_runs").select("status,scan_day,scanned,counts,next_offset").order("scan_day",{ascending:false}).limit(1).maybeSingle(),
-      db.from("pos_monitor_location_history").select("location_id,state,device_count,attention_count,observed_at")
-        .eq("state",monitorState).order("observed_at",{ascending:false}).limit(40),
+      historyQuery.order("observed_at",{ascending:false}).limit(40),
     ]);
     if(!runs.error&&runs.data)latestScan=runs.data;
     if(!history.error)monitorHistory=history.data||[];
@@ -115,6 +119,12 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
           </Link>
         ))}
       </div>
+      <form method="get" action="/admin/dashboard/pos" className="mt-3 flex flex-wrap gap-2">
+        <input type="hidden" name="monitorState" value={monitorState} />
+        <input name="monitorLocation" defaultValue={monitorLocation} aria-label="Filter by location UUID"
+          placeholder="Location ID (optional)" className="min-w-64 flex-1 rounded-lg border border-white/15 bg-white/[0.04] px-3 py-2 text-sm" />
+        <button type="submit" className="rounded-lg border border-rose-300/30 px-4 py-2 text-sm font-bold text-rose-100">Filter</button>
+      </form>
       <div className="mt-4 space-y-2">
         {monitorHistory.map((row,index)=>(
           <div key={row.location_id+row.observed_at+index} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3 text-xs">
