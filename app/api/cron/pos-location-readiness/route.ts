@@ -24,21 +24,25 @@ export async function GET(request:NextRequest){
   const dryRun=request.nextUrl.searchParams.get("dry_run")==="1";
   const now=new Date();
   const day=now.toISOString().slice(0,10);
-  let run: {id:string;next_offset:number;scanned:number;counts:Counts;status:string}|null=null;
+  let run: {id:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string}|null=null;
   if(!dryRun){
     const {data:existing,error:lookupError}=await supabaseAdmin.from("pos_monitor_scan_runs")
-      .select("id,next_offset,scanned,counts,status").eq("scan_day",day).maybeSingle();
+      .select("id,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").eq("scan_day",day).maybeSingle();
     if(lookupError)return NextResponse.json({success:false,error:"monitor_run_lookup_failed"},{status:503});
     if(existing?.status==="complete")return NextResponse.json({success:true,complete:true,skipped:true,reason:"already_completed",runId:existing.id,counts:existing.counts});
     if(existing)run=existing as typeof run;
     else {
-      const {data:created,error}=await supabaseAdmin.from("pos_monitor_scan_runs").insert({scan_day:day})
+      const {data:upper,error:upperError}=await supabaseAdmin.from("pos_hardware_assignments")
+        .select("id").eq("assignment_status","active").order("id",{ascending:false}).limit(1).maybeSingle();
+      if(upperError)return NextResponse.json({success:false,error:"monitor_high_watermark_failed"},{status:503});
+      const {data:created,error}=await supabaseAdmin.from("pos_monitor_scan_runs").insert({scan_day:day,max_assignment_id:upper?.id||null})
         .select("id,next_offset,scanned,counts,status").maybeSingle();
       if(error||!created)return NextResponse.json({success:false,error:"monitor_run_create_failed"},{status:503});
       run=created as typeof run;
     }
   }
   let offset=run?.next_offset||0;
+  let cursor=run?.cursor_assignment_id||null;
   let scanned=run?.scanned||0;
   let counts:Counts={...emptyCounts(),...(run?.counts||{})};
   const started=Date.now();
@@ -48,9 +52,14 @@ export async function GET(request:NextRequest){
   try{
     for(;pages<MAX_PAGES;pages++){
       if(pages>0 && Date.now()-started>=SOFT_DEADLINE_MS)break;
-      const {data:rows,error}=await supabaseAdmin.from("pos_hardware_assignments")
+      let query=supabaseAdmin.from("pos_hardware_assignments")
         .select("id,location_id,device_id,metadata").eq("assignment_status","active")
-        .order("id").range(offset,offset+PAGE_SIZE-1);
+        .order("id").limit(PAGE_SIZE);
+      if(cursor)query=query.gt("id",cursor);
+      if(run?.max_assignment_id)query=query.lte("id",run.max_assignment_id);
+      const {data:rows,error}=run&&!run.max_assignment_id
+        ? {data:[] as Assignment[],error:null}
+        : await query;
       if(error)throw Error("monitor_assignments_read_failed");
       const assignments=(rows||[]) as Assignment[];
       if(!assignments.length){complete=true;break;}
@@ -104,9 +113,10 @@ export async function GET(request:NextRequest){
       for(const key of Object.keys(pageCounts) as (keyof Counts)[])counts[key]+=pageCounts[key];
       scanned+=assignments.length;
       offset+=assignments.length;
+      cursor=assignments[assignments.length-1].id;
       if(!dryRun&&run){
         const {error:progressError}=await supabaseAdmin.from("pos_monitor_scan_runs")
-          .update({next_offset:offset,scanned,counts,updated_at:new Date().toISOString()}).eq("id",run.id);
+          .update({next_offset:offset,cursor_assignment_id:cursor,scanned,counts,updated_at:new Date().toISOString()}).eq("id",run.id);
         if(progressError)throw Error("monitor_progress_write_failed");
       }
       if(assignments.length<PAGE_SIZE){complete=true;break;}
@@ -120,13 +130,13 @@ export async function GET(request:NextRequest){
     }
     return NextResponse.json({
       success:complete,complete,dryRun,runId:run?.id||null,scanned,counts,pages,
-      nextOffset:complete?null:offset,attention,notificationsSent:0,
+      nextOffset:complete?null:offset,nextCursor:complete?null:cursor,attention,notificationsSent:0,
       incompleteReason:complete?null:"scan_budget_exhausted",
       note:"No payments, device actions, or merchant alerts."
     },{status:complete?200:503});
   }catch(error){
     if(run&&!dryRun)await supabaseAdmin.from("pos_monitor_scan_runs")
       .update({status:"failed",error:error instanceof Error?error.message:"unknown",updated_at:new Date().toISOString()}).eq("id",run.id);
-    return NextResponse.json({success:false,complete:false,scanned,nextOffset:offset,error:"pos_monitor_scan_failed"},{status:503});
+    return NextResponse.json({success:false,complete:false,scanned,nextOffset:offset,nextCursor:cursor,error:"pos_monitor_scan_failed"},{status:503});
   }
 }
