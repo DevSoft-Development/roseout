@@ -17,7 +17,7 @@ export default async function BusinessPlanReview({ searchParams }: { searchParam
   const { data: { user } } = await client.auth.getUser();
   if (!user) redirect(`/login?next=${encodeURIComponent("/business/plan-review?" + q.toString())}`);
   if (!entry.plan) redirect("/business/dashboard");
-  const plan = getRestaurantPlanConfig(entry.plan);
+  const plan = getLocationPlanConfig(entry.plan);
   return <main className="min-h-screen bg-[#050505] px-6 py-16 text-white">
     <div className="mx-auto max-w-2xl">
       <h1 className="text-3xl font-bold">Review your selected plan</h1>
