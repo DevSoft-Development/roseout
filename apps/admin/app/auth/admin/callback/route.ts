@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@theouthaven/auth/server-client";
+import { NextRequest } from "next/server";
+import { createAdminOAuthSession } from "@/lib/admin-oauth-session";
 import { normalizeAdminRole } from "@theouthaven/auth/admin-roles";
 import { sanitizeIntendedPath } from "@theouthaven/auth/redirect";
 import { resolveWebSurfaceAuthOrigin } from "@theouthaven/config/web-surface-origin";
@@ -9,7 +9,7 @@ import { logAdminAuditEvent } from "@/lib/admin-audit-log";
 function redirectToAdminLogin(request: NextRequest, requestUrl: URL, error: string) {
   const url = new URL("/admin/login", resolveWebSurfaceAuthOrigin(request, requestUrl, "admin"));
   url.searchParams.set("error", error);
-  return NextResponse.redirect(url);
+  return url;
 }
 
 function isMicrosoftIdentity(user: {
@@ -27,14 +27,13 @@ export async function GET(request: NextRequest) {
   const requestedNext = sanitizeIntendedPath(request.cookies.get("toh_admin_next")?.value);
   const next = requestedNext?.startsWith("/admin") ? requestedNext : "/admin/dashboard";
 
-  if (!code) return redirectToAdminLogin(request, requestUrl, "oauth_failed");
-
-  const supabase = await createServerSupabaseClient();
+  const {supabase,redirect} = createAdminOAuthSession(request);
+  if (!code) return redirect(redirectToAdminLogin(request, requestUrl, "oauth_failed"));
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError) {
     console.error("ADMIN_MICROSOFT_OAUTH_EXCHANGE_FAILED", exchangeError);
-    return redirectToAdminLogin(request, requestUrl, "oauth_failed");
+    return redirect(redirectToAdminLogin(request, requestUrl, "oauth_failed"));
   }
 
   const {
@@ -43,7 +42,7 @@ export async function GET(request: NextRequest) {
 
   if (!user?.id || !user.email || !isMicrosoftIdentity(user)) {
     await supabase.auth.signOut().catch(() => undefined);
-    return redirectToAdminLogin(request, requestUrl, "invalid_identity");
+    return redirect(redirectToAdminLogin(request, requestUrl, "invalid_identity"));
   }
 
   const normalizedEmail = user.email.trim().toLowerCase();
@@ -76,7 +75,7 @@ export async function GET(request: NextRequest) {
       if (bindError) {
         console.error("ADMIN_MICROSOFT_IDENTITY_BIND_FAILED", bindError);
         await supabase.auth.signOut().catch(() => undefined);
-        return redirectToAdminLogin(request, requestUrl, "not_authorized");
+        return redirect(redirectToAdminLogin(request, requestUrl, "not_authorized"));
       }
 
       adminUser = { ...adminUser, user_id: user.id };
@@ -100,7 +99,7 @@ export async function GET(request: NextRequest) {
       request,
     });
     await supabase.auth.signOut().catch(() => undefined);
-    return redirectToAdminLogin(request, requestUrl, "not_authorized");
+    return redirect(redirectToAdminLogin(request, requestUrl, "not_authorized"));
   }
 
   await logAdminAuditEvent({
@@ -166,7 +165,7 @@ export async function GET(request: NextRequest) {
       JSON.stringify({ status: microsoft365ConnectionStatus }),
     );
   }
-  const response = NextResponse.redirect(destination);
+  const response = redirect(destination);
   response.cookies.set("toh_admin_next", "", {
     httpOnly: true,
     secure: true,
