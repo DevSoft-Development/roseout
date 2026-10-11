@@ -48,11 +48,28 @@ revoke all on public.pos_monitor_scan_runs,public.pos_monitor_location_history,p
 grant select,insert,update,delete on public.pos_monitor_scan_runs,public.pos_monitor_location_history,public.pos_monitor_device_incidents to service_role;
 grant usage,select on sequence public.pos_monitor_location_history_id_seq to service_role;
 
+create table if not exists public.pos_monitor_alert_outbox (
+ id bigint generated always as identity primary key,
+ device_id text not null,
+ location_id text not null,
+ event_type text not null check(event_type in ('needs_attention','recovered')),
+ incident_started_at timestamptz not null,
+ created_at timestamptz not null default now(),
+ delivery_status text not null default 'held' check(delivery_status in ('held','ready','sent','cancelled')),
+ unique(device_id,event_type,incident_started_at)
+);
+create index if not exists pos_monitor_alert_outbox_delivery_idx
+ on public.pos_monitor_alert_outbox(delivery_status,created_at);
+alter table public.pos_monitor_alert_outbox enable row level security;
+revoke all on public.pos_monitor_alert_outbox from anon,authenticated;
+grant select,insert,update,delete on public.pos_monitor_alert_outbox to service_role;
+grant usage,select on sequence public.pos_monitor_alert_outbox_id_seq to service_role;
+
 -- Batch incident lifecycle: preserve original creation and notification timestamps,
 -- resolve recovered devices, and never send notifications from this function.
 create or replace function public.pos_monitor_reconcile_incidents(p_observations jsonb)
 returns integer language plpgsql security definer set search_path=public as $$
-declare entry jsonb; changed integer:=0; v_state text; v_device text; v_location text;
+declare entry jsonb; changed integer:=0; v_state text; v_device text; v_location text; v_incident_start timestamptz; v_was_open boolean;
 begin
  if auth.role() is distinct from 'service_role' then
    raise exception 'pos_monitor_service_role_required';
@@ -66,16 +83,29 @@ begin
    v_state:=entry->>'state';
    if v_device is null or v_location is null then continue; end if;
    if v_state='needs_attention' then
+     select state='open' into v_was_open from public.pos_monitor_device_incidents where device_id=v_device;
      insert into public.pos_monitor_device_incidents(device_id,location_id,state,reason)
      values(v_device,v_location,'open',coalesce(entry->>'reason','required_device_offline'))
      on conflict(device_id) do update set
        state='open',location_id=excluded.location_id,reason=excluded.reason,
        last_seen_at=now(),resolved_at=null,
        first_seen_at=case when public.pos_monitor_device_incidents.state='resolved' then now() else public.pos_monitor_device_incidents.first_seen_at end;
+     select first_seen_at into v_incident_start from public.pos_monitor_device_incidents where device_id=v_device;
+     if coalesce(v_was_open,false)=false then
+       insert into public.pos_monitor_alert_outbox(device_id,location_id,event_type,incident_started_at)
+       values(v_device,v_location,'needs_attention',v_incident_start)
+       on conflict do nothing;
+     end if;
      changed:=changed+1;
    elsif v_state in ('healthy','expected_offline') then
+     select first_seen_at into v_incident_start from public.pos_monitor_device_incidents
+       where device_id=v_device and state='open';
      update public.pos_monitor_device_incidents set state='resolved',resolved_at=now(),last_seen_at=now()
      where device_id=v_device and state='open';
+     if v_incident_start is not null then
+       insert into public.pos_monitor_alert_outbox(device_id,location_id,event_type,incident_started_at)
+       values(v_device,v_location,'recovered',v_incident_start) on conflict do nothing;
+     end if;
    end if;
  end loop;
  return changed;
