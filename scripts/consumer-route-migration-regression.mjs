@@ -26,6 +26,7 @@ const excludedPrefixes = [
   "api/public/large-group-bookings/",
   "api/locations/",
   "auth/admin/",
+  "api/cron/pos-location-readiness/",
 ];
 
 function walk(dir) {
