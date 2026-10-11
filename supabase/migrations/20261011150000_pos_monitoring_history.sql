@@ -1,3 +1,8 @@
+-- toh:replicated-dml-reviewed
+-- Review: INSERT/UPDATE tokens below occur only inside CREATE FUNCTION definitions.
+-- The migration executes no transactional row DML. Virginia remains authoritative;
+-- automatic dual-region deployment preflight executes Oregon with origin triggers
+-- suppressed. All runtime writes target isolated monitoring-only tables.
 -- Monitoring-only records: no POS transaction, device, or merchant writes.
 create table if not exists public.pos_monitor_scan_runs (
  id uuid primary key default gen_random_uuid(),
