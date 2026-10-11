@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from "next/server";
 import {requireCronRequest} from "@/lib/cron-auth";
 import {supabaseAdmin} from "@/lib/supabase-admin";
 import {evaluatePosDeviceReadiness,type PosReadinessState} from "@/lib/pos/hardware/health/location-readiness";
-import {effectivePosSchedule} from "@/lib/pos/hardware/health/special-hours";
+import {effectivePosSchedule,isPosSpecialClosure} from "@/lib/pos/hardware/health/special-hours";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -77,7 +77,8 @@ export async function GET(request:NextRequest){
             lastSeenAt:device?.last_seen_at||null,health:device?.health_status||"unknown",
             required:assignment.metadata?.monitoring_required!==false,
           },now});
-          state=result.state;reason=result.reason;
+          state=isPosSpecialClosure(schedule)?(result.state==="healthy"?"healthy":"expected_offline"):result.state;
+          reason=isPosSpecialClosure(schedule)?"special_closure":result.reason;
         }catch{state="unknown";reason="invalid_monitoring_config";}
         pageCounts[state]++;
         if(run&&!dryRun)observationsForHistory.push({
