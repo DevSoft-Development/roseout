@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from "next/server";
 import {requireCronRequest} from "@/lib/cron-auth";
 import {supabaseAdmin} from "@/lib/supabase-admin";
 import {evaluatePosDeviceReadiness,type PosReadinessState} from "@/lib/pos/hardware/health/location-readiness";
-import {scheduleFromLocationHours} from "@/lib/pos/hardware/health/operating-hours";
+import {effectivePosSchedule} from "@/lib/pos/hardware/health/special-hours";
 
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
@@ -65,13 +65,14 @@ export async function GET(request:NextRequest){
       const locations=new Map(((lq.data||[]) as Location[]).map(x=>[x.id,x]));
       const pageCounts=emptyCounts();
       const byLocation=new Map<string,{device_count:number;attention_count:number;state:PosReadinessState}>();
+      const incidents:{device_id:string;location_id:string;state:string;reason:string;last_seen_at:string;resolved_at:null}[]=[];
       for(const assignment of assignments){
         const location=locations.get(assignment.location_id),device=devices.get(assignment.device_id);
         const meta=location?.metadata||{};
         const confirmed=!!location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours);
         let state:PosReadinessState="unknown",reason="hours_unverified";
         try{
-          const schedule=confirmed?scheduleFromLocationHours(location?.operating_hours,meta.pos_monitoring_timezone):null;
+          const schedule=confirmed?effectivePosSchedule({regularHours:location?.operating_hours,specialHours:location?.special_hours,timeZone:meta.pos_monitoring_timezone,now,confirmedFingerprint:meta.pos_monitoring_hours_fingerprint}):null;
           const result=evaluatePosDeviceReadiness({schedule,device:{
             lastSeenAt:device?.last_seen_at||null,health:device?.health_status||"unknown",
             required:assignment.metadata?.monitoring_required!==false,
@@ -87,12 +88,14 @@ export async function GET(request:NextRequest){
         byLocation.set(assignment.location_id,summary);
         if(state==="needs_attention"&&attention.length<50)attention.push({locationId:assignment.location_id,deviceId:assignment.device_id,reason});
         // Incidents are recorded, never delivered as owner notifications in this phase.
-        if(!dryRun&&state==="needs_attention"){
-          const {error:incidentError}=await supabaseAdmin.from("pos_monitor_device_incidents").upsert({
-            device_id:assignment.device_id,location_id:assignment.location_id,state:"open",reason,last_seen_at:now.toISOString(),resolved_at:null,
-          },{onConflict:"device_id"});
-          if(incidentError)throw Error("monitor_incident_write_failed");
-        }
+        if(!dryRun&&state==="needs_attention")incidents.push({
+          device_id:assignment.device_id,location_id:assignment.location_id,state:"open",reason,
+          last_seen_at:now.toISOString(),resolved_at:null,
+        });
+      }
+      if(!dryRun&&incidents.length){
+        const {error}=await supabaseAdmin.from("pos_monitor_device_incidents").upsert(incidents,{onConflict:"device_id"});
+        if(error)throw Error("monitor_incident_write_failed");
       }
       if(!dryRun&&run){
         for(const [locationId,value] of byLocation){
