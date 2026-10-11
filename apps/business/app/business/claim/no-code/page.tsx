@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
+import { getClaimPlanSelection } from "@/lib/business/claim-plan-return";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import GoogleAddressAutocomplete, {
@@ -45,10 +45,7 @@ const initialForm = {
 
 function NoCodeClaimPageInner() {
   const searchParams = useSearchParams();
-  const entryParams = new URLSearchParams(searchParams.toString());
-  if (searchParams.get("product_plan")) entryParams.set("plan", searchParams.get("product_plan")!);
-  const entry = parseBusinessEntryIntent(entryParams);
-  const paidSelection = entry.plan ? `&product_plan=${encodeURIComponent(entry.plan)}${entry.source ? `&source=${encodeURIComponent(entry.source)}` : ""}` : "";
+  const { entry, productSuffix, planReviewHref } = getClaimPlanSelection(searchParams.toString());
   const supabase = useMemo(() => createClient(), []);
   const [form, setForm] = useState(initialForm);
   const [signedIn, setSignedIn] = useState(false);
@@ -67,7 +64,7 @@ function NoCodeClaimPageInner() {
   const canCompleteClaim = signedIn && emailVerified;
   const claimReturnPath = `/business/claim/no-code?plan=${form.planInterval}${
     selectedLocation ? `&location=${selectedLocation.id}` : "&mode=new"
-  }${paidSelection}`;
+  }${productSuffix}`;
 
   useEffect(() => {
     let active = true;
@@ -301,7 +298,7 @@ function NoCodeClaimPageInner() {
           </Link>
 
           {success ? (
-            <SuccessPanel success={success} signedIn={signedIn} planReviewHref={entry.plan ? `/business/plan-review?${buildBusinessEntryQuery(entry)}` : null} />
+            <SuccessPanel success={success} signedIn={signedIn} planReviewHref={planReviewHref} />
           ) : (
             <div className="mt-8 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <div>
