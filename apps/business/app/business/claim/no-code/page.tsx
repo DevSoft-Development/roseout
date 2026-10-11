@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseBusinessEntryIntent } from "@/lib/business/entry-intent";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
@@ -43,7 +43,7 @@ const initialForm = {
   notes: "",
 };
 
-export default function NoCodeClaimPage() {
+function NoCodeClaimPageInner() {
   const searchParams = useSearchParams();
   const entryParams = new URLSearchParams(searchParams.toString());
   if (searchParams.get("product_plan")) entryParams.set("plan", searchParams.get("product_plan")!);
@@ -651,4 +651,8 @@ function SuccessPanel({
       </div>
     </section>
   );
+}
+
+export default function NoCodeClaimPage() {
+  return <Suspense fallback={<main className="min-h-screen bg-[#050505] p-8 text-white">Loading claim form...</main>}><NoCodeClaimPageInner /></Suspense>;
 }
