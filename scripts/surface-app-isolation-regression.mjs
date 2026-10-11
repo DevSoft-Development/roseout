@@ -345,6 +345,9 @@ if (!adminShell.includes("@theouthaven/auth/browser-client") || adminShell.inclu
 }
 
 const adminCallback = read("apps/admin/app/auth/admin/callback/route.ts");
+if (!adminCallback.includes("createAdminOAuthSession(request)") || !adminCallback.includes("redirect(destination)")) {
+  throw new Error("Admin callback must use the cookie-preserving redirect client.");
+}
 if (
   !adminCallback.includes('request.cookies.get("toh_admin_next")') ||
   !adminCallback.includes('response.cookies.set("toh_admin_next", ""')
@@ -353,7 +356,7 @@ if (
 }
 
 for (const dependency of [
-  "@theouthaven/auth/server-client",
+  "@/lib/admin-oauth-session",
   "@theouthaven/auth/admin-roles",
   "@theouthaven/config/web-surface-origin",
   "@theouthaven/db/admin-client",
