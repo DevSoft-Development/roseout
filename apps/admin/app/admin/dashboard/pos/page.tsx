@@ -50,6 +50,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
     if(!runs.error&&runs.data)latestScan=runs.data;
     if(!history.error)monitorHistory=history.data||[];
   }catch{/* Database migration may not be deployed yet. */}
+  const openMonitoringIncidents=await countRows("pos_monitor_device_incidents",(q)=>q.eq("state","open"));
   const healthy=(deadLetters||0)===0;
   let monitoring: Record<string,any>|null=null;
   try {
@@ -89,6 +90,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
       <AdminKpiCard label="Raw offline" value={offlineDevices==null?"—":offlineDevices.toLocaleString()} helper="May be expected while restaurant is closed" />
       <AdminKpiCard label="Command queue" value={pendingCommands==null?"—":pendingCommands.toLocaleString()} helper="Pending or currently leased" />
       <AdminKpiCard label="Dead letters" value={deadLetters==null?"—":deadLetters.toLocaleString()} helper="Delivery failures requiring support" />
+      <AdminKpiCard label="Monitoring incidents" value={openMonitoringIncidents==null?"—":openMonitoringIncidents.toLocaleString()} helper="Distinct required devices under review; owner alerts held" />
     </AdminKpiGrid>
 
     <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
