@@ -5,6 +5,7 @@ import { getClaimReadiness } from "../../lib/business/free-claim-readiness";
 import { resolveCheckoutGate } from "../../lib/business/plan-checkout-gate";
 import { getLocationPlanConfig } from "../../lib/business/product-entitlements";
 import { getDiscoveryReadiness } from "../../lib/business/discovery-readiness";
+import { getClaimPlanSelection } from "../../lib/business/claim-plan-return";
 
 describe("claim and subscription handoff", () => {
   it("recognizes valid plans without allowing arbitrary plan ids", () => {
@@ -56,5 +57,20 @@ describe("discovery-first location onboarding", () => {
   });
   it("never treats optional tools as required for discovery", () => {
     expect(getDiscoveryReadiness([profile, { key: "plan", status: "skipped", optional: true }]).discoveryReady).toBe(true);
+  });
+});
+
+describe("claim selection survives authentication", () => {
+  it("keeps Select+ separate from the claim form's monthly interval", () => {
+    const selection = getClaimPlanSelection("intent=signup&plan=monthly&product_plan=select-plus&source=theposhaven");
+    expect(selection.entry.plan).toBe("select-plus");
+    expect(selection.productSuffix).toBe("&product_plan=select-plus&source=theposhaven");
+    expect(selection.planReviewHref).toContain("plan=select-plus");
+  });
+  it("accepts marketing entry plans before the claim form converts its query", () => {
+    expect(getClaimPlanSelection("plan=essential-plus&source=thereservehaven").entry.plan).toBe("essential-plus");
+  });
+  it("ignores unrecognized plan values", () => {
+    expect(getClaimPlanSelection("plan=monthly&product_plan=unlimited").entry.plan).toBeNull();
   });
 });
