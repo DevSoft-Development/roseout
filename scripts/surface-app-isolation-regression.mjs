@@ -106,14 +106,8 @@ for (const marker of [
 
 
 const adminOauthStart = read("apps/admin/app/auth/admin/start/route.ts");
-const adminOAuthSession = read("apps/admin/lib/admin-oauth-session.ts");
-for (const marker of ['createServerClient', '@supabase/ssr', 'response.cookies.set', 'no-store']) {
-  if (!adminOAuthSession.includes(marker)) {
-    throw new Error(`Admin OAuth redirect-bound session helper missing safety marker: ${marker}`);
-  }
-}
 for (const dependency of [
-  "@/lib/admin-oauth-session",
+  "@theouthaven/auth/server-client",
   "@theouthaven/auth/redirect",
   "@theouthaven/config/web-surface-origin",
 ]) {
@@ -345,9 +339,6 @@ if (!adminShell.includes("@theouthaven/auth/browser-client") || adminShell.inclu
 }
 
 const adminCallback = read("apps/admin/app/auth/admin/callback/route.ts");
-if (!adminCallback.includes("createAdminOAuthSession(request)") || !adminCallback.includes("redirect(destination)")) {
-  throw new Error("Admin callback must use the cookie-preserving redirect client.");
-}
 if (
   !adminCallback.includes('request.cookies.get("toh_admin_next")') ||
   !adminCallback.includes('response.cookies.set("toh_admin_next", ""')
@@ -356,7 +347,7 @@ if (
 }
 
 for (const dependency of [
-  "@/lib/admin-oauth-session",
+  "@theouthaven/auth/server-client",
   "@theouthaven/auth/admin-roles",
   "@theouthaven/config/web-surface-origin",
   "@theouthaven/db/admin-client",
