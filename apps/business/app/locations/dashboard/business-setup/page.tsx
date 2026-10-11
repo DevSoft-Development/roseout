@@ -45,8 +45,8 @@ export default async function BusinessSetupHubPage({ searchParams }: { searchPar
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#ff5f7a]">Business setup</p>
-            <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Get {onboarding.locationName} ready for customers.</h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/50">Complete the essentials in order. Reservations and Events & Experiences can be skipped for now and finished later.</p>
+            <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Help people discover {onboarding.locationName}.</h1>
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/50">Complete your discovery profile first. Reservations, experiences and paid software are optional and can be configured later.</p>
           </div>
           <Link href={withQuery("/locations/dashboard")} className="rounded-full border border-white/10 px-4 py-2.5 text-xs font-black text-white/65">Back to dashboard</Link>
         </div>
@@ -54,8 +54,8 @@ export default async function BusinessSetupHubPage({ searchParams }: { searchPar
         <section className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className={`rounded-[1.5rem] border p-5 sm:p-6 ${onboarding.readyForCustomers ? "border-emerald-400/25 bg-emerald-400/[0.06]" : "border-[#e1062a]/25 bg-[#e1062a]/[0.055]"}`}>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#ff7188]">Next best action</p>
-            <h2 className="mt-1 text-2xl font-black">{onboarding.readyForCustomers ? "You’re ready for customers." : next?.title || "Setup is resolved."}</h2>
-            <p className="mt-2 text-sm font-semibold text-white/50">{onboarding.readyForCustomers ? "Your required setup is complete. Skipped optional steps remain available below whenever you want to finish them." : next?.description || "Review any skipped steps whenever you are ready."}</p>
+            <h2 className="mt-1 text-2xl font-black">{onboarding.readyForCustomers ? "Your discovery setup is ready." : next?.title || "Setup is resolved."}</h2>
+            <p className="mt-2 text-sm font-semibold text-white/50">{onboarding.readyForCustomers ? "Your discovery profile meets the setup checklist. Optional software and booking tools can be added later." : next?.description || "Review any skipped steps whenever you are ready."}</p>
             {next ? <Link href={withQuery(next.href)} className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em]">{next.action} →</Link> : <Link href={withQuery("/locations/dashboard")} className="mt-5 inline-flex rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em]">Go to dashboard →</Link>}
           </div>
 
@@ -63,7 +63,7 @@ export default async function BusinessSetupHubPage({ searchParams }: { searchPar
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Readiness</p>
             <div className="mt-2 flex items-end gap-2"><p className="text-4xl font-black">{onboarding.readinessPercent}%</p><p className="pb-1 text-xs font-bold text-white/35">resolved</p></div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#e1062a]" style={{ width: `${onboarding.readinessPercent}%` }} /></div>
-            <p className="mt-4 text-xs font-semibold leading-5 text-white/40">{onboarding.completionPercent}% fully completed. Skipped steps count as resolved for launch readiness, but remain unfinished until you return to them.</p>
+            <p className="mt-4 text-xs font-semibold leading-5 text-white/40">{onboarding.completionPercent}% fully completed. Optional tools do not block discovery readiness.</p>
           </aside>
         </section>
 
@@ -94,7 +94,7 @@ export default async function BusinessSetupHubPage({ searchParams }: { searchPar
 
         <section className={`mt-8 rounded-[1.35rem] border p-5 ${onboarding.readyForCustomers ? "border-emerald-400/20 bg-emerald-400/[0.045]" : "border-white/10 bg-white/[0.02]"}`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Final status</p><h2 className="mt-1 text-xl font-black">{onboarding.readyForCustomers ? "Ready to accept customers" : "Finish the next required item"}</h2></div>
+            <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Final status</p><h2 className="mt-1 text-xl font-black">{onboarding.readyForCustomers ? "Discovery setup ready" : "Finish the next required item"}</h2></div>
             <Link href={onboarding.readyForCustomers ? withQuery("/locations/dashboard") : withQuery(next?.href || "/locations/dashboard/business-setup")} className="rounded-full bg-[#e1062a] px-5 py-3 text-xs font-black uppercase tracking-[0.08em]">{onboarding.readyForCustomers ? "Open dashboard" : next?.action || "Review setup"} →</Link>
           </div>
         </section>
