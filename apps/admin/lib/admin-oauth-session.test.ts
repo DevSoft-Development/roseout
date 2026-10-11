@@ -13,7 +13,7 @@ vi.mock("@theouthaven/config/server-env",()=>({
   requireSupabaseUrl:()=>"https://example.supabase.co",
   requireSupabaseAnonKey:()=>"anon-test-key"
 }));
-import {createAdminOAuthSession} from "./admin-oauth-session";
+import {createAdminOAuthSession} from "@theouthaven/auth/server-client";
 
 describe("Admin OAuth redirect cookies",()=>{
   beforeEach(()=>{writes.setAll=null;writes.getAll=null;});
