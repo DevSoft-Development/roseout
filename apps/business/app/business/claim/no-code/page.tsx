@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import GoogleAddressAutocomplete, {
@@ -42,6 +44,9 @@ const initialForm = {
 };
 
 export default function NoCodeClaimPage() {
+  const searchParams = useSearchParams();
+  const entry = parseBusinessEntryIntent(new URLSearchParams(searchParams.toString()));
+  const paidSelection = entry.plan ? buildBusinessEntryQuery(entry) : "";
   const supabase = useMemo(() => createClient(), []);
   const [form, setForm] = useState(initialForm);
   const [signedIn, setSignedIn] = useState(false);
@@ -60,7 +65,7 @@ export default function NoCodeClaimPage() {
   const canCompleteClaim = signedIn && emailVerified;
   const claimReturnPath = `/business/claim/no-code?plan=${form.planInterval}${
     selectedLocation ? `&location=${selectedLocation.id}` : "&mode=new"
-  }`;
+  }${paidSelection ? `&${paidSelection.replace(/^intent=/, "entry_intent=")}` : ""}`;
 
   useEffect(() => {
     let active = true;
