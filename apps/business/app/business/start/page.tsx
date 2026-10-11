@@ -28,7 +28,7 @@ export default async function BusinessStart({ searchParams }: { searchParams?: P
     <main className="min-h-screen bg-[#050505] px-6 py-16 text-white">
       <div className="mx-auto max-w-2xl">
         <p className="text-sm font-bold text-[#ec0b5b]">TheOutHaven Business</p>
-        <h1 className="mt-4 text-3xl font-bold">Get started with your restaurant</h1>
+        <h1 className="mt-4 text-3xl font-bold">Get started with your business location</h1>
         {selection && (
           <div className="mt-6 rounded-xl border border-white/20 p-5">
             <p className="text-white/70">Selected plan</p>
