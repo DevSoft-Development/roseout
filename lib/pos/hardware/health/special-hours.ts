@@ -29,3 +29,7 @@ export function effectivePosSchedule(input:{
   const parsed=scheduleFromLocationHours({[["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][weekday]]:raw},regular.timeZone);
   return parsed;
 }
+
+export function isPosSpecialClosure(schedule:PosOpeningSchedule|null):boolean{
+  return Boolean(schedule&&schedule.windows.length===0);
+}
