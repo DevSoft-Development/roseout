@@ -232,6 +232,13 @@ export default async function DemoCenterPage() {
 
   const tools: ToolCard[] = [
     {
+      title: "Hardware Simulator",
+      description: "Admin-only virtual registers, printers, handhelds, hubs, and outage/recovery testing. No physical hardware or merchant alerts.",
+      href: "/admin/dashboard/settings/demo-center/hardware-simulator",
+      label: "Open simulator",
+      status: "Demo only",
+    },
+    {
       title: "Open Location Dashboard",
       description: "Launch the new owner command center with demo/admin location context preserved.",
       href: dashboardHref,
