@@ -3,7 +3,8 @@ import { parseBusinessEntryIntent } from "../../lib/business/entry-intent";
 import { getBusinessEntryReturnPath } from "../../lib/business/entry-return";
 import { getClaimReadiness } from "../../lib/business/free-claim-readiness";
 import { resolveCheckoutGate } from "../../lib/business/plan-checkout-gate";
-import { getRestaurantPlanConfig } from "../../lib/business/product-entitlements";
+import { getLocationPlanConfig } from "../../lib/business/product-entitlements";
+import { getDiscoveryReadiness } from "../../lib/business/discovery-readiness";
 
 describe("claim and subscription handoff", () => {
   it("recognizes valid plans without allowing arbitrary plan ids", () => {
@@ -25,8 +26,35 @@ describe("claim and subscription handoff", () => {
     expect(resolveCheckoutGate({ ...input, ownerVerified: true }).stage).toBe("activate");
   });
   it("includes increasing, explicit monthly usage allowances", () => {
-    expect(getRestaurantPlanConfig("essential-plus").monthlyUsd).toBe(99);
-    expect(getRestaurantPlanConfig("select-plus").pos).toBe(true);
-    expect(getRestaurantPlanConfig("signature-plus").aiReceptionistMinutes).toBe(150);
+    expect(getLocationPlanConfig("essential-plus").monthlyUsd).toBe(99);
+    expect(getLocationPlanConfig("select-plus").pos).toBe(true);
+    expect(getLocationPlanConfig("signature-plus").aiReceptionistMinutes).toBe(150);
+  });
+});
+
+describe("discovery-first location onboarding", () => {
+  const profile = { key: "profile", status: "complete", optional: false } as const;
+  const optional = [
+    { key: "plan", status: "needs_setup", optional: true },
+    { key: "reservations", status: "needs_setup", optional: true },
+    { key: "events_experiences", status: "needs_setup", optional: true },
+  ] as const;
+  it("allows free discovery readiness with no paid plan, booking setup or events", () => {
+    expect(getDiscoveryReadiness([profile, ...optional])).toMatchObject({
+      discoveryReady: true, nextRequiredStep: null, readinessPercent: 25
+    });
+  });
+  it("requires a complete public discovery profile", () => {
+    expect(getDiscoveryReadiness([{ ...profile, status: "needs_setup" }, ...optional])).toMatchObject({
+      discoveryReady: false, nextRequiredStep: "profile"
+    });
+  });
+  it("applies equally across location types", () => {
+    for (const locationType of ["restaurant", "bar", "nightclub", "activity", "event_space", "entertainment"]) {
+      expect(getDiscoveryReadiness([profile, ...optional]).discoveryReady, locationType).toBe(true);
+    }
+  });
+  it("never treats optional tools as required for discovery", () => {
+    expect(getDiscoveryReadiness([profile, { key: "plan", status: "skipped", optional: true }]).discoveryReady).toBe(true);
   });
 });
