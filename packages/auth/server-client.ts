@@ -2,6 +2,7 @@ import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import {NextRequest,NextResponse} from "next/server";
 import { requireSupabaseAnonKey, requireSupabaseUrl } from "@theouthaven/config/server-env";
 
 export async function createServerSupabaseClient() {
@@ -27,8 +28,6 @@ export async function createServerSupabaseClient() {
 
 
 
-import {createServerClient} from "@supabase/ssr";
-import {NextRequest,NextResponse} from "next/server";
 
 
 /** Bind Supabase's PKCE/session cookie writes to the actual redirect response.
