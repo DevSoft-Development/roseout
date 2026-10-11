@@ -2,7 +2,8 @@ import Link from "next/link";
 import {requireAdminRole} from "@theouthaven/auth/admin-session";
 import {getAdminDatabaseClient} from "@theouthaven/db/admin-client";
 import {AdminPageHeader,AdminPageShell,AdminStatusBadge} from "@/lib/admin-design-system";
-import {provisionSimulator,runSimulatorScenario,resetSimulator} from "./actions";
+import {provisionSimulatorForm,scenarioSimulatorForm,resetSimulatorForm} from "./actions";
+import DemoActionButton from "../DemoActionButton";
 
 export const dynamic="force-dynamic";
 const LOCATION_ID="642a2ad6-c144-47b7-b9ff-f89554edf0da";
@@ -14,10 +15,6 @@ const SCENARIOS=[
  ["recovery","Restore connections","Bring offline devices online and resolve incidents"],
  ["repeat_outage","Repeat same outage","Replay identical outage; counters must not increase again"]
 ] as const;
-
-async function provisionAction(){ "use server"; await provisionSimulator(); }
-async function scenarioAction(formData:FormData){ "use server"; await runSimulatorScenario(formData); }
-async function resetAction(){ "use server"; await resetSimulator(); }
 
 export default async function HardwareSimulatorPage(){
  await requireAdminRole(["superadmin","admin"]);
@@ -48,18 +45,18 @@ export default async function HardwareSimulatorPage(){
    <section className="rounded-2xl border border-white/15 p-5">
      <h2 className="text-lg font-bold">Provision test equipment</h2>
      <p className="my-2 text-sm opacity-70">Create 20 virtual registers, printers, handhelds, hubs, and kitchen displays, each with unique simulator-only IDs.</p>
-     <form action={provisionAction}><button className="rounded-xl bg-rose-600 px-4 py-2 font-bold text-white" type="submit">Provision 20 devices</button></form>
+     <DemoActionButton action={provisionSimulatorForm} label="Provision 20 devices"/>
    </section>
    <section className="rounded-2xl border border-white/15 p-5">
      <h2 className="text-lg font-bold">Run device scenarios</h2>
      <p className="my-2 text-sm opacity-70">Simulated time is UTC: service hours 09:00–22:00 every day. Each scenario updates only test fixtures.</p>
      <div className="grid gap-3 md:grid-cols-2">
        {SCENARIOS.map(([scenario,title,description])=>
-        <form key={scenario} action={scenarioAction} className="rounded-xl border border-white/10 p-3">
-          <input type="hidden" name="scenario" value={scenario}/>
+        <div key={scenario} className="rounded-xl border border-white/10 p-3">
+          
           <h3 className="font-bold">{title}</h3><p className="my-2 text-xs opacity-70">{description}</p>
-          <button type="submit" className="rounded-lg border border-rose-400/40 px-3 py-2 text-sm font-semibold">Run scenario</button>
-        </form>)}
+          <DemoActionButton action={scenarioSimulatorForm} label="Run scenario" hidden={{scenario}} variant="outline"/>
+        </div>)}
      </div>
    </section>
    <section className="rounded-2xl border border-white/15 p-5">
@@ -75,7 +72,7 @@ export default async function HardwareSimulatorPage(){
    <section className="rounded-2xl border border-red-300/20 p-5">
      <h2 className="font-bold">Reset simulation</h2>
      <p className="my-2 text-xs opacity-70">Remove virtual fixtures for the hidden demo location only. Live hardware is not touched.</p>
-     <form action={resetAction}><button type="submit" className="rounded-lg border border-red-400/40 px-3 py-2 text-sm">Delete simulated devices</button></form>
+     <DemoActionButton action={resetSimulatorForm} label="Delete simulated devices" variant="danger"/>
    </section>
  </AdminPageShell>;
 }
