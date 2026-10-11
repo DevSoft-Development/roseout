@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getLocationName } from "@/lib/locationName";
+import { getDiscoveryReadiness } from "@/lib/business/discovery-readiness";
 
 export type BusinessOnboardingStepKey = "profile" | "plan" | "reservations" | "events_experiences";
 export type BusinessOnboardingStepStatus = "complete" | "needs_setup" | "skipped";
@@ -122,19 +123,16 @@ export async function getBusinessOnboardingState(locationId: string): Promise<Bu
     status: completed[step.key] ? "complete" : skipped.has(step.key) && step.optional ? "skipped" : "needs_setup",
   }));
 
-  const resolvedCount = steps.filter((step) => step.status !== "needs_setup").length;
-  const completedCount = steps.filter((step) => step.status === "complete").length;
-  const requiredReady = steps.filter((step) => !step.optional).every((step) => step.status === "complete");
-  // Free discovery readiness must never depend on purchasing software or enabling bookings.
-  const readyForCustomers = requiredReady;
-  const nextBestAction = steps.find((step) => !step.optional && step.status === "needs_setup") || null;
+  const discovery = getDiscoveryReadiness(steps);
+  const readyForCustomers = discovery.discoveryReady;
+  const nextBestAction = steps.find(step => step.key === discovery.nextRequiredStep) || null;
 
   return {
     locationId,
     locationName: getLocationName(raw, "Your business"),
     steps,
-    readinessPercent: Math.round((resolvedCount / steps.length) * 100),
-    completionPercent: Math.round((completedCount / steps.length) * 100),
+    readinessPercent: discovery.readinessPercent,
+    completionPercent: discovery.completionPercent,
     readyForCustomers,
     nextBestAction,
   };
