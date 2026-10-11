@@ -69,7 +69,8 @@ export async function GET(request:NextRequest){
       for(const assignment of assignments){
         const location=locations.get(assignment.location_id),device=devices.get(assignment.device_id);
         const meta=location?.metadata||{};
-        const confirmed=!!location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours);
+        const confirmed=!!location&&meta.pos_monitoring_hours_fingerprint===JSON.stringify(location.operating_hours)
+          && meta.pos_monitoring_special_hours_fingerprint===JSON.stringify(location.special_hours??null);
         let state:PosReadinessState="unknown",reason="hours_unverified";
         try{
           const schedule=confirmed?effectivePosSchedule({regularHours:location?.operating_hours,specialHours:location?.special_hours,timeZone:meta.pos_monitoring_timezone,now,confirmedFingerprint:meta.pos_monitoring_hours_fingerprint}):null;
