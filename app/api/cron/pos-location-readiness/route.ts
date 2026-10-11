@@ -24,10 +24,10 @@ export async function GET(request:NextRequest){
   const dryRun=request.nextUrl.searchParams.get("dry_run")==="1";
   const now=new Date();
   const day=now.toISOString().slice(0,10);
-  let run: {id:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string}|null=null;
+  let run: {id:string;started_at:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string}|null=null;
   if(!dryRun){
     const {data:existing,error:lookupError}=await supabaseAdmin.from("pos_monitor_scan_runs")
-      .select("id,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").eq("scan_day",day).maybeSingle();
+      .select("id,started_at,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").eq("scan_day",day).maybeSingle();
     if(lookupError)return NextResponse.json({success:false,error:"monitor_run_lookup_failed"},{status:503});
     if(existing?.status==="complete")return NextResponse.json({success:true,complete:true,skipped:true,reason:"already_completed",runId:existing.id,counts:existing.counts});
     if(existing)run=existing as typeof run;
@@ -56,6 +56,7 @@ export async function GET(request:NextRequest){
         .select("id,location_id,device_id,metadata").eq("assignment_status","active")
         .order("id").limit(PAGE_SIZE);
       if(cursor)query=query.gt("id",cursor);
+      if(run?.started_at)query=query.lte("assigned_at",run.started_at);
       if(run?.max_assignment_id)query=query.lte("id",run.max_assignment_id);
       const {data:rows,error}=run&&!run.max_assignment_id
         ? {data:[] as Assignment[],error:null}
