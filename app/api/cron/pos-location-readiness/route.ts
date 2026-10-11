@@ -64,7 +64,7 @@ export async function GET(request:NextRequest){
       const devices=new Map(((dq.data||[]) as Device[]).map(x=>[x.id,x]));
       const locations=new Map(((lq.data||[]) as Location[]).map(x=>[x.id,x]));
       const pageCounts=emptyCounts();
-      const byLocation=new Map<string,{device_count:number;attention_count:number;state:PosReadinessState}>();
+      const observationsForHistory:{scan_id:string;assignment_id:string;location_id:string;device_id:string;state:PosReadinessState;reason:string;observed_at:string}[]=[];
       const observations:{device_id:string;location_id:string;state:PosReadinessState;reason:string}[]=[];
       for(const assignment of assignments){
         const location=locations.get(assignment.location_id),device=devices.get(assignment.device_id);
@@ -80,12 +80,10 @@ export async function GET(request:NextRequest){
           state=result.state;reason=result.reason;
         }catch{state="unknown";reason="invalid_monitoring_config";}
         pageCounts[state]++;
-        const summary=byLocation.get(assignment.location_id)||{device_count:0,attention_count:0,state:"healthy" as PosReadinessState};
-        summary.device_count++;
-        if(state==="needs_attention"){summary.attention_count++;summary.state=state;}
-        else if(summary.state!=="needs_attention"&&state==="unknown")summary.state="unknown";
-        else if(summary.state==="healthy"&&state!=="healthy")summary.state=state;
-        byLocation.set(assignment.location_id,summary);
+        if(run&&!dryRun)observationsForHistory.push({
+          scan_id:run.id,assignment_id:assignment.id,location_id:assignment.location_id,
+          device_id:assignment.device_id,state,reason,observed_at:now.toISOString(),
+        });
         if(state==="needs_attention"&&attention.length<50)attention.push({locationId:assignment.location_id,deviceId:assignment.device_id,reason});
         // Incidents are recorded, never delivered as owner notifications in this phase.
         if(!dryRun)observations.push({
@@ -96,13 +94,10 @@ export async function GET(request:NextRequest){
         const {error}=await supabaseAdmin.rpc("pos_monitor_reconcile_incidents",{p_observations:observations});
         if(error)throw Error("monitor_incident_reconcile_failed");
       }
-      if(!dryRun&&run){
-        for(const [locationId,value] of byLocation){
-          const {error:historyError}=await supabaseAdmin.from("pos_monitor_location_history").upsert({
-            scan_id:run.id,location_id:locationId,observed_at:now.toISOString(),...value,
-          },{onConflict:"scan_id,location_id"});
-          if(historyError)throw Error("monitor_history_write_failed");
-        }
+      if(!dryRun&&run&&observationsForHistory.length){
+        const {error}=await supabaseAdmin.from("pos_monitor_device_observations")
+          .upsert(observationsForHistory,{onConflict:"scan_id,assignment_id"});
+        if(error)throw Error("monitor_observations_write_failed");
       }
       for(const key of Object.keys(pageCounts) as (keyof Counts)[])counts[key]+=pageCounts[key];
       scanned+=assignments.length;
@@ -115,9 +110,11 @@ export async function GET(request:NextRequest){
       if(assignments.length<PAGE_SIZE){complete=true;break;}
     }
     if(!dryRun&&run&&complete){
-      const {error}=await supabaseAdmin.from("pos_monitor_scan_runs")
-        .update({status:"complete",finished_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",run.id);
-      if(error)throw Error("monitor_completion_write_failed");
+      // The SQL finalizer recomputes history/counts from uniquely keyed observations.
+      // Replay-safe even if a prior attempt stopped after writing some pages.
+      const {data,error}=await supabaseAdmin.rpc("pos_monitor_finalize_scan",{p_scan_id:run.id});
+      if(error)throw Error("monitor_finalization_failed");
+      if(data&&typeof data==="object")counts={...emptyCounts(),...data};
     }
     return NextResponse.json({
       success:complete,complete,dryRun,runId:run?.id||null,scanned,counts,pages,
