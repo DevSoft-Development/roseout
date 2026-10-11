@@ -65,7 +65,7 @@ export async function GET(request:NextRequest){
       const locations=new Map(((lq.data||[]) as Location[]).map(x=>[x.id,x]));
       const pageCounts=emptyCounts();
       const byLocation=new Map<string,{device_count:number;attention_count:number;state:PosReadinessState}>();
-      const incidents:{device_id:string;location_id:string;state:string;reason:string;last_seen_at:string;resolved_at:null}[]=[];
+      const observations:{device_id:string;location_id:string;state:PosReadinessState;reason:string}[]=[];
       for(const assignment of assignments){
         const location=locations.get(assignment.location_id),device=devices.get(assignment.device_id);
         const meta=location?.metadata||{};
@@ -88,14 +88,13 @@ export async function GET(request:NextRequest){
         byLocation.set(assignment.location_id,summary);
         if(state==="needs_attention"&&attention.length<50)attention.push({locationId:assignment.location_id,deviceId:assignment.device_id,reason});
         // Incidents are recorded, never delivered as owner notifications in this phase.
-        if(!dryRun&&state==="needs_attention")incidents.push({
-          device_id:assignment.device_id,location_id:assignment.location_id,state:"open",reason,
-          last_seen_at:now.toISOString(),resolved_at:null,
+        if(!dryRun)observations.push({
+          device_id:assignment.device_id,location_id:assignment.location_id,state,reason,
         });
       }
-      if(!dryRun&&incidents.length){
-        const {error}=await supabaseAdmin.from("pos_monitor_device_incidents").upsert(incidents,{onConflict:"device_id"});
-        if(error)throw Error("monitor_incident_write_failed");
+      if(!dryRun&&observations.length){
+        const {error}=await supabaseAdmin.rpc("pos_monitor_reconcile_incidents",{p_observations:observations});
+        if(error)throw Error("monitor_incident_reconcile_failed");
       }
       if(!dryRun&&run){
         for(const [locationId,value] of byLocation){
