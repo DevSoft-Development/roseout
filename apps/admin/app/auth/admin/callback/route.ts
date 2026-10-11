@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createAdminOAuthSession } from "@/lib/admin-oauth-session";
+import { createAdminOAuthSession } from "@theouthaven/auth/server-client";
 import { normalizeAdminRole } from "@theouthaven/auth/admin-roles";
 import { sanitizeIntendedPath } from "@theouthaven/auth/redirect";
 import { resolveWebSurfaceAuthOrigin } from "@theouthaven/config/web-surface-origin";
