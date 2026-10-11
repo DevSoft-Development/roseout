@@ -15,6 +15,7 @@ type Device={id:string;health_status:string;last_seen_at:string|null};
 type Location={id:string;operating_hours:unknown;special_hours:unknown;metadata:Record<string,unknown>|null};
 const emptyCounts=()=>({healthy:0,expected_offline:0,awaiting_startup:0,needs_attention:0,unknown:0});
 type Counts=ReturnType<typeof emptyCounts>;
+type ScanRun={id:string;started_at:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string};
 
 export async function GET(request:NextRequest){
   const authError=requireCronRequest(request);
@@ -24,21 +25,21 @@ export async function GET(request:NextRequest){
   const dryRun=request.nextUrl.searchParams.get("dry_run")==="1";
   const now=new Date();
   const day=now.toISOString().slice(0,10);
-  let run: {id:string;started_at:string;next_offset:number;cursor_assignment_id:string|null;max_assignment_id:string|null;scanned:number;counts:Counts;status:string}|null=null;
+  let run: ScanRun|null=null;
   if(!dryRun){
     const {data:existing,error:lookupError}=await supabaseAdmin.from("pos_monitor_scan_runs")
       .select("id,started_at,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").eq("scan_day",day).maybeSingle();
     if(lookupError)return NextResponse.json({success:false,error:"monitor_run_lookup_failed"},{status:503});
     if(existing?.status==="complete")return NextResponse.json({success:true,complete:true,skipped:true,reason:"already_completed",runId:existing.id,counts:existing.counts});
-    if(existing)run=existing as typeof run;
+    if(existing)run=existing as ScanRun;
     else {
       const {data:upper,error:upperError}=await supabaseAdmin.from("pos_hardware_assignments")
         .select("id").eq("assignment_status","active").order("id",{ascending:false}).limit(1).maybeSingle();
       if(upperError)return NextResponse.json({success:false,error:"monitor_high_watermark_failed"},{status:503});
       const {data:created,error}=await supabaseAdmin.from("pos_monitor_scan_runs").insert({scan_day:day,max_assignment_id:upper?.id||null})
-        .select("id,next_offset,scanned,counts,status").maybeSingle();
+        .select("id,started_at,next_offset,cursor_assignment_id,max_assignment_id,scanned,counts,status").maybeSingle();
       if(error||!created)return NextResponse.json({success:false,error:"monitor_run_create_failed"},{status:503});
-      run=created as typeof run;
+      run=created as ScanRun;
     }
   }
   let offset=run?.next_offset||0;
