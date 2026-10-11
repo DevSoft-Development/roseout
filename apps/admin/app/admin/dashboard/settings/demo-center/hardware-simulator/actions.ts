@@ -3,7 +3,7 @@
 import {revalidatePath} from "next/cache";
 import {requireAdminRole} from "@theouthaven/auth/admin-session";
 import {getAdminDatabaseClient} from "@theouthaven/db/admin-client";
-import {evaluatePosDeviceReadiness} from "@/lib/pos/hardware/health/location-readiness";
+import {evaluatePosDeviceReadiness} from "../../../../../../../../lib/pos/hardware/health/location-readiness";
 
 const LOCATION_ID="642a2ad6-c144-47b7-b9ff-f89554edf0da";
 const PATH="/admin/dashboard/settings/demo-center/hardware-simulator";
