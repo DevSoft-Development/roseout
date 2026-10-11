@@ -20,7 +20,7 @@ assert(endpoint.includes("MAX_PAGES"),"Fleet probe must be bounded");
 assert(endpoint.includes("MAX_PAGES=80") && endpoint.includes("SOFT_DEADLINE_MS=100_000"),"Fleet scan must cover large populations within a bounded runtime");
 assert(endpoint.includes("status:complete?200:503"),"Incomplete scans must fail closed so the tracked cron cannot be green");
 assert(endpoint.includes("pos_monitor_scan_runs") && endpoint.includes("next_offset"),"Durable continuation must be persisted");
-assert(endpoint.includes("pos_monitor_location_history") && endpoint.includes("pos_monitor_device_incidents"),"History and incident persistence required");
+assert(endpoint.includes("pos_monitor_device_observations") && endpoint.includes("pos_monitor_reconcile_incidents") && endpoint.includes("pos_monitor_finalize_scan"),"Device observations, incident dedup and finalization required");
 assert(endpoint.includes("effectivePosSchedule"),"Special-hours guard required");
 assert(endpoint.includes("incompleteReason") && endpoint.includes("nextOffset:"),"Partial progress and continuation must be visible");
 assert(classifier.includes('state:"expected_offline"'),"Closed restaurants must be expected offline");
