@@ -8,7 +8,10 @@ import {requireSupabaseAnonKey,requireSupabaseUrl} from "@theouthaven/config/ser
  * Server cookieStore writes alone do not guarantee they reach a new NextResponse.
  */
 export function createAdminOAuthSession(request:NextRequest){
-  type StoredCookie={name:string;value:string;options?:Record<string,unknown>};
+  type StoredCookie={name:string;value:string;options?:{
+    domain?:string;path?:string;maxAge?:number;httpOnly?:boolean;secure?:boolean;
+    sameSite?:boolean|"lax"|"strict"|"none";expires?:Date;priority?:"low"|"medium"|"high";partitioned?:boolean;
+  }};
   const pending=new Map<string,StoredCookie>();
   const supabase=createServerClient(requireSupabaseUrl(),requireSupabaseAnonKey(),{
     cookies:{
@@ -19,7 +22,7 @@ export function createAdminOAuthSession(request:NextRequest){
       },
       setAll(cookiesToSet){
         for(const {name,value,options} of cookiesToSet)
-          pending.set(name,{name,value,options:options as Record<string,unknown>});
+          pending.set(name,{name,value,options:options as StoredCookie["options"]});
       }
     }
   });
