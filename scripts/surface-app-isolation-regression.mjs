@@ -106,8 +106,14 @@ for (const marker of [
 
 
 const adminOauthStart = read("apps/admin/app/auth/admin/start/route.ts");
+const adminOAuthSession = read("apps/admin/lib/admin-oauth-session.ts");
+for (const marker of ['createServerClient', '@supabase/ssr', 'response.cookies.set', 'no-store']) {
+  if (!adminOAuthSession.includes(marker)) {
+    throw new Error(`Admin OAuth redirect-bound session helper missing safety marker: ${marker}`);
+  }
+}
 for (const dependency of [
-  "@theouthaven/auth/server-client",
+  "@/lib/admin-oauth-session",
   "@theouthaven/auth/redirect",
   "@theouthaven/config/web-surface-origin",
 ]) {
