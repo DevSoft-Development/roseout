@@ -35,7 +35,7 @@ jobs:
           set -euo pipefail
           grep -F 'managementAccessToken' .github/workflows/supabase-admin-auth-redirect.yml >/dev/null
           grep -F 'configure-aws-credentials@' .github/workflows/supabase-admin-auth-redirect.yml >/dev/null
-          if grep -Eq 'SUPABASE_ACCESS_TOKEN:[[:space:]]*\\$\\{\\{' .github/workflows/supabase-admin-auth-redirect.yml; then
+          if grep -Eq '^[[:space:]]+SUPABASE_ACCESS_TOKEN:.*secrets[.]' .github/workflows/supabase-admin-auth-redirect.yml; then
             echo 'Direct GitHub Supabase tokens are forbidden; use Credential Vault.' >&2
             exit 1
           fi
