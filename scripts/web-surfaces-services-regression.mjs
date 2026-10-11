@@ -178,3 +178,21 @@ if (/route53|change-resource-record-sets|cloudfront update-distribution/i.test(w
 }
 
 console.log('Admin/Business ECS service boundary regression passed.');
+
+
+const adminAuthVaultWorkflow = fs.readFileSync('.github/workflows/supabase-admin-auth-redirect.yml', 'utf8');
+for (const marker of [
+  '/theouthaven/credential-vault/production/supabase',
+  'managementAccessToken',
+  'aws-actions/configure-aws-credentials',
+  'aws secretsmanager get-secret-value',
+  'SUPABASE_ACCESS_TOKEN=',
+  '::add-mask::',
+]) {
+  if (!adminAuthVaultWorkflow.includes(marker)) {
+    throw new Error('Admin Supabase redirect must source its management token from Credential Vault: ' + marker);
+  }
+}
+if (/^[ \\t]+SUPABASE_ACCESS_TOKEN:[^\\n]*secrets\\./m.test(adminAuthVaultWorkflow)) {
+  throw new Error('Admin Supabase redirect must not use a direct GitHub token secret.');
+}
