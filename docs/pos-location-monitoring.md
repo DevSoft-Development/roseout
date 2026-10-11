@@ -33,3 +33,18 @@ This is the second part of ThePOSHaven's shift certification and per-location mo
 6. Run isolated test-location and physical-device acceptance. Do not certify live Stripe or hardware from the simulation-only test.
 
 This PR is not an authorization to turn on unattended owner notifications or write physical-device status.
+
+## Stack 10 follow-up (PR #4003; pending merge and migration validation)
+
+- Adds private RLS-only tables for resumable scan runs, idempotent per-assignment observations, location history, and deduplicated device incidents. No tenant-facing table access.
+- Daily scans are bounded to 80 pages / ~100 seconds and use a persisted UUID keyset cursor and start-of-scan high-watermark. Partial scans remain **HTTP 503**, never falsely green.
+- Cross-page location totals are finalized from distinct assignment observations to prevent double-counting or overriding location totals.
+- Incidents preserve their first-seen and last-notified timestamps on repeated failures, and resolve on readiness or expected-offline recovery. Notification transport remains **disabled** pending opt-in delivery and escalation tests.
+- Confirmed special hours are authoritative for the local date. Explicitly closed days are expected offline; edited hours invalidate owner confirmation until reapproved.
+- Admin POS Operations adds state filters and 40 most-recent per-location historical records.
+- A Vitest synthetic CPU-only benchmark covers 100, 1,000 and 10,000 devices. It does **not** establish live database/network fleet runtime.
+- The migration is not a mandate to repair Supabase Preview history. See `docs/supabase-preview-migration-reconciliation.md`.
+
+### Activation remains explicitly blocked
+
+Do not add an AWS scheduler entry until the dual-region schema deployment is verified, primary/DR parity is healthy, the scan is exercised on production-like assignments, notification transport has dedup and opt-in limits, and a rollback is proven. No owner alert delivery is implemented by PR #4003.
