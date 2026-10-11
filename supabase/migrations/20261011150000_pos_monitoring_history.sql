@@ -9,6 +9,8 @@ create table if not exists public.pos_monitor_scan_runs (
  scan_day date not null,
  status text not null default 'running' check (status in ('running','complete','failed')),
  next_offset integer not null default 0 check (next_offset >= 0),
+ cursor_assignment_id uuid,
+ max_assignment_id uuid,
  scanned integer not null default 0,
  counts jsonb not null default '{"healthy":0,"expected_offline":0,"awaiting_startup":0,"needs_attention":0,"unknown":0}'::jsonb,
  started_at timestamptz not null default now(),
