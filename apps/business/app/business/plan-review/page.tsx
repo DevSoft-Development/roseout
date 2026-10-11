@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
-import { parseBusinessEntryIntent } from "@/lib/business/entry-intent";
+import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
 import { getRestaurantPlanConfig } from "@/lib/business/product-entitlements";
 
 type Params = Promise<Record<string, string | string[] | undefined>>;
@@ -28,7 +28,7 @@ export default async function BusinessPlanReview({ searchParams }: { searchParam
         <p className="mt-3 text-sm text-amber-200">No charge has been made and no paid features are active. Checkout is not yet connected to this new plan selection.</p>
       </section>
       <div className="mt-6 flex flex-wrap gap-4">
-        <Link href="/business/claim/no-code" className="rounded-xl border border-white/20 px-5 py-3">Verify or claim restaurant</Link>
+        <Link href={`/business/claim/no-code?${buildBusinessEntryQuery(entry)}`} className="rounded-xl border border-white/20 px-5 py-3">Verify or claim restaurant</Link>
         <Link href="/business/dashboard" className="rounded-xl border border-white/20 px-5 py-3">Business dashboard</Link>
       </div>
     </div>
