@@ -4,6 +4,7 @@ const read=(path)=>fs.readFileSync(path,"utf8");
 const endpoint=read("app/api/cron/pos-location-readiness/route.ts");
 const classifier=read("lib/pos/hardware/health/location-readiness.ts");
 const parser=read("lib/pos/hardware/health/operating-hours.ts");
+const schema=read("supabase/migrations/20261011150000_pos_monitoring_history.sql");
 const confirm=read("apps/business/app/locations/dashboard/hardware/health/actions.ts");
 const admin=read("apps/admin/app/admin/dashboard/pos/page.tsx");
 const business=read("apps/business/app/locations/dashboard/hardware/health/page.tsx");
@@ -19,7 +20,12 @@ assert(endpoint.includes("nextOffset:"),"Fleet probe must return cursor");
 assert(endpoint.includes("MAX_PAGES"),"Fleet probe must be bounded");
 assert(endpoint.includes("MAX_PAGES=80") && endpoint.includes("SOFT_DEADLINE_MS=100_000"),"Fleet scan must cover large populations within a bounded runtime");
 assert(endpoint.includes("status:complete?200:503"),"Incomplete scans must fail closed so the tracked cron cannot be green");
-assert(endpoint.includes("pos_monitor_scan_runs") && endpoint.includes("next_offset"),"Durable continuation must be persisted");
+assert(endpoint.includes("pos_monitor_scan_runs") && endpoint.includes("cursor_assignment_id") && endpoint.includes("max_assignment_id"),"Stable keyset pagination and durable high watermark required");
+for(const table of ["pos_monitor_scan_runs","pos_monitor_location_history","pos_monitor_device_incidents","pos_monitor_device_observations"]){
+  assert(schema.includes(`alter table public.${table} enable row level security`),`Missing private RLS on ${table}`);
+}
+assert(schema.includes("pos_monitor_finalize_scan")&&schema.includes("on conflict(scan_id,location_id)"),"Finalization must aggregate idempotently");
+assert(schema.includes("first_seen_at=case")&&schema.includes("last_notified_at"),"Incident dedup must preserve original notification history");
 assert(endpoint.includes("pos_monitor_device_observations") && endpoint.includes("pos_monitor_reconcile_incidents") && endpoint.includes("pos_monitor_finalize_scan"),"Device observations, incident dedup and finalization required");
 assert(endpoint.includes("effectivePosSchedule"),"Special-hours guard required");
 assert(endpoint.includes("incompleteReason") && endpoint.includes("nextOffset:"),"Partial progress and continuation must be visible");
