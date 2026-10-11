@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase-server";
 import { getUserOrganizationContext } from "@/lib/organizations/context";
 import BusinessOrganizationForm from "./BusinessOrganizationForm";
+import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
 
 export const dynamic = "force-dynamic";
 
@@ -19,21 +20,29 @@ export default async function BusinessOnboardingPage({
 }) {
   const params = searchParams ? await searchParams : {};
   const creatingAdditionalOrganization = first(params.new) === "1";
+  const entryParams = new URLSearchParams();
+  for (const key of ["intent", "plan", "location_id", "source"]) {
+    const value = first(params[key]);
+    if (value) entryParams.set(key, value);
+  }
+  const entry = parseBusinessEntryIntent(entryParams);
+  const selectionQuery = buildBusinessEntryQuery(entry);
+  const destination = entry.plan ? `/business/plan-review?${selectionQuery}` : "/business/dashboard";
 
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const user = data.user;
 
   if (!user) {
-    const next = creatingAdditionalOrganization
-      ? "/business/onboarding?new=1"
-      : "/business/onboarding";
+    const nextParams = new URLSearchParams(selectionQuery);
+    if (creatingAdditionalOrganization) nextParams.set("new", "1");
+    const next = `/business/onboarding?${nextParams.toString()}`;
     redirect(`/login?next=${encodeURIComponent(next)}`);
   }
 
   const context = await getUserOrganizationContext(user.id);
   if (context.organizations.length && !creatingAdditionalOrganization) {
-    redirect("/business/dashboard");
+    redirect(destination);
   }
 
   return (
@@ -60,7 +69,7 @@ export default async function BusinessOnboardingPage({
         </div>
 
         <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 sm:p-7">
-          <BusinessOrganizationForm />
+          <BusinessOrganizationForm nextPath={destination} />
         </section>
       </div>
     </main>

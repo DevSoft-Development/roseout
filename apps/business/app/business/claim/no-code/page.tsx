@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { getClaimPlanSelection } from "@/lib/business/claim-plan-return";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import GoogleAddressAutocomplete, {
   type GoogleAddressFields,
@@ -41,7 +43,9 @@ const initialForm = {
   notes: "",
 };
 
-export default function NoCodeClaimPage() {
+function NoCodeClaimPageInner() {
+  const searchParams = useSearchParams();
+  const { entry, productSuffix, planReviewHref } = getClaimPlanSelection(searchParams.toString());
   const supabase = useMemo(() => createClient(), []);
   const [form, setForm] = useState(initialForm);
   const [signedIn, setSignedIn] = useState(false);
@@ -60,7 +64,7 @@ export default function NoCodeClaimPage() {
   const canCompleteClaim = signedIn && emailVerified;
   const claimReturnPath = `/business/claim/no-code?plan=${form.planInterval}${
     selectedLocation ? `&location=${selectedLocation.id}` : "&mode=new"
-  }`;
+  }${productSuffix}`;
 
   useEffect(() => {
     let active = true;
@@ -294,7 +298,7 @@ export default function NoCodeClaimPage() {
           </Link>
 
           {success ? (
-            <SuccessPanel success={success} signedIn={signedIn} />
+            <SuccessPanel success={success} signedIn={signedIn} planReviewHref={planReviewHref} />
           ) : (
             <div className="mt-8 grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
               <div>
@@ -601,9 +605,11 @@ function Field({
 function SuccessPanel({
   success,
   signedIn,
+  planReviewHref,
 }: {
   success: NonNullable<SuccessState>;
   signedIn: boolean;
+  planReviewHref: string | null;
 }) {
   const matched = success.matchedExistingLocation;
   return (
@@ -619,6 +625,7 @@ function SuccessPanel({
         to access your location dashboard and add details such as photos,
         descriptions, hours, contact information, and plan options.
       </p>
+      {planReviewHref && <p className="mt-4 text-sm text-white/70">Your selected software plan is saved. Ownership approval is required before checkout or activation.</p>}
       <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
         <Link
           href="/business"
@@ -626,7 +633,9 @@ function SuccessPanel({
         >
           Back to Business
         </Link>
-        {signedIn ? (
+        {signedIn && planReviewHref ? (
+          <Link href={planReviewHref} className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black">Review selected plan</Link>
+        ) : signedIn ? (
           <Link
             href="/locations/dashboard"
             className="rounded-2xl border border-white/15 bg-white/[0.05] px-6 py-4 text-sm font-black text-white/85 transition hover:bg-white hover:text-black"
@@ -644,4 +653,8 @@ function SuccessPanel({
       </div>
     </section>
   );
+}
+
+export default function NoCodeClaimPage() {
+  return <Suspense fallback={<main className="min-h-screen bg-[#050505] p-8 text-white">Loading claim form...</main>}><NoCodeClaimPageInner /></Suspense>;
 }
