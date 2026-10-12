@@ -136,6 +136,28 @@ export async function POST(request: NextRequest) {
     const { error } = await supabaseAdmin.from("locations").update(update).eq("id", locationId);
     if (error) throw error;
   };
+  // Invoice and deletion events may arrive after an upgrade or a location reassignment.
+  // Never mutate a location unless the event targets its currently stored subscription.
+  const lifecycleTypes = new Set([
+    "invoice.payment_succeeded", "invoice.paid", "invoice.payment_failed",
+    "invoice.payment_action_required", "invoice.finalization_failed",
+    "customer.subscription.deleted",
+  ]);
+  if (lifecycleTypes.has(event.type)) {
+    const incomingSubscription = subIdOf(object);
+    const { data: boundLocation, error: boundError } = locationId
+      ? await supabaseAdmin.from("locations").select("stripe_subscription_id").eq("id", locationId).maybeSingle()
+      : { data: null, error: null };
+    if (boundError) throw boundError;
+    if (!incomingSubscription || !boundLocation?.stripe_subscription_id || incomingSubscription !== boundLocation.stripe_subscription_id) {
+      // A valid Stripe event was received, but it cannot affect this location.
+      const { error: skipError } = await supabaseAdmin.from("payment_logs")
+        .update({ processed_at: new Date().toISOString(), processing_error: null })
+        .eq("stripe_event_id", event.id);
+      if (skipError) throw skipError;
+      return NextResponse.json({ received: true, ignored: "subscription_mismatch" });
+    }
+  }
   const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
   const stripePlan = verifiedLocationPlanFromStripe({ source: metadata.source, plan: metadata.plan, priceId: price.id, livemode: event.livemode });
 
