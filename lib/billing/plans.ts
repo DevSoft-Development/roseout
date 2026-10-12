@@ -61,8 +61,9 @@ export function isPaidBillingStatus(status?: string | null) {
   return ["active", "trialing", "comped", "grace_period"].includes(normalizeBillingStatus(status));
 }
 
+/** Deprecated compatibility predicate: all current paid tiers replace Business Pro. */
 export function isBusinessProPlan(plan?: string | null) {
-  return normalizePlanKey(plan) === "essential-plus";
+  return isPaidPlan(plan);
 }
 
 export function isPaidPlan(plan?: string | null) {
