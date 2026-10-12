@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     "metadata[source]": "location_plan_checkout",
     "metadata[plan]": plan,
     "metadata[location_id]": id,
+    "subscription_data[metadata][source]": "location_plan_checkout",
     "subscription_data[metadata][plan]": plan,
     "subscription_data[metadata][location_id]": id,
   });
