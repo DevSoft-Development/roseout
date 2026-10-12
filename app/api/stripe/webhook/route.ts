@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeBillingStatus } from "@/lib/billing/plans";
+import { verifiedLocationPlanFromStripe, canActivateLocationPlan } from "@/lib/business/stripe-location-entitlements";
 import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
 import { linkFraudIdentity, recordFraudSignal, type FraudSubjectType } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
@@ -136,6 +137,7 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
   };
   const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
+  const stripePlan = verifiedLocationPlanFromStripe({ source: metadata.source, plan: metadata.plan, priceId: price.id, livemode: event.livemode });
 
   try {
     switch (event.type) {
@@ -154,6 +156,15 @@ export async function POST(request: NextRequest) {
 
       case "customer.subscription.created":
       case "customer.subscription.updated":
+        if (metadata.source === "location_plan_checkout") {
+          if (!stripePlan || !locationId) throw new Error("Unverified location subscription price or location");
+          if (!canActivateLocationPlan({ plan: stripePlan, locationId, subscriptionId: object.id, status: object.status })) {
+            await updateLocation({ subscription_status: normalizeBillingStatus(object.status), stripe_subscription_id: object.id });
+            break;
+          }
+          await updateLocation({ subscription_plan: stripePlan, subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || "usd" });
+          break;
+        }
         await updateLocation({ subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
         break;
 
