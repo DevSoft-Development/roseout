@@ -1,3 +1,4 @@
+import { verifiedLocationPlanFromStripe, canActivateLocationPlan } from "../../lib/business/stripe-location-entitlements";
 import { describe, expect, it } from "vitest";
 import { getLocationSubscriptionPriceId, isBusinessPlanKey } from "../../lib/business/paid-plan-billing";
 describe("location subscription safety", () => {
@@ -30,4 +31,21 @@ it("documents the three live Stripe prices without enabling checkout", () => {
   expect(getLocationSubscriptionPriceId("essential-plus", live)).toBe(live.STRIPE_LOCATION_ESSENTIAL_PLUS_MONTHLY_PRICE_ID);
   expect(getLocationSubscriptionPriceId("select-plus", live)).toBe(live.STRIPE_LOCATION_SELECT_PLUS_MONTHLY_PRICE_ID);
   expect(getLocationSubscriptionPriceId("signature-plus", live)).toBe(live.STRIPE_LOCATION_SIGNATURE_PLUS_MONTHLY_PRICE_ID);
+});
+
+describe("Stripe-confirmed location entitlement", () => {
+  const environment = { STRIPE_LOCATION_SELECT_PLUS_MONTHLY_PRICE_ID: "price_select123" } as NodeJS.ProcessEnv;
+  it("accepts verified Stripe plan and expected live price", () => {
+    expect(verifiedLocationPlanFromStripe({ source: "location_plan_checkout", plan: "select-plus", priceId: "price_select123", livemode: true, environment })).toBe("select-plus");
+  });
+  it("rejects forged plan, price, or non-platform checkout", () => {
+    expect(verifiedLocationPlanFromStripe({ source: "other", plan: "select-plus", priceId: "price_select123", livemode: true, environment })).toBeNull();
+    expect(verifiedLocationPlanFromStripe({ source: "location_plan_checkout", plan: "signature-plus", priceId: "price_select123", livemode: true, environment })).toBeNull();
+  });
+  it("requires an active Stripe subscription and a location before activation", () => {
+    const input = { plan: "select-plus" as const, subscriptionId: "sub_123", locationId: "loc_123" };
+    expect(canActivateLocationPlan({ ...input, status: "incomplete" })).toBe(false);
+    expect(canActivateLocationPlan({ ...input, status: "active" })).toBe(true);
+    expect(canActivateLocationPlan({ ...input, locationId: null, status: "active" })).toBe(false);
+  });
 });
