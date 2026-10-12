@@ -89,6 +89,7 @@ const businessShell = fs.readFileSync(path.join(root, "apps/business/components/
 const sharedHeader = fs.readFileSync(path.join(root, "components/TheOutHavenHeader.tsx"), "utf8");
 const sharedFooter = fs.readFileSync(path.join(root, "components/TheOutHavenFooter.tsx"), "utf8");
 const sharedLogo = fs.readFileSync(path.join(root, "components/TheOutHavenBrandLogo.tsx"), "utf8");
+const businessLogin = fs.readFileSync(path.join(root, "apps/business/app/business/login/page.tsx"), "utf8");
 
 if (!businessLayout.includes("BusinessSurfaceShell")) {
   throw new Error("Business root layout must use the Business public surface shell.");
@@ -96,8 +97,11 @@ if (!businessLayout.includes("BusinessSurfaceShell")) {
 if (!businessShell.includes('TheOutHavenHeader surface="business"') || !businessShell.includes("TheOutHavenFooter")) {
   throw new Error("Business public pages must consume shared TheOutHaven header/footer chrome.");
 }
-if (!sharedHeader.includes("TheOutHavenBrandLogo") || !sharedLogo.includes("toh_logo_wordmark_white.webp")) {
-  throw new Error("Consumer and Business headers must consume the shared resilient brand logo.");
+if (!sharedHeader.includes("TheOutHavenBrandLogo") || !sharedLogo.includes("toh_logo_wordmark_white_20261006.webp")) {
+  throw new Error("Consumer and Business headers must consume the cache-busted shared brand logo.");
+}
+if (!businessShell.includes('pathname.startsWith("/business/login")') || !businessLogin.includes("TheOutHavenBrandLogo") || businessLogin.includes("/api/brand/theouthaven-logo")) {
+  throw new Error("Business login must use the shared logo and shared footer path.");
 }
 if (!sharedFooter.includes("https://theouthaven.com/status") || !sharedFooter.includes("https://business.theouthaven.com/business")) {
   throw new Error("Shared footer links must remain safe across isolated hosts.");

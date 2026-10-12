@@ -69,15 +69,10 @@ export default function BusinessLoginPage() {
             <div className="relative flex h-full flex-col justify-between">
               <div>
                 <div className="mb-8">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/api/brand/theouthaven-logo"
-                    alt="TheOutHaven"
-                    width={600}
-                    height={200}
+                  <TheOutHavenBrandLogo
+                    label="Business"
                     className="h-auto w-[220px] max-w-full object-contain"
                   />
-                  <p className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
                 </div>
                 <p className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
                   <ShieldCheck className="h-4 w-4" />
@@ -109,16 +104,11 @@ export default function BusinessLoginPage() {
           <div className="flex items-center p-6 sm:p-10 xl:p-14">
             <div className="mx-auto w-full max-w-md">
               <div className="mb-8 lg:hidden">
-                <div className="mb-5 text-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/api/brand/theouthaven-logo"
-                    alt="TheOutHaven"
-                    width={600}
-                    height={200}
-                    className="mx-auto h-auto w-[185px] max-w-[72vw] object-contain"
+                <div className="mb-5 flex justify-center text-center">
+                  <TheOutHavenBrandLogo
+                    label="Business"
+                    className="h-auto w-[185px] max-w-[72vw] object-contain"
                   />
-                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">Business</p>
                 </div>
                 <div className="flex justify-center">
                   <span className="inline-flex items-center gap-2 rounded-full border border-[#e1062a]/25 bg-[#e1062a]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-rose-100">
