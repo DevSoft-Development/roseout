@@ -12,7 +12,8 @@ function readSqlTree(dir) {
     .join('\n');
 }
 
-const checkout = read('app/api/business/billing/checkout/route.ts');
+const checkout = read('apps/business/app/api/business/billing/location-plan-checkout/route.ts');
+const legacyCheckout = read('app/api/business/billing/checkout/route.ts');
 const portal = read('app/api/business/billing/portal/route.ts');
 const changePlan = read('app/api/business/billing/change-plan/route.ts');
 const billingPlans = read('lib/billing/plans.ts');
@@ -31,16 +32,16 @@ const migrationCorpus = [
 ].join('\n');
 
 const checks = [
-  ['checkout monthly/annual params', checkout, /interval.*monthly/s, /getBusinessProPriceId\(interval\)/],
-  ['checkout isolates Stripe customer per location', checkout, /location\.stripe_customer_id/, /requireOwnerOrAdminAccessToLocation/, /randomUUID\(\)/],
-  ['checkout has no profile customer fallback', checkout, /location\.stripe_customer_id/],
+  ['checkout requires verified location owner', checkout, /requireOwnerOrAdminAccessToLocation/, /isBusinessPlanKey/, /LOCATION_PLAN_CHECKOUT_ENABLED/],
+  ['checkout uses location-specific price and customer', checkout, /getLocationSubscriptionPriceId/, /location\.stripe_customer_id/, /randomUUID\(\)/],
   ['checkout enables automatic tax and card-only collection', checkout, /automatic_tax\[enabled\].*true/s, /billing_address_collection.*required/s, /payment_method_types\[0\].*card/s],
+  ['retired checkout returns 410', legacyCheckout, /status: 410/],
   ['portal is location scoped', portal, /requireOwnerOrAdminAccessToLocation/, /authorized\.location\.stripe_customer_id/, /Choose a location before opening billing/],
-  ['canonical plan recognizes business and legacy Growth Pro', billingPlans, /business_pro/, /growth_pro/, /partner_pro/, /hasPaidEntitlement/],
+  ['canonical plan recognizes three new tiers', billingPlans, /essential-plus/, /select-plus/, /signature-plus/, /hasPaidEntitlement/],
   ['Growth Pro gate uses canonical entitlement', growthPlan, /hasPaidEntitlement/, /isBusinessProPlan/, /billing_grace_ends_at/],
   ['webhook resolves metadata location', webhook, /metadata\.location_id/, /eq\("id", metadataLocationId\)/],
   ['webhook resolves subscription id', webhook, /o\?\.object === "subscription"/, /eq\("stripe_subscription_id", subscriptionId\)/],
-  ['webhook only upgrades subscription checkout sessions', webhook, /metadata\.plan === "business_pro" \|\| metadata\.source === "business_billing"/, /subscription_plan: "business_pro"/],
+  ['webhook validates three-plan subscription prices', webhook, /verifiedLocationPlanFromStripe/, /canActivateLocationPlan/, /subscription_plan: stripePlan/],
   ['webhook duplicate idempotency', webhook, /duplicate: true/, /stripe_event_id/],
   ['payment failed grace is not extended by retries', webhook, /invoice\.payment_failed/, /current\?\.billing_grace_ends_at \|\| addDaysFrom/, /subscription_status: "grace_period"/],
   ['webhook handles payment action and finalization failures', webhook, /invoice\.payment_action_required/, /invoice\.finalization_failed/, /invoice\.paid/],
