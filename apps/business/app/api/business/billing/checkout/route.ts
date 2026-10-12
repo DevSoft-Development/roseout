@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-/** Retired: all new paid subscriptions use the verified, per-location three-plan checkout. */
+/** Business Pro is retired; this legacy endpoint must never create new charges. */
 export async function POST() {
-  return NextResponse.json({ error: "Legacy Business Pro checkout is retired. Choose Essential+, Select+, or Signature+ in the Business Portal." }, { status: 410 });
+  return NextResponse.json({ error: "Legacy checkout retired. Select Essential+, Select+, or Signature+ through Business Portal." }, { status: 410 });
 }
