@@ -6,6 +6,7 @@ import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-ful
 import { linkFraudIdentity, recordFraudSignal, type FraudSubjectType } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { stripeRequest } from "@/lib/stripe/server";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
@@ -158,8 +159,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true, ignored: "subscription_mismatch" });
     }
   }
-  const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
-  const stripePlan = verifiedLocationPlanFromStripe({ source: metadata.source, plan: metadata.plan, priceId: price.id, livemode: event.livemode });
+  // Never rely on an old event snapshot when provisioning a paid location plan.
+  const isLocationSubscriptionEvent = ["customer.subscription.created", "customer.subscription.updated"].includes(event.type)
+    && metadata.source === "location_plan_checkout";
+  const currentSubscription = isLocationSubscriptionEvent
+    ? await stripeRequest<any>(`/subscriptions/${encodeURIComponent(String(object.id))}`, {
+      method: "GET", mode: event.livemode === true ? "live" : "test",
+    })
+    : null;
+  if (isLocationSubscriptionEvent && currentSubscription?.id !== object.id)
+    throw new Error("Unable to verify current Stripe subscription");
+  const verifiedObject = currentSubscription || object;
+  const verifiedMetadata = verifiedObject.metadata || metadata;
+  const price = verifiedObject.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
+  const stripePlan = verifiedLocationPlanFromStripe({ source: verifiedMetadata.source, plan: verifiedMetadata.plan, priceId: price.id, livemode: event.livemode });
 
   try {
     switch (event.type) {
@@ -178,11 +191,11 @@ export async function POST(request: NextRequest) {
       case "customer.subscription.updated":
         if (metadata.source === "location_plan_checkout") {
           if (!stripePlan || !locationId) throw new Error("Unverified location subscription price or location");
-          if (!canActivateLocationPlan({ plan: stripePlan, locationId, subscriptionId: object.id, status: object.status })) {
-            await updateLocation({ subscription_status: normalizeBillingStatus(object.status), stripe_subscription_id: object.id });
+          if (!canActivateLocationPlan({ plan: stripePlan, locationId, subscriptionId: verifiedObject.id, status: verifiedObject.status })) {
+            await updateLocation({ subscription_status: normalizeBillingStatus(verifiedObject.status), stripe_subscription_id: verifiedObject.id });
             break;
           }
-          await updateLocation({ subscription_plan: stripePlan, subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || "usd" });
+          await updateLocation({ subscription_plan: stripePlan, subscription_status: normalizeBillingStatus(verifiedObject.status), stripe_customer_id: customerIdOf(verifiedObject), stripe_subscription_id: verifiedObject.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || "usd" });
           break;
         }
         // Unrecognized subscriptions must not create paid location entitlements.
