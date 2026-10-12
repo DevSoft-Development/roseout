@@ -1,4 +1,4 @@
-import { verifiedLocationPlanFromStripe, canActivateLocationPlan } from "../../lib/business/stripe-location-entitlements";
+import { verifiedLocationPlanFromStripe, canActivateLocationPlan, matchesCurrentLocationSubscription } from "../../lib/business/stripe-location-entitlements";
 import { describe, expect, it } from "vitest";
 import { getLocationSubscriptionPriceId, isBusinessPlanKey } from "../../lib/business/paid-plan-billing";
 describe("location subscription safety", () => {
@@ -47,5 +47,14 @@ describe("Stripe-confirmed location entitlement", () => {
     expect(canActivateLocationPlan({ ...input, status: "incomplete" })).toBe(false);
     expect(canActivateLocationPlan({ ...input, status: "active" })).toBe(true);
     expect(canActivateLocationPlan({ ...input, locationId: null, status: "active" })).toBe(false);
+  });
+});
+
+describe("stale webhook subscription rejection", () => {
+  it("accepts only the exact stored subscription", () => {
+    expect(matchesCurrentLocationSubscription("sub_current", "sub_current")).toBe(true);
+    expect(matchesCurrentLocationSubscription("sub_old", "sub_current")).toBe(false);
+    expect(matchesCurrentLocationSubscription(null, "sub_current")).toBe(false);
+    expect(matchesCurrentLocationSubscription("sub_current", null)).toBe(false);
   });
 });
