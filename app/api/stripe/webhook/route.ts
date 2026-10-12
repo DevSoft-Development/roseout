@@ -148,9 +148,7 @@ export async function POST(request: NextRequest) {
           await fulfillPaidExperienceBooking(String(metadata.booking_id), paymentIntentId);
           break;
         }
-        if (metadata.plan === "business_pro" || metadata.source === "business_billing") {
-          await updateLocation({ stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.subscription || null, subscription_plan: "business_pro" });
-        }
+        // Retired Business Pro checkout never provisions new entitlements.
         break;
       }
 
@@ -165,7 +163,9 @@ export async function POST(request: NextRequest) {
           await updateLocation({ subscription_plan: stripePlan, subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || "usd" });
           break;
         }
-        await updateLocation({ subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
+        // Unrecognized subscriptions must not create paid location entitlements.
+        if (metadata.plan !== "business_pro" || metadata.source !== "business_billing") break;
+        await updateLocation({ subscription_plan: "free_discovery", subscription_status: "inactive", stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
         break;
 
       case "invoice.payment_succeeded":
