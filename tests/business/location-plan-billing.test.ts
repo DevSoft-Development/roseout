@@ -19,3 +19,15 @@ describe("location subscription safety", () => {
     expect(getLocationSubscriptionPriceId("select-plus", { VERCEL_ENV: "preview", STRIPE_LOCATION_SELECT_PLUS_MONTHLY_PRICE_ID: "price_live123" })).toBeNull();
   });
 });
+
+it("documents the three live Stripe prices without enabling checkout", () => {
+  const live = {
+    VERCEL_ENV: "production",
+    STRIPE_LOCATION_ESSENTIAL_PLUS_MONTHLY_PRICE_ID: "price_1U3coN01cWE2hGZL6t8WNZsh",
+    STRIPE_LOCATION_SELECT_PLUS_MONTHLY_PRICE_ID: "price_1UPkIC01cWE2hGZLwK9VxAuu",
+    STRIPE_LOCATION_SIGNATURE_PLUS_MONTHLY_PRICE_ID: "price_1UPkIE01cWE2hGZLUo2lFXaz",
+  } as NodeJS.ProcessEnv;
+  expect(getLocationSubscriptionPriceId("essential-plus", live)).toBe(live.STRIPE_LOCATION_ESSENTIAL_PLUS_MONTHLY_PRICE_ID);
+  expect(getLocationSubscriptionPriceId("select-plus", live)).toBe(live.STRIPE_LOCATION_SELECT_PLUS_MONTHLY_PRICE_ID);
+  expect(getLocationSubscriptionPriceId("signature-plus", live)).toBe(live.STRIPE_LOCATION_SIGNATURE_PLUS_MONTHLY_PRICE_ID);
+});
