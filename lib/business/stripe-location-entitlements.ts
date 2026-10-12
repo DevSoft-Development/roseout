@@ -27,3 +27,9 @@ export function canActivateLocationPlan(input: {
 }) {
   return Boolean(input.plan && input.locationId && input.subscriptionId && ["active", "trialing"].includes(String(input.status || "").toLowerCase()));
 }
+
+/** Invoice and cancellation events may only touch the current subscription. */
+export function matchesCurrentLocationSubscription(incoming: unknown, current: unknown): boolean {
+  return typeof incoming === "string" && incoming.startsWith("sub_")
+    && typeof current === "string" && current === incoming;
+}
