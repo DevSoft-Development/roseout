@@ -17,7 +17,7 @@ const organizationTypes = [
   ["other", "Other"],
 ] as const;
 
-export default function BusinessOrganizationForm() {
+export default function BusinessOrganizationForm({ nextPath = "/business/dashboard" }: { nextPath?: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [legalName, setLegalName] = useState("");
@@ -39,7 +39,7 @@ export default function BusinessOrganizationForm() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Unable to create organization.");
-      router.push(payload.dashboardUrl || "/business/dashboard");
+      router.push(nextPath.startsWith("/business/") && !nextPath.startsWith("//") ? nextPath : (payload.dashboardUrl || "/business/dashboard"));
       router.refresh();
     } catch (err: any) {
       setError(err?.message || "Unable to create organization.");
