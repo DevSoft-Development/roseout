@@ -1,4 +1,4 @@
-export const BILLING_PLAN_KEYS = ["free_discovery", "business_pro", "enterprise"] as const;
+export const BILLING_PLAN_KEYS = ["free_discovery", "essential-plus", "select-plus", "signature-plus", "enterprise"] as const;
 export const BILLING_STATUSES = [
   "inactive",
   "trialing",
@@ -16,12 +16,15 @@ export const BILLING_STATUSES = [
 export type BillingPlanKey = (typeof BILLING_PLAN_KEYS)[number];
 export type BillingStatus = (typeof BILLING_STATUSES)[number];
 
+/** Deprecated legacy export; new plans resolve from location plan catalog. */
 export const BUSINESS_PRO_MONTHLY_CENTS = 9900;
 export const BUSINESS_PRO_ANNUAL_CENTS = 99900;
 
 const PLAN_LABELS: Record<BillingPlanKey, string> = {
   free_discovery: "Free Discovery",
-  business_pro: "Business Pro",
+  "essential-plus": "Essential+",
+  "select-plus": "Select+",
+  "signature-plus": "Signature+",
   enterprise: "Enterprise",
 };
 
@@ -41,9 +44,7 @@ const STATUS_LABELS: Record<BillingStatus, string> = {
 
 export function normalizePlanKey(value?: string | null): BillingPlanKey {
   const clean = String(value || "").trim().toLowerCase();
-  if (["pro", "business_pro", "business-pro", "growth_pro", "growth-pro", "growth pro", "partner_99", "partner_pro", "pro_reserve", "reserve", "paid"].includes(clean)) {
-    return "business_pro";
-  }
+  if (["essential-plus", "select-plus", "signature-plus"].includes(clean)) return clean as BillingPlanKey;
   if (["enterprise", "enterprise_invoice"].includes(clean)) return "enterprise";
   return "free_discovery";
 }
@@ -60,8 +61,9 @@ export function isPaidBillingStatus(status?: string | null) {
   return ["active", "trialing", "comped", "grace_period"].includes(normalizeBillingStatus(status));
 }
 
+/** Deprecated compatibility predicate: all current paid tiers replace Business Pro. */
 export function isBusinessProPlan(plan?: string | null) {
-  return normalizePlanKey(plan) === "business_pro";
+  return isPaidPlan(plan);
 }
 
 export function isPaidPlan(plan?: string | null) {

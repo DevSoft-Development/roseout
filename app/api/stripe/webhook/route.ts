@@ -1,10 +1,12 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeBillingStatus } from "@/lib/billing/plans";
+import { verifiedLocationPlanFromStripe, canActivateLocationPlan } from "@/lib/business/stripe-location-entitlements";
 import { fulfillPaidExperienceBooking } from "@/lib/experiences/paid-booking-fulfillment";
 import { linkFraudIdentity, recordFraudSignal, type FraudSubjectType } from "@/lib/fraud";
 import { logEvent } from "@/lib/monitoring";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { stripeRequest } from "@/lib/stripe/server";
 
 function verifyStripeSignature(payload: string, signatureHeader: string, webhookSecret: string) {
   const entries = signatureHeader.split(",").map((part) => part.trim());
@@ -135,7 +137,42 @@ export async function POST(request: NextRequest) {
     const { error } = await supabaseAdmin.from("locations").update(update).eq("id", locationId);
     if (error) throw error;
   };
-  const price = object.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
+  // Invoice and deletion events may arrive after an upgrade or a location reassignment.
+  // Never mutate a location unless the event targets its currently stored subscription.
+  const lifecycleTypes = new Set([
+    "invoice.payment_succeeded", "invoice.paid", "invoice.payment_failed",
+    "invoice.payment_action_required", "invoice.finalization_failed",
+    "customer.subscription.deleted",
+  ]);
+  if (lifecycleTypes.has(event.type)) {
+    const incomingSubscription = subIdOf(object);
+    const { data: boundLocation, error: boundError } = locationId
+      ? await supabaseAdmin.from("locations").select("stripe_subscription_id").eq("id", locationId).maybeSingle()
+      : { data: null, error: null };
+    if (boundError) throw boundError;
+    if (!incomingSubscription || !boundLocation?.stripe_subscription_id || incomingSubscription !== boundLocation.stripe_subscription_id) {
+      // A valid Stripe event was received, but it cannot affect this location.
+      const { error: skipError } = await supabaseAdmin.from("payment_logs")
+        .update({ processed_at: new Date().toISOString(), processing_error: null })
+        .eq("stripe_event_id", event.id);
+      if (skipError) throw skipError;
+      return NextResponse.json({ received: true, ignored: "subscription_mismatch" });
+    }
+  }
+  // Never rely on an old event snapshot when provisioning a paid location plan.
+  const isLocationSubscriptionEvent = ["customer.subscription.created", "customer.subscription.updated"].includes(event.type)
+    && metadata.source === "location_plan_checkout";
+  const currentSubscription = isLocationSubscriptionEvent
+    ? await stripeRequest<any>(`/subscriptions/${encodeURIComponent(String(object.id))}`, {
+      method: "GET", mode: event.livemode === true ? "live" : "test",
+    })
+    : null;
+  if (isLocationSubscriptionEvent && currentSubscription?.id !== object.id)
+    throw new Error("Unable to verify current Stripe subscription");
+  const verifiedObject = currentSubscription || object;
+  const verifiedMetadata = verifiedObject.metadata || metadata;
+  const price = verifiedObject.items?.data?.[0]?.price || object.lines?.data?.[0]?.price || {};
+  const stripePlan = verifiedLocationPlanFromStripe({ source: verifiedMetadata.source, plan: verifiedMetadata.plan, priceId: price.id, livemode: event.livemode });
 
   try {
     switch (event.type) {
@@ -146,15 +183,24 @@ export async function POST(request: NextRequest) {
           await fulfillPaidExperienceBooking(String(metadata.booking_id), paymentIntentId);
           break;
         }
-        if (metadata.plan === "business_pro" || metadata.source === "business_billing") {
-          await updateLocation({ stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.subscription || null, subscription_plan: "business_pro" });
-        }
+        // Retired Business Pro checkout never provisions new entitlements.
         break;
       }
 
       case "customer.subscription.created":
       case "customer.subscription.updated":
-        await updateLocation({ subscription_plan: "business_pro", subscription_status: normalizeBillingStatus(object.status), stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
+        if (metadata.source === "location_plan_checkout") {
+          if (!stripePlan || !locationId) throw new Error("Unverified location subscription price or location");
+          if (!canActivateLocationPlan({ plan: stripePlan, locationId, subscriptionId: verifiedObject.id, status: verifiedObject.status })) {
+            await updateLocation({ subscription_status: normalizeBillingStatus(verifiedObject.status), stripe_subscription_id: verifiedObject.id });
+            break;
+          }
+          await updateLocation({ subscription_plan: stripePlan, subscription_status: normalizeBillingStatus(verifiedObject.status), stripe_customer_id: customerIdOf(verifiedObject), stripe_subscription_id: verifiedObject.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || "usd" });
+          break;
+        }
+        // Unrecognized subscriptions must not create paid location entitlements.
+        if (metadata.plan !== "business_pro" || metadata.source !== "business_billing") break;
+        await updateLocation({ subscription_plan: "free_discovery", subscription_status: "inactive", stripe_customer_id: customerIdOf(object), stripe_subscription_id: object.id, current_period_start: ts(object.current_period_start), current_period_end: ts(object.current_period_end), next_billing_date: ts(object.current_period_end), trial_ends_at: ts(object.trial_end), cancel_at_period_end: Boolean(object.cancel_at_period_end), canceled_at: ts(object.canceled_at), stripe_price_id: price.id || null, subscription_interval: price.recurring?.interval || null, subscription_amount_cents: price.unit_amount ?? null, subscription_currency: price.currency || object.currency || "usd" });
         break;
 
       case "invoice.payment_succeeded":

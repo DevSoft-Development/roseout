@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { parseBusinessEntryIntent, buildBusinessEntryQuery } from "@/lib/business/entry-intent";
 import { getLocationPlanConfig } from "@/lib/business/product-entitlements";
+import { requireOwnerOrAdminAccessToLocation } from "@/lib/auth/locationOwnerAccess";
+import { getLocationSubscriptionPriceId } from "@/lib/business/paid-plan-billing";
 
 type Params = Promise<Record<string, string | string[] | undefined>>;
 const first = (v: string | string[] | undefined) => Array.isArray(v) ? v[0] || "" : v || "";
@@ -18,6 +20,9 @@ export default async function BusinessPlanReview({ searchParams }: { searchParam
   if (!user) redirect(`/login?next=${encodeURIComponent("/business/plan-review?" + q.toString())}`);
   if (!entry.plan) redirect("/business/dashboard");
   const plan = getLocationPlanConfig(entry.plan);
+  const authorized = entry.locationId ? await requireOwnerOrAdminAccessToLocation(user.id, entry.locationId) : null;
+  const priceConfigured = Boolean(getLocationSubscriptionPriceId(entry.plan));
+  const checkoutEnabled = process.env.LOCATION_PLAN_CHECKOUT_ENABLED === "true" && priceConfigured;
   return <main className="min-h-screen bg-[#050505] px-6 py-16 text-white">
     <div className="mx-auto max-w-2xl">
       <h1 className="text-3xl font-bold">Review your selected plan</h1>
@@ -25,8 +30,15 @@ export default async function BusinessPlanReview({ searchParams }: { searchParam
       <section className="mt-6 rounded-xl border border-white/20 p-6">
         <h2 className="text-xl font-semibold">{entry.plan === "essential-plus" ? "Essential+" : entry.plan === "select-plus" ? "Select+" : "Signature+"} — ${plan.monthlyUsd}/month per location</h2>
         <p className="mt-3 text-sm text-white/70">Includes {plan.smsSegments} SMS segments, {plan.marketingEmails.toLocaleString()} emails and {plan.aiReceptionistMinutes} AI minutes each month.</p>
-        <p className="mt-3 text-sm text-amber-200">No charge has been made and no paid features are active. Checkout is not yet connected to this new plan selection.</p>
+        <p className="mt-3 text-sm text-amber-200">No charge has been made and no paid features are active. Checkout becomes available only after verified ownership and successful billing certification.</p>
       </section>
+      {authorized && checkoutEnabled && <form action="/api/business/billing/location-plan-checkout" method="POST" className="mt-6">
+        <input type="hidden" name="location_id" value={entry.locationId || ""} />
+        <input type="hidden" name="plan" value={entry.plan} />
+        <button type="submit" className="rounded-xl bg-white px-5 py-3 font-semibold text-black">Continue to secure checkout</button>
+      </form>}
+      {!authorized && <p className="mt-5 text-sm text-white/70">Select a verified, claimed business location to continue. Claiming remains free.</p>}
+      {authorized && !checkoutEnabled && <p className="mt-5 text-sm text-white/70">Paid checkout is currently unavailable while activation checks are finalized.</p>}
       <div className="mt-6 flex flex-wrap gap-4">
         <Link href={`/business/claim/no-code?${buildBusinessEntryQuery(entry)}`} className="rounded-xl border border-white/20 px-5 py-3">Verify or claim location</Link>
         <Link href="/business/dashboard" className="rounded-xl border border-white/20 px-5 py-3">Business dashboard</Link>
