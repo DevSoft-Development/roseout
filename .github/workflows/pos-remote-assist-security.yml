@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'lib/pos/remote-assist/**'
+      - 'apps/admin/app/admin/dashboard/pos/**'
+      - 'apps/admin/app/admin/dashboard/admin-navigation.ts'
       - 'scripts/pos-remote-assist-*.mjs'
       - '.github/workflows/pos-remote-assist-security.yml'
   workflow_dispatch:
@@ -31,3 +33,4 @@ jobs:
           node scripts/pos-remote-assist-relay-regression.mjs
           node scripts/pos-remote-assist-revocation-regression.mjs
           node scripts/pos-remote-assist-supervisor-regression.mjs
+          node scripts/pos-remote-assist-admin-regression.mjs
