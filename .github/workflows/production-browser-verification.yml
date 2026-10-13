@@ -11,6 +11,7 @@ on:
       - 'components/**'
       - 'tests/e2e/production-browser-helpers.ts'
       - 'tests/e2e/production-surfaces.spec.ts'
+      - 'tests/e2e/production-pos-register.spec.ts'
       - '.github/workflows/production-browser-verification.yml'
       - 'playwright.config.ts'
       - 'package.json'
@@ -56,6 +57,7 @@ jobs:
       ADMIN_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_ADMIN_STORAGE_STATE_B64 }}
       BUSINESS_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_BUSINESS_STORAGE_STATE_B64 }}
       PRODUCTION_BUSINESS_DEMO_PATH: ${{ vars.PRODUCTION_BUSINESS_DEMO_PATH }}
+      PRODUCTION_POS_DEMO_PATH: ${{ vars.PRODUCTION_POS_DEMO_PATH }}
 
     steps:
       - name: Check out verification commit
@@ -140,8 +142,21 @@ jobs:
             echo "PLAYWRIGHT_BUSINESS_STORAGE_STATE=$RUNNER_TEMP/browser-auth/business.json" >> "$GITHUB_ENV"
           fi
 
+      - name: Record POS smoke prerequisites
+        shell: bash
+        run: |
+          echo "### Production POS smoke" >> "$GITHUB_STEP_SUMMARY"
+          echo "Test source SHA: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production deployed SHA requires separate AWS attestation." >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "${PLAYWRIGHT_BUSINESS_STORAGE_STATE:-}" ] || [ -z "${PRODUCTION_POS_DEMO_PATH:-}" ]; then
+            echo "::warning::POS smoke skipped without authenticated Business state and PRODUCTION_POS_DEMO_PATH"
+            echo "Authenticated POS smoke: NOT CERTIFIED (missing prerequisites)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Authenticated POS smoke: configured to run" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Run production browser verification
-        run: npx playwright test tests/e2e/production-surfaces.spec.ts --project=chromium
+        run: npx playwright test tests/e2e/production-surfaces.spec.ts tests/e2e/production-pos-register.spec.ts --project=chromium
 
       - name: Upload browser evidence
         if: always()
