@@ -10,6 +10,7 @@ export type VerificationRepository={
  /** Atomic, durable proof consumed by the activation transaction. */
  markVerified(sessionId:string,technicianId:string):Promise<void>;
 };
+export type VerifiedDeviceIdentity={deviceId:string;locationId:string;authenticated:true;sessionBound:boolean};
 export type VerificationInput={locationId:string;sessionId:string;deviceId:string;code?:string};
 export type VerificationResult={ok:true;code?:string}|{ok:false;reason:"unauthenticated"|"forbidden"|"invalid"|"unavailable"};
 function authorized(p:VerificationPrincipal,s:VerificationContext,q:VerificationInput):boolean{
@@ -19,15 +20,14 @@ function authorized(p:VerificationPrincipal,s:VerificationContext,q:Verification
 }
 /** Code is returned ONLY to a verified device-facing channel; never return it to the support dashboard. */
 export async function issueDeviceVerificationCode(input:{
- principal:VerificationPrincipal;request:VerificationInput;repo:VerificationRepository;secret:string;
- trustedDeviceChannel:boolean;
+ device:VerifiedDeviceIdentity;request:VerificationInput;repo:VerificationRepository;secret:string;
 }):Promise<VerificationResult>{
- const {principal:p,request:q}=input;
- if(!p.authenticated)return {ok:false,reason:"unauthenticated"};
- if(!input.trustedDeviceChannel||![q.locationId,q.sessionId,q.deviceId].every(validAssistId))return {ok:false,reason:"forbidden"};
+ const {device:d,request:q}=input;
+ if(!d.authenticated||!d.sessionBound)return {ok:false,reason:"unauthenticated"};
+ if(![q.locationId,q.sessionId,q.deviceId].every(validAssistId)||d.deviceId!==q.deviceId||d.locationId!==q.locationId)return {ok:false,reason:"forbidden"};
  try{
   const s=await input.repo.getSession(q.locationId,q.sessionId);
-  if(!s||!authorized(p,s,q))return {ok:false,reason:"forbidden"};
+  if(!s||s.sessionId!==q.sessionId||s.locationId!==q.locationId||s.deviceId!==q.deviceId||s.state!=="approved")return {ok:false,reason:"forbidden"};
   const code=await issueAssistCode({...s,secret:input.secret,store:input.repo.store,now:Date.now()});
   return {ok:true,code};
  }catch{return {ok:false,reason:"unavailable"};}
