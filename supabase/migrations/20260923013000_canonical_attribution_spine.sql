@@ -11,7 +11,7 @@ alter table public.location_reservations
   add column if not exists attribution_channel_class text,
   add column if not exists attribution_context jsonb not null default '{}'::jsonb;
 
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_constraint
@@ -23,7 +23,7 @@ begin
       check (attribution_channel_class is null or attribution_channel_class in ('organic','sponsored','owned','unknown'));
   end if;
 end
-$;
+$$;
 
 create index if not exists location_reservations_attribution_search_idx
   on public.location_reservations(attribution_search_id)
