@@ -55,6 +55,23 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   let previewError:string | null = null;
   try { preview = await getPosTableServiceBootstrap(canonicalLocationId); }
   catch { previewError = "Table and catalog data are currently unavailable."; }
+  // Browser-only sample data is used solely when the protected Lounge has no operational catalog or tables.
+  // Never seed the operational database or show sample menu items for a live merchant.
+  const sampleTables = [
+    {id:"practice-table-1",label:"Practice Table 1",capacity:4},
+    {id:"practice-table-2",label:"Practice Table 2",capacity:6},
+    {id:"practice-table-3",label:"Practice Table 3",capacity:2},
+  ];
+  const sampleItems = [
+    {id:"practice-drink",name:"Sample Sparkling Lemonade",priceCents:500,course:"drinks",isAvailable:true},
+    {id:"practice-app",name:"Sample Crispy Calamari",priceCents:1200,course:"appetizers",isAvailable:true},
+    {id:"practice-entree",name:"Sample House Burger",priceCents:1800,course:"entrees",isAvailable:true},
+    {id:"practice-dessert",name:"Sample Chocolate Cake",priceCents:900,course:"desserts",isAvailable:true},
+  ];
+  const realTables=(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}));
+  const realItems=(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}));
+  const usingSampleTables=isProtectedLoungeDemo && realTables.length===0;
+  const usingSampleItems=isProtectedLoungeDemo && realItems.length===0;
   const requestedCheckId = first(params.checkId) || "";
   const selectedCheckId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedCheckId) &&
     (preview?.tables || []).some(table => table.openCheck?.id === requestedCheckId) ? requestedCheckId : "";
@@ -112,7 +129,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
       </div>
     </section>
     {isProtectedLoungeDemo ? <p className="mt-5 rounded-xl border border-sky-400/30 p-4 text-sm">Protected demo location: TheOutHaven Lounge. All practice actions stay in this browser tab and never change restaurant records.</p> : null}
-    {isProtectedLoungeDemo ? <PreviewRegister tables={(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}))} items={(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}))} /> : <section className="mt-6 rounded-2xl border border-amber-400/30 p-5"><h2 className="text-lg font-bold">Practice register restricted to TheOutHaven Lounge</h2><p className="mt-2 text-sm">To test ordering and tender simulations, launch the protected Lounge through Admin Demo Center. Other locations remain read-only until cashier certification.</p></section>}
+    {isProtectedLoungeDemo ? <>{usingSampleTables || usingSampleItems ? <p role="status" className="mt-4 rounded-xl border border-amber-400/40 p-3 text-sm text-amber-200">Practice-only sample {usingSampleTables ? "tables" : ""}{usingSampleTables && usingSampleItems ? " and " : ""}{usingSampleItems ? "menu items" : ""} are displayed because the Lounge operational data is empty or unavailable. These samples are not stored or shared with native POS devices.</p> : null}<PreviewRegister tables={usingSampleTables ? sampleTables : realTables} items={usingSampleItems ? sampleItems : realItems} /></> : <section className="mt-6 rounded-2xl border border-amber-400/30 p-5"><h2 className="text-lg font-bold">Practice register restricted to TheOutHaven Lounge</h2><p className="mt-2 text-sm">To test ordering and tender simulations, launch the protected Lounge through Admin Demo Center. Other locations remain read-only until cashier certification.</p></section>}
     {check ? <section className="mt-5 rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Check details · read only</h2><Link href={`?${query}`} className="text-sm underline">Close details</Link></div>
       <p className="mt-2 text-sm text-[var(--business-muted)]">{check.guestCount} guests · {check.status}</p>
