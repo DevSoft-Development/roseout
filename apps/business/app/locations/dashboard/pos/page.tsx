@@ -72,6 +72,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
   const href=(path:string)=>`${path}?${q}`;
 
   const core=[
+    ["Web Register (preview)","Browser-based POS entry for tablets and desktops. Live cashier operations require device authorization and certification.",href("/locations/dashboard/pos/register"),"Open preview"],
     ["Hardware","Registers, payment terminals, printers, drawers, KDS screens, and device roles.",href("/locations/dashboard/hardware"),"Manage devices"],
     ["Menu / Catalog","Control the same catalog used by the POS, website, profile, and online ordering.",href("/locations/dashboard/menu"),"Edit catalog"],
     ["Online Ordering","Pickup ordering, prep time, capacity, alerts, automatic printing, and customer updates.",href("/locations/dashboard/online-ordering"),"Manage ordering"],
@@ -83,7 +84,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
     <BusinessPageHeader
       eyebrow="ThePOSHaven"
       title={`POS control center for ${locationName}`}
-      subtitle="Manage the business side of your POS in one place. Staff run live orders from the dedicated ThePOSHaven register and handheld app."
+      subtitle="Manage the business side of your POS in one place. Staff use the dedicated ThePOSHaven app for live orders. Browser register access is being certified separately."
       badge={<><BusinessStatusBadge tone="green">Essentials+</BusinessStatusBadge><BusinessStatusBadge tone="blue">Signature+ ready</BusinessStatusBadge></>}
       actions={<Link href={href("/locations/dashboard/hardware")} className="inline-flex min-h-11 items-center rounded-xl bg-[#e1062a] px-4 text-sm font-black text-white">Manage Hardware</Link>}
     />
