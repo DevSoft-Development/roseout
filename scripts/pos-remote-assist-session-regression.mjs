@@ -25,6 +25,9 @@ for(const platform of ["android","ipados","linux"]){
  assert.equal(sessionPolicy.authorizeAssistCommand({...opts,action:"remote_touch"}),false);
  assert.equal(sessionPolicy.authorizeAssistCommand({...opts,session:{...session,state:"revoked",endedAt:new Date(now).toISOString()}}),false);
  assert.equal(sessionPolicy.isValidSessionTransition({...session,state:"requested",version:1,approvedBy:null},{...session,state:"approved"}),true);
+ assert.equal(sessionPolicy.isValidSessionTransition({...session,state:"requested",version:1,approvedBy:null},{...session,state:"approved",approvedBy:staff}),false);
+ assert.equal(sessionPolicy.isValidSessionTransition({...session,state:"requested",version:1,approvedBy:null},{...session,state:"approved",consentExpiresAt:new Date(now+16*60000).toISOString()}),false);
+ assert.equal(sessionPolicy.authorizeAssistCommand({...opts,session:{...session,approvedBy:null},action:"device_sync"}),false);
  assert.equal(sessionPolicy.isValidSessionTransition({...session,state:"revoked"},{...session,state:"active",version:3}),false);
 }
 console.log("Remote Assist session policy regression passed");
