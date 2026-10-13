@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/admin/app/auth/admin/start/route.ts'
       - 'apps/admin/app/auth/admin/callback/route.ts'
+      - 'apps/business/app/auth/staff/start/route.ts'
+      - 'apps/business/app/auth/staff/callback/route.ts'
       - '.github/workflows/supabase-admin-auth-redirect.yml'
   workflow_dispatch:
   pull_request:
@@ -20,6 +22,7 @@ env:
   EAST_PRIMARY_SUPABASE_REF: ftdsltatyqhtllyyefzp
   WEST_OREGON_SUPABASE_REF: hnhbzynoyrhjndefbwkh
   ADMIN_CALLBACK_URL: https://admin.theouthaven.com/auth/admin/callback
+  BUSINESS_CALLBACK_URL: https://business.theouthaven.com/auth/staff/callback
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   VAULT_SECRET_ID: /theouthaven/credential-vault/production/supabase
@@ -76,7 +79,7 @@ jobs:
           PY
           rm -f "$RUNNER_TEMP/supabase-vault.json"
 
-      - name: Add Admin callback to Auth redirect allowlists
+      - name: Add Admin and Business callbacks to Auth redirect allowlists
         run: |
           set -euo pipefail
 
@@ -89,14 +92,15 @@ jobs:
               "https://api.supabase.com/v1/projects/${ref}/config/auth" \
               > "$current"
 
-            python3 - "$current" "$payload" "$ADMIN_CALLBACK_URL" <<'PY'
+            python3 - "$current" "$payload" "$ADMIN_CALLBACK_URL" "$BUSINESS_CALLBACK_URL" <<'PY'
           import json, sys
-          source, destination, required = sys.argv[1:4]
+          source, destination, *required_urls = sys.argv[1:]
           config = json.load(open(source, encoding="utf-8"))
           raw = str(config.get("uri_allow_list") or "")
           urls = [item.strip() for item in raw.split(",") if item.strip()]
-          if required not in urls:
-              urls.append(required)
+          for required in required_urls:
+              if required not in urls:
+                  urls.append(required)
           with open(destination, "w", encoding="utf-8") as handle:
               json.dump({"uri_allow_list": ",".join(urls)}, handle)
           PY
@@ -113,17 +117,18 @@ jobs:
               "https://api.supabase.com/v1/projects/${ref}/config/auth" \
               > "$current"
 
-            python3 - "$current" "$ADMIN_CALLBACK_URL" <<'PY'
+            python3 - "$current" "$ADMIN_CALLBACK_URL" "$BUSINESS_CALLBACK_URL" <<'PY'
           import json, sys
-          source, required = sys.argv[1:3]
+          source, *required_urls = sys.argv[1:]
           config = json.load(open(source, encoding="utf-8"))
           urls = [item.strip() for item in str(config.get("uri_allow_list") or "").split(",") if item.strip()]
-          if required not in urls:
-              raise SystemExit("Admin callback is missing from Supabase Auth redirect allowlist")
+          for required in required_urls:
+              if required not in urls:
+                  raise SystemExit("Required callback is missing from Supabase Auth redirect allowlist: " + required)
           PY
           done
 
-          echo "Admin callback is present in East primary and West/Oregon DR Supabase Auth redirect allowlists."
+          echo "Admin and Business callbacks are present in East primary and West/Oregon DR Supabase Auth redirect allowlists."
 
       - name: Remove temporary Auth config files
         if: always()
