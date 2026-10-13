@@ -1,0 +1,96 @@
+name: AWS production read-only operations report
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: AWS environment to inspect
+        required: true
+        type: choice
+        options: [production, staging]
+        default: production
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ops-readonly-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 10
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      TARGET_ENV: ${{ inputs.environment }}
+    steps:
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_OBSERVABILITY_ROLE_ARN || vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Collect sanitized infrastructure status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          echo "GitHub source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Target environment: ${TARGET_ENV}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+          foundation_stack="theouthaven-web-surfaces-${TARGET_ENV}"
+          cluster="$(aws cloudformation describe-stacks --stack-name "$foundation_stack" --output json | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="EcsClusterName") | .OutputValue')"
+          test -n "$cluster"
+          services_stack="theouthaven-web-surface-services-${TARGET_ENV}"
+          foundation_stack="theouthaven-web-surfaces-${TARGET_ENV}"
+          node --version >/dev/null
+          # Never collect secrets, task-definition environment, or container logs in artifacts.
+          aws sts get-caller-identity --query '{Account:Account,Arn:Arn}' --output json |
+            jq '{account:.Account, role_type:"assumed AWS identity"}' > report/identity.json
+          aws cloudformation describe-stacks --stack-name "$services_stack" --output json |
+            jq '{stacks:[.Stacks[] | {name:.StackName,status:.StackStatus,last_updated:.LastUpdatedTime,created:.CreationTime}]}' > report/services-stack.json
+          aws cloudformation describe-stacks --stack-name "$foundation_stack" --output json |
+            jq '{stacks:[.Stacks[] | {name:.StackName,status:.StackStatus,last_updated:.LastUpdatedTime,created:.CreationTime}]}' > report/foundation-stack.json
+          aws cloudformation describe-stack-events --stack-name "$services_stack" --max-items 20 --output json |
+            jq '{events:[.StackEvents[] | {time:.Timestamp,resource_type:.ResourceType,logical_id:.LogicalResourceId,status:.ResourceStatus}]}' > report/recent-stack-events.json
+          aws ecs list-services --cluster "$cluster" --output json |
+            jq -r '.serviceArns[]?' > report/service-arns.txt
+          if [ ! -s report/service-arns.txt ]; then
+            echo "No services found in cluster $cluster" >&2
+            exit 1
+          fi
+          mapfile -t services < report/service-arns.txt
+          aws ecs describe-services --cluster "$cluster" --services "${services[@]}" --output json |
+            jq '{services:[.services[] | {name:.serviceName,status:.status,desired:.desiredCount,running:.runningCount,pending:.pendingCount,task_definition:.taskDefinition,deployments:[.deployments[] | {status:.status,rollout_state:.rolloutState,desired:.desiredCount,running:.runningCount,pending:.pendingCount,task_definition:.taskDefinition}]}],failures:[.failures[]? | {reason:.reason}]}' > report/services.json
+          jq -e '(.failures|length)==0 and (.services|length)>0 and all(.services[]; .running==.desired and .pending==0 and .status=="ACTIVE")' report/services.json >/dev/null
+          aws ecs list-tasks --cluster "$cluster" --desired-status RUNNING --output json |
+            jq -r '.taskArns[]?' > report/task-arns.txt
+          if [ -s report/task-arns.txt ]; then
+            mapfile -t tasks < report/task-arns.txt
+            aws ecs describe-tasks --cluster "$cluster" --tasks "${tasks[@]}" --output json |
+              jq '{tasks:[.tasks[] | {group:.group,last_status:.lastStatus,desired_status:.desiredStatus,task_definition:.taskDefinition,containers:[.containers[]? | {name:.name,image:.image,image_digest:.imageDigest,last_status:.lastStatus,health_status:.healthStatus}]}]}' > report/tasks.json
+          else
+            echo '{"tasks":[]}' > report/tasks.json
+          fi
+          {
+            echo "## AWS service snapshot"
+            echo ""
+            echo "| ECS service | Running / desired | Pending | Status |"
+            echo "|---|---:|---:|---|"
+            jq -r '.services[] | "| \(.name) | \(.running) / \(.desired) | \(.pending) | \(.status) |"' report/services.json
+            echo ""
+            echo "This read-only inspection does not deploy or modify AWS resources. Review the downloadable JSON for running image digests; the workflow commit is not proof of deployed version."
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f report/service-arns.txt report/task-arns.txt
+      - name: Upload sanitized operations report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-ops-readonly-${{ inputs.environment }}-${{ github.run_id }}
+          path: report/*.json
+          if-no-files-found: warn
+          retention-days: 7
