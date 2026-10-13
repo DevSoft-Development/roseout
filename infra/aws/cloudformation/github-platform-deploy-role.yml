@@ -214,6 +214,8 @@ Resources:
                   - ecs:DeleteService
                   - ecs:DescribeServices
                   - ecs:ListServices
+                  - ecs:ListTasks
+                  - ecs:DescribeTasks
                   - ecs:RegisterTaskDefinition
                   - ecs:DeregisterTaskDefinition
                   - ecs:DescribeTaskDefinition
