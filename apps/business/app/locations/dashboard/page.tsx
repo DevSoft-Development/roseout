@@ -1,3 +1,4 @@
+import { verifySuperadminOwnerModeToken } from "@/lib/auth/superadmin-owner-mode-token";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -421,7 +422,7 @@ export default async function DashboardPage({
     cookieStore.get(BUSINESS_RESERVE_HANDOFF_COOKIE)?.value,
   );
   const impersonatedLocationId = cookieStore.get("theouthaven_impersonate_location_id")?.value;
-  const superadminOwnerLocationId = cookieStore.get("toh_superadmin_owner_mode_location")?.value;
+  const superadminOwnerModeToken = cookieStore.get("toh_superadmin_owner_mode_location")?.value;
   const impersonatedUserId = cookieStore.get("theouthaven_impersonate_user_id")?.value;
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
   const impersonationTargetType = cookieStore.get("theouthaven_impersonate_target_type")?.value;
@@ -466,7 +467,7 @@ export default async function DashboardPage({
     redirect("/api/locations/dashboard/clear-invalid-impersonation");
   }
 
-  if (superadminOwnerLocationId && ownerAccess.isSuperadmin) {
+  const superadminOwnerLocationId = user?.id && ownerAccess.isSuperadmin\n    ? verifySuperadminOwnerModeToken(superadminOwnerModeToken, user.id)\n    : null;\n  if (superadminOwnerLocationId) {
     const { data: selectedLocation } = await supabase
       .from("locations").select(LOCATION_DASHBOARD_COLUMNS)
       .eq("id", superadminOwnerLocationId)
