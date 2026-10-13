@@ -19,8 +19,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Install test-only transpiler
-        run: npm install --no-save --ignore-scripts --package-lock=false esbuild
+      - name: Install test-only transpiler in isolated directory
+        run: |
+          mkdir -p .tmp-pos-assist-tools
+          npm install --prefix .tmp-pos-assist-tools --no-save --ignore-scripts --no-package-lock esbuild
+          ln -s ../.tmp-pos-assist-tools/node_modules/esbuild node_modules/esbuild
       - name: Run remote assist regressions
         run: |
           node scripts/pos-remote-assist-policy-regression.mjs
