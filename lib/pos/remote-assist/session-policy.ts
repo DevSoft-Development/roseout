@@ -15,7 +15,7 @@ export function authorizeAssistCommand(input:{
  if (s.locationId!==input.locationId || s.deviceId!==input.deviceId) return false;
  if (s.requestedBy!==input.technicianId || !input.permissionGranted) return false;
  if (s.endedAt || s.version<1) return false;
- if (input.action==="screen_share" && !s.approvedBy) return false;
+ if (["screen_share","device_sync","rediscover","refresh_config"].includes(input.action) && !validAssistId(s.approvedBy)) return false;
  return mayAssist({
   platform:s.platform,action:input.action,authorized:true,
   assigned:input.assignedToLocation,state:s.state,
@@ -31,7 +31,8 @@ export function isValidSessionTransition(before:AssistSession,after:AssistSessio
  active:["revoked","expired","ended"],revoked:[],expired:[],ended:[]
  };
  if(!transitions[before.state].includes(after.state))return false;
- if(after.state==="approved" && !validAssistId(after.approvedBy))return false;
+ if(after.state==="approved" && (!validAssistId(after.approvedBy) || after.approvedBy===after.requestedBy || !after.consentExpiresAt || !Number.isFinite(Date.parse(after.consentExpiresAt)) || Date.parse(after.consentExpiresAt)<=Date.parse(after.createdAt) || Date.parse(after.consentExpiresAt)-Date.parse(after.createdAt)>15*60_000))return false;
+ if(["approved","active"].includes(after.state) && (!validAssistId(after.approvedBy) || !after.consentExpiresAt))return false;
  if(["revoked","expired","ended"].includes(after.state) && !after.endedAt)return false;
  return true;
 }
