@@ -112,7 +112,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
       </div>
     </section>
     {isProtectedLoungeDemo ? <p className="mt-5 rounded-xl border border-sky-400/30 p-4 text-sm">Protected demo location: TheOutHaven Lounge. All practice actions stay in this browser tab and never change restaurant records.</p> : null}
-    <PreviewRegister tables={(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}))} items={(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}))} />
+    {isProtectedLoungeDemo ? <PreviewRegister tables={(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}))} items={(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}))} /> : <section className="mt-6 rounded-2xl border border-amber-400/30 p-5"><h2 className="text-lg font-bold">Practice register restricted to TheOutHaven Lounge</h2><p className="mt-2 text-sm">To test ordering and tender simulations, launch the protected Lounge through Admin Demo Center. Other locations remain read-only until cashier certification.</p></section>}
     {check ? <section className="mt-5 rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Check details · read only</h2><Link href={`?${query}`} className="text-sm underline">Close details</Link></div>
       <p className="mt-2 text-sm text-[var(--business-muted)]">{check.guestCount} guests · {check.status}</p>
