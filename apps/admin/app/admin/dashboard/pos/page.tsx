@@ -65,6 +65,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
   const monitorCounts = (runDetails.counts || runDetails.response?.counts || null) as Record<string,number>|null;
 
   const workspaces=[
+    ["Remote Assist","Review customer-consented support sessions and audit history. Screen viewing stays disabled until device certification.","/admin/dashboard/pos/remote-assist","Support"],
     ["POS Hardware Inventory","Receive, assign, replace, and track ThePOSHaven devices.","/admin/dashboard/settings/location-tools/pos-hardware/inventory","Hardware"],
     ["Location POS Management","Open a business location in CRM, then enter its owner workspace to manage POS settings and hardware.","/admin/dashboard/crm","Locations"],
     ["Plans & Entitlements","Manage Essentials+ and Signature+ commercial access from the plan system.","/admin/dashboard/plans","Plans"],
