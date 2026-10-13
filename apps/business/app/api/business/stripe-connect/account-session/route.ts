@@ -98,6 +98,19 @@ export async function POST(request: NextRequest) {
     const authorized = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
     if (!authorized) return NextResponse.json({ error: "Location not found." }, { status: 404 });
 
+    // Administrative visibility is not merchant financial authorization.
+    // Require explicit, active owner association; never fall back to a
+    // platform administrator role or an Owner Mode cookie.
+    const explicitOwner = authorized.access.ownedLocationIds.includes(String(authorized.location.id)) ||
+      (typeof authorized.location.source_id === "string" &&
+        authorized.access.ownedSourceLocationIds.includes(authorized.location.source_id));
+    if (authorized.access.isAdmin || !explicitOwner) {
+      return NextResponse.json(
+        { error: "Stripe financial account access requires the restaurant's own authorized owner account." },
+        { status: 403 },
+      );
+    }
+
     const location = authorized.location as Record<string, any>;
     const mode = getStripeModeForLocation(location);
     let accountId = String(location.stripe_connect_account_id || "").trim();
