@@ -118,7 +118,7 @@ jobs:
 
       - name: Verify claim and discovery onboarding
         if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'business'
-        run: npx vitest run tests/business/claim-plan-stack.test.ts tests/business/location-plan-billing.test.ts
+        run: npx vitest run tests/business/claim-plan-stack.test.ts tests/business/location-plan-billing.test.ts tests/business/subscription-release-policy.test.ts tests/business/discovery-paid-journey-e2e.test.ts tests/business/billing-launch-gate.test.ts
 
       - name: Build isolated Business surface
         if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'business'
