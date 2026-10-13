@@ -25,6 +25,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      certify_pos:
+        description: Require authenticated Lounge POS smoke and fail if not configured
+        required: true
+        default: false
+        type: boolean
       surface:
         description: Production surface to verify
         required: true
@@ -154,6 +159,21 @@ jobs:
           else
             echo "Authenticated POS smoke: configured to run" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Require authenticated POS certification prerequisites
+        if: github.event_name == 'workflow_dispatch' && inputs.certify_pos == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${PRODUCTION_BROWSER_SURFACES}" != "all" ] && [ "${PRODUCTION_BROWSER_SURFACES}" != "business" ]; then
+            echo '::error::POS certification requires surface=business or surface=all'
+            exit 1
+          fi
+          if [ -z "${PLAYWRIGHT_BUSINESS_STORAGE_STATE:-}" ] || [ -z "${PRODUCTION_POS_DEMO_PATH:-}" ]; then
+            echo '::error::Protected POS certification blocked: configure authenticated Business storage state and POS demo path in production GitHub environment.'
+            exit 1
+          fi
+          echo 'Protected POS prerequisites present; running Playwright verification.'
 
       - name: Run production browser verification
         run: npx playwright test tests/e2e/production-surfaces.spec.ts tests/e2e/production-pos-register.spec.ts --project=chromium
