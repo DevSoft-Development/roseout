@@ -1,3 +1,6 @@
+import { cookies } from "next/headers";
+import { getLocationOwnerAccess } from "@/lib/auth/locationOwnerAccess";
+import { verifySuperadminOwnerModeToken } from "@/lib/auth/superadmin-owner-mode-token";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -71,6 +74,26 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
+
+    // An operator viewing a restaurant in Superadmin Owner Mode is not the
+    // restaurant's financial principal. Never mint a Stripe account session
+    // with account-management, refund, capture, or payout features for them.
+    const ownerModeCookie = (await cookies()).get("toh_superadmin_owner_mode_location")?.value;
+    if (ownerModeCookie) {
+      const actor = await getLocationOwnerAccess(user.id, user.email);
+      const selectedLocation = actor.isSuperadmin
+        ? verifySuperadminOwnerModeToken(ownerModeCookie, user.id)
+        : null;
+      if (!selectedLocation || selectedLocation === locationId) {
+        return NextResponse.json(
+          { error: "Stripe account management is unavailable in Superadmin Owner Mode." },
+          { status: 403 },
+        );
+      }
+      // An active Owner Mode session must not be used to manage a different
+      // location's Stripe account either.
+      return NextResponse.json({ error: "Exit Owner Mode before managing Stripe." }, { status: 403 });
+    }
 
     const authorized = await requireOwnerOrAdminAccessToLocation(user.id, locationId);
     if (!authorized) return NextResponse.json({ error: "Location not found." }, { status: 404 });
