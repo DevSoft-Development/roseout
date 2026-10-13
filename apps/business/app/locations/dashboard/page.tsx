@@ -467,7 +467,10 @@ export default async function DashboardPage({
     redirect("/api/locations/dashboard/clear-invalid-impersonation");
   }
 
-  const superadminOwnerLocationId = user?.id && ownerAccess.isSuperadmin\n    ? verifySuperadminOwnerModeToken(superadminOwnerModeToken, user.id)\n    : null;\n  if (superadminOwnerLocationId) {
+  const superadminOwnerLocationId = user?.id && ownerAccess.isSuperadmin
+    ? verifySuperadminOwnerModeToken(superadminOwnerModeToken, user.id)
+    : null;
+  if (superadminOwnerLocationId) {
     const { data: selectedLocation } = await supabase
       .from("locations").select(LOCATION_DASHBOARD_COLUMNS)
       .eq("id", superadminOwnerLocationId)
