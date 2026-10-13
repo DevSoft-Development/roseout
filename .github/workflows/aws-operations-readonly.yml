@@ -42,7 +42,9 @@ jobs:
           echo "GitHub source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
           echo "Target environment: ${TARGET_ENV}" >> "$GITHUB_STEP_SUMMARY"
           echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
-          cluster="theouthaven-web-surfaces-${TARGET_ENV}"
+          foundation_stack="theouthaven-web-surfaces-${TARGET_ENV}"
+          cluster="$(aws cloudformation describe-stacks --stack-name "$foundation_stack" --output json | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="EcsClusterName") | .OutputValue')"
+          test -n "$cluster"
           services_stack="theouthaven-web-surface-services-${TARGET_ENV}"
           foundation_stack="theouthaven-web-surfaces-${TARGET_ENV}"
           node --version >/dev/null
