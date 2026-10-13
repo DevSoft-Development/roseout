@@ -21,6 +21,7 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
   const [practiceLog,setPracticeLog]=useState<string[]>([]);
   const [paymentFailure,setPaymentFailure]=useState(false);
   const [tipPercent,setTipPercent]=useState(0);
+  const [receiptVisible,setReceiptVisible]=useState(false);
   const categories=useMemo(()=>["all",...new Set(items.map(item=>item.course))],[items]);
   const filtered=items.filter(item=>(category==="all"||item.course===category)&&item.name.toLowerCase().includes(search.toLowerCase()));
   const subtotal=lines.reduce((total,line)=>total+line.item.priceCents*line.quantity,0);
@@ -39,7 +40,7 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
     if(sent||paid)return;
     setLines(current=>current.map(line=>line.key===key?{...line,quantity:line.quantity+delta}:line).filter(line=>line.quantity>0));
   };
-  const reset=()=>{setLines([]);setSent(false);setPaid(false);setSeat(1);setCourseSent([]);setPracticeLog([]);setPaymentFailure(false);setTipPercent(0);};
+  const reset=()=>{setLines([]);setSent(false);setPaid(false);setSeat(1);setCourseSent([]);setPracticeLog([]);setPaymentFailure(false);setTipPercent(0);setReceiptVisible(false);};
   const record=(event:string)=>setPracticeLog(current=>[...current,event]);
   const sendCourse=(course:string)=>{if(paid||!lines.length)return;setCourseSent(current=>current.includes(course)?current:[...current,course]);setSent(true);record(`Kitchen: ${course} course simulated`);};
   const simulateTender=()=>{if(paymentFailure){record(`Payment: simulated ${paymentMethod} decline`);return;}setPaid(true);record(`Payment: simulated ${paymentMethod} approval for ${format(simulatedTotal)}`);};
@@ -76,7 +77,7 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
         </div>)}</div>
         {!lines.length?<p className="mt-4 text-sm text-[var(--business-muted)]">Tap a menu item to start.</p>:null}
         <div className="mt-4 flex justify-between border-t border-white/20 pt-4 text-lg font-black"><span>Subtotal (simulation)</span><span>{format(subtotal)}</span></div>
-        <p className="mt-1 text-xs text-[var(--business-muted)]">Tax, tips and service charges are excluded from this practice calculation.</p>
+        <p className="mt-1 text-xs text-[var(--business-muted)]">Tax and service charges are excluded from this practice calculation; any selected tip appears in the tender total.</p>
         <div className="mt-4 grid gap-2">{coursesOnCheck.map(course=><button key={course} type="button" disabled={courseSent.includes(course)||paid} onClick={()=>sendCourse(course)} className="w-full rounded-xl bg-rose-700 p-3 text-sm font-bold text-white disabled:opacity-40">{courseSent.includes(course)?"Sent (simulation): ":"Simulate fire: "}{course}</button>)}</div>
         {sent?<><p role="status" className="mt-3 text-sm text-emerald-300">Simulated kitchen ticket prepared — nothing was transmitted.</p>
           <label className="mt-3 block text-xs font-semibold">Practice tender
@@ -91,7 +92,8 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
           <button type="button" disabled={paid} onClick={simulateTender} className="mt-3 w-full rounded-xl border border-emerald-400/40 p-3 font-bold disabled:opacity-40">Simulate {paymentMethod} payment</button>
           {paymentFailure&&!paid?<p role="status" className="mt-2 text-xs text-amber-300">Decline test selected: payment will not complete.</p>:null}
         </>:null}
-        {paid?<p role="status" className="mt-3 text-sm font-bold text-emerald-300">Practice check complete. No money moved.</p>:null}
+        {paid?<><p role="status" className="mt-3 text-sm font-bold text-emerald-300">Practice check complete. No money moved.</p><button type="button" onClick={()=>setReceiptVisible(v=>!v)} className="mt-3 w-full rounded-xl border border-white/25 p-3 text-sm font-bold">{receiptVisible?"Hide":"Show"} practice receipt</button></>:null}
+        {receiptVisible&&paid?<div aria-label="Simulated receipt" className="mt-3 rounded-xl border border-dashed border-white/30 p-4 text-sm"><h4 className="text-center font-bold">TheOutHaven Lounge · DEMO RECEIPT</h4><p className="mt-1 text-center text-xs">NOT A REAL TRANSACTION</p><p className="mt-3 text-xs">{tableId==="counter"?"Counter":tables.find(t=>t.id===tableId)?.label} · {guests} guests</p>{lines.map(line=><div key={line.key} className="mt-2 flex justify-between gap-2"><span>{line.quantity} × {line.item.name}</span><span>{format(line.item.priceCents*line.quantity)}</span></div>)}<div className="mt-3 flex justify-between border-t border-white/20 pt-2"><span>Subtotal</span><span>{format(subtotal)}</span></div><div className="flex justify-between"><span>Tip</span><span>{format(tipCents)}</span></div><div className="flex justify-between font-bold"><span>Practice total</span><span>{format(simulatedTotal)}</span></div><p className="mt-3 text-center text-xs">Simulated {paymentMethod} tender · no funds captured</p></div>:null}
         {practiceLog.length?<div className="mt-4 border-t border-white/15 pt-3"><h4 className="text-xs font-bold">Practice event log</h4><ol className="mt-2 space-y-1 text-xs text-[var(--business-muted)]">{practiceLog.map((event,index)=><li key={index}>{index+1}. {event}</li>)}</ol></div>:null}
       </div>
     </div>
