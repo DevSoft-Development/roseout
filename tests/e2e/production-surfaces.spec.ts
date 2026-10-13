@@ -131,6 +131,7 @@ for (const surface of [
   for (const width of [390, 768, 1024, 1180, 1280, 1600]) {
     test(`${surface.name} live official logo and header fit at ${width}px`, async ({ page }, testInfo) => {
       test.skip(!selectedSurface(surface.name), `${surface.name} not selected`);
+      test.skip(process.env.GITHUB_EVENT_NAME === "pull_request", "Live layout certification runs after deployment, not against the unchanged production site during a PR.");
       await page.setViewportSize({ width, height: 900 });
       const response = await gotoProductionPage(page, `${surface.baseUrl}${surface.path}`);
       expect(response?.status() ?? 599).toBeLessThan(400);
