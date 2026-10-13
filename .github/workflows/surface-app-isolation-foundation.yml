@@ -21,6 +21,11 @@ on:
     paths:
       - 'apps/**'
       - 'tests/business/**'
+      - 'lib/business/**'
+      - 'lib/billing/**'
+      - 'lib/stripe/**'
+      - 'app/api/stripe/**'
+      - 'apps/consumer/app/api/stripe/**'
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'scripts/consumer-route-migration-regression.mjs'
@@ -86,6 +91,10 @@ jobs:
 
           # Test-only edits still run isolation tests, but need not rebuild Next.js.
           build=$run
+          # Pure business regression test edits should never rebuild a Next.js app.
+          if [ "$SURFACE" = "business" ] && [ -n "$CHANGED" ] && ! printf '%s\n' "$CHANGED" | grep -Evq '^tests/business/'; then
+            build=false
+          fi
           if [ "$run" = true ] && [ -n "$CHANGED" ]; then
             if ! printf '%s\n' "$CHANGED" | grep -Evq '^(apps/[^/]+/(__tests__/|tests/|.*\\.(test|spec)\\.[cm]?[jt]sx?$)|scripts/(surface-app-isolation-regression|consumer-route-migration-regression)\\.mjs$)'; then
               build=false
