@@ -41,7 +41,7 @@ export async function verifyTechnicianCode(input:{
  try{
   const s=await input.repo.getSession(q.locationId,q.sessionId);
   if(!s||!authorized(p,s,q))return {ok:false,reason:"forbidden"};
-  const ok=await redeemAssistCode({...s,code:q.code!,secret:input.secret,store:input.repo.store,now:Date.now()});
+  const ok=await redeemAssistCode({...s,code:q.code!,secret:input.secret,store:atomicRedemptionStore(input.repo.store),now:Date.now()});
   if(!ok)return {ok:false,reason:"invalid"};
   return {ok:true};
  }catch{return {ok:false,reason:"unavailable"};}
