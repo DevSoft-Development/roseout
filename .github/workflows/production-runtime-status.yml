@@ -25,13 +25,13 @@ jobs:
           inlineScript: |
             set -euo pipefail
             RG=rg-toh-consumer-production
-            : > "$RUNNER_TEMP/azure-revisions.jsonl"
+            : > "$GITHUB_WORKSPACE/azure-revisions.jsonl"
             echo "## Azure Consumer production" >> "$GITHUB_STEP_SUMMARY"
             for APP in ca-toh-consumer-prod-primary ca-toh-consumer-prod-secondary; do
               echo "### $APP" >> "$GITHUB_STEP_SUMMARY"
               az containerapp show --resource-group "$RG" --name "$APP" --query '{name:name,provisioningState:properties.provisioningState,latestRevision:properties.latestRevisionName}' -o json >> "$GITHUB_STEP_SUMMARY"
               az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json >> "$GITHUB_STEP_SUMMARY"
-              az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json | jq -c --arg app "$APP" '{app:$app,revisions:.}' >> "$RUNNER_TEMP/azure-revisions.jsonl"
+              az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json | jq -c --arg app "$APP" '{app:$app,revisions:.}' >> "$GITHUB_WORKSPACE/azure-revisions.jsonl"
             done
 
       - name: Upload sanitized Azure revision report
@@ -39,7 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: production-azure-revisions
-          path: ${{ runner.temp }}/azure-revisions.jsonl
+          path: ${{ github.workspace }}/azure-revisions.jsonl
           retention-days: 7
           if-no-files-found: warn
 
