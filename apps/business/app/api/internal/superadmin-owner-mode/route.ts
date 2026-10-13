@@ -10,6 +10,12 @@ export async function POST(request: NextRequest) {
   const auth = await createClient();
   const { data: { user } } = await auth.auth.getUser();
   if (!user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const origin = request.headers.get("origin");
+  const expected = new URL(process.env.NEXT_PUBLIC_BUSINESS_SITE_URL || "https://business.theouthaven.com").origin;
+  if (origin !== expected) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+  const microsoft = user.app_metadata?.provider === "azure" ||
+    user.identities?.some(identity => identity.provider === "azure");
+  if (!microsoft) return NextResponse.json({ error: "Microsoft staff sign-in required" }, { status: 403 });
   const access = await getLocationOwnerAccess(user.id, user.email);
   if (!access.isSuperadmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null);
