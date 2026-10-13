@@ -114,6 +114,46 @@ test.describe("public product readiness", () => {
     await expect(page.getByRole("heading", { name: "Human support" })).toBeVisible();
   });
 
+
+  for (const width of [390, 768, 1024, 1180]) {
+    test(`shared header collapses navigation cleanly at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      const header = page.locator("header");
+      const logo = header.getByRole("link", { name: "TheOutHaven home" }).locator("img");
+      await expect(logo).toBeVisible();
+      await expect.poll(() => logo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      const menuButton = header.getByRole("button", { name: "Open mobile menu" });
+      await expect(menuButton).toBeVisible();
+      await expect(header.getByRole("navigation")).toBeHidden();
+      await menuButton.click();
+      await expect(header.getByRole("link", { name: "Discover" })).toBeVisible();
+      await expect(header.getByRole("link", { name: "Sign In" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+      await header.getByRole("button", { name: "Close mobile menu" }).click();
+      await expect(header.getByRole("link", { name: "Discover" })).toBeHidden();
+    });
+  }
+
+  for (const width of [1280, 1600]) {
+    test(`shared desktop header keeps labels on one line at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      const header = page.locator("header");
+      await expect(header.getByRole("button", { name: "Open mobile menu" })).toBeHidden();
+      for (const label of ["Discover", "Create Outing", "Saved Outings", "Support", "For Businesses", "Sign In", "Get Started"]) {
+        const link = header.getByRole("link", { name: label, exact: true });
+        await expect(link).toBeVisible();
+        const fits = await link.evaluate((el) => {
+          const style = getComputedStyle(el);
+          return style.whiteSpace === "nowrap" || el.getBoundingClientRect().height <= parseFloat(style.lineHeight || "20") * 1.5;
+        });
+        expect(fits, `${label} should fit on one line`).toBe(true);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    });
+  }
+
   for (const viewport of [
     { width: 390, height: 900 },
     { width: 1280, height: 900 },
