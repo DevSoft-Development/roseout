@@ -3,33 +3,35 @@ export interface AssistRelayRuntime extends RelayShutdown {
  subscribeSessionState(sessionId:string,onChange:(grant:RelayGrantState)=>void):()=>void;
  disconnectSession(sessionId:string):Promise<void>;
 }
-/** Fail closed when grant becomes invalid. Stop both publisher and viewer.
- * Subscription is established before initial evaluation to avoid a missed revocation.
- * A relay must ALSO validate grants independently on connection and expiry;
- * callback supervision alone cannot enforce an expiry deadline.
- */
+export interface RelayScheduler {
+ schedule(callback:()=>void,delayMs:number):unknown;
+ cancel(handle:unknown):void;
+}
+/** Server runtime supplies a real scheduler. No remote input channel is exposed. */
 export function superviseRelaySession(input:{
  sessionId:string;runtime:AssistRelayRuntime;initial:RelayGrantState;
- now:()=>number;onError:(error:unknown)=>void;
+ now:()=>number;onError:(error:unknown)=>void;scheduler:RelayScheduler;
 }):()=>void{
  let closed=false;
  let stopping=false;
- let expiryTimer:ReturnType<typeof setTimeout>|undefined;
+ let timer:unknown;
  const stop=async()=>{
   if(stopping)return;
   stopping=true;
-  if(expiryTimer!==undefined)clearTimeout(expiryTimer);
-  try{await shutdownRemoteAssist(input.sessionId,input.runtime);}
-  catch(error){input.onError(error);}
-  finally{try{await input.runtime.disconnectSession(input.sessionId);}catch(error){input.onError(error);}}
+  if(timer!==undefined){input.scheduler.cancel(timer);timer=undefined;}
+  // Disconnect immediately before asynchronous token and publisher cleanup.
+  try{await input.runtime.disconnectSession(input.sessionId);}catch(error){input.onError(error);}
+  try{await shutdownRemoteAssist(input.sessionId,input.runtime);}catch(error){input.onError(error);}
  };
  const check=(grant:RelayGrantState)=>{
-  if(closed)return;
-  if(expiryTimer!==undefined)clearTimeout(expiryTimer);
-  if(!relayPermitted(grant,input.now())){void stop();return;}
-  const remaining=Math.min(grant.expiresAt,grant.consentExpiresAt)-input.now();
-  if(remaining<=0){void stop();return;}
-  expiryTimer=setTimeout(()=>void stop(),Math.min(remaining,2147483647));
+  if(closed||stopping)return;
+  if(timer!==undefined){input.scheduler.cancel(timer);timer=undefined;}
+  const now=input.now();
+  if(!relayPermitted(grant,now)){void stop();return;}
+  const delay=Math.min(grant.expiresAt,grant.consentExpiresAt)-now;
+  // Explicit expiry timer: never rely solely on database notifications.
+  if(!Number.isFinite(delay)||delay<=0){void stop();return;}
+  timer=input.scheduler.schedule(()=>{timer=undefined;void stop();},Math.max(1,Math.ceil(delay)));
  };
  const unsubscribe=input.runtime.subscribeSessionState(input.sessionId,check);
  check(input.initial);
