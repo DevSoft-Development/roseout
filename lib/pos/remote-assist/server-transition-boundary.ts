@@ -8,11 +8,12 @@ export type AssistTrustedPrincipal = {
 };
 export type AssistSessionStore = {
  load(locationId:string,sessionId:string):Promise<AssistSession|null>;
+ verifyNativeCapture(args:{locationId:string;deviceId:string;sessionId:string}):Promise<boolean>;
  transition(args:{locationId:string;sessionId:string;expectedVersion:number;actorId:string;action:AssistOperation;captureApproved:boolean}):Promise<AssistSession>;
 };
 export type AssistTransitionRequest = {
  locationId:string;sessionId:string;deviceId:string;expectedVersion:number;
- action:AssistOperation;captureApproved?:boolean;
+ action:AssistOperation;
 };
 export type AssistTransitionResult =
  | {ok:true;session:AssistSession}
@@ -27,8 +28,7 @@ export async function transitionAssistSession(
  !["approve","activate","revoke","end"].includes(request.action))return {ok:false,code:"invalid_request"};
  if(!principal.locationIds.includes(request.locationId)||!principal.assignedDeviceIds.includes(request.deviceId))
   return {ok:false,code:"forbidden"};
- // Capture approval must come from a verified native-device assertion, not request JSON.
- if(request.action==="activate"&&request.captureApproved!==true)return {ok:false,code:"forbidden"};
+
  let session:AssistSession|null;
  try {session=await store.load(request.locationId,request.sessionId);}
  catch {return {ok:false,code:"storage_error"};}
@@ -39,12 +39,18 @@ export async function transitionAssistSession(
  id:principal.id,authenticated:true,supportRole:principal.supportRole,
  isCustomerApprover:principal.isCustomerApprover,locationAuthorized:true,deviceAssigned:true
  };
- const decision=decideAssistTransition({session,actor,operation:request.action,now:Date.now(),deviceCaptureApproved:request.captureApproved});
+ let captureApproved=false;
+ if(request.action==="activate") {
+  try {captureApproved=await store.verifyNativeCapture({locationId:request.locationId,deviceId:request.deviceId,sessionId:request.sessionId});}
+  catch {return {ok:false,code:"storage_error"};}
+  if(!captureApproved)return {ok:false,code:"forbidden"};
+ }
+ const decision=decideAssistTransition({session,actor,operation:request.action,now:Date.now(),deviceCaptureApproved:captureApproved});
  if(!decision.ok)return {ok:false,code:"forbidden"};
  try {
   const updated=await store.transition({locationId:request.locationId,sessionId:request.sessionId,
    expectedVersion:request.expectedVersion,actorId:principal.id,action:request.action,
-   captureApproved:request.captureApproved===true});
+   captureApproved});
   return {ok:true,session:updated};
  } catch {return {ok:false,code:"conflict"};}
 }
