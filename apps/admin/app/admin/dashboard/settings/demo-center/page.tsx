@@ -232,6 +232,13 @@ export default async function DemoCenterPage() {
 
   const tools: ToolCard[] = [
     {
+      title: "ThePOSHaven Web Register Preview",
+      description: "Practice a full restaurant shift with TheOutHaven Lounge tables and catalog. Local-only orders, kitchen fire, tips and payments; no live transactions.",
+      href: demoHref("/locations/dashboard/pos/register"),
+      label: "Launch practice register",
+      status: loc ? "Demo only" : "Needs setup",
+    },
+    {
       title: "Hardware Simulator",
       description: "Admin-only virtual registers, printers, handhelds, hubs, and outage/recovery testing. No physical hardware or merchant alerts.",
       href: "/admin/dashboard/settings/demo-center/hardware-simulator",
