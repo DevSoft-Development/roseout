@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PreviewRegister from "./PreviewRegister";
+import { MIRROR_DEMO_KEY } from "@/lib/demo/demo-center";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
@@ -25,8 +26,11 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   const fromDemoCenter = first(params.fromDemoCenter) === "1";
   let locationId = first(params.locationId) || adminLocationId || demoLocationId ||
     cookieStore.get("theouthaven_impersonate_location_id")?.value || "";
-  let internalDemoAccess = null;
-  if (!user) {
+  const explicitDemoRequest = demo || fromDemoCenter || Boolean(demoLocationId);
+  let internalDemoAccess = explicitDemoRequest ? await getInternalDemoLocationAccess({
+    locationId,adminLocationId,demoLocationId,demo,fromDemoCenter,
+  }) : null;
+  if (!user && !internalDemoAccess) {
     internalDemoAccess = await getInternalDemoLocationAccess({
       locationId,adminLocationId,demoLocationId,demo,fromDemoCenter,
     });
@@ -38,7 +42,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
     locationId = owner.ownedLocationIds[0] || owner.ownedSourceLocationIds[0] || "";
   }
   if (!locationId) redirect("/locations/dashboard");
-  const access = user ? await resolveEditableLocationContext({
+  const access = user && !internalDemoAccess ? await resolveEditableLocationContext({
     userId:user.id,userEmail:user.email ?? null,locationId,
     adminLocationId,demoLocationId,sourceId,type,demo,fromDemoCenter,
   }) : null;
@@ -46,6 +50,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess!.locationId);
   const location = access?.location || internalDemoAccess!.location || {};
   const name = String(location.name || location.location_name || location.restaurant_name || "Your location");
+  const isProtectedLoungeDemo = location.demo_key === MIRROR_DEMO_KEY && location.is_demo === true && location.is_hidden === true;
   let preview:Awaited<ReturnType<typeof getPosTableServiceBootstrap>> | null = null;
   let previewError:string | null = null;
   try { preview = await getPosTableServiceBootstrap(canonicalLocationId); }
@@ -66,7 +71,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   return <BusinessPageShell>
     <BusinessPageHeader eyebrow="ThePOSHaven / Web Register" title={name}
       subtitle="Tablet and desktop register preview. Shared operational services will power both web and native POS."
-      badge={<BusinessStatusBadge tone="amber">Not certified for transactions</BusinessStatusBadge>}
+      badge={<><BusinessStatusBadge tone="amber">Not certified for transactions</BusinessStatusBadge>{isProtectedLoungeDemo ? <BusinessStatusBadge tone="blue">TheOutHaven Lounge demo</BusinessStatusBadge> : null}</>}
       actions={<Link href={`/locations/dashboard/pos?${query}`} className="rounded-xl border border-white/20 px-4 py-2 text-sm">POS control center</Link>}
     />
     <section className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
@@ -106,6 +111,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
         {!preview?.catalog?.items?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No catalog items available.</p> : null}
       </div>
     </section>
+    {isProtectedLoungeDemo ? <p className="mt-5 rounded-xl border border-sky-400/30 p-4 text-sm">Protected demo location: TheOutHaven Lounge. All practice actions stay in this browser tab and never change restaurant records.</p> : null}
     <PreviewRegister tables={(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}))} items={(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}))} />
     {check ? <section className="mt-5 rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Check details · read only</h2><Link href={`?${query}`} className="text-sm underline">Close details</Link></div>
