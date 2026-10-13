@@ -85,7 +85,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
       eyebrow="ThePOSHaven"
       title={`POS control center for ${locationName}`}
       subtitle="Manage the business side of your POS in one place. Staff use the dedicated ThePOSHaven app for live orders. Browser register access is being certified separately."
-      badge={<><BusinessStatusBadge tone="green">Essentials+</BusinessStatusBadge><BusinessStatusBadge tone="blue">Signature+ ready</BusinessStatusBadge></>}
+      badge={<><BusinessStatusBadge tone="green">Select+ · $149/mo</BusinessStatusBadge><BusinessStatusBadge tone="blue">Signature+ · $199/mo</BusinessStatusBadge></>}
       actions={<Link href={href("/locations/dashboard/hardware")} className="inline-flex min-h-11 items-center rounded-xl bg-[#e1062a] px-4 text-sm font-black text-white">Manage Hardware</Link>}
     />
 
@@ -100,18 +100,18 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
     <section className="mt-6 grid gap-5 xl:grid-cols-2">
       <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
         <div className="flex items-center justify-between gap-3">
-          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Essentials+</p><h2 className="mt-2 text-2xl font-black">Core POS operations</h2></div>
-          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-200">Included</span>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Select+ · $149/month</p><h2 className="mt-2 text-2xl font-black">Core POS operations</h2></div>
+          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-200">Select+ and up</span>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          {["Main register","Reservations + table service","Guest / Shared ordering","Course-based sending","Offline POS","Local printing","Cash drawer","Pickup online ordering","Basic inventory","Core reporting"].map(item=><div key={item} className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm font-bold text-[var(--business-text)]/75">✓ {item}</div>)}
+          {["Main register","Reservations + table service","Guest / Shared ordering","Course-based sending","Offline POS (certification pending)","Local printing","Cash drawer","Pickup online ordering","Basic inventory","Core reporting"].map(item=><div key={item} className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm font-bold text-[var(--business-text)]/75">✓ {item}</div>)}
         </div>
       </div>
 
       <div className="rounded-3xl border border-[#ff2142]/20 bg-gradient-to-br from-[#231015] to-[#0e0b0d] p-6">
         <div className="flex items-center justify-between gap-3">
-          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Signature+</p><h2 className="mt-2 text-2xl font-black">Advanced restaurant operations</h2></div>
-          <span className="rounded-full border border-[#ff6b86]/30 bg-[#e1062a]/15 px-3 py-1 text-xs font-black text-[#ff9cac]">$149 plan</span>
+          <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff6b86]">Signature+ · $199/month</p><h2 className="mt-2 text-2xl font-black">Advanced restaurant operations</h2></div>
+          <span className="rounded-full border border-[#ff6b86]/30 bg-[#e1062a]/15 px-3 py-1 text-xs font-black text-[#ff9cac]">$199 plan</span>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           {["Hold / Fire","Seat-aware kitchen tickets","Kitchen / Bar / Expo routing","KDS","Move / Merge tables","Transfer server","Advanced split checks","Multi-device synchronization","Ingredient + recipe inventory","Advanced reporting"].map(item=><div key={item} className="rounded-xl border border-white/8 bg-black/15 px-3 py-3 text-sm font-bold text-white/75">✓ {item}</div>)}
