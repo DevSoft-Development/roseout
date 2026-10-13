@@ -33,7 +33,7 @@ jobs:
             done
 
   aws-web-surfaces:
-    name: AWS Admin and Business running tasks
+    name: AWS Admin and Business runtime inspection
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -58,9 +58,22 @@ jobs:
             exit 1
           fi
           for SERVICE in $SERVICES; do
+            echo "### $SERVICE" >> "$GITHUB_STEP_SUMMARY"
             aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount,taskDefinition:taskDefinition,deployments:deployments[].{status:status,rollout:rolloutState,desired:desiredCount,running:runningCount}}' --output json >> "$GITHUB_STEP_SUMMARY"
-            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status RUNNING --query 'taskArns[]' --output text)"
-            if [ -n "$TASKS" ]; then
-              aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS --query 'tasks[].{task:taskArn,lastStatus:lastStatus,health:healthStatus,containers:containers[].{name:name,image:image,imageDigest:imageDigest}}' --output json >> "$GITHUB_STEP_SUMMARY"
+            TASK_DEF="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].taskDefinition' --output text)"
+            if [ -n "$TASK_DEF" ] && [ "$TASK_DEF" != None ]; then
+              if ! aws ecs describe-task-definition --task-definition "$TASK_DEF" --query 'taskDefinition.{family:family,revision:revision,images:containerDefinitions[].{name:name,image:image}}' --output json >> "$GITHUB_STEP_SUMMARY"; then
+                echo "Task definition inspection unavailable; grant ecs:DescribeTaskDefinition scoped to task definition ARNs." >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
+            if ! TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status RUNNING --query 'taskArns[]' --output text 2>"$RUNNER_TEMP/ecs-list-tasks.err")"; then
+              echo "Running-task inspection unavailable (ecs:ListTasks denied); service and task-definition results above are still valid." >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::ECS ListTasks unavailable. Grant scoped ecs:ListTasks and ecs:DescribeTasks for full image-digest proof."
+              continue
+            fi
+            if [ -n "$TASKS" ] && [ "$TASKS" != None ]; then
+              if ! aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS --query 'tasks[].{task:taskArn,lastStatus:lastStatus,health:healthStatus,containers:containers[].{name:name,image:image,imageDigest:imageDigest}}' --output json >> "$GITHUB_STEP_SUMMARY"; then
+                echo "Running-task detail unavailable; grant ecs:DescribeTasks scoped to task ARNs." >> "$GITHUB_STEP_SUMMARY"
+              fi
             fi
           done
