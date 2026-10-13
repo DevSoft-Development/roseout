@@ -421,6 +421,7 @@ export default async function DashboardPage({
     cookieStore.get(BUSINESS_RESERVE_HANDOFF_COOKIE)?.value,
   );
   const impersonatedLocationId = cookieStore.get("theouthaven_impersonate_location_id")?.value;
+  const superadminOwnerLocationId = cookieStore.get("toh_superadmin_owner_mode_location")?.value;
   const impersonatedUserId = cookieStore.get("theouthaven_impersonate_user_id")?.value;
   const adminUserId = cookieStore.get("theouthaven_admin_user_id")?.value;
   const impersonationTargetType = cookieStore.get("theouthaven_impersonate_target_type")?.value;
@@ -465,7 +466,18 @@ export default async function DashboardPage({
     redirect("/api/locations/dashboard/clear-invalid-impersonation");
   }
 
-  if (impersonatedLocationId && ownerAccess.isAdmin) {
+  if (superadminOwnerLocationId && ownerAccess.isSuperadmin) {
+    const { data: selectedLocation } = await supabase
+      .from("locations").select(LOCATION_DASHBOARD_COLUMNS)
+      .eq("id", superadminOwnerLocationId)
+      .eq("is_demo", false)
+      .eq("is_hidden", false)
+      .maybeSingle();
+    if (selectedLocation) {
+      locations = [toDashboardLocation(selectedLocation as Record<string, any>)];
+      impersonationLabel = `Superadmin Owner Mode — ${locations[0].display_name}`;
+    }
+  } else if (impersonatedLocationId && ownerAccess.isAdmin) {
     const { data } = await supabase
       .from("locations")
       .select(LOCATION_DASHBOARD_COLUMNS)
@@ -528,6 +540,7 @@ export default async function DashboardPage({
       impersonationLabel={impersonationLabel}
       summaries={summaries}
       superadminDemoLocationHref={ownerAccess.isSuperadmin ? "/locations/dashboard?demo=1&locationId=642a2ad6-c144-47b7-b9ff-f89554edf0da&fromDemoCenter=1" : undefined}
+      superadminLocationSearch={ownerAccess.isSuperadmin}
     />
   );
 }
