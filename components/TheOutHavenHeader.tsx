@@ -166,7 +166,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
     ? "fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-black/95 text-white shadow-lg shadow-black/40 backdrop-blur-xl transition-all duration-300"
     : "fixed left-0 right-0 top-0 z-50 border-b border-white/10 bg-black/95 text-white backdrop-blur-xl transition-all duration-300";
   const shellClass = scrolled
-    ? "flex h-16 w-full items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6 lg:px-8"
+    ? "flex h-16 w-full items-center justify-between gap-3 px-4 transition-all duration-300 sm:px-6 xl:gap-5 xl:px-8"
     : "flex h-20 w-full items-center justify-between gap-4 px-4 transition-all duration-300 sm:px-6 lg:px-8";
 
   return (
@@ -179,25 +179,25 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
         >
           <TheOutHavenBrandLogo
             className={scrolled
-              ? "h-auto w-[170px] max-w-[42vw] object-contain sm:w-[185px]"
-              : "h-auto w-[190px] max-w-[46vw] object-contain sm:w-[215px]"}
+              ? "h-auto w-[170px] max-w-[42vw] object-contain sm:w-[185px] xl:w-[180px] 2xl:w-[205px]"
+              : "h-auto w-[190px] max-w-[46vw] object-contain sm:w-[205px] xl:w-[185px] 2xl:w-[215px]"}
           />
         </Link>
 
-        <nav className="hidden items-center gap-4 lg:flex">
+        <nav className="hidden shrink-0 items-center gap-3 xl:flex 2xl:gap-4">
           {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className={isActive(item.href) ? "relative text-sm font-black text-white transition" : "relative text-sm font-black text-white/45 transition hover:text-white"}>
+            <Link key={item.href} href={item.href} className={isActive(item.href) ? "relative whitespace-nowrap text-sm font-black text-white transition" : "relative whitespace-nowrap text-sm font-black text-white/45 transition hover:text-white"}>
               {item.label}
               <span className={isActive(item.href) ? "absolute -bottom-1 left-0 h-[2px] w-full bg-[#e1062a]" : "absolute -bottom-1 left-0 h-[2px] w-0 bg-[#e1062a]"} />
             </Link>
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden shrink-0 items-center gap-2 xl:flex 2xl:gap-3">
           {!signedIn ? (
             <>
-              <Link href={signInHref} className="rounded-full border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">Sign In</Link>
-              <Link href={getStartedHref} className="rounded-full bg-[#e1062a] px-6 py-3 text-sm font-black text-white transition hover:bg-red-500">{getStartedLabel}</Link>
+              <Link href={signInHref} className="rounded-full border border-white/15 bg-white/[0.04] whitespace-nowrap px-4 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">Sign In</Link>
+              <Link href={getStartedHref} className="rounded-full bg-[#e1062a] whitespace-nowrap px-4 py-3 text-sm font-black text-white transition hover:bg-red-500">{getStartedLabel}</Link>
             </>
           ) : (
             <>
@@ -232,12 +232,12 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
                   </div>
                 ) : null}
               </div>
-              <button type="button" onClick={handleSignOut} className="rounded-full border border-rose-300/30 bg-rose-600/15 px-5 py-3 text-sm font-black text-rose-100 transition hover:bg-[#e1062a] hover:text-white">Sign Out</button>
+              <button type="button" onClick={handleSignOut} className="rounded-full border border-rose-300/30 bg-rose-600/15 whitespace-nowrap px-4 py-3 text-sm font-black text-rose-100 transition hover:bg-[#e1062a] hover:text-white">Sign Out</button>
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-2 lg:hidden">
+        <div className="flex shrink-0 items-center gap-2 xl:hidden">
           {signedIn ? <button type="button" onClick={handleSignOut} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white">Sign Out</button> : null}
           <button type="button" onClick={() => { setAccountDropdownOpen(false); setMenuOpen((open) => !open); }} aria-label={menuOpen ? "Close mobile menu" : "Open mobile menu"} aria-expanded={menuOpen} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white transition hover:bg-white hover:text-black">
             <span className="text-xl font-black">{menuOpen ? "×" : "☰"}</span>
@@ -246,7 +246,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
       </div>
 
       {menuOpen ? (
-        <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl lg:hidden">
+        <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl xl:hidden">
           <div className="mx-auto max-w-7xl space-y-2">
             {navItems.map((item) => (
               <Link key={item.href} href={item.href} className={isActive(item.href) ? "block rounded-2xl bg-white px-4 py-4 text-sm font-black text-black transition" : "block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"}>{item.label}</Link>
