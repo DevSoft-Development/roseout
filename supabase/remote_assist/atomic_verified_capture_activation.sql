@@ -13,7 +13,7 @@ begin
  where id=p_session and location_id=p_location and device_id=p_device for update;
  if not found or s.state<>'approved' or s.version<>p_expected_version
  or s.consent_expires_at is null or s.consent_expires_at<=t then return false; end if;
- select * into v from public.pos_remote_assist_verifications
+ if not public.pos_assist_session_authorized(p_session,p_location,p_device,p_technician) then return false; end if;\n select * into v from public.pos_remote_assist_verifications
  where session_id=p_session for update;
  if not found or v.technician_id<>p_technician or v.consumed_at is not null
  or v.verified_at<t-interval '2 minutes' then return false; end if;
