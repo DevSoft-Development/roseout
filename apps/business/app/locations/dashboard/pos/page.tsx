@@ -31,18 +31,20 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
     cookieStore.get("theouthaven_impersonate_location_id")?.value||
     "";
 
-  let internalDemoAccess = null;
-  if(!user){
-    internalDemoAccess=await getInternalDemoLocationAccess({
-      locationId,
-      adminLocationId,
-      demoLocationId,
-      demo,
-      fromDemoCenter,
+  // Signed, protected Admin Demo Center access takes precedence over an unrelated
+  // Business login; otherwise an authenticated Admin can be redirected away.
+  let internalDemoAccess = (demo || fromDemoCenter || Boolean(demoLocationId))
+    ? await getInternalDemoLocationAccess({
+        locationId, adminLocationId, demoLocationId, demo, fromDemoCenter,
+      })
+    : null;
+  if(!user && !internalDemoAccess) {
+    internalDemoAccess = await getInternalDemoLocationAccess({
+      locationId, adminLocationId, demoLocationId, demo, fromDemoCenter,
     });
     if(!internalDemoAccess) redirect("/business/login?next=/locations/dashboard/pos");
-    locationId=internalDemoAccess.locationId;
   }
+  if(internalDemoAccess) locationId=internalDemoAccess.locationId;
 
   if(!locationId&&user){
     const owner=await getLocationOwnerAccess(user.id,user.email??null);
@@ -50,7 +52,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
   }
   if(!locationId) redirect("/locations/dashboard");
 
-  const access=user?await resolveEditableLocationContext({
+  const access=user&&!internalDemoAccess?await resolveEditableLocationContext({
     userId:user.id,userEmail:user.email??null,locationId,
     adminLocationId,demoLocationId,sourceId,type,demo,fromDemoCenter,
   }):null;
