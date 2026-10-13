@@ -7,7 +7,7 @@ const module={exports:{}};
 vm.runInNewContext(transformSync(src,{loader:"ts",format:"cjs",target:"node20"}).code,{module,exports:module.exports,Date,Number,Object});
 const {assistActionsFor,mayAssist,redactAssistTelemetry}=module.exports;
 const now=Date.parse("2026-10-12T12:00:00Z"), expiresAt=new Date(now+600000).toISOString();
-for(const platform of ["android","ios","ipados"]){
+for(const platform of ["android","ipados","linux"]){
  const base={platform,authorized:true,assigned:true,state:"active",expiresAt,now};
  assert.equal(mayAssist({...base,action:"screen_share"}),true);
  assert.equal(mayAssist({...base,action:"remote_touch"}),false);
