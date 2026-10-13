@@ -28,8 +28,9 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
   const tipCents=Math.round(subtotal*tipPercent/100);
   const simulatedTotal=subtotal+tipCents;
   const coursesOnCheck=[...new Set(lines.map(line=>line.item.course))];
+  const pendingCourses=coursesOnCheck.filter(course=>!courseSent.includes(course));
   const add=(item:Item)=>{
-    if(sent||paid||!item.isAvailable)return;
+    if(paid||courseSent.includes(item.course)||!item.isAvailable)return;
     const key=`${item.id}:${seat}`;
     setLines(current=>{
       const found=current.find(line=>line.key===key);
@@ -37,13 +38,13 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
     });
   };
   const change=(key:string,delta:number)=>{
-    if(sent||paid)return;
-    setLines(current=>current.map(line=>line.key===key?{...line,quantity:line.quantity+delta}:line).filter(line=>line.quantity>0));
+    if(paid)return;
+    setLines(current=>current.map(line=>line.key===key&&!courseSent.includes(line.item.course)?{...line,quantity:line.quantity+delta}:line).filter(line=>line.quantity>0));
   };
   const reset=()=>{setLines([]);setSent(false);setPaid(false);setSeat(1);setCourseSent([]);setPracticeLog([]);setPaymentFailure(false);setTipPercent(0);setReceiptVisible(false);};
   const record=(event:string)=>setPracticeLog(current=>[...current,event]);
   const sendCourse=(course:string)=>{if(paid||!lines.length)return;setCourseSent(current=>current.includes(course)?current:[...current,course]);setSent(true);record(`Kitchen: ${course} course simulated`);};
-  const simulateTender=()=>{if(paymentFailure){record(`Payment: simulated ${paymentMethod} decline`);return;}setPaid(true);record(`Payment: simulated ${paymentMethod} approval for ${format(simulatedTotal)}`);};
+  const simulateTender=()=>{if(pendingCourses.length){record("Payment blocked: fire remaining courses first");return;}if(paymentFailure){record(`Payment: simulated ${paymentMethod} decline`);return;}setPaid(true);record(`Payment: simulated ${paymentMethod} approval for ${format(simulatedTotal)}`);};
   return <section className="mt-6 rounded-3xl border border-amber-400/30 bg-[var(--business-panel)] p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-xs font-bold uppercase tracking-widest text-amber-300">Interactive sandbox · no database writes</p><h2 className="mt-1 text-2xl font-black">Practice register</h2></div>
@@ -73,7 +74,7 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
         <h3 className="text-lg font-black">Practice check</h3><p className="text-xs text-[var(--business-muted)]">{tableId==="counter"?"Counter":tables.find(t=>t.id===tableId)?.label} · {guests} guests</p>
         <div className="mt-4 max-h-[330px] space-y-3 overflow-y-auto">{lines.map(line=><div key={line.key} className="border-b border-white/10 pb-3">
           <div className="flex justify-between gap-2 text-sm"><span>{line.item.name} · Seat {line.seat}</span><strong>{format(line.item.priceCents*line.quantity)}</strong></div>
-          <div className="mt-2 flex items-center gap-3"><button type="button" aria-label={`Remove one ${line.item.name}`} disabled={sent||paid} onClick={()=>change(line.key,-1)} className="rounded-lg border border-white/20 px-3 py-1 disabled:opacity-40">−</button><span>{line.quantity}</span><button type="button" aria-label={`Add one ${line.item.name}`} disabled={sent||paid} onClick={()=>change(line.key,1)} className="rounded-lg border border-white/20 px-3 py-1 disabled:opacity-40">+</button></div>
+          <div className="mt-2 flex items-center gap-3"><button type="button" aria-label={`Remove one ${line.item.name}`} disabled={paid||courseSent.includes(line.item.course)} onClick={()=>change(line.key,-1)} className="rounded-lg border border-white/20 px-3 py-1 disabled:opacity-40">−</button><span>{line.quantity}</span><button type="button" aria-label={`Add one ${line.item.name}`} disabled={paid||courseSent.includes(line.item.course)} onClick={()=>change(line.key,1)} className="rounded-lg border border-white/20 px-3 py-1 disabled:opacity-40">+</button></div>
         </div>)}</div>
         {!lines.length?<p className="mt-4 text-sm text-[var(--business-muted)]">Tap a menu item to start.</p>:null}
         <div className="mt-4 flex justify-between border-t border-white/20 pt-4 text-lg font-black"><span>Subtotal (simulation)</span><span>{format(subtotal)}</span></div>
@@ -89,7 +90,8 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
           <div className="mt-2 flex justify-between text-sm"><span>Tip</span><span>{format(tipCents)}</span></div>
           <div className="mt-2 flex justify-between font-bold"><span>Practice tender total</span><span>{format(simulatedTotal)}</span></div>
           <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={paymentFailure} onChange={e=>setPaymentFailure(e.target.checked)}/> Simulate declined payment</label>
-          <button type="button" disabled={paid} onClick={simulateTender} className="mt-3 w-full rounded-xl border border-emerald-400/40 p-3 font-bold disabled:opacity-40">Simulate {paymentMethod} payment</button>
+          <button type="button" disabled={paid||pendingCourses.length>0} onClick={simulateTender} className="mt-3 w-full rounded-xl border border-emerald-400/40 p-3 font-bold disabled:opacity-40">Simulate {paymentMethod} payment</button>
+          {pendingCourses.length?<p role="status" className="mt-2 text-xs text-amber-300">Fire all remaining courses before tendering: {pendingCourses.join(", ")}.</p>:null}
           {paymentFailure&&!paid?<p role="status" className="mt-2 text-xs text-amber-300">Decline test selected: payment will not complete.</p>:null}
         </>:null}
         {paid?<><p role="status" className="mt-3 text-sm font-bold text-emerald-300">Practice check complete. No money moved.</p><button type="button" onClick={()=>setReceiptVisible(v=>!v)} className="mt-3 w-full rounded-xl border border-white/25 p-3 text-sm font-bold">{receiptVisible?"Hide":"Show"} practice receipt</button></>:null}
