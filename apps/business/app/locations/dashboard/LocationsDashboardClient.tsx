@@ -142,7 +142,7 @@ const tabs: Array<[TabId, string]> = [
   ["marketing", "Marketing"],
 ];
 
-export default function LocationsDashboardClient({ locations, impersonationLabel, demoContext, summaries }: { locations: LocationItem[]; impersonationLabel?: string; demoContext?: DemoContext; summaries?: Record<string, DashboardSummary> }) {
+export default function LocationsDashboardClient({ locations, impersonationLabel, demoContext, summaries, superadminDemoLocationHref }: { locations: LocationItem[]; impersonationLabel?: string; demoContext?: DemoContext; summaries?: Record<string, DashboardSummary>; superadminDemoLocationHref?: string }) {
   const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -191,7 +191,7 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
   return (
     <main data-page-version={LOCATIONS_DASHBOARD_VERSION} data-demo-mode={demoContext?.demoMode ? "true" : undefined} className="min-h-screen overflow-x-hidden bg-[#050607] pt-20 text-white [&+footer]:hidden">
       <div className="grid min-h-[calc(100vh-5rem)] lg:grid-cols-[280px_minmax(0,1fr)]">
-        <Sidebar locations={filteredLocations} selected={selected} query={query} onQuery={setQuery} onSelect={setSelectedId} demoContext={demoContext} />
+        <Sidebar locations={filteredLocations} selected={selected} query={query} onQuery={setQuery} onSelect={setSelectedId} demoContext={demoContext} superadminDemoLocationHref={superadminDemoLocationHref} />
         <section className="min-w-0">
           <TopBar selected={selected} links={links} query={query} onQuery={setQuery} impersonationLabel={impersonationLabel} demoContext={demoContext} onStopImpersonation={stopImpersonation} />
           <div className="border-b border-white/10 px-4 sm:px-6 lg:px-8">
@@ -296,7 +296,7 @@ function ToolWorkspace({ tab, location, links, summary }: { tab: TabId; location
   );
 }
 
-function Sidebar({ locations, selected, query, onQuery, onSelect, demoContext }: { locations: LocationItem[]; selected: LocationItem | null; query: string; onQuery: (value: string) => void; onSelect: (id: string) => void; demoContext?: DemoContext }) {
+function Sidebar({ locations, selected, query, onQuery, onSelect, demoContext, superadminDemoLocationHref }: { locations: LocationItem[]; selected: LocationItem | null; query: string; onQuery: (value: string) => void; onSelect: (id: string) => void; demoContext?: DemoContext; superadminDemoLocationHref?: string }) {
   const links = selected ? getLinks(selected, demoContext) : null;
   const nav = links ? ([
     ["Overview", links.dashboard, LayoutDashboard],
@@ -315,6 +315,7 @@ function Sidebar({ locations, selected, query, onQuery, onSelect, demoContext }:
     <aside className="hidden min-h-[calc(100vh-5rem)] overflow-hidden border-r border-white/10 bg-[#06080b] p-4 lg:flex lg:flex-col">
       <div className="mb-7 flex items-center gap-3 px-2"><div className="grid h-11 w-11 place-items-center rounded-2xl border border-[#ff2142]/60 bg-[#e1062a]/20 text-[#ff2142]"><span className="text-lg font-black">R</span></div><div><p className="text-lg font-black">TheOutHaven</p><p className="text-xs font-bold text-white/40">Locations Dashboard</p></div></div>
       {locations.length > 1 ? <div className="mb-4 rounded-3xl border border-white/10 bg-white/[0.035] p-3"><div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/35 px-3 py-2"><Search size={15} className="text-white/35" /><input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Search locations..." className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/35" /></div><div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">{locations.map((location) => <button key={location.id} type="button" onClick={() => onSelect(location.id)} className={`w-full rounded-2xl px-3 py-2 text-left text-xs font-black ${selected?.id === location.id ? "bg-[#e1062a]/20 text-white" : "bg-white/[0.04] text-white/60 hover:text-white"}`}>{location.display_name}<span className="block font-semibold text-white/35">{cityState(location)}</span></button>)}</div></div> : null}
+      {superadminDemoLocationHref ? <Link href={superadminDemoLocationHref} className="mb-4 block rounded-2xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-400/20">TheOutHaven Lounge <span className="block text-xs font-semibold text-amber-200/70">Protected practice demo · open location</span></Link> : null}
       <p className="mb-2 px-3 text-xs font-black uppercase tracking-[0.18em] text-white/30">Manage</p>
       <nav className="space-y-1 overflow-y-auto pr-1">{nav.map(([label, href, Icon], index) => <Link key={label} href={href} className={`flex items-center justify-between rounded-2xl px-3 py-2.5 text-sm font-bold transition ${index === 0 ? "border border-[#ff2142]/45 bg-[#e1062a]/20 text-white" : "text-white/65 hover:bg-white/[0.06] hover:text-white"}`}><span className="flex items-center gap-3"><Icon size={16} className="text-[#ff6b86]" />{label}</span>{index === 0 ? <span className="h-2 w-2 rounded-full bg-[#ff2142]" /> : null}</Link>)}</nav>
       <div className="mt-auto space-y-3 pt-5"><p className="px-3 text-xs font-black uppercase tracking-[0.18em] text-white/30">Quick Actions</p>{links ? <div className="space-y-2"><QuickAction href={links.publicPage} label="Public Preview" /><QuickAction href={links.menu} label="Open Menu Editor" /><QuickAction href={links.reserveDashboard} label="Reserve Dashboard" /><QuickAction href={links.marketing} label="Marketing Center" /><QuickAction href={links.qr} label="Create QR Code" /></div> : null}<PlanCard location={selected} demoContext={demoContext} /></div>

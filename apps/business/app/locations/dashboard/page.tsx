@@ -527,6 +527,7 @@ export default async function DashboardPage({
       locations={locations}
       impersonationLabel={impersonationLabel}
       summaries={summaries}
+      superadminDemoLocationHref={ownerAccess.isSuperadmin ? "/locations/dashboard?demo=1&locationId=642a2ad6-c144-47b7-b9ff-f89554edf0da&fromDemoCenter=1" : undefined}
     />
   );
 }
