@@ -50,7 +50,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-          files = sorted((p for p in Path("supabase/migrations").glob("*.sql") if re.match(r"^\\d+_", p.name)), key=lambda p: (int(p.name.split("_", 1)[0]), p.name))
+          files = sorted((p for p in Path("supabase/migrations").glob("*.sql") if p.name[:1].isdigit()), key=lambda p: (int(p.name.split("_", 1)[0]), p.name))
           last = -1
           for path in files:
               version, suffix = path.name.split("_", 1)
