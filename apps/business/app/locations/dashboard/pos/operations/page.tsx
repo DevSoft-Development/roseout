@@ -62,7 +62,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
   if(!access&&!internalDemoAccess) redirect(user?"/locations/dashboard":"/business/login?next=/locations/dashboard/pos/operations");
 
   const canonicalLocationId=String(access?.canonicalLocationId||internalDemoAccess!.locationId);
-  const plan=await getPosPlanForLocation(canonicalLocationId);
+  const plan=internalDemoAccess?"signature_plus":await getPosPlanForLocation(canonicalLocationId);
   if(plan!=="signature_plus"&&!internalDemoAccess) redirect(`/locations/dashboard/pos?locationId=${encodeURIComponent(canonicalLocationId)}&signatureRequired=1`);
 
   const from=first(params.from)||null;
@@ -106,6 +106,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
       actions={<Link href={backHref} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--business-border)] px-4 text-sm font-black text-[var(--business-text)]">Back to POS</Link>}
     />
 
+    {internalDemoAccess?<div role="status" className="mx-5 my-4 rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm text-amber-200">Demo preview: operational data may still be syncing. Inventory mutations require a Business manager session and are disabled for this protected Admin demo.</div>:null}
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {[
         ["Ingredients",inventory.summary?.ingredientCount||0],
@@ -144,7 +145,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
                   <input type="hidden" name="catalogItemId" value={item.id}/>
                   <input name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="Qty" className="w-20 rounded-xl border border-[var(--business-border)] bg-black/15 px-3 py-2 text-sm font-bold text-[var(--business-text)]"/>
                   <input name="reason" defaultValue="waste" aria-label={`Waste reason for ${item.name}`} className="min-w-0 flex-1 rounded-xl border border-[var(--business-border)] bg-black/15 px-3 py-2 text-sm font-bold text-[var(--business-text)]"/>
-                  <button className="rounded-xl bg-[#e1062a] px-3 py-2 text-xs font-black text-white">Log</button>
+                  <button disabled={Boolean(internalDemoAccess)} className="rounded-xl bg-[#e1062a] px-3 py-2 text-xs font-black text-white disabled:opacity-40">Log</button>
                 </form>
               </td>
             </tr>)}</tbody>
@@ -164,7 +165,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
             <input type="hidden" name="locationId" value={canonicalLocationId}/>
             <input name="name" required placeholder="New area name" className="rounded-xl border border-[var(--business-border)] bg-black/15 px-3 py-2 text-sm font-bold text-[var(--business-text)]"/>
             <input name="code" placeholder="Optional code" className="rounded-xl border border-[var(--business-border)] bg-black/15 px-3 py-2 text-sm font-bold text-[var(--business-text)]"/>
-            <button className="rounded-xl border border-[#ff2142]/30 bg-[#e1062a]/10 px-3 py-2 text-sm font-black text-[#ff8da0]">Add stock area</button>
+            <button disabled={Boolean(internalDemoAccess)} className="rounded-xl border border-[#ff2142]/30 bg-[#e1062a]/10 px-3 py-2 text-sm font-black text-[#ff8da0] disabled:opacity-40">Add stock area</button>
           </form>
         </div>
 
@@ -184,7 +185,7 @@ export default async function PosOperationsPage({searchParams}:{searchParams?:Pr
               </select>
             </div>
             <input name="quantity" type="number" step="0.0001" min="0.0001" required placeholder="Quantity" className="rounded-xl border border-[var(--business-border)] bg-black/15 px-3 py-2 text-sm font-bold text-[var(--business-text)]"/>
-            <button disabled={stockAreas.length<2||!ingredients.length} className="rounded-xl bg-[#e1062a] px-3 py-2 text-sm font-black text-white disabled:opacity-40">Transfer</button>
+            <button disabled={Boolean(internalDemoAccess)||stockAreas.length<2||!ingredients.length} className="rounded-xl bg-[#e1062a] px-3 py-2 text-sm font-black text-white disabled:opacity-40">Transfer</button>
           </form>
         </div>
       </div>

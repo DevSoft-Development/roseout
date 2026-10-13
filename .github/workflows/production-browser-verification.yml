@@ -25,6 +25,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      certify_pos:
+        description: Require authenticated Lounge POS smoke and fail if not configured
+        required: true
+        default: false
+        type: boolean
       surface:
         description: Production surface to verify
         required: true
@@ -57,7 +62,6 @@ jobs:
       ADMIN_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_ADMIN_STORAGE_STATE_B64 }}
       BUSINESS_STORAGE_STATE_B64: ${{ secrets.PLAYWRIGHT_BUSINESS_STORAGE_STATE_B64 }}
       PRODUCTION_BUSINESS_DEMO_PATH: ${{ vars.PRODUCTION_BUSINESS_DEMO_PATH }}
-      PRODUCTION_POS_DEMO_PATH: ${{ vars.PRODUCTION_POS_DEMO_PATH }}
 
     steps:
       - name: Check out verification commit
@@ -148,12 +152,27 @@ jobs:
           echo "### Production POS smoke" >> "$GITHUB_STEP_SUMMARY"
           echo "Test source SHA: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
           echo "Production deployed SHA requires separate AWS attestation." >> "$GITHUB_STEP_SUMMARY"
-          if [ -z "${PLAYWRIGHT_BUSINESS_STORAGE_STATE:-}" ] || [ -z "${PRODUCTION_POS_DEMO_PATH:-}" ]; then
-            echo "::warning::POS smoke skipped without authenticated Business state and PRODUCTION_POS_DEMO_PATH"
+          if [ -z "${PLAYWRIGHT_ADMIN_STORAGE_STATE:-}" ]; then
+            echo "::warning::POS smoke skipped without authenticated Admin state for Demo Center handoff"
             echo "Authenticated POS smoke: NOT CERTIFIED (missing prerequisites)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Authenticated POS smoke: configured to run" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Require authenticated POS certification prerequisites
+        if: github.event_name == 'workflow_dispatch' && inputs.certify_pos == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${PRODUCTION_BROWSER_SURFACES}" != "all" ] && [ "${PRODUCTION_BROWSER_SURFACES}" != "business" ]; then
+            echo '::error::POS certification requires surface=business or surface=all'
+            exit 1
+          fi
+          if [ -z "${PLAYWRIGHT_ADMIN_STORAGE_STATE:-}" ]; then
+            echo '::error::Protected POS certification blocked: configure PLAYWRIGHT_ADMIN_STORAGE_STATE_B64 for the Admin Demo Center session.'
+            exit 1
+          fi
+          echo 'Protected POS prerequisites present; running Playwright verification.'
 
       - name: Run production browser verification
         run: npx playwright test tests/e2e/production-surfaces.spec.ts tests/e2e/production-pos-register.spec.ts --project=chromium
