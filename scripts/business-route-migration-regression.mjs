@@ -96,8 +96,8 @@ if (!businessLayout.includes("BusinessSurfaceShell")) {
 if (!businessShell.includes('TheOutHavenHeader surface="business"') || !businessShell.includes("TheOutHavenFooter")) {
   throw new Error("Business public pages must consume shared TheOutHaven header/footer chrome.");
 }
-if (!sharedHeader.includes("TheOutHavenBrandLogo") || !sharedLogo.includes("toh_logo_wordmark_white.webp")) {
-  throw new Error("Consumer and Business headers must consume the shared resilient brand logo.");
+if (!sharedHeader.includes("TheOutHavenBrandLogo") || !sharedLogo.includes("theouthaven-official-logo.png")) {
+  throw new Error("Consumer and Business headers must consume the shared approved official brand logo.");
 }
 if (!sharedFooter.includes("https://theouthaven.com/status") || !sharedFooter.includes("https://business.theouthaven.com/business")) {
   throw new Error("Shared footer links must remain safe across isolated hosts.");
