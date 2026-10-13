@@ -176,6 +176,13 @@ export const adminShellNavigationGroups: readonly AdminShellNavGroup[] = [
     icon: Activity,
     items: [
       {
+        label: "POS Remote Assist",
+        href: "/admin/dashboard/pos/remote-assist",
+        icon: LifeBuoy,
+        migrated: true,
+        roles: ["superadmin", "admin", "manager"],
+      },
+      {
         label: "POS Operations",
         href: "/admin/dashboard/pos",
         icon: ReceiptText,
