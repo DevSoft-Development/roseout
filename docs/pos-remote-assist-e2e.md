@@ -1,4 +1,4 @@
-# ThePOSHaven Remote Assist: Android and Apple
+# ThePOSHaven Remote Assist: Android, iPadOS and Linux
 This stack begins with shared capability gating. It does not yet provide live remote screen sharing or touch control.
 
 ## Reuse
@@ -6,7 +6,7 @@ Use existing hardware registry, assignment table, heartbeat and readiness engine
 
 ## Supported platforms
 - Android: Android Enterprise managed Samsung registers; device-side sharing requires MediaProjection and operator consent.
-- iPadOS/iOS: optional Apple registers; screen broadcast requires a ReplayKit Broadcast Upload extension and user consent.
+- iPadOS: optional iPad registers; screen broadcast requires a ReplayKit Broadcast Upload extension and user consent. iPhone is not a supported cashier endpoint.\n- Linux: POS/kitchen stations require a signed, least-privilege screen capture agent (Wayland portal or controlled X11 capture), local operator approval, and visible stop controls.
 - Neither platform is allowed unattended takeover, arbitrary remote touch, or unsanctioned reboot by this service.
 - Application-specific printer/reader rediscovery and signed settings refresh must go through POS device adapters, not direct privileged shell commands.
 - Never capture PIN entry or payment details; default to no screen recording retention.
@@ -16,5 +16,5 @@ Use existing hardware registry, assignment table, heartbeat and readiness engine
 2. Implement Admin ticket-linked session controls and business/device approval and revocation.
 3. Add authenticated streaming relay, short-lived credentials and native MediaProjection / ReplayKit clients; explicit visible sharing indicator and immediate stop.
 4. Integrate POS telemetry and permitted signed, idempotent diagnostics; Intune remains authoritative for device OS policies.
-5. Verify Android and iPad physical-device flows, privacy redaction, offline/reconnect, reader/printer behavior and unauthorized cross-location requests.
+5. Verify Android, iPadOS and Linux physical-device flows, privacy redaction, offline/reconnect, reader/printer behavior and unauthorized cross-location requests.
 Keep feature flag OFF until device certification and production authorization reviews are complete.
