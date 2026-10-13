@@ -1,0 +1,66 @@
+name: Production runtime status (read only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  azure-consumer:
+    name: Azure Consumer active revisions
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Login to Azure using existing OIDC identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Inspect active Container App revisions (no writes)
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+            RG=rg-toh-consumer-production
+            echo "## Azure Consumer production" >> "$GITHUB_STEP_SUMMARY"
+            for APP in ca-toh-consumer-prod-primary ca-toh-consumer-prod-secondary; do
+              echo "### $APP" >> "$GITHUB_STEP_SUMMARY"
+              az containerapp show --resource-group "$RG" --name "$APP" --query '{name:name,provisioningState:properties.provisioningState,latestRevision:properties.latestRevisionName}' -o json >> "$GITHUB_STEP_SUMMARY"
+              az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json >> "$GITHUB_STEP_SUMMARY"
+            done
+
+  aws-web-surfaces:
+    name: AWS Admin and Business running tasks
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials using existing OIDC role
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Inspect ECS services and running task images (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          STACK=theouthaven-web-surfaces-production
+          CLUSTER="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue | [0]" --output text)"
+          test -n "$CLUSTER" && test "$CLUSTER" != None
+          echo "## AWS web surfaces production" >> "$GITHUB_STEP_SUMMARY"
+          echo "ECS cluster: $CLUSTER" >> "$GITHUB_STEP_SUMMARY"
+          SERVICES="$(aws ecs list-services --cluster "$CLUSTER" --query 'serviceArns[]' --output text)"
+          if [ -z "$SERVICES" ]; then
+            echo "No ECS services found in cluster." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          for SERVICE in $SERVICES; do
+            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount,taskDefinition:taskDefinition,deployments:deployments[].{status:status,rollout:rolloutState,desired:desiredCount,running:runningCount}}' --output json >> "$GITHUB_STEP_SUMMARY"
+            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status RUNNING --query 'taskArns[]' --output text)"
+            if [ -n "$TASKS" ]; then
+              aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS --query 'tasks[].{task:taskArn,lastStatus:lastStatus,health:healthStatus,containers:containers[].{name:name,image:image,imageDigest:imageDigest}}' --output json >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
