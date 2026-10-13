@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const read = path => readFileSync(new URL("../"+path, import.meta.url),"utf8");
+const page=read("apps/admin/app/admin/dashboard/pos/remote-assist/page.tsx");
+const nav=read("apps/admin/app/admin/dashboard/admin-navigation.ts");
+const pos=read("apps/admin/app/admin/dashboard/pos/page.tsx");
+assert.match(page,/requireAdminRole\(\["superadmin", "admin", "manager"\]\)/);
+assert.match(page,/pos_remote_assist_sessions/);
+assert.match(page,/pos_remote_assist_events/);
+assert.match(page,/Data unavailable/);
+assert.match(page,/Production disabled/);
+assert.doesNotMatch(page,/onClick|onSubmit|redeemAuthorizedCode|issueAssistCode|activateWithProofs|remote_touch|remoteTouch/);
+assert.match(nav,/label: "POS Remote Assist"/);
+assert.match(pos,/\/admin\/dashboard\/pos\/remote-assist/);
+console.log("Remote Assist Admin read-only regression passed");
