@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
-import { getPosTableServiceBootstrap } from "@/lib/pos/table-service/service";
+import { getPosTableCheckWorkspace, getPosTableServiceBootstrap } from "@/lib/pos/table-service/service";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,14 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   let previewError:string | null = null;
   try { preview = await getPosTableServiceBootstrap(canonicalLocationId); }
   catch { previewError = "Table and catalog data are currently unavailable."; }
+  const requestedCheckId = first(params.checkId) || "";
+  const selectedCheckId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedCheckId) &&
+    (preview?.tables || []).some(table => table.openCheck?.id === requestedCheckId) ? requestedCheckId : "";
+  let check:Awaited<ReturnType<typeof getPosTableCheckWorkspace>> | null = null;
+  if (selectedCheckId) {
+    try { check = await getPosTableCheckWorkspace(canonicalLocationId,selectedCheckId); }
+    catch { previewError = "Selected check is unavailable."; }
+  }
   const query = new URLSearchParams({locationId:canonicalLocationId});
   if (adminLocationId) query.set("adminLocationId",adminLocationId);
   if (demoLocationId) query.set("demoLocationId",demoLocationId);
@@ -81,7 +89,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
           {(preview?.tables || []).map(table => <div key={table.id} className="rounded-xl border border-white/15 p-3">
             <p className="font-semibold">{table.label}</p>
             <p className="text-xs text-[var(--business-muted)]">{table.status} · {table.capacity} seats</p>
-            {table.openCheck ? <p className="mt-2 text-xs">Open check · {(table.openCheck.totalCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</p> : null}
+            {table.openCheck ? <Link href={`?${query}&checkId=${encodeURIComponent(table.openCheck.id)}`} className="mt-2 block text-xs underline underline-offset-4">View open check · {(table.openCheck.totalCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</Link> : null}
           </div>)}
         </div>
         {!preview?.tables?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No tables available.</p> : null}
@@ -97,5 +105,12 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
         {!preview?.catalog?.items?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No catalog items available.</p> : null}
       </div>
     </section>
+    {check ? <section className="mt-5 rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Check details · read only</h2><Link href={`?${query}`} className="text-sm underline">Close details</Link></div>
+      <p className="mt-2 text-sm text-[var(--business-muted)]">{check.guestCount} guests · {check.status}</p>
+      <div className="mt-4 space-y-2">{check.items.map(item => <div key={item.id} className="flex justify-between gap-3 border-b border-white/10 py-2 text-sm"><span>{item.quantity} × {item.name} · {item.course}</span><span>{(item.lineTotalCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</span></div>)}</div>
+      <div className="mt-4 flex justify-between text-base font-bold"><span>Remaining balance</span><span>{(check.amounts.remainingCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</span></div>
+      <p className="mt-3 text-xs text-[var(--business-muted)]">Payment, editing and kitchen actions are unavailable in preview mode.</p>
+    </section> : null}
   </BusinessPageShell>;
 }
