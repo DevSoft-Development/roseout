@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
+import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
 import { hasLocationPermission, resolveLocationAccessContext } from "@/lib/auth/locationOwnerAccess";
 import { getBusinessOnlineOrderingSettings, updateBusinessOnlineOrderingSettings } from "@/lib/pos/online-ordering/business-settings";
 
@@ -11,16 +12,21 @@ async function accessFor(request:Request){
   if(!locationId) return {error:NextResponse.json({ok:false,error:"missing_location_id"},{status:400}),locationId:""};
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
-  if(!user) return {error:NextResponse.json({ok:false,error:"auth_required"},{status:401}),locationId};
-  const access=await resolveLocationAccessContext({
-    userId:user.id,
-    userEmail:user.email,
-    locationId,
-  });
-  if(!access.canonicalLocationId||access.canonicalLocationId!==locationId||!hasLocationPermission(access,"location.edit")){
-    return {error:NextResponse.json({ok:false,error:"online_ordering_settings_forbidden"},{status:403}),locationId};
+  if(user){
+    const access=await resolveLocationAccessContext({
+      userId:user.id,
+      userEmail:user.email,
+      locationId,
+    });
+    if(access.canonicalLocationId===locationId&&hasLocationPermission(access,"location.edit")){
+      return {error:null as NextResponse|null,locationId};
+    }
   }
-  return {error:null as NextResponse|null,locationId};
+  // Only a verified, unexpired Admin demo handoff for this exact hidden mirror
+  // location can access this route without Business owner permissions.
+  const demo=await getInternalDemoLocationAccess({locationId});
+  if(demo) return {error:null as NextResponse|null,locationId};
+  return {error:NextResponse.json({ok:false,error:user?"online_ordering_settings_forbidden":"auth_required"},{status:user?403:401}),locationId};
 }
 
 export async function GET(request:Request){
