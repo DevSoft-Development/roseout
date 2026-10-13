@@ -25,12 +25,23 @@ jobs:
           inlineScript: |
             set -euo pipefail
             RG=rg-toh-consumer-production
+            : > "$RUNNER_TEMP/azure-revisions.jsonl"
             echo "## Azure Consumer production" >> "$GITHUB_STEP_SUMMARY"
             for APP in ca-toh-consumer-prod-primary ca-toh-consumer-prod-secondary; do
               echo "### $APP" >> "$GITHUB_STEP_SUMMARY"
               az containerapp show --resource-group "$RG" --name "$APP" --query '{name:name,provisioningState:properties.provisioningState,latestRevision:properties.latestRevisionName}' -o json >> "$GITHUB_STEP_SUMMARY"
               az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json >> "$GITHUB_STEP_SUMMARY"
+              az containerapp revision list --resource-group "$RG" --name "$APP" --query "[?properties.active==\`true\`].{revision:name,created:properties.createdTime,image:properties.template.containers[0].image,health:properties.healthState,replicas:properties.replicas}" -o json | jq -c --arg app "$APP" '{app:$app,revisions:.}' >> "$RUNNER_TEMP/azure-revisions.jsonl"
             done
+
+      - name: Upload sanitized Azure revision report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-azure-revisions
+          path: ${{ runner.temp }}/azure-revisions.jsonl
+          retention-days: 7
+          if-no-files-found: warn
 
   aws-web-surfaces:
     name: AWS Admin and Business runtime inspection
@@ -47,6 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          : > "$RUNNER_TEMP/aws-services.jsonl"
           STACK=theouthaven-web-surfaces-production
           CLUSTER="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue | [0]" --output text)"
           test -n "$CLUSTER" && test "$CLUSTER" != None
@@ -60,8 +72,10 @@ jobs:
           for SERVICE in $SERVICES; do
             echo "### $SERVICE" >> "$GITHUB_STEP_SUMMARY"
             aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount,taskDefinition:taskDefinition,deployments:deployments[].{status:status,rollout:rolloutState,desired:desiredCount,running:runningCount}}' --output json >> "$GITHUB_STEP_SUMMARY"
+            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[].{service:serviceName,status:status,desired:desiredCount,running:runningCount,taskDefinition:taskDefinition,deployments:deployments[].{status:status,rollout:rolloutState,desired:desiredCount,running:runningCount}}' --output json | jq -c '.[]' >> "$RUNNER_TEMP/aws-services.jsonl"
             TASK_DEF="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].taskDefinition' --output text)"
             if [ -n "$TASK_DEF" ] && [ "$TASK_DEF" != None ]; then
+              aws ecs describe-task-definition --task-definition "$TASK_DEF" --query 'taskDefinition.{family:family,revision:revision,images:containerDefinitions[].{name:name,image:image}}' --output json | jq -c --arg service "$SERVICE" '{service:$service,taskDefinition:.}' >> "$RUNNER_TEMP/aws-services.jsonl" || true
               if ! aws ecs describe-task-definition --task-definition "$TASK_DEF" --query 'taskDefinition.{family:family,revision:revision,images:containerDefinitions[].{name:name,image:image}}' --output json >> "$GITHUB_STEP_SUMMARY"; then
                 echo "Task definition inspection unavailable; grant ecs:DescribeTaskDefinition scoped to task definition ARNs." >> "$GITHUB_STEP_SUMMARY"
               fi
@@ -77,3 +91,12 @@ jobs:
               fi
             fi
           done
+
+      - name: Upload sanitized AWS service report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-aws-services
+          path: ${{ runner.temp }}/aws-services.jsonl
+          retention-days: 7
+          if-no-files-found: warn
