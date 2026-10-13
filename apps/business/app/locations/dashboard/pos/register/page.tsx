@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
 import { getLocationOwnerAccess, resolveEditableLocationContext } from "@/lib/auth/locationOwnerAccess";
 import { getInternalDemoLocationAccess } from "@/lib/demo/internal-demo-location-access";
+import { getPosTableServiceBootstrap } from "@/lib/pos/table-service/service";
 import { BusinessPageHeader, BusinessPageShell, BusinessStatusBadge } from "@/components/business/BusinessDesignSystem";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,10 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
   const canonicalLocationId = String(access?.canonicalLocationId || internalDemoAccess!.locationId);
   const location = access?.location || internalDemoAccess!.location || {};
   const name = String(location.name || location.location_name || location.restaurant_name || "Your location");
+  let preview:Awaited<ReturnType<typeof getPosTableServiceBootstrap>> | null = null;
+  let previewError:string | null = null;
+  try { preview = await getPosTableServiceBootstrap(canonicalLocationId); }
+  catch { previewError = "Table and catalog data are currently unavailable."; }
   const query = new URLSearchParams({locationId:canonicalLocationId});
   if (adminLocationId) query.set("adminLocationId",adminLocationId);
   if (demoLocationId) query.set("demoLocationId",demoLocationId);
@@ -66,6 +71,30 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
         <Link href={`/locations/dashboard/menu?${query}`} className="rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold">Manage menu</Link>
         <Link href={`/locations/dashboard/online-ordering?${query}`} className="rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold">Online orders</Link>
         <Link href={`/locations/dashboard/hardware?${query}`} className="rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold">Hardware</Link>
+      </div>
+    </section>
+    <section className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
+        <h2 className="text-xl font-bold">Restaurant tables</h2>
+        {previewError ? <p role="alert" className="mt-3 text-sm text-amber-300">{previewError}</p> : null}
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {(preview?.tables || []).map(table => <div key={table.id} className="rounded-xl border border-white/15 p-3">
+            <p className="font-semibold">{table.label}</p>
+            <p className="text-xs text-[var(--business-muted)]">{table.status} · {table.capacity} seats</p>
+            {table.openCheck ? <p className="mt-2 text-xs">Open check · {(table.openCheck.totalCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</p> : null}
+          </div>)}
+        </div>
+        {!preview?.tables?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No tables available.</p> : null}
+      </div>
+      <div className="rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
+        <h2 className="text-xl font-bold">POS catalog</h2>
+        <div className="mt-4 max-h-[480px] space-y-2 overflow-y-auto">
+          {(preview?.catalog?.items || []).slice(0,100).map(item => <div key={item.id} className="flex justify-between gap-3 rounded-xl border border-white/10 p-3">
+            <div><p className="text-sm font-semibold">{item.name}</p><p className="text-xs text-[var(--business-muted)]">{item.course} · {item.isAvailable ? "Available" : "Unavailable"}</p></div>
+            <span className="text-sm font-semibold">{(item.priceCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})}</span>
+          </div>)}
+        </div>
+        {!preview?.catalog?.items?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No catalog items available.</p> : null}
       </div>
     </section>
   </BusinessPageShell>;
