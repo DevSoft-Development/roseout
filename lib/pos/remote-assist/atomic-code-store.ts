@@ -4,7 +4,7 @@ import type {AssistCodeStore} from "./verification-code";
 export type AtomicCodeRedemptionStore=Pick<AssistCodeStore,"issue"> & {
  redeemAndRecordProof(input:{
   sessionId:string;locationId:string;deviceId:string;technicianId:string;
-  digest:string;now:number;
+  digest:string;now:number;maxAttempts:number;
  }):Promise<"accepted"|"rejected"|"locked"|"expired">;
 };
 
@@ -14,7 +14,7 @@ export function atomicRedemptionStore(store:AtomicCodeRedemptionStore):AssistCod
   issue:record=>store.issue(record),
   redeem:async input=>store.redeemAndRecordProof({
    sessionId:input.sessionId,locationId:input.locationId,deviceId:input.deviceId,
-   technicianId:input.technicianId,digest:input.digest,now:input.now
+   technicianId:input.technicianId,digest:input.digest,now:input.now,maxAttempts:input.maxAttempts
   })
  };
 }
