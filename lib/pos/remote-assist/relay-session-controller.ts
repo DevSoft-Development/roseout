@@ -3,7 +3,11 @@ export interface AssistRelayRuntime extends RelayShutdown {
  subscribeSessionState(sessionId:string,onChange:(grant:RelayGrantState)=>void):()=>void;
  disconnectSession(sessionId:string):Promise<void>;
 }
-/** Fail closed when grant becomes invalid. Stop both publisher and viewer. */
+/** Fail closed when grant becomes invalid. Stop both publisher and viewer.
+ * Subscription is established before initial evaluation to avoid a missed revocation.
+ * A relay must ALSO validate grants independently on connection and expiry;
+ * callback supervision alone cannot enforce an expiry deadline.
+ */
 export function superviseRelaySession(input:{
  sessionId:string;runtime:AssistRelayRuntime;initial:RelayGrantState;
  now:()=>number;onError:(error:unknown)=>void;
