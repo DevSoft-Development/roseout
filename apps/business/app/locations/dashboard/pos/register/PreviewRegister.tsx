@@ -17,9 +17,16 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
   const [sent,setSent]=useState(false);
   const [paid,setPaid]=useState(false);
   const [paymentMethod,setPaymentMethod]=useState<"cash"|"card">("card");
+  const [courseSent,setCourseSent]=useState<string[]>([]);
+  const [practiceLog,setPracticeLog]=useState<string[]>([]);
+  const [paymentFailure,setPaymentFailure]=useState(false);
+  const [tipPercent,setTipPercent]=useState(0);
   const categories=useMemo(()=>["all",...new Set(items.map(item=>item.course))],[items]);
   const filtered=items.filter(item=>(category==="all"||item.course===category)&&item.name.toLowerCase().includes(search.toLowerCase()));
   const subtotal=lines.reduce((total,line)=>total+line.item.priceCents*line.quantity,0);
+  const tipCents=Math.round(subtotal*tipPercent/100);
+  const simulatedTotal=subtotal+tipCents;
+  const coursesOnCheck=[...new Set(lines.map(line=>line.item.course))];
   const add=(item:Item)=>{
     if(sent||paid||!item.isAvailable)return;
     const key=`${item.id}:${seat}`;
@@ -32,7 +39,10 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
     if(sent||paid)return;
     setLines(current=>current.map(line=>line.key===key?{...line,quantity:line.quantity+delta}:line).filter(line=>line.quantity>0));
   };
-  const reset=()=>{setLines([]);setSent(false);setPaid(false);setSeat(1);};
+  const reset=()=>{setLines([]);setSent(false);setPaid(false);setSeat(1);setCourseSent([]);setPracticeLog([]);setPaymentFailure(false);setTipPercent(0);};
+  const record=(event:string)=>setPracticeLog(current=>[...current,event]);
+  const sendCourse=(course:string)=>{if(paid||!lines.length)return;setCourseSent(current=>current.includes(course)?current:[...current,course]);setSent(true);record(`Kitchen: ${course} course simulated`);};
+  const simulateTender=()=>{if(paymentFailure){record(`Payment: simulated ${paymentMethod} decline`);return;}setPaid(true);record(`Payment: simulated ${paymentMethod} approval for ${format(simulatedTotal)}`);};
   return <section className="mt-6 rounded-3xl border border-amber-400/30 bg-[var(--business-panel)] p-4 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-xs font-bold uppercase tracking-widest text-amber-300">Interactive sandbox · no database writes</p><h2 className="mt-1 text-2xl font-black">Practice register</h2></div>
@@ -67,14 +77,22 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
         {!lines.length?<p className="mt-4 text-sm text-[var(--business-muted)]">Tap a menu item to start.</p>:null}
         <div className="mt-4 flex justify-between border-t border-white/20 pt-4 text-lg font-black"><span>Subtotal (simulation)</span><span>{format(subtotal)}</span></div>
         <p className="mt-1 text-xs text-[var(--business-muted)]">Tax, tips and service charges are excluded from this practice calculation.</p>
-        <button type="button" disabled={!lines.length||sent||paid} onClick={()=>setSent(true)} className="mt-4 w-full rounded-xl bg-rose-700 p-3 font-bold text-white disabled:opacity-40">Simulate send to kitchen</button>
+        <div className="mt-4 grid gap-2">{coursesOnCheck.map(course=><button key={course} type="button" disabled={courseSent.includes(course)||paid} onClick={()=>sendCourse(course)} className="w-full rounded-xl bg-rose-700 p-3 text-sm font-bold text-white disabled:opacity-40">{courseSent.includes(course)?"Sent (simulation): ":"Simulate fire: "}{course}</button>)}</div>
         {sent?<><p role="status" className="mt-3 text-sm text-emerald-300">Simulated kitchen ticket prepared — nothing was transmitted.</p>
           <label className="mt-3 block text-xs font-semibold">Practice tender
             <select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value as "cash"|"card")} className="mt-1 w-full rounded-xl border border-white/20 bg-[#15151a] p-3 text-white"><option value="card">Card (simulated)</option><option value="cash">Cash (simulated)</option></select>
           </label>
-          <button type="button" disabled={paid} onClick={()=>setPaid(true)} className="mt-3 w-full rounded-xl border border-emerald-400/40 p-3 font-bold disabled:opacity-40">Simulate {paymentMethod} payment</button>
+          <label className="mt-3 block text-xs font-semibold">Practice tip
+            <select value={tipPercent} onChange={e=>setTipPercent(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-white/20 bg-[#15151a] p-3 text-white">{[0,15,18,20,25].map(v=><option key={v} value={v}>{v}%</option>)}</select>
+          </label>
+          <div className="mt-2 flex justify-between text-sm"><span>Tip</span><span>{format(tipCents)}</span></div>
+          <div className="mt-2 flex justify-between font-bold"><span>Practice tender total</span><span>{format(simulatedTotal)}</span></div>
+          <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={paymentFailure} onChange={e=>setPaymentFailure(e.target.checked)}/> Simulate declined payment</label>
+          <button type="button" disabled={paid} onClick={simulateTender} className="mt-3 w-full rounded-xl border border-emerald-400/40 p-3 font-bold disabled:opacity-40">Simulate {paymentMethod} payment</button>
+          {paymentFailure&&!paid?<p role="status" className="mt-2 text-xs text-amber-300">Decline test selected: payment will not complete.</p>:null}
         </>:null}
         {paid?<p role="status" className="mt-3 text-sm font-bold text-emerald-300">Practice check complete. No money moved.</p>:null}
+        {practiceLog.length?<div className="mt-4 border-t border-white/15 pt-3"><h4 className="text-xs font-bold">Practice event log</h4><ol className="mt-2 space-y-1 text-xs text-[var(--business-muted)]">{practiceLog.map((event,index)=><li key={index}>{index+1}. {event}</li>)}</ol></div>:null}
       </div>
     </div>
   </section>;
