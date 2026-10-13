@@ -5,6 +5,11 @@ on:
     paths:
       - 'apps/**'
       - 'tests/business/**'
+      - 'lib/business/**'
+      - 'lib/billing/**'
+      - 'lib/stripe/**'
+      - 'app/api/stripe/**'
+      - 'apps/consumer/app/api/stripe/**'
       - 'packages/**'
       - 'scripts/surface-app-isolation-regression.mjs'
       - 'scripts/consumer-route-migration-regression.mjs'
@@ -67,7 +72,7 @@ jobs:
             run=true
           elif printf '%s\n' "$CHANGED" | grep -Eq '^packages/'; then
             run=true
-          elif [ "$SURFACE" = "business" ] && printf '%s\n' "$CHANGED" | grep -Eq '^tests/business/'; then
+          elif [ "$SURFACE" = "business" ] && printf '%s\n' "$CHANGED" | grep -Eq '^(tests/business/|lib/business/|lib/billing/|lib/stripe/|app/api/stripe/)'; then
             run=true
           elif printf '%s\n' "$CHANGED" | grep -Eq "^apps/${SURFACE}/"; then
             run=true
@@ -81,11 +86,8 @@ jobs:
 
           # Test-only edits still run isolation tests, but need not rebuild Next.js.
           build=$run
-          if [ "$SURFACE" = "business" ] && printf '%s\n' "$CHANGED" | grep -Eq '^tests/business/'; then
-            build=false
-          fi
           if [ "$run" = true ] && [ -n "$CHANGED" ]; then
-            if ! printf '%s\\n' "$CHANGED" | grep -Evq '^(apps/[^/]+/(__tests__/|tests/|.*\\.(test|spec)\\.[cm]?[jt]sx?$)|scripts/(surface-app-isolation-regression|consumer-route-migration-regression)\\.mjs$)'; then
+            if ! printf '%s\n' "$CHANGED" | grep -Evq '^(apps/[^/]+/(__tests__/|tests/|.*\\.(test|spec)\\.[cm]?[jt]sx?$)|scripts/(surface-app-isolation-regression|consumer-route-migration-regression)\\.mjs$)'; then
               build=false
             fi
           fi
@@ -115,7 +117,7 @@ jobs:
         run: npm run build:surface:admin
 
       - name: Build isolated Consumer surface
-        if: steps.surface_scope.outputs.run == 'true' && matrix.surface == 'consumer'
+        if: steps.surface_scope.outputs.build == 'true' && matrix.surface == 'consumer'
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: consumer-ci-placeholder
