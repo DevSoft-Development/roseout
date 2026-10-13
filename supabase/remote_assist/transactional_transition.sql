@@ -9,8 +9,6 @@ begin
  if s.state in ('ended','expired','revoked') then raise exception 'terminal session'; end if;
  if p_action='approve' and s.state='requested' and p_actor<>s.requested_by then
   update public.pos_remote_assist_sessions set state='approved',approved_by=p_actor,consent_expires_at=n+interval '15 minutes',version=version+1 where id=p_session returning * into s;
- elsif p_action='activate' and s.state='approved' and p_actor=s.requested_by and p_capture_approved and s.consent_expires_at>n then
-  update public.pos_remote_assist_sessions set state='active',version=version+1 where id=p_session returning * into s;
  elsif p_action in ('revoke','end') and (p_actor=s.requested_by or p_actor=s.approved_by) then
   update public.pos_remote_assist_sessions set state=case when p_action='revoke' then 'revoked' else 'ended' end,ended_at=n,version=version+1 where id=p_session returning * into s;
  else raise exception 'invalid session transition'; end if;
@@ -18,5 +16,4 @@ begin
  if s.state in ('revoked','ended') then update public.pos_remote_assist_relay_grants set revoked_at=n where session_id=p_session and revoked_at is null; end if;
  return s;
 end $$;
-revoke all on function public.pos_assist_transition(uuid,integer,uuid,text,boolean) from public,anon,authenticated;
-grant execute on function public.pos_assist_transition(uuid,integer,uuid,text,boolean) to service_role;
+revoke all on function public.pos_assist_transition(uuid,integer,uuid,text,boolean) from public,anon,authenticated,service_role;
