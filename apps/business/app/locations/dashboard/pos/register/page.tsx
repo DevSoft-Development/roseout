@@ -1,4 +1,5 @@
 import Link from "next/link";
+import PreviewRegister from "./PreviewRegister";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase-server";
@@ -105,6 +106,7 @@ export default async function WebRegisterPreview({searchParams}:{searchParams?:P
         {!preview?.catalog?.items?.length ? <p className="mt-3 text-sm text-[var(--business-muted)]">No catalog items available.</p> : null}
       </div>
     </section>
+    <PreviewRegister tables={(preview?.tables || []).map(t=>({id:t.id,label:t.label,capacity:t.capacity}))} items={(preview?.catalog?.items || []).map(i=>({id:i.id,name:i.name,priceCents:i.priceCents,course:i.course,isAvailable:i.isAvailable}))} />
     {check ? <section className="mt-5 rounded-3xl border border-[var(--business-border)] bg-[var(--business-panel)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Check details · read only</h2><Link href={`?${query}`} className="text-sm underline">Close details</Link></div>
       <p className="mt-2 text-sm text-[var(--business-muted)]">{check.guestCount} guests · {check.status}</p>
