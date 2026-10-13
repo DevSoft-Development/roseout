@@ -147,8 +147,6 @@ export default function BusinessLoginPage() {
                 </div>
               )}
 
-              <a href="/auth/staff/start" className="mb-5 flex min-h-12 items-center justify-center rounded-xl border border-white/25 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/20">Staff: Sign in with Microsoft 365</a>
-
               <form onSubmit={handleSubmit} className="mt-8 space-y-5">
                 <label className="block">
                   <span className="mb-2 block text-sm font-semibold text-white/80">Email address</span>
@@ -223,6 +221,7 @@ export default function BusinessLoginPage() {
                 </p>
                 <p>
                   TheOutHaven staff?{" "}
+                  <a href="/auth/staff/start" className="font-semibold text-white/55 hover:text-white">Microsoft 365 sign in</a>{" · "}
                   <a href="https://admin.theouthaven.com/admin/login" className="font-semibold text-white/55 hover:text-white">
                     Admin login
                   </a>
