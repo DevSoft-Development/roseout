@@ -14,16 +14,22 @@ export function superviseRelaySession(input:{
 }):()=>void{
  let closed=false;
  let stopping=false;
+ let expiryTimer:ReturnType<typeof setTimeout>|undefined;
  const stop=async()=>{
   if(stopping)return;
   stopping=true;
+  if(expiryTimer!==undefined)clearTimeout(expiryTimer);
   try{await shutdownRemoteAssist(input.sessionId,input.runtime);}
   catch(error){input.onError(error);}
   finally{try{await input.runtime.disconnectSession(input.sessionId);}catch(error){input.onError(error);}}
  };
  const check=(grant:RelayGrantState)=>{
   if(closed)return;
-  if(!relayPermitted(grant,input.now()))void stop();
+  if(expiryTimer!==undefined)clearTimeout(expiryTimer);
+  if(!relayPermitted(grant,input.now())){void stop();return;}
+  const remaining=Math.min(grant.expiresAt,grant.consentExpiresAt)-input.now();
+  if(remaining<=0){void stop();return;}
+  expiryTimer=setTimeout(()=>void stop(),Math.min(remaining,2147483647));
  };
  const unsubscribe=input.runtime.subscribeSessionState(input.sessionId,check);
  check(input.initial);
