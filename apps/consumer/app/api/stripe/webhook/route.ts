@@ -204,9 +204,15 @@ export async function POST(request: NextRequest) {
         break;
 
       case "invoice.payment_succeeded":
-      case "invoice.paid":
+      case "invoice.paid": {
+        // Re-read Stripe: a delayed paid invoice must never reactivate a canceled or unpaid subscription.
+        const invoiceSubscriptionId = subIdOf(object);
+        if (!invoiceSubscriptionId) break;
+        const authoritative = await stripeRequest<any>(`/subscriptions/${encodeURIComponent(invoiceSubscriptionId)}`, { method: "GET", mode: event.livemode === true ? "live" : "test" });
+        if (authoritative?.id !== invoiceSubscriptionId || !["active", "trialing"].includes(String(authoritative.status))) break;
         await updateLocation({ subscription_status: "active", last_payment_succeeded_at: new Date().toISOString(), past_due_at: null, billing_grace_ends_at: null, current_period_start: ts(object.lines?.data?.[0]?.period?.start), current_period_end: ts(object.lines?.data?.[0]?.period?.end), next_billing_date: ts(object.lines?.data?.[0]?.period?.end) });
         break;
+      }
 
       case "invoice.payment_failed": {
         await logEvent("failed_stripe", { type: event.type, eventId: event.id || null, locationId });
