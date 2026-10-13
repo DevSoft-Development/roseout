@@ -171,10 +171,28 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
 
   return (
     <header className={headerClass}>
+      <style>{`
+        .toh-header-brand img { display: block; width: min(190px, 46vw); max-width: 100%; height: auto; }
+        .toh-header-desktop-nav, .toh-header-desktop-actions { display: none; }
+        .toh-header-mobile-actions { display: flex; }
+        .toh-header-mobile-panel { display: block; }
+        @media (min-width: 640px) {
+          .toh-header-brand img { width: 205px; }
+        }
+        @media (min-width: 1280px) {
+          .toh-header-brand img { width: 185px; }
+          .toh-header-desktop-nav, .toh-header-desktop-actions { display: flex; }
+          .toh-header-mobile-actions, .toh-header-mobile-panel { display: none; }
+          .toh-header-desktop-nav a, .toh-header-desktop-actions a { white-space: nowrap; }
+        }
+        @media (min-width: 1536px) {
+          .toh-header-brand img { width: 215px; }
+        }
+      `}</style>
       <div className={shellClass}>
         <Link
           href={homeHref}
-          className="flex min-w-0 shrink-0 items-center"
+          className="toh-header-brand flex min-w-0 shrink-0 items-center"
           aria-label="TheOutHaven home"
         >
           <TheOutHavenBrandLogo
@@ -184,7 +202,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
           />
         </Link>
 
-        <nav className="hidden shrink-0 items-center gap-3 xl:flex 2xl:gap-4">
+        <nav className="toh-header-desktop-nav hidden shrink-0 items-center gap-3 xl:flex 2xl:gap-4">
           {navItems.map((item) => (
             <Link key={item.href} href={item.href} className={isActive(item.href) ? "relative whitespace-nowrap text-sm font-black text-white transition" : "relative whitespace-nowrap text-sm font-black text-white/45 transition hover:text-white"}>
               {item.label}
@@ -193,7 +211,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
           ))}
         </nav>
 
-        <div className="hidden shrink-0 items-center gap-2 xl:flex 2xl:gap-3">
+        <div className="toh-header-desktop-actions hidden shrink-0 items-center gap-2 xl:flex 2xl:gap-3">
           {!signedIn ? (
             <>
               <Link href={signInHref} className="rounded-full border border-white/15 bg-white/[0.04] whitespace-nowrap px-4 py-3 text-sm font-black text-white transition hover:border-white/25 hover:bg-white hover:text-black">Sign In</Link>
@@ -237,7 +255,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 xl:hidden">
+        <div className="toh-header-mobile-actions flex shrink-0 items-center gap-2 xl:hidden">
           {signedIn ? <button type="button" onClick={handleSignOut} className="rounded-full bg-[#e1062a] px-4 py-2 text-xs font-black text-white">Sign Out</button> : null}
           <button type="button" onClick={() => { setAccountDropdownOpen(false); setMenuOpen((open) => !open); }} aria-label={menuOpen ? "Close mobile menu" : "Open mobile menu"} aria-expanded={menuOpen} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] text-white transition hover:bg-white hover:text-black">
             <span className="text-xl font-black">{menuOpen ? "×" : "☰"}</span>
@@ -246,7 +264,7 @@ export default function TheOutHavenHeader({ surface = "consumer" }: { surface?: 
       </div>
 
       {menuOpen ? (
-        <div className="border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl xl:hidden">
+        <div className="toh-header-mobile-panel border-t border-white/10 bg-black/95 px-4 pb-5 pt-3 shadow-2xl shadow-black/50 backdrop-blur-xl xl:hidden">
           <div className="mx-auto max-w-7xl space-y-2">
             {navItems.map((item) => (
               <Link key={item.href} href={item.href} className={isActive(item.href) ? "block rounded-2xl bg-white px-4 py-4 text-sm font-black text-black transition" : "block rounded-2xl bg-white/[0.05] px-4 py-4 text-sm font-black text-white/70 transition hover:bg-white hover:text-black"}>{item.label}</Link>

@@ -122,3 +122,51 @@ test("authenticated Business reservations demo renders its floor resources", asy
     await context.close();
   }
 });
+
+
+for (const surface of [
+  { name: "consumer", baseUrl: bases.consumer, path: "/" },
+  { name: "business", baseUrl: bases.business, path: "/business" },
+] as const) {
+  for (const width of [390, 768, 1024, 1180, 1280, 1600]) {
+    test(`${surface.name} live official logo and header fit at ${width}px`, async ({ page }, testInfo) => {
+      test.skip(!selectedSurface(surface.name), `${surface.name} not selected`);
+      test.skip(process.env.GITHUB_EVENT_NAME === "pull_request", "Live layout certification runs after deployment, not against the unchanged production site during a PR.");
+      await page.setViewportSize({ width, height: 900 });
+      const response = await gotoProductionPage(page, `${surface.baseUrl}${surface.path}`);
+      expect(response?.status() ?? 599).toBeLessThan(400);
+      const header = page.locator("header").first();
+      const logo = header.getByRole("link", { name: "TheOutHaven home" }).locator("img");
+      await expect(logo).toBeVisible();
+      await expect(logo).toHaveAttribute("src", "/theouthaven-official-logo.png");
+      await expect.poll(() => logo.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+      const bounds = await logo.boundingBox();
+      expect(bounds?.width ?? 0).toBeGreaterThan(90);
+      expect(bounds?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(width + 1);
+
+      const menu = header.getByRole("button", { name: "Open mobile menu" });
+      if (width < 1280) {
+        await expect(menu).toBeVisible();
+        await menu.click();
+        await expect(header.getByRole("link", { name: "Discover" })).toBeVisible();
+        await header.getByRole("button", { name: "Close mobile menu" }).click();
+      } else {
+        await expect(menu).toBeHidden();
+        const labels = surface.name === "consumer"
+          ? ["Discover", "Create Outing", "Saved Outings", "Support", "For Businesses"]
+          : ["Discover", "Create Outing", "Support", "Business Home"];
+        for (const label of labels) {
+          const link = header.getByRole("link", { name: label, exact: true });
+          await expect(link).toBeVisible();
+          expect(await link.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("nowrap");
+        }
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+      await testInfo.attach(`${surface.name}-header-${width}.png`, {
+        body: await header.screenshot(),
+        contentType: "image/png",
+      });
+    });
+  }
+}
