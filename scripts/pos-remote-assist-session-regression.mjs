@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import {readFileSync} from "node:fs";
 import {transformSync} from "esbuild";
-const load=(p,requireFn)=>{const module={exports:{}};const src=readFileSync(new URL(p,import.meta.url),"utf8");vm.runInNewContext(transformSync(src,{loader:"ts",format:"cjs",target:"node20"}).code,{exports:module.exports,module,require:requireFn,Date,Number,Object});return module.exports;};
+const load=(p,requireFn)=>{const cjsModule={exports:{}};const src=readFileSync(new URL(p,import.meta.url),"utf8");vm.runInNewContext(transformSync(src,{loader:"ts",format:"cjs",target:"node20"}).code,{exports:cjsModule.exports,module:cjsModule,require:requireFn,Date,Number,Object});return cjsModule.exports;};
 const caps=load("../lib/pos/remote-assist/capabilities.ts",()=>{throw Error("unexpected import")});
 const sessionPolicy=load("../lib/pos/remote-assist/session-policy.ts",()=>caps);
 const uuid="11111111-1111-4111-8111-111111111111";
@@ -11,7 +11,7 @@ const dev="33333333-3333-4333-8333-333333333333";
 const staff="44444444-4444-4444-8444-444444444444";
 const approver="55555555-5555-4555-8555-555555555555";
 const now=Date.parse("2026-10-12T12:00:00Z");
-for(const platform of ["android","ipados","ios"]){
+for(const platform of ["android","ipados","linux"]){
  const session={id:uuid,locationId:loc,deviceId:dev,requestedBy:staff,approvedBy:approver,platform,state:"active",createdAt:new Date(now).toISOString(),consentExpiresAt:new Date(now+600000).toISOString(),endedAt:null,version:2};
  const opts={session,locationId:loc,deviceId:dev,technicianId:staff,permissionGranted:true,assignedToLocation:true,action:"screen_share",now};
  assert.equal(sessionPolicy.authorizeAssistCommand(opts),true);
