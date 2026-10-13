@@ -38,7 +38,7 @@ jobs:
 
       - name: Resolve Foundry account
         id: foundry
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         with:
           inlineScript: |
             set -euo pipefail
@@ -67,7 +67,7 @@ jobs:
 
       - name: Inspect reasoning quota
         id: quota
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           LOCATION: ${{ steps.foundry.outputs.location }}
         with:
