@@ -1,10 +1,10 @@
-export type AssistPlatform = "android" | "ios" | "ipados";
+export type AssistPlatform = "android" | "ipados" | "linux";
 export type AssistAction = "diagnostics" | "rediscover" | "refresh_config" | "request_share" | "screen_share" | "device_sync" | "remote_touch" | "reboot";
 export type AssistState = "requested" | "approved" | "active" | "revoked" | "expired" | "ended";
 export const ASSIST_MAX_CONSENT_MS = 15 * 60_000;
 const capabilities: Record<AssistPlatform, readonly AssistAction[]> = {
  android: ["diagnostics","rediscover","refresh_config","request_share","screen_share","device_sync"],
- ios: ["diagnostics","rediscover","refresh_config","request_share","screen_share","device_sync"],
+ linux: ["diagnostics","rediscover","refresh_config","request_share","screen_share","device_sync"],
  ipados: ["diagnostics","rediscover","refresh_config","request_share","screen_share","device_sync"]
 };
 export const assistActionsFor = (platform: AssistPlatform) => capabilities[platform];
