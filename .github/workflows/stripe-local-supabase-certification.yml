@@ -45,6 +45,24 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
+      - name: Normalize duplicate migration versions in disposable workspace
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          files = sorted((p for p in Path("supabase/migrations").glob("*.sql") if re.match(r"^\\d+_", p.name)), key=lambda p: (int(p.name.split("_", 1)[0]), p.name))
+          last = -1
+          for path in files:
+              version, suffix = path.name.split("_", 1)
+              unique = max(int(version), last + 1)
+              last = unique
+              if unique != int(version):
+                  target = path.with_name(f"{unique:014d}_{suffix}")
+                  if target.exists():
+                      raise RuntimeError(f"Refusing to overwrite {target}")
+                  path.rename(target)
+                  print(f"CI-only: {path.name} -> {target.name}")
+          PY
       - name: Start local Supabase
         run: supabase start
       - name: Rebuild isolated database from migrations
