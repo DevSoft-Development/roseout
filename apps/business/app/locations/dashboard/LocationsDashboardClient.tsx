@@ -142,9 +142,32 @@ const tabs: Array<[TabId, string]> = [
   ["marketing", "Marketing"],
 ];
 
-export default function LocationsDashboardClient({ locations, impersonationLabel, demoContext, summaries, superadminDemoLocationHref }: { locations: LocationItem[]; impersonationLabel?: string; demoContext?: DemoContext; summaries?: Record<string, DashboardSummary>; superadminDemoLocationHref?: string }) {
+export default function LocationsDashboardClient({ locations, impersonationLabel, demoContext, summaries, superadminDemoLocationHref, superadminLocationSearch }: { locations: LocationItem[]; impersonationLabel?: string; demoContext?: DemoContext; summaries?: Record<string, DashboardSummary>; superadminDemoLocationHref?: string; superadminLocationSearch?: boolean }) {
   const [selectedId, setSelectedId] = useState(locations[0]?.id || "");
   const [query, setQuery] = useState("");
+  const [allQuery, setAllQuery] = useState("");
+  const [allPage, setAllPage] = useState(0);
+  const [allLocations, setAllLocations] = useState<Array<{id: string; name: string}>>([]);
+  const [allMore, setAllMore] = useState(false);
+  const [ownerError, setOwnerError] = useState("");
+  useEffect(() => {
+    if (!superadminLocationSearch) return;
+    const controller = new AbortController();
+    fetch(`/api/internal/superadmin-locations?q=${encodeURIComponent(allQuery)}&page=${allPage}`, { signal: controller.signal, cache: "no-store" })
+      .then(async res => { if (!res.ok) throw Error("Search unavailable"); return res.json(); })
+      .then(data => { setAllLocations(data.locations || []); setAllMore(Boolean(data.hasMore)); setOwnerError(""); })
+      .catch(() => { if (!controller.signal.aborted) setOwnerError("Location search unavailable"); });
+    return () => controller.abort();
+  }, [allQuery, allPage, superadminLocationSearch]);
+  async function setOwnerLocation(id: string | null) {
+    const res = await fetch("/api/internal/superadmin-owner-mode", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(id ? {locationId:id} : {action:"exit"})
+    });
+    if (!res.ok) { setOwnerError("Owner Mode change refused"); return; }
+    window.location.assign("/locations/dashboard");
+  }
+
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [businessTrends, setBusinessTrends] = useState<BusinessTrends | null>(null);
 
@@ -194,6 +217,15 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
         <Sidebar locations={filteredLocations} selected={selected} query={query} onQuery={setQuery} onSelect={setSelectedId} demoContext={demoContext} superadminDemoLocationHref={superadminDemoLocationHref} />
         <section className="min-w-0">
           <TopBar selected={selected} links={links} query={query} onQuery={setQuery} impersonationLabel={impersonationLabel} demoContext={demoContext} onStopImpersonation={stopImpersonation} />
+          {superadminLocationSearch ? <section className="border-b border-white/20 px-4 py-4">
+            <label className="text-sm">All locations <input aria-label="Search all locations" value={allQuery} onChange={e => {setAllQuery(e.target.value); setAllPage(0);}} className="ml-2 rounded-lg bg-white/10 p-2" /></label>
+            <button onClick={() => setOwnerLocation(null)} className="ml-2 rounded-lg border p-2 text-xs">Exit Owner Mode</button>
+            {ownerError ? <p role="alert">{ownerError}</p> : null}
+            <div className="mt-2 flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+              {allLocations.map(loc => <button key={loc.id} onClick={() => setOwnerLocation(loc.id)} className="rounded-lg border border-white/20 p-2 text-xs">{loc.name}</button>)}
+            </div>
+            <div className="mt-2 flex gap-2"><button disabled={!allPage} onClick={() => setAllPage(p => p-1)}>Previous</button><button disabled={!allMore} onClick={() => setAllPage(p => p+1)}>Next</button></div>
+          </section> : null}
           <div className="border-b border-white/10 px-4 sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-[1760px] gap-2 overflow-x-auto pb-3 pt-2">
               {tabs.map(([id, label]) => (
