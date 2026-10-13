@@ -67,7 +67,7 @@ export default function PreviewRegister({tables,items}:{tables:Table[];items:Ite
         <input aria-label="Search POS menu" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search menu..." className="mt-4 w-full rounded-xl border border-white/20 bg-[#15151a] p-3 text-white" />
         <div className="mt-3 flex flex-wrap gap-2">{categories.map(c=><button type="button" key={c} onClick={()=>setCategory(c)} aria-pressed={category===c} className={`rounded-xl border px-3 py-2 text-xs font-bold ${category===c?"border-rose-500 bg-rose-950":"border-white/20"}`}>{c}</button>)}</div>
         <div className="mt-4 grid max-h-[510px] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
-          {filtered.map(item=><button type="button" key={item.id} onClick={()=>add(item)} disabled={!item.isAvailable||sent||paid} className="min-h-28 rounded-2xl border border-white/15 p-3 text-left disabled:opacity-40"><span className="block text-sm font-bold">{item.name}</span><span className="mt-2 block text-sm">{format(item.priceCents)}</span><span className="block text-xs text-[var(--business-muted)]">{item.isAvailable?"Add to check":"Sold out"}</span></button>)}
+          {filtered.map(item=><button type="button" key={item.id} onClick={()=>add(item)} disabled={!item.isAvailable||courseSent.includes(item.course)||paid} className="min-h-28 rounded-2xl border border-white/15 p-3 text-left disabled:opacity-40"><span className="block text-sm font-bold">{item.name}</span><span className="mt-2 block text-sm">{format(item.priceCents)}</span><span className="block text-xs text-[var(--business-muted)]">{item.isAvailable?"Add to check":"Sold out"}</span></button>)}
         </div>
       </div>
       <div className="rounded-2xl border border-white/15 p-4">
