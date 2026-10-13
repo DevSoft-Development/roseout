@@ -1,3 +1,4 @@
+import { issueSuperadminOwnerModeToken } from "@/lib/auth/superadmin-owner-mode-token";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
   });
   if (auditError) return NextResponse.json({ error: "Audit unavailable" }, { status: 503 });
   const response = NextResponse.json({ ok: true, redirectTo: "/locations/dashboard" });
-  response.cookies.set(COOKIE, clear ? "" : location!.id, {
+  response.cookies.set(COOKIE, clear ? "" : issueSuperadminOwnerModeToken(user.id, location!.id), {
     secure: true, httpOnly: true, sameSite: "lax", path: "/", maxAge: clear ? 0 : MAX_AGE,
   });
   response.headers.set("Cache-Control", "private, no-store");
