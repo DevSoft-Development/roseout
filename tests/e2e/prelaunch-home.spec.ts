@@ -31,6 +31,15 @@ test.describe("public product readiness", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
+    const officialLogo = page.getByRole("link", { name: "TheOutHaven home" }).locator("img");
+    await expect(officialLogo).toBeVisible();
+    await expect(officialLogo).toHaveAttribute("src", "/theouthaven-official-logo.png");
+    const logoResponse = await page.request.get("/theouthaven-official-logo.png");
+    expect(logoResponse.status(), "Official logo must be served as a static asset").toBe(200);
+    expect(logoResponse.headers()["content-type"], "Official logo must be a PNG image").toMatch(new RegExp("image/png", "i"));
+    const logoBytes = await logoResponse.body();
+    expect(logoBytes.subarray(0, 8).toString("hex"), "Official logo PNG signature").toBe("89504e470d0a1a0a");
+    await expect.poll(async () => officialLogo.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     await expect(page.getByRole("heading", { name: "Plan better OUTings." })).toBeVisible();
     await expect(page.getByRole("region", { name: "Plan your outing" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
