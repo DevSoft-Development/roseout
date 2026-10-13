@@ -1,4 +1,6 @@
-import {issueAssistCode,redeemAssistCode,type AssistCodeStore} from "./verification-code";
+import {issueAssistCode,redeemAssistCode} from "./verification-code";
+import type {AtomicCodeRedemptionStore} from "./atomic-code-store";
+import {atomicRedemptionStore} from "./atomic-code-store";
 import {validAssistId} from "./session-policy";
 
 /** Trusted backend principal resolved from authenticated session, never client-supplied roles. */
@@ -6,9 +8,7 @@ export type VerificationPrincipal={id:string;authenticated:boolean;supportRole:b
 export type VerificationContext={sessionId:string;locationId:string;deviceId:string;technicianId:string;state:"requested"|"approved"|"active"|"revoked"|"ended"|"expired"};
 export type VerificationRepository={
  getSession(locationId:string,sessionId:string):Promise<VerificationContext|null>;
- store:AssistCodeStore;
- /** Atomic, durable proof consumed by the activation transaction. */
- markVerified(sessionId:string,technicianId:string):Promise<void>;
+ store:AtomicCodeRedemptionStore;
 };
 export type VerifiedDeviceIdentity={deviceId:string;locationId:string;authenticated:true;sessionBound:boolean};
 export type VerificationInput={locationId:string;sessionId:string;deviceId:string;code?:string};
@@ -28,7 +28,7 @@ export async function issueDeviceVerificationCode(input:{
  try{
   const s=await input.repo.getSession(q.locationId,q.sessionId);
   if(!s||s.sessionId!==q.sessionId||s.locationId!==q.locationId||s.deviceId!==q.deviceId||s.state!=="approved")return {ok:false,reason:"forbidden"};
-  const code=await issueAssistCode({...s,secret:input.secret,store:input.repo.store,now:Date.now()});
+  const code=await issueAssistCode({...s,secret:input.secret,store:atomicRedemptionStore(input.repo.store),now:Date.now()});
   return {ok:true,code};
  }catch{return {ok:false,reason:"unavailable"};}
 }
@@ -43,7 +43,6 @@ export async function verifyTechnicianCode(input:{
   if(!s||!authorized(p,s,q))return {ok:false,reason:"forbidden"};
   const ok=await redeemAssistCode({...s,code:q.code!,secret:input.secret,store:input.repo.store,now:Date.now()});
   if(!ok)return {ok:false,reason:"invalid"};
-  await input.repo.markVerified(q.sessionId,p.id);
   return {ok:true};
  }catch{return {ok:false,reason:"unavailable"};}
 }
