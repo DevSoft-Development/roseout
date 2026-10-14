@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acquisitionReservationInput } from "../acquisition-reservation";
+import { acquisitionReservationInput, mustStopAcquisitionFallback } from "../acquisition-reservation";
 
 describe("LI V2 acquisition reservation fail closed", () => {
   const base = { provider: "dataforseo", capability: "discovery", eventKey: "pilot-run-001:target-05", maximumUsd: "0.025" };
@@ -16,5 +16,17 @@ describe("LI V2 acquisition reservation fail closed", () => {
   });
   it.each(["", "short", "../bad", "bad key with spaces"])("rejects unstable key %s", (eventKey) => {
     expect(() => acquisitionReservationInput({ ...base, eventKey })).toThrow("acquisition_stable_event_key_required");
+  });
+});
+
+describe("LI V2 provider failure fallback", () => {
+  it("blocks fallback after an uncertain paid response", () => {
+    expect(mustStopAcquisitionFallback(new Error("paid_acquisition_outcome_uncertain:dataforseo"))).toBe(true);
+    expect(mustStopAcquisitionFallback(new Error("paid_acquisition_outcome_uncertain:brave"))).toBe(true);
+  });
+  it("permits fallback after preflight or unbilled errors", () => {
+    expect(mustStopAcquisitionFallback(new Error("provider_registry_disabled_or_unavailable:brave"))).toBe(false);
+    expect(mustStopAcquisitionFallback(new Error("acquisition_budget_reservation_denied:dataforseo"))).toBe(false);
+    expect(mustStopAcquisitionFallback(null)).toBe(false);
   });
 });
