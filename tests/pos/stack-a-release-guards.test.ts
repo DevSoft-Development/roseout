@@ -25,6 +25,10 @@ describe("Stack A checkout and dispute release guards",()=>{
   expect(checkout).toContain("p_checkout_session_id:checkout.id");
   expect(checkout).not.toContain(".update({checkout_session_id:checkout.id})");
  });
+ it("uses the Stripe-supported card-only Checkout filter",()=>{
+  expect(checkout).toContain('form.set("allowed_payment_method_types[0]","card")');
+  expect(checkout).not.toContain('form.set("payment_method_types[0]"');
+ });
  it("preserves idempotent settlement and check/tender locking",()=>{
   expect(migration).toContain("if v_s.status='paid' then");
   expect(migration).toContain("for update;");
