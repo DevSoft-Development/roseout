@@ -76,19 +76,19 @@ export async function POST(request:NextRequest){
     const mode=chooseCheckoutVerification(Number(tender.data.total_cents),configured);
     if(mode==="qr")return error(409,"qr_customer_handoff_required");
    }
-   // Fail closed on repeated or parallel requests for a customer handoff.
-   if(body.customerPresent!==true)return error(403,"customer_presence_not_confirmed");
-   const latest=await shard.client.from("pos_evidence_customer_sessions")
-    .select("nonce").eq("location_id",locationId).eq("tender_id",tenderId)
-    .is("consumed_at",null).gt("expires_at",new Date().toISOString()).limit(1);
-   if(latest.error||latest.data?.length)return error(409,"signature_session_already_active");
+   // Until a separate customer-controlled approval exists, employee/device
+   // self-attestation cannot authorize issuance, even with a valid credential.
+   if(process.env.POS_CUSTOMER_HANDOFF_REDEMPTION_CERTIFIED!=="true")
+    return error(503,"customer_handoff_not_certified");
+   // Atomic issuance eliminates check-then-insert races across instances.
    const token=issueCustomerEvidenceSession({locationId,checkId,tenderId,deviceId});
    const claims=verifyCustomerEvidenceSession(token,{locationId,checkId,tenderId,deviceId});
-   const inserted=await shard.client.from("pos_evidence_customer_sessions").insert({
-    nonce:claims.nonce,location_id:locationId,check_id:checkId,tender_id:tenderId,device_id:deviceId,
-    expires_at:new Date(claims.expiresAt).toISOString()
+   const issued=await shard.client.rpc("pos_issue_evidence_session",{
+    p_nonce:claims.nonce,p_location_id:locationId,p_check_id:checkId,
+    p_tender_id:tenderId,p_device_id:deviceId,
+    p_expires_at:new Date(claims.expiresAt).toISOString()
    });
-   if(inserted.error)throw Error("session_persist_failed");
+   if(issued.error||issued.data!==true)return error(409,"signature_session_already_active_or_unavailable");
    return NextResponse.json({ok:true,token,expiresAt:claims.expiresAt},{headers});
   }
   if(body?.action!=="capture"||typeof body.token!=="string"||typeof body.pngBase64!=="string"||
