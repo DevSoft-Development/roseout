@@ -1,4 +1,6 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
+import { recordLiProviderUsage } from "@/lib/location-intelligence/v2/provider-metering";
 
 import type {
   LocationIntelligenceProviderAdapter,
@@ -49,11 +51,21 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
-    return {
-      providerId: this.descriptor.id,
-      capability: request.capability,
-      data: await this.handler(request),
-    };
+    const eventKey = randomUUID();
+    try {
+      const data = await this.handler(request);
+      if (paidRequest) await recordLiProviderUsage({
+        provider: this.descriptor.id, operation: request.capability,
+        eventKey, estimatedUsd: 0, status: "estimated",
+      }).catch(error => console.error("[li-v2] provider metering failed", error));
+      return { providerId: this.descriptor.id, capability: request.capability, data };
+    } catch (error) {
+      if (paidRequest) await recordLiProviderUsage({
+        provider: this.descriptor.id, operation: request.capability,
+        eventKey, estimatedUsd: 0, status: "failed",
+      }).catch(meteringError => console.error("[li-v2] provider metering failed", meteringError));
+      throw error;
+    }
   }
 }
 
