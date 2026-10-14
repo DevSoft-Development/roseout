@@ -65,6 +65,8 @@ function isAllowedBusinessSurfacePath(pathname: string) {
   if (pathMatches(pathname, "/business/dashboard")) return true;
   if (pathname === "/business/login" || pathname === "/login") return true;
   return [
+    "/auth/staff/start",
+    "/auth/staff/callback",
     "/auth/callback",
     "/auth/confirm",
     "/auth/create-password",
