@@ -15,16 +15,16 @@ export default async function AcquisitionDashboard() {
  const total=all.count ?? 0, visible=searchable.count ?? 0;
  return <AdminPageShell>
   <AdminPageHeader eyebrow="Location Intelligence V2" title="Acquisition & Provider Spending" subtitle="Quality-first metro acquisition; paid-provider metering requires reconciliation." />
-  <AdminSectionCard title="Location inventory">
+  <AdminSectionCard><h2 className="text-lg font-bold">Location inventory</h2>
     <p>All locations: {total.toLocaleString()} · Searchable: {visible.toLocaleString()} · Low-level quarantined: {(lowLevel.count ?? 0).toLocaleString()}</p>
     <p>Targets: 10,000 / 25,000 / 50,000. Remaining: {[10000,25000,50000].map(x => Math.max(0,x-visible).toLocaleString()).join(" / ")}.</p>
   </AdminSectionCard>
-  <AdminSectionCard title="Spending">
+  <AdminSectionCard><h2 className="text-lg font-bold">Spending</h2>
     <p>Google Places spending and hard-cap controls remain available in the existing dashboard.</p>
     <p><Link href="/admin/dashboard/settings/google-places">Open Google Places Budget</Link></p>
     <p>Cross-provider cost data not yet reconciled. No aggregate spending total is displayed until provider events are wired.</p>
   </AdminSectionCard>
-  <AdminSectionCard title="Quality-first acquisition">
+  <AdminSectionCard><h2 className="text-lg font-bold">Quality-first acquisition</h2>
     <p>Local screening rules for fast-food chains, excluded categories, market boundaries and duplicate identities are available for integration. The rules are not yet enforcing production acquisition.</p>
   </AdminSectionCard>
  </AdminPageShell>;
