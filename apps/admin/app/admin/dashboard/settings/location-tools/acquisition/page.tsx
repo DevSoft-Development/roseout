@@ -13,6 +13,7 @@ export default async function AcquisitionDashboard() {
    db.from("locations").select("id",{count:"exact",head:true}).eq("quality_status","low_level_review").eq("is_searchable",false),
  ]);
  const total=all.count ?? 0, visible=searchable.count ?? 0;
+ const {data: providerSpend, error: spendError} = await db.rpc("get_location_acquisition_provider_spend");
  return <AdminPageShell>
   <AdminPageHeader eyebrow="Location Intelligence V2" title="Acquisition & Provider Spending" subtitle="Quality-first metro acquisition; paid-provider metering requires reconciliation." />
   <AdminSectionCard><h2 className="text-lg font-bold">Location inventory</h2>
@@ -22,7 +23,12 @@ export default async function AcquisitionDashboard() {
   <AdminSectionCard><h2 className="text-lg font-bold">Spending</h2>
     <p>Google Places spending and hard-cap controls remain available in the existing dashboard.</p>
     <p><Link href="/admin/dashboard/settings/google-places">Open Google Places Budget</Link></p>
-    <p>Cross-provider cost data not yet reconciled. No aggregate spending total is displayed until provider events are wired.</p>
+    <p>Provider request telemetry below covers instrumented LI V2 operations only. Reconciled totals reflect recorded provider invoices, not assumed costs.</p>
+    {spendError ? <p>Unified spend telemetry unavailable or awaiting database migration.</p> :
+      Array.isArray(providerSpend) && providerSpend.length ? <table className="w-full text-sm">
+       <thead><tr><th className="text-left">Provider</th><th>Attempts</th><th>Reserved estimate</th><th>Reconciled</th><th>Credits</th></tr></thead>
+       <tbody>{providerSpend.map((item: any) => <tr key={item.provider}><td>{item.provider}</td><td className="text-right">{item.attempts}</td><td className="text-right">${Number(item.estimated_usd || 0).toFixed(2)}</td><td className="text-right">${Number(item.reconciled_usd || 0).toFixed(2)}</td><td className="text-right">${Number(item.credits_usd || 0).toFixed(2)}</td></tr>)}</tbody>
+      </table> : <p>No metered provider attempts yet.</p>}
   </AdminSectionCard>
   <AdminSectionCard><h2 className="text-lg font-bold">Quality-first acquisition</h2>
     <p>Local screening rules for fast-food chains, excluded categories, market boundaries and duplicate identities are available for integration. The rules are not yet enforcing production acquisition.</p>
