@@ -1,0 +1,60 @@
+name: POS evidence schema v11-v14 controlled promotion
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_migration:
+        description: Type APPLY_POS_EVIDENCE_V14 to explicitly approve production shard and DR updates
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: operational-shard-control-production
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: inputs.confirm_migration == 'APPLY_POS_EVIDENCE_V14'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      AWS_REGION: us-east-1
+      SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Promote evidence schema to four physical shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          vault="$(aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text)"
+          token="$(jq -r '.managementAccessToken // empty' <<< "$vault")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          sql_api() {
+            local ref="$1" name="$2" sql="$3" file="$RUNNER_TEMP/${name}.json"
+            jq -n --arg query "$sql" '{query:$query}' > "$file"
+            curl --fail --silent --show-error --request POST \
+              -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+              --data-binary "@$file" "https://api.supabase.com/v1/projects/$ref/database/query" > "$RUNNER_TEMP/${name}-result.json"
+          }
+          for mapping in "lyeruuzsnceaxrmdafxb shard01" "vcdnwrsuvhtlvxqbkamg shard01dr" "lpcrikaixcfbqaikevlg shard02" "bjhcxzahgfeniitejtrx shard02dr"; do
+            read -r ref label <<< "$mapping"
+            for v in transaction-evidence-v11 pos-gratuity-policy-v12 pos-evidence-storage-audit-v13 pos-evidence-customer-session-v14; do
+              sql="$(cat "infra/supabase/operational-shards/${v}.sql")"
+              sql_api "$ref" "${label}-${v}" "$sql"
+            done
+            sql_api "$ref" "${label}-proof" "select
+              to_regclass('public.pos_transaction_evidence') is not null as evidence,
+              to_regclass('public.pos_gratuity_policies') is not null as gratuity,
+              to_regclass('public.pos_evidence_access_events') is not null as audit,
+              to_regclass('public.pos_evidence_customer_sessions') is not null as sessions,
+              exists(select 1 from storage.buckets where id='pos-transaction-evidence' and public=false) as private_bucket;"
+            jq -e 'length == 1 and .[0].evidence == true and .[0].gratuity == true and .[0].audit == true and .[0].sessions == true and .[0].private_bucket == true' "$RUNNER_TEMP/${label}-proof-result.json" > /dev/null
+            echo "${label}: four tables and private bucket provisioned" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "IMPORTANT: feature flags remain OFF. Schema proof does not certify capture, encryption configuration, Stripe or reader hardware." >> "$GITHUB_STEP_SUMMARY"
