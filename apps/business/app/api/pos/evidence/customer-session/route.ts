@@ -56,6 +56,12 @@ export async function POST(request:NextRequest){
  try{
   const shard=await verifyTender(locationId,checkId,tenderId);
   if(body?.action==="issue"){
+   // Fail closed on repeated or parallel requests for a customer handoff.
+   if(body.customerPresent!==true)return error(403,"customer_presence_not_confirmed");
+   const latest=await shard.client.from("pos_evidence_customer_sessions")
+    .select("nonce").eq("location_id",locationId).eq("tender_id",tenderId)
+    .is("consumed_at",null).gt("expires_at",new Date().toISOString()).limit(1);
+   if(latest.error||latest.data?.length)return error(409,"signature_session_already_active");
    const token=issueCustomerEvidenceSession({locationId,checkId,tenderId,deviceId});
    const claims=verifyCustomerEvidenceSession(token,{locationId,checkId,tenderId,deviceId});
    const inserted=await shard.client.from("pos_evidence_customer_sessions").insert({
