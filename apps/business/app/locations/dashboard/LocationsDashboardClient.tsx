@@ -147,17 +147,17 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
   const [query, setQuery] = useState("");
   const [allQuery, setAllQuery] = useState("");
   const [allPage, setAllPage] = useState(0);
-  const [allLocations, setAllLocations] = useState<Array<{id: string; name: string}>>([]);
+  const [allLocations, setAllLocations] = useState<Array<{id: string; name: string; city?: string; state?: string; isDemo?: boolean}>>([]);
   const [allMore, setAllMore] = useState(false);
   const [ownerError, setOwnerError] = useState("");
   useEffect(() => {
-    if (!superadminLocationSearch) return;
+    if (!superadminLocationSearch || allQuery.trim().length < 2) { setAllLocations([]); setAllMore(false); return; }
     const controller = new AbortController();
-    fetch(`/api/internal/superadmin-locations?q=${encodeURIComponent(allQuery)}&page=${allPage}`, { signal: controller.signal, cache: "no-store" })
+    const timer = setTimeout(() => fetch(`/api/internal/superadmin-locations?q=${encodeURIComponent(allQuery)}&page=${allPage}`, { signal: controller.signal, cache: "no-store" })
       .then(async res => { if (!res.ok) throw Error("Search unavailable"); return res.json(); })
       .then(data => { setAllLocations(data.locations || []); setAllMore(Boolean(data.hasMore)); setOwnerError(""); })
-      .catch(() => { if (!controller.signal.aborted) setOwnerError("Location search unavailable"); });
-    return () => controller.abort();
+      .catch(() => { if (!controller.signal.aborted) setOwnerError("Location search unavailable"); }), 300);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [allQuery, allPage, superadminLocationSearch]);
   async function setOwnerLocation(id: string | null) {
     const res = await fetch("/api/internal/superadmin-owner-mode", {
@@ -217,14 +217,30 @@ export default function LocationsDashboardClient({ locations, impersonationLabel
         <Sidebar locations={filteredLocations} selected={selected} query={query} onQuery={setQuery} onSelect={setSelectedId} demoContext={demoContext} superadminDemoLocationHref={superadminDemoLocationHref} />
         <section className="min-w-0">
           <TopBar selected={selected} links={links} query={query} onQuery={setQuery} impersonationLabel={impersonationLabel} demoContext={demoContext} onStopImpersonation={stopImpersonation} />
-          {superadminLocationSearch ? <section className="border-b border-white/20 px-4 py-4">
-            <label className="text-sm">All locations <input aria-label="Search all locations" value={allQuery} onChange={e => {setAllQuery(e.target.value); setAllPage(0);}} className="ml-2 rounded-lg bg-white/10 p-2" /></label>
-            <button onClick={() => setOwnerLocation(null)} className="ml-2 rounded-lg border p-2 text-xs">Exit Owner Mode</button>
-            {ownerError ? <p role="alert">{ownerError}</p> : null}
-            <div className="mt-2 flex max-h-32 flex-wrap gap-2 overflow-y-auto">
-              {allLocations.map(loc => <button key={loc.id} onClick={() => setOwnerLocation(loc.id)} className="rounded-lg border border-white/20 p-2 text-xs">{loc.name}</button>)}
+          {superadminLocationSearch ? <section className="border-b border-white/10 px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex flex-wrap items-center gap-3">
+              <label htmlFor="staff-location-search" className="sr-only">Search location by name, phone, ID, or email</label>
+              <input id="staff-location-search" type="search" autoComplete="off"
+                placeholder="Search location by name, phone, location ID, or email"
+                aria-label="Search location by name, phone, ID, or email"
+                value={allQuery} onChange={e => { setAllQuery(e.target.value); setAllPage(0); }}
+                className="min-h-11 w-full max-w-2xl flex-1 rounded-xl border border-white/20 bg-white/10 px-4 text-sm text-white placeholder:text-white/45 focus:border-rose-400 focus:outline-none" />
+              <button type="button" onClick={() => setOwnerLocation(null)} className="rounded-lg border border-white/20 px-3 py-2 text-xs">Exit Owner Mode</button>
             </div>
-            <div className="mt-2 flex gap-2"><button disabled={!allPage} onClick={() => setAllPage(p => p-1)}>Previous</button><button disabled={!allMore} onClick={() => setAllPage(p => p+1)}>Next</button></div>
+            {ownerError ? <p role="alert" className="mt-2 text-sm text-rose-300">{ownerError}</p> : null}
+            {allQuery.trim().length >= 2 ? <div className="mt-3 max-h-64 space-y-1 overflow-y-auto" aria-label="Location search results">
+              {allLocations.map(loc => <button type="button" key={loc.id}
+                onClick={() => loc.isDemo && superadminDemoLocationHref ? window.location.assign(superadminDemoLocationHref) : setOwnerLocation(loc.id)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2 text-left text-sm hover:bg-white/10">
+                <span>{loc.name}{loc.city ? ` · ${loc.city}` : ""}{loc.state ? `, ${loc.state}` : ""}{loc.isDemo ? " · Demo" : ""}</span>
+                <span className="text-xs text-white/50">{loc.isDemo ? "Open demo" : "Open location"}</span>
+              </button>)}
+              {!allLocations.length && !ownerError ? <p className="px-2 py-3 text-xs text-white/50">No matching locations.</p> : null}
+              {allMore || allPage > 0 ? <div className="flex gap-4 py-2 text-xs">
+                <button disabled={!allPage} onClick={() => setAllPage(p => p - 1)} className="disabled:opacity-40">Previous</button>
+                <button disabled={!allMore} onClick={() => setAllPage(p => p + 1)} className="disabled:opacity-40">Next</button>
+              </div> : null}
+            </div> : null}
           </section> : null}
           <div className="border-b border-white/10 px-4 sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-[1760px] gap-2 overflow-x-auto pb-3 pt-2">
