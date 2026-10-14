@@ -261,7 +261,7 @@ declare v_check uuid;
 declare v_changed boolean;
 begin
  if TG_TABLE_NAME='pos_checks' then
-  v_check:=coalesce(new.id,old.id);
+  v_check:=case when TG_OP='DELETE' then old.id else new.id end;
   v_changed:=TG_OP='DELETE' or
    old.subtotal_cents is distinct from new.subtotal_cents or
    old.discount_cents is distinct from new.discount_cents or
@@ -269,7 +269,7 @@ begin
    old.service_charge_cents is distinct from new.service_charge_cents or
    old.total_cents is distinct from new.total_cents;
  elsif TG_TABLE_NAME='pos_tenders' then
-  v_check:=coalesce(new.check_id,old.check_id);
+  v_check:=case when TG_OP='DELETE' then old.check_id else new.check_id end;
   v_changed:=TG_OP='DELETE' or
    old.amount_cents is distinct from new.amount_cents or
    old.tip_cents is distinct from new.tip_cents or
