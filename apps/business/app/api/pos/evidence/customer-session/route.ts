@@ -74,7 +74,7 @@ export async function POST(request:NextRequest){
      customerScreenThresholdCents:Number(policy.data.customer_screen_threshold_cents)
     }:DEFAULT_VERIFICATION_POLICY;
     const mode=chooseCheckoutVerification(Number(tender.data.total_cents),configured);
-    if(mode==="qr")return error(409,"qr_customer_handoff_required");
+    if(mode==="text_to_pay")return error(409,"text_to_pay_customer_handoff_required");
    }
    // Until a separate customer-controlled approval exists, employee/device
    // self-attestation cannot authorize issuance, even with a valid credential.
