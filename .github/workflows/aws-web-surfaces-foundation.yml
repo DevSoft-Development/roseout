@@ -252,12 +252,28 @@ jobs:
 
           for surface in admin business; do
             HOST="${surface}.theouthaven.com"
-            BODY="$(curl --fail --silent --show-error --max-time 20 \
+            # A foundation-only deployment has no ECS targets yet. HTTP 503
+            # from the ALB is expected until the separate services deploy.
+            # curl still validates the public certificate and TLS handshake.
+            STATUS="$(curl --silent --show-error --max-time 20 \
+              --output "$RUNNER_TEMP/${surface}-foundation-response" \
+              --write-out '%{http_code}' \
               --connect-to "${HOST}:443:${ORIGIN}:443" \
               "https://${HOST}/api/health/platform-dr")"
-            printf '%s' "$BODY" | jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' >/dev/null
+            if [ "$TARGET_ENV" = "staging" ]; then
+              case "$STATUS" in
+                200|503) ;;
+                *) echo "Unexpected staging TLS response for ${surface}: $STATUS" >&2; exit 1 ;;
+              esac
+              if [ "$STATUS" = "200" ]; then
+                jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' "$RUNNER_TEMP/${surface}-foundation-response" > /dev/null
+              fi
+            else
+              test "$STATUS" = "200" || { echo "Production origin unhealthy for ${surface}: $STATUS" >&2; exit 1; }
+              jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' "$RUNNER_TEMP/${surface}-foundation-response" > /dev/null
+            fi
           done
-          echo 'HTTPS/TLS and managed WAF protection are active on the isolated AWS origins. Public DNS has not been changed.'
+          echo 'HTTPS/TLS and managed WAF protection verified. Staging 503 is permitted before ECS deployment; application health is verified by the services workflow. DNS unchanged.'
 
       - name: Show CloudFormation failure events
         if: failure()
