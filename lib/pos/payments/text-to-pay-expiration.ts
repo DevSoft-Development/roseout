@@ -19,7 +19,7 @@ export async function expireVerifiedTextToPay(input:{
   "/checkout/sessions/"+encodeURIComponent(input.checkoutSessionId),
   {method:"GET",stripeAccount:input.accountId,mode:"test"});
  if(remote.id!==input.checkoutSessionId||remote.status!=="expired"||
-    remote.payment_status==="paid"||remote.metadata?.type!=="pos_text_to_pay"||
+    remote.payment_status!=="unpaid"||remote.metadata?.type!=="pos_text_to_pay"||
     remote.metadata?.location_id!==input.locationId||
     remote.metadata?.session_id!==input.sessionId)throw Error("checkout_expiry_unverified");
  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"write"});
