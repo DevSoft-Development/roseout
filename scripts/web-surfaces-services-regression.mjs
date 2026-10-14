@@ -85,6 +85,8 @@ requireText(proxy, 'pathname === "/admin/login"', 'Admin runtime must allow its 
 requireText(proxy, 'pathMatches(pathname, "/auth/admin/callback")', 'Admin runtime must allow the admin auth callback.');
 requireText(proxy, 'pathMatches(pathname, "/locations/dashboard")', 'Business runtime must allow the location dashboard.');
 requireText(proxy, 'pathMatches(pathname, "/business/dashboard")', 'Business runtime must allow the business dashboard.');
+requireText(proxy, '"/auth/staff/start",', 'AWS Business runtime must allow Microsoft 365 staff OAuth initiation.');
+requireText(proxy, '"/auth/staff/callback",', 'AWS Business runtime must allow Microsoft 365 staff OAuth callback.');
 requireText(proxy, 'pathname === "/business/login" || pathname === "/login"', 'Business runtime must allow its dedicated login page and the compatibility login alias.');
 requireText(proxy, 'if (pathname === "/") {', 'Isolated AWS web surface roots must have an explicit landing behavior.');
 requireText(proxy, 'loginUrl.pathname = surface === "admin" ? "/admin/login" : "/business/login";', 'Admin and Business roots must redirect to their dedicated login pages.');
