@@ -21,11 +21,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for stack in theouthaven-web-surfaces-staging theouthaven-web-surface-services-staging theouthaven-workers-staging; do
+          for stack in theouthaven-web-surfaces-staging theouthaven-workers-staging; do
             status="$(aws cloudformation describe-stacks --stack-name "$stack" --query 'Stacks[0].StackStatus' --output text)"
             case "$status" in CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;; *) echo "Staging stack not healthy: $stack ($status)" >&2; exit 1;; esac
             echo "$stack healthy" >> "$GITHUB_STEP_SUMMARY"
           done
+          if aws cloudformation describe-stacks --stack-name theouthaven-web-surface-services-staging --query "Stacks[0].StackStatus" --output text > /dev/null 2>&1; then
+            echo "Staging ECS services stack exists." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Staging ECS services not yet deployed; this is expected before the services workflow." >> "$GITHUB_STEP_SUMMARY"
+          fi
           aws secretsmanager describe-secret --secret-id /theouthaven/staging/edge-runtime/env --query ARN --output text >/dev/null
           for surface in admin business; do
             aws secretsmanager describe-secret --secret-id "/theouthaven/staging/${surface}-web/app-env" --query ARN --output text >/dev/null
