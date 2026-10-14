@@ -1,4 +1,3 @@
-import {createHash} from "node:crypto";
 import {NextRequest,NextResponse} from "next/server";
 import {authenticatePosDeviceCredential} from "@/lib/pos/device-command-service";
 import {resolveOperationalShardForLocationId} from "@/lib/operational-shards";
@@ -39,7 +38,7 @@ export async function POST(request:NextRequest){
   const tender=await shard.client.from("pos_tenders").select("id,status,check_id,total_cents")
    .eq("location_id",device.locationId).eq("check_id",body.checkId).eq("id",body.tenderId).maybeSingle();
   if(check.error||tender.error||!check.data||!tender.data||
-   !["open","held"].includes(check.data.status)||!["pending","created"].includes(tender.data.status)||
+   !["open","held"].includes(check.data.status)||tender.data.status!=="initiated"||
    !Number.isSafeInteger(tender.data.total_cents)||tender.data.total_cents<1||
    Number(tender.data.total_cents)!==Number(check.data.total_cents))return deny("checkout_totals_unavailable",409);
   const active=await shard.client.from("pos_text_to_pay_sessions").select("id")
