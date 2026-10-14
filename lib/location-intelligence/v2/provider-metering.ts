@@ -19,6 +19,12 @@ export async function reserveLiProviderSpend(input: {
  eventKey: string; provider: string; operation: string; estimatedUsd: number;
  campaignId?: string; runId?: string;
 }): Promise<boolean> {
+ // Fail closed unless all reservations are routed to one designated write region.
+ const authority = process.env.LI_V2_BUDGET_AUTHORITY_REGION;
+ const runtimeRegion = process.env.LI_V2_RUNTIME_REGION;
+ if (!authority || !runtimeRegion || authority !== runtimeRegion) {
+   throw new Error("li_v2_budget_authority_region_mismatch");
+ }
  const {data,error}=await supabaseAdmin.rpc("reserve_location_acquisition_spend", {
   p_event_key:input.eventKey,p_provider:input.provider,p_operation:input.operation,
   p_estimated_usd:input.estimatedUsd,p_campaign_id:input.campaignId||null,p_run_id:input.runId||null,
