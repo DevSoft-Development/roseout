@@ -81,7 +81,7 @@ export default function Checkout({locationId,token}:{locationId:string;token:str
     finally{setBusy(false);}
    }} disabled={busy}/>:null}
    {signed?<p className="text-sm text-emerald-700">Signature securely recorded.</p>:null}
-   {data.status==="accepted"?<button disabled={busy} className="w-full rounded-lg bg-emerald-700 p-3 font-bold text-white disabled:opacity-40" onClick={()=>action("pay")}>Continue to secure Stripe payment</button>:null}
+   {data.status==="accepted"&&data.paymentEnabled?<button disabled={busy} className="w-full rounded-lg bg-emerald-700 p-3 font-bold text-white disabled:opacity-40" onClick={()=>action("pay")}>Continue to secure Stripe payment</button>:null}
    {done?<p role="status" className="text-sm">Agreement recorded. You may proceed to secure payment.</p>:null}
   </section>:null}
  </main>;
