@@ -59,7 +59,8 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
-    if (paidRequest && (purpose === "discovery" || purpose === "bootstrap")) {
+    const reservedPaidAcquisition = paidRequest && (purpose === "discovery" || purpose === "bootstrap");
+    if (reservedPaidAcquisition) {
       const key = `LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`;
       const estimatedUsd = Number(process.env[key]);
       if (!Number.isFinite(estimatedUsd) || estimatedUsd <= 0) throw new Error(`acquisition_provider_price_unconfigured:${this.descriptor.id}`);
@@ -69,11 +70,18 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       });
       if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
-    return {
-      providerId: this.descriptor.id,
-      capability: request.capability,
-      data: await this.handler(request),
-    };
+    try {
+      return {
+        providerId: this.descriptor.id,
+        capability: request.capability,
+        data: await this.handler(request),
+      };
+    } catch (error) {
+      // After a reservation, a timeout might still have incurred a charge.
+      // Prevent a second paid request until reconciliation determines the outcome.
+      if (reservedPaidAcquisition) throw new Error(`paid_acquisition_outcome_uncertain:${this.descriptor.id}`, { cause: error });
+      throw error;
+    }
   }
 }
 
@@ -191,6 +199,7 @@ export async function executeWithProviderFallback(request: LocationProviderReque
         error: "provider_result_inadequate",
       });
     } catch (error) {
+      if (error instanceof Error && error.message.startsWith("paid_acquisition_outcome_uncertain:")) throw error;
       errors.push({
         providerId: adapter.descriptor.id,
         error: error instanceof Error ? error.message : "provider_failed",
