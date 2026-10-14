@@ -1,4 +1,5 @@
 import "server-only";
+import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
   LocationIntelligenceProviderAdapter,
@@ -6,7 +7,7 @@ import type {
   LocationProviderResponse,
   ProviderCapability,
 } from "@/lib/location-intelligence/v2/contracts";
-import { providersForCapability, providerDescriptor } from "@/lib/location-intelligence/v2/providers";
+import { isLocationProviderEnabled, providersForCapability, providerDescriptor } from "@/lib/location-intelligence/v2/providers";
 import { allowPaidProviderExecution } from "@/lib/location-intelligence/v2/policy";
 import {
   braveContextSearch,
@@ -33,7 +34,7 @@ class Adapter implements LocationIntelligenceProviderAdapter {
   ) {}
 
   supports(capability: ProviderCapability) {
-    return this.descriptor.enabled && this.descriptor.capabilities.includes(capability);
+    return isLocationProviderEnabled(this.descriptor) && this.descriptor.capabilities.includes(capability);
   }
 
   async execute(request: LocationProviderRequest): Promise<LocationProviderResponse> {
@@ -178,4 +179,22 @@ export async function executeWithProviderFallback(request: LocationProviderReque
     }
   }
   throw new Error(`location_intelligence_provider_exhausted:${request.capability}:${JSON.stringify(errors)}`);
+}
+
+/**
+ * Resolve one planner decision to the input formats already used by each provider.
+ * This is intentionally plan-only: callers must reserve the shared acquisition
+ * budget before executing any chargeable provider request.
+ */
+export function planProviderCoverageDiscovery(target: CoverageDiscoveryTarget) {
+  const inputs = providerDiscoveryInputs(target);
+  return {
+    target,
+    google: providerDescriptor("google") && isLocationProviderEnabled(providerDescriptor("google")!)
+      ? { capability: "identity" as const, purpose: "discovery" as const, input: inputs.google } : null,
+    brave: providerDescriptor("brave") && isLocationProviderEnabled(providerDescriptor("brave")!)
+      ? { capability: "web_context" as const, purpose: "discovery" as const, input: inputs.brave } : null,
+    dataforseo: inputs.dataforseo && providerDescriptor("dataforseo") && isLocationProviderEnabled(providerDescriptor("dataforseo")!)
+      ? { capability: "discovery" as const, purpose: "discovery" as const, input: inputs.dataforseo } : null,
+  };
 }

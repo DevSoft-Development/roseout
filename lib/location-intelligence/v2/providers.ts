@@ -95,9 +95,18 @@ export const LOCATION_INTELLIGENCE_PROVIDER_REGISTRY: readonly ProviderDescripto
   },
 ] as const;
 
+/**
+ * Runtime kill-switches preserve plug-in/plug-out behavior without touching the
+ * coverage planner. A disabled provider is never selected for a new request.
+ */
+export function isLocationProviderEnabled(provider: ProviderDescriptor) {
+  const flag = process.env[`LI_V2_PROVIDER_${provider.id.toUpperCase()}_ENABLED`];
+  return provider.enabled && flag !== "false" && flag !== "0";
+}
+
 export function providersForCapability(capability: ProviderCapability) {
   return LOCATION_INTELLIGENCE_PROVIDER_REGISTRY
-    .filter((provider) => provider.enabled && provider.capabilities.includes(capability))
+    .filter((provider) => isLocationProviderEnabled(provider) && provider.capabilities.includes(capability))
     .sort((a, b) => b.priority - a.priority);
 }
 
