@@ -58,6 +58,8 @@ export async function POST(request:NextRequest){
   if(connectionError||!/^acct_[A-Za-z0-9]+$/.test(String(connected?.stripe_connect_account_id||"")))throw Error("connected_account_missing");
   const connectedAccountId=connected?.stripe_connect_account_id;
   if(!connectedAccountId)throw Error("connected_account_missing");
+  const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
+  if(!base||!/^https:\/\/[a-z0-9.-]+$/i.test(base))throw Error("customer_origin_unconfigured");
   const inserted=await shard.client.from("pos_text_to_pay_sessions").insert({
    location_id:device.locationId,check_id:body.checkId,tender_id:body.tenderId,
    amount_cents:issued.snapshot.amountCents,currency:issued.snapshot.currency,
@@ -66,10 +68,16 @@ export async function POST(request:NextRequest){
    receipt_snapshot:quoted.receipt,connected_account_id:connectedAccountId
   });
   if(inserted.error)throw Error("session_create_failed");
-  const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
-  if(!base||!/^https:\/\/[a-z0-9.-]+$/i.test(base))throw Error("customer_origin_unconfigured");
   const url=base+"/pos/customer/checkout?locationId="+encodeURIComponent(device.locationId)+"&token="+encodeURIComponent(issued.token);
-  await sendSms({to:phone,body:"ThePOSHaven: Review your secure checkout and agreement: "+url+" (expires in 10 minutes). Do not share this link."});
+  try{
+   const sms=await sendSms({to:phone,body:"ThePOSHaven: Review your secure checkout and agreement: "+url+" (expires in 10 minutes). Do not share this link."});
+   if(!sms.id||/fail|reject|error/i.test(sms.status))throw Error("sms_not_accepted");
+  }catch{
+   // No link was returned: remove this issued session so staff can retry safely.
+   await shard.client.from("pos_text_to_pay_sessions").delete()
+    .eq("location_id",device.locationId).eq("token_sha256",issued.tokenHash).eq("status","issued");
+   throw Error("sms_delivery_unavailable");
+  }
   return NextResponse.json({ok:true,expiresAt:issued.snapshot.expiresAt},{headers});
  }catch{return deny("checkout_link_unavailable",503);}
 }
