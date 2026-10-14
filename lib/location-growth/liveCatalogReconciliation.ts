@@ -32,8 +32,7 @@ function importedUnverifiedReason(row: any) {
   const businessStatus = text(row.google_business_status).toUpperCase();
   if (businessStatus === "CLOSED_PERMANENTLY") return "google_closed_permanently";
   if (businessStatus === "CLOSED_TEMPORARILY") return "google_closed_temporarily";
-  if (row.rating == null || row.review_count == null) return "legacy_missing_reputation";
-  if (Number(row.rating) < 4.4 || Number(row.review_count) < 200) return "legacy_below_current_quality_floor";
+  // Reputation affects ranking, not whether an otherwise verified venue exists.
   if (lower(row.curation_tier) === "low_level" || isStorefrontTakeoutRestaurant(row) || isWeakGenericRestaurant(row)) return "legacy_quick_service_or_low_level";
   if (lower(row.data_status) !== "clean" || !hasPublicPhoto(row) || !hasCompleteLocation(row)) return "legacy_incomplete_public_data";
   if (!isActiveMarketState(row.state)) return "outside_active_market";
@@ -47,13 +46,16 @@ function canRecoverImportedUnverified(row: any) {
     && isActiveMarketState(row.state)
     && ["approved", "active", ""].includes(lower(row.status))
     && lower(row.location_type) === "restaurant"
+    && row.is_hidden !== true
+    && lower(row.public_visibility_tier) === "standard"
     && lower(row.data_status) === "clean"
     && lower(row.duplicate_status) === "unique"
-    && Number(row.rating) >= 4.4
-    && Number(row.review_count) >= 200
+    && !row.duplicate_of
+    && Boolean(text(row.google_place_id))
     && hasPublicPhoto(row)
     && hasCompleteLocation(row)
     && lower(row.curation_tier) !== "low_level"
+    && !row.is_low_level
     && !isStorefrontTakeoutRestaurant(row)
     && !isWeakGenericRestaurant(row);
 }
@@ -71,6 +73,24 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
     .limit(safeLimit);
   if (error) throw new Error(`Imported-unverified reconciliation select failed: ${error.message}`);
 
+  const placeIds = [...new Set((data || []).map((row: any) => text(row.google_place_id)).filter(Boolean))];
+  const { data: identityRows, error: identityError } = placeIds.length
+    ? await supabaseAdmin.from("locations").select("id,google_place_id").in("google_place_id", placeIds)
+    : { data: [], error: null as any };
+  if (identityError) throw new Error(`Recovery identity verification failed: ${identityError.message}`);
+  const identityCounts = new Map<string, number>();
+  for (const identity of identityRows || []) {
+    const key = text(identity.google_place_id);
+    identityCounts.set(key, (identityCounts.get(key) || 0) + 1);
+  }
+
+  const candidateIds = (data || []).map((row: any) => row.id);
+  const { data: profiles, error: profileError } = candidateIds.length
+    ? await supabaseAdmin.from("location_intelligence_profiles_v2").select("location_id,classification").in("location_id", candidateIds)
+    : { data: [], error: null as any };
+  if (profileError) throw new Error(`Recovery classification verification failed: ${profileError.message}`);
+  const classifications = new Map((profiles || []).map((profile: any) => [profile.location_id, profile.classification]));
+
   const reasonCounts: Record<string, number> = {};
   let recovered = 0;
   let closedPermanently = 0;
@@ -79,7 +99,14 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
   const errors: string[] = [];
 
   for (const row of data || []) {
-    const reason = importedUnverifiedReason(row);
+    const repeatedIdentity = (identityCounts.get(text(row.google_place_id)) || 0) > 1;
+    const classification: any = classifications.get(row.id);
+    // negativeClassificationKnown means the classifier ran, not that the venue is negative.
+    // Preserve actual negative flags until a separate raw-evidence reclassification can clear them.
+    const classificationBlocked = !classification || classification.domain !== "restaurant"
+      || classification.negativeClassificationKnown !== true
+      || (Array.isArray(classification.negativeFlags) && classification.negativeFlags.length > 0);
+    const reason = repeatedIdentity ? "duplicate_google_place_id" : classificationBlocked ? "classification_review_required" : importedUnverifiedReason(row);
     reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
     const businessStatus = text(row.google_business_status).toUpperCase();
 
@@ -109,7 +136,7 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
         low_level_detected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-    } else if (canRecoverImportedUnverified(row)) {
+    } else if (!repeatedIdentity && !classificationBlocked && canRecoverImportedUnverified(row)) {
       const normalized = {
         ...row,
         source_quality_status: "enriched",
