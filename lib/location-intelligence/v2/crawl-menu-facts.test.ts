@@ -15,4 +15,14 @@ describe("official JSON-LD food and drink evidence", () => {
   const html='<script type="application/ld+json">'+JSON.stringify({"@type":"MenuItem","name":"Seasonal","offers":{"price":"market price"}})+'</script>';
   expect(extractOfficialJsonLdMenuFacts(html,"https://example.com")[0].price).toBeNull();
  });
+ it("deduplicates repeated menu names and preserves source URL",()=>{
+  const html='<script type="application/ld+json">'+JSON.stringify({"@graph":[
+    {"@type":"MenuItem","name":"Espresso Martini","offers":{"price":"18","priceCurrency":"USD"}},
+    {"@type":"MenuItem","name":"Espresso Martini","offers":{"price":"18","priceCurrency":"USD"}}
+  ]})+'</script>';
+  const items=extractOfficialJsonLdMenuFacts(html,"https://example.com/cocktails");
+  expect(items).toHaveLength(1);
+  expect(items[0].sourceUrl).toBe("https://example.com/cocktails");
+ });
+
 });
