@@ -46,6 +46,8 @@ function canRecoverImportedUnverified(row: any) {
     && isActiveMarketState(row.state)
     && ["approved", "active", ""].includes(lower(row.status))
     && lower(row.location_type) === "restaurant"
+    && row.is_hidden !== true
+    && lower(row.public_visibility_tier) === "standard"
     && lower(row.data_status) === "clean"
     && lower(row.duplicate_status) === "unique"
     && !row.duplicate_of
