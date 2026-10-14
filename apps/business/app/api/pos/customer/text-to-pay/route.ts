@@ -56,7 +56,9 @@ export async function POST(request:NextRequest){
    if(session.status!=="accepted")return failure(409);
    const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
    if(!base||!base.startsWith("https://") || !/^[a-z0-9.-]+$/i.test(base.slice(8)))return failure(503);
-   // Only a confirmed sandbox connected account can receive these funds.\n   if(!/^acct_[A-Za-z0-9]+$/.test(String(session.connected_account_id)))return failure(503);\n   const amount=Number(session.amount_cents);
+   // Only a confirmed sandbox connected account can receive these funds.
+   if(!/^acct_[A-Za-z0-9]+$/.test(String(session.connected_account_id)))return failure(503);
+   const amount=Number(session.amount_cents);
    const form=new URLSearchParams();
    form.set("mode","payment");
    form.set("payment_method_types[0]","card");
