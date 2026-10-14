@@ -1,0 +1,46 @@
+name: POS Stack A protected staging preflight
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c7d0916e443cbe1a4317217940a39e7578c97ff0
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Verify isolated AWS staging infrastructure without modifying resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          for stack in theouthaven-web-surfaces-staging theouthaven-web-surface-services-staging theouthaven-workers-staging; do
+            status="$(aws cloudformation describe-stacks --stack-name "$stack" --query 'Stacks[0].StackStatus' --output text)"
+            case "$status" in CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;; *) echo "Staging stack not healthy: $stack ($status)" >&2; exit 1;; esac
+            echo "$stack healthy" >> "$GITHUB_STEP_SUMMARY"
+          done
+          aws secretsmanager describe-secret --secret-id /theouthaven/staging/edge-runtime/env --query ARN --output text >/dev/null
+          for surface in admin business; do
+            aws secretsmanager describe-secret --secret-id "/theouthaven/staging/${surface}-web/app-env" --query ARN --output text >/dev/null
+          done
+          echo 'Staging runtime secret records found; no secrets printed or changed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Require staging-only checkout identity defaults
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret="$(aws secretsmanager get-secret-value --secret-id /theouthaven/staging/edge-runtime/env --query SecretString --output text)"
+          jq -e 'type=="object"' <<<"$secret" > /dev/null
+          # Preflight checks, not an activation. Fail closed if any financial
+          # release flag is already enabled without a dedicated sandbox rollout.
+          for key in POS_TEXT_TO_PAY_SMS_ENABLED POS_TEXT_TO_PAY_STRIPE_CHECKOUT_ENABLED POS_TEXT_TO_PAY_CUSTOMER_SIGNATURE_ENABLED; do
+            value="$(jq -r --arg key "$key" '.[$key] // "false" | tostring' <<<"$secret")"
+            if [ "$value" = "true" ]; then echo "Staging financial gate already enabled: $key; investigate before certification" >&2; exit 1; fi
+          done
+          echo 'Staging payment and signature gates are disabled. Preflight performed no deployment or mutation.' >> "$GITHUB_STEP_SUMMARY"
