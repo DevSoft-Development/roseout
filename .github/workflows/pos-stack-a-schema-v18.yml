@@ -1,0 +1,61 @@
+name: POS Stack A schema v15-v18 controlled promotion
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_migration:
+        description: Type APPLY_POS_STACK_A_V18 to approve all four operational databases
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: operational-shard-control-production
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: inputs.confirm_migration == 'APPLY_POS_STACK_A_V18'
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      AWS_REGION: us-east-1
+      SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Apply additive schemas and independently verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          vault="$(aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text)"
+          token="$(jq -r '.managementAccessToken // empty' <<< "$vault")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          sql_api() {
+            local ref="$1" name="$2" sql="$3"
+            local file="$RUNNER_TEMP/${name}.json"
+            jq -n --arg query "$sql" '{query:$query}' > "$file"
+            curl --fail --silent --show-error --retry 2 --request POST \
+              -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+              --data-binary "@$file" "https://api.supabase.com/v1/projects/$ref/database/query" > "$RUNNER_TEMP/${name}-result.json"
+          }
+          for mapping in "lyeruuzsnceaxrmdafxb shard01" "vcdnwrsuvhtlvxqbkamg shard01dr" "lpcrikaixcfbqaikevlg shard02" "bjhcxzahgfeniitejtrx shard02dr"; do
+            read -r ref label <<< "$mapping"
+            for v in pos-customer-verification-policy-v15 pos-evidence-session-issuance-v16 pos-disputes-v17 pos-text-to-pay-v18; do
+              sql="$(cat "infra/supabase/operational-shards/${v}.sql")"
+              sql_api "$ref" "${label}-${v}" "$sql"
+            done
+            sql_api "$ref" "${label}-proof" "select
+              to_regclass('public.pos_customer_verification_policies') is not null as v15,
+              to_regprocedure('public.pos_issue_evidence_session(uuid,uuid,uuid,uuid,text,timestamp with time zone)') is not null as v16,
+              to_regclass('public.pos_dispute_cases') is not null as v17,
+              to_regclass('public.pos_dispute_review_events') is not null as review,
+              to_regclass('public.pos_text_to_pay_sessions') is not null as v18,
+              to_regprocedure('public.pos_text_to_pay_advance(text,text,text,integer,text)') is not null as advance;"
+            jq -e 'length == 1 and .[0].v15 == true and .[0].v16 == true and .[0].v17 == true and .[0].review == true and .[0].v18 == true and .[0].advance == true' "$RUNNER_TEMP/${label}-proof-result.json" > /dev/null
+            echo "${label}: all additive schemas verified; payments and dispute submission remain disabled" >> "$GITHUB_STEP_SUMMARY"
+          done
