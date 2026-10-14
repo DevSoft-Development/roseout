@@ -1,0 +1,82 @@
+name: POS Stack A disposable schema certification
+on:
+  pull_request:
+    paths:
+      - 'infra/supabase/operational-shards/pos-*.sql'
+      - 'tests/pos/stack-a-release-guards.test.ts'
+      - '.github/workflows/pos-stack-a-disposable-certification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run Stack A release guards
+        run: npx vitest run tests/pos/text-to-pay-session.test.ts tests/pos/stack-a-release-guards.test.ts
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start disposable local Supabase
+        run: supabase start
+      - name: Reset disposable database
+        run: supabase db reset --local
+      - name: Verify prerequisite operational tables
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF to_regclass('public.locations') IS NULL OR
+               to_regclass('public.pos_checks') IS NULL OR
+               to_regclass('public.pos_tenders') IS NULL OR
+               to_regclass('public.pos_payments') IS NULL OR
+               to_regclass('public.pos_order_items') IS NULL OR
+               to_regclass('public.pos_evidence_customer_sessions') IS NULL
+            THEN RAISE EXCEPTION 'POS operational baseline is unavailable in disposable Supabase; certification blocked';
+            END IF;
+          END $$;
+          SQL
+      - name: Execute migrations twice to verify repeatability
+        run: |
+          set -euo pipefail
+          for pass in 1 2; do
+            for name in pos-customer-verification-policy-v15 pos-evidence-session-issuance-v16 pos-disputes-v17 pos-text-to-pay-v18; do
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "infra/supabase/operational-shards/${name}.sql"
+            done
+            echo "Pass ${pass}: all four migrations executed" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Validate schema ACL and RPC signatures
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE obj text;
+          BEGIN
+            FOREACH obj IN ARRAY ARRAY['pos_customer_verification_policies','pos_dispute_cases','pos_dispute_review_events','pos_text_to_pay_sessions'] LOOP
+              IF to_regclass('public.'||obj) IS NULL THEN RAISE EXCEPTION 'Missing table %', obj; END IF;
+              IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||obj)) THEN RAISE EXCEPTION 'RLS disabled on %',obj; END IF;
+              IF has_table_privilege('anon','public.'||obj,'SELECT') OR has_table_privilege('authenticated','public.'||obj,'SELECT') THEN
+                RAISE EXCEPTION 'Public SELECT access: %',obj;
+              END IF;
+            END LOOP;
+            IF to_regprocedure('public.pos_text_to_pay_advance(text,text,text,integer,text,text)') IS NULL OR
+               to_regprocedure('public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)') IS NULL THEN
+              RAISE EXCEPTION 'Missing RPC signature';
+            END IF;
+            IF has_function_privilege('anon','public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)','EXECUTE') OR
+               has_function_privilege('authenticated','public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)','EXECUTE') THEN
+              RAISE EXCEPTION 'Financial settlement RPC exposed';
+            END IF;
+          END $$;
+          SQL
+      - name: Stop local services
+        if: always()
+        run: supabase stop --no-backup
