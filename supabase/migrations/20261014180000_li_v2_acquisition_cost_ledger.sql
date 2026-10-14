@@ -111,3 +111,23 @@ language sql security definer set search_path = '' stable as $$
 $$;
 revoke all on function public.get_location_acquisition_provider_spend() from public,anon,authenticated;
 grant execute on function public.get_location_acquisition_provider_spend() to service_role;
+
+-- Actual billed cost is set only after reconciliation against a provider statement.
+create or replace function public.reconcile_location_acquisition_usage(
+ p_event_key text, p_actual_usd numeric, p_credit_usd numeric default 0
+) returns boolean language plpgsql security definer set search_path = '' as $$
+declare updated_count integer;
+begin
+ if p_event_key is null or p_actual_usd is null or p_actual_usd < 0
+    or p_credit_usd is null or p_credit_usd < 0 or p_credit_usd > p_actual_usd then
+  raise exception 'invalid_acquisition_reconciliation';
+ end if;
+ update private.location_acquisition_usage
+ set actual_usd = p_actual_usd, credit_usd = p_credit_usd, status = 'reconciled'
+ where event_key = p_event_key and status in ('estimated','failed')
+   and p_actual_usd <= estimated_usd;
+ get diagnostics updated_count = row_count;
+ return updated_count = 1;
+end $$;
+revoke all on function public.reconcile_location_acquisition_usage(text,numeric,numeric) from public,anon,authenticated;
+grant execute on function public.reconcile_location_acquisition_usage(text,numeric,numeric) to service_role;
