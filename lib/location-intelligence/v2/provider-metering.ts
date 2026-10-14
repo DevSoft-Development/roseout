@@ -26,3 +26,17 @@ export async function reserveLiProviderSpend(input: {
  if(error) throw new Error("li_provider_reservation_failed:"+error.message);
  return data===true;
 }
+
+/** Apply verified provider statement amounts; rejects unknown or exceeding reservations. */
+export async function reconcileLiProviderCharge(input: {
+ eventKey: string; actualUsd: number; creditUsd?: number;
+}): Promise<boolean> {
+ if (!Number.isFinite(input.actualUsd) || input.actualUsd < 0 ||
+     !Number.isFinite(input.creditUsd ?? 0) || (input.creditUsd ?? 0) < 0 ||
+     (input.creditUsd ?? 0) > input.actualUsd) throw new Error("invalid_li_reconciliation_amount");
+ const {data,error}=await supabaseAdmin.rpc("reconcile_location_acquisition_usage",{
+   p_event_key:input.eventKey,p_actual_usd:input.actualUsd,p_credit_usd:input.creditUsd ?? 0,
+ });
+ if(error) throw new Error("li_reconciliation_failed:"+error.message);
+ return data === true;
+}
