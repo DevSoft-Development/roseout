@@ -81,4 +81,63 @@ begin
 end $$;
 revoke all on function public.pos_text_to_pay_advance(text,text,text,integer,text) from public,anon,authenticated;
 grant execute on function public.pos_text_to_pay_advance(text,text,text,integer,text) to service_role;
+
+-- Atomic POS ledger settlement. The caller MUST verify the Stripe-signed webhook,
+-- connected account, completed Checkout Session, succeeded PaymentIntent, and amount.
+create or replace function public.pos_settle_text_to_pay(
+ p_location_id uuid,p_token_sha256 text,p_checkout_session_id text,
+ p_payment_intent_id text,p_connected_account_id text,p_amount_cents integer,p_currency text
+) returns boolean language plpgsql security invoker set search_path=public as $
+declare v_s public.pos_text_to_pay_sessions%rowtype;
+        v_t public.pos_tenders%rowtype;
+        v_c public.pos_checks%rowtype;
+begin
+ if p_amount_cents<=0 or p_currency !~ '^[a-z]{3} or
+    p_checkout_session_id !~ '^cs_test_[A-Za-z0-9]+ or
+    p_payment_intent_id !~ '^pi_[A-Za-z0-9]+ or
+    p_connected_account_id !~ '^acct_[A-Za-z0-9]+ then return false; end if;
+ select * into v_s from public.pos_text_to_pay_sessions
+  where location_id=p_location_id and token_sha256=p_token_sha256 for update;
+ if not found then return false; end if;
+ if v_s.status='paid' then
+  return v_s.payment_intent_id=p_payment_intent_id
+    and v_s.checkout_session_id=p_checkout_session_id;
+ end if;
+ if v_s.status<>'paying' or v_s.checkout_session_id<>p_checkout_session_id or
+    v_s.connected_account_id<>p_connected_account_id or
+    v_s.amount_cents<>p_amount_cents or v_s.currency<>p_currency then return false; end if;
+ select * into v_t from public.pos_tenders
+  where id=v_s.tender_id and location_id=v_s.location_id and check_id=v_s.check_id for update;
+ select * into v_c from public.pos_checks
+  where id=v_s.check_id and location_id=v_s.location_id for update;
+ if v_t.id is null or v_c.id is null or v_t.status<>'initiated' or
+  v_t.tender_type<>'card' or v_t.total_cents<>p_amount_cents or
+  v_c.currency<>p_currency or v_c.total_cents<>p_amount_cents or
+  v_c.amount_paid_cents<>0 or v_c.status not in ('open','held') then return false; end if;
+ if exists(select 1 from public.pos_payments
+   where provider='stripe' and provider_payment_intent_id=p_payment_intent_id)
+ then return false; end if;
+ insert into public.pos_payments(
+  location_id,check_id,tender_id,provider,provider_payment_intent_id,
+  connected_account_id,idempotency_key,status,amount_cents,tip_cents,
+  application_fee_cents,payment_method_type,processed_at,succeeded_at,metadata
+ ) values (
+  p_location_id,v_s.check_id,v_s.tender_id,'stripe',p_payment_intent_id,
+  p_connected_account_id,'pos-text-to-pay-'||v_s.id::text,'succeeded',
+  p_amount_cents,0,0,'card',now(),now(),
+  jsonb_build_object('checkout_session_id',p_checkout_session_id,'receipt_sha256',v_s.agreement_sha256)
+ );
+ update public.pos_tenders set status='completed',completed_at=now(),updated_at=now()
+  where id=v_t.id;
+ update public.pos_checks set status='closed',amount_paid_cents=p_amount_cents,
+  closed_at=now(),updated_at=now() where id=v_c.id;
+ update public.pos_text_to_pay_sessions set status='paid',
+  payment_intent_id=p_payment_intent_id,updated_at=now() where id=v_s.id;
+ return true;
+end $;
+revoke all on function public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)
+ from public,anon,authenticated;
+grant execute on function public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)
+ to service_role;
+
 commit;
