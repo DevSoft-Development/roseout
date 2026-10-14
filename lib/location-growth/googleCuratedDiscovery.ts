@@ -146,6 +146,7 @@ const ACTIVE_DISCOVERY_MARKETS: CanonicalMarketKey[] = [
   "LONG_ISLAND",
   "NORTHERN_NJ",
   "WESTCHESTER",
+  "CONNECTICUT",
 ];
 
 type DiscoveryLane = "core" | "curated";
@@ -385,6 +386,28 @@ export async function buildGoogleDiscoveryPlan(
     loadCoverageTargetOverrides(kind),
   ]);
   const catalog = catalogFor(kind);
+  // Prefer the existing persisted coverage planner to rotating fixed area lists.
+  // Fall back to the legacy curated market areas if the planner is unavailable.
+  const prioritizedAreas = new Map<CanonicalMarketKey, string[]>();
+  const { data: coverageRows, error: coverageError } = await supabaseAdmin
+    .from("location_coverage_state")
+    .select("market,area_key,priority_score")
+    .eq("location_kind", kind)
+    .order("priority_score", { ascending: false })
+    .limit(2000);
+  if (coverageError) {
+    console.warn("location_coverage_state_read_failed", coverageError.message);
+  } else {
+    for (const row of coverageRows || []) {
+      const market = normalizeMarketKey(row.market);
+      if (!ACTIVE_DISCOVERY_MARKETS.includes(market)) continue;
+      const area = String(row.area_key || "").trim();
+      if (!area || area.length > 120 || /[\\r\\n]/.test(area)) continue;
+      const areas = prioritizedAreas.get(market) || [];
+      if (!areas.includes(area)) areas.push(area);
+      prioritizedAreas.set(market, areas);
+    }
+  }
   const candidates: DiscoveryPlan[] = [];
 
   for (const market of ACTIVE_DISCOVERY_MARKETS) {
@@ -397,7 +420,10 @@ export async function buildGoogleDiscoveryPlan(
     });
 
     catalog.forEach((entry, index) => {
-      const area = areaFor(market, index);
+      const liveAreas = prioritizedAreas.get(market);
+      const area = liveAreas?.length
+        ? liveAreas[index % liveAreas.length]
+        : areaFor(market, index);
       const areaRows = marketRows.filter((row) => rowMatchesArea(row, area));
       const existingCount = areaRows.filter((row) => {
         const text = rowSearchText(row);
