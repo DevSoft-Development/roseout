@@ -1,3 +1,4 @@
+import {recordVerifiedPosDispute} from "@/lib/pos/payments/dispute-ingestion";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
@@ -450,6 +451,25 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "charge.dispute.updated":
+      case "charge.dispute.funds_reinstated":
+      case "charge.dispute.funds_withdrawn": {
+        if(process.env.POS_DISPUTE_INTAKE_ENABLED==="true"&&owner.locationId&&accountId&&
+          typeof object.payment_intent==="string"){
+          try {
+            await recordVerifiedPosDispute({
+              eventId:String(event.id),disputeId:String(object.id),
+              paymentIntentId:object.payment_intent,connectedAccountId:accountId,
+              amountCents:Number(object.amount),currency:String(object.currency),
+              reason:String(object.reason||"unknown"),status:String(object.status||"unknown"),
+              dueAt:object.evidence_details?.due_by?new Date(Number(object.evidence_details.due_by)*1000).toISOString():null
+            });
+          }catch(err){
+            if(!(err instanceof Error)||err.message!=="dispute_payment_ambiguous_or_missing")throw err;
+          }
+        }
+        break;
+      }
       case "charge.dispute.created": {
         const type = String(object?.metadata?.type || "");
         const orderId = type === "event_ticket_order" ? await resolveOrderId(object) : null;
