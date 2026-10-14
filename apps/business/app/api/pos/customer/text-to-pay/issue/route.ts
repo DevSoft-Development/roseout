@@ -16,7 +16,7 @@ export async function POST(request:NextRequest){
  const auth=request.headers.get("authorization")||"";
  if(!auth.startsWith("Bearer "))return deny("unauthorized_device",401);
  let device:{locationId:string;deviceId:string};
- try{device=await authenticatePosDeviceCredential({deviceId:request.headers.get("x-pos-device-id")||"",credential:auth.slice(7)});}
+ try{device=await authenticatePosDeviceCredential({deviceId:request.headers.get("x-pos-device-id")||"",credential:auth.slice(7),allowSandboxVirtual:true});}
  catch{return deny("unauthorized_device",401);}
  let body:{checkId?:string;tenderId?:string;phone?:string;customerConsent?:boolean;agreementSha256?:string};
  try{
