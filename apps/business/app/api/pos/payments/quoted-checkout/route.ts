@@ -18,8 +18,10 @@ export async function POST(request:NextRequest){
  });}catch{return error("unauthorized_device",401);}
  let body:Record<string,unknown>;
  try{
-  const text=await request.text();
-  if(Buffer.byteLength(text,"utf8")>4096)return error("invalid_payload",413);
+  if(!request.body)return error("invalid_payload");
+  const reader=request.body.getReader();let size=0;const pieces:Buffer[]=[];
+  for(;;){const n=await reader.read();if(n.done)break;size+=n.value.byteLength;if(size>4096){await reader.cancel();return error("invalid_payload",413);}pieces.push(Buffer.from(n.value));}
+  const text=Buffer.concat(pieces).toString("utf8");
   const decoded=JSON.parse(text);
   if(!decoded||typeof decoded!=="object"||Array.isArray(decoded))return error("invalid_payload");
   body=decoded;
