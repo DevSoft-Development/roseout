@@ -26,6 +26,22 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - name: Normalize duplicate migration versions in disposable checkout only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          paths = sorted((p for p in Path("supabase/migrations").glob("*.sql") if p.name[:1].isdigit()), key=lambda p: (int(p.name.split("_",1)[0]),p.name))
+          latest = -1
+          for path in paths:
+              number, suffix = path.name.split("_",1)
+              version = max(int(number),latest+1)
+              latest = version
+              if version != int(number):
+                  target = path.with_name(f"{version:014d}_{suffix}")
+                  if target.exists():
+                      raise RuntimeError(f"Migration collision: {target}")
+                  path.rename(target)
+          PY
       - name: Start disposable local Supabase
         run: supabase start
       - name: Reset disposable database
