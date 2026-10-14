@@ -74,6 +74,7 @@ export default async function PosWorkspacePage({searchParams}:{searchParams?:Pro
   const href=(path:string)=>`${path}?${q}`;
 
   const core=[
+    ...(internalDemoAccess ? [["Run Test Checkout (sandbox preflight)","Check protected demo checkout readiness, operational check/tender prerequisites and test-mode release gates. This does not charge or send a receipt.",href("/locations/dashboard/pos/sandbox-checkout"),"Check sandbox readiness"] as const] : []),
     ["Customer Checkout (preview)","Practice restaurant, activity, or hybrid checkout, optional tips, sample automatic service charges, tap-to-pay sequence, and digital receipts. No payment or signature is collected.",href("/locations/dashboard/pos/checkout-preview"),"Preview checkout"],
     ["Chargeback Management","Review imported Stripe disputes, evidence deadlines and transaction manifests. Read-only while dispute intake and approval are being certified.",href("/locations/dashboard/pos/disputes"),"Review disputes"],
     ["Transactions & Evidence","Authorized owners can review completed tenders and download printable evidence manifests. Real signed PDFs require further certification.",href("/locations/dashboard/pos/evidence"),"Review transactions"],
