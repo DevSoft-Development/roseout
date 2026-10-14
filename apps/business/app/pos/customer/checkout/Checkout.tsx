@@ -4,7 +4,7 @@ import {useEffect,useState} from "react";
 type Receipt={v:number;items:Array<{id:string;name:string;quantity:number;lineTotalCents:number}>;
  subtotalCents:number;discountCents:number;taxCents:number;serviceChargeCents:number;
  amountCents:number;currency:string;termsText:string;termsVersion:string};
-type Response={status:string;receipt:Receipt;amountCents:number;agreementSha256:string;expiresAt:string};
+type Response={status:string;receipt:Receipt;amountCents:number;agreementSha256:string;expiresAt:string;signatureEnabled:boolean;paymentEnabled?:boolean};
 export default function Checkout({locationId,token}:{locationId:string;token:string}){
  const [data,setData]=useState<Response|null>(null);
  const [busy,setBusy]=useState(false),[agreed,setAgreed]=useState(false);
@@ -66,7 +66,7 @@ export default function Checkout({locationId,token}:{locationId:string;token:str
     <label className="flex items-start gap-3"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)}/>I accept the displayed payment authorization agreement and total.</label>
     <button disabled={!agreed||busy} className="w-full rounded-lg bg-slate-900 p-3 font-bold text-white disabled:opacity-40" onClick={()=>action("accept")}>Confirm agreement</button>
    </>:null}
-   {data.status==="accepted"&&!signed?<SignaturePad onSave={async pngBase64=>{
+   {data.status==="accepted"&&data.signatureEnabled&&!signed?<SignaturePad onSave={async pngBase64=>{
     if(!data)return;
     setBusy(true);setError("");
     try{
