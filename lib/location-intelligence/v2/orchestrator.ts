@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { acquisitionReservationInput } from "@/lib/location-intelligence/v2/acquisition-reservation";
+import { acquisitionReservationInput, mustStopAcquisitionFallback } from "@/lib/location-intelligence/v2/acquisition-reservation";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -201,7 +201,7 @@ export async function executeWithProviderFallback(request: LocationProviderReque
         error: "provider_result_inadequate",
       });
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("paid_acquisition_outcome_uncertain:")) throw error;
+      if (mustStopAcquisitionFallback(error)) throw error;
       errors.push({
         providerId: adapter.descriptor.id,
         error: error instanceof Error ? error.message : "provider_failed",
