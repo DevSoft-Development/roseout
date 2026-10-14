@@ -71,6 +71,17 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
     .limit(safeLimit);
   if (error) throw new Error(`Imported-unverified reconciliation select failed: ${error.message}`);
 
+  const placeIds = [...new Set((data || []).map((row: any) => text(row.google_place_id)).filter(Boolean))];
+  const { data: identityRows, error: identityError } = placeIds.length
+    ? await supabaseAdmin.from("locations").select("id,google_place_id").in("google_place_id", placeIds)
+    : { data: [], error: null as any };
+  if (identityError) throw new Error(`Recovery identity verification failed: ${identityError.message}`);
+  const identityCounts = new Map<string, number>();
+  for (const identity of identityRows || []) {
+    const key = text(identity.google_place_id);
+    identityCounts.set(key, (identityCounts.get(key) || 0) + 1);
+  }
+
   const reasonCounts: Record<string, number> = {};
   let recovered = 0;
   let closedPermanently = 0;
@@ -79,7 +90,8 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
   const errors: string[] = [];
 
   for (const row of data || []) {
-    const reason = importedUnverifiedReason(row);
+    const repeatedIdentity = (identityCounts.get(text(row.google_place_id)) || 0) > 1;
+    const reason = repeatedIdentity ? "duplicate_google_place_id" : importedUnverifiedReason(row);
     reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
     const businessStatus = text(row.google_business_status).toUpperCase();
 
@@ -109,7 +121,7 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
         low_level_detected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-    } else if (canRecoverImportedUnverified(row)) {
+    } else if (!repeatedIdentity && canRecoverImportedUnverified(row)) {
       const normalized = {
         ...row,
         source_quality_status: "enriched",
