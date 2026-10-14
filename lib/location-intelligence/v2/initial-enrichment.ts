@@ -1,4 +1,5 @@
 import "server-only";
+import { extractOfficialJsonLdMenuFacts } from "@/lib/location-intelligence/v2/crawl-menu-facts";
 import { screenAcquisitionCandidate } from "@/lib/location-intelligence/v2/acquisition-quality";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -268,6 +269,17 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
         evidenceType: "website",
         field: "web_context_snapshot",
       }));
+      if (website.providerId === "official_website" && website.data && typeof website.data === "object") {
+        const page = website.data as { html?: unknown; url?: unknown };
+        if (typeof page.html === "string" && typeof page.url === "string") {
+          const facts = extractOfficialJsonLdMenuFacts(page.html, page.url);
+          if (facts.length > 0) await recordLocationEvidence({
+            locationId, provider: "official_website", evidenceType: "website",
+            field: "verified_menu_items", value: facts.slice(0, 100),
+            confidence: 0.95, metadata: { extractedFrom: "jsonld", indexIntent: "search_v3_menu" },
+          });
+        }
+      }
     }
   }
 
