@@ -107,6 +107,13 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   const query = [name, location.address, location.city, location.state].filter(Boolean).join(", ");
   const acquisitionGate = screenAcquisitionCandidate({name, category: location.primary_category, state: location.state, claimed: Boolean(location.claimed || location.is_claimed)});
   const eligibleForOptionalPaidEnrichment = acquisitionGate.action === "accept" || acquisitionGate.action === "protected";
+  if (!eligibleForOptionalPaidEnrichment) {
+    await recordLocationIntelligenceStage({
+      locationId, stage: "normalize", status: "completed",
+      eventType: "v2_acquisition_quality_gate_skipped",
+      metadata: { decision: acquisitionGate.action, reason: acquisitionGate.reason, paidEnrichmentSkipped: true },
+    });
+  }
 
   await recordLocationIntelligenceStage({
     locationId,
