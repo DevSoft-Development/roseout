@@ -4,6 +4,7 @@ on:
     paths:
       - 'infra/supabase/operational-shards/pos-*.sql'
       - 'tests/pos/stack-a-release-guards.test.ts'
+      - 'tests/pos/stack-a-disposable-operational-fixture.sql'
       - '.github/workflows/pos-stack-a-disposable-certification.yml'
   workflow_dispatch:
 permissions:
@@ -46,6 +47,8 @@ jobs:
         run: supabase start
       - name: Reset disposable database
         run: supabase db reset --local
+      - name: Install disposable operational shard fixture
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/pos/stack-a-disposable-operational-fixture.sql
       - name: Verify prerequisite operational tables
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
