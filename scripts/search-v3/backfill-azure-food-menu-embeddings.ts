@@ -731,7 +731,8 @@ async function main() {
   );
 
   if (!TARGET_LOCATION_ID) await migrateMenuSourceText(eligibleLocationIds);
-  await backfillFoodEmbeddings(profiles, locationMap);
+  // A location-scoped certification must never launch the global food backfill.
+  if (!TARGET_LOCATION_ID) await backfillFoodEmbeddings(profiles, locationMap);
   await backfillMenuEmbeddings(eligibleLocationIds);
 
   console.log(JSON.stringify({ summary }, null, 2));
