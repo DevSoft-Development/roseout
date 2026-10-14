@@ -1,3 +1,4 @@
+import {chooseCheckoutVerification,DEFAULT_VERIFICATION_POLICY} from "@/lib/pos/payments/customer-verification-policy";
 import {verifyStripePosSettlement} from "@/lib/pos/payments/stripe-settlement-verification";
 import {NextRequest,NextResponse} from "next/server";
 import {authenticatePosDeviceCredential} from "@/lib/pos/device-command-service";
@@ -56,6 +57,25 @@ export async function POST(request:NextRequest){
  try{
   const shard=await verifyTender(locationId,checkId,tenderId);
   if(body?.action==="issue"){
+   // A high-value QR handoff must be customer controlled, not an employee's
+   // self-attested customerPresent flag. Until the QR redemption route is
+   // certified, deny issuance for policies that require QR.
+   if(process.env.POS_HIGH_VALUE_QR_VERIFICATION_ENABLED==="true"){
+    const policy=await shard.client.from("pos_customer_verification_policies")
+     .select("enabled,qr_threshold_cents,customer_screen_threshold_cents")
+     .eq("location_id",locationId).maybeSingle();
+    if(policy.error)throw Error("customer_verification_policy_unavailable");
+    const tender=await shard.client.from("pos_tenders").select("total_cents")
+     .eq("location_id",locationId).eq("check_id",checkId).eq("id",tenderId).maybeSingle();
+    if(tender.error||!tender.data)throw Error("verification_total_unavailable");
+    const configured=policy.data?{
+     enabled:policy.data.enabled===true,
+     qrThresholdCents:Number(policy.data.qr_threshold_cents),
+     customerScreenThresholdCents:Number(policy.data.customer_screen_threshold_cents)
+    }:DEFAULT_VERIFICATION_POLICY;
+    const mode=chooseCheckoutVerification(Number(tender.data.total_cents),configured);
+    if(mode==="qr")return error(409,"qr_customer_handoff_required");
+   }
    // Fail closed on repeated or parallel requests for a customer handoff.
    if(body.customerPresent!==true)return error(403,"customer_presence_not_confirmed");
    const latest=await shard.client.from("pos_evidence_customer_sessions")
