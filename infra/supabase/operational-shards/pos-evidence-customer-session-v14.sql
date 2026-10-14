@@ -14,7 +14,7 @@ create index if not exists pos_evidence_customer_sessions_tender_idx
  on public.pos_evidence_customer_sessions(location_id,tender_id,expires_at);
 alter table public.pos_evidence_customer_sessions enable row level security;
 revoke all on public.pos_evidence_customer_sessions from public,anon,authenticated;
-grant select,insert,update to service_role;
+grant select,insert,update on table public.pos_evidence_customer_sessions to service_role;
 -- Atomically consume one token. Caller MUST also verify token MAC, device, and settled tender.
 create or replace function public.pos_consume_evidence_session(
  p_nonce uuid,p_location_id uuid,p_check_id uuid,p_tender_id uuid,p_device_id text
