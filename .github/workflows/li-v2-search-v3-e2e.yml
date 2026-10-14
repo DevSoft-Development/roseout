@@ -1,6 +1,10 @@
 name: LI V2 to Search V3 authenticated E2E
 
 on:
+  pull_request:
+    paths:
+      - 'scripts/certify-li-v2-search-v3-e2e.mjs'
+      - '.github/workflows/li-v2-search-v3-e2e.yml'
   workflow_dispatch:
     inputs:
       location_id:
@@ -16,7 +20,26 @@ permissions:
   contents: read
 
 jobs:
+  preflight:
+    name: Validate certification harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify harness syntax
+        run: node --check scripts/certify-li-v2-search-v3-e2e.mjs
+      - name: Verify harness fails closed without certification credentials
+        run: |
+          if node scripts/certify-li-v2-search-v3-e2e.mjs; then
+            echo 'ERROR: E2E harness passed without credentials'
+            exit 1
+          fi
   certify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
     name: Official menu to authenticated Search V3
     runs-on: ubuntu-latest
     timeout-minutes: 10
