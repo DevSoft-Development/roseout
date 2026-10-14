@@ -1,3 +1,4 @@
+import {SignaturePad} from "./SignaturePad";
 "use client";
 import {useEffect,useState} from "react";
 type Receipt={v:number;items:Array<{id:string;name:string;quantity:number;lineTotalCents:number}>;
@@ -7,7 +8,7 @@ type Response={status:string;receipt:Receipt;amountCents:number;agreementSha256:
 export default function Checkout({locationId,token}:{locationId:string;token:string}){
  const [data,setData]=useState<Response|null>(null);
  const [busy,setBusy]=useState(false),[agreed,setAgreed]=useState(false);
- const [error,setError]=useState(""),[done,setDone]=useState(false);
+ const [error,setError]=useState(""),[done,setDone]=useState(false),[signed,setSigned]=useState(false);
  useEffect(()=>{
   // Token remains in component state; clear URL so it is not accidentally shared.
   window.history.replaceState(null,"","/pos/customer/checkout");
@@ -65,6 +66,21 @@ export default function Checkout({locationId,token}:{locationId:string;token:str
     <label className="flex items-start gap-3"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)}/>I accept the displayed payment authorization agreement and total.</label>
     <button disabled={!agreed||busy} className="w-full rounded-lg bg-slate-900 p-3 font-bold text-white disabled:opacity-40" onClick={()=>action("accept")}>Confirm agreement</button>
    </>:null}
+   {data.status==="accepted"&&!signed?<SignaturePad onSave={async pngBase64=>{
+    if(!data)return;
+    setBusy(true);setError("");
+    try{
+     const result=await fetch("/api/pos/customer/text-to-pay/signature",{
+      method:"POST",cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({locationId,token,agreementSha256:data.agreementSha256,pngBase64})
+     });
+     if(!result.ok)throw Error("Signature collection is unavailable. You may proceed without signing.");
+     setSigned(true);
+    }catch(e){setError(e instanceof Error?e.message:"Signature unavailable");}
+    finally{setBusy(false);}
+   }} disabled={busy}/>:null}
+   {signed?<p className="text-sm text-emerald-700">Signature securely recorded.</p>:null}
    {data.status==="accepted"?<button disabled={busy} className="w-full rounded-lg bg-emerald-700 p-3 font-bold text-white disabled:opacity-40" onClick={()=>action("pay")}>Continue to secure Stripe payment</button>:null}
    {done?<p role="status" className="text-sm">Agreement recorded. You may proceed to secure payment.</p>:null}
   </section>:null}
