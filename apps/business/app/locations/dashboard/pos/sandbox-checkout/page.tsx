@@ -27,7 +27,8 @@ export default async function SandboxCheckoutPage({searchParams}:{
   signature:process.env.POS_TEXT_TO_PAY_CUSTOMER_SIGNATURE_ENABLED==="true"
  };
  let openChecks=0,initiatedTenders=0,connection="Unavailable";
- let assignedDevices=0,activeCredentials=0,availableClaims=0;
+ let assignedDevices=0,activeCredentials=0,availableClaims=0,activeVirtualDevices=0;
+ const virtualDevicesEnabled=process.env.POS_SANDBOX_VIRTUAL_DEVICES_ENABLED==="true";
  let devicePreflight="Unavailable",connectedAccount="Not configured";
  try {
   const [assignments,credentials,claims,account]=await Promise.all([
@@ -40,6 +41,11 @@ export default async function SandboxCheckoutPage({searchParams}:{
   assignedDevices=assignments.count||0;
   activeCredentials=credentials.count||0;
   availableClaims=claims.count||0;
+  if(virtualDevicesEnabled){
+   const virtual=await supabaseAdmin.from("pos_sandbox_virtual_devices").select("id",{head:true,count:"exact"}).eq("location_id",locationId).eq("status","active").gt("expires_at",new Date().toISOString());
+   if(virtual.error)throw Error("virtual_device_preflight_failed");
+   activeVirtualDevices=virtual.count||0;
+  }
   devicePreflight="Connected";
   connectedAccount=/^acct_[A-Za-z0-9]+$/.test(String(account.data?.stripe_connect_account_id||""))?"Configured (test capability unverified)":"Missing";
  }catch {devicePreflight="Read-only preflight unavailable";}
@@ -54,7 +60,7 @@ export default async function SandboxCheckoutPage({searchParams}:{
   initiatedTenders=tenders.count||0;
   connection="Connected";
  }catch {connection="Read-only preflight unavailable";}
- const ready=flags.sms&&flags.review&&flags.payment&&connection==="Connected"&&devicePreflight==="Connected"&&activeCredentials>0&&assignedDevices>0&&openChecks>0&&initiatedTenders>0&&connectedAccount.startsWith("Configured");
+ const ready=flags.sms&&flags.review&&flags.payment&&connection==="Connected"&&devicePreflight==="Connected"&&((activeCredentials>0&&assignedDevices>0)||(virtualDevicesEnabled&&activeVirtualDevices>0))&&openChecks>0&&initiatedTenders>0&&connectedAccount.startsWith("Configured");
  const back="/locations/dashboard/pos?locationId="+encodeURIComponent(locationId)+"&demo=1&fromDemoCenter=1";
  return <main className="mx-auto max-w-3xl space-y-5 p-6 text-[var(--business-text)]">
   <Link className="underline" href={back}>Back to POS</Link>
@@ -65,8 +71,9 @@ export default async function SandboxCheckoutPage({searchParams}:{
   <dl className="grid grid-cols-2 gap-3 rounded-xl border border-[var(--business-border)] p-4 text-sm">
    <dt>Operational shard</dt><dd>{connection}</dd>
    <dt>Device registry</dt><dd>{devicePreflight}</dd>
-   <dt>Assigned devices</dt><dd>{assignedDevices}</dd>
-   <dt>Active device credentials</dt><dd>{activeCredentials}</dd>
+   <dt>Assigned physical devices</dt><dd>{assignedDevices}</dd>
+   <dt>Sandbox virtual devices</dt><dd>{virtualDevicesEnabled?activeVirtualDevices:"Disabled"}</dd>
+   <dt>Active physical credentials</dt><dd>{activeCredentials}</dd>
    <dt>Unexpired pairing claims</dt><dd>{availableClaims}</dd>
    <dt>Stripe Connect account</dt><dd>{connectedAccount}</dd>
    <dt>Open/held checks</dt><dd>{openChecks}</dd>
