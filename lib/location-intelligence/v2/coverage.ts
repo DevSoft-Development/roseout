@@ -22,3 +22,38 @@ export function coveragePriority(input: CoverageInventory) {
 export function sortCoverageGaps(rows: CoverageInventory[]) {
   return [...rows].sort((a, b) => coveragePriority(b) - coveragePriority(a));
 }
+
+/** Provider-neutral target. Coordinates must be validated before any geo-scoped paid listing search. */
+export type CoverageDiscoveryTarget = {
+  market: string;
+  area: string;
+  category: string;
+  score: number;
+  query: string;
+  locationCoordinate?: string;
+};
+
+export function providerDiscoveryInputs(target: CoverageDiscoveryTarget) {
+  const query = target.query.trim();
+  if (!query || !target.area.trim() || !target.category.trim()) {
+    throw new Error("coverage_target_incomplete");
+  }
+  const result: {
+    google: { query: string; limit: number };
+    brave: { query: string; count: number };
+    dataforseo: { title: string; locationCoordinate: string; limit: number } | null;
+  } = {
+    google: { query, limit: 10 },
+    brave: { query: `${target.category} ${target.area} official website`, count: 10 },
+    dataforseo: null,
+  };
+  if (target.locationCoordinate) {
+    const parts = target.locationCoordinate.split(",").map(Number);
+    if (parts.length !== 3 || parts.some((x) => !Number.isFinite(x)) ||
+      Math.abs(parts[0]) > 90 || Math.abs(parts[1]) > 180 || parts[2] <= 0 || parts[2] > 50) {
+      throw new Error("coverage_target_invalid_coordinates");
+    }
+    result.dataforseo = { title: target.category, locationCoordinate: target.locationCoordinate, limit: 100 };
+  }
+  return result;
+}
