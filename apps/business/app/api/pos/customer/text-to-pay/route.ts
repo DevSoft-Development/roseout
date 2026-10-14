@@ -34,7 +34,8 @@ export async function GET(request:NextRequest){
    status:session.status,amountCents:session.amount_cents,
    currency:session.currency,agreementSha256:session.agreement_sha256,
    expiresAt:session.expires_at,requiresExplicitAgreement:true,
-   paymentEnabled:process.env.POS_TEXT_TO_PAY_STRIPE_CHECKOUT_ENABLED==="true"
+   paymentEnabled:process.env.POS_TEXT_TO_PAY_STRIPE_CHECKOUT_ENABLED==="true",
+   signatureEnabled:process.env.POS_TEXT_TO_PAY_CUSTOMER_SIGNATURE_ENABLED==="true"
   },{headers});
  }catch{return failure(404);}
 }
