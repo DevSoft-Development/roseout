@@ -1,3 +1,4 @@
+import {settleVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-settlement";
 import {recordVerifiedPosDispute} from "@/lib/pos/payments/dispute-ingestion";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -298,6 +299,20 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
+        if(object?.metadata?.type==="pos_text_to_pay"){
+          if(process.env.POS_TEXT_TO_PAY_STRIPE_SETTLEMENT_ENABLED!=="true")break;
+          if(event.livemode!==false||!accountId||!owner.locationId||
+             String(object.metadata.location_id)!==owner.locationId)throw Error("pos_checkout_connect_account_mismatch");
+          await settleVerifiedTextToPay({
+           checkoutSessionId:String(object.id),accountId,
+           locationId:String(object.metadata.location_id),
+           checkId:String(object.metadata.check_id),
+           tenderId:String(object.metadata.tender_id),
+           receiptSha256:String(object.metadata.receipt_sha256),
+           sessionId:String(object.metadata.session_id)
+          });
+          break;
+        }
         const type = String(object?.metadata?.type || "");
         if (type === "location_lead_payment" && object.payment_status === "paid") {
           const leadId = String(object.metadata.lead_id || "").trim();
