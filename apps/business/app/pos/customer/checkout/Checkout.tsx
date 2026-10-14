@@ -1,5 +1,5 @@
-import {SignaturePad} from "./SignaturePad";
 "use client";
+import {SignaturePad} from "./SignaturePad";
 import {useEffect,useState} from "react";
 type Receipt={v:number;items:Array<{id:string;name:string;quantity:number;lineTotalCents:number}>;
  subtotalCents:number;discountCents:number;taxCents:number;serviceChargeCents:number;
