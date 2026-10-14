@@ -36,7 +36,8 @@ jobs:
           test -n "$token"
           echo "::add-mask::$token"
           sql_api() {
-            local ref="$1" name="$2" sql="$3" file="$RUNNER_TEMP/${name}.json"
+            local ref="$1" name="$2" sql="$3"
+            local file="$RUNNER_TEMP/${name}.json"
             jq -n --arg query "$sql" '{query:$query}' > "$file"
             curl --fail --silent --show-error --request POST \
               -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
