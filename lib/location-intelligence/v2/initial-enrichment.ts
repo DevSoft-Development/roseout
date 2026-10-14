@@ -1,4 +1,5 @@
 import "server-only";
+import { screenAcquisitionCandidate } from "@/lib/location-intelligence/v2/acquisition-quality";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lifecycle";
@@ -103,6 +104,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   const mode = maintenanceModeForLocation(location as Record<string, unknown>);
   const name = String(location.name || location.restaurant_name || location.activity_name || "").trim();
   const query = [name, location.address, location.city, location.state].filter(Boolean).join(", ");
+  const acquisitionGate = screenAcquisitionCandidate({name, category: location.primary_category, state: location.state, claimed: Boolean(location.claimed || location.is_claimed)});
+  const eligibleForOptionalPaidEnrichment = acquisitionGate.action === "accept" || acquisitionGate.action === "protected";
 
   await recordLocationIntelligenceStage({
     locationId,
@@ -268,7 +271,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }
   }
 
-  if (!location.website && mode === "theouthaven_managed" && query) {
+  if (!location.website && mode === "theouthaven_managed" && query && eligibleForOptionalPaidEnrichment) {
     let discovery: LocationProviderResponse | null = null;
     try {
       discovery = await executeWithProviderFallback({
@@ -293,6 +296,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   if (
     mode === "theouthaven_managed" &&
     name &&
+    eligibleForOptionalPaidEnrichment &&
     shouldRunPaidBusinessProfileBootstrap(location as Record<string, unknown>)
   ) {
     let profileResult: LocationProviderResponse | null = null;
@@ -360,7 +364,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }, { onConflict: "location_id" });
   if (updateError) throw new Error(updateError.message);
 
-  await scheduleReviewRefresh({
+  if (eligibleForOptionalPaidEnrichment) await scheduleReviewRefresh({
     locationId,
     provider: "dataforseo",
     popularityScore: Number(location.popularity_score || 0),
