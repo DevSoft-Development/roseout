@@ -13,9 +13,23 @@ permissions:
 jobs:
   isolated-sql:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,29 +39,17 @@ jobs:
       - run: npm ci
       - name: Run Stack A release guards
         run: npx vitest run tests/pos/text-to-pay-session.test.ts tests/pos/stack-a-release-guards.test.ts
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Normalize duplicate migration versions in disposable checkout only
+      - name: Initialize disposable Supabase-style DB roles
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          paths = sorted((p for p in Path("supabase/migrations").glob("*.sql") if p.name[:1].isdigit()), key=lambda p: (int(p.name.split("_",1)[0]),p.name))
-          latest = -1
-          for path in paths:
-              number, suffix = path.name.split("_",1)
-              version = max(int(number),latest+1)
-              latest = version
-              if version != int(number):
-                  target = path.with_name(f"{version:014d}_{suffix}")
-                  if target.exists():
-                      raise RuntimeError(f"Migration collision: {target}")
-                  path.rename(target)
-          PY
-      - name: Start disposable local Supabase
-        run: supabase start
-      - name: Reset disposable database
-        run: supabase db reset --local
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+          END $$;
+          GRANT USAGE ON SCHEMA public TO anon,authenticated,service_role;
+          SQL
       - name: Install disposable operational shard fixture
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/pos/stack-a-disposable-operational-fixture.sql
       - name: Verify prerequisite operational tables
@@ -99,6 +101,3 @@ jobs:
             END IF;
           END $$;
           SQL
-      - name: Stop local services
-        if: always()
-        run: supabase stop --no-backup
