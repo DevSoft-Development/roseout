@@ -74,7 +74,7 @@ export async function POST(request:NextRequest){
    if(!sms.id||/fail|reject|error/i.test(sms.status))throw Error("sms_not_accepted");
   }catch{
    // No link was returned: remove this issued session so staff can retry safely.
-   await shard.client.from("pos_text_to_pay_sessions").delete()
+   await shard.client.from("pos_text_to_pay_sessions").update({status:"cancelled",updated_at:new Date().toISOString()})
     .eq("location_id",device.locationId).eq("token_sha256",issued.tokenHash).eq("status","issued");
    throw Error("sms_delivery_unavailable");
   }
