@@ -304,6 +304,8 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
                 onConflict:"location_id,normalized_item_name,source",
               });
               if (menuError) throw new Error("official_menu_index_source_failed:"+menuError.message);
+              // Menu embeddings are produced by the existing backfill pipeline; do not
+              // claim searchable certification until the matching embeddings are ready.
             }
           }
         }
