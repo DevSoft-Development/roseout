@@ -975,6 +975,14 @@ export async function runGoogleCuratedDiscovery(
             continue;
           }
 
+          // Existing curated discovery bypasses the LI V2 adapter. Do not allow
+          // rich, potentially billable lookups until its shared ledger
+          // integration is certified. IDs-only discovery remains available.
+          if (process.env.LI_V2_LEGACY_RICH_DISCOVERY_CERTIFIED !== "true") {
+            counts.rejected += 1;
+            errors.push("legacy_rich_discovery_budget_gate_not_certified");
+            continue;
+          }
           const details = await getPlaceDetailsLegacyCompat(placeId, {
             fieldMode: "rich",
             jobKey,
