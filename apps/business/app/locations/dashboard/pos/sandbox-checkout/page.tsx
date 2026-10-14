@@ -4,7 +4,7 @@ import {getInternalDemoLocationAccess} from "@/lib/demo/internal-demo-location-a
 import {resolveOperationalShardForLocationId} from "@/lib/operational-shards";
 
 export const dynamic="force-dynamic";
-const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export default async function SandboxCheckoutPage({searchParams}:{
  searchParams:Promise<{locationId?:string;demoLocationId?:string;demo?:string;fromDemoCenter?:string}>
