@@ -55,7 +55,7 @@ export async function POST(request:NextRequest){
    if(process.env.POS_TEXT_TO_PAY_STRIPE_CHECKOUT_ENABLED!=="true")return failure(503);
    if(session.status!=="accepted")return failure(409);
    const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
-   if(!base||!/^https:\\/\\/[a-z0-9.-]+$/i.test(base))return failure(503);
+   if(!base||!base.startsWith("https://") || !/^[a-z0-9.-]+$/i.test(base.slice(8)))return failure(503);
    const amount=Number(session.amount_cents);
    const form=new URLSearchParams();
    form.set("mode","payment");
