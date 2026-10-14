@@ -12,6 +12,11 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
+      location_id:
+        description: "Optional UUID to restrict embedding backfill to one location for LI V2 certification"
+        type: string
+        required: false
+        default: ''
       force:
         description: Run the resumable backfill even if the triggering commit did not change the Phase 7 migration
         type: boolean
@@ -27,6 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  LI_V2_MENU_BACKFILL_LOCATION_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.location_id || '' }}
   EAST_REF: ftdsltatyqhtllyyefzp
   WEST_REF: hnhbzynoyrhjndefbwkh
   EMBEDDING_DEPLOYMENT: toh-embedding
