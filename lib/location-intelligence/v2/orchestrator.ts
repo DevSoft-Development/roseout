@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { randomUUID } from "node:crypto";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -57,6 +58,16 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       ownerMaintained: request.ownerMaintained,
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
+    }
+    if (paidRequest && (purpose === "discovery" || purpose === "bootstrap")) {
+      const key = `LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`;
+      const estimatedUsd = Number(process.env[key]);
+      if (!Number.isFinite(estimatedUsd) || estimatedUsd <= 0) throw new Error(`acquisition_provider_price_unconfigured:${this.descriptor.id}`);
+      const { data: reserved, error: reservationError } = await supabaseAdmin.rpc("reserve_location_acquisition_spend", {
+        p_event_key: randomUUID(), p_provider: this.descriptor.id,
+        p_operation: request.capability, p_estimated_usd: estimatedUsd,
+      });
+      if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
     return {
       providerId: this.descriptor.id,
