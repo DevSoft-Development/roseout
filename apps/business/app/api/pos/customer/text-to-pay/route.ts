@@ -61,7 +61,8 @@ export async function POST(request:NextRequest){
    const amount=Number(session.amount_cents);
    const form=new URLSearchParams();
    form.set("mode","payment");
-   // Use Stripe Dashboard-configured eligible payment methods; legacy payment_method_types is rejected.
+   // Stripe API requires the allowed-payment-method filter, not legacy payment_method_types.
+   form.set("allowed_payment_method_types[0]","card");
    form.set("line_items[0][price_data][currency]",String(session.currency));
    form.set("line_items[0][price_data][unit_amount]",String(amount));
    form.set("line_items[0][price_data][product_data][name]","ThePOSHaven checkout "+String(session.check_id).slice(0,8));
