@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { extractOfficialJsonLdMenuFacts } from "@/lib/location-intelligence/v2/crawl-menu-facts";
 import { screenAcquisitionCandidate } from "@/lib/location-intelligence/v2/acquisition-quality";
 
@@ -285,6 +286,24 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
             field: "verified_menu_items", value: facts.slice(0, 100),
             confidence: 0.95, metadata: { extractedFrom: "jsonld", indexIntent: "search_v3_menu" },
           });
+          if (facts.length > 0) {
+            const rows = facts.slice(0, 100).map(fact => {
+              const normalized = fact.name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+              const record = { name:fact.name, price:fact.price, currency:fact.currency, sourceUrl:fact.sourceUrl };
+              return {
+                location_id:locationId, item_name:fact.name, normalized_item_name:normalized,
+                source:"official_jsonld", source_metadata:{...record, category:fact.category, evidence:"first_party_website"},
+                content_hash:createHash("sha256").update(JSON.stringify(record)).digest("hex"),
+                status:"active", updated_at:new Date().toISOString(),
+              };
+            }).filter(row=>row.normalized_item_name);
+            if (rows.length > 0) {
+              const {error: menuError} = await supabaseAdmin.from("location_menu_items").upsert(rows, {
+                onConflict:"location_id,normalized_item_name,source",
+              });
+              if (menuError) throw new Error("official_menu_index_source_failed:"+menuError.message);
+            }
+          }
         }
       }
     }
