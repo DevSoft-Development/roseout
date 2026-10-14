@@ -66,7 +66,8 @@ export async function POST(request:NextRequest){
    form.set("line_items[0][price_data][unit_amount]",String(amount));
    form.set("line_items[0][price_data][product_data][name]","ThePOSHaven checkout "+String(session.check_id).slice(0,8));
    form.set("line_items[0][quantity]","1");
-   form.set("expires_at",String(Math.ceil(Date.now()/1000)+1800));
+   // Stripe requires an expiry at least 30 minutes after receipt; include clock/transport margin.
+   form.set("expires_at",String(Math.ceil(Date.now()/1000)+31*60));
    form.set("success_url",base+"/pos/customer/checkout/success?session_id={CHECKOUT_SESSION_ID}");
    form.set("cancel_url",base+"/pos/customer/checkout/cancelled");
    for(const [key,value] of Object.entries({
