@@ -4,7 +4,7 @@ export type QualityDecision = { action: "accept" | "reject" | "quarantine" | "du
 const EXCLUDED_BRANDS = ["mcdonalds","burger king","wendys","taco bell","kfc","subway","dunkin","popeyes","chipotle","five guys","chick fil a"];
 const EXCLUDED_CATEGORIES = ["gas station","convenience store","supermarket","grocery store","pharmacy","car wash","fast food restaurant","fast food","department store"];
 const ALLOWED = ["restaurant","bar","lounge","nightclub","cafe","coffee shop","bakery","museum","theater","art gallery","amusement","entertainment","escape room","bowling","live music","attraction","activity","experience","wine bar","cocktail"];
-const normalize = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g," ").trim();
+const normalize = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[’\u0027]/g,"").replace(/[^a-z0-9]+/g," ").trim();
 export function screenAcquisitionCandidate(candidate: Candidate, knownKeys: ReadonlySet<string> = new Set()): QualityDecision {
   if (candidate.claimed) return {action:"protected",reason:"claimed_location"};
   const name = normalize(candidate.name || "");
