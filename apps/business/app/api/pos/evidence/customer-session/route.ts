@@ -29,7 +29,23 @@ export async function POST(request:NextRequest){
  if(length>1500000)return error(413,"payload_too_large");
  let device;
  try{device=await deviceAuth(request);}catch{return error(401,"unauthorized_device");}
- const body=await request.json().catch(()=>null);
+ // Bound the actual request bytes, independent of untrusted Content-Length.
+ if(!request.body)return error(400,"missing_payload");
+ const reader=request.body.getReader();
+ const chunks:Buffer[]=[];
+ let readBytes=0;
+ try{
+  for(;;){
+   const next=await reader.read();
+   if(next.done)break;
+   readBytes+=next.value.byteLength;
+   if(readBytes>1500000){await reader.cancel();return error(413,"payload_too_large");}
+   chunks.push(Buffer.from(next.value));
+  }
+ }catch{return error(400,"invalid_payload");}
+ let body:Record<string,any>|null=null;
+ try{const parsed=JSON.parse(Buffer.concat(chunks).toString("utf8"));if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))body=parsed;}catch{}
+ if(!body)return error(400,"invalid_payload");
  const locationId=String(device.locationId||""),deviceId=String(device.deviceId||"");
  const checkId=String(body?.checkId||""),tenderId=String(body?.tenderId||"");
  if(!uuid.test(locationId)||!uuid.test(checkId)||!uuid.test(tenderId))return error(400,"invalid_tender");
