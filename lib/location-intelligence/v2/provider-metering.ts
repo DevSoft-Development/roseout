@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireSupabaseUrl } from "@/lib/env";
 
 /** Best-effort request accounting. Never report estimated usage as invoiced spend. */
 export async function recordLiProviderUsage(input: {
@@ -22,7 +23,11 @@ export async function reserveLiProviderSpend(input: {
  // Fail closed unless all reservations are routed to one designated write region.
  const authority = process.env.LI_V2_BUDGET_AUTHORITY_REGION;
  const runtimeRegion = process.env.LI_V2_RUNTIME_REGION;
- if (!authority || !runtimeRegion || authority !== runtimeRegion) {
+ const configuredProject = process.env.LI_V2_BUDGET_AUTHORITY_SUPABASE_PROJECT_REF;
+ const actualHost = new URL(requireSupabaseUrl()).hostname;
+ const actualProject = actualHost.endsWith(".supabase.co") ? actualHost.split(".")[0] : "";
+ if (!authority || !runtimeRegion || authority !== runtimeRegion ||
+     !configuredProject || configuredProject !== actualProject) {
    throw new Error("li_v2_budget_authority_region_mismatch");
  }
  const {data,error}=await supabaseAdmin.rpc("reserve_location_acquisition_spend", {
