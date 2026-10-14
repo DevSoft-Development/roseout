@@ -15,7 +15,7 @@ export async function prepareDisputeReview(input:{
  if(found.error||!found.data)throw Error("dispute_not_found");
  if(found.data.submitted_at)throw Error("dispute_already_submitted");
  const manifest=await preparePosDisputeManifest(input.locationId,found.data.tender_id);
- const digest=createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
+ const digest=createHash("sha256").update(JSON.stringify({...manifest,generatedAt:null})).digest("hex");
  const audit=await shard.client.from("pos_dispute_review_events").insert({
   location_id:input.locationId,dispute_id:input.disputeId,
   actor_user_id:input.actorUserId,action:"prepare",evidence_sha256:digest
