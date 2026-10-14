@@ -36,7 +36,7 @@ export async function POST(req:NextRequest){
   const dispute=record.data;
   if(dispute.evidence_due_at&&Date.parse(dispute.evidence_due_at)<=Date.now())return fail(409,"evidence_deadline_expired");
   const manifest=await preparePosDisputeManifest(locationId,dispute.tender_id);
-  const digest=createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
+  const digest=createHash("sha256").update(JSON.stringify({...manifest,generatedAt:null})).digest("hex");
   // Evidence packets contain generation times. Use the reviewed snapshot hash
   // supplied during preparation only if an exact matching stored audit exists.
   if(body.action==="approve"){
