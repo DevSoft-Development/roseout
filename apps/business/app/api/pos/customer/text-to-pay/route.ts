@@ -87,12 +87,10 @@ export async function POST(request:NextRequest){
      return failure(503);
     const changed=await shard.client.rpc("pos_text_to_pay_advance",{
      p_token_sha256:tokenHash,p_from:"accepted",p_to:"paying",
-     p_amount_cents:amount,p_agreement_sha256:session.agreement_sha256
+     p_amount_cents:amount,p_agreement_sha256:session.agreement_sha256,
+     p_checkout_session_id:checkout.id
     });
     if(changed.error||changed.data!==true)return failure(409);
-    const saved=await shard.client.from("pos_text_to_pay_sessions")
-      .update({checkout_session_id:checkout.id}).eq("id",session.id).eq("status","paying");
-    if(saved.error)return failure(503);
     return NextResponse.json({ok:true,checkoutUrl:checkout.url,status:"paying"},{headers});
    }catch{return failure(503);}
   }
