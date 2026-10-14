@@ -1,0 +1,63 @@
+name: POS sandbox virtual device controlled promotion
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_migration:
+        description: Type APPLY_POS_SANDBOX_VIRTUAL_DEVICE to approve East and West control-plane databases
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: supabase-control-plane-production
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: inputs.confirm_migration == 'APPLY_POS_SANDBOX_VIRTUAL_DEVICE'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c7d0916e443cbe1a4317217940a39e7578c97ff0
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Install and prove sandbox identity schema with issuance disabled
+        shell: bash
+        env:
+          SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
+        run: |
+          set -euo pipefail
+          vault="$(aws secretsmanager get-secret-value --secret-id "$SUPABASE_VAULT_SECRET" --query SecretString --output text)"
+          token="$(jq -r '.managementAccessToken // empty' <<< "$vault")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          sql_api() {
+            local ref="$1" name="$2" sql="$3"
+            local file="$RUNNER_TEMP/${name}.json"
+            jq -n --arg query "$sql" '{query:$query}' > "$file"
+            curl --fail --silent --show-error --retry 2 --request POST \
+              -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+              --data-binary "@$file" "https://api.supabase.com/v1/projects/$ref/database/query" > "$RUNNER_TEMP/${name}-result.json"
+            if jq -e 'type=="object" and (.error != null or .message != null)' "$RUNNER_TEMP/${name}-result.json" > /dev/null; then
+              echo "Supabase SQL API reported an error for ${name}" >&2
+              exit 1
+            fi
+          }
+          sql="$(cat supabase/migrations/20261014193000_pos_sandbox_virtual_device_identity.sql)"
+          for mapping in "ftdsltatyqhtllyyefzp east" "hnhbzynoyrhjndefbwkh west"; do
+            read -r ref label <<< "$mapping"
+            sql_api "$ref" "${label}-apply" "$sql"
+            sql_api "$ref" "${label}-verify" "select
+              to_regclass('public.pos_sandbox_virtual_devices') is not null as installed,
+              (select relrowsecurity from pg_class where oid=to_regclass('public.pos_sandbox_virtual_devices')) as rls,
+              not has_table_privilege('anon','public.pos_sandbox_virtual_devices','SELECT') as anon_denied,
+              not has_table_privilege('authenticated','public.pos_sandbox_virtual_devices','SELECT') as authenticated_denied,
+              has_table_privilege('service_role','public.pos_sandbox_virtual_devices','SELECT,INSERT,UPDATE') as service_access;"
+            jq -e 'length==1 and .[0].installed==true and .[0].rls==true and .[0].anon_denied==true and .[0].authenticated_denied==true and .[0].service_access==true' "$RUNNER_TEMP/${label}-verify-result.json" > /dev/null
+            echo "${label}: isolated sandbox device table and RLS verified; runtime issuance remains disabled" >> "$GITHUB_STEP_SUMMARY"
+          done
