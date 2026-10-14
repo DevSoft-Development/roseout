@@ -18,7 +18,7 @@ test("authorized Lounge handoff sees checkout preview and cannot initiate paymen
  await expect(page.getByRole("heading",{name:"Customer checkout"})).toBeVisible();
  await page.getByLabel("Venue type").selectOption("hybrid");
  await expect(page.getByText("Bowling lane")).toBeVisible();
- await page.getByRole("button",{name:/tap to pay/i}).click();
- await expect(page.getByText(/No payment, signature, email, or receipt is sent/i)).toBeVisible();
+ await page.getByRole("button",{name:"Review payment step"}).click();
+ await expect(page.getByText(/No device is connected to this preview/i)).toBeVisible();
  await context.close();
 });
