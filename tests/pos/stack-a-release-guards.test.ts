@@ -5,11 +5,17 @@ import {describe,it,expect} from "vitest";
 const source=(path:string)=>readFileSync(join(process.cwd(),path),"utf8");
 const migration=source("infra/supabase/operational-shards/pos-text-to-pay-v18.sql");
 const checkout=source("apps/business/app/api/pos/customer/text-to-pay/route.ts");
+const customerUi=source("apps/business/app/pos/customer/checkout/Checkout.tsx");
 const issuance=source("apps/business/app/api/pos/customer/text-to-pay/issue/route.ts");
 const expire=source("lib/pos/payments/text-to-pay-expiration.ts");
 const review=source("apps/business/app/api/pos/disputes/review/route.ts");
 
 describe("Stack A checkout and dispute release guards",()=>{
+ it("only exposes customer signature and payment actions when release gates permit",()=>{
+  expect(checkout).toContain("signatureEnabled:process.env.POS_TEXT_TO_PAY_CUSTOMER_SIGNATURE_ENABLED");
+  expect(customerUi).toContain("data.status===\"accepted\"&&data.signatureEnabled&&!signed");
+  expect(customerUi).toContain("data.status===\"accepted\"&&data.paymentEnabled");
+ });
  it("defines each migration component exactly once with balanced PL/pgSQL delimiters",()=>{
   expect(migration.match(/create table if not exists public.pos_text_to_pay_sessions/gi)?.length).toBe(1);
   expect(migration.match(/create or replace function public.pos_settle_text_to_pay/gi)?.length).toBe(1);
