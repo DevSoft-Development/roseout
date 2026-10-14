@@ -7,6 +7,15 @@ import {resolveOperationalShardForLocationId} from "@/lib/operational-shards";
 
 export const dynamic="force-dynamic";
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const deadlineLabel=(value:unknown,submitted:unknown,now:number)=>{
+ if(!value)return "Not provided";
+ const due=Date.parse(String(value));
+ if(!Number.isFinite(due))return "Invalid deadline";
+ if(submitted)return "Submitted · "+new Date(due).toLocaleString("en-US",{timeZone:"UTC"})+" UTC";
+ if(due<=now)return "Deadline passed · "+new Date(due).toLocaleString("en-US",{timeZone:"UTC"})+" UTC";
+ if(due-now<=24*60*60*1000)return "URGENT: under 24 hours · "+new Date(due).toLocaleString("en-US",{timeZone:"UTC"})+" UTC";
+ return new Date(due).toLocaleString("en-US",{timeZone:"UTC"})+" UTC";
+};
 export default async function PosDisputes({searchParams}:{searchParams:Promise<{locationId?:string}>}){
  const locationId=String((await searchParams).locationId||"");
  if(!UUID.test(locationId))redirect("/locations/dashboard");
@@ -36,7 +45,7 @@ export default async function PosDisputes({searchParams}:{searchParams:Promise<{
     <td className="p-3 font-mono text-xs">{String(x.provider_dispute_id)}</td>
     <td className="p-3">{new Intl.NumberFormat("en-US",{style:"currency",currency:String(x.currency).toUpperCase()}).format(Number(x.amount_cents)/100)}</td>
     <td className="p-3">{x.reason}</td><td className="p-3">{x.status}</td>
-    <td className="p-3">{x.evidence_due_at?new Date(x.evidence_due_at).toLocaleString():"Not provided"}</td>
+    <td className="p-3">{deadlineLabel(x.evidence_due_at,x.submitted_at,Date.now())}</td>
     <td className="p-3"><Link className="underline" href={`/api/pos/evidence/packet?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(x.tender_id)}`}>Review manifest</Link>{process.env.POS_DISPUTE_MANAGER_APPROVAL_ENABLED==="true"?<DisputeActions locationId={locationId} disputeId={x.id}/>:null}</td>
    </tr>)}</tbody></table>
    {!rows.length?<p className="p-4">No disputes have been imported for this location.</p>:null}
