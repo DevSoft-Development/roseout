@@ -298,7 +298,9 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
               };
             }).filter(row=>row.normalized_item_name);
             if (rows.length > 0) {
-              const {error: menuError} = await supabaseAdmin.from("location_menu_items").upsert(rows, {
+              // Avoid duplicate upsert keys when a website repeats the same dish in multiple sections.
+              const uniqueRows = [...new Map(rows.map(row => [row.normalized_item_name, row])).values()];
+              const {error: menuError} = await supabaseAdmin.from("location_menu_items").upsert(uniqueRows, {
                 onConflict:"location_id,normalized_item_name,source",
               });
               if (menuError) throw new Error("official_menu_index_source_failed:"+menuError.message);
