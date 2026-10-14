@@ -10,7 +10,7 @@ describe("optional high-value customer verification",()=>{
   expect(chooseCheckoutVerification(24999,enabled)).toBe("standard");
   expect(chooseCheckoutVerification(25000,enabled)).toBe("customer_screen");
   expect(chooseCheckoutVerification(99999,enabled)).toBe("customer_screen");
-  expect(chooseCheckoutVerification(100000,enabled)).toBe("qr");
+  expect(chooseCheckoutVerification(100000,enabled)).toBe("text_to_pay");
  });
  it("uses actual integer cents, never decimals or negative amounts",()=>{
   for(const cents of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1])expect(()=>chooseCheckoutVerification(cents,enabled)).toThrow("invalid_payment_total");
