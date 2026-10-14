@@ -158,7 +158,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
         metadata: { source: "canonical_location", initialEnrichment: true },
       });
     }
-  } else if (query) {
+  } else if (query && eligibleForOptionalPaidEnrichment) {
     let identity: LocationProviderResponse | null = null;
     try {
       identity = await executeWithProviderFallback({
