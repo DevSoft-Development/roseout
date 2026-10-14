@@ -35,7 +35,7 @@ export async function settleVerifiedTextToPay(input:{
   throw Error("checkout_payment_intent_mismatch");
  const shard=await resolveOperationalShardForLocationId(input.locationId,{mode:"write"});
  const session=await shard.client.from("pos_text_to_pay_sessions").select(
-  "id,check_id,tender_id,location_id,token_sha256,amount_cents,currency,agreement_sha256,connected_account_id,checkout_session_id,status"
+  "id,check_id,tender_id,location_id,token_sha256,amount_cents,currency,agreement_sha256,connected_account_id,checkout_session_id,status,signature_storage_key,signature_sha256,signature_signed_at"
  ).eq("id",input.sessionId).eq("location_id",input.locationId).maybeSingle();
  const r=session.data;
  if(session.error||!r||r.check_id!==input.checkId||r.tender_id!==input.tenderId||
@@ -49,5 +49,16 @@ export async function settleVerifiedTextToPay(input:{
   p_amount_cents:checkout.amount_total,p_currency:checkout.currency
  });
  if(result.error||result.data!==true)throw Error("pos_checkout_ledger_settlement_failed");
+ if(r.signature_storage_key&&r.signature_sha256&&r.signature_signed_at){
+  const saved=await shard.client.from("pos_transaction_evidence").upsert({
+   location_id:input.locationId,check_id:input.checkId,tender_id:input.tenderId,
+   evidence_type:"customer_signature",storage_key:r.signature_storage_key,
+   sha256_hex:r.signature_sha256,content_type:"image/png",capture_source:"customer_display",
+   signed_at:r.signature_signed_at,
+   metadata:{checkout_session_id:input.checkoutSessionId,payment_intent_id:intent.id}
+  },{onConflict:"location_id,tender_id,evidence_type,sha256_hex",ignoreDuplicates:true});
+  if(saved.error)throw Error("pos_checkout_signature_evidence_reconcile_failed");
+ }
+
  return {locationId:input.locationId,checkId:input.checkId,tenderId:input.tenderId};
 }
