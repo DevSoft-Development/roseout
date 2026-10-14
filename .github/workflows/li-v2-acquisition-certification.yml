@@ -64,6 +64,7 @@ jobs:
       - name: Verify reconciliation constraints
         run: |
           set -euo pipefail
-          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('parallel-1',0.08,0.01);")" = "t" || exit 1
-          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('parallel-1',0.08,0.01);")" = "f" || exit 1
+          key="$(psql -At -c "select event_key from private.location_acquisition_usage where status='estimated' order by event_key limit 1;")"
+          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('$key',0.08,0.01);")" = "t" || exit 1
+          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('$key',0.08,0.01);")" = "f" || exit 1
           test "$(psql -At -c "select count(*) from private.location_acquisition_usage where status='reconciled' and actual_usd=0.08 and credit_usd=0.01;")" = "1"
