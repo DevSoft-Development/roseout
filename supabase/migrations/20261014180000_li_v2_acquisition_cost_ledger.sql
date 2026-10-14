@@ -71,6 +71,8 @@ begin
    raise exception 'invalid_acquisition_reservation';
  end if;
  perform pg_catalog.pg_advisory_xact_lock(6742031);
+ -- No active global budget means acquisitions are not authorized.
+ if not exists (select 1 from private.location_acquisition_budget_caps where scope = 'global' and scope_id = 'all' and enabled and pg_catalog.now() >= period_start and pg_catalog.now() < period_end) then return false; end if;
  if exists(select 1 from private.location_acquisition_usage where event_key=p_event_key) then return false; end if;
  for cap in select * from private.location_acquisition_budget_caps c where c.enabled
  and pg_catalog.now() >= c.period_start and pg_catalog.now() < c.period_end
