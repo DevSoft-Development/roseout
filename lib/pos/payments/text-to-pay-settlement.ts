@@ -55,7 +55,7 @@ export async function settleVerifiedTextToPay(input:{
    evidence_type:"customer_signature",storage_key:r.signature_storage_key,
    sha256_hex:r.signature_sha256,content_type:"image/png",capture_source:"customer_display",
    signed_at:r.signature_signed_at,
-   metadata:{checkout_session_id:input.checkoutSessionId,payment_intent_id:intent.id}
+   metadata:{checkout_session_id:input.checkoutSessionId,payment_intent_id:intent.id,agreement_sha256:input.receiptSha256,customer_session_id:input.sessionId}
   },{onConflict:"location_id,tender_id,evidence_type,sha256_hex",ignoreDuplicates:true});
   if(saved.error)throw Error("pos_checkout_signature_evidence_reconcile_failed");
  }
