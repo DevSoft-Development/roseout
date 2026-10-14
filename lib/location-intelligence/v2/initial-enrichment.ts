@@ -1,4 +1,7 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { extractOfficialJsonLdMenuFacts, extractOfficialMicrodataMenuFacts } from "@/lib/location-intelligence/v2/crawl-menu-facts";
+import { screenAcquisitionCandidate } from "@/lib/location-intelligence/v2/acquisition-quality";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { recordLocationIntelligenceStage } from "@/lib/location-intelligence/lifecycle";
@@ -103,6 +106,15 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   const mode = maintenanceModeForLocation(location as Record<string, unknown>);
   const name = String(location.name || location.restaurant_name || location.activity_name || "").trim();
   const query = [name, location.address, location.city, location.state].filter(Boolean).join(", ");
+  const acquisitionGate = screenAcquisitionCandidate({name, category: location.primary_category, state: location.state, claimed: Boolean(location.claimed || location.is_claimed)});
+  const eligibleForOptionalPaidEnrichment = acquisitionGate.action === "accept" || acquisitionGate.action === "protected";
+  if (!eligibleForOptionalPaidEnrichment) {
+    await recordLocationIntelligenceStage({
+      locationId, stage: "normalize", status: "completed",
+      eventType: "v2_acquisition_quality_gate_skipped",
+      metadata: { decision: acquisitionGate.action, reason: acquisitionGate.reason, paidEnrichmentSkipped: true },
+    });
+  }
 
   await recordLocationIntelligenceStage({
     locationId,
@@ -155,7 +167,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
         metadata: { source: "canonical_location", initialEnrichment: true },
       });
     }
-  } else if (query) {
+  } else if (query && eligibleForOptionalPaidEnrichment) {
     let identity: LocationProviderResponse | null = null;
     try {
       identity = await executeWithProviderFallback({
@@ -265,10 +277,43 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
         evidenceType: "website",
         field: "web_context_snapshot",
       }));
+      if (website.providerId === "official_website" && website.data && typeof website.data === "object") {
+        const page = website.data as { html?: unknown; url?: unknown };
+        if (typeof page.html === "string" && typeof page.url === "string") {
+          const facts = [...extractOfficialJsonLdMenuFacts(page.html, page.url), ...extractOfficialMicrodataMenuFacts(page.html, page.url)];
+          if (facts.length > 0) await recordLocationEvidence({
+            locationId, provider: "official_website", evidenceType: "website",
+            field: "verified_menu_items", value: facts.slice(0, 100),
+            confidence: 0.95, metadata: { extractedFrom: "schema_org_explicit", indexIntent: "search_v3_menu" },
+          });
+          if (facts.length > 0) {
+            const rows = facts.slice(0, 100).map(fact => {
+              const normalized = fact.name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+              const record = { name:fact.name, price:fact.price, currency:fact.currency, sourceUrl:fact.sourceUrl };
+              return {
+                location_id:locationId, item_name:fact.name, normalized_item_name:normalized,
+                source:fact.sourceType, source_metadata:{...record, category:fact.category, evidence:"first_party_website"},
+                content_hash:createHash("sha256").update(JSON.stringify(record)).digest("hex"),
+                status:"active", updated_at:new Date().toISOString(),
+              };
+            }).filter(row=>row.normalized_item_name);
+            if (rows.length > 0) {
+              // Avoid duplicate upsert keys when a website repeats the same dish in multiple sections.
+              const uniqueRows = [...new Map(rows.map(row => [row.source + ":" + row.normalized_item_name, row])).values()];
+              const {error: menuError} = await supabaseAdmin.from("location_menu_items").upsert(uniqueRows, {
+                onConflict:"location_id,normalized_item_name,source",
+              });
+              if (menuError) throw new Error("official_menu_index_source_failed:"+menuError.message);
+              // Menu embeddings are produced by the existing backfill pipeline; do not
+              // claim searchable certification until the matching embeddings are ready.
+            }
+          }
+        }
+      }
     }
   }
 
-  if (!location.website && mode === "theouthaven_managed" && query) {
+  if (!location.website && mode === "theouthaven_managed" && query && eligibleForOptionalPaidEnrichment) {
     let discovery: LocationProviderResponse | null = null;
     try {
       discovery = await executeWithProviderFallback({
@@ -293,6 +338,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
   if (
     mode === "theouthaven_managed" &&
     name &&
+    eligibleForOptionalPaidEnrichment &&
     shouldRunPaidBusinessProfileBootstrap(location as Record<string, unknown>)
   ) {
     let profileResult: LocationProviderResponse | null = null;
@@ -360,7 +406,7 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
     }, { onConflict: "location_id" });
   if (updateError) throw new Error(updateError.message);
 
-  await scheduleReviewRefresh({
+  if (eligibleForOptionalPaidEnrichment) await scheduleReviewRefresh({
     locationId,
     provider: "dataforseo",
     popularityScore: Number(location.popularity_score || 0),

@@ -67,6 +67,7 @@ async function setAutomaticReviewRefreshes(formData: FormData) {
 export const dynamic = "force-dynamic";
 
 const tools = [
+  ["Acquisition & Provider Spending", "Metro acquisition targets, quality screening, and unified cost tracking readiness", "Finance", "/admin/dashboard/settings/location-tools/acquisition"],
   ["Location Data Intelligence", "Unified database health, Google enrichment, cuisine/category repair, review, and Search Foundation V3 refresh", "Quality", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Search Profiles", "Canonical classification diagnostics and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
   ["Curated Google Discovery", "Review gap-driven Google candidates, nightly outcomes, rejections, and manual restaurant/activity discovery", "Discovery", "/admin/dashboard/settings/location-tools/google-discovery"],

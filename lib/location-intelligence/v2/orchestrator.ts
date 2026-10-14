@@ -1,4 +1,6 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
+import { recordLiProviderUsage, reserveLiProviderSpend } from "@/lib/location-intelligence/v2/provider-metering";
 
 import type {
   LocationIntelligenceProviderAdapter,
@@ -42,18 +44,39 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     }
     const purpose = request.purpose || "unspecified";
     const paidRequest = this.descriptor.paid ||
-      (this.descriptor.id === "google" && request.capability === "status_verification");
+      (this.descriptor.id === "google" && (request.capability === "status_verification" ||
+        (request.capability === "identity" && process.env.LI_V2_ENFORCE_ACQUISITION_BUDGET === "true")));
     if (paidRequest && !allowPaidProviderExecution({
       purpose,
       ownerMaintained: request.ownerMaintained,
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
-    return {
-      providerId: this.descriptor.id,
-      capability: request.capability,
-      data: await this.handler(request),
-    };
+    const eventKey = randomUUID();
+    const enforced = process.env.LI_V2_ENFORCE_ACQUISITION_BUDGET === "true" && (purpose === "bootstrap" || purpose === "discovery");
+    if (paidRequest && enforced) {
+      let prices: Record<string, unknown> = {};
+      try { prices = JSON.parse(process.env.LI_V2_MAX_PROVIDER_REQUEST_USD_JSON || "{}"); } catch { throw new Error("li_v2_invalid_prices"); }
+      // Configure worst-case request cost by provider and capability, not provider alone.
+      const price = Number(prices[this.descriptor.id + ":" + request.capability]);
+      if (!Number.isFinite(price) || price <= 0) throw new Error("li_v2_missing_price:"+this.descriptor.id);
+      const allowed = await reserveLiProviderSpend({ eventKey, provider: this.descriptor.id, operation: request.capability, estimatedUsd: price });
+      if (!allowed) throw new Error("li_v2_spending_cap_exceeded:"+this.descriptor.id);
+    }
+    try {
+      const data = await this.handler(request);
+      if (paidRequest && !enforced) await recordLiProviderUsage({
+        provider: this.descriptor.id, operation: request.capability,
+        eventKey, estimatedUsd: 0, status: "estimated",
+      }).catch(error => console.error("[li-v2] provider metering failed", error));
+      return { providerId: this.descriptor.id, capability: request.capability, data };
+    } catch (error) {
+      if (paidRequest && !enforced) await recordLiProviderUsage({
+        provider: this.descriptor.id, operation: request.capability,
+        eventKey, estimatedUsd: 0, status: "failed",
+      }).catch(meteringError => console.error("[li-v2] provider metering failed", meteringError));
+      throw error;
+    }
   }
 }
 
