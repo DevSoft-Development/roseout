@@ -7,7 +7,7 @@ import type {
   LocationProviderResponse,
   ProviderCapability,
 } from "@/lib/location-intelligence/v2/contracts";
-import { providersForCapability, providerDescriptor } from "@/lib/location-intelligence/v2/providers";
+import { isLocationProviderEnabled, providersForCapability, providerDescriptor } from "@/lib/location-intelligence/v2/providers";
 import { allowPaidProviderExecution } from "@/lib/location-intelligence/v2/policy";
 import {
   braveContextSearch,
@@ -34,7 +34,7 @@ class Adapter implements LocationIntelligenceProviderAdapter {
   ) {}
 
   supports(capability: ProviderCapability) {
-    return this.descriptor.enabled && this.descriptor.capabilities.includes(capability);
+    return isLocationProviderEnabled(this.descriptor) && this.descriptor.capabilities.includes(capability);
   }
 
   async execute(request: LocationProviderRequest): Promise<LocationProviderResponse> {
@@ -190,10 +190,11 @@ export function planProviderCoverageDiscovery(target: CoverageDiscoveryTarget) {
   const inputs = providerDiscoveryInputs(target);
   return {
     target,
-    google: { capability: "identity" as const, purpose: "discovery" as const, input: inputs.google },
-    brave: { capability: "web_context" as const, purpose: "discovery" as const, input: inputs.brave },
-    dataforseo: inputs.dataforseo
-      ? { capability: "discovery" as const, purpose: "discovery" as const, input: inputs.dataforseo }
-      : null,
+    google: providerDescriptor("google") && isLocationProviderEnabled(providerDescriptor("google")!)
+      ? { capability: "identity" as const, purpose: "discovery" as const, input: inputs.google } : null,
+    brave: providerDescriptor("brave") && isLocationProviderEnabled(providerDescriptor("brave")!)
+      ? { capability: "web_context" as const, purpose: "discovery" as const, input: inputs.brave } : null,
+    dataforseo: inputs.dataforseo && providerDescriptor("dataforseo") && isLocationProviderEnabled(providerDescriptor("dataforseo")!)
+      ? { capability: "discovery" as const, purpose: "discovery" as const, input: inputs.dataforseo } : null,
   };
 }
