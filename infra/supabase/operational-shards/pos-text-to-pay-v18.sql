@@ -1,20 +1,19 @@
--- Text-to-Pay: sandbox-only hashed customer link and atomic settlement.
--- Must pass SQL validation and test-mode certification before deployment.
+-- Text-to-Pay sandbox schema. Keep payment gates disabled until certification.
 BEGIN;
-CREATE TABLE IF NOT EXISTS public.pos_text_to_pay_sessions (
+CREATE TABLE IF NOT EXISTS public.pos_text_to_pay_sessions(
  id uuid primary key default gen_random_uuid(),
  location_id uuid not null references public.locations(id) on delete cascade,
  check_id uuid not null references public.pos_checks(id) on delete cascade,
  tender_id uuid not null references public.pos_tenders(id) on delete cascade,
  token_sha256 text not null unique check(token_sha256 ~ '^[a-f0-9]{64}$'),
  amount_cents integer not null check(amount_cents>0),
- currency text not null check(currency ~ '^[a-z]{3}$'),,
- agreement_sha256 text not null check (agreement_sha256 ~ '^[a-f0-9]{64}$'),
+ currency text not null check(currency ~ '^[a-z]{3}$'),
+ agreement_sha256 text not null check(agreement_sha256 ~ '^[a-f0-9]{64}$'),
  receipt_snapshot jsonb not null,
- connected_account_id text not null check (connected_account_id ~ '^acct_[A-Za-z0-9]+$'),
+ connected_account_id text not null check(connected_account_id ~ '^acct_[A-Za-z0-9]+$'),
  checkout_session_id text unique,
  signature_storage_key text,
- signature_sha256 text check (signature_sha256 is null or signature_sha256 ~ '^[a-f0-9]{64}$'),
+ signature_sha256 text check(signature_sha256 is null or signature_sha256 ~ '^[a-f0-9]{64}$'),
  signature_signed_at timestamptz,
  status text not null default 'issued' check(status in ('issued','reviewed','accepted','paying','paid','expired','cancelled')),
  expires_at timestamptz not null,
@@ -28,7 +27,6 @@ create index if not exists pos_text_to_pay_location_check_idx
 alter table public.pos_text_to_pay_sessions enable row level security;
 revoke all on public.pos_text_to_pay_sessions from public,anon,authenticated;
 grant select,insert,update on public.pos_text_to_pay_sessions to service_role;
-
 -- and agreement details before invoking; no anonymous RPC execution.
 create or replace function public.pos_text_to_pay_advance(
  p_token_sha256 text,p_from text,p_to text,p_amount_cents integer,p_agreement_sha256 text
@@ -49,7 +47,6 @@ begin
 end $$;
 revoke all on function public.pos_text_to_pay_advance(text,text,text,integer,text) from public,anon,authenticated;
 grant execute on function public.pos_text_to_pay_advance(text,text,text,integer,text) to service_role;
-
 -- Atomic POS ledger settlement. The caller MUST verify the Stripe-signed webhook,
 -- connected account, completed Checkout Session, succeeded PaymentIntent, and amount.
 create or replace function public.pos_settle_text_to_pay(
@@ -786,7 +783,6 @@ revoke all on function public.pos_settle_text_to_pay(uuid,text,text,text,text,in
  from public,anon,authenticated;
 grant execute on function public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)
  to service_role;
-
 -- Prevent concurrent active handoffs for the same tender (not an application-level race).
 create or replace function public.pos_text_to_pay_single_active()
 returns trigger language plpgsql set search_path=public as $
