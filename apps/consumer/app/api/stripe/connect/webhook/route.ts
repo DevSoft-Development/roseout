@@ -1,3 +1,4 @@
+import {reconcileVerifiedPosTextToPayRefund} from "@/lib/pos/payments/text-to-pay-refund";
 import {expireVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-expiration";
 import {settleVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-settlement";
 import {recordVerifiedPosDispute} from "@/lib/pos/payments/dispute-ingestion";
@@ -451,6 +452,16 @@ export async function POST(request: NextRequest) {
       }
 
       case "charge.refunded": {
+        if(process.env.POS_TEXT_TO_PAY_STRIPE_SETTLEMENT_ENABLED==="true"&&
+           event.livemode===false&&accountId&&owner.locationId&&
+           typeof object?.payment_intent==="string"&&Number(object.amount_refunded)>0){
+          await reconcileVerifiedPosTextToPayRefund({
+            locationId:owner.locationId,accountId,
+            paymentIntentId:String(object.payment_intent),eventId:String(event.id),
+            amountCents:Number(object.amount),refundedCents:Number(object.amount_refunded),
+            currency:String(object.currency)
+          });
+        }
         const type = String(object?.metadata?.type || "");
         if (type === "location_lead_payment") {
           const leadId = String(object?.metadata?.lead_id || "").trim();
