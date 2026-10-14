@@ -1,7 +1,7 @@
 /** Parse explicit Schema.org MenuItem facts only; do not infer prices or allergens. */
 export type CrawledMenuFact = {
  name: string; price: number | null; currency: string | null;
- category: string | null; sourceUrl: string; sourceType: "official_jsonld";
+ category: string | null; sourceUrl: string; sourceType: "official_jsonld" | "official_microdata";
 };
 function objects(value: unknown, depth=0): Record<string,unknown>[] {
  if (depth>12 || !value || typeof value!=="object") return [];
@@ -42,4 +42,25 @@ export function extractOfficialJsonLdMenuFacts(html:string, sourceUrl:string): C
    }
  }
  return [...new Map(results.map(x=>[x.name.toLowerCase(),x])).values()];
+}
+
+/** Extract only explicit schema.org MenuItem microdata. No inferred menu dishes. */
+export function extractOfficialMicrodataMenuFacts(html: string, sourceUrl: string): CrawledMenuFact[] {
+ const url = new URL(sourceUrl);
+ if (!["https:", "http:"].includes(url.protocol)) throw new Error("invalid_menu_source");
+ const facts: CrawledMenuFact[] = [];
+ const blocks = html.slice(0, 1_000_000).matchAll(/<([a-z][\w:-]*)\b(?=[^>]*\bitemscope\b)(?=[^>]*\bitemtype\s*=\s*["'][^"']*schema\.org\/MenuItem["'])[^>]*>([\s\S]*?)<\/\1>/gi);
+ for (const match of blocks) {
+  const body = match[2];
+  const nameTag = body.match(/<[^>]+\bitemprop\s*=\s*["']name["'][^>]*>/i);
+  if (!nameTag) continue;
+  const attr = nameTag[0].match(/\bcontent\s*=\s*["']([^"']+)["']/i);
+  const tail = body.slice((nameTag.index ?? 0) + nameTag[0].length);
+  const plain = tail.split(/<\//, 1)[0].replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+  const name = (attr?.[1] ?? plain).replace(/\s+/g, " ").trim().slice(0, 160);
+  if (!name || /[<>]/.test(name)) continue;
+  facts.push({name,price:null,currency:null,category:null,sourceUrl:url.toString(),sourceType:"official_microdata"});
+  if(facts.length>=100) break;
+ }
+ return [...new Map(facts.map(x=>[x.name.toLowerCase(),x])).values()];
 }
