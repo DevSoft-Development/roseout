@@ -32,8 +32,7 @@ function importedUnverifiedReason(row: any) {
   const businessStatus = text(row.google_business_status).toUpperCase();
   if (businessStatus === "CLOSED_PERMANENTLY") return "google_closed_permanently";
   if (businessStatus === "CLOSED_TEMPORARILY") return "google_closed_temporarily";
-  if (row.rating == null || row.review_count == null) return "legacy_missing_reputation";
-  if (Number(row.rating) < 4.4 || Number(row.review_count) < 200) return "legacy_below_current_quality_floor";
+  // Reputation affects ranking, not whether an otherwise verified venue exists.
   if (lower(row.curation_tier) === "low_level" || isStorefrontTakeoutRestaurant(row) || isWeakGenericRestaurant(row)) return "legacy_quick_service_or_low_level";
   if (lower(row.data_status) !== "clean" || !hasPublicPhoto(row) || !hasCompleteLocation(row)) return "legacy_incomplete_public_data";
   if (!isActiveMarketState(row.state)) return "outside_active_market";
@@ -49,11 +48,12 @@ function canRecoverImportedUnverified(row: any) {
     && lower(row.location_type) === "restaurant"
     && lower(row.data_status) === "clean"
     && lower(row.duplicate_status) === "unique"
-    && Number(row.rating) >= 4.4
-    && Number(row.review_count) >= 200
+    && !row.duplicate_of
+    && Boolean(text(row.google_place_id))
     && hasPublicPhoto(row)
     && hasCompleteLocation(row)
     && lower(row.curation_tier) !== "low_level"
+    && !row.is_low_level
     && !isStorefrontTakeoutRestaurant(row)
     && !isWeakGenericRestaurant(row);
 }
