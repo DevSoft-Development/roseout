@@ -124,38 +124,55 @@ create trigger pos_text_to_pay_one_active before insert on public.pos_text_to_pa
 create or replace function public.pos_text_to_pay_block_frozen_check()
 returns trigger language plpgsql set search_path=public as $$
 declare v_check uuid;
-        v_changed boolean;
+        v_changed boolean := false;
 begin
  if TG_TABLE_NAME='pos_checks' then
-  v_check:=case when TG_OP='DELETE' then old.id else new.id end;
-  v_changed:=TG_OP='DELETE' or
-   old.subtotal_cents is distinct from new.subtotal_cents or
-   old.discount_cents is distinct from new.discount_cents or
-   old.tax_cents is distinct from new.tax_cents or
-   old.service_charge_cents is distinct from new.service_charge_cents or
-   old.total_cents is distinct from new.total_cents;
+  if TG_OP='DELETE' then
+   v_check:=old.id;
+   v_changed:=true;
+  else
+   v_check:=new.id;
+   v_changed:=old.subtotal_cents is distinct from new.subtotal_cents or
+    old.discount_cents is distinct from new.discount_cents or
+    old.tax_cents is distinct from new.tax_cents or
+    old.service_charge_cents is distinct from new.service_charge_cents or
+    old.total_cents is distinct from new.total_cents;
+  end if;
  elsif TG_TABLE_NAME='pos_tenders' then
-  v_check:=case when TG_OP='DELETE' then old.check_id else new.check_id end;
-  v_changed:=TG_OP='DELETE' or
-   old.amount_cents is distinct from new.amount_cents or
-   old.tip_cents is distinct from new.tip_cents or
-   old.check_id is distinct from new.check_id;
+  if TG_OP='DELETE' then
+   v_check:=old.check_id;
+   v_changed:=true;
+  else
+   v_check:=new.check_id;
+   v_changed:=old.amount_cents is distinct from new.amount_cents or
+    old.tip_cents is distinct from new.tip_cents or
+    old.check_id is distinct from new.check_id;
+  end if;
  else
-  v_check:=case when TG_OP='INSERT' then new.check_id else old.check_id end;
-  v_changed:=TG_OP<>'UPDATE' or
-   old.item_name is distinct from new.item_name or
-   old.quantity is distinct from new.quantity or
-   old.unit_price_cents is distinct from new.unit_price_cents or
-   old.unit_modifier_total_cents is distinct from new.unit_modifier_total_cents or
-   old.discount_cents is distinct from new.discount_cents or
-   old.status='voided' or new.status='voided';
+  if TG_OP='INSERT' then
+   v_check:=new.check_id;
+   v_changed:=true;
+  elsif TG_OP='DELETE' then
+   v_check:=old.check_id;
+   v_changed:=true;
+  else
+   v_check:=new.check_id;
+   v_changed:=old.check_id is distinct from new.check_id or
+    old.item_name is distinct from new.item_name or
+    old.quantity is distinct from new.quantity or
+    old.unit_price_cents is distinct from new.unit_price_cents or
+    old.unit_modifier_total_cents is distinct from new.unit_modifier_total_cents or
+    old.discount_cents is distinct from new.discount_cents or
+    old.status='voided' or new.status='voided';
+  end if;
  end if;
  if v_changed and exists(
   select 1 from public.pos_text_to_pay_sessions s where s.check_id=v_check
    and (s.status='paying' or
     (s.status in ('issued','reviewed','accepted') and s.expires_at>now()))
  ) then raise exception 'pos_text_to_pay_checkout_frozen'; end if;
- return case when TG_OP='DELETE' then old else new end;
+ if TG_OP='DELETE' then return old; end if;
+ return new;
 end $$;
 drop trigger if exists pos_text_to_pay_check_fence on public.pos_checks;
 create trigger pos_text_to_pay_check_fence before update or delete on public.pos_checks
