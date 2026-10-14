@@ -68,16 +68,16 @@ export async function POST(req:NextRequest){
    ". Transaction and receipt evidence retained by location.";
   form.set("evidence[uncategorized_text]",summary.slice(0,15000));
   form.set("submit","true");
-  const audit=await shard.client.from("pos_dispute_review_events").insert({
-   location_id:locationId,dispute_id:dispute.id,actor_user_id:user.id,
-   action:"submit",evidence_sha256:body.sha256
-  });
-  if(audit.error)return fail(503,"submission_audit_unavailable");
   const submitted=await stripeRequest<{id:string,status:string}>(`/disputes/${encodeURIComponent(dispute.provider_dispute_id)}`,{
    method:"POST",body:form,stripeAccount:dispute.connected_account_id,mode:"test",
    idempotencyKey:`pos-dispute-submit-${dispute.id}-${body.sha256}`
   });
   if(submitted.id!==dispute.provider_dispute_id)throw Error("dispute_submission_response_mismatch");
+  const audit=await shard.client.from("pos_dispute_review_events").insert({
+   location_id:locationId,dispute_id:dispute.id,actor_user_id:user.id,
+   action:"submit",evidence_sha256:body.sha256
+  });
+  if(audit.error)return fail(503,"submission_audit_unavailable");
   const saved=await shard.client.from("pos_dispute_cases")
    .update({submitted_at:new Date().toISOString(),status:submitted.status,updated_at:new Date().toISOString()})
    .eq("id",dispute.id).eq("location_id",locationId).is("submitted_at",null);
