@@ -1,5 +1,5 @@
-/** Customer QR acknowledgment adds evidence; it never replaces payment authorization. */
-export type CheckoutVerificationMode="standard"|"customer_screen"|"qr";
+/** Customer Text-to-Pay acknowledgment adds evidence; it never replaces cardholder authentication. */
+export type CheckoutVerificationMode="standard"|"customer_screen"|"text_to_pay";
 export type VerificationPolicy={
  enabled:boolean;
  qrThresholdCents:number;
@@ -14,7 +14,7 @@ export function chooseCheckoutVerification(totalCents:number,policy:Verification
  if(!Number.isSafeInteger(policy.qrThresholdCents)||policy.qrThresholdCents<100||
   !Number.isSafeInteger(policy.customerScreenThresholdCents)||policy.customerScreenThresholdCents<100||
   policy.qrThresholdCents<policy.customerScreenThresholdCents)throw Error("invalid_verification_policy");
- if(totalCents>=policy.qrThresholdCents)return "qr";
+ if(totalCents>=policy.qrThresholdCents)return "text_to_pay";
  if(totalCents>=policy.customerScreenThresholdCents)return "customer_screen";
  return "standard";
 }
