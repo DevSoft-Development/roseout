@@ -55,7 +55,8 @@ jobs:
               to_regclass('public.pos_dispute_cases') is not null as v17,
               to_regclass('public.pos_dispute_review_events') is not null as review,
               to_regclass('public.pos_text_to_pay_sessions') is not null as v18,
-              to_regprocedure('public.pos_text_to_pay_advance(text,text,text,integer,text,text)') is not null as advance,\n              to_regprocedure('public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)') is not null as settlement;"
+              to_regprocedure('public.pos_text_to_pay_advance(text,text,text,integer,text,text)') is not null as advance,
+              to_regprocedure('public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)') is not null as settlement;"
             jq -e 'length == 1 and .[0].v15 == true and .[0].v16 == true and .[0].v17 == true and .[0].review == true and .[0].v18 == true and .[0].advance == true and .[0].settlement == true' "$RUNNER_TEMP/${label}-proof-result.json" > /dev/null
             echo "${label}: all additive schemas verified; payments and dispute submission remain disabled" >> "$GITHUB_STEP_SUMMARY"
           done
