@@ -14,7 +14,7 @@ describe("Stack A checkout and dispute release guards",()=>{
   expect(migration.match(/create table if not exists public.pos_text_to_pay_sessions/gi)?.length).toBe(1);
   expect(migration.match(/create or replace function public.pos_settle_text_to_pay/gi)?.length).toBe(1);
   expect(migration.match(/create or replace function public.pos_text_to_pay_advance/gi)?.length).toBe(1);
-  expect(migration.match(/\$\$/g)?.length).toBe(8);
+  expect(migration.match(/\$\$/g)?.length).toBe(10);
   expect(migration.match(/\bcommit;/gi)?.length).toBe(1);
   expect(migration).not.toMatch(/as \$\s*\n/);
  });
@@ -29,6 +29,11 @@ describe("Stack A checkout and dispute release guards",()=>{
   expect(migration).toContain("if v_s.status='paid' then");
   expect(migration).toContain("for update;");
   expect(migration).toContain("provider_payment_intent_id=p_payment_intent_id");
+ });
+ it("keeps refunds monotonic and restricted to paid Text-to-Pay sessions",()=>{
+  expect(migration).toContain("pos_reconcile_text_to_pay_refund");
+  expect(migration).toContain("p_refunded_cents<=v_t.amount_refunded_cents");
+  expect(migration).toContain("s.status='paid'");
  });
  it("refuses reopening checkout without independent expired and unpaid Stripe confirmation",()=>{
   expect(expire).toContain('remote.status!=="expired"');
