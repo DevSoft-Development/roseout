@@ -26,8 +26,11 @@ export async function reserveLiProviderSpend(input: {
  const configuredProject = process.env.LI_V2_BUDGET_AUTHORITY_SUPABASE_PROJECT_REF;
  const actualHost = new URL(requireSupabaseUrl()).hostname;
  const actualProject = actualHost.endsWith(".supabase.co") ? actualHost.split(".")[0] : "";
- if (!authority || !runtimeRegion || authority !== runtimeRegion ||
-     !configuredProject || configuredProject !== actualProject) {
+ // The East primary is the only budget writer. West DR remains read-only for reservations
+ // until a separately audited promotion procedure reconciles spending state.
+ const eastPrimaryRef = "ftdsltatyqhtllyyefzp";
+ if (authority !== "east" || runtimeRegion !== "east" ||
+     configuredProject !== eastPrimaryRef || actualProject !== eastPrimaryRef) {
    throw new Error("li_v2_budget_authority_region_mismatch");
  }
  const {data,error}=await supabaseAdmin.rpc("reserve_location_acquisition_spend", {
