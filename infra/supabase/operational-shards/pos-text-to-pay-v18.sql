@@ -237,4 +237,68 @@ revoke all on function public.pos_settle_text_to_pay(uuid,text,text,text,text,in
 grant execute on function public.pos_settle_text_to_pay(uuid,text,text,text,text,integer,text)
  to service_role;
 
+
+-- Prevent concurrent active handoffs for the same tender (not an application-level race).
+create or replace function public.pos_text_to_pay_single_active()
+returns trigger language plpgsql set search_path=public as $
+begin
+ perform pg_advisory_xact_lock(hashtextextended(new.tender_id::text, 918));
+ if exists(select 1 from public.pos_text_to_pay_sessions s
+   where s.location_id=new.location_id and s.tender_id=new.tender_id
+   and (s.status='paying' or (s.status in ('issued','reviewed','accepted') and s.expires_at>now())))
+ then raise exception 'pos_text_to_pay_active_session'; end if;
+ return new;
+end $;
+drop trigger if exists pos_text_to_pay_one_active on public.pos_text_to_pay_sessions;
+create trigger pos_text_to_pay_one_active before insert on public.pos_text_to_pay_sessions
+ for each row execute function public.pos_text_to_pay_single_active();
+
+-- Any financial changes or itemization changes cancel the prior checkout quote.
+-- Activity-only item status changes are allowed for kitchen workflows.
+create or replace function public.pos_text_to_pay_block_frozen_check()
+returns trigger language plpgsql set search_path=public as $
+declare v_check uuid;
+declare v_changed boolean;
+begin
+ if TG_TABLE_NAME='pos_checks' then
+  v_check:=coalesce(new.id,old.id);
+  v_changed:=TG_OP='DELETE' or
+   old.subtotal_cents is distinct from new.subtotal_cents or
+   old.discount_cents is distinct from new.discount_cents or
+   old.tax_cents is distinct from new.tax_cents or
+   old.service_charge_cents is distinct from new.service_charge_cents or
+   old.total_cents is distinct from new.total_cents;
+ elsif TG_TABLE_NAME='pos_tenders' then
+  v_check:=coalesce(new.check_id,old.check_id);
+  v_changed:=TG_OP='DELETE' or
+   old.amount_cents is distinct from new.amount_cents or
+   old.tip_cents is distinct from new.tip_cents or
+   old.check_id is distinct from new.check_id;
+ else
+  v_check:=case when TG_OP='INSERT' then new.check_id else old.check_id end;
+  v_changed:=TG_OP<>'UPDATE' or
+   old.item_name is distinct from new.item_name or
+   old.quantity is distinct from new.quantity or
+   old.unit_price_cents is distinct from new.unit_price_cents or
+   old.unit_modifier_total_cents is distinct from new.unit_modifier_total_cents or
+   old.discount_cents is distinct from new.discount_cents or
+   old.status='voided' or new.status='voided';
+ end if;
+ if v_changed and exists(
+  select 1 from public.pos_text_to_pay_sessions s where s.check_id=v_check
+   and (s.status='paying' or
+    (s.status in ('issued','reviewed','accepted') and s.expires_at>now()))
+ ) then raise exception 'pos_text_to_pay_checkout_frozen'; end if;
+ return case when TG_OP='DELETE' then old else new end;
+end $;
+drop trigger if exists pos_text_to_pay_check_fence on public.pos_checks;
+create trigger pos_text_to_pay_check_fence before update or delete on public.pos_checks
+ for each row execute function public.pos_text_to_pay_block_frozen_check();
+drop trigger if exists pos_text_to_pay_tender_fence on public.pos_tenders;
+create trigger pos_text_to_pay_tender_fence before update or delete on public.pos_tenders
+ for each row execute function public.pos_text_to_pay_block_frozen_check();
+drop trigger if exists pos_text_to_pay_items_fence on public.pos_order_items;
+create trigger pos_text_to_pay_items_fence before insert or update or delete on public.pos_order_items
+ for each row execute function public.pos_text_to_pay_block_frozen_check();
+
 commit;
