@@ -18,6 +18,10 @@ const EMBEDDING_VERSION = String(
   process.env.SEARCH_FOOD_MENU_EMBEDDING_VERSION ||
     "azure-text-embedding-3-small:v1",
 );
+const TARGET_LOCATION_ID = String(process.env.LI_V2_MENU_BACKFILL_LOCATION_ID || "").trim();
+if (TARGET_LOCATION_ID && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(TARGET_LOCATION_ID)) {
+  throw new Error("Invalid LI_V2_MENU_BACKFILL_LOCATION_ID");
+}
 const VECTOR_DIMENSIONS = 1536;
 const PAGE_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_PAGE_SIZE || 500), 100, 1000);
 const BATCH_SIZE = clamp(Number(process.env.SEARCH_EMBEDDING_BATCH_SIZE || 512), 1, 512);
@@ -606,7 +610,7 @@ async function backfillMenuEmbeddings(eligibleLocationIds: Set<string>) {
     (query) => query.eq("status", "active"),
   );
   const eligible = menuItems.filter((row) =>
-    eligibleLocationIds.has(row.location_id),
+    eligibleLocationIds.has(row.location_id) && (!TARGET_LOCATION_ID || row.location_id === TARGET_LOCATION_ID),
   );
 
   summary.menuCandidates = eligible.length;
@@ -726,7 +730,7 @@ async function main() {
     locations.filter(isEligibleLocation).map((row) => row.id),
   );
 
-  await migrateMenuSourceText(eligibleLocationIds);
+  if (!TARGET_LOCATION_ID) await migrateMenuSourceText(eligibleLocationIds);
   await backfillFoodEmbeddings(profiles, locationMap);
   await backfillMenuEmbeddings(eligibleLocationIds);
 
