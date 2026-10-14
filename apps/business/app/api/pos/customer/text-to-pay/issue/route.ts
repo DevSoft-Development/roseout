@@ -1,3 +1,4 @@
+import {prepareTextToPayQuote} from "@/lib/pos/payments/text-to-pay-quote";
 import {NextRequest,NextResponse} from "next/server";
 import {authenticatePosDeviceCredential} from "@/lib/pos/device-command-service";
 import {resolveOperationalShardForLocationId} from "@/lib/operational-shards";
@@ -25,7 +26,7 @@ export async function POST(request:NextRequest){
   body=JSON.parse(raw);
  }catch{return deny("invalid_payload");}
  if(!body||!UUID.test(String(body.checkId||""))||!UUID.test(String(body.tenderId||""))||
-  body.customerConsent!==true||!/^[a-f0-9]{64}$/.test(String(body.agreementSha256||"")))return deny("invalid_checkout_request");
+  body.customerConsent!==true)return deny("invalid_checkout_request");
  const phone=normalizePhone(body.phone);
  if(!/^\+[1-9]\d{7,14}$/.test(phone))return deny("invalid_phone");
  const loc=await supabaseAdmin.from("locations").select("id,is_demo,demo_key").eq("id",device.locationId).maybeSingle();
@@ -46,16 +47,21 @@ export async function POST(request:NextRequest){
    .in("status",["issued","reviewed","accepted","paying"])
    .gt("expires_at",new Date().toISOString()).limit(1);
   if(active.error||active.data?.length)return deny("active_checkout_session",409);
+  const quoted=await prepareTextToPayQuote(device.locationId,String(body.checkId),String(body.tenderId));
+  if(body.agreementSha256!==quoted.sha256)return deny("receipt_agreement_mismatch",409);
   const issued=issueTextToPayChallenge({
    locationId:device.locationId,checkId:String(body.checkId),tenderId:String(body.tenderId),
-   amountCents:Number(tender.data.total_cents),currency:String(check.data.currency).toLowerCase(),
-   agreementSha256:String(body.agreementSha256),expiresAt:new Date(Date.now()+10*60_000).toISOString()
+   amountCents:quoted.receipt.amountCents,currency:quoted.receipt.currency,
+   agreementSha256:quoted.sha256,expiresAt:new Date(Date.now()+10*60_000).toISOString()
   });
+  const {data:connected,error:connectionError}=await supabaseAdmin.from("locations").select("stripe_connect_account_id").eq("id",device.locationId).maybeSingle();
+  if(connectionError||!/^acct_[A-Za-z0-9]+$/.test(String(connected?.stripe_connect_account_id||"")))throw Error("connected_account_missing");
   const inserted=await shard.client.from("pos_text_to_pay_sessions").insert({
    location_id:device.locationId,check_id:body.checkId,tender_id:body.tenderId,
    amount_cents:issued.snapshot.amountCents,currency:issued.snapshot.currency,
    agreement_sha256:issued.snapshot.agreementSha256,
-   token_sha256:issued.tokenHash,expires_at:issued.snapshot.expiresAt
+   token_sha256:issued.tokenHash,expires_at:issued.snapshot.expiresAt,
+   receipt_snapshot:quoted.receipt,connected_account_id:connected.stripe_connect_account_id
   });
   if(inserted.error)throw Error("session_create_failed");
   const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
