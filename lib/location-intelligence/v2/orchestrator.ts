@@ -44,7 +44,8 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     }
     const purpose = request.purpose || "unspecified";
     const paidRequest = this.descriptor.paid ||
-      (this.descriptor.id === "google" && request.capability === "status_verification");
+      (this.descriptor.id === "google" && (request.capability === "status_verification" ||
+        (request.capability === "identity" && process.env.LI_V2_ENFORCE_ACQUISITION_BUDGET === "true")));
     if (paidRequest && !allowPaidProviderExecution({
       purpose,
       ownerMaintained: request.ownerMaintained,
