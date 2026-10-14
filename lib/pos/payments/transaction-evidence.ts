@@ -32,9 +32,9 @@ export async function storeVerifiedPosSignature(input: SignatureInput) {
 
   const shard = await resolveOperationalShardForLocationId(input.locationId, {mode:"write"});
   const {data:tender,error:tenderError} = await shard.client.from("pos_tenders")
-    .select("id,location_id,check_id,status,method")
+    .select("id,location_id,check_id,status,tender_type")
     .eq("id",input.tenderId).eq("location_id",input.locationId).eq("check_id",input.checkId).maybeSingle();
-  if (tenderError || !tender || tender.status !== "completed" || tender.method === "cash") {
+  if (tenderError || !tender || tender.status !== "completed" || tender.tender_type === "cash") {
     throw new Error("pos_evidence_tender_not_eligible");
   }
   const {data:payment,error:paymentError} = await shard.client.from("pos_payments")
