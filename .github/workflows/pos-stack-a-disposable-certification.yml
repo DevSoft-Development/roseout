@@ -5,6 +5,7 @@ on:
       - 'infra/supabase/operational-shards/pos-*.sql'
       - 'tests/pos/stack-a-release-guards.test.ts'
       - 'tests/pos/stack-a-disposable-operational-fixture.sql'
+      - 'tests/pos/stack-a-disposable-ledger-certification.sql'
       - '.github/workflows/pos-stack-a-disposable-certification.yml'
   workflow_dispatch:
 permissions:
@@ -73,6 +74,8 @@ jobs:
             done
             echo "Pass ${pass}: all four migrations executed" >> "$GITHUB_STEP_SUMMARY"
           done
+      - name: Certify payment settlement, idempotency and refund replay
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/pos/stack-a-disposable-ledger-certification.sql
       - name: Validate schema ACL and RPC signatures
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
