@@ -2,6 +2,7 @@ import Link from "next/link";
 import {redirect} from "next/navigation";
 import {getInternalDemoLocationAccess} from "@/lib/demo/internal-demo-location-access";
 import {resolveOperationalShardForLocationId} from "@/lib/operational-shards";
+import {supabaseAdmin} from "@/lib/supabase-admin";
 
 export const dynamic="force-dynamic";
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -26,6 +27,22 @@ export default async function SandboxCheckoutPage({searchParams}:{
   signature:process.env.POS_TEXT_TO_PAY_CUSTOMER_SIGNATURE_ENABLED==="true"
  };
  let openChecks=0,initiatedTenders=0,connection="Unavailable";
+ let assignedDevices=0,activeCredentials=0,availableClaims=0;
+ let devicePreflight="Unavailable",connectedAccount="Not configured";
+ try {
+  const [assignments,credentials,claims,account]=await Promise.all([
+   supabaseAdmin.from("pos_hardware_assignments").select("id",{head:true,count:"exact"}).eq("location_id",locationId).eq("assignment_status","active"),
+   supabaseAdmin.from("pos_device_credentials").select("device_id",{head:true,count:"exact"}).eq("location_id",locationId).eq("status","active"),
+   supabaseAdmin.from("pos_device_claim_codes").select("id",{head:true,count:"exact"}).eq("location_id",locationId).is("used_at",null).gt("expires_at",new Date().toISOString()),
+   supabaseAdmin.from("locations").select("stripe_connect_account_id").eq("id",locationId).maybeSingle()
+  ]);
+  if(assignments.error||credentials.error||claims.error||account.error)throw Error("device_preflight_failed");
+  assignedDevices=assignments.count||0;
+  activeCredentials=credentials.count||0;
+  availableClaims=claims.count||0;
+  devicePreflight="Connected";
+  connectedAccount=/^acct_[A-Za-z0-9]+$/.test(String(account.data?.stripe_connect_account_id||""))?"Configured (test capability unverified)":"Missing";
+ }catch {devicePreflight="Read-only preflight unavailable";}
  try {
   const shard=await resolveOperationalShardForLocationId(locationId,{mode:"read"});
   const [checks,tenders]=await Promise.all([
@@ -37,7 +54,7 @@ export default async function SandboxCheckoutPage({searchParams}:{
   initiatedTenders=tenders.count||0;
   connection="Connected";
  }catch {connection="Read-only preflight unavailable";}
- const ready=flags.sms&&flags.review&&flags.payment&&connection==="Connected"&&openChecks>0&&initiatedTenders>0;
+ const ready=flags.sms&&flags.review&&flags.payment&&connection==="Connected"&&devicePreflight==="Connected"&&activeCredentials>0&&assignedDevices>0&&openChecks>0&&initiatedTenders>0&&connectedAccount.startsWith("Configured");
  const back="/locations/dashboard/pos?locationId="+encodeURIComponent(locationId)+"&demo=1&fromDemoCenter=1";
  return <main className="mx-auto max-w-3xl space-y-5 p-6 text-[var(--business-text)]">
   <Link className="underline" href={back}>Back to POS</Link>
@@ -47,6 +64,11 @@ export default async function SandboxCheckoutPage({searchParams}:{
   <div role="status" className="rounded-xl border border-[var(--business-border)] p-4 font-bold">{ready?"Sandbox prerequisites detected. Begin checkout from an authorized POS device.":"Sandbox checkout is not ready. Missing prerequisites must be resolved before attempting a payment."}</div>
   <dl className="grid grid-cols-2 gap-3 rounded-xl border border-[var(--business-border)] p-4 text-sm">
    <dt>Operational shard</dt><dd>{connection}</dd>
+   <dt>Device registry</dt><dd>{devicePreflight}</dd>
+   <dt>Assigned devices</dt><dd>{assignedDevices}</dd>
+   <dt>Active device credentials</dt><dd>{activeCredentials}</dd>
+   <dt>Unexpired pairing claims</dt><dd>{availableClaims}</dd>
+   <dt>Stripe Connect account</dt><dd>{connectedAccount}</dd>
    <dt>Open/held checks</dt><dd>{openChecks}</dd>
    <dt>Initiated tenders</dt><dd>{initiatedTenders}</dd>
    <dt>SMS issuance gate</dt><dd>{flags.sms?"Enabled":"Disabled"}</dd>
