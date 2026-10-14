@@ -21,9 +21,12 @@ export async function createPolicyQuotedCheckPayment(input:Input){
  const bps=input.selectedTipBasisPoints;
  if(!Number.isSafeInteger(bps)||bps<0||bps>3000||bps%100!==0)throw Error("invalid_tip_selection");
  if(p?.auto_service_charge_enabled){
-  // The stored check must already contain the service charge. Until a validated
-  // line-category/tax calculation exists, refuse to add or collect a new one.
-  throw Error("automatic_service_charge_checkout_not_certified");
+  if(!Number.isSafeInteger(c.service_charge_cents)||c.service_charge_cents<=0||
+     !p.customer_disclosure||p.customer_disclosure.trim().length<16)
+   throw Error("service_charge_not_disclosed_or_persisted");
+  if(bps!==0&&!p.extra_tip_prompt_with_service_charge)throw Error("extra_tip_disabled");
+ }else if(c.service_charge_cents>0){
+  throw Error("unconfigured_service_charge");
  }
  if(bps!==0&&(!p?.suggestions_enabled||!Array.isArray(p.tip_suggestions)||
     !p.tip_suggestions.includes(bps/100)))throw Error("tip_not_allowed_by_policy");
