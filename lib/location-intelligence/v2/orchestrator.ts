@@ -56,7 +56,8 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     if (paidRequest && enforced) {
       let prices: Record<string, unknown> = {};
       try { prices = JSON.parse(process.env.LI_V2_MAX_PROVIDER_REQUEST_USD_JSON || "{}"); } catch { throw new Error("li_v2_invalid_prices"); }
-      const price = Number(prices[this.descriptor.id]);
+      // Configure worst-case request cost by provider and capability, not provider alone.
+      const price = Number(prices[this.descriptor.id + ":" + request.capability]);
       if (!Number.isFinite(price) || price <= 0) throw new Error("li_v2_missing_price:"+this.descriptor.id);
       const allowed = await reserveLiProviderSpend({ eventKey, provider: this.descriptor.id, operation: request.capability, estimatedUsd: price });
       if (!allowed) throw new Error("li_v2_spending_cap_exceeded:"+this.descriptor.id);
