@@ -124,7 +124,7 @@ create trigger pos_text_to_pay_one_active before insert on public.pos_text_to_pa
 create or replace function public.pos_text_to_pay_block_frozen_check()
 returns trigger language plpgsql set search_path=public as $$
 declare v_check uuid;
-declare v_changed boolean;
+        v_changed boolean;
 begin
  if TG_TABLE_NAME='pos_checks' then
   v_check:=case when TG_OP='DELETE' then old.id else new.id end;
