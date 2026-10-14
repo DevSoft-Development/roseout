@@ -10,14 +10,14 @@ test("protected Lounge demo cannot be accessed anonymously",async({browser,baseU
 });
 test("authorized Lounge handoff sees checkout preview and cannot initiate payment",async({browser,baseURL})=>{
  const storageState=process.env.POS_LOUNGE_E2E_STORAGE_STATE;
- test.skip(!storageState,"Requires an actual authorized Admin demo handoff storage-state file; not simulated credentials.");
+ if(!storageState)throw new Error("CERTIFICATION_BLOCKED: POS_LOUNGE_E2E_STORAGE_STATE is required; no live authorized browser proof");
  const context=await browser.newContext({storageState:storageState!});
  const page=await context.newPage();
  await page.goto((baseURL||"http://127.0.0.1:3000")+path);
  await expect(page.getByRole("heading",{name:"Customer checkout"})).toBeVisible();
  await page.getByLabel("Venue type").selectOption("hybrid");
  await expect(page.getByText("Bowling lane")).toBeVisible();
- await page.getByRole("button",{name:"Review payment step"}).click();
- await expect(page.getByText("No device is connected to this preview.")).toBeVisible();
+ await page.getByRole("button",{name:/tap to pay/i}).click();
+ await expect(page.getByText(/No payment, signature, email, or receipt is sent/i)).toBeVisible();
  await context.close();
 });
