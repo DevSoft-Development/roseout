@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { extractOfficialJsonLdMenuFacts } from "@/lib/location-intelligence/v2/crawl-menu-facts";
+import { extractOfficialJsonLdMenuFacts, extractOfficialMicrodataMenuFacts } from "@/lib/location-intelligence/v2/crawl-menu-facts";
 import { screenAcquisitionCandidate } from "@/lib/location-intelligence/v2/acquisition-quality";
 
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -280,11 +280,11 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
       if (website.providerId === "official_website" && website.data && typeof website.data === "object") {
         const page = website.data as { html?: unknown; url?: unknown };
         if (typeof page.html === "string" && typeof page.url === "string") {
-          const facts = extractOfficialJsonLdMenuFacts(page.html, page.url);
+          const facts = [...extractOfficialJsonLdMenuFacts(page.html, page.url), ...extractOfficialMicrodataMenuFacts(page.html, page.url)];
           if (facts.length > 0) await recordLocationEvidence({
             locationId, provider: "official_website", evidenceType: "website",
             field: "verified_menu_items", value: facts.slice(0, 100),
-            confidence: 0.95, metadata: { extractedFrom: "jsonld", indexIntent: "search_v3_menu" },
+            confidence: 0.95, metadata: { extractedFrom: "schema_org_explicit", indexIntent: "search_v3_menu" },
           });
           if (facts.length > 0) {
             const rows = facts.slice(0, 100).map(fact => {
@@ -292,14 +292,14 @@ export async function runInitialLocationEnrichmentV2(locationId: string) {
               const record = { name:fact.name, price:fact.price, currency:fact.currency, sourceUrl:fact.sourceUrl };
               return {
                 location_id:locationId, item_name:fact.name, normalized_item_name:normalized,
-                source:"official_jsonld", source_metadata:{...record, category:fact.category, evidence:"first_party_website"},
+                source:fact.sourceType, source_metadata:{...record, category:fact.category, evidence:"first_party_website"},
                 content_hash:createHash("sha256").update(JSON.stringify(record)).digest("hex"),
                 status:"active", updated_at:new Date().toISOString(),
               };
             }).filter(row=>row.normalized_item_name);
             if (rows.length > 0) {
               // Avoid duplicate upsert keys when a website repeats the same dish in multiple sections.
-              const uniqueRows = [...new Map(rows.map(row => [row.normalized_item_name, row])).values()];
+              const uniqueRows = [...new Map(rows.map(row => [row.source + ":" + row.normalized_item_name, row])).values()];
               const {error: menuError} = await supabaseAdmin.from("location_menu_items").upsert(uniqueRows, {
                 onConflict:"location_id,normalized_item_name,source",
               });
