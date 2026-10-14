@@ -60,11 +60,11 @@ function renderDocument(lines:string[],image?:{width:number;height:number;bytes:
  const add=(s:string|Buffer)=>{const b=Buffer.isBuffer(s)?s:Buffer.from(s,"latin1");chunks.push(b);total+=b.length;};
  const obj=(n:number,s:string|Buffer)=>{offsets[n]=total;add(n+" 0 obj\n");add(s);add("\nendobj\n");};
  const pages:string[][]=[];
- for(let start=0;start<lines.length;start+=43)pages.push(lines.slice(start,start+43));
+ for(let start=0;start<lines.length;start+=35)pages.push(lines.slice(start,start+35));
  if(!pages.length)pages.push([]);
  const imageId=image?5:0;
  const firstPage=image?6:5;
- const objects=firstPage+pages.length*2;
+ const objects=firstPage+pages.length*2-1;
  add("%PDF-1.4\n");
  obj(1,"<< /Type /Catalog /Pages 2 0 R >>");
  obj(2,"<< /Type /Pages /Kids ["+pages.map((_,i)=>(firstPage+i*2)+" 0 R").join(" ")+"] /Count "+pages.length+" >>");
