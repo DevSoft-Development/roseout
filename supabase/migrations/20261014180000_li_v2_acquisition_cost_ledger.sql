@@ -30,3 +30,20 @@ create table if not exists private.location_acquisition_quality_audit (
 );
 create index if not exists location_acquisition_quality_audit_candidate_idx on private.location_acquisition_quality_audit (candidate_key, created_at desc);
 revoke all on private.location_acquisition_quality_audit from public, anon, authenticated;
+
+-- Service-only idempotent metering writer; authenticated users cannot call this API.
+create or replace function public.record_location_acquisition_usage(
+ p_event_key text, p_provider text, p_operation text, p_status text, p_estimated_usd numeric,
+ p_campaign_id text default null, p_run_id text default null
+) returns void language plpgsql security definer set search_path = '' as $$
+begin
+ if auth.role() <> 'service_role' then
+  raise exception 'service_role_required';
+ end if;
+ insert into private.location_acquisition_usage
+ (event_key, provider, operation, status, estimated_usd, campaign_id, run_id)
+ values (p_event_key,p_provider,p_operation,p_status,p_estimated_usd,p_campaign_id,p_run_id)
+ on conflict (event_key) do nothing;
+end $$;
+revoke all on function public.record_location_acquisition_usage(text,text,text,text,numeric,text,text) from public, anon, authenticated;
+grant execute on function public.record_location_acquisition_usage(text,text,text,text,numeric,text,text) to service_role;
