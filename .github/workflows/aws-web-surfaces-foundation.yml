@@ -273,7 +273,7 @@ jobs:
               jq -e --arg provider "aws-${surface}" '.ok == true and .provider == $provider' "$RUNNER_TEMP/${surface}-foundation-response" > /dev/null
             fi
           done
-          echo 'HTTPS/TLS and managed WAF protection verified. Staging 503 is permitted before ECS deployment; application health is verified by the services workflow. DNS unchanged.'
+          echo 'HTTPS/TLS and managed WAF protection verified. Staging 503 is permitted before ECS deployment; application health is verified by the services workflow. Public DNS has not been changed.'
 
       - name: Show CloudFormation failure events
         if: failure()
