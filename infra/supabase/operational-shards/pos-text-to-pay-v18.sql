@@ -189,4 +189,55 @@ drop trigger if exists pos_text_to_pay_items_fence on public.pos_order_items;
 create trigger pos_text_to_pay_items_fence before insert or update or delete on public.pos_order_items
  for each row execute function public.pos_text_to_pay_block_frozen_check();
 
+-- Idempotent cumulative refund reconciliation for completed Text-to-Pay charges.
+-- Caller must first verify the Stripe Connect event signature and account ownership.
+create or replace function public.pos_reconcile_text_to_pay_refund(
+ p_location_id uuid,p_connected_account_id text,p_payment_intent_id text,
+ p_charge_amount_cents integer,p_refunded_cents integer,p_currency text,p_event_id text
+) returns boolean language plpgsql security invoker set search_path=public as $$
+declare v_p public.pos_payments%rowtype;
+        v_t public.pos_tenders%rowtype;
+        v_c public.pos_checks%rowtype;
+begin
+ if p_charge_amount_cents<=0 or p_refunded_cents<0 or
+    p_refunded_cents>p_charge_amount_cents or
+    p_currency !~ '^[a-z]{3}$' or
+    p_connected_account_id !~ '^acct_[A-Za-z0-9]+$' or
+    p_payment_intent_id !~ '^pi_[A-Za-z0-9]+$' or
+    p_event_id !~ '^evt_[A-Za-z0-9]+$'
+ then return false; end if;
+ select * into v_p from public.pos_payments
+  where location_id=p_location_id and connected_account_id=p_connected_account_id
+   and provider='stripe' and provider_payment_intent_id=p_payment_intent_id for update;
+ if not found or v_p.status not in ('succeeded','partially_refunded','refunded')
+    or v_p.amount_cents<>p_charge_amount_cents then return false; end if;
+ select * into v_t from public.pos_tenders
+  where id=v_p.tender_id and check_id=v_p.check_id and location_id=p_location_id for update;
+ select * into v_c from public.pos_checks
+  where id=v_p.check_id and location_id=p_location_id for update;
+ if v_t.id is null or v_c.id is null or v_c.currency<>p_currency
+    or v_t.total_cents<>p_charge_amount_cents
+    or v_c.total_cents<>p_charge_amount_cents or
+    v_t.status not in ('completed','partially_refunded','refunded') then return false; end if;
+ -- Older out-of-order events must never lower cumulative refunded value.
+ if p_refunded_cents<=v_t.amount_refunded_cents then return true; end if;
+ update public.pos_tenders set amount_refunded_cents=p_refunded_cents,
+  status=case when p_refunded_cents=p_charge_amount_cents
+   then 'refunded' else 'partially_refunded' end,
+  updated_at=now() where id=v_t.id;
+ update public.pos_checks set amount_refunded_cents=p_refunded_cents,
+  updated_at=now() where id=v_c.id;
+ update public.pos_payments set
+  status=case when p_refunded_cents=p_charge_amount_cents
+   then 'refunded' else 'partially_refunded' end,
+  metadata=coalesce(metadata,'{}'::jsonb)||jsonb_build_object(
+   'refunded_cents',p_refunded_cents,'last_refund_event_id',p_event_id),
+  updated_at=now() where id=v_p.id;
+ return true;
+end $$;
+revoke all on function public.pos_reconcile_text_to_pay_refund(uuid,text,text,integer,integer,text,text)
+ from public,anon,authenticated;
+grant execute on function public.pos_reconcile_text_to_pay_refund(uuid,text,text,integer,integer,text,text)
+ to service_role;
+
 COMMIT;
