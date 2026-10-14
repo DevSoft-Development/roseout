@@ -14,9 +14,9 @@ describe("Stack A checkout and dispute release guards",()=>{
   expect(migration.match(/create table if not exists public.pos_text_to_pay_sessions/gi)?.length).toBe(1);
   expect(migration.match(/create or replace function public.pos_settle_text_to_pay/gi)?.length).toBe(1);
   expect(migration.match(/create or replace function public.pos_text_to_pay_advance/gi)?.length).toBe(1);
-  expect(migration.match(/\\$\\$/g)?.length).toBe(8);
-  expect(migration.match(/\\bcommit;/gi)?.length).toBe(1);
-  expect(migration).not.toMatch(/as \\$\\s*\\n/);
+  expect(migration.match(/\$\$/g)?.length).toBe(8);
+  expect(migration.match(/\bcommit;/gi)?.length).toBe(1);
+  expect(migration).not.toMatch(/as \$\s*\n/);
  });
  it("restricts payment RPCs to service role and atomically associates Stripe checkout ID",()=>{
   expect(migration).toContain("checkout_session_id=case when p_to='paying'");
