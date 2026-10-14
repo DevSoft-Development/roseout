@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { acquisitionReservationInput } from "@/lib/location-intelligence/v2/acquisition-reservation";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -59,15 +60,15 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
     if (paidRequest && (purpose === "discovery" || purpose === "bootstrap")) {
-      const eventKey = String(request.input.acquisitionEventKey || "").trim();
-      if (!/^[a-zA-Z0-9:_-]{12,128}$/.test(eventKey)) throw new Error("acquisition_stable_event_key_required");
-      const key = `LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`;
-      const estimatedUsd = Number(process.env[key]);
-      if (!Number.isFinite(estimatedUsd) || estimatedUsd <= 0) throw new Error(`acquisition_provider_price_unconfigured:${this.descriptor.id}`);
-      const { data: reserved, error: reservationError } = await supabaseAdmin.rpc("reserve_location_acquisition_spend", {
-        p_event_key: `${eventKey}:${this.descriptor.id}`, p_provider: this.descriptor.id,
-        p_operation: request.capability, p_estimated_usd: estimatedUsd,
-      });
+      const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
+        "reserve_location_acquisition_spend",
+        acquisitionReservationInput({
+          provider: this.descriptor.id,
+          capability: request.capability,
+          eventKey: request.input.acquisitionEventKey,
+          maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+        }),
+      );
       if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
     return {
