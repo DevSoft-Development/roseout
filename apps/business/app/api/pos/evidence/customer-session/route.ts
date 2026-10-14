@@ -15,13 +15,15 @@ async function deviceAuth(r:NextRequest){
 }
 async function verifyTender(locationId:string,checkId:string,tenderId:string){
  const shard=await resolveOperationalShardForLocationId(locationId,{mode:"write"});
- const t=await shard.client.from("pos_tenders").select("id,status,method,charge_total_cents,currency")
+ const t=await shard.client.from("pos_tenders").select("id,status,tender_type,total_cents")
  .eq("location_id",locationId).eq("check_id",checkId).eq("id",tenderId).maybeSingle();
- if(t.error||t.data?.status!=="completed"||t.data?.method==="cash")throw Error("tender_unverified");
- const p=await shard.client.from("pos_payments").select("id,provider_payment_intent_id,connected_account_id,status,amount_cents,currency")
+ if(t.error||t.data?.status!=="completed"||t.data?.tender_type==="cash")throw Error("tender_unverified");
+ const p=await shard.client.from("pos_payments").select("id,provider_payment_intent_id,connected_account_id,status,amount_cents")
  .eq("location_id",locationId).eq("check_id",checkId).eq("tender_id",tenderId).eq("status","succeeded").maybeSingle();
  if(p.error||!p.data?.provider_payment_intent_id||!p.data.connected_account_id)throw Error("payment_unverified");
- await verifyStripePosSettlement({locationId,checkId,tenderId,expectedAmountCents:Number(t.data.charge_total_cents),currency:String(t.data.currency||p.data.currency||"usd"),payment:p.data});
+ const check=await shard.client.from("pos_checks").select("currency").eq("location_id",locationId).eq("id",checkId).maybeSingle();
+ if(check.error||!check.data)throw Error("check_unverified");
+ await verifyStripePosSettlement({locationId,checkId,tenderId,expectedAmountCents:Number(t.data.total_cents),currency:check.data.currency,payment:p.data});
  return shard;
 }
 /** Issuance and capture are disabled until provider reconciliation and physical-device testing. */
