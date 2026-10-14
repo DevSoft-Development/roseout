@@ -84,6 +84,13 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
     identityCounts.set(key, (identityCounts.get(key) || 0) + 1);
   }
 
+  const candidateIds = (data || []).map((row: any) => row.id);
+  const { data: profiles, error: profileError } = candidateIds.length
+    ? await supabaseAdmin.from("location_intelligence_profiles_v2").select("location_id,classification").in("location_id", candidateIds)
+    : { data: [], error: null as any };
+  if (profileError) throw new Error(`Recovery classification verification failed: ${profileError.message}`);
+  const classifications = new Map((profiles || []).map((profile: any) => [profile.location_id, profile.classification]));
+
   const reasonCounts: Record<string, number> = {};
   let recovered = 0;
   let closedPermanently = 0;
@@ -93,7 +100,11 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
 
   for (const row of data || []) {
     const repeatedIdentity = (identityCounts.get(text(row.google_place_id)) || 0) > 1;
-    const reason = repeatedIdentity ? "duplicate_google_place_id" : importedUnverifiedReason(row);
+    const classification: any = classifications.get(row.id);
+    const classificationBlocked = !classification || classification.domain !== "restaurant"
+      || classification.negativeClassificationKnown === true
+      || (Array.isArray(classification.negativeFlags) && classification.negativeFlags.length > 0);
+    const reason = repeatedIdentity ? "duplicate_google_place_id" : classificationBlocked ? "classification_review_required" : importedUnverifiedReason(row);
     reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
     const businessStatus = text(row.google_business_status).toUpperCase();
 
@@ -123,7 +134,7 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
         low_level_detected_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-    } else if (!repeatedIdentity && canRecoverImportedUnverified(row)) {
+    } else if (!repeatedIdentity && !classificationBlocked && canRecoverImportedUnverified(row)) {
       const normalized = {
         ...row,
         source_quality_status: "enriched",
