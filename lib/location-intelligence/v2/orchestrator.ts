@@ -1,4 +1,5 @@
 import "server-only";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -40,6 +41,13 @@ class Adapter implements LocationIntelligenceProviderAdapter {
   async execute(request: LocationProviderRequest): Promise<LocationProviderResponse> {
     if (!this.supports(request.capability)) {
       throw new Error(`provider_capability_not_supported:${this.descriptor.id}:${request.capability}`);
+    }
+    // Registry toggles are authoritative even when the process has cached adapters.
+    const { data: providerRow, error: registryError } = await supabaseAdmin
+      .from("location_provider_registry").select("enabled")
+      .eq("provider", this.descriptor.id).maybeSingle();
+    if (registryError || !providerRow || providerRow.enabled !== true) {
+      throw new Error(`provider_registry_disabled_or_unavailable:${this.descriptor.id}`);
     }
     const purpose = request.purpose || "unspecified";
     const paidRequest = this.descriptor.paid ||

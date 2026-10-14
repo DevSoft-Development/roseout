@@ -5,6 +5,18 @@ import { requireAdminRole } from "@/lib/admin-auth";
 import { getMirrorDemoLocation } from "@/lib/demo/demo-center";
 import { getDemoOwnerSearchParams } from "@/lib/demo/owner-context";
 
+async function setAcquisitionProvider(formData: FormData) {
+  "use server";
+  await requireAdminRole(["superadmin", "admin"]);
+  const provider = String(formData.get("provider") || "");
+  const enabled = String(formData.get("enabled")) === "true";
+  if (!["google", "dataforseo", "brave", "serpapi"].includes(provider)) throw new Error("Unsupported acquisition provider");
+  const { data, error } = await supabaseAdmin.from("location_provider_registry")
+    .update({ enabled, updated_at: new Date().toISOString() }).eq("provider", provider).select("provider");
+  if (error || !data?.length) throw new Error(error?.message || "Provider not registered");
+  revalidatePath("/admin/dashboard/settings/location-tools");
+}
+
 async function setAutomaticReviewRefreshes(formData: FormData) {
   "use server";
   await requireAdminRole(["superadmin", "admin"]);
@@ -118,6 +130,7 @@ export default async function LocationToolsPage() {
                 <div key={row.provider} className="rounded-xl border border-white/10 p-3">
                   <div className="flex items-center justify-between gap-2"><span className="font-bold">{row.provider}</span><span className={row.enabled ? "text-emerald-300" : "text-white/50"}>{row.enabled ? "Registered on" : "Registered off"}</span></div>
                   <p className="mt-1 text-xs text-white/50">{row.paid ? "Paid provider" : "No paid-provider flag"} · Health: {row.health_status || "Unknown"}</p>
+                  {["google", "dataforseo", "brave", "serpapi"].includes(row.provider) && <form action={setAcquisitionProvider} className="mt-3 flex gap-2"><input type="hidden" name="provider" value={row.provider}/><button name="enabled" value="false" className="rounded-full border border-white/20 px-3 py-1 text-xs">Disable</button><button name="enabled" value="true" className="rounded-full border border-white/20 px-3 py-1 text-xs">Enable</button></form>}
                 </div>
               ))}
             </div>
