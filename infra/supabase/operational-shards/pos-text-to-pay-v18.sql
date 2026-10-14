@@ -211,6 +211,11 @@ begin
    and provider='stripe' and provider_payment_intent_id=p_payment_intent_id for update;
  if not found or v_p.status not in ('succeeded','partially_refunded','refunded')
     or v_p.amount_cents<>p_charge_amount_cents then return false; end if;
+ if not exists(select 1 from public.pos_text_to_pay_sessions s
+  where s.location_id=p_location_id and s.connected_account_id=p_connected_account_id
+    and s.payment_intent_id=p_payment_intent_id and s.status='paid'
+    and s.check_id=v_p.check_id and s.tender_id=v_p.tender_id)
+ then return false; end if;
  select * into v_t from public.pos_tenders
   where id=v_p.tender_id and check_id=v_p.check_id and location_id=p_location_id for update;
  select * into v_c from public.pos_checks
