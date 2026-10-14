@@ -1,3 +1,4 @@
+import {expireVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-expiration";
 import {settleVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-settlement";
 import {recordVerifiedPosDispute} from "@/lib/pos/payments/dispute-ingestion";
 import crypto from "crypto";
@@ -370,6 +371,17 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.expired": {
         const type = String(object?.metadata?.type || "");
+        if (type === "pos_text_to_pay") {
+          if(event.livemode!==false||!accountId||!owner.locationId||
+             String(object.metadata.location_id)!==owner.locationId)
+            throw Error("pos_checkout_expiry_account_mismatch");
+          await expireVerifiedTextToPay({
+            checkoutSessionId:String(object.id),accountId,
+            locationId:String(object.metadata.location_id),
+            sessionId:String(object.metadata.session_id)
+          });
+          break;
+        }
         if (type === "location_lead_payment") {
           const leadId = String(object.metadata.lead_id || "").trim();
           const paymentKind = String(object.metadata.payment_kind || "").trim();
