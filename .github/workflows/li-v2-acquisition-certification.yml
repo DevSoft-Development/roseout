@@ -1,0 +1,69 @@
+name: LI V2 acquisition budget certification
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*li_v2_acquisition_cost_ledger.sql'
+      - '.github/workflows/li-v2-acquisition-certification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-spend-certification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install service role and migration
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -c "create role anon noinherit; create role authenticated noinherit; create role service_role noinherit;"
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261014180000_li_v2_acquisition_cost_ledger.sql
+      - name: Check permissions and default fail closed
+        run: |
+          set -euo pipefail
+          test "$(psql -At -c "select has_function_privilege('authenticated','public.reserve_location_acquisition_spend(text,text,text,numeric,text,text)','EXECUTE');")" = "f"
+          test "$(psql -At -c "select has_function_privilege('anon','public.get_location_acquisition_provider_spend()','EXECUTE');")" = "f"
+          test "$(psql -At -c "select public.reserve_location_acquisition_spend('without-cap','dataforseo','business_profile',0.10);")" = "f"
+      - name: Configure bounded test budget
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "insert into private.location_acquisition_budget_caps(scope,scope_id,period_start,period_end,cap_usd,enabled) values ('global','all',now()-interval '1 minute',now()+interval '10 minutes',0.50,true),('provider','dataforseo',now()-interval '1 minute',now()+interval '10 minutes',0.30,true);"
+      - name: Verify atomic concurrent reservations
+        run: |
+          set -euo pipefail
+          export PGOPTIONS='-c statement_timeout=15000'
+          pids=()
+          for i in $(seq 1 20); do
+            psql -v ON_ERROR_STOP=1 -At -c "select public.reserve_location_acquisition_spend('parallel-$i','dataforseo','business_profile',0.10);" > "/tmp/li-v2-$i.out" 2> "/tmp/li-v2-$i.err" &
+            pids+=("$!")
+          done
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          approved="$(psql -At -c "select count(*) from private.location_acquisition_usage where status='estimated';")"
+          test "$approved" = "3" || { echo "Expected 3 reservations; got $approved"; exit 1; }
+          rejected="$(grep -l '^f$' /tmp/li-v2-*.out | wc -l)"
+          test "$rejected" = "17"
+          test "$(psql -At -c "select public.reserve_location_acquisition_spend('parallel-1','dataforseo','business_profile',0.10);")" = "f"
+      - name: Verify reconciliation constraints
+        run: |
+          set -euo pipefail
+          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('parallel-1',0.08,0.01);")" = "t" || exit 1
+          test "$(psql -At -c "select public.reconcile_location_acquisition_usage('parallel-1',0.08,0.01);")" = "f" || exit 1
+          test "$(psql -At -c "select count(*) from private.location_acquisition_usage where status='reconciled' and actual_usd=0.08 and credit_usd=0.01;")" = "1"
