@@ -34,10 +34,10 @@ async function read(table,select,filters) {
 }
 const location=env.LI_E2E_LOCATION_ID;
 if(!/^[a-f0-9-]{36}$/i.test(location)) throw Error("Invalid location UUID");
-const items=await read("location_menu_items","id,location_id,item_name,source,source_metadata,content_hash",{location_id:"eq."+location,source:"eq.official_jsonld",status:"eq.active",limit:"100"});
+const items=await read("location_menu_items","id,location_id,item_name,source,source_metadata,content_hash",{location_id:"eq."+location,source:"in.(official_jsonld,official_microdata)",status:"eq.active",limit:"100"});
 const query=env.LI_E2E_SEARCH_QUERY.trim().toLowerCase();
 const target=items.find(i=>i.item_name.toLowerCase()===query);
-if(!target) throw Error("Not certified: official_jsonld menu item missing in East primary for this exact query");
+if(!target) throw Error("Not certified: verified official menu item missing in East primary for this exact query");
 const sourceUrl=target.source_metadata?.sourceUrl;
 if(typeof sourceUrl!=="string" || new URL(sourceUrl).protocol!=="https:") throw Error("Official source provenance missing HTTPS URL");
 const embeddings=await read("location_menu_item_embeddings","menu_item_id,location_id,embedding_model,embedding_version,status,document_hash",{menu_item_id:"eq."+target.id,status:"eq.ready",limit:"2"});
