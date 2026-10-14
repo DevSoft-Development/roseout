@@ -1,4 +1,5 @@
 import "server-only";
+import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
   LocationIntelligenceProviderAdapter,
@@ -178,4 +179,21 @@ export async function executeWithProviderFallback(request: LocationProviderReque
     }
   }
   throw new Error(`location_intelligence_provider_exhausted:${request.capability}:${JSON.stringify(errors)}`);
+}
+
+/**
+ * Resolve one planner decision to the input formats already used by each provider.
+ * This is intentionally plan-only: callers must reserve the shared acquisition
+ * budget before executing any chargeable provider request.
+ */
+export function planProviderCoverageDiscovery(target: CoverageDiscoveryTarget) {
+  const inputs = providerDiscoveryInputs(target);
+  return {
+    target,
+    google: { capability: "identity" as const, purpose: "discovery" as const, input: inputs.google },
+    brave: { capability: "web_context" as const, purpose: "discovery" as const, input: inputs.brave },
+    dataforseo: inputs.dataforseo
+      ? { capability: "discovery" as const, purpose: "discovery" as const, input: inputs.dataforseo }
+      : null,
+  };
 }
