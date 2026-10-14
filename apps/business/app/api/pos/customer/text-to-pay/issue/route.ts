@@ -56,12 +56,14 @@ export async function POST(request:NextRequest){
   });
   const {data:connected,error:connectionError}=await supabaseAdmin.from("locations").select("stripe_connect_account_id").eq("id",device.locationId).maybeSingle();
   if(connectionError||!/^acct_[A-Za-z0-9]+$/.test(String(connected?.stripe_connect_account_id||"")))throw Error("connected_account_missing");
+  const connectedAccountId=connected?.stripe_connect_account_id;
+  if(!connectedAccountId)throw Error("connected_account_missing");
   const inserted=await shard.client.from("pos_text_to_pay_sessions").insert({
    location_id:device.locationId,check_id:body.checkId,tender_id:body.tenderId,
    amount_cents:issued.snapshot.amountCents,currency:issued.snapshot.currency,
    agreement_sha256:issued.snapshot.agreementSha256,
    token_sha256:issued.tokenHash,expires_at:issued.snapshot.expiresAt,
-   receipt_snapshot:quoted.receipt,connected_account_id:connected.stripe_connect_account_id
+   receipt_snapshot:quoted.receipt,connected_account_id:connectedAccountId
   });
   if(inserted.error)throw Error("session_create_failed");
   const base=process.env.POS_TEXT_TO_PAY_CUSTOMER_ORIGIN;
