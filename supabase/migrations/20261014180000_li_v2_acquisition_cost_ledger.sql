@@ -97,3 +97,17 @@ begin
 end $$;
 revoke all on function public.reserve_location_acquisition_spend(text,text,text,numeric,text,text) from public,anon,authenticated;
 grant execute on function public.reserve_location_acquisition_spend(text,text,text,numeric,text,text) to service_role;
+
+-- Service-only aggregated report. Null actuals are never treated as settled invoices.
+create or replace function public.get_location_acquisition_provider_spend()
+returns table(provider text, attempts bigint, estimated_usd numeric, reconciled_usd numeric, credits_usd numeric)
+language sql security definer set search_path = '' stable as $$
+ select u.provider, count(*)::bigint,
+ coalesce(sum(u.estimated_usd),0)::numeric,
+ coalesce(sum(u.actual_usd) filter (where u.status='reconciled'),0)::numeric,
+ coalesce(sum(u.credit_usd),0)::numeric
+ from private.location_acquisition_usage u
+ group by u.provider order by u.provider
+$$;
+revoke all on function public.get_location_acquisition_provider_spend() from public,anon,authenticated;
+grant execute on function public.get_location_acquisition_provider_spend() to service_role;
