@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { recordLiProviderUsage } from "@/lib/location-intelligence/v2/provider-metering";
+import { recordLiProviderUsage, reserveLiProviderSpend } from "@/lib/location-intelligence/v2/provider-metering";
 
 import type {
   LocationIntelligenceProviderAdapter,
@@ -52,15 +52,24 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
     const eventKey = randomUUID();
+    const enforced = process.env.LI_V2_ENFORCE_ACQUISITION_BUDGET === "true" && (purpose === "bootstrap" || purpose === "discovery");
+    if (paidRequest && enforced) {
+      let prices: Record<string, unknown> = {};
+      try { prices = JSON.parse(process.env.LI_V2_MAX_PROVIDER_REQUEST_USD_JSON || "{}"); } catch { throw new Error("li_v2_invalid_prices"); }
+      const price = Number(prices[this.descriptor.id]);
+      if (!Number.isFinite(price) || price <= 0) throw new Error("li_v2_missing_price:"+this.descriptor.id);
+      const allowed = await reserveLiProviderSpend({ eventKey, provider: this.descriptor.id, operation: request.capability, estimatedUsd: price });
+      if (!allowed) throw new Error("li_v2_spending_cap_exceeded:"+this.descriptor.id);
+    }
     try {
       const data = await this.handler(request);
-      if (paidRequest) await recordLiProviderUsage({
+      if (paidRequest && !enforced) await recordLiProviderUsage({
         provider: this.descriptor.id, operation: request.capability,
         eventKey, estimatedUsd: 0, status: "estimated",
       }).catch(error => console.error("[li-v2] provider metering failed", error));
       return { providerId: this.descriptor.id, capability: request.capability, data };
     } catch (error) {
-      if (paidRequest) await recordLiProviderUsage({
+      if (paidRequest && !enforced) await recordLiProviderUsage({
         provider: this.descriptor.id, operation: request.capability,
         eventKey, estimatedUsd: 0, status: "failed",
       }).catch(meteringError => console.error("[li-v2] provider metering failed", meteringError));
