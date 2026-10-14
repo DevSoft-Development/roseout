@@ -1,3 +1,4 @@
+import {DisputeActions} from "./DisputeActions";
 import Link from "next/link";
 import {redirect} from "next/navigation";
 import {createClient} from "@/lib/supabase-server";
@@ -36,7 +37,7 @@ export default async function PosDisputes({searchParams}:{searchParams:Promise<{
     <td className="p-3">{new Intl.NumberFormat("en-US",{style:"currency",currency:String(x.currency).toUpperCase()}).format(Number(x.amount_cents)/100)}</td>
     <td className="p-3">{x.reason}</td><td className="p-3">{x.status}</td>
     <td className="p-3">{x.evidence_due_at?new Date(x.evidence_due_at).toLocaleString():"Not provided"}</td>
-    <td className="p-3"><Link className="underline" href={`/api/pos/evidence/packet?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(x.tender_id)}`}>Review manifest</Link></td>
+    <td className="p-3"><Link className="underline" href={`/api/pos/evidence/packet?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(x.tender_id)}`}>Review manifest</Link>{process.env.POS_DISPUTE_MANAGER_APPROVAL_ENABLED==="true"?<DisputeActions locationId={locationId} disputeId={x.id}/>:null}</td>
    </tr>)}</tbody></table>
    {!rows.length?<p className="p-4">No disputes have been imported for this location.</p>:null}
   </div>}
