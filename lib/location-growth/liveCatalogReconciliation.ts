@@ -101,8 +101,10 @@ export async function reconcileImportedUnverified({ limit = 1000, dryRun = true 
   for (const row of data || []) {
     const repeatedIdentity = (identityCounts.get(text(row.google_place_id)) || 0) > 1;
     const classification: any = classifications.get(row.id);
+    // negativeClassificationKnown means the classifier ran, not that the venue is negative.
+    // Preserve actual negative flags until a separate raw-evidence reclassification can clear them.
     const classificationBlocked = !classification || classification.domain !== "restaurant"
-      || classification.negativeClassificationKnown === true
+      || classification.negativeClassificationKnown !== true
       || (Array.isArray(classification.negativeFlags) && classification.negativeFlags.length > 0);
     const reason = repeatedIdentity ? "duplicate_google_place_id" : classificationBlocked ? "classification_review_required" : importedUnverifiedReason(row);
     reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
