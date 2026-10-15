@@ -1178,20 +1178,9 @@ for (const emailRuntimeFile of [
 }
 
 const googlePlacesBudgetPage = read("apps/admin/app/admin/dashboard/settings/google-places/page.tsx");
-if (
-  !googlePlacesBudgetPage.includes("@theouthaven/auth/admin-session") ||
-  !googlePlacesBudgetPage.includes("@/lib/google/google-places-budget") ||
-  !googlePlacesBudgetPage.includes("@/lib/google/google-places-cost-control-admin") ||
-  !googlePlacesBudgetPage.includes('requireAdminRole(["superadmin", "admin"])')
-) {
-  throw new Error("Google Places Budget page must use isolated Admin auth and local budget helpers.");
-}
-if (
-  googlePlacesBudgetPage.includes("@/lib/supabase-admin") ||
-  googlePlacesBudgetPage.includes('from "@/lib/google/google-places-cost-control"') ||
-  googlePlacesBudgetPage.includes("from '@/lib/google/google-places-cost-control'")
-) {
-  throw new Error("Google Places Budget page must not import root monolith database/cost-control modules.");
+if (!googlePlacesBudgetPage.includes('redirect("/admin/dashboard/settings/location-tools")') ||
+    !googlePlacesBudgetPage.includes('requireAdminRole(["superadmin", "admin"])')) {
+  throw new Error("Retired Google Places settings must redirect authorized admins to Location Tools.");
 }
 
 const googlePlacesBudgetRoute = read("apps/admin/app/api/admin/settings/google-places-budget/route.ts");

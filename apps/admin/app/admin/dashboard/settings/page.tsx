@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Globe2,
   MailCheck,
-  MapPinned,
   MonitorCog,
   Search,
   Settings2,
@@ -90,14 +89,6 @@ const businessLinks: SettingsLink[] = [
       "Control first-year domain benefits and sponsored renewal behavior without redeploying.",
     eyebrow: "Partner Pro",
     icon: MonitorCog,
-  },
-  {
-    href: "/admin/dashboard/settings/google-places",
-    title: "Google Places Budget",
-    description:
-      "Manage monthly spend, usage, credits, photos, place details, and autocomplete allocation.",
-    eyebrow: "Location Intelligence",
-    icon: MapPinned,
   },
   {
     href: "/admin/dashboard/settings/promo-codes",
