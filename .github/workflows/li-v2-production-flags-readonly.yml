@@ -1,0 +1,87 @@
+name: LI V2 production certification flags (read only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: li-v2-production-flags-readonly
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      BACKGROUND_FUNCTION: toh-production-background-runtime
+    steps:
+      - name: Configure production AWS OIDC
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+
+      - name: Classify authoritative runtime flags without printing secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          # Lambda configuration is metadata; never dump it into the workflow log.
+          CFG="$(mktemp)"
+          SECRET="$(mktemp)"
+          trap 'rm -f "$CFG" "$SECRET"' EXIT
+          chmod 600 "$CFG" "$SECRET"
+          aws lambda get-function-configuration --function-name "$BACKGROUND_FUNCTION" --output json > "$CFG"
+          SECRET_ID="$(jq -er '.Environment.Variables.BACKGROUND_RUNTIME_SECRET_ID' "$CFG")"
+          SECRET_REGION="$(jq -er '.Environment.Variables.BACKGROUND_RUNTIME_SECRET_REGION' "$CFG")"
+          test -n "$SECRET_ID" && test -n "$SECRET_REGION"
+          aws secretsmanager get-secret-value --region "$SECRET_REGION" --secret-id "$SECRET_ID" --query SecretString --output text > "$SECRET"
+          CFG_PATH="$CFG" SECRET_PATH="$SECRET" python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["CFG_PATH"], encoding="utf-8") as handle:
+              cfg = json.load(handle)
+          with open(os.environ["SECRET_PATH"], encoding="utf-8") as handle:
+              secret = json.load(handle)
+          if not isinstance(secret, dict):
+              raise SystemExit("Runtime secret is not a JSON object; certification blocked.")
+          direct = cfg.get("Environment", {}).get("Variables", {})
+          keys = (
+              "LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED",
+              "LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED",
+          )
+          # bootstrap.mjs copies only nonempty string values from the secret over
+          # any inherited Lambda env variables. Missing/empty secret entries
+          # leave an existing Lambda environment value untouched.
+          def status(key):
+              value = secret.get(key)
+              if isinstance(value, str) and value:
+                  effective = value
+              else:
+                  effective = direct.get(key)
+              if effective is None or effective == "":
+                  return "missing"
+              return "enabled" if effective == "true" else "disabled"
+
+          results = {key: status(key) for key in keys}
+          lines = ["### LI V2 production runtime flag certification", "",
+                   "- Source: actual background Lambda secret pointer (AWS Secrets Manager)",
+                   "- Scope: configured startup values, not an in-process memory probe",
+                   "- Paid acquisition: not invoked or modified", ""]
+          for key, outcome in results.items():
+              lines.append(f"- `{key}`: **{outcome}**")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("\n".join(lines) + "\n")
+          for key, outcome in results.items():
+              print(f"{key}: {outcome}")
+          if not all(v == "enabled" for v in results.values()):
+              raise SystemExit("Certification flags are not both enabled; paid acquisition remains blocked.")
+          PY
