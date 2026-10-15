@@ -3,7 +3,8 @@ export type IndependentBusinessProfile = {
   latitude?: number; longitude?: number; sourceUrl?: string;
   photoUrl?: string; photoPermission?: "licensed" | "owner" | "public_domain";
   /** Google photos are live, attributed provider content, NOT licensed assets. */
-  photoSource?: "google_live" | "independent" | "wikimedia_commons";\n  wikimediaFilePageUrl?: string;
+  photoSource?: "google_live" | "independent" | "wikimedia_commons";
+  wikimediaFilePageUrl?: string;
   googlePlaceId?: string;
   googlePhotoSlotVerified?: boolean;
   openStatus?: "open" | "closed" | "unknown";
