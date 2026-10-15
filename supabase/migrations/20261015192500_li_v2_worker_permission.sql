@@ -1,6 +1,6 @@
 -- Each worker step is claimed atomically and rechecks operator action before work.
 create or replace function public.li_v2_campaign_run_permitted(p_run_id uuid)
-returns boolean language plpgsql stable security definer set search_path='' as $
+returns boolean language plpgsql stable security definer set search_path='' as $$
 begin
 return exists(
  select 1 from private.li_v2_campaign_import_runs r
@@ -11,6 +11,6 @@ return exists(
  and now()>=g.period_start and now()<g.period_end
 );
 end;
-$;
+$$;
 revoke all on function public.li_v2_campaign_run_permitted(uuid) from public,anon,authenticated;
 grant execute on function public.li_v2_campaign_run_permitted(uuid) to service_role;
