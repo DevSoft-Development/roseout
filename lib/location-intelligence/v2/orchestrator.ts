@@ -22,6 +22,7 @@ import {
 } from "@/lib/location-intelligence/v2/provider-executors";
 import {
   fetchOfficialWebsiteContext,
+  freeGeocodeAddress,
   loadInternalSignals,
   loadOwnerProfile,
   loadPublicGeography,
@@ -175,8 +176,8 @@ export const LOCATION_INTELLIGENCE_ADAPTERS: readonly LocationIntelligenceProvid
   new Adapter(descriptor("official_website"), async ({ input }) =>
     fetchOfficialWebsiteContext(String(input.url || ""))),
 
-  new Adapter(descriptor("public_geo"), async ({ input }) =>
-    loadPublicGeography(String(input.zipCode || ""))),
+  new Adapter(descriptor("public_geo"), async ({ capability, input }) =>
+    capability === "geocoding" ? freeGeocodeAddress(input) : loadPublicGeography(String(input.zipCode || ""))),
 
   new Adapter(descriptor("owner"), async ({ input }) =>
     loadOwnerProfile(String(input.locationId || ""))),
