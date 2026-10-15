@@ -4,7 +4,7 @@ import { resolveOfficialWebsiteLead, type PhotoGrant } from "./official-website-
 import { stageIndependentCandidate } from "./independent-staging";
 import { finalizeIndependentBatch } from "./independent-batch-finalizer";
 
-const forbidden=/(^|\\.)(google\\.com|google\\.[a-z.]+|maps\\.google\\.com|dataforseo\\.com)$/i;
+const forbidden=/(^|\.)(google\.com|google\.[a-z.]+|maps\.google\.com|dataforseo\.com)$/i;
 export function websiteLeadFromMapsItem(value:unknown):string|null {
  if(!value||typeof value!=="object"||Array.isArray(value))return null;
  const item=value as Record<string,unknown>;
