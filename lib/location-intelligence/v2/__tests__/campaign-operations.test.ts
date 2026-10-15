@@ -12,7 +12,7 @@ describe("LI V2 campaign operational wiring",()=>{
   const permission=readFileSync("supabase/migrations/20261015192500_li_v2_worker_permission.sql","utf8");
   const claims=readFileSync("supabase/migrations/20261015191500_li_v2_campaign_worker_claims.sql","utf8");
   expect(permission).toContain("as "+String.fromCharCode(36,36));
-  expect(permission).not.toMatch(/as \\$(?:\\r?\\n)/);
+  expect(permission).not.toMatch(/as \$(?:\r?\n)/);
   expect(claims).toContain("worker_lease_expired_manual_reconciliation_required");
   expect(claims).not.toContain("status='queued', last_error='worker_lease_expired");
  });
