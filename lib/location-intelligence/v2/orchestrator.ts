@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { acquisitionReservationInput, mustStopAcquisitionFallback } from "@/lib/location-intelligence/v2/acquisition-reservation";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -58,11 +59,31 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
     }
-    return {
-      providerId: this.descriptor.id,
-      capability: request.capability,
-      data: await this.handler(request),
-    };
+    const reservedPaidAcquisition = paidRequest && (purpose === "discovery" || purpose === "bootstrap");
+    if (reservedPaidAcquisition) {
+      const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
+        "reserve_location_acquisition_spend",
+        acquisitionReservationInput({
+          provider: this.descriptor.id,
+          capability: request.capability,
+          eventKey: request.input.acquisitionEventKey,
+          maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+        }),
+      );
+      if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
+    }
+    try {
+      return {
+        providerId: this.descriptor.id,
+        capability: request.capability,
+        data: await this.handler(request),
+      };
+    } catch (error) {
+      // After a reservation, a timeout might still have incurred a charge.
+      // Prevent a second paid request until reconciliation determines the outcome.
+      if (reservedPaidAcquisition) throw new Error(`paid_acquisition_outcome_uncertain:${this.descriptor.id}`, { cause: error });
+      throw error;
+    }
   }
 }
 
@@ -180,6 +201,7 @@ export async function executeWithProviderFallback(request: LocationProviderReque
         error: "provider_result_inadequate",
       });
     } catch (error) {
+      if (mustStopAcquisitionFallback(error)) throw error;
       errors.push({
         providerId: adapter.descriptor.id,
         error: error instanceof Error ? error.message : "provider_failed",
