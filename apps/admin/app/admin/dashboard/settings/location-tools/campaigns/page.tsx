@@ -29,8 +29,9 @@ async function updateProviderPrice(formData: FormData) {
   await requireAdminRole(["superadmin"]);
   const provider = String(formData.get("provider") || "");
   const raw = String(formData.get("max_usd") || "");
-  if (!["google","dataforseo","brave","serpapi"].includes(provider) ||
-      !/^\d+(\.\d{1,6})?$/.test(raw) || Number(raw) <= 0) throw new Error("Invalid provider price");
+  if (!["google","dataforseo","dataforseo_maps_standard","brave","serpapi"].includes(provider) ||
+      !/^\d+(\.\d{1,6})?$/.test(raw) || Number(raw) <= 0 ||
+      (provider === "dataforseo_maps_standard" && Number(raw) !== 0.0006)) throw new Error("Invalid provider price");
   const { data, error } = await getAdminDatabaseClient().rpc("admin_li_v2_set_provider_price", {
     p_provider: provider, p_max_usd: Number(raw),
     p_enabled: String(formData.get("enabled")) === "true",
