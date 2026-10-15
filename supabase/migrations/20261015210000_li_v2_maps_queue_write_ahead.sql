@@ -170,3 +170,21 @@ begin
 end;$$;
 revoke all on function public.li_v2_claim_campaign_run() from public,anon,authenticated;
 grant execute on function public.li_v2_claim_campaign_run() to service_role;
+
+-- Licensed photo grants are independent of web search results.
+-- Only service operators may write grants after verifying permission evidence.
+create table if not exists public.li_v2_photo_grants(
+ id uuid primary key default gen_random_uuid(),
+ website_origin text not null unique,
+ image_url text not null check(image_url ~ '^https://'),
+ evidence_url text not null check(evidence_url ~ '^https://'),
+ permission text not null check(permission in ('owner','licensed','public_domain')),
+ verified_by text not null check(length(trim(verified_by))>0),
+ expires_at timestamptz,
+ active boolean not null default false,
+ created_at timestamptz not null default now(),
+ updated_at timestamptz not null default now()
+);
+alter table public.li_v2_photo_grants enable row level security;
+revoke all on public.li_v2_photo_grants from public,anon,authenticated;
+grant select,insert,update on public.li_v2_photo_grants to service_role;
