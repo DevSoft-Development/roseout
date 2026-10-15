@@ -92,14 +92,6 @@ const businessLinks: SettingsLink[] = [
     icon: MonitorCog,
   },
   {
-    href: "/admin/dashboard/settings/google-places",
-    title: "Google Places Budget",
-    description:
-      "Manage monthly spend, usage, credits, photos, place details, and autocomplete allocation.",
-    eyebrow: "Location Intelligence",
-    icon: MapPinned,
-  },
-  {
     href: "/admin/dashboard/settings/promo-codes",
     title: "Promo Codes",
     description:
