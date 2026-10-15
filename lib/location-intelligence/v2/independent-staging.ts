@@ -58,7 +58,7 @@ export async function stageIndependentCandidate(input:{
    import_status:"staged",source_quality_status:"independently_verified",
    import_confidence:"high",
    raw_payload:{campaign_id:input.campaignId,run_id:input.runId,
-     independent_profile:{evidenceSource:p.evidenceSource,
+     independent_profile:{googlePlaceId:p.googlePlaceId||null,evidenceSource:p.evidenceSource,
        photoPermission:p.photoPermission,openStatus:p.openStatus,
        geocodeProvider:location.provider,geoPrecision:location.precision,
        matchedAddress:location.matchedAddress}},
