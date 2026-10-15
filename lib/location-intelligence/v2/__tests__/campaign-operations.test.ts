@@ -8,6 +8,14 @@ const schedule=JSON.parse(readFileSync("infra/aws/edge-runtime/schedules.json","
 const registry=JSON.parse(readFileSync("config/cron-jobs.json","utf8")) as Array<{jobKey:string;targetPath:string;delivery:string}>;
 
 describe("LI V2 campaign operational wiring",()=>{
+ it("uses valid function delimiters and fails closed on abandoned paid work",()=>{
+  const permission=readFileSync("supabase/migrations/20261015192500_li_v2_worker_permission.sql","utf8");
+  const claims=readFileSync("supabase/migrations/20261015191500_li_v2_campaign_worker_claims.sql","utf8");
+  expect(permission).toContain("as "+String.fromCharCode(36,36));
+  expect(permission).not.toMatch(/as \\$(?:\\r?\\n)/);
+  expect(claims).toContain("worker_lease_expired_manual_reconciliation_required");
+  expect(claims).not.toContain("status='queued', last_error='worker_lease_expired");
+ });
  it("has a managed AWS 15-minute schedule and a protected endpoint",()=>{
   expect(registry).toContainEqual(expect.objectContaining({jobKey:"li-v2-acquisition-campaign",delivery:"managed"}));
   expect(schedule).toContainEqual(expect.objectContaining({name:"li-v2-acquisition-campaign",expression:"cron(0/15 * * * ? *)",enabled:true}));
