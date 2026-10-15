@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { advanceMapsQueue, submitApprovedMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
+import { resolveQueuedMapsToIndependentProfiles } from "@/lib/location-intelligence/v2/maps-independent-resolver";
 
 type Run = {id:string;campaign_id:string;processed:number};
 type Coverage={market:string;area_key:string;location_kind:string;category:string;target_count:number;current_count:number};
@@ -61,10 +62,24 @@ export async function processQueuedAcquisitionCampaign() {
      return {claimed:true,runId:run.id,queueStatus:"pending"};
    }
    if(queue.status==="ready"){
-     // No DataForSEO Maps SERP fields become a stored business profile.
-     // A separately verified, rights-cleared record must be attached first.
-     await checkpoint(run.id,0,"failed","independent_profile_resolution_not_connected");
-     return {claimed:true,runId:run.id,stopped:"independent_profile_resolution_not_connected"};
+     // Maps content is a discovery lead only; official evidence and rights grants
+     // are separately verified before any LI V2 profile is staged/published.
+     const resolved=await resolveQueuedMapsToIndependentProfiles({
+       runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
+     });
+     if(resolved.staged===0){
+       await checkpoint(run.id,0,"failed","no_rights_verified_publishable_candidates");
+       return {claimed:true,runId:run.id,stopped:"no_rights_verified_publishable_candidates",
+         inspected:resolved.inspected,photoBlocked:resolved.photoBlocked};
+     }
+     const indexed=resolved.finalizations.some(batch=>batch.readyLocationIds.length>0 && batch.searchV3RetrievalCertified);
+     if(!indexed){
+       await checkpoint(run.id,0,"failed","search_v3_live_retrieval_certification_required");
+       return {claimed:true,runId:run.id,staged:resolved.staged,
+         stopped:"search_v3_live_retrieval_certification_required"};
+     }
+     await checkpoint(run.id,1);
+     continue;
    }
    await checkpoint(run.id,0,"failed","maps_queue_manual_reconciliation_required");
    return {claimed:true,runId:run.id,stopped:"maps_queue_manual_reconciliation_required"};
