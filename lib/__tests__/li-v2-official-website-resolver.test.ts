@@ -1,5 +1,8 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
+vi.mock("@/lib/supabase-admin",()=>({supabaseAdmin:{}}));
+vi.mock("@/lib/location-intelligence/v2/independent-staging",()=>({stageIndependentCandidate:vi.fn()}));
+vi.mock("@/lib/location-intelligence/v2/independent-batch-finalizer",()=>({finalizeIndependentBatch:vi.fn()}));
 vi.mock("@/lib/location-intelligence/v2/source-executors",()=>({fetchOfficialWebsiteContext:vi.fn()}));
 import {parseOfficialBusinessJsonLd,permittedOfficialPhoto} from "../location-intelligence/v2/official-website-resolver";
 import {websiteLeadFromMapsItem} from "../location-intelligence/v2/maps-independent-resolver";
