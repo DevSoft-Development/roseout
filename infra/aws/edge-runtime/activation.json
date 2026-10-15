@@ -64,7 +64,8 @@
     "microsoft-365-sync",
     "marketing-social-publish",
     "website-failover",
-    "domain-lifecycle"
+    "domain-lifecycle",
+    "li-v2-acquisition-campaign"
   ],
   "rollback_enabled": [
     "billing-reconciliation",
@@ -129,7 +130,8 @@
     "microsoft-365-sync",
     "marketing-social-publish",
     "website-failover",
-    "domain-lifecycle"
+    "domain-lifecycle",
+    "li-v2-acquisition-campaign"
   ],
   "probe": [
     "domain-lifecycle"
