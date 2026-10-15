@@ -27,8 +27,12 @@ export async function stageIndependentCandidate(input:{
    street:p.address!,city:p.city!,state:p.state!,zip:p.zip,
  },{geoapifyKey:String(values.apiKey||"")});
  if(!location)return {staged:false,reasons:["independent_geocode_not_confirmed"]};
- if(distanceM(location.latitude,location.longitude,p.latitude!,p.longitude!)>500)
+ if(p.latitude!==undefined && p.longitude!==undefined &&
+   distanceM(location.latitude,location.longitude,p.latitude,p.longitude)>500)
    return {staged:false,reasons:["independent_location_coordinate_disagreement"]};
+ const verified={...p,latitude:location.latitude,longitude:location.longitude};
+ const verdict=assessIndependentBusinessProfile(verified);
+ if(!verdict.publishable)return {staged:false,reasons:verdict.reasons};
  const identifier=(p.googlePlaceId&&/^[A-Za-z0-9_-]{8,255}$/.test(p.googlePlaceId))
    ?p.googlePlaceId:createHash("sha256").update(
      [p.name,p.address,p.city,p.state].join("|").toLowerCase()).digest("hex");
@@ -52,7 +56,7 @@ export async function stageIndependentCandidate(input:{
    batch_id:batch.id,source,source_id:identifier,source_url:p.sourceUrl,
    location_type:p.locationType,name:p.name,address:p.address,city:p.city,
    state:p.state,zip_code:p.zip||null,website:p.website||null,
-   latitude:p.latitude,longitude:p.longitude,
+   latitude:location.latitude,longitude:location.longitude,
    primary_category:p.category,main_image:p.photoUrl,images:[p.photoUrl],
    has_photos:true,photo_status:"licensed",duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
