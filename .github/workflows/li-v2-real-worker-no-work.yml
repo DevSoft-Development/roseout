@@ -47,8 +47,11 @@ jobs:
       - name: Certify real worker returns no work with zero queued campaigns
         run: |
           set -euo pipefail
+          STAGE=initialization
+          trap 'echo "::error title=LI V2 certification::Failed stage: $STAGE (line $LINENO)"' ERR
           KEY="$(cat "$RUNNER_TEMP/service-role")"
           echo "::add-mask::$KEY"
+          STAGE=check_empty_campaign_queue
           # Abort unless the production queue is empty and this pilot cannot spend.
           curl --fail-with-body --silent --show-error \
             -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
@@ -61,16 +64,21 @@ jobs:
             -d '{"p_campaign_id":"li-v2-pilot-001","p_provider":"brave","p_price_usd":0.005}' \
             "$SUPABASE_URL/rest/v1/rpc/li_v2_paid_acquisition_preflight" \
             | jq -e '. == false' > /dev/null
+          STAGE=discover_scheduler_invoker
           INVOKER="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           test -n "$INVOKER" && test "$INVOKER" != "None"
+          STAGE=invoke_private_worker
           # This is NOT dry-run: it hits the actual worker route with no work to claim.
           printf '%s\n' '{"function":"node:/api/cron/li-v2-acquisition-campaign","body":{}}' > "$RUNNER_TEMP/worker-probe.json"
           aws lambda invoke --function-name "$INVOKER" \
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$RUNNER_TEMP/worker-probe.json" \
             "$RUNNER_TEMP/worker-result.json" > "$RUNNER_TEMP/worker-invocation.json"
+          STAGE=validate_lambda_transport
           jq -e 'has("FunctionError") | not' "$RUNNER_TEMP/worker-invocation.json" >/dev/null
+          STAGE=validate_worker_no_work_response
           jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.result.claimed == false' "$RUNNER_TEMP/worker-result.json" >/dev/null
+          STAGE=verify_post_invocation_invariants
           # Confirm invocation did not create a campaign or alter acquisition availability.
           curl --fail-with-body --silent --show-error \
             -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
