@@ -366,6 +366,22 @@ export async function publishReadyStagedLocations({
   for (const row of rows) {
     if (String(row.source || "").startsWith("li_v2_")) {
       const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
+      if (evidence.photoSource==="wikimedia_commons") {
+        const license=recordValue(evidence.wikimediaEvidence);
+        const goodLicense=["CC BY 4.0","CC BY-SA 4.0","CC BY 3.0","CC BY-SA 3.0"].includes(String(license.license||""));
+        if(!goodLicense || !String(license.author||"").trim() ||
+          !String(license.filePageUrl||"").startsWith("https://commons.wikimedia.org/wiki/File:") ||
+          !String(license.licenseUrl||"").startsWith("https://creativecommons.org/licenses/") ||
+          String(license.imageUrl||"")!==String(row.main_image||"")) {
+          const {error:quarantineError}=await supabaseAdmin.from("location_import_staging").update({
+            quality_status:"review",source_quality_status:"imported_unverified",
+            rejection_reason:"wikimedia_attribution_evidence_invalid"
+          }).eq("id",row.id);
+          if(quarantineError)throw new Error("wikimedia_evidence_quarantine_failed");
+          quarantinedIds.add(String(row.id));
+          continue;
+        }
+      }
       const verdict = assessIndependentBusinessProfile({
         name: String(row.name || ""), address: String(row.address || ""),
         city: String(row.city || ""), state: String(row.state || ""),

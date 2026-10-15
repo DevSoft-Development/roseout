@@ -246,8 +246,19 @@ export default function LocationDetailPage() {
   const returnHref = safeInternalReturnHref(searchParams.get("from"));
 
   const [location, setLocation] = useState<LocationRecord | null>(null);
+  const [photoCredit, setPhotoCredit] = useState<{author:string;license:string;licenseUrl:string;sourceUrl:string}|null>(null);
   const [loading, setLoading] = useState(true);
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
+  useEffect(() => {
+    setPhotoCredit(null);
+    if(!location?.id)return;
+    let cancelled=false;
+    fetch("/api/public/photo-attribution?locationId="+encodeURIComponent(String(location.id)))
+      .then(r=>r.ok?r.json():null)
+      .then(data=>{if(!cancelled)setPhotoCredit(data?.attribution||null);})
+      .catch(()=>{if(!cancelled)setPhotoCredit(null);});
+    return ()=>{cancelled=true;};
+  },[location?.id]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [menu, setMenu] = useState<MenuPayload | null>(null);
   const [menuLoading, setMenuLoading] = useState(false);
@@ -789,6 +800,11 @@ export default function LocationDetailPage() {
         </div>
       </div>
 
+      {photoCredit && (
+        <p className="mx-auto max-w-6xl px-4 py-2 text-xs text-white/70" data-testid="wikimedia-photo-credit">
+          Photo: {photoCredit.author} · <a href={photoCredit.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">Wikimedia Commons source</a> · <a href={photoCredit.licenseUrl} target="_blank" rel="noopener noreferrer" className="underline">{photoCredit.license}</a>. Changes to the image must follow the license terms.
+        </p>
+      )}
       {photoIndex !== null && photos[photoIndex] ? (
         <PhotoViewer photos={photos} index={photoIndex} name={name} onClose={() => setPhotoIndex(null)} onChange={setPhotoIndex} />
       ) : null}
