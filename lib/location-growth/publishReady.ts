@@ -355,6 +355,7 @@ export async function publishReadyStagedLocations({
   }
 
   const newRows = [];
+  const quarantinedIds = new Set<string>();
   for (const row of rows) {
     if (String(row.source || "").startsWith("li_v2_")) {
       const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
@@ -373,6 +374,7 @@ export async function publishReadyStagedLocations({
           .update({ quality_status: "review", source_quality_status: "imported_unverified",
             rejection_reason: verdict.reasons.join(",") }).eq("id", row.id);
         if (quarantineError) throw new Error("li_v2_profile_quarantine_failed");
+        quarantinedIds.add(String(row.id));
         continue;
       }
     }
@@ -424,6 +426,7 @@ export async function publishReadyStagedLocations({
   }
 
   const publishedIds = rows
+    .filter((row) => !quarantinedIds.has(String(row.id)))
     .filter((row) => existingKeys.has(`${row.source}::${row.source_id}`))
     .map((row) => row.id)
     .filter(Boolean);
