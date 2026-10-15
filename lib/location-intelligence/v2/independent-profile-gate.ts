@@ -3,7 +3,7 @@ export type IndependentBusinessProfile = {
   latitude?: number; longitude?: number; sourceUrl?: string;
   photoUrl?: string; photoPermission?: "licensed" | "owner" | "public_domain";
   /** Google photos are live, attributed provider content, NOT licensed assets. */
-  photoSource?: "google_live" | "independent";
+  photoSource?: "google_live" | "independent" | "wikimedia_commons";\n  wikimediaFilePageUrl?: string;
   googlePlaceId?: string;
   googlePhotoSlotVerified?: boolean;
   openStatus?: "open" | "closed" | "unknown";
@@ -27,7 +27,7 @@ export function assessIndependentBusinessProfile(p: IndependentBusinessProfile) 
   if (p.openStatus !== "open") reasons.push("operating_status_unverified");
   if (p.duplicate) reasons.push("existing_business_duplicate");
   const independentPhoto=Boolean(p.photoUrl?.startsWith("https://") && p.photoPermission &&
-    (p.photoSource===undefined || p.photoSource==="independent"));
+    (p.photoSource===undefined || p.photoSource==="independent" || p.photoSource==="wikimedia_commons"));
   if (!independentPhoto && !isVerifiedGoogleLivePhoto(p))
     reasons.push("approved_photo_missing");
   if (!p.sourceUrl?.startsWith("https://")) reasons.push("evidence_url_missing");
