@@ -61,14 +61,21 @@ class Adapter implements LocationIntelligenceProviderAdapter {
     }
     const reservedPaidAcquisition = paidRequest && (purpose === "discovery" || purpose === "bootstrap");
     if (reservedPaidAcquisition) {
+      const campaignId = String(request.input.acquisitionCampaignId || "").trim();
+      if (!/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId)) {
+        throw new Error("acquisition_campaign_id_required");
+      }
       const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
         "reserve_location_acquisition_spend",
-        acquisitionReservationInput({
-          provider: this.descriptor.id,
-          capability: request.capability,
-          eventKey: request.input.acquisitionEventKey,
-          maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
-        }),
+        {
+          ...acquisitionReservationInput({
+            provider: this.descriptor.id,
+            capability: request.capability,
+            eventKey: request.input.acquisitionEventKey,
+            maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+          }),
+          p_campaign_id: campaignId,
+        },
       );
       if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
