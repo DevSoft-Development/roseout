@@ -189,6 +189,10 @@ function toLocationInsert(row: StagingRow) {
     rating: row.rating,
     review_count: row.review_count,
     main_image: row.main_image,
+    // Google photos remain short-lived live provider media, never copied as licensed assets.
+    photo_source: String(row.source||"").startsWith("li_v2_") &&
+      recordValue(recordValue(row.raw_payload).independent_profile).photoSource==="google_live"
+      ? "google_places_new" : null,
     images: row.images || [],
     description: row.description,
     import_source: row.source,
