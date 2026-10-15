@@ -2,6 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveOfficialWebsiteLead, type PhotoGrant } from "./official-website-resolver";
 import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
+import { getPlaceDetailsNew } from "@/lib/google/places-new-client";
+import { matchesIndependentBusiness } from "./google-business-identity-match";
 import { googlePhotoSlotUrl } from "@/lib/locations/photo-public";
 import type { IndependentBusinessProfile } from "./independent-profile-gate";
 import { stageIndependentCandidate } from "./independent-staging";
@@ -63,6 +65,8 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(id){
       // At most one metadata check per discovered lead. Do not fetch media here.
+      const details=await getPlaceDetailsNew(id,{fieldMode:"address",jobKey:"li-v2-independent-business-identity"});
+      if(!matchesIndependentBusiness(candidate,details,id))continue;
       const slot=await getGooglePhotoSlot(id,0);
       const url=slot?.name?googlePhotoSlotUrl(id,0,800):null;
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
