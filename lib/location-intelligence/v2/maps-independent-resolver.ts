@@ -64,7 +64,13 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(id){
-      // At most one metadata check per discovered lead. Do not fetch media here.
+      // Free-first: reject any ID already attached to a TOH record before billed Google details.
+      // A shared venue ID is NOT proof these businesses are duplicates.
+      const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
+        .select("id").eq("google_place_id",id).limit(1);
+      if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
+      if(assigned?.length){photoBlocked++;continue;}
+      // Only unresolved identities needing a Google live photo can reach this billed check.
       const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id))continue;
       const slot=await getGooglePhotoSlot(id,0);
