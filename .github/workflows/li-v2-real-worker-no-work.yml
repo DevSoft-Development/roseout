@@ -68,8 +68,8 @@ jobs:
           INVOKER="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
           test -n "$INVOKER" && test "$INVOKER" != "None"
           STAGE=invoke_private_worker
-          # This is NOT dry-run: it hits the actual worker route with no work to claim.
-          printf '%s\n' '{"function":"node:/api/cron/li-v2-acquisition-campaign","body":{}}' > "$RUNNER_TEMP/worker-probe.json"
+          # This is NOT dry-run: the authorized private managed dispatcher forwards\n          # to the actual worker with x-toh-aws-internal=managed-dispatch.
+          printf '%s\n' '{"function":"node:/api/cron/managed?job=li-v2-acquisition-campaign","body":{}}' > "$RUNNER_TEMP/worker-probe.json"
           aws lambda invoke --function-name "$INVOKER" \
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$RUNNER_TEMP/worker-probe.json" \
