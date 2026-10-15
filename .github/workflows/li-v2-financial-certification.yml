@@ -1,0 +1,47 @@
+name: LI V2 financial certification
+on:
+  pull_request:
+    paths:
+      - 'lib/location-intelligence/v2/**'
+      - 'supabase/migrations/*li_v2_acquisition_cost_ledger*'
+      - 'scripts/certify-li-v2-concurrent-reservations.sh'
+      - '.github/workflows/li-v2-financial-certification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  financial-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: certification-only
+          POSTGRES_DB: li_v2_cert
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d li_v2_cert"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PG_URL: postgresql://postgres:certification-only@localhost:5432/li_v2_cert
+      LI_V2_CERT_DISPOSABLE_DB: 'YES'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+      - name: Apply acquisition ledger schema in disposable DB
+        run: psql "$PG_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014180000_li_v2_acquisition_cost_ledger.sql
+      - name: Verify independent-session concurrency and budget exhaustion
+        run: bash scripts/certify-li-v2-concurrent-reservations.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify fail-closed inputs and provider failure routing
+        run: npx vitest run lib/location-intelligence/v2/__tests__/acquisition-reservation.test.ts
