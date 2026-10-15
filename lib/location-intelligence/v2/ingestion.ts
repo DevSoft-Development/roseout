@@ -8,6 +8,7 @@ function sourceProvider(source: string): ExternalIdentityProvider | null {
   if (value.includes("google")) return "google";
   if (value.includes("dataforseo")) return "dataforseo";
   if (value.includes("mapbox")) return "mapbox";
+  if (value.includes("independent")) return "other";
   return null;
 }
 
