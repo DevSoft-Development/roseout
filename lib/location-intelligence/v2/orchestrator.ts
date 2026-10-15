@@ -131,12 +131,17 @@ export const LOCATION_INTELLIGENCE_ADAPTERS: readonly LocationIntelligenceProvid
         tag: String(input.tag || "") || undefined,
       });
     }
+    // One fixed-size request per reservation; do not allow unlimited result counts.
+    const requestedLimit = Number(input.limit ?? 100);
+    if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+      throw new Error("dataforseo_discovery_limit_out_of_bounds");
+    }
     return searchDataForSeoBusinessListings({
       categories: Array.isArray(input.categories) ? input.categories.map(String) : undefined,
       title: String(input.title || "") || undefined,
       description: String(input.description || "") || undefined,
       locationCoordinate: String(input.locationCoordinate || "") || undefined,
-      limit: Number(input.limit || 100),
+      limit: requestedLimit,
       filters: Array.isArray(input.filters) ? input.filters : undefined,
     });
   }),
