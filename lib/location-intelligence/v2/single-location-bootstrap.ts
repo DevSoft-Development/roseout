@@ -25,7 +25,7 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
     ...c,photoUrl:photo.imageUrl,photoSource:"wikimedia_commons",
     wikimediaFilePageUrl:photo.filePageUrl,category:"restaurant",locationType:"restaurant",
   }});
-  if(!staged.staged || !staged.batchId)return {ok:false,stage:"staging",reasons:staged.reasons||[]};
+  if(!staged.staged || !staged.batchId)return {ok:false,stage:"staging",reasons:"reasons" in staged ? staged.reasons : ["stage_rejected"]};
   const finalized=await finalizeIndependentBatch(staged.batchId);
   return {ok:true,dryRun:false,batchId:staged.batchId,staged:true,
     readyLocationIds:finalized.readyLocationIds,needsReadiness:finalized.needsReadiness,
