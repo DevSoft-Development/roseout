@@ -232,6 +232,13 @@ export default async function DemoCenterPage() {
 
   const tools: ToolCard[] = [
     {
+      title: "POS E2E Testing Center",
+      description: "Review software certification Pass A–D, prerequisites and explicit NOT CERTIFIED gates. Real test execution is not connected yet.",
+      href: "/admin/dashboard/settings/demo-center/pos-e2e",
+      label: "Open POS testing",
+      status: "Warning",
+    },
+    {
       title: "ThePOSHaven Web Register Preview",
       description: "Practice a full restaurant shift with TheOutHaven Lounge tables and catalog. Local-only orders, kitchen fire, tips and payments; no live transactions.",
       href: demoHref("/locations/dashboard/pos/register"),
