@@ -1,4 +1,5 @@
 import {describe,it,expect} from "vitest";
+import {readFileSync} from "node:fs";
 import {assessIndependentBusinessProfile} from "../location-intelligence/v2/independent-profile-gate";
 const complete={
   name:"Example Cafe",address:"100 Main St",city:"Mineola",state:"NY",
@@ -15,5 +16,14 @@ describe("independently sourced profile gate",()=>{
     for(const change of [{duplicate:true},{openStatus:"closed" as const},{photoPermission:undefined},{evidenceSource:undefined},{latitude:999}]) {
       expect(assessIndependentBusinessProfile({...complete,...change}).publishable).toBe(false);
     }
+  });
+});
+
+describe("acquisition publishing isolation",()=>{
+  it("requires the independent profile gate at final insertion boundary",()=>{
+    const publisher=readFileSync("lib/location-growth/publishReady.ts","utf8");
+    expect(publisher).toContain('startsWith("li_v2_")');
+    expect(publisher).toContain("assessIndependentBusinessProfile");
+    expect(publisher).toContain('quality_status: "review"');
   });
 });
