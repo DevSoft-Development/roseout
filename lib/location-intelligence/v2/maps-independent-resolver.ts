@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveOfficialWebsiteLead, type PhotoGrant } from "./official-website-resolver";
+import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
+import { googlePhotoSlotUrl } from "@/lib/locations/photo-public";
 import { stageIndependentCandidate } from "./independent-staging";
 import { finalizeIndependentBatch } from "./independent-batch-finalizer";
 
@@ -29,26 +31,48 @@ async function grantForSite(origin:string):Promise<PhotoGrant|undefined> {
   evidenceUrl:String(data.evidence_url),permission:data.permission as PhotoGrant["permission"],
   verifiedBy:String(data.verified_by),expiresAt:data.expires_at||undefined};
 }
-/** Maps output only supplies leads; independently fetch and verify every business. */
+/** Provider IDs are used for identity/photo lookup, never as source facts. */
+export function googleIdentityLead(value:unknown):string|null {
+ if(!value||typeof value!=="object"||Array.isArray(value))return null;
+ const item=value as Record<string,unknown>;
+ for(const key of ["place_id","placeId","google_place_id"]){
+   const id=String(item[key]||"").trim();
+   if(/^[A-Za-z0-9_-]{8,255}$/.test(id))return id;
+ }
+ return null;
+}
+/** Maps output supplies leads only; official website independently supplies business facts. */
 export async function resolveQueuedMapsToIndependentProfiles(input:{
  runId:string;campaignId:string;items:unknown[]
 }) {
  let inspected=0,photoBlocked=0,verified=0,staged=0;
  const seen=new Set<string>(),batches=new Set<string>();
- for(const raw of input.items.slice(0,20)){
+ for(const raw of input.items.slice(0,50)){
    const origin=websiteLeadFromMapsItem(raw);
    if(!origin||seen.has(origin))continue;
    seen.add(origin);inspected++;
-   const grant=await grantForSite(origin);
-   if(!grant){photoBlocked++;continue;}
    try{
+    const grant=await grantForSite(origin);
     const resolved=await resolveOfficialWebsiteLead(origin,grant);
-    if(resolved.status!=="verified_evidence")continue;
+    if(resolved.status==="needs_independent_evidence")continue;
+    const candidate=resolved.candidate;
+    if(!candidate)continue;
+    const id=googleIdentityLead(raw);
+    let photoCandidate:Record<string,unknown>|null=null;
+    if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
+    else if(id){
+      // At most one metadata check per discovered lead. Do not fetch media here.
+      const slot=await getGooglePhotoSlot(id,0);
+      const url=slot?.name?googlePhotoSlotUrl(id,0,800):null;
+      if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
+        photoSource:"google_live",googlePhotoSlotVerified:true};
+    }
+    if(!photoCandidate){photoBlocked++;continue;}
     verified++;
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...resolved.candidate,category:resolved.candidate.category,
-       locationType:resolved.candidate.locationType}
+      candidate:{...photoCandidate,category:candidate.category,
+       locationType:candidate.locationType}
     });
     if(saved.staged){staged++;batches.add(saved.batchId);}
    }catch{/* malformed or unreachable lead is never promoted */}
