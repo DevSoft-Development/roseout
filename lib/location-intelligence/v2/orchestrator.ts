@@ -65,6 +65,13 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       if (!/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId)) {
         throw new Error("acquisition_campaign_id_required");
       }
+      // Global caps alone are insufficient: deny any acquisition whose
+      // specific campaign has no active, bounded budget.
+      const { data: campaignActive, error: campaignCapError } = await supabaseAdmin
+        .rpc("is_location_acquisition_campaign_active", { p_campaign_id: campaignId });
+      if (campaignCapError || campaignActive !== true) {
+        throw new Error("acquisition_active_campaign_cap_required");
+      }
       const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
         "reserve_location_acquisition_spend",
         {
