@@ -1,5 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { assessIndependentBusinessProfile } from "@/lib/location-intelligence/v2/independent-profile-gate";
+import { advanceMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
 import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
@@ -63,6 +65,15 @@ export async function processQueuedAcquisitionCampaign() {
       processed++;
       continue;
     }
+    const queueState = await advanceMapsQueue(run.id,index,identityQuery);
+    if(queueState.status !== "ready") {
+      return {claimed:true,runId:run.id,processed,staged,queueStatus:queueState.status,
+        stopped:"queued_maps_result_or_certification_required"};
+    }
+    // Never use Google Maps SERP output directly as a stored business profile.
+    // Structured, independently licensed candidates must be resolved before staging.
+    return {claimed:true,runId:run.id,processed,staged,
+      stopped:"independent_profile_source_not_certified"};
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
     let hit=0, miss=0;
     try {
@@ -117,6 +128,29 @@ export async function processQueuedAcquisitionCampaign() {
   const dedupe=await dedupeStagedLocationsChunk({batchId:batch.id,limit:50});
   const {data:allowPublishing,error:publishingError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
   if(publishingError || allowPublishing!==true) return {claimed:true,runId:run.id,processed,staged,dedupe,stopped:"operator_command"};
+  const {data: stagedForReview,error:reviewError}=await supabaseAdmin.from("location_import_staging")
+    .select("id,name,address,city,state,latitude,longitude,source_url,main_image,raw_payload,duplicate_status")
+    .eq("batch_id",batch.id).eq("import_status","staged").limit(100);
+  if(reviewError)throw new Error("acquisition_profile_review_read_failed");
+  for (const row of stagedForReview || []) {
+    const evidence=(row.raw_payload || {}) as Record<string,unknown>;
+    const independent=(evidence.independent_profile || {}) as Record<string,unknown>;
+    const verdict=assessIndependentBusinessProfile({
+      name:row.name,address:row.address,city:row.city,state:row.state,
+      latitude:Number(row.latitude),longitude:Number(row.longitude),
+      sourceUrl:row.source_url,photoUrl:row.main_image,
+      photoPermission:independent.photoPermission as "owner"|"licensed"|"public_domain"|undefined,
+      evidenceSource:independent.evidenceSource as "owner"|"official_website"|"licensed_dataset"|undefined,
+      openStatus:independent.openStatus as "open"|"closed"|"unknown"|undefined,
+      duplicate:row.duplicate_status!=="unique"
+    });
+    if(!verdict.publishable) {
+      const {error:rejectError}=await supabaseAdmin.from("location_import_staging")
+        .update({quality_status:"review",source_quality_status:"imported_unverified"})
+        .eq("id",row.id);
+      if(rejectError)throw rejectError;
+    }
+  }
   const publishing=await publishReadyStagedLocations({batchId:batch.id,limit:20});
   if(publishing.errors.length) throw new Error("campaign_publishing_errors:"+publishing.errors.join(";"));
   const {data:recorded,error:recordError}=await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",{
