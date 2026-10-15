@@ -14,8 +14,10 @@ type CoverageRow = {
 export default async function GapCoveragePage() {
   await requireAdminRole(["superadmin", "admin"]);
   const db = getAdminDatabaseClient();
+  const freshnessCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await db.from("location_coverage_state")
     .select("market,area_type,area_key,location_kind,category,current_count,target_count,search_demand,result_gap_rate,priority_score,calculated_at")
+    .gte("calculated_at", freshnessCutoff)
     .order("priority_score", { ascending: false }).limit(500);
   const rows = (data || []) as CoverageRow[];
   const [recentImports, importBatches] = await Promise.all([
@@ -47,8 +49,8 @@ export default async function GapCoveragePage() {
         <section className="rounded-3xl border border-white/10 bg-[#111] p-6">
           <p className="text-xs font-black uppercase tracking-widest text-rose-200">Location Intelligence V2</p>
           <h1 className="mt-2 text-3xl font-black">Gap Coverage</h1>
-          <p className="mt-3 text-sm text-white/65">Live coverage priorities by market, area and category. Read-only reporting does not start paid discovery.</p>
-          <p className="mt-2 text-xs text-white/50">Showing the top 500 priority records, not all coverage rows. Gap totals below apply to this sample only. Last coverage calculation: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "Not available"}.</p>
+          <p className="mt-3 text-sm text-white/65">Coverage priorities refreshed in the last 24 hours by market, area and category. Read-only reporting does not start paid discovery.</p>
+          <p className="mt-2 text-xs text-white/50">Showing up to 500 priority records refreshed in the past 24 hours, not all coverage rows. Gap totals below apply to this sample only. Last coverage calculation: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "Not available"}.</p>
         </section>
         {error ? (
           <p role="alert" className="rounded-xl border border-rose-400/30 p-5 text-rose-200">Coverage data unavailable: {error.message}</p>
@@ -58,7 +60,7 @@ export default async function GapCoveragePage() {
               {[
                 ["Markets in sample", groups.size],
                 ["Coverage priority rows", rows.length],
-                ["Missing locations in sample", rows.reduce((sum, row) => sum + missing(row), 0)],
+                ["Category deficit slots in sample", rows.reduce((sum, row) => sum + missing(row), 0)],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-2xl border border-white/10 bg-[#111] p-5">
                   <p className="text-sm text-white/60">{label}</p><p className="mt-2 text-3xl font-black">{Number(value).toLocaleString()}</p>
@@ -70,7 +72,7 @@ export default async function GapCoveragePage() {
                 <div key={market} className="rounded-2xl border border-white/10 bg-[#111] p-5">
                   <h2 className="font-black">{market.replace(/_/g, " ")}</h2>
                   <p className="mt-2 text-sm text-white/60">{summary.areas.size} areas · {summary.rows} priority rows</p>
-                  <p className="mt-2 text-sm text-rose-200">{summary.gap.toLocaleString()} missing within sample</p>
+                  <p className="mt-2 text-sm text-rose-200">{summary.gap.toLocaleString()} category deficit slots within sample</p>
                 </div>
               ))}
             </section>
@@ -146,7 +148,7 @@ export default async function GapCoveragePage() {
                   </tr>
                 ))}</tbody>
               </table>
-              {rows.length === 0 && <p className="mt-4 text-white/60">No coverage rows available.</p>}
+              {rows.length === 0 && <p className="mt-4 text-white/60">No recently refreshed coverage rows available.</p>}
             </section>
           </>
         )}
