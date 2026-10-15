@@ -35,7 +35,13 @@ export async function processQueuedAcquisitionCampaign() {
   let processed=0, discovered=0, failed=0, staged=0;
   for (const [index,target] of ((coverage || []) as Coverage[]).entries()) {
     if (index < run.processed) continue;
-    if (target.current_count >= target.target_count) continue;
+    if (target.current_count >= target.target_count) {
+      const {data: skipped, error: skipError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
+        {p_run_id:run.id,p_processed:1,p_discovered:0,p_failed:0,p_status:"running"});
+      if (skipError || skipped !== true) break;
+      processed++;
+      continue;
+    }
     const {data:permitted,error:permissionError} = await supabaseAdmin
       .rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
     if (permissionError || permitted !== true) break;
@@ -75,12 +81,12 @@ export async function processQueuedAcquisitionCampaign() {
       if(candidates.length){discovered+=candidates.length;hit=candidates.length;}
     } catch (e) {
       failed++; miss=1;
-      // An uncertain paid outcome must stop the batch to avoid double billing.
-      if (e instanceof Error && (e.message.includes("paid_acquisition_outcome_uncertain") || e.message.includes("acquisition_") || e.message.includes("provider_registry_disabled"))) {
-        await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
-          {p_run_id:run.id,p_processed:processed,p_discovered:discovered,p_failed:failed,p_status:"failed",p_error:e.message});
-        return {claimed:true,runId:run.id,processed,discovered,failed,stopped:"uncertain_charge"};
-      }
+      // No retry is safe after a provider request may have been charged.
+      const message = e instanceof Error ? e.message : "unknown_provider_or_staging_error";
+      const {data: stopped, error: stopError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
+        {p_run_id:run.id,p_processed:0,p_discovered:0,p_failed:1,p_status:"failed",p_error:message});
+      if (stopError || stopped !== true) throw new Error("campaign_failure_checkpoint_not_recorded");
+      return {claimed:true,runId:run.id,processed,staged,stopped:"manual_reconciliation_required"};
     }
     processed++;
     const {data:accepted,error:checkpointError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
