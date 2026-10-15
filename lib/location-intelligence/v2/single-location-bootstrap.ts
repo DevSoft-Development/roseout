@@ -9,7 +9,7 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
   const website="https://www.superiorityburger.com/";
   const commons="https://commons.wikimedia.org/wiki/File:Superiority_Burger_NYC.jpg";
   const source=await resolveOfficialWebsiteLead(website);
-  if(!source.candidate || source.status==="needs_independent_evidence")
+  if(!source.candidate)
     return {ok:false,stage:"official_evidence",reason:"official_structured_business_missing"};
   const c=source.candidate;
   const normalized=(v:string|undefined)=>String(v||"").trim().toLowerCase().replace(/\\s+/g," ");
