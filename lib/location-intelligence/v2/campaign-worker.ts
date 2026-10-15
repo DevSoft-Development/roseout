@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -45,6 +46,25 @@ export async function processQueuedAcquisitionCampaign() {
     const {data:permitted,error:permissionError} = await supabaseAdmin
       .rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
     if (permissionError || permitted !== true) break;
+    const identityQuery = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} New York`;
+    // Fail closed: no paid discovery until Google's IDs-only set has been
+    // checked against all live and staged TOH identities, even hidden rows.
+    // This does not claim that Google IDs identify a complete business profile.
+    const idGate = await discoverUnseenGooglePlaceIds(identityQuery);
+    if (idGate.unseenIds.length === 0) {
+      const {data:checkpoint,error:checkpointError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
+        {p_run_id:run.id,p_processed:1,p_discovered:0,p_failed:0,p_status:"running"});
+      if(checkpointError || checkpoint!==true) break;
+      processed++;
+      continue;
+    }
+    // Release gate: existing Brave URL/title candidates cannot become searchable
+    // without independently licensed identity/address/photo evidence. Prevent
+    // every charge rather than purchasing unpublishable candidates.
+    if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true") {
+      return {claimed:true,runId:run.id,processed,staged,
+        stopped:"searchable_import_certification_required",newPlaceIds:idGate.unseenIds.length};
+    }
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
     let hit=0, miss=0;
     try {
