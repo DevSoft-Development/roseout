@@ -20,7 +20,7 @@ const rollback = new Set(activation.rollback_enabled ?? []);
 const stagedNames = new Set(staged.map((row) => row.name));
 const activeSorted = [...activeNames].sort();
 const enabledSorted = [...enabled].sort();
-const rollbackExpected = activeSorted.filter((name) => name !== "location-intelligence-v2-maintenance").sort();
+const rollbackExpected = activeSorted.filter((name) => name !== "location-intelligence-v2-maintenance" && name !== "li-v2-acquisition-campaign").sort();
 const rollbackSorted = [...rollback].sort();
 const delta = (activation.enabled ?? []).filter((name) => !rollback.has(name)).sort();
 const probes = [...(activation.probe ?? [])].sort();
@@ -28,13 +28,13 @@ const dryRunProbes = [...(activation.dry_run_probe ?? [])].sort();
 const vercelJobs = new Set();
 
 if (activation.batch !== 15) throw new Error(`expected Batch 15, got ${activation.batch}`);
-if (schedules.length !== 64) throw new Error(`expected 64 active AWS schedules, got ${schedules.length}`);
-if ((activation.enabled ?? []).length !== 64) throw new Error(`expected 64 enabled schedules, got ${(activation.enabled ?? []).length}`);
+if (schedules.length !== 65) throw new Error(`expected 65 active AWS schedules, got ${schedules.length}`);
+if ((activation.enabled ?? []).length !== 65) throw new Error(`expected 65 enabled schedules, got ${(activation.enabled ?? []).length}`);
 if ((activation.rollback_enabled ?? []).length !== 63) throw new Error(`expected rollback baseline 63, got ${(activation.rollback_enabled ?? []).length}`);
 if (staged.length !== 0) throw new Error(`expected no staged schedules, got ${staged.length}`);
 if (JSON.stringify(activeSorted) !== JSON.stringify(enabledSorted)) throw new Error("enabled inventory must exactly equal active schedule inventory");
 if (JSON.stringify(rollbackSorted) !== JSON.stringify(rollbackExpected)) throw new Error("rollback baseline must preserve the previous 63-schedule fleet");
-if (JSON.stringify(delta) !== JSON.stringify(["location-intelligence-v2-maintenance"])) throw new Error(`unexpected final activation delta: ${delta.join(",")}`);
+if (JSON.stringify(delta) !== JSON.stringify(["li-v2-acquisition-campaign","location-intelligence-v2-maintenance"])) throw new Error(`unexpected final activation delta: ${delta.join(",")}`);
 if (JSON.stringify(probes) !== JSON.stringify([job])) throw new Error(`unexpected live activation probes: ${probes.join(",")}`);
 if (JSON.stringify(dryRunProbes) !== JSON.stringify([job])) throw new Error(`unexpected dry-run probes: ${dryRunProbes.join(",")}`);
 if (stagedNames.has(job)) throw new Error("domain-lifecycle must not remain staged");
@@ -70,4 +70,4 @@ if (!workerWorkflow.includes("enable_domain_lifecycle:") || !workerWorkflow.incl
   throw new Error("dedicated registrar worker deployment toggle must remain disabled by default");
 }
 
-console.log(`batch15_scheduler_contract=pass active=64 rollback=63 activation_delta=location-intelligence-v2-maintenance live_probe=domain-lifecycle dry_run_probe=domain-lifecycle domain_recovery=hourly`);
+console.log(`batch15_scheduler_contract=pass active=65 rollback=63 activation_delta=li-v2-acquisition-campaign+location-intelligence-v2-maintenance live_probe=domain-lifecycle dry_run_probe=domain-lifecycle domain_recovery=hourly`);

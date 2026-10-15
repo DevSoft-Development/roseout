@@ -48,5 +48,6 @@
   {"jobKey":"website-replica-repair","jobName":"Website Replica Repair","targetPath":"/api/cron/website-replica-repair","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"website-dr-readiness","jobName":"Website DR Readiness","targetPath":"/api/cron/website-dr-readiness","delivery":"managed","manuallyRunnable":true},
   {"jobKey":"stripe-connect-status-sync","jobName":"Stripe Connect Status Sync","targetPath":"/api/cron/stripe-connect-status-sync?limit=100","delivery":"managed","manuallyRunnable":true},
-  {"jobKey":"cron-alert-dispatcher","jobName":"Cron Alert Dispatcher","targetPath":"/api/cron/cron-alert-dispatcher","delivery":"direct","manuallyRunnable":true}
+  {"jobKey":"cron-alert-dispatcher","jobName":"Cron Alert Dispatcher","targetPath":"/api/cron/cron-alert-dispatcher","delivery":"direct","manuallyRunnable":true},
+  {"jobKey":"li-v2-acquisition-campaign","jobName":"LI V2 Campaign Worker","targetPath":"/api/cron/li-v2-acquisition-campaign","delivery":"managed","manuallyRunnable":true}
 ]

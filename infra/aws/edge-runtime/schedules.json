@@ -62,5 +62,6 @@
   {"name":"microsoft-365-sync","expression":"cron(0/30 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=microsoft-365-sync"}},
   {"name":"marketing-social-publish","expression":"cron(0 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=marketing-social-publish"}},
   {"name":"website-failover","expression":"cron(0/5 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=website-failover"}},
-  {"name":"domain-lifecycle","expression":"cron(0 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=domain-lifecycle"}}
+  {"name":"domain-lifecycle","expression":"cron(0 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=domain-lifecycle"}},
+  {"name":"li-v2-acquisition-campaign","expression":"cron(0/15 * * * ? *)","function":"sqs:background-cron","body":{"target":"/api/cron/managed?job=li-v2-acquisition-campaign"},"enabled":true}
 ]
