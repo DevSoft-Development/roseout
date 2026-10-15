@@ -65,7 +65,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(id){
       // At most one metadata check per discovered lead. Do not fetch media here.
-      const details=await getPlaceDetailsNew(id,{fieldMode:"address",jobKey:"li-v2-independent-business-identity"});
+      const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id))continue;
       const slot=await getGooglePhotoSlot(id,0);
       const url=slot?.name?googlePhotoSlotUrl(id,0,800):null;
