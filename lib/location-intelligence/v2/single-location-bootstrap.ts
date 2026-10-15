@@ -12,7 +12,7 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
   if(!source.candidate)
     return {ok:false,stage:"official_evidence",reason:"official_structured_business_missing"};
   const c=source.candidate;
-  const normalized=(v:string|undefined)=>String(v||"").trim().toLowerCase().replace(/\\s+/g," ");
+  const normalized=(v:string|undefined)=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
   if(normalized(c.name)!=="superiority burger" || normalized(c.address)!=="119 avenue a" ||
     normalized(c.city)!=="new york" || !["ny","new york"].includes(normalized(c.state)) || c.openStatus!=="open")
     return {ok:false,stage:"identity",reason:"official_identity_or_status_mismatch"};
@@ -27,6 +27,10 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
   }});
   if(!staged.staged || !staged.batchId)return {ok:false,stage:"staging",reasons:"reasons" in staged ? staged.reasons : ["stage_rejected"]};
   const finalized=await finalizeIndependentBatch(staged.batchId);
+  const locationIds=[...finalized.readyLocationIds,...finalized.needsReadiness];
+  if(locationIds.length===0)
+    return {ok:false,dryRun:false,stage:"publication",reason:"no_published_location",batchId:staged.batchId,
+      searchV3RetrievalCertified:false};
   return {ok:true,dryRun:false,batchId:staged.batchId,staged:true,
     readyLocationIds:finalized.readyLocationIds,needsReadiness:finalized.needsReadiness,
     searchV3RetrievalCertified:false};
