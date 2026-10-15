@@ -54,6 +54,32 @@ async function commandImport(formData: FormData) {
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
+async function registerPhotoGrant(formData: FormData) {
+  "use server";
+  await requireAdminRole(["superadmin"]);
+  const origin = String(formData.get("website_origin") || "").trim();
+  const image = String(formData.get("image_url") || "").trim();
+  const evidence = String(formData.get("evidence_url") || "").trim();
+  const verifiedBy = String(formData.get("verified_by") || "").trim();
+  const permission = String(formData.get("permission") || "");
+  const valid = (input: string) => {
+    try { const url = new URL(input); return url.protocol === "https:" && !url.username && !url.password; }
+    catch { return false; }
+  };
+  if (!valid(origin) || new URL(origin).origin !== origin ||
+      !valid(image) || !valid(evidence) ||
+      !["owner","licensed","public_domain"].includes(permission) ||
+      verifiedBy.length < 4 || verifiedBy.length > 120)
+    throw new Error("A verified HTTPS website, image, evidence URL, permission type, and reviewer are required");
+  const { error } = await getAdminDatabaseClient().from("li_v2_photo_grants").upsert({
+    website_origin: origin,image_url: image,evidence_url: evidence,
+    permission,verified_by: verifiedBy,active: true,
+    updated_at: new Date().toISOString(),
+  },{onConflict:"website_origin"});
+  if (error) throw new Error("Photo permission record was not saved: "+error.message);
+  revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
+}
+
 export default async function CampaignControlsPage() {
   await requireAdminRole(["superadmin"]);
   const { data, error } = await getAdminDatabaseClient().rpc("admin_li_v2_budget_snapshot");
@@ -102,6 +128,18 @@ export default async function CampaignControlsPage() {
           {run.last_error && <p className="mt-1 text-rose-300">{run.last_error}</p>}
           <p className="text-white/50">Updated: {new Date(run.updated_at).toLocaleString()}</p>
         </div>)}</div>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
+        <h2 className="text-xl font-black">Independent photo permission grants</h2>
+        <p className="mt-2 text-sm text-white/60">A photo appearing on an official business website is not proof of reuse rights. Only add owner-provided, licensed or public-domain images after personally verifying the evidence. This does not start paid imports.</p>
+        <form action={registerPhotoGrant} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">Official website origin<input required name="website_origin" placeholder="https://restaurant.example" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm">Approved HTTPS photo URL<input required name="image_url" type="url" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm">Permission evidence URL<input required name="evidence_url" type="url" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm">Verified by<input required name="verified_by" minLength={4} className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm">Permission<select name="permission" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"><option value="owner">Owner permission</option><option value="licensed">Licensed</option><option value="public_domain">Public domain</option></select></label>
+          <button type="submit" className="self-end rounded-lg border border-emerald-400/40 px-4 py-3 font-bold">Save verified grant</button>
+        </form>
       </section>
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
         <h2 className="text-xl font-black">Provider-specific pricing safeguards</h2>
