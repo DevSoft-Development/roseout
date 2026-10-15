@@ -9,7 +9,7 @@ select pg_catalog.jsonb_build_object(
     where u.status <> 'void' and u.occurred_at >= c.period_start and u.occurred_at < c.period_end
     and (c.scope='global' or (c.scope='campaign' and u.campaign_id=c.scope_id))
   )) order by c.scope,c.scope_id) from private.location_acquisition_budget_caps c
-  where pg_catalog.now() >= c.period_start and pg_catalog.now() < c.period_end),'[]'::jsonb)
+  where c.scope in ('global','campaign') and pg_catalog.now() >= c.period_start and pg_catalog.now() < c.period_end),'[]'::jsonb)
 );
 $$;
 revoke all on function public.admin_li_v2_budget_snapshot() from public,anon,authenticated;
@@ -32,6 +32,11 @@ begin
    raise exception 'invalid_budget_input';
  end if;
  perform pg_catalog.pg_advisory_xact_lock(6742031);
+ if (select count(*) from private.location_acquisition_budget_caps c
+     where c.scope=p_scope and c.scope_id=p_scope_id
+     and pg_catalog.now() >= c.period_start and pg_catalog.now() < c.period_end) <> 1 then
+   raise exception 'active_budget_period_ambiguous_or_missing';
+ end if;
  select * into v_cap from private.location_acquisition_budget_caps c
  where c.scope=p_scope and c.scope_id=p_scope_id
  and pg_catalog.now() >= c.period_start and pg_catalog.now() < c.period_end;
