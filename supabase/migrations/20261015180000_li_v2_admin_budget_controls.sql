@@ -22,7 +22,7 @@ declare v_cap private.location_acquisition_budget_caps%rowtype;
 declare v_used numeric;
 declare v_global boolean;
 begin
- if pg_catalog.current_user <> 'postgres' and auth.role() is distinct from 'service_role' then
+ if auth.role() is distinct from 'service_role' then
    raise exception 'service_role_required';
  end if;
  if p_scope not in ('global','campaign') or
