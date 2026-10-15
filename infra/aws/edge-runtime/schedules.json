@@ -545,6 +545,7 @@
     "function": "sqs:background-cron",
     "body": {
       "target": "/api/cron/managed?job=li-v2-acquisition-campaign"
-    }
+    },
+    "enabled": true
   }
 ]
