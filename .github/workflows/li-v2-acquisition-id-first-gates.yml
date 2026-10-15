@@ -4,7 +4,9 @@ on:
     paths:
       - 'lib/location-intelligence/v2/acquisition-identity-gate.ts'
       - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-intelligence/v2/dataforseo-maps-standard.ts'
       - 'lib/__tests__/li-v2-acquisition-id-gate.test.ts'
+      - 'lib/__tests__/li-v2-maps-standard.test.ts'
       - '.github/workflows/li-v2-acquisition-id-first-gates.yml'
 permissions:
   contents: read
@@ -18,4 +20,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
+      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
