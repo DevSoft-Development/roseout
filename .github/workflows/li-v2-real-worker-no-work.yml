@@ -1,0 +1,93 @@
+name: LI V2 live worker no-work certification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/li-v2-real-worker-no-work.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/li-v2-real-worker-no-work.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: li-v2-real-worker-no-work
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-1
+      AWS_ACCOUNT_ID: '742020474738'
+      SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+      ROLE_SECRET: /theouthaven/production/supabase/service-role
+      STACK_NAME: theouthaven-edge-runtime-production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Authenticate AWS production and load authoritative service role
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws secretsmanager get-secret-value --secret-id "$ROLE_SECRET" --query SecretString --output text > "$RUNNER_TEMP/service-role"
+          test -s "$RUNNER_TEMP/service-role"
+          chmod 600 "$RUNNER_TEMP/service-role"
+      - name: Certify real worker returns no work with zero queued campaigns
+        run: |
+          set -euo pipefail
+          KEY="$(cat "$RUNNER_TEMP/service-role")"
+          echo "::add-mask::$KEY"
+          # Abort unless the production queue is empty and this pilot cannot spend.
+          curl --fail-with-body --silent --show-error \
+            -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
+            -H "content-type: application/json" -d '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/admin_li_v2_import_runs" \
+            | jq -e 'type == "array" and length == 0' > /dev/null
+          curl --fail-with-body --silent --show-error \
+            -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
+            -H "content-type: application/json" \
+            -d '{"p_campaign_id":"li-v2-pilot-001","p_provider":"brave","p_price_usd":0.005}' \
+            "$SUPABASE_URL/rest/v1/rpc/li_v2_paid_acquisition_preflight" \
+            | jq -e '. == false' > /dev/null
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != "None"
+          # This is NOT dry-run: it hits the actual worker route with no work to claim.
+          printf '%s\n' '{"function":"node:/api/cron/li-v2-acquisition-campaign","body":{}}' > "$RUNNER_TEMP/worker-probe.json"
+          aws lambda invoke --function-name "$INVOKER" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$RUNNER_TEMP/worker-probe.json" \
+            "$RUNNER_TEMP/worker-result.json" > "$RUNNER_TEMP/worker-invocation.json"
+          jq -e 'has("FunctionError") | not' "$RUNNER_TEMP/worker-invocation.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.ok == true and .response.result.claimed == false' "$RUNNER_TEMP/worker-result.json" >/dev/null
+          # Confirm invocation did not create a campaign or alter acquisition availability.
+          curl --fail-with-body --silent --show-error \
+            -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
+            -H "content-type: application/json" -d '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/admin_li_v2_import_runs" \
+            | jq -e 'type == "array" and length == 0' > /dev/null
+          curl --fail-with-body --silent --show-error \
+            -H "apikey: $KEY" -H "authorization: Bearer $KEY" \
+            -H "content-type: application/json" \
+            -d '{"p_campaign_id":"li-v2-pilot-001","p_provider":"brave","p_price_usd":0.005}' \
+            "$SUPABASE_URL/rest/v1/rpc/li_v2_paid_acquisition_preflight" \
+            | jq -e '. == false' > /dev/null
+          rm -f "$RUNNER_TEMP/service-role"
+          {
+            echo '### LI V2 actual worker no-work certification'
+            echo ''
+            echo '- Authenticated private production AWS worker route returned claimed=false.'
+            echo '- Queue empty and pilot paid preflight denied before and after invocation.'
+            echo '- No acquisition provider request or publication was initiated.'
+          } >> "$GITHUB_STEP_SUMMARY"
