@@ -48,5 +48,26 @@ const [profile]=await rest("location_intelligence_profiles_v2",{
  select:"location_id,search_v3_ready",location_id:"eq."+location.id,limit:"1"
 });
 if(profile?.search_v3_ready!==true)throw Error("Location Intelligence profile not Search V3-ready");
-const [cost]=await rest("rpc/li_v2_campaign_financial_snapshot",{},{
+const costResponse=await fetch(new URL("/rest/v1/rpc/li_v2_campaign_financial_snapshot",e.LI_E2E_SUPABASE_URL),{
+ method:"POST",headers:{"apikey":e.LI_E2E_SUPABASE_SERVICE_ROLE_KEY,
+ authorization:"Bearer "+e.LI_E2E_SUPABASE_SERVICE_ROLE_KEY,"content-type":"application/json"},
+ body:JSON.stringify({p_campaign_id:e.LI_E2E_CAMPAIGN_ID}),signal:AbortSignal.timeout(20000)
 });
+if(!costResponse.ok)throw Error("Campaign financial snapshot failed");
+const cost=await costResponse.json();
+if(Number(cost.reserved_usd)>10||Number(cost.actual_usd)>10||
+ Number(cost.unreconciled_count)!==0||Number(cost.tasks_reserved)<1)
+ throw Error("Campaign charges exceed budget, lack task accounting, or remain unreconciled");
+const searchResponse=await fetch(e.LI_E2E_SEARCH_URL,{
+ method:"POST",headers:{"authorization":"Bearer "+e.LI_E2E_SEARCH_BEARER_TOKEN,
+ "content-type":"application/json"},
+ body:JSON.stringify({query:location.name}),signal:AbortSignal.timeout(20000)
+});
+if(!searchResponse.ok)throw Error("Authenticated Search V3 request failed: "+searchResponse.status);
+const result=await searchResponse.json();
+if(!JSON.stringify(result).includes(location.id))
+ throw Error("Search V3 did not return the newly imported location ID");
+console.log(JSON.stringify({certified:true,location_id:location.id,
+ campaign_id:e.LI_E2E_CAMPAIGN_ID,search_v3_ready:true,
+ search_http_status:searchResponse.status,reserved_usd:cost.reserved_usd,
+ reconciled_usd:cost.actual_usd,unreconciled_count:0}));
