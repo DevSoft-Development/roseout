@@ -74,9 +74,17 @@ export async function processQueuedAcquisitionCampaign() {
      }
      const indexed=resolved.finalizations.some(batch=>batch.readyLocationIds.length>0 && batch.searchV3RetrievalCertified);
      if(!indexed){
-       await checkpoint(run.id,0,"failed","search_v3_live_retrieval_certification_required");
+       // A new location cannot pass authenticated Search V3 retrieval until it
+       // has actually been imported and indexed. Preserve the paid task and
+       // staged work; pause instead of incorrectly classifying it as failed.
+       // A human must certify the new IDs before resuming paid acquisition.
+       const {error:pauseError}=await supabaseAdmin.rpc("admin_li_v2_import_command",{
+         p_campaign_id:run.campaign_id,p_action:"pause",
+       });
+       if(pauseError)throw new Error("campaign_certification_pause_failed:"+pauseError.message);
        return {claimed:true,runId:run.id,staged:resolved.staged,
-         stopped:"search_v3_live_retrieval_certification_required"};
+         stopped:"awaiting_search_v3_live_retrieval_certification",
+         reviewRequired:true};
      }
      await checkpoint(run.id,1);
      continue;
