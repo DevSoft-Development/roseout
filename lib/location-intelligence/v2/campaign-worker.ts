@@ -1,5 +1,4 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { executeWithProviderFallback } from "@/lib/location-intelligence/v2/orchestrator";
 
@@ -24,6 +23,7 @@ export async function processQueuedAcquisitionCampaign() {
       .rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
     if (permissionError || permitted !== true) break;
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
+    let hit=0, miss=0;
     try {
       // A single paid, campaign-reserved provider request. No automatic publication:
       // candidates require identity resolution, dedupe, and quality review.
@@ -32,9 +32,9 @@ export async function processQueuedAcquisitionCampaign() {
         input:{query,count:5,acquisitionCampaignId:run.campaign_id,
           acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${processed}`},
       });
-      if (result.data) discovered++;
+      if (result.data) { discovered++; hit=1; }
     } catch (e) {
-      failed++;
+      failed++; miss=1;
       // An uncertain paid outcome must stop the batch to avoid double billing.
       if (e instanceof Error && e.message.includes("paid_acquisition_outcome_uncertain")) {
         await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
@@ -44,7 +44,7 @@ export async function processQueuedAcquisitionCampaign() {
     }
     processed++;
     const {data:accepted,error:checkpointError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
-      {p_run_id:run.id,p_processed:1,p_discovered:discovered > 0 ? 1 : 0,p_failed:failed > 0 ? 1 : 0,p_status:"running"});
+      {p_run_id:run.id,p_processed:1,p_discovered:hit,p_failed:miss,p_status:"running"});
     // Operator pause/cancel won the lock; do not issue another request.
     if (checkpointError || accepted !== true) break;
     discovered=0;failed=0;
