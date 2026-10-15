@@ -15,7 +15,12 @@ export async function advanceMapsQueue(runId:string,index:number,query:string) {
  const row=(data as Row[]).find(r=>r.target_index===index);
  if(row?.query!==undefined&&row.query!==query)throw new Error("queue_query_mismatch");
  if(row?.status==="submitting"||row?.status==="uncertain")return {status:"manual_reconciliation_required"};
- if(row?.status==="ready"||row?.status==="reviewed"||row?.status==="failed")return {status:row.status};
+ if(row?.status==="ready"){
+   if(!row.task_id)throw new Error("ready_queue_task_id_missing");
+   const fetched=await getMapsStandardTask(row.task_id);
+   return fetched.status==="ready"?{status:"ready",items:fetched.items}:{status:"pending"};
+ }
+ if(row?.status==="reviewed"||row?.status==="failed")return {status:row.status};
  if(row?.status==="pending"){
    if(!row.task_id)throw new Error("missing_task_id");
    const result=await getMapsStandardTask(row.task_id);
