@@ -1,5 +1,5 @@
 import "server-only";
-import {createHash} from "node:crypto";
+import {createHash} from "node:crypto";\nimport {verifyWikimediaPhoto} from "./wikimedia-photo-license";
 import {supabaseAdmin} from "@/lib/supabase-admin";
 import {getCredentialVaultProviderValues} from "@/lib/admin/credential-vault-runtime-source";
 import {geocodeFreeFirst} from "@/lib/location-intelligence/v2/free-geocoding";
@@ -19,7 +19,7 @@ function distanceM(a:number,b:number,c:number,d:number){
 export async function stageIndependentCandidate(input:{
  campaignId:string;runId:string;candidate:Candidate
 }) {
- const p=input.candidate;
+ let p=input.candidate;\n let wikimediaEvidence = null;\n if(p.photoSource==="wikimedia_commons"){\n   wikimediaEvidence=p.wikimediaFilePageUrl ? await verifyWikimediaPhoto(p.wikimediaFilePageUrl) : null;\n   if(!wikimediaEvidence || p.photoUrl!==wikimediaEvidence.imageUrl)\n     return {staged:false,reasons:["wikimedia_license_or_url_unverified"]};\n   p={...p,photoPermission:"licensed",photoUrl:wikimediaEvidence.imageUrl};\n }
  const values=await getCredentialVaultProviderValues("geoapify").catch(()=>({apiKey:""}));
  const location=await geocodeFreeFirst({
    street:p.address!,city:p.city!,state:p.state!,zip:p.zip,
@@ -67,7 +67,7 @@ export async function stageIndependentCandidate(input:{
        photoPermission:p.photoPermission||null,
        photoSource:p.photoSource||"independent",
        googlePhotoSlotVerified:p.googlePhotoSlotVerified===true,
-       photoStrategy:"primary_only_gallery_on_demand",
+       photoStrategy:"primary_only_gallery_on_demand",\n       wikimediaEvidence,
        openStatus:p.openStatus,
        geocodeProvider:location.provider,geoPrecision:location.precision,
        matchedAddress:location.matchedAddress}},
