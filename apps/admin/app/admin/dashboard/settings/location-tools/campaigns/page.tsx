@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LiveRefresh from "./LiveRefresh";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
@@ -73,6 +74,7 @@ export default async function CampaignControlsPage() {
       {!error && rows.length === 0 && <p>No active-period acquisition budget records exist.</p>}
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
         <h2 className="text-xl font-black">Import campaign operations</h2>
+        <LiveRefresh/>
         <p className="mt-2 text-sm text-white/60">Start queues an import; pause/resume/cancel persist instructions for the worker. Queueing alone does not mean a worker has begun processing. Counters reflect only worker-reported progress.</p>
         {runError && <p role="alert" className="mt-3 text-rose-300">Import run statuses unavailable.</p>}
         {!runError && rows.filter(row => row.scope === "campaign").map(row => {
