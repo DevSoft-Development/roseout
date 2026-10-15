@@ -1,4 +1,7 @@
 import "server-only";
+import { createHash } from "node:crypto";
+import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
+import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 
@@ -18,7 +21,12 @@ export async function processQueuedAcquisitionCampaign() {
     .gt("target_count",0)
     .order("priority_score",{ascending:false}).limit(10);
   if (coverageError) throw coverageError;
-  let processed=0, discovered=0, failed=0;
+  const {data: batch, error: batchError} = await supabaseAdmin.from("location_import_batches").insert({
+    source:"li_v2_brave",source_label:"LI V2 "+run.campaign_id+" "+run.id,status:"staging",
+    metadata:{campaign_id:run.campaign_id,run_id:run.id},
+  }).select("id").single();
+  if (batchError || !batch) throw new Error("campaign_batch_creation_failed");
+  let processed=0, discovered=0, failed=0, staged=0;
   for (const target of (coverage || []) as Coverage[]) {
     if (target.current_count >= target.target_count) continue;
     const {data:permitted,error:permissionError} = await supabaseAdmin
@@ -34,7 +42,28 @@ export async function processQueuedAcquisitionCampaign() {
         input:{query,count:5,acquisitionCampaignId:run.campaign_id,
           acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${processed}`},
       });
-      if (result.data) { discovered++; hit=1; }
+      const candidates = Array.isArray(result.data) ? result.data as Array<Record<string,unknown>> : [];
+      for (const candidate of candidates.slice(0,5)) {
+        const url=String(candidate.url || "").trim();
+        const title=String(candidate.title || "").trim();
+        if (!url.startsWith("https://") || !title) continue;
+        const sourceId=createHash("sha256").update(url).digest("hex");
+        const {data:existing,error:lookupError}=await supabaseAdmin.from("location_import_staging").select("id")
+          .eq("source","li_v2_brave").eq("source_id",sourceId).limit(1);
+        if(lookupError) throw new Error("candidate_lookup_failed");
+        if(existing?.length) continue;
+        const {error:stageError}=await supabaseAdmin.from("location_import_staging").insert({
+          batch_id:batch.id,source:"li_v2_brave",source_id:sourceId,source_url:url,
+          name:title,description:String(candidate.description||"").slice(0,1000),
+          location_type:target.location_kind,primary_category:target.category,
+          import_status:"staged",duplicate_status:"unchecked",quality_status:"needs_review",
+          source_quality_status:"imported_unverified",import_confidence:"low",
+          raw_payload:{campaign_id:run.campaign_id,run_id:run.id,market:target.market,area:target.area_key},
+        });
+        if(stageError) throw new Error("candidate_staging_failed:"+stageError.message);
+        staged++;
+      }
+      if(candidates.length){discovered+=candidates.length;hit=candidates.length;}
     } catch (e) {
       failed++; miss=1;
       // An uncertain paid outcome must stop the batch to avoid double billing.
@@ -51,8 +80,10 @@ export async function processQueuedAcquisitionCampaign() {
     if (checkpointError || accepted !== true) break;
     discovered=0;failed=0;
   }
+  const dedupe=await dedupeStagedLocationsChunk({batchId:batch.id,limit:50});
+  const publishing=await publishReadyStagedLocations({batchId:batch.id,limit:20});
   const {data:permitted}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
   if (permitted === true) await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
     {p_run_id:run.id,p_processed:0,p_discovered:0,p_failed:0,p_status:"completed"});
-  return {claimed:true,runId:run.id,processed};
+  return {claimed:true,runId:run.id,processed,staged,dedupe,publishing};
 }
