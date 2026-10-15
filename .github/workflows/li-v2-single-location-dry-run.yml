@@ -1,0 +1,82 @@
+name: LI V2 protected single-location dry run
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type superiority-burger-119-avenue-a to authorize a non-mutating dry run"
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: li-v2-single-location-certification
+  cancel-in-progress: false
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    environment: li-v2-certification
+    steps:
+      - name: Verify explicit business confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'superiority-burger-119-avenue-a'
+      - name: Authenticate to production AWS role
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Invoke private background runtime in dry-run mode
+        env:
+          STACK: theouthaven-background-runtime-production
+          AWS_REGION: us-east-1
+          APP_ENV_SECRET_REGION: us-west-2
+          APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+        run: |
+          set -euo pipefail
+          function_name="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$function_name" && test "$function_name" != None
+          aws lambda wait function-updated-v2 --function-name "$function_name"
+          appenv="$RUNNER_TEMP/li-app-env.json"
+          event="$RUNNER_TEMP/li-dry-run.json"
+          response="$RUNNER_TEMP/li-dry-response.json"
+          trap 'rm -f "$appenv" "$event" "$response"' EXIT
+          aws secretsmanager get-secret-value --region "$APP_ENV_SECRET_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$appenv"
+          chmod 600 "$appenv"
+          # Never mutate the shared production secret. An authorized operator must
+          # explicitly enable the bootstrap in the existing protected environment.
+          jq -e '.LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED == "true" and (.CRON_SECRET | type == "string" and length > 0)' "$appenv" >/dev/null || {
+            echo "::error::Protected bootstrap flag/secret not configured. No import attempted."
+            exit 1
+          }
+          python - "$appenv" "$event" <<'PY'
+          import base64,json,sys
+          from pathlib import Path
+          settings=json.loads(Path(sys.argv[1]).read_text())
+          body={"confirmation":"superiority-burger-119-avenue-a","dryRun":True}
+          event={"version":"2.0","routeKey":"POST /api/cron/li-v2-single-location-bootstrap",
+            "rawPath":"/api/cron/li-v2-single-location-bootstrap","rawQueryString":"",
+            "headers":{"authorization":"Bearer "+settings["CRON_SECRET"],
+                       "x-toh-aws-internal":"managed-dispatch","content-type":"application/json"},
+            "requestContext":{"accountId":"certification","apiId":"internal","domainName":"internal",
+              "domainPrefix":"internal","http":{"method":"POST",
+                "path":"/api/cron/li-v2-single-location-bootstrap","protocol":"HTTP/1.1",
+                "sourceIp":"127.0.0.1","userAgent":"github-actions-certification"},
+              "requestId":"li-v2-dry-run","routeKey":"POST /api/cron/li-v2-single-location-bootstrap",
+              "stage":"$default","time":"15/Oct/2026:00:00:00 +0000","timeEpoch":1792022400000},
+            "body":json.dumps(body),"isBase64Encoded":False}
+          Path(sys.argv[2]).write_text(json.dumps(event))
+          PY
+          aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" >/dev/null
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .dryRun == true and .photoSource != null)' "$response" >/dev/null || {
+            jq -c '{statusCode, result:(.body | fromjson? | {ok,stage,reason,error})}' "$response" || true
+            exit 1
+          }
+          echo "Protected official-evidence and Wikimedia dry run passed; no location was imported."
+          echo '### Protected LI V2 dry run' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Superiority Burger identity and Wikimedia evidence: passed' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Import executed: no' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Paid providers enabled: no change' >> "$GITHUB_STEP_SUMMARY"
