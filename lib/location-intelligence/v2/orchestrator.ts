@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { acquisitionReservationInput } from "@/lib/location-intelligence/v2/acquisition-reservation";
 import { providerDiscoveryInputs, type CoverageDiscoveryTarget } from "@/lib/location-intelligence/v2/coverage";
 
 import type {
@@ -57,6 +58,18 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       ownerMaintained: request.ownerMaintained,
     })) {
       throw new Error(`paid_provider_execution_blocked:${this.descriptor.id}:${purpose}`);
+    }
+    if (paidRequest && (purpose === "discovery" || purpose === "bootstrap")) {
+      const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
+        "reserve_location_acquisition_spend",
+        acquisitionReservationInput({
+          provider: this.descriptor.id,
+          capability: request.capability,
+          eventKey: request.input.acquisitionEventKey,
+          maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+        }),
+      );
+      if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
     return {
       providerId: this.descriptor.id,
