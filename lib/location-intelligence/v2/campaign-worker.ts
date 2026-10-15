@@ -47,7 +47,7 @@ export async function processQueuedAcquisitionCampaign() {
       const result = await provider.execute({
         capability:"web_context",purpose:"discovery",
         input:{query,count:5,acquisitionCampaignId:run.campaign_id,
-          acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${processed}`},
+          acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${index}`},
       });
       const {data:stillAllowed,error:stillAllowedError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
       if(stillAllowedError || stillAllowed!==true) break;
