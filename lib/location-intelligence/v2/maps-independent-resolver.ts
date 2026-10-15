@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveOfficialWebsiteLead, type PhotoGrant } from "./official-website-resolver";
 import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
 import { googlePhotoSlotUrl } from "@/lib/locations/photo-public";
+import type { IndependentBusinessProfile } from "./independent-profile-gate";
 import { stageIndependentCandidate } from "./independent-staging";
 import { finalizeIndependentBatch } from "./independent-batch-finalizer";
 
@@ -58,7 +59,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     const candidate=resolved.candidate;
     if(!candidate)continue;
     const id=googleIdentityLead(raw);
-    let photoCandidate:Record<string,unknown>|null=null;
+    let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(id){
       // At most one metadata check per discovered lead. Do not fetch media here.
