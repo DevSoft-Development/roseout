@@ -75,7 +75,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       const licensed=await verifyWikimediaPhoto(pilotCommons.filePageUrl);
       if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
-    if(!photoCandidate && id){
+    if(!photoCandidate && id && String(candidate.name||"").trim().toLowerCase()!==pilotCommons.name){
       // Free-first: reject any ID already attached to a TOH record before billed Google details.
       // A shared venue ID is NOT proof these businesses are duplicates.
       const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
