@@ -5,6 +5,12 @@ declare v record;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
  perform pg_catalog.pg_advisory_xact_lock(6742031);
+ -- Failed workers cannot be safely replayed until their provider charge outcome
+ -- has been reconciled. Quarantine orphaned runs instead of double spending.
+ update private.li_v2_campaign_import_runs
+ set status='failed', last_error='worker_lease_expired_manual_reconciliation_required',
+     finished_at=now(), updated_at=now()
+ where status='running' and updated_at < now() - interval '30 minutes';
  select r.* into v from private.li_v2_campaign_import_runs r
  where r.status='queued' and r.requested_action='run'
  and exists(select 1 from private.location_acquisition_budget_caps c where c.scope='campaign' and c.scope_id=r.campaign_id and c.enabled and now()>=c.period_start and now()<c.period_end)
