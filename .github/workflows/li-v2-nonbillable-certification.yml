@@ -1,0 +1,41 @@
+name: LI V2 non-billable acquisition safeguards
+
+on:
+  pull_request:
+    paths:
+      - 'lib/location-intelligence/v2/**'
+      - '.github/workflows/li-v2-nonbillable-certification.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/location-intelligence/v2/**'
+      - '.github/workflows/li-v2-nonbillable-certification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certified-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run synthetic no-network import guards
+        run: npx vitest run lib/location-intelligence/v2/__tests__/nonbillable-acquisition-certification.test.ts
+      - name: Explicitly withhold live acquisition certification
+        run: |
+          {
+            echo '### Non-billable LI V2 gate'
+            echo '- Pure fixtures: covered by test above'
+            echo '- Actual Supabase insert / TOH ID creation: not exercised'
+            echo '- Real Azure Search V3 retrieval: not exercised'
+            echo '- AWS certification flags: unchanged'
+            echo '- Paid acquisition: never invoked'
+            echo '- Overall production activation gate: BLOCKED until live provenance and Search V3 certification'
+          } >> "$GITHUB_STEP_SUMMARY"
