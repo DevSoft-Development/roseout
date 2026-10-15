@@ -65,3 +65,13 @@ from private.li_v2_maps_queue where campaign_run_id=p_run_id and auth.role()='se
 $$;
 revoke all on function public.li_v2_maps_queue_snapshot(uuid) from public,anon,authenticated;
 grant execute on function public.li_v2_maps_queue_snapshot(uuid) to service_role;
+
+-- Standard Queue is separately priced: do not under-reserve Business Listings Live.
+alter table private.li_v2_provider_price_limits drop constraint if exists li_v2_provider_price_limits_provider_check;
+alter table private.li_v2_provider_price_limits add constraint li_v2_provider_price_limits_provider_check
+check(provider in ('dataforseo','dataforseo_maps_standard','brave','serpapi','google'));
+insert into private.li_v2_provider_price_limits(provider,max_usd_per_request,enabled)
+values('dataforseo_maps_standard',0.000600,false)
+on conflict(provider) do update set max_usd_per_request=0.000600,enabled=false,updated_at=now();
+update private.li_v2_provider_price_limits set enabled=false,updated_at=now()
+where provider='dataforseo';
