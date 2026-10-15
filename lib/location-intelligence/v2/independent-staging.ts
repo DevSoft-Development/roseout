@@ -20,8 +20,6 @@ export async function stageIndependentCandidate(input:{
  campaignId:string;runId:string;candidate:Candidate
 }) {
  const p=input.candidate;
- const verdict=assessIndependentBusinessProfile(p);
- if(!verdict.publishable)return {staged:false,reasons:verdict.reasons};
  const values=await getCredentialVaultProviderValues("geoapify").catch(()=>({apiKey:""}));
  const location=await geocodeFreeFirst({
    street:p.address!,city:p.city!,state:p.state!,zip:p.zip,
