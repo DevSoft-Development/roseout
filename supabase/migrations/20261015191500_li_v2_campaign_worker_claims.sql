@@ -1,7 +1,7 @@
 -- Worker claims are serialized with operator commands and only claim funded queued runs.
 create or replace function public.li_v2_claim_campaign_run()
 returns jsonb language plpgsql security definer set search_path='' as $$
-declare v private.li_v2_campaign_import_runs%rowtype;
+declare v record;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
  perform pg_catalog.pg_advisory_xact_lock(6742031);
@@ -19,7 +19,7 @@ grant execute on function public.li_v2_claim_campaign_run() to service_role;
 
 create or replace function public.li_v2_campaign_run_checkpoint(p_run_id uuid,p_processed integer,p_discovered integer,p_failed integer,p_status text default 'running',p_error text default null)
 returns boolean language plpgsql security definer set search_path='' as $$
-declare v private.li_v2_campaign_import_runs%rowtype;
+declare v record;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
  if p_processed < 0 or p_discovered < 0 or p_failed < 0 or p_status not in ('running','completed','failed') then raise exception 'invalid_run_checkpoint'; end if;
