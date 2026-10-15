@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { executeWithProviderFallback } from "@/lib/location-intelligence/v2/orchestrator";
+import { LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 
 type Run = { id: string; campaign_id: string };
 type Coverage = { market:string; area_key:string; location_kind:string; category:string; target_count:number; current_count:number };
@@ -10,6 +10,8 @@ export async function processQueuedAcquisitionCampaign() {
   if (error) throw error;
   if (!data) return { claimed:false };
   const run = data as Run;
+  const provider = LOCATION_INTELLIGENCE_ADAPTERS.find(a => a.descriptor.id === "brave");
+  if (!provider) throw new Error("campaign_brave_provider_missing");
   const { data: coverage, error: coverageError } = await supabaseAdmin
     .from("location_coverage_state")
     .select("market,area_key,location_kind,category,target_count,current_count")
@@ -27,7 +29,7 @@ export async function processQueuedAcquisitionCampaign() {
     try {
       // A single paid, campaign-reserved provider request. No automatic publication:
       // candidates require identity resolution, dedupe, and quality review.
-      const result = await executeWithProviderFallback({
+      const result = await provider.execute({
         capability:"web_context",purpose:"discovery",
         input:{query,count:5,acquisitionCampaignId:run.campaign_id,
           acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${processed}`},
@@ -36,7 +38,7 @@ export async function processQueuedAcquisitionCampaign() {
     } catch (e) {
       failed++; miss=1;
       // An uncertain paid outcome must stop the batch to avoid double billing.
-      if (e instanceof Error && e.message.includes("paid_acquisition_outcome_uncertain")) {
+      if (e instanceof Error && (e.message.includes("paid_acquisition_outcome_uncertain") || e.message.includes("acquisition_") || e.message.includes("provider_registry_disabled"))) {
         await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
           {p_run_id:run.id,p_processed:processed,p_discovered:discovered,p_failed:failed,p_status:"failed",p_error:e.message});
         return {claimed:true,runId:run.id,processed,discovered,failed,stopped:"uncertain_charge"};
