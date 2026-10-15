@@ -33,4 +33,4 @@ begin
  return true;
 end;$$;
 revoke all on function public.li_v2_campaign_run_checkpoint(uuid,integer,integer,integer,text,text,integer) from public,anon,authenticated;
-grant execute on function public.li_v2_campaign_run_checkpoint(uuid,integer,integer,integer,text,text) to service_role;
+grant execute on function public.li_v2_campaign_run_checkpoint(uuid,integer,integer,integer,text,text,integer) to service_role;
