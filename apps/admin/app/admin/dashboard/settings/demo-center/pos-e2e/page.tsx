@@ -7,9 +7,9 @@ import { AdminPageHeader, AdminPageShell, AdminStatusBadge } from "@/lib/admin-d
 export const dynamic = "force-dynamic";
 const passes = [
   { id: "A", name: "Runtime and payments", detail: "Protected virtual-device authentication, operational database/shard parity and real Stripe test-mode payment/refund evidence.", path: "/admin/dashboard/settings/demo-center", label: "Open Demo Center" },
-  { id: "B", name: "Restaurant shift", detail: "Reservation, table service, order/course routing, virtual KDS, inventory and shift reconciliation.", path: "/admin/dashboard/settings/demo-center", label: "Open Demo Center" },
+  { id: "B", name: "Restaurant shift", detail: "Reservation, table service, order/course routing, virtual KDS, inventory and shift reconciliation.", path: "https://github.com/DevSoft-Development/roseout/actions/workflows/pos-shift-certification.yml", label: "Open shift simulation workflow" },
   { id: "C", name: "Customer and manager", detail: "Text-to-Pay, receipts, signatures, owner evidence export, manager refunds and dispute handling.", path: "/admin/dashboard/settings/demo-center", label: "Open Demo Center" },
-  { id: "D", name: "Full certification", detail: "Real deployed-SHA E2E, authorization, offline recovery, idempotency and DR evidence.", path: "/admin/dashboard/settings/demo-center", label: "Open Demo Center" },
+  { id: "D", name: "Full certification", detail: "Real deployed-SHA E2E, authorization, offline recovery, idempotency and DR evidence.", path: "https://github.com/DevSoft-Development/roseout/actions/workflows/production-browser-verification.yml", label: "Open authenticated browser checks" },
 ] as const;
 
 export default async function PosE2ETestingPage() {
@@ -40,6 +40,7 @@ export default async function PosE2ETestingPage() {
         </div>
         <section className="rounded-2xl border border-amber-500/40 bg-[var(--admin-shell-card)] p-5">
           <h2 className="text-lg font-bold">Run Full Certification — unavailable</h2>
+          <p className="mt-2 text-sm text-[var(--admin-shell-muted)]">The existing shift certification workflow is a deterministic simulation only; the protected browser verification is read-only. Neither proves Stripe settlement or operational database E2E.</p>
           <p className="mt-2 text-sm text-[var(--admin-shell-muted)]">A future authorized runner must report its exact SHA, location, Stripe sandbox transaction IDs, database/DR evidence and failures before this action is enabled. Never substitute the hardware simulator or practice register for real POS tender certification.</p>
         </section>
       </div>
