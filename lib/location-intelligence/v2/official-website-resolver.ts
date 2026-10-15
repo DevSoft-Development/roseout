@@ -32,7 +32,7 @@ function graphs(value:unknown):Record<string,unknown>[] {
 }
 export function parseOfficialBusinessJsonLd(html:string,website:string):Omit<WebsiteEvidence,"latitude"|"longitude"|"photoUrl"|"photoPermission">|null {
  const nodes:Record<string,unknown>[]=[];
- const pattern=/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi;
+ const pattern=/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi;
  for(const match of html.matchAll(pattern)){
    try {nodes.push(...graphs(JSON.parse(match[1])));}catch{/* malformed scripts are not evidence */}
  }
