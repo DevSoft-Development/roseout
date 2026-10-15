@@ -4,6 +4,9 @@ on:
     paths:
       - 'lib/location-intelligence/v2/acquisition-identity-gate.ts'
       - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-intelligence/v2/independent-staging.ts'
+      - 'lib/location-intelligence/v2/independent-batch-finalizer.ts'
+      - 'lib/location-intelligence/v2/ingestion.ts'
       - 'lib/location-intelligence/v2/maps-queue-runner.ts'
       - 'lib/location-growth/publishReady.ts'
       - 'lib/__tests__/li-v2-maps-queue-runner.test.ts'
