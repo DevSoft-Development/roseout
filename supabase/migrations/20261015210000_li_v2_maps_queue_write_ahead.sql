@@ -133,3 +133,40 @@ end;$$;
 revoke all on function public.admin_li_v2_set_provider_price(text,numeric,boolean)
  from public,anon,authenticated;
 grant execute on function public.admin_li_v2_set_provider_price(text,numeric,boolean) to service_role;
+
+-- Reclaim a crashed worker ONLY when the provider task id is durably saved.
+-- Every other expired lease remains failed/manual reconciliation; never repost.
+create or replace function public.li_v2_claim_campaign_run()
+returns jsonb language plpgsql security definer set search_path='' as $$
+declare v record;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
+ perform pg_catalog.pg_advisory_xact_lock(6742031);
+ update private.li_v2_campaign_import_runs r
+ set status='queued',last_error='pending_provider_task_recovered_from_expired_worker_lease',
+     updated_at=now()
+ where r.status='running' and r.requested_action='run'
+   and r.updated_at < now()-interval '30 minutes'
+   and exists(select 1 from private.li_v2_maps_queue q
+     where q.campaign_run_id=r.id and q.status='pending' and q.task_id is not null);
+ update private.li_v2_campaign_import_runs r
+ set status='failed',last_error='worker_lease_expired_manual_reconciliation_required',
+     finished_at=now(),updated_at=now()
+ where r.status='running' and r.updated_at < now()-interval '30 minutes';
+ select r.* into v from private.li_v2_campaign_import_runs r
+ where r.status='queued' and r.requested_action='run'
+ and exists(select 1 from private.location_acquisition_budget_caps c
+   where c.scope='campaign' and c.scope_id=r.campaign_id and c.enabled
+   and now()>=c.period_start and now()<c.period_end)
+ and exists(select 1 from private.location_acquisition_budget_caps g
+   where g.scope='global' and g.scope_id='all' and g.enabled
+   and now()>=g.period_start and now()<g.period_end)
+ order by r.created_at for update skip locked limit 1;
+ if not found then return null; end if;
+ update private.li_v2_campaign_import_runs
+ set status='running',started_at=coalesce(started_at,now()),updated_at=now()
+ where id=v.id;
+ return jsonb_build_object('id',v.id,'campaign_id',v.campaign_id,'processed',v.processed);
+end;$$;
+revoke all on function public.li_v2_claim_campaign_run() from public,anon,authenticated;
+grant execute on function public.li_v2_claim_campaign_run() to service_role;
