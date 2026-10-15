@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { detectChainBrand } from "@/lib/location-growth/chainDetection";
+import { assessIndependentBusinessProfile } from "@/lib/location-intelligence/v2/independent-profile-gate";
 import {
   getPhotoStatus,
   hasLocationPhoto,
@@ -355,6 +356,26 @@ export async function publishReadyStagedLocations({
 
   const newRows = [];
   for (const row of rows) {
+    if (String(row.source || "").startsWith("li_v2_")) {
+      const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
+      const verdict = assessIndependentBusinessProfile({
+        name: String(row.name || ""), address: String(row.address || ""),
+        city: String(row.city || ""), state: String(row.state || ""),
+        latitude: Number(row.latitude), longitude: Number(row.longitude),
+        sourceUrl: String(row.source_url || ""), photoUrl: String(row.main_image || ""),
+        photoPermission: evidence.photoPermission,
+        evidenceSource: evidence.evidenceSource,
+        openStatus: evidence.openStatus,
+        duplicate: row.duplicate_status !== "unique",
+      });
+      if (!verdict.publishable) {
+        const { error: quarantineError } = await supabaseAdmin.from("location_import_staging")
+          .update({ quality_status: "review", source_quality_status: "imported_unverified",
+            rejection_reason: verdict.reasons.join(",") }).eq("id", row.id);
+        if (quarantineError) throw new Error("li_v2_profile_quarantine_failed");
+        continue;
+      }
+    }
     if (existingKeys.has(`${row.source}::${row.source_id}`)) continue;
     const duplicate = await findExistingLiveDuplicate(row);
     if (duplicate) {
