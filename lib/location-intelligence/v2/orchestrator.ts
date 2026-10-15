@@ -65,24 +65,20 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       if (!/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId)) {
         throw new Error("acquisition_campaign_id_required");
       }
-      // Global caps alone are insufficient: deny any acquisition whose
-      // specific campaign has no active, bounded budget.
-      const { data: campaignActive, error: campaignCapError } = await supabaseAdmin
-        .rpc("is_location_acquisition_campaign_active", { p_campaign_id: campaignId });
-      if (campaignCapError || campaignActive !== true) {
-        throw new Error("acquisition_active_campaign_cap_required");
-      }
+      const reservationInput = acquisitionReservationInput({
+        provider: this.descriptor.id,
+        capability: request.capability,
+        eventKey: request.input.acquisitionEventKey,
+        maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+      });
+      const { data: permitted, error: preflightError } = await supabaseAdmin.rpc(
+        "li_v2_paid_acquisition_preflight",
+        { p_campaign_id: campaignId, p_provider: this.descriptor.id, p_price_usd: reservationInput.p_estimated_usd },
+      );
+      if (preflightError || permitted !== true) throw new Error("acquisition_campaign_or_price_disabled");
       const { data: reserved, error: reservationError } = await supabaseAdmin.rpc(
         "reserve_location_acquisition_spend",
-        {
-          ...acquisitionReservationInput({
-            provider: this.descriptor.id,
-            capability: request.capability,
-            eventKey: request.input.acquisitionEventKey,
-            maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
-          }),
-          p_campaign_id: campaignId,
-        },
+        { ...reservationInput, p_campaign_id: campaignId },
       );
       if (reservationError || reserved !== true) throw new Error(`acquisition_budget_reservation_denied:${this.descriptor.id}`);
     }
