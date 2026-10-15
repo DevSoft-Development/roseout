@@ -1,0 +1,72 @@
+name: LI V2 AWS worker dry-run certification
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/li-v2-aws-worker-dryrun.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/li-v2-aws-worker-dryrun.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: li-v2-aws-worker-dryrun-certification
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: '742020474738'
+  EDGE_STACK_NAME: theouthaven-edge-runtime-production
+  SCHEDULE_GROUP: toh-production-edge-runtime
+  JOB_NAME: li-v2-acquisition-campaign
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify worker stays private and dry-run bypasses business handler
+        run: |
+          set -euo pipefail
+          grep -F 'request.headers.get("x-toh-aws-internal")!=="managed-dispatch"' app/api/cron/li-v2-acquisition-campaign/route.ts >/dev/null
+          grep -F 'if (dryRun) {' app/api/cron/managed/route.ts >/dev/null
+          grep -F 'side_effects: false' app/api/cron/managed/route.ts >/dev/null
+          jq -e --arg name "$JOB_NAME" 'any(.[]; .name == $name and .enabled == true and .function == "sqs:background-cron")' infra/aws/edge-runtime/schedules.json >/dev/null
+  certify:
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+      - name: Verify deployed schedule and private Lambda without acquisition spending
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+          aws scheduler get-schedule --group-name "$SCHEDULE_GROUP" --name "$JOB_NAME" > "$RUNNER_TEMP/li-v2-schedule.json"
+          jq -e '.State == "ENABLED" and .ScheduleExpression == "cron(0/15 * * * ? *)" and (.Target.Input | fromjson | .function == "sqs:background-cron" and .body.target == "/api/cron/managed?job=li-v2-acquisition-campaign")' "$RUNNER_TEMP/li-v2-schedule.json" >/dev/null
+          INVOKER="$(aws cloudformation describe-stacks --stack-name "$EDGE_STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='SchedulerInvokerFunctionName'].OutputValue" --output text)"
+          test -n "$INVOKER" && test "$INVOKER" != "None"
+          printf '%s\n' '{"function":"node:/api/cron/managed?job=li-v2-acquisition-campaign&dry_run=1","body":{}}' > "$RUNNER_TEMP/li-v2-probe.json"
+          aws lambda invoke --function-name "$INVOKER" --cli-binary-format raw-in-base64-out --payload "fileb://$RUNNER_TEMP/li-v2-probe.json" "$RUNNER_TEMP/li-v2-result.json" > "$RUNNER_TEMP/li-v2-invoke-metadata.json"
+          jq -e 'has("FunctionError") | not' "$RUNNER_TEMP/li-v2-invoke-metadata.json" >/dev/null
+          jq -e '.ok == true and .runtime == "node" and .status == 200 and .response.success == true and .response.dry_run == true and .response.side_effects == false and .response.job_key == "li-v2-acquisition-campaign" and .response.private_dispatch == true' "$RUNNER_TEMP/li-v2-result.json" >/dev/null
+          {
+            echo '### LI V2 AWS runtime certification'
+            echo ''
+            echo '- 15-minute EventBridge schedule exists and is ENABLED.'
+            echo '- Private AWS Node runtime returned authenticated managed-cron dry-run success.'
+            echo '- Paid provider discovery and import business handler were not invoked.'
+            echo '- Acquisition budgets and provider policies were not changed.'
+          } >> "$GITHUB_STEP_SUMMARY"
