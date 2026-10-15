@@ -31,6 +31,7 @@ ALLOWED_PROVIDERS = {
     "aws": {"accessKeyId", "secretAccessKey", "sessionToken", "roleArn", "region"},
     "google": {"apiKey", "clientId", "clientSecret"},
     "mapbox": {"accessToken"},
+    "geoapify": {"apiKey"},
     "supabase": {
         "url", "publishableKey", "secretKey", "serviceRoleKey", "managementAccessToken",
         "shard01Url", "shard01SecretKey", "shard01DrUrl", "shard01DrSecretKey",

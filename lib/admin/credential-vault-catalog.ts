@@ -2,6 +2,7 @@ export type CredentialProviderId =
   | "aws"
   | "google"
   | "mapbox"
+  | "geoapify"
   | "supabase"
   | "vercel"
   | "github"
@@ -55,6 +56,7 @@ export const CREDENTIAL_PROVIDERS: readonly CredentialProvider[] = [
   { id: "mapbox", label: "Mapbox", category: "Data", description: "Server-side Mapbox routing credentials used by Search V3 to verify real walking routes between outing stops.", note: "Create a dedicated Mapbox access token for Directions/Matrix routing. Keep it server-side; Search V3 reads it from the runtime secret as MAPBOX_ACCESS_TOKEN.", fields: [
     { key: "accessToken", label: "Access token", secret: true, placeholder: "pk. or sk. Mapbox token" },
   ] },
+  { id: "geoapify", label: "Geoapify", category: "Data", description: "Free-tier geocoding fallback for LI V2 where US Census address matching is unavailable.", note: "Add a Geoapify API key. Usage is limited by your Geoapify plan; preserve © OpenStreetMap contributors and Geoapify attribution. This never authorizes paid acquisition.", fields: [{ key: "apiKey", label: "API key", secret: true }] },
   { id: "supabase", label: "Supabase", category: "Data", description: "Supabase project URL, runtime keys, protected management credentials, and isolated operational shard credentials.", note: "Prefer modern sb_publishable_ and sb_secret_ keys. Each operational shard is a separate Supabase project and must keep its own secret key. The runtime shard JSON is generated/persisted for compatibility.", fields: [
     { key: "url", label: "Global project URL", placeholder: "https://project-ref.supabase.co" },
     { key: "publishableKey", label: "Global publishable / anon key", secret: true, multiline: true },

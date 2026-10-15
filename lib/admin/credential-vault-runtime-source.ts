@@ -13,6 +13,7 @@ export const RUNTIME_ENV_MAP: RuntimeEnvMap = {
   microsoft: { tenantId: ["MICROSOFT_TENANT_ID", "AZURE_TENANT_ID"], clientId: ["MICROSOFT_CLIENT_ID", "AZURE_CLIENT_ID"], clientSecret: ["MICROSOFT_CLIENT_SECRET", "AZURE_CLIENT_SECRET"], tokenEncryptionKey: ["M365_TOKEN_ENCRYPTION_KEY"] },
   openai: { apiKey: ["OPENAI_API_KEY"] },
   huggingface: { token: ["SEARCH_HF_ML_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"] },
+  geoapify: { apiKey: ["GEOAPIFY_API_KEY"] },
   brave: { apiKey: ["BRAVE_SEARCH_API_KEY"] },
   dataforseo: { login: ["DATAFORSEO_LOGIN"], password: ["DATAFORSEO_PASSWORD"] },
   serpapi: { apiKey: ["SERPAPI_API_KEY"] },

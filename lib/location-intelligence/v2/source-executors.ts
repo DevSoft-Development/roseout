@@ -1,5 +1,6 @@
 import "server-only";
 
+import { geocodeFreeFirst } from "@/lib/location-intelligence/v2/free-geocoding";
 import { getCredentialVaultProviderValues } from "@/lib/admin/credential-vault-runtime-source";
 import { createAzureFoundryProvider } from "@/lib/ai/gateway/providers/azure-foundry";
 import { resolvePostalArea } from "@/lib/geo/server";
@@ -69,6 +70,11 @@ export async function mapboxGeocodeAddress(query: string) {
   if (!response.ok) throw new Error(`mapbox_geocode_http_${response.status}`);
   const data = await response.json() as { features?: unknown[] };
   return data.features || [];
+}
+
+export async function freeGeocodeAddress(input: Record<string,unknown>) {
+  const keyValues = await getCredentialVaultProviderValues("geoapify").catch(() => ({} as { apiKey?: string }));
+  return geocodeFreeFirst({street:String(input.street||""),city:String(input.city||""),state:String(input.state||""),zip:String(input.zip||"")},{geoapifyKey:String(keyValues.apiKey||"")});
 }
 
 export async function loadPublicGeography(zipCode: string) {
