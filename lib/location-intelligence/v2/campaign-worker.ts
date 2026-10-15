@@ -63,20 +63,19 @@ export async function processQueuedAcquisitionCampaign() {
         const title=String(candidate.title || "").trim();
         if (!url.startsWith("https://") || !title) continue;
         const sourceId=createHash("sha256").update(url).digest("hex");
-        const {data:existing,error:lookupError}=await supabaseAdmin.from("location_import_staging").select("id")
-          .eq("source","li_v2_brave").eq("source_id",sourceId).limit(1);
-        if(lookupError) throw new Error("candidate_lookup_failed");
-        if(existing?.length) continue;
-        const {error:stageError}=await supabaseAdmin.from("location_import_staging").insert({
+        // The database unique(source, source_id) constraint arbitrates concurrent
+        // worker attempts. Read-before-write cannot prevent duplicate races.
+        const {data:inserted,error:stageError}=await supabaseAdmin.from("location_import_staging").upsert({
           batch_id:batch.id,source:"li_v2_brave",source_id:sourceId,source_url:url,
           name:title,description:String(candidate.description||"").slice(0,1000),
           location_type:target.location_kind,primary_category:target.category,
           import_status:"staged",duplicate_status:"unchecked",quality_status:"needs_review",
           source_quality_status:"imported_unverified",import_confidence:"low",
           raw_payload:{campaign_id:run.campaign_id,run_id:run.id,market:target.market,area:target.area_key},
-        });
+        },{onConflict:"source,source_id",ignoreDuplicates:true}).select("id");
         if(stageError) throw new Error("candidate_staging_failed:"+stageError.message);
-        staged++;
+        if(inserted?.length) staged++;
+
       }
       if(candidates.length){discovered+=candidates.length;hit=candidates.length;}
     } catch (e) {
