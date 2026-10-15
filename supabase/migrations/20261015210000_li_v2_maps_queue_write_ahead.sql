@@ -111,3 +111,25 @@ where campaign_id=p_campaign_id and auth.role()='service_role'
 $$;
 revoke all on function public.li_v2_campaign_financial_snapshot(text) from public,anon,authenticated;
 grant execute on function public.li_v2_campaign_financial_snapshot(text) to service_role;
+
+-- Admin controls retain exact-SKU ceiling, preventing a value intended for
+-- Standard Queue from being reused for Business Listings Live.
+create or replace function public.admin_li_v2_set_provider_price(
+ p_provider text,p_max_usd numeric,p_enabled boolean
+) returns boolean language plpgsql security definer set search_path='' as $$
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
+ if p_provider not in ('dataforseo','dataforseo_maps_standard','brave','serpapi','google')
+    or p_max_usd is null or p_max_usd <= 0
+    or (p_provider='dataforseo_maps_standard' and p_max_usd <> 0.000600)
+ then raise exception 'invalid_provider_price'; end if;
+ perform pg_catalog.pg_advisory_xact_lock(6742031);
+ insert into private.li_v2_provider_price_limits(provider,max_usd_per_request,enabled,updated_at)
+ values(p_provider,p_max_usd,p_enabled,now())
+ on conflict(provider) do update set max_usd_per_request=excluded.max_usd_per_request,
+ enabled=excluded.enabled,updated_at=now();
+ return true;
+end;$$;
+revoke all on function public.admin_li_v2_set_provider_price(text,numeric,boolean)
+ from public,anon,authenticated;
+grant execute on function public.admin_li_v2_set_provider_price(text,numeric,boolean) to service_role;
