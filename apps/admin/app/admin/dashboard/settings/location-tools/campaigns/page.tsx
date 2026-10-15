@@ -38,11 +38,28 @@ async function updateProviderPrice(formData: FormData) {
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
+async function commandImport(formData: FormData) {
+  "use server";
+  await requireAdminRole(["superadmin"]);
+  const campaignId = String(formData.get("campaign_id") || "");
+  const action = String(formData.get("action") || "");
+  if (!/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId) ||
+    !["start","pause","resume","cancel"].includes(action)) throw new Error("Invalid campaign command");
+  const { data, error } = await getAdminDatabaseClient().rpc("admin_li_v2_import_command", {
+    p_campaign_id: campaignId, p_action: action,
+  });
+  if (error || !data) throw new Error(error?.message || "Campaign command denied");
+  revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
+}
+
 export default async function CampaignControlsPage() {
   await requireAdminRole(["superadmin", "admin"]);
   const { data, error } = await getAdminDatabaseClient().rpc("admin_li_v2_budget_snapshot");
   const rows = ((data as { caps?: Budget[] } | null)?.caps || []) as Budget[];
   const { data: priceData, error: priceError } = await getAdminDatabaseClient().rpc("li_v2_acquisition_controls_snapshot");
+  const { data: runData, error: runError } = await getAdminDatabaseClient().rpc("admin_li_v2_import_runs");
+  type Run = {id:string;campaign_id:string;status:string;requested_action:string;processed:number;discovered:number;published:number;failed:number;last_error:string|null;updated_at:string};
+  const runs = (Array.isArray(runData) ? runData : []) as Run[];
   const prices = ((priceData as { providers?: {provider:string;max_usd_per_request:number;enabled:boolean}[] } | null)?.providers || []);
   return <main className="min-h-screen bg-[#080407] px-4 py-8 text-white sm:px-8">
     <div className="mx-auto max-w-5xl space-y-6">
@@ -50,10 +67,39 @@ export default async function CampaignControlsPage() {
       <section className="rounded-3xl border border-white/10 bg-[#111] p-6">
         <h1 className="text-3xl font-black">Acquisition Campaign & Spending Controls</h1>
         <p className="mt-3 text-sm text-white/65">Authorized administrators manage budget amounts and stop or resume new paid reservations here. No fixed dollar ceiling is imposed by this page. Existing charges cannot be reversed by stopping a campaign.</p>
-        <p className="mt-3 text-sm text-amber-200">Import-job start and cancellation are not connected to this budget panel yet; enabling a budget does not launch an import.</p>
+        <p className="mt-3 text-sm text-amber-200">Import jobs require a separately deployed, authenticated worker. Queueing a run does not trigger provider spending by itself.</p>
       </section>
       {error && <p role="alert" className="rounded-xl border border-rose-400/30 p-5 text-rose-200">Budget controls unavailable: {error.message}</p>}
       {!error && rows.length === 0 && <p>No active-period acquisition budget records exist.</p>}
+      <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
+        <h2 className="text-xl font-black">Import campaign operations</h2>
+        <p className="mt-2 text-sm text-white/60">Start queues an import; pause/resume/cancel persist instructions for the worker. Queueing alone does not mean a worker has begun processing. Counters reflect only worker-reported progress.</p>
+        {runError && <p role="alert" className="mt-3 text-rose-300">Import run statuses unavailable.</p>}
+        {!runError && rows.filter(row => row.scope === "campaign").map(row => {
+          const active = runs.find(run => run.campaign_id === row.scope_id && ["queued","running","paused"].includes(run.status));
+          return <div key={row.scope_id} className="mt-4 rounded-xl border border-white/10 p-4">
+            <p className="font-bold">{row.scope_id} · {active?.status || "No active run"}</p>
+            <p className="mt-1 text-sm text-white/60">Processed: {active?.processed ?? 0} · Discovered: {active?.discovered ?? 0} · Published: {active?.published ?? 0} · Failed: {active?.failed ?? 0}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["start","pause","resume","cancel"] as const).map(action => {
+                const disabled = action === "start" ? !!active || !row.enabled :
+                  action === "pause" ? !active || !["running","queued"].includes(active.status) :
+                  action === "resume" ? active?.status !== "paused" : !active;
+                return <form key={action} action={commandImport}>
+                  <input type="hidden" name="campaign_id" value={row.scope_id}/>
+                  <button disabled={disabled} name="action" value={action} className="rounded-lg border border-white/30 px-4 py-2 text-sm font-bold capitalize disabled:opacity-35">{action}</button>
+                </form>;
+              })}
+            </div>
+          </div>;
+        })}
+        <h3 className="mt-6 font-bold">Recent import runs</h3>
+        <div className="mt-3 space-y-2">{runs.map(run => <div key={run.id} className="rounded-lg border border-white/10 p-3 text-sm">
+          <span className="font-bold">{run.campaign_id}</span> · {run.status} · {run.processed} processed · {run.discovered} discovered · {run.published} published · {run.failed} failed
+          {run.last_error && <p className="mt-1 text-rose-300">{run.last_error}</p>}
+          <p className="text-white/50">Updated: {new Date(run.updated_at).toLocaleString()}</p>
+        </div>)}</div>
+      </section>
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
         <h2 className="text-xl font-black">Provider-specific pricing safeguards</h2>
         <p className="mt-2 text-sm text-white/60">Maximum permitted estimated cost per paid request. A disabled provider price policy blocks new paid acquisitions. The runtime also requires its own configured reservation estimate.</p>
