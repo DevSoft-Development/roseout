@@ -75,3 +75,22 @@ values('dataforseo_maps_standard',0.000600,false)
 on conflict(provider) do update set max_usd_per_request=0.000600,enabled=false,updated_at=now();
 update private.li_v2_provider_price_limits set enabled=false,updated_at=now()
 where provider='dataforseo';
+
+-- After a queued provider task is submitted, release the run for later polling.
+-- A failed/uncertain submission remains quarantined, not resubmitted.
+create or replace function public.li_v2_maps_campaign_yield(p_run_id uuid)
+returns boolean language plpgsql security definer set search_path='' as $$
+declare changed integer;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
+ perform pg_catalog.pg_advisory_xact_lock(6742031);
+ update private.li_v2_campaign_import_runs
+ set status='queued',updated_at=now()
+ where id=p_run_id and status='running' and requested_action='run'
+ and exists(select 1 from private.li_v2_maps_queue q
+            where q.campaign_run_id=p_run_id and q.status in ('pending','ready'));
+ get diagnostics changed = row_count;
+ return changed=1;
+end;$$;
+revoke all on function public.li_v2_maps_campaign_yield(uuid) from public,anon,authenticated;
+grant execute on function public.li_v2_maps_campaign_yield(uuid) to service_role;
