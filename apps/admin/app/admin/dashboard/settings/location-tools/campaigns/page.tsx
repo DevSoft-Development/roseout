@@ -54,7 +54,7 @@ async function commandImport(formData: FormData) {
 }
 
 export default async function CampaignControlsPage() {
-  await requireAdminRole(["superadmin", "admin"]);
+  await requireAdminRole(["superadmin"]);
   const { data, error } = await getAdminDatabaseClient().rpc("admin_li_v2_budget_snapshot");
   const rows = ((data as { caps?: Budget[] } | null)?.caps || []) as Budget[];
   const { data: priceData, error: priceError } = await getAdminDatabaseClient().rpc("li_v2_acquisition_controls_snapshot");
