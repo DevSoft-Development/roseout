@@ -1,0 +1,52 @@
+name: LI V2 acquisition searchable E2E
+on:
+  pull_request:
+    paths:
+      - 'scripts/certify-li-v2-acquisition-search-v3-e2e.mjs'
+      - '.github/workflows/li-v2-acquisition-search-v3-e2e.yml'
+  workflow_dispatch:
+    inputs:
+      location_id:
+        description: UUID of a genuinely imported, new searchable business
+        required: true
+        type: string
+      campaign_id:
+        description: Acquisition campaign ID
+        required: true
+        default: li-v2-pilot-001
+        type: string
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check scripts/certify-li-v2-acquisition-search-v3-e2e.mjs
+      - name: Fail closed with missing credentials
+        run: |
+          if node scripts/certify-li-v2-acquisition-search-v3-e2e.mjs; then
+            echo 'Certification bypassed required secrets'
+            exit 1
+          fi
+  certify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
+    environment: li-v2-certification
+    runs-on: ubuntu-latest
+    env:
+      LI_E2E_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+      LI_E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.LI_E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      LI_E2E_SEARCH_URL: ${{ vars.LI_E2E_SEARCH_URL }}
+      LI_E2E_SEARCH_BEARER_TOKEN: ${{ secrets.LI_E2E_SEARCH_BEARER_TOKEN }}
+      LI_E2E_LOCATION_ID: ${{ inputs.location_id }}
+      LI_E2E_CAMPAIGN_ID: ${{ inputs.campaign_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/certify-li-v2-acquisition-search-v3-e2e.mjs

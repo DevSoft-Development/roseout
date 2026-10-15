@@ -4,6 +4,18 @@ on:
     paths:
       - 'lib/location-intelligence/v2/acquisition-identity-gate.ts'
       - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-intelligence/v2/independent-staging.ts'
+      - 'lib/location-intelligence/v2/independent-batch-finalizer.ts'
+      - 'lib/location-intelligence/v2/ingestion.ts'
+      - 'lib/location-intelligence/v2/maps-queue-runner.ts'
+      - 'lib/location-intelligence/v2/maps-independent-resolver.ts'
+      - 'lib/location-intelligence/v2/official-website-resolver.ts'
+      - 'lib/__tests__/li-v2-official-website-resolver.test.ts'
+      - 'lib/location-growth/publishReady.ts'
+      - 'lib/__tests__/li-v2-maps-queue-runner.test.ts lib/__tests__/li-v2-official-website-resolver.test.ts'
+      - 'lib/location-intelligence/v2/independent-profile-gate.ts'
+      - 'lib/__tests__/li-v2-independent-profile-gate.test.ts'
+      - 'supabase/migrations/20261015210000_li_v2_maps_queue_write_ahead.sql'
       - 'lib/location-intelligence/v2/dataforseo-maps-standard.ts'
       - 'lib/__tests__/li-v2-acquisition-id-gate.test.ts'
       - 'lib/__tests__/li-v2-maps-standard.test.ts'
@@ -20,4 +32,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
+      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-maps-queue-runner.test.ts lib/__tests__/li-v2-independent-profile-gate.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
