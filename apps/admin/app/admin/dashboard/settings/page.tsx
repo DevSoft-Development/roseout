@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Globe2,
   MailCheck,
-  MapPinned,
   MonitorCog,
   Search,
   Settings2,
