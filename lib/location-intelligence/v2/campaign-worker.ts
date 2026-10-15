@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { assessIndependentBusinessProfile } from "@/lib/location-intelligence/v2/independent-profile-gate";
-import { advanceMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
+import { advanceMapsQueue, submitApprovedMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
 import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
@@ -14,7 +14,8 @@ type Coverage = { market:string; area_key:string; location_kind:string; category
 export async function processQueuedAcquisitionCampaign() {
   // A hard release interlock: no campaign is claimed (or billed) until
   // the complete discovery-to-searchable pipeline passes certification.
-  if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true") {
+  if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true" ||
+      process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED !== "true") {
     return { claimed:false, stopped:"searchable_import_certification_required" };
   }
   const { data, error } = await supabaseAdmin.rpc("li_v2_claim_campaign_run");
@@ -66,9 +67,24 @@ export async function processQueuedAcquisitionCampaign() {
       continue;
     }
     const queueState = await advanceMapsQueue(run.id,index,identityQuery);
+    if (queueState.status === "prepared") {
+      const submitted=await submitApprovedMapsQueue({
+        runId:run.id,campaignId:run.campaign_id,targetIndex:index,query:identityQuery,
+      });
+      if (submitted.status === "pending") {
+        const {data:yielded,error:yieldError}=await supabaseAdmin.rpc("li_v2_maps_campaign_yield",{p_run_id:run.id});
+        if(yieldError||yielded!==true)throw new Error("maps_campaign_yield_failed");
+      }
+      return {claimed:true,runId:run.id,processed,staged,queueStatus:submitted.status};
+    }
+    if(queueState.status === "pending") {
+      const {data:yielded,error:yieldError}=await supabaseAdmin.rpc("li_v2_maps_campaign_yield",{p_run_id:run.id});
+      if(yieldError||yielded!==true)throw new Error("maps_campaign_yield_failed");
+      return {claimed:true,runId:run.id,processed,staged,queueStatus:"pending"};
+    }
     if(queueState.status !== "ready") {
-      return {claimed:true,runId:run.id,processed,staged,queueStatus:queueState.status,
-        stopped:"queued_maps_result_or_certification_required"};
+      return {claimed:true,runId:run.id,processed,staged,
+        stopped:"maps_queue_requires_operator_review",queueStatus:queueState.status};
     }
     // Never use Google Maps SERP output directly as a stored business profile.
     // Structured, independently licensed candidates must be resolved before staging.
