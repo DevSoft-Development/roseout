@@ -5,7 +5,7 @@ import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady"
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { LOCATION_INTELLIGENCE_ADAPTERS } from "@/lib/location-intelligence/v2/orchestrator";
 
-type Run = { id: string; campaign_id: string };
+type Run = { id: string; campaign_id: string; processed: number };
 type Coverage = { market:string; area_key:string; location_kind:string; category:string; target_count:number; current_count:number };
 
 export async function processQueuedAcquisitionCampaign() {
@@ -21,13 +21,20 @@ export async function processQueuedAcquisitionCampaign() {
     .gt("target_count",0)
     .order("priority_score",{ascending:false}).limit(10);
   if (coverageError) throw coverageError;
-  const {data: batch, error: batchError} = await supabaseAdmin.from("location_import_batches").insert({
-    source:"li_v2_brave",source_label:"LI V2 "+run.campaign_id+" "+run.id,status:"staging",
-    metadata:{campaign_id:run.campaign_id,run_id:run.id},
-  }).select("id").single();
+  const sourceLabel="LI V2 "+run.campaign_id+" "+run.id;
+  const { data: priorBatches, error: priorError } = await supabaseAdmin.from("location_import_batches")
+    .select("id").eq("source","li_v2_brave").eq("source_label",sourceLabel).limit(1);
+  if(priorError) throw new Error("campaign_batch_lookup_failed");
+  const {data: batch,error:batchError} = priorBatches?.length
+    ? {data:priorBatches[0],error:null}
+    : await supabaseAdmin.from("location_import_batches").insert({
+      source:"li_v2_brave",source_label:sourceLabel,status:"staging",
+      metadata:{campaign_id:run.campaign_id,run_id:run.id},
+    }).select("id").single();
   if (batchError || !batch) throw new Error("campaign_batch_creation_failed");
   let processed=0, discovered=0, failed=0, staged=0;
-  for (const target of (coverage || []) as Coverage[]) {
+  for (const [index,target] of ((coverage || []) as Coverage[]).entries()) {
+    if (index < run.processed) continue;
     if (target.current_count >= target.target_count) continue;
     const {data:permitted,error:permissionError} = await supabaseAdmin
       .rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
@@ -42,6 +49,8 @@ export async function processQueuedAcquisitionCampaign() {
         input:{query,count:5,acquisitionCampaignId:run.campaign_id,
           acquisitionEventKey:`li-v2-${run.id.replace(/-/g,"")}-${processed}`},
       });
+      const {data:stillAllowed,error:stillAllowedError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
+      if(stillAllowedError || stillAllowed!==true) break;
       const candidates = Array.isArray(result.data) ? result.data as Array<Record<string,unknown>> : [];
       for (const candidate of candidates.slice(0,5)) {
         const url=String(candidate.url || "").trim();
@@ -80,7 +89,11 @@ export async function processQueuedAcquisitionCampaign() {
     if (checkpointError || accepted !== true) break;
     discovered=0;failed=0;
   }
+  const {data:allowFinalization,error:finalizationError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
+  if(finalizationError || allowFinalization!==true) return {claimed:true,runId:run.id,processed,staged,stopped:"operator_command"};
   const dedupe=await dedupeStagedLocationsChunk({batchId:batch.id,limit:50});
+  const {data:allowPublishing,error:publishingError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
+  if(publishingError || allowPublishing!==true) return {claimed:true,runId:run.id,processed,staged,dedupe,stopped:"operator_command"};
   const publishing=await publishReadyStagedLocations({batchId:batch.id,limit:20});
   const {data:permitted}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
   if (permitted === true) await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
