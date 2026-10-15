@@ -1,0 +1,63 @@
+name: LI V2 AWS certification flags proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/li-v2-aws-certification-flags-proof.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/li-v2-aws-certification-flags-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  proof:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate production AWS read-only
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Verify deployed runtime loads AWS production environment and check flags
+        env:
+          APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+          APP_ENV_SECRET_REGION: us-west-2
+          BACKGROUND_STACK: theouthaven-background-runtime-production
+        run: |
+          set -euo pipefail
+          FUNCTION="$(aws cloudformation describe-stacks --stack-name "$BACKGROUND_STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$FUNCTION" && test "$FUNCTION" != "None"
+          aws lambda get-function-configuration --function-name "$FUNCTION" > "$RUNNER_TEMP/li-v2-function.json"
+          jq -e --arg name "$APP_ENV_SECRET_NAME" --arg region "$APP_ENV_SECRET_REGION" \
+            '.Environment.Variables.BACKGROUND_RUNTIME_SECRET_ID == $name and .Environment.Variables.BACKGROUND_RUNTIME_SECRET_REGION == $region' \
+            "$RUNNER_TEMP/li-v2-function.json" >/dev/null
+          aws secretsmanager get-secret-value --region "$APP_ENV_SECRET_REGION" --secret-id "$APP_ENV_SECRET_NAME" --query SecretString --output text > "$RUNNER_TEMP/li-v2-flags.json"
+          chmod 600 "$RUNNER_TEMP/li-v2-flags.json"
+          python - <<'PY'
+          import json, os
+          path = os.path.join(os.environ['RUNNER_TEMP'], 'li-v2-flags.json')
+          with open(path, encoding='utf-8') as file:
+              data=json.load(file)
+          if not isinstance(data,dict):
+              raise SystemExit('Invalid production environment JSON')
+          names=('LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED','LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
+              out.write('### LI V2 AWS certification flags (read-only)\n\n')
+              out.write('Verified Lambda configuration points to the production AWS app-env secret.\n\n')
+              for name in names:
+                  enabled = data.get(name) == 'true'
+                  state = 'ENABLED' if enabled else 'NOT ENABLED'
+                  out.write(f'- `{name}`: **{state}**\n')
+                  print(f'{name}={state}')
+          # Intentionally do not fail if flags are disabled: that is a safe, valid
+          # production state before the paid acquisition pilot is authorized.
+          PY
+          rm -f "$RUNNER_TEMP/li-v2-flags.json" "$RUNNER_TEMP/li-v2-function.json"
