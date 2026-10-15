@@ -50,12 +50,14 @@ export async function stageIndependentCandidate(input:{
     metadata:{campaign_id:input.campaignId,run_id:input.runId}
   }).select("id").single();
  if(batchError||!batch)throw new Error("independent_import_batch_creation_failed");
+ const primaryPhoto=p.photoUrl!.trim();
+ // Import a single primary photo only. Gallery photos are loaded on demand on profile views.
  const base={
    batch_id:batch.id,source,source_id:identifier,source_url:p.sourceUrl,
    location_type:p.locationType,name:p.name,address:p.address,city:p.city,
    state:p.state,zip_code:p.zip||null,website:p.website||null,
    latitude:location.latitude,longitude:location.longitude,
-   primary_category:p.category,main_image:p.photoUrl,images:[p.photoUrl],
+   primary_category:p.category,main_image:primaryPhoto,images:[primaryPhoto],
    has_photos:true,photo_status:p.photoSource==="google_live"?"google_photo":"imported_photo",
    duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
@@ -65,6 +67,7 @@ export async function stageIndependentCandidate(input:{
        photoPermission:p.photoPermission||null,
        photoSource:p.photoSource||"independent",
        googlePhotoSlotVerified:p.googlePhotoSlotVerified===true,
+       photoStrategy:"primary_only_gallery_on_demand",
        openStatus:p.openStatus,
        geocodeProvider:location.provider,geoPrecision:location.precision,
        matchedAddress:location.matchedAddress}},
