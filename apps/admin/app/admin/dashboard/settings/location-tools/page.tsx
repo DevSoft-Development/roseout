@@ -49,6 +49,23 @@ function getDemoOwnerSearchParams(location: {
   });
 }
 
+async function setAcquisitionProvider(formData: FormData) {
+  "use server";
+  await requireAdminRole(["superadmin", "admin"]);
+  const provider = String(formData.get("provider") || "");
+  const enabled = String(formData.get("enabled")) === "true";
+  if (!["google", "dataforseo", "brave", "serpapi"].includes(provider)) {
+    throw new Error("Unsupported acquisition provider");
+  }
+  const { data, error } = await getAdminDatabaseClient()
+    .from("location_provider_registry")
+    .update({ enabled, updated_at: new Date().toISOString() })
+    .eq("provider", provider)
+    .select("provider");
+  if (error || !data?.length) throw new Error(error?.message || "Provider not registered");
+  revalidatePath("/admin/dashboard/settings/location-tools");
+}
+
 async function setAutomaticReviewRefreshes(formData: FormData) {
   "use server";
   await requireAdminRole(["superadmin", "admin"]);
@@ -95,6 +112,11 @@ export default async function LocationToolsPage() {
     ? dataForSeoProvider.metadata as Record<string, unknown>
     : {};
   const automaticReviewRefreshes = providerMetadata.automatic_review_refresh_enabled === true;
+  const { data: acquisitionProviders, error: providerError } = await getAdminDatabaseClient()
+    .from("location_provider_registry")
+    .select("provider,enabled,health_status,paid")
+    .in("provider", ["google", "dataforseo", "brave", "serpapi"])
+    .order("provider");
   const demoParams = lounge?.id
     ? getDemoOwnerSearchParams({
         id: String(lounge.id),
@@ -116,6 +138,30 @@ export default async function LocationToolsPage() {
         badge={<AdminStatusBadge tone="green">Location data workspace</AdminStatusBadge>}
         actions={<AdminActionButton href="/admin/dashboard/locations">Locations</AdminActionButton>}
       />
+
+      <section id="acquisition-coverage" className="scroll-mt-24">
+        <AdminSectionCard className="p-6">
+          <h2 className="text-2xl font-black">LI V2 Provider Controls</h2>
+          <p className="mt-2 text-sm text-white/65">Enable or disable providers from the live registry. These switches do not authorize acquisition spending; campaign and global budget gates remain separate.</p>
+          {providerError ? <p role="alert" className="mt-4 text-rose-300">Provider status is unavailable. Controls are disabled.</p> : (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {(acquisitionProviders || []).map((provider) => (
+                <div key={provider.provider} className="rounded-2xl border border-white/15 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="capitalize">{provider.provider}</strong>
+                    <span className="text-sm text-white/60">{provider.enabled ? "Enabled" : "Disabled"} · {provider.health_status || "Unknown"}</span>
+                  </div>
+                  <form action={setAcquisitionProvider} className="mt-4 flex gap-2">
+                    <input type="hidden" name="provider" value={provider.provider} />
+                    <button type="submit" name="enabled" value="true" disabled={provider.enabled} className="rounded-full border border-white/25 px-4 py-2 text-sm font-bold disabled:opacity-35">Enable</button>
+                    <button type="submit" name="enabled" value="false" disabled={!provider.enabled} className="rounded-full border border-white/25 px-4 py-2 text-sm font-bold disabled:opacity-35">Disable</button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
+        </AdminSectionCard>
+      </section>
 
       <AdminSectionCard className="border-rose-400/20 p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
