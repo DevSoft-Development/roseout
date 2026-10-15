@@ -1,5 +1,8 @@
 name: LI V2 financial certification
 on:
+  push:
+    branches:
+      - stack/li-v2-fallback-certification
   pull_request:
     paths:
       - 'lib/location-intelligence/v2/**'
