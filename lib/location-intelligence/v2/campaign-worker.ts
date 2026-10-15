@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging";
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -9,6 +10,11 @@ type Run = { id: string; campaign_id: string; processed: number };
 type Coverage = { market:string; area_key:string; location_kind:string; category:string; target_count:number; current_count:number };
 
 export async function processQueuedAcquisitionCampaign() {
+  // A hard release interlock: no campaign is claimed (or billed) until
+  // the complete discovery-to-searchable pipeline passes certification.
+  if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true") {
+    return { claimed:false, stopped:"searchable_import_certification_required" };
+  }
   const { data, error } = await supabaseAdmin.rpc("li_v2_claim_campaign_run");
   if (error) throw error;
   if (!data) return { claimed:false };
@@ -45,6 +51,18 @@ export async function processQueuedAcquisitionCampaign() {
     const {data:permitted,error:permissionError} = await supabaseAdmin
       .rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
     if (permissionError || permitted !== true) break;
+    const identityQuery = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} New York`;
+    // Fail closed: no paid discovery until Google's IDs-only set has been
+    // checked against all live and staged TOH identities, even hidden rows.
+    // This does not claim that Google IDs identify a complete business profile.
+    const idGate = await discoverUnseenGooglePlaceIds(identityQuery);
+    if (idGate.unseenIds.length === 0) {
+      const {data:checkpoint,error:checkpointError} = await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
+        {p_run_id:run.id,p_processed:1,p_discovered:0,p_failed:0,p_status:"running"});
+      if(checkpointError || checkpoint!==true) break;
+      processed++;
+      continue;
+    }
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
     let hit=0, miss=0;
     try {

@@ -1,0 +1,23 @@
+name: LI V2 identity-first pilot safeguards
+on:
+  pull_request:
+    paths:
+      - 'lib/location-intelligence/v2/acquisition-identity-gate.ts'
+      - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-intelligence/v2/dataforseo-maps-standard.ts'
+      - 'lib/__tests__/li-v2-acquisition-id-gate.test.ts'
+      - 'lib/__tests__/li-v2-maps-standard.test.ts'
+      - '.github/workflows/li-v2-acquisition-id-first-gates.yml'
+permissions:
+  contents: read
+jobs:
+  id-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
