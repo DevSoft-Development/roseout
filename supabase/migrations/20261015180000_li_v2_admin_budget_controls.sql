@@ -28,7 +28,7 @@ begin
  if p_scope not in ('global','campaign') or
     (p_scope='global' and p_scope_id <> 'all') or
     (p_scope='campaign' and p_scope_id !~ '^[a-zA-Z0-9:_-]{6,100}$') or
-    p_cap_usd is null or p_cap_usd < 0 or p_cap_usd > 10000 then
+    p_cap_usd is null or p_cap_usd < 0 then
    raise exception 'invalid_budget_input';
  end if;
  perform pg_catalog.pg_advisory_xact_lock(6742031);
