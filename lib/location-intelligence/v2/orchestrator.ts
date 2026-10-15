@@ -65,11 +65,20 @@ class Adapter implements LocationIntelligenceProviderAdapter {
       if (!/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId)) {
         throw new Error("acquisition_campaign_id_required");
       }
+      // Admin is the pricing authority. Missing/disabled limits deny paid calls;
+      // no deployment-time dollar ceiling can override an operator adjustment.
+      const {data:pricing,error:pricingError}=await supabaseAdmin.rpc("li_v2_acquisition_controls_snapshot");
+      if(pricingError) throw new Error("acquisition_provider_price_registry_unavailable");
+      const priceRows=Array.isArray(pricing?.providers) ? pricing.providers as Array<{
+        provider:string;max_usd_per_request:number;enabled:boolean
+      }> : [];
+      const price=priceRows.find(row=>row.provider===this.descriptor.id && row.enabled===true);
+      if(!price) throw new Error("acquisition_provider_price_disabled");
       const reservationInput = acquisitionReservationInput({
         provider: this.descriptor.id,
         capability: request.capability,
         eventKey: request.input.acquisitionEventKey,
-        maximumUsd: process.env[`LI_V2_${this.descriptor.id.toUpperCase()}_MAX_USD_PER_REQUEST`],
+        maximumUsd: price.max_usd_per_request,
       });
       const { data: permitted, error: preflightError } = await supabaseAdmin.rpc(
         "li_v2_paid_acquisition_preflight",
