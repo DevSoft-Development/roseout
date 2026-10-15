@@ -3,12 +3,17 @@ on:
   pull_request:
     paths:
       - 'scripts/certify-li-v2-acquisition-search-v3-e2e.mjs'
+      - 'scripts/certify-li-v2-acquisition-batch.mjs'
       - '.github/workflows/li-v2-acquisition-search-v3-e2e.yml'
   workflow_dispatch:
     inputs:
       location_id:
         description: UUID of a genuinely imported, new searchable business
-        required: true
+        required: false
+        type: string
+      location_ids:
+        description: Comma-separated 25-50 independently published location UUIDs for full batch certification
+        required: false
         type: string
       campaign_id:
         description: Acquisition campaign ID
@@ -25,11 +30,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --check scripts/certify-li-v2-acquisition-search-v3-e2e.mjs
+      - run: node --check scripts/certify-li-v2-acquisition-search-v3-e2e.mjs && node --check scripts/certify-li-v2-acquisition-batch.mjs
       - name: Fail closed with missing credentials
         run: |
           if node scripts/certify-li-v2-acquisition-search-v3-e2e.mjs; then
             echo 'Certification bypassed required secrets'
+            exit 1
+          fi
+          if node scripts/certify-li-v2-acquisition-batch.mjs; then
+            echo 'Batch certification bypassed minimum-count and credential gate'
             exit 1
           fi
   certify:
@@ -43,10 +52,20 @@ jobs:
       LI_E2E_SEARCH_URL: ${{ vars.LI_E2E_SEARCH_URL }}
       LI_E2E_SEARCH_BEARER_TOKEN: ${{ secrets.LI_E2E_SEARCH_BEARER_TOKEN }}
       LI_E2E_LOCATION_ID: ${{ inputs.location_id }}
+      LI_E2E_LOCATION_IDS: ${{ inputs.location_ids }}
       LI_E2E_CAMPAIGN_ID: ${{ inputs.campaign_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node scripts/certify-li-v2-acquisition-search-v3-e2e.mjs
+      - name: Certify one location or 25-50 verified real locations
+        run: |
+          if [ -n "$LI_E2E_LOCATION_IDS" ]; then
+            node scripts/certify-li-v2-acquisition-batch.mjs
+          elif [ -n "$LI_E2E_LOCATION_ID" ]; then
+            node scripts/certify-li-v2-acquisition-search-v3-e2e.mjs
+          else
+            echo 'Supply a real location_id or 25-50 location_ids for certification'
+            exit 1
+          fi

@@ -189,6 +189,10 @@ function toLocationInsert(row: StagingRow) {
     rating: row.rating,
     review_count: row.review_count,
     main_image: row.main_image,
+    // Google photos remain short-lived live provider media, never copied as licensed assets.
+    ...(String(row.source||"").startsWith("li_v2_") &&
+      recordValue(recordValue(row.raw_payload).independent_profile).photoSource==="google_live"
+      ? {photo_source:"google_places_new"} : {}),
     images: row.images || [],
     description: row.description,
     import_source: row.source,
@@ -368,6 +372,9 @@ export async function publishReadyStagedLocations({
         latitude: Number(row.latitude), longitude: Number(row.longitude),
         sourceUrl: String(row.source_url || ""), photoUrl: String(row.main_image || ""),
         photoPermission: evidence.photoPermission,
+        photoSource: evidence.photoSource,
+        googlePhotoSlotVerified: evidence.googlePhotoSlotVerified === true,
+        googlePlaceId: evidence.googlePlaceId,
         evidenceSource: evidence.evidenceSource,
         openStatus: evidence.openStatus,
         duplicate: row.duplicate_status !== "unique",

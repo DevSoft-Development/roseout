@@ -12,7 +12,8 @@ on:
       - 'lib/location-intelligence/v2/official-website-resolver.ts'
       - 'lib/__tests__/li-v2-official-website-resolver.test.ts'
       - 'lib/location-growth/publishReady.ts'
-      - 'lib/__tests__/li-v2-maps-queue-runner.test.ts lib/__tests__/li-v2-official-website-resolver.test.ts'
+      - 'lib/__tests__/li-v2-maps-queue-runner.test.ts'
+      - 'lib/__tests__/li-v2-google-live-photo-gate.test.ts'
       - 'lib/location-intelligence/v2/independent-profile-gate.ts'
       - 'lib/__tests__/li-v2-independent-profile-gate.test.ts'
       - 'supabase/migrations/20261015210000_li_v2_maps_queue_write_ahead.sql'
@@ -32,4 +33,4 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-maps-queue-runner.test.ts lib/__tests__/li-v2-independent-profile-gate.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts
+      - run: npx vitest run lib/__tests__/li-v2-acquisition-id-gate.test.ts lib/__tests__/li-v2-maps-standard.test.ts lib/__tests__/li-v2-maps-queue-runner.test.ts lib/__tests__/li-v2-independent-profile-gate.test.ts lib/__tests__/li-v2-pilot-pipeline.test.ts lib/__tests__/li-v2-google-live-photo-gate.test.ts

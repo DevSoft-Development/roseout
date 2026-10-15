@@ -40,10 +40,24 @@ const [stage]=await rest("location_import_staging",{
  import_status:"eq.published",limit:"1"
 });
 const independent=stage?.raw_payload?.independent_profile;
+const independentPhoto=["owner","licensed","public_domain"].includes(independent?.photoPermission);
+const googleLivePhoto=independent?.photoSource==="google_live" &&
+ independent?.googlePhotoSlotVerified===true &&
+ /^[A-Za-z0-9_-]{8,255}$/.test(String(independent?.googlePlaceId||""));
 if(!stage||stage.raw_payload?.campaign_id!==e.LI_E2E_CAMPAIGN_ID||
- !["owner","licensed","public_domain"].includes(independent?.photoPermission)||
+ !(independentPhoto||googleLivePhoto)||
  !["owner","official_website","licensed_dataset"].includes(independent?.evidenceSource))
- throw Error("Independent campaign profile provenance or photo rights not certified");
+ throw Error("Independent campaign source or approved photo provider not certified");
+if(googleLivePhoto) {
+ const expected="/api/public/google-place-photo?placeId="+
+  encodeURIComponent(independent.googlePlaceId)+"&index=0&maxwidth=800";
+ const [actual]=await rest("locations",{
+  select:"main_image,google_place_id,photo_source",id:"eq."+e.LI_E2E_LOCATION_ID,limit:"1"
+ });
+ if(actual?.main_image!==expected || actual?.google_place_id!==independent.googlePlaceId ||
+   actual?.photo_source!=="google_places_new")
+   throw Error("Google live photo was not published through the approved attributed proxy");
+}
 const [profile]=await rest("location_intelligence_profiles_v2",{
  select:"location_id,search_v3_ready",location_id:"eq."+location.id,limit:"1"
 });
