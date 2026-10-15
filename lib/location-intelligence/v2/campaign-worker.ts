@@ -88,6 +88,11 @@ export async function processQueuedAcquisitionCampaign() {
     }
     // Never use Google Maps SERP output directly as a stored business profile.
     // Structured, independently licensed candidates must be resolved before staging.
+    const {data:stopped,error:stopError}=await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",{
+      p_run_id:run.id,p_processed:0,p_discovered:0,p_failed:1,
+      p_status:"failed",p_error:"independent_profile_source_not_certified",
+    });
+    if(stopError||stopped!==true)throw new Error("maps_profile_quarantine_checkpoint_failed");
     return {claimed:true,runId:run.id,processed,staged,
       stopped:"independent_profile_source_not_certified"};
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
