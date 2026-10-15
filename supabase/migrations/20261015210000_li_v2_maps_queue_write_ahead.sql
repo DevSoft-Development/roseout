@@ -94,3 +94,20 @@ begin
 end;$$;
 revoke all on function public.li_v2_maps_campaign_yield(uuid) from public,anon,authenticated;
 grant execute on function public.li_v2_maps_campaign_yield(uuid) to service_role;
+
+-- Service-only campaign financial certification. Reserved and invoiced cost are
+-- deliberately separate; unreconciled charges must not be reported as final.
+create or replace function public.li_v2_campaign_financial_snapshot(p_campaign_id text)
+returns jsonb language sql stable security definer set search_path='' as $$
+select jsonb_build_object(
+ 'campaign_id',p_campaign_id,
+ 'reserved_usd',coalesce(sum(estimated_usd),0),
+ 'actual_usd',coalesce(sum(actual_usd) filter(where status='reconciled'),0),
+ 'unreconciled_count',count(*) filter(where status not in ('reconciled','void')),
+ 'tasks_reserved',count(*) filter(where provider='dataforseo_maps_standard')
+)
+from private.location_acquisition_usage
+where campaign_id=p_campaign_id and auth.role()='service_role'
+$$;
+revoke all on function public.li_v2_campaign_financial_snapshot(text) from public,anon,authenticated;
+grant execute on function public.li_v2_campaign_financial_snapshot(text) to service_role;
