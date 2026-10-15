@@ -157,6 +157,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
 
+      - name: Load release registry credentials before build
+        if: steps.config.outputs.target_env == 'production'
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+
+      - name: Report build started to release registry
+        if: steps.config.outputs.target_env == 'production'
+        run: |
+          for surface in admin business; do
+            RELEASE_ID="aws-${surface}-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="$surface" RELEASE_PROVIDER="aws" RELEASE_STATE="BUILDING" RELEASE_EVENT_TYPE="build_started" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"building"}' bash .github/scripts/write-platform-release.sh
+          done
+
       - name: Resolve foundation outputs
         id: foundation
         env:
@@ -284,6 +295,15 @@ jobs:
             fi
             echo "${surface}_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
           done
+
+      - name: Report images built to release registry
+        if: steps.config.outputs.target_env == 'production'
+        env:
+          ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
+          BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
+        run: |
+          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="VALIDATING" RELEASE_EVENT_TYPE="images_built" AWS_ADMIN_IMAGE="$ADMIN_IMAGE_URI" RELEASE_ARTIFACT_REF="$ADMIN_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"images_built"}' bash .github/scripts/write-platform-release.sh
+          RELEASE_ID="aws-business-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="business" RELEASE_PROVIDER="aws" RELEASE_STATE="VALIDATING" RELEASE_EVENT_TYPE="images_built" AWS_BUSINESS_IMAGE="$BUSINESS_IMAGE_URI" RELEASE_ARTIFACT_REF="$BUSINESS_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"images_built"}' bash .github/scripts/write-platform-release.sh
 
       - name: Recover failed services stack
         env:
@@ -421,17 +441,13 @@ jobs:
           set -euo pipefail
           aws ecs wait services-stable --cluster "$CLUSTER" --services "toh-${TARGET_ENV}-admin-web" "toh-${TARGET_ENV}-business-web"
 
-      - name: Load platform release registry credentials
-        if: steps.config.outputs.target_env == 'production'
-        run: bash .github/scripts/load-platform-release-registry-env.sh production
-
-      - name: Record Admin and Business candidates
+      - name: Record ECS healthy before origin verification
         if: steps.config.outputs.target_env == 'production'
         env:
           ADMIN_IMAGE_URI: ${{ steps.image.outputs.admin_uri }}
           BUSINESS_IMAGE_URI: ${{ steps.image.outputs.business_uri }}
         run: |
-          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="ecs_deployed" AWS_ADMIN_IMAGE="$ADMIN_IMAGE_URI" RELEASE_ARTIFACT_REF="$ADMIN_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"ecs_deployed"}' bash .github/scripts/write-platform-release.sh
+          RELEASE_ID="aws-admin-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="admin" RELEASE_PROVIDER="aws" RELEASE_STATE="CANARY" RELEASE_EVENT_TYPE="ecs_healthy" AWS_ADMIN_IMAGE="$ADMIN_IMAGE_URI" RELEASE_ARTIFACT_REF="$ADMIN_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"ecs_healthy"}' bash .github/scripts/write-platform-release.sh
           RELEASE_ID="aws-business-production-${GITHUB_SHA}" GIT_SHA="$GITHUB_SHA" RELEASE_SURFACE="business" RELEASE_PROVIDER="aws" RELEASE_STATE="CANDIDATE" RELEASE_EVENT_TYPE="ecs_deployed" AWS_BUSINESS_IMAGE="$BUSINESS_IMAGE_URI" RELEASE_ARTIFACT_REF="$BUSINESS_IMAGE_URI" RELEASE_EVIDENCE='{"workflow":"aws-web-surfaces-services","stage":"ecs_deployed"}' bash .github/scripts/write-platform-release.sh
 
       - name: Direct-origin smoke test
