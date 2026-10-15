@@ -57,7 +57,6 @@ export async function stageIndependentCandidate(input:{
    latitude:location.latitude,longitude:location.longitude,
    primary_category:p.category,main_image:p.photoUrl,images:[p.photoUrl],
    has_photos:true,photo_status:p.photoSource==="google_live"?"google_photo":"imported_photo",
-   photo_source:p.photoSource==="google_live"?"google":"independent",
    duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
    import_confidence:"high",
