@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { detectChainBrand } from "@/lib/location-growth/chainDetection";
 import { assessIndependentBusinessProfile } from "@/lib/location-intelligence/v2/independent-profile-gate";
+import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
+import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import {
   getPhotoStatus,
   hasLocationPhoto,
@@ -191,7 +193,8 @@ function toLocationInsert(row: StagingRow) {
     description: row.description,
     import_source: row.source,
     import_source_id: row.source_id,
-    google_place_id: enrichment.placeId || row.google_place_id || null,
+    google_place_id: enrichment.placeId || row.google_place_id ||
+      (String(row.source || "").startsWith("li_v2_") ? recordValue(recordValue(row.raw_payload).independent_profile).googlePlaceId || null : null),
     google_primary_type: enrichment.google.primaryType || null,
     google_maps_url: enrichment.google.googleMapsUri || row.source_url || null,
     google_maps_uri: enrichment.google.googleMapsUri || null,
@@ -416,10 +419,15 @@ export async function publishReadyStagedLocations({
           locationId: String(row.id),
           source: String(row.import_source || staged.source || "unknown"),
           sourceId: String(row.import_source_id || staged.source_id || "") || null,
-          googlePlaceId: row.google_place_id || staged.google_place_id || null,
+          googlePlaceId: row.google_place_id || staged.google_place_id ||
+            (String(staged.source || "").startsWith("li_v2_") ? recordValue(recordValue(staged.raw_payload).independent_profile).googlePlaceId || null : null),
           rawPayload: recordValue(staged.raw_payload),
           qualityScore: Number(row.quality_score || staged.quality_score || 0),
         });
+        if (String(staged.source || "").startsWith("li_v2_")) {
+          await refreshLocationClassificationV2(String(row.id));
+          await refreshLocationReadiness(String(row.id));
+        }
       }
     }
     inserted = insertedRows?.length || 0;
