@@ -12,7 +12,7 @@ begin
  order by r.created_at for update skip locked limit 1;
  if not found then return null; end if;
  update private.li_v2_campaign_import_runs set status='running',started_at=coalesce(started_at,now()),updated_at=now() where id=v.id;
- return jsonb_build_object('id',v.id,'campaign_id',v.campaign_id);
+ return jsonb_build_object('id',v.id,'campaign_id',v.campaign_id,'processed',v.processed);
 end;$$;
 revoke all on function public.li_v2_claim_campaign_run() from public,anon,authenticated;
 grant execute on function public.li_v2_claim_campaign_run() to service_role;
