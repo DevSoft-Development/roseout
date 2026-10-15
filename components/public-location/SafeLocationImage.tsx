@@ -65,6 +65,8 @@ export default function SafeLocationImage({
   const [attribution, setAttribution] = useState<Attribution | null>(null);
   const [googleAvailability, setGoogleAvailability] = useState<"unknown" | "available" | "unavailable">("available");
   const unavailableMarkerRef = useRef<HTMLSpanElement | null>(null);
+  const primaryPhotoContainerRef = useRef<HTMLSpanElement | null>(null);
+  const [nearViewport, setNearViewport] = useState(false);
   const cleanedSrc = String(src || "").trim();
   const googleRequest = useMemo(() => googlePhotoRequest(cleanedSrc), [cleanedSrc]);
   const isLazyGooglePhoto = Boolean(googleRequest && Number(googleRequest.index || 0) > 0);
@@ -75,8 +77,28 @@ export default function SafeLocationImage({
     setGoogleAvailability(isLazyGooglePhoto ? "unknown" : "available");
   }, [cleanedSrc, isLazyGooglePhoto]);
 
+  // Primary search-result photos stay natively lazy and only look up
+  // potentially billable Google photo metadata when approaching the viewport.
+  // Gallery slots keep their existing availability behavior.
   useEffect(() => {
-    if (!googleRequest) return;
+    if (!googleRequest || isLazyGooglePhoto) return;
+    const root=primaryPhotoContainerRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") {
+      setNearViewport(true);
+      return;
+    }
+    const observer=new IntersectionObserver(entries=>{
+      if (entries.some(entry=>entry.isIntersecting)) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    },{rootMargin:"150px"});
+    observer.observe(root);
+    return ()=>observer.disconnect();
+  },[googleRequest,isLazyGooglePhoto]);
+
+  useEffect(() => {
+    if (!googleRequest || (!isLazyGooglePhoto && !nearViewport)) return;
     let cancelled = false;
     const params = new URLSearchParams({
       placeId: googleRequest.placeId,
@@ -103,7 +125,7 @@ export default function SafeLocationImage({
     return () => {
       cancelled = true;
     };
-  }, [googleRequest, isLazyGooglePhoto]);
+  }, [googleRequest, isLazyGooglePhoto, nearViewport]);
 
   useEffect(() => {
     const marker = unavailableMarkerRef.current;
@@ -127,7 +149,7 @@ export default function SafeLocationImage({
 
   const sourceHref = attribution?.photoUri || attribution?.uri || null;
   return (
-    <span className="relative block h-full w-full overflow-hidden">
+    <span ref={primaryPhotoContainerRef} className="relative block h-full w-full overflow-hidden">
       <img
         src={cleanedSrc}
         alt={alt}
