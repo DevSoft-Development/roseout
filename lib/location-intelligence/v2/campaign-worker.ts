@@ -10,6 +10,11 @@ type Run = { id: string; campaign_id: string; processed: number };
 type Coverage = { market:string; area_key:string; location_kind:string; category:string; target_count:number; current_count:number };
 
 export async function processQueuedAcquisitionCampaign() {
+  // A hard release interlock: no campaign is claimed (or billed) until
+  // the complete discovery-to-searchable pipeline passes certification.
+  if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true") {
+    return { claimed:false, stopped:"searchable_import_certification_required" };
+  }
   const { data, error } = await supabaseAdmin.rpc("li_v2_claim_campaign_run");
   if (error) throw error;
   if (!data) return { claimed:false };
@@ -57,13 +62,6 @@ export async function processQueuedAcquisitionCampaign() {
       if(checkpointError || checkpoint!==true) break;
       processed++;
       continue;
-    }
-    // Release gate: existing Brave URL/title candidates cannot become searchable
-    // without independently licensed identity/address/photo evidence. Prevent
-    // every charge rather than purchasing unpublishable candidates.
-    if (process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED !== "true") {
-      return {claimed:true,runId:run.id,processed,staged,
-        stopped:"searchable_import_certification_required",newPlaceIds:idGate.unseenIds.length};
     }
     const query = `${target.category.replace(/_/g," ")} ${target.location_kind} ${target.area_key} ${target.market} official website`;
     let hit=0, miss=0;
