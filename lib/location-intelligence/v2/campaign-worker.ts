@@ -95,6 +95,12 @@ export async function processQueuedAcquisitionCampaign() {
   const {data:allowPublishing,error:publishingError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
   if(publishingError || allowPublishing!==true) return {claimed:true,runId:run.id,processed,staged,dedupe,stopped:"operator_command"};
   const publishing=await publishReadyStagedLocations({batchId:batch.id,limit:20});
+  if(publishing.errors.length) throw new Error("campaign_publishing_errors:"+publishing.errors.join(";"));
+  const {data:recorded,error:recordError}=await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",{
+    p_run_id:run.id,p_processed:0,p_discovered:0,p_failed:0,
+    p_published:publishing.markedPublished,p_status:"running",
+  });
+  if(recordError || recorded!==true) throw new Error("campaign_publish_progress_not_recorded");
   const {data:permitted}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:run.id});
   if (permitted === true) await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",
     {p_run_id:run.id,p_processed:0,p_discovered:0,p_failed:0,p_status:"completed"});
