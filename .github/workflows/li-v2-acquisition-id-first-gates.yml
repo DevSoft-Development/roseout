@@ -6,7 +6,7 @@ on:
       - 'lib/location-intelligence/v2/campaign-worker.ts'
       - 'lib/location-intelligence/v2/independent-profile-gate.ts'
       - 'lib/__tests__/li-v2-independent-profile-gate.test.ts'
-      - 'supabase/migrations/20261015175500_li_v2_maps_queue_write_ahead.sql'
+      - 'supabase/migrations/20261015210000_li_v2_maps_queue_write_ahead.sql'
       - 'lib/location-intelligence/v2/dataforseo-maps-standard.ts'
       - 'lib/__tests__/li-v2-acquisition-id-gate.test.ts'
       - 'lib/__tests__/li-v2-maps-standard.test.ts'
