@@ -137,6 +137,15 @@ export default async function Page() {
         </div>
       </div>
 
+      <ToolCard title="LI V2 independent import certification" description="Verify the first independently sourced restaurant without starting a paid campaign or publishing anything.">
+        <ActionToolsClient
+          warning="Superadmin only. This performs a non-mutating evidence and Wikimedia license dry run. Production bootstrap authorization must already be enabled in the AWS Admin runtime."
+          actions={[
+            { label: "Dry run Superiority Burger", endpoint: "/api/admin/location-growth/li-v2-independent-dry-run", body: { confirmation: "superiority-burger-119-avenue-a", dryRun: true }, tone: "white" },
+          ]}
+        />
+      </ToolCard>
+
       <ToolCard title="Other supported imports" description="The existing NYC Open Data and OSM components remain available.">
         <ActionToolsClient
           warning="Run small batches first. Imports can create or update location rows."
