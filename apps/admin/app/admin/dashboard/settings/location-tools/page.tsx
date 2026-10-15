@@ -84,6 +84,7 @@ async function setAutomaticReviewRefreshes(formData: FormData) {
 export const dynamic = "force-dynamic";
 
 const tools = [
+  ["Gap Coverage", "Live coverage gaps, priority scores, target counts, and underserved areas by market and category", "Coverage", "/admin/dashboard/settings/location-tools/gap-coverage"],
   ["Campaign Controls", "Set global and campaign budgets, review reserved spend, stop or enable spending", "Acquisition", "/admin/dashboard/settings/location-tools/campaigns"],
   ["Location Data Intelligence", "Unified database health, Google enrichment, cuisine/category repair, review, and Search Foundation V3 refresh", "Quality", "/admin/dashboard/settings/location-tools/enrichment"],
   ["Search Profiles", "Canonical classification diagnostics and durable backfill runs", "Search", "/admin/dashboard/settings/location-tools/search-profiles"],
