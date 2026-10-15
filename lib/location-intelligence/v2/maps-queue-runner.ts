@@ -40,3 +40,27 @@ export async function submitReservedMapsQueue(runId:string,index:number,query:st
    return {status:"manual_reconciliation_required"};
  }
 }
+
+/** Exact-SKU reservation happens before the billable POST. */
+export async function submitApprovedMapsQueue(input:{
+ runId:string;campaignId:string;targetIndex:number;query:string
+}) {
+ const {runId,campaignId,targetIndex,query}=input;
+ const {data:permitted,error:permitError}=await supabaseAdmin.rpc("li_v2_campaign_run_permitted",{p_run_id:runId});
+ if(permitError||permitted!==true)throw new Error("campaign_not_permitted");
+ const {data:cfg,error:cfgError}=await supabaseAdmin.rpc("li_v2_acquisition_controls_snapshot");
+ const price=Array.isArray(cfg?.providers)?cfg.providers.find((v:{provider:string})=>v.provider==="dataforseo_maps_standard"):null;
+ if(cfgError||!price||price.enabled!==true||Number(price.max_usd_per_request)!==0.0006)
+   throw new Error("maps_standard_price_control_not_approved");
+ const {data:preflight,error:preflightError}=await supabaseAdmin.rpc("li_v2_paid_acquisition_preflight",{
+   p_campaign_id:campaignId,p_provider:"dataforseo_maps_standard",p_price_usd:0.0006,
+ });
+ if(preflightError||preflight!==true)throw new Error("maps_standard_budget_disabled");
+ const eventKey="li-v2-maps-"+runId+"-"+targetIndex;
+ const {data:reserved,error:reserveError}=await supabaseAdmin.rpc("reserve_location_acquisition_spend",{
+  p_event_key:eventKey,p_provider:"dataforseo_maps_standard",p_operation:"discovery",
+  p_estimated_usd:0.0006,p_campaign_id:campaignId,p_run_id:runId,
+ });
+ if(reserveError||reserved!==true)throw new Error("maps_standard_reservation_denied");
+ return submitReservedMapsQueue(runId,targetIndex,query);
+}
