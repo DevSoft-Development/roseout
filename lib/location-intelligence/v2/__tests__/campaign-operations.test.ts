@@ -35,6 +35,7 @@ describe("LI V2 campaign operational wiring",()=>{
  it("stages unverified evidence and applies existing dedupe and publishability protections",()=>{
   expect(worker).toContain('source_quality_status:"imported_unverified"');
   expect(worker).toContain('import_confidence:"low"');
+  expect(worker).toContain('onConflict:"source,source_id",ignoreDuplicates:true');
   expect(worker).toContain("dedupeStagedLocationsChunk");
   expect(worker).toContain("publishReadyStagedLocations");
   expect(worker).not.toContain('quality_status:"publish_ready"');
