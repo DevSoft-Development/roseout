@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 /** Discovery signals are NOT authority to grant location ownership. */
-export type ClaimMethod = "email_plus_review" | "dns" | "website" | "phone_plus_review" | "postcard" | "manual_review";
+export type ClaimMethod = "email_plus_review" | "dns" | "website" | "phone_plus_review" | "postcard" | "video_review" | "manual_review";
 export type ClaimMethodDecision = { methods: ClaimMethod[]; requiresOwnershipReview: true; evidence: { officialWebsite: boolean; sourcedEmail: boolean; businessPhone: boolean; mailingAddress: boolean } };
 
 export async function getClaimMethodDecision(locationId: string): Promise<ClaimMethodDecision> {
@@ -22,6 +22,6 @@ export async function getClaimMethodDecision(locationId: string): Promise<ClaimM
   if (officialWebsite) methods.push("dns","website");
   if (businessPhone) methods.push("phone_plus_review");
   if (mailingAddress) methods.push("postcard");
-  methods.push("manual_review");
+  methods.push("video_review","manual_review");
   return { methods, requiresOwnershipReview: true, evidence: { officialWebsite, sourcedEmail, businessPhone, mailingAddress } };
 }
