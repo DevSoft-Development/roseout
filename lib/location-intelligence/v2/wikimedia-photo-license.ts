@@ -14,7 +14,7 @@ const allowedLicenses: Record<string,string> = {
   "CC BY 3.0":"https://creativecommons.org/licenses/by/3.0/",
   "CC BY-SA 3.0":"https://creativecommons.org/licenses/by-sa/3.0/",
 };
-const plain = (s:string)=>s.replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/\\s+/g," ").trim();
+const plain = (s:string)=>s.replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim();
 export async function verifyWikimediaPhoto(filePageUrl:string):Promise<WikimediaPhotoEvidence|null> {
   let url:URL;
   try {url=new URL(filePageUrl);}catch{return null;}
@@ -40,4 +40,47 @@ export async function verifyWikimediaPhoto(filePageUrl:string):Promise<Wikimedia
   const fileUrl=String(info?.descriptionurl||"");
   if(!fileUrl.startsWith("https://commons.wikimedia.org/wiki/File:"))return null;
   return {filePageUrl:fileUrl,imageUrl,author,license,licenseUrl,attribution:`${author} · ${license} · ${fileUrl}`,verifiedAt:new Date().toISOString()};
+}
+
+
+/**
+ * Find only photo candidates with unusually strong, independently checkable identity.
+ * Commons search relevance alone is never evidence that an image depicts a venue.
+ * Fail closed; the caller can retain the business lead for later photo resolution.
+ */
+export async function discoverVerifiedWikimediaBusinessPhoto(business:{
+  name:string; address:string; city:string; state:string;
+}):Promise<WikimediaPhotoEvidence|null> {
+  const clean=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\\s+/g," ");
+  const name=clean(business.name),street=clean(business.address),city=clean(business.city);
+  if(name.length<6||street.length<6||city.length<3)return null;
+  const search=new URL("https://commons.wikimedia.org/w/api.php");
+  for(const [key,value] of Object.entries({
+    action:"query",generator:"search",gsrsearch:`filetype:bitmap "${business.name}" "${business.city}"`,
+    gsrnamespace:"6",gsrlimit:"8",prop:"imageinfo",iiprop:"url|extmetadata",
+    format:"json",formatversion:"2",
+  }))search.searchParams.set(key,value);
+  try {
+    const response=await fetch(search,{headers:{"user-agent":"TheOutHaven/1.0 (Wikimedia-business-photo-discovery)"},
+      signal:AbortSignal.timeout(12000),cache:"no-store"});
+    if(!response.ok)return null;
+    const data=await response.json();
+    const pages=Array.isArray(data?.query?.pages)?data.query.pages:[];
+    for(const page of pages.slice(0,8)){
+      const info=page?.imageinfo?.[0],meta=info?.extmetadata;
+      const metadataText=(key:string)=>plain(String(meta?.[key]?.value||""));
+      const title=clean(String(page?.title||"").replace(/^File:/i,"").replace(/\.[a-z0-9]+$/i,""));
+      const description=clean(metadataText("ImageDescription")+" "+metadataText("ObjectName"));
+      // Name must be explicit in the title AND descriptive metadata; the exact
+      // street must appear in the independent file description. This intentionally
+      // sacrifices recall to avoid attaching another business's photo.
+      if(!title.includes(name)||!description.includes(name)||
+         !description.includes(street)||!description.includes(city))continue;
+      const url=String(info?.descriptionurl||"");
+      if(!url.startsWith("https://commons.wikimedia.org/wiki/File:"))continue;
+      const license=await verifyWikimediaPhoto(url);
+      if(license)return license;
+    }
+  }catch{/* Wikimedia outage or malformed metadata cannot license a photo */}
+  return null;
 }
