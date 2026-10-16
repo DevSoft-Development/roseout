@@ -22,10 +22,11 @@ describe("LI V2 identity-first acquisition",()=>{
     expect(gate).toContain('.in("google_place_id", ids)');
     expect(gate).toContain('.in("source_id", ids)');
   });
-  it("pauses a newly staged batch for external Search V3 verification without reporting a false failure",()=>{
+  it("uses durable consumer retrieval checks without falsely claiming protected V3 certification",()=>{
     const worker=readFileSync("lib/location-intelligence/v2/campaign-worker.ts","utf8");
-    expect(worker).toContain('p_action:"pause"');
-    expect(worker).toContain("awaiting_search_v3_live_retrieval_certification");
+    expect(worker).toContain("advanceConsumerChecks(run.id,index)");
+    expect(worker).toContain("awaiting_consumer_indexing");
+    expect(worker).toContain("authenticatedSearchV3Certified:false");
     expect(worker).not.toContain('checkpoint(run.id,0,"failed","search_v3_live_retrieval_certification_required")');
   });
 });
