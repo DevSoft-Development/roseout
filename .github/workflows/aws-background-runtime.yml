@@ -83,7 +83,7 @@ jobs:
           test -f infra/aws/background-runtime/Dockerfile
           test -f infra/aws/background-runtime/bootstrap.mjs
           for attempt in 1 2 3 4 5; do
-            if docker build --check -f infra/aws/background-runtime/Dockerfile .; then
+            if docker build --check --build-arg LAMBDA_ADAPTER_IMAGE=node:22-alpine -f infra/aws/background-runtime/Dockerfile .; then
               exit 0
             fi
             if [ "$attempt" -eq 5 ]; then
@@ -274,13 +274,21 @@ jobs:
           IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           ENV_FILE="$RUNNER_TEMP/background-production.env"
           aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
-          # Public ECR occasionally responds 429 (data limit exceeded) while
-          # resolving the pinned Lambda Web Adapter. Retry the same immutable
-          # Dockerfile/build rather than changing image sources or bypassing CI.
+          # Reuse the exact Lambda Adapter from the currently deployed, healthy
+          # production image in our private ECR. Avoid public ECR throttling.
+          ADAPTER_IMAGE="$(aws lambda get-function --function-name toh-production-background-runtime --query 'Code.ImageUri' --output text)"
+          case "$ADAPTER_IMAGE" in
+            "$REGISTRY/$ECR_REPOSITORY:"*|"$REGISTRY/$ECR_REPOSITORY@"*) ;;
+            *) echo "Production Lambda image is not in the expected private ECR repository." >&2; exit 1 ;;
+          esac
+          docker pull "$ADAPTER_IMAGE"
+          docker run --rm --entrypoint /bin/sh "$ADAPTER_IMAGE" -c 'test -x /opt/extensions/lambda-adapter'
+          echo "Reusing the deployed Lambda Adapter from verified private ECR image."
           built=0
           for attempt in 1 2 3 4 5 6; do
             if DOCKER_BUILDKIT=1 docker build \
               --secret id=platform_env,src="$ENV_FILE" \
+              --build-arg LAMBDA_ADAPTER_IMAGE="$ADAPTER_IMAGE" \
               -f infra/aws/background-runtime/Dockerfile \
               -t "$IMAGE_URI" .; then
               built=1
