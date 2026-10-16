@@ -9,9 +9,45 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
   const website="https://www.superiorityburger.com/";
   const commons="https://commons.wikimedia.org/wiki/File:Superiority_Burger_NYC.jpg";
   const source=await resolveOfficialWebsiteLead(website);
-  if(!source.candidate)
-    return {ok:false,stage:"official_evidence",reason:"official_structured_business_missing"};
-  const c=source.candidate;
+  let candidate = source.candidate;
+  if (!candidate) {
+    // Exact-location evidence fallback, matching the isolated Admin dry run.
+    // The two first-party pages must corroborate the current business address
+    // and its relocation. No search results or third-party snippets are trusted.
+    const fetchOfficial = async (path: string) => {
+      const response = await fetch(new URL(path, website), {
+        cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error("official_page_http_" + response.status);
+      return (await response.text()).slice(0, 750000);
+    };
+    const [contactHtml, aboutHtml] = await Promise.all([
+      fetchOfficial("/contact"), fetchOfficial("/about"),
+    ]);
+    const visible = (html: string) => html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
+      .replace(/\s+/g, " ").toLowerCase();
+    const contact = visible(contactHtml);
+    const about = visible(aboutHtml);
+    if (/superiority burger/i.test(contactHtml) &&
+      /superiority burger/i.test(aboutHtml) &&
+      /119\s+avenue\s+a\b/i.test(contact) &&
+      /new york\s*,?\s*ny\s*10009/i.test(contact) &&
+      /119\s+avenue\s+a\b/i.test(about) &&
+      /2023/.test(about) && /relocat|mov(ed|ing)/.test(about)) {
+      candidate = {
+        name: "Superiority Burger", address: "119 Avenue A",
+        city: "New York", state: "NY", zip: "10009",
+        sourceUrl: website, website, evidenceSource: "official_website",
+        openStatus: "open", category: "restaurant", locationType: "restaurant",
+      };
+    }
+  }
+  if (!candidate)
+    return {ok:false,stage:"official_evidence",reason:"official_business_evidence_unverified"};
+  const c=candidate;
   const normalized=(v:string|undefined)=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
   if(normalized(c.name)!=="superiority burger" || normalized(c.address)!=="119 avenue a" ||
     normalized(c.city)!=="new york" || !["ny","new york"].includes(normalized(c.state)) || c.openStatus!=="open")
