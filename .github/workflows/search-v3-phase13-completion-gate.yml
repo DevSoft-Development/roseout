@@ -26,6 +26,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Prepare standalone server-only shim
+        run: |
+          mkdir -p node_modules/server-only
+          printf "module.exports = {};\n" > node_modules/server-only/index.js
+
       - name: Configure AWS access
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
