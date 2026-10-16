@@ -1,3 +1,4 @@
+import FirstLocationDryRun from "../FirstLocationDryRun";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
@@ -33,7 +34,7 @@ const SECTIONS: Record<string, { title: string; description: string; links: { ti
   },
   import: {
     title: "LI V2 Import Operations",
-    description: "Location inventory and certification access on isolated AWS Admin. The protected Superiority Burger bootstrap is not yet wired to this runtime; do not mistake the old app endpoint for a working production action.",
+    description: "Read-only first-location evidence certification. Does not import, publish, or spend money.",
     links: [
       { title: "Import logs", href: "/admin/dashboard/settings/location-tools/logs" },
       { title: "Location health", href: "/admin/dashboard/crm/location-health" },
@@ -103,6 +104,13 @@ export default async function LocationToolsSectionPage({
                 ))}
               </ul>
             )}
+          </section>
+        )}
+        {tool === "import" && (
+          <section className="rounded-2xl border border-white/10 bg-[#111] p-5">
+            <h2 className="text-xl font-bold">Superiority Burger certification</h2>
+            <p className="mt-2 text-sm text-white/65">Superadmin-only, read-only verification of official business identity and Wikimedia photo attribution. No import, publishing, or paid requests. Authorization flag must be enabled separately.</p>
+            <FirstLocationDryRun />
           </section>
         )}
         <section className="rounded-2xl border border-white/10 bg-[#111] p-5">
