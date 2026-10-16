@@ -1,0 +1,51 @@
+name: Refresh Superiority Burger V3 readiness
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment: li-v2-production-import
+    steps:
+      - name: Confirm protected gate
+        env:
+          APPROVED: ${{ vars.LI_V2_PRODUCTION_IMPORT_APPROVED }}
+        run: test "$APPROVED" = true
+      - name: AWS scoped import identity
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenLiV2SingleLocationImportRole
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Recompute existing classification and readiness
+        env:
+          SECRET_ID: /theouthaven/production/platform-dr/app-env
+        run: |
+          set -euo pipefail
+          umask 077
+          secret="$RUNNER_TEMP/toh-env.json"
+          payload="$RUNNER_TEMP/toh-event.json"
+          response="$RUNNER_TEMP/toh-response.json"
+          trap 'rm -f "$secret" "$payload" "$response"' EXIT
+          aws secretsmanager get-secret-value --region us-west-2 --secret-id "$SECRET_ID" --query SecretString --output text > "$secret"
+          jq -e '.LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED == "true" and (.CRON_SECRET | type=="string" and length>0)' "$secret" >/dev/null
+          fn="$(aws cloudformation describe-stacks --stack-name theouthaven-background-runtime-production --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$fn" && test "$fn" != None
+          python - "$secret" "$payload" <<'PY'
+          import json,sys
+          from pathlib import Path
+          settings=json.loads(Path(sys.argv[1]).read_text())
+          route="/api/cron/li-v2-certify-superiority-readiness"
+          event={"version":"2.0","routeKey":"POST "+route,"rawPath":route,"rawQueryString":"",
+          "headers":{"authorization":"Bearer "+settings["CRON_SECRET"],"x-toh-aws-internal":"managed-dispatch","content-type":"application/json"},
+          "requestContext":{"accountId":"certification","apiId":"internal","domainName":"internal","domainPrefix":"internal",
+            "http":{"method":"POST","path":route,"protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"li-v2-certification"},
+            "requestId":"li-v2-readiness","routeKey":"POST "+route,"stage":"$default","time":"16/Oct/2026:00:00:00 +0000","timeEpoch":1792108800000},
+          "body":json.dumps({"confirmation":"superiority-burger-119-avenue-a"}),"isBase64Encoded":False}
+          Path(sys.argv[2]).write_text(json.dumps(event))
+          PY
+          aws lambda invoke --function-name "$fn" --cli-binary-format raw-in-base64-out --payload "fileb://$payload" "$response" >/dev/null
+          jq -c '{statusCode,result:(.body | fromjson? | {ok,locationId,readiness,publiclyDiscoverable,searchV3RetrievalCertified,error})}' "$response"
+          jq -e '.statusCode==200 and (.body | fromjson | .ok==true and .readiness.searchV3Ready==true and .readiness.qualityScore>=85)' "$response" >/dev/null
