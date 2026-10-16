@@ -39,7 +39,10 @@ export async function processQueuedAcquisitionCampaign() {
      "li_v2_campaign_run_permitted",{p_run_id:run.id});
    if(permissionError||permitted!==true)
      return {claimed:true,runId:run.id,stopped:"operator_command"};
-   if(target.current_count>=target.target_count){
+   const {data:queuedTargets,error:queuedError}=await supabaseAdmin.rpc("li_v2_maps_queue_snapshot",{p_run_id:run.id});
+   if(queuedError)throw queuedError;
+   const existing=(queuedTargets as {target_index:number;status:string}[]).find(q=>q.target_index===index);
+   if(target.current_count>=target.target_count&&!existing){
      await checkpoint(run.id,1);
      continue;
    }
