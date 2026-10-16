@@ -1,0 +1,45 @@
+name: LI V2 bootstrap live Search V3 certification
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/certify-li-v2-bootstrap-live-search.mjs'
+      - '.github/workflows/li-v2-bootstrap-live-search.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check syntax and fail-closed credentials
+        run: |
+          node --check scripts/certify-li-v2-bootstrap-live-search.mjs
+          if node scripts/certify-li-v2-bootstrap-live-search.mjs; then
+            echo 'Certification must fail when authentication configuration is absent'
+            exit 1
+          fi
+
+  certify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: li-v2-certification
+    env:
+      LI_E2E_SEARCH_URL: ${{ vars.LI_E2E_SEARCH_URL }}
+      LI_E2E_SEARCH_BEARER_TOKEN: ${{ secrets.LI_E2E_SEARCH_BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify exact published TOH location ID in authenticated live Search V3 response
+        run: node scripts/certify-li-v2-bootstrap-live-search.mjs
