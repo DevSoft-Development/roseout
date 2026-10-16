@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { sendClaimWelcomeOnce } from "@/lib/business-claim/welcomeOnce";
 import { supabase } from "@/lib/supabase";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
           : `${siteUrl}/locations/dashboard/profile?setup=photos&claimed=1`;
 
       if (status === "approved") {
-        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
+        await sendClaimWelcomeOnce({ claimId: String(claim.id), locationId: String(approvedLocationId || claim.location_id || ""), email: claim.owner_email, name: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
       } else if (status === "rejected") {
         await sendClaimRejectedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       } else {
