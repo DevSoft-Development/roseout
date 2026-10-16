@@ -54,8 +54,9 @@ function ClaimPageInner() {
   const [error, setError] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
   const [videoMessage, setVideoMessage] = useState("");
-  const [dnsChallenge, setDnsChallenge] = useState<{challengeId:string;recordName:string;recordValue:string}|null>(null);
+  const [dnsChallenge, setDnsChallenge] = useState<{challengeId:string;recordName:string|null;recordValue:string;websiteFileUrl?:string|null}|null>(null);
   const [dnsMessage, setDnsMessage] = useState("");
+  const [domainMethod, setDomainMethod] = useState<"dns" | "website">("dns");
   const [videoFile, setVideoFile] = useState<File | null>(null);
 
   async function loadLocation(codeValue = claimCode, source: "qr" | "manual" = "manual") {
@@ -235,10 +236,10 @@ function ClaimPageInner() {
     try {
       const { data } = await supabase.auth.getUser();
       if (!data.user) { setError("Sign in first to verify control of your business website.");return; }
-      const response = await fetch("/api/business/claim/domain",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:claimCode})});
+      const response = await fetch("/api/business/claim/domain",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:claimCode,method:domainMethod})});
       const result=await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error);
-      setDnsChallenge({challengeId:result.challengeId,recordName:result.recordName,recordValue:result.recordValue});
+      setDnsChallenge({challengeId:result.challengeId,recordName:result.recordName,recordValue:result.recordValue,websiteFileUrl:result.websiteFileUrl});
     }catch {setError("DNS verification is unavailable for this business. You may use another verification method.");}
     finally {setBusy(false);}
   }
@@ -403,10 +404,12 @@ function ClaimPageInner() {
                 <section className="mt-6 rounded-2xl border border-white/10 p-4">
                   <h3 className="text-lg font-black">Verify with your business website</h3>
                   <p className="mt-2 text-sm text-white/55">Use DNS verification if you control your official business domain. This proves domain control, not business ownership.</p>
+                  <div className="mt-3 flex gap-2"><button type="button" onClick={()=>{setDomainMethod("dns");setDnsChallenge(null)}}>DNS TXT</button><button type="button" onClick={()=>{setDomainMethod("website");setDnsChallenge(null)}}>Website file</button></div>
                   <button type="button" disabled={busy} onClick={()=>void startDnsVerification()} className="mt-3 rounded-xl border border-white/30 px-4 py-3 text-sm font-bold">Generate DNS verification record</button>
                   {dnsChallenge && <div className="mt-4 space-y-2 text-sm">
-                    <p>Record type: TXT</p>
-                    <p className="break-all">Host: {dnsChallenge.recordName}</p>
+                    <p>{domainMethod==="dns" ? "Record type: TXT" : "Publish a plain-text file containing the value below."}</p>
+                    {dnsChallenge.recordName && <p className="break-all">Host: {dnsChallenge.recordName}</p>}
+                    {dnsChallenge.websiteFileUrl && <p className="break-all">File URL: {dnsChallenge.websiteFileUrl}</p>}
                     <p className="break-all">Value: {dnsChallenge.recordValue}</p>
                     <button type="button" disabled={busy} onClick={()=>void checkDnsVerification()} className="rounded-xl bg-white px-4 py-3 font-bold text-black">Check DNS record</button>
                   </div>}
