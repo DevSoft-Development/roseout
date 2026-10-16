@@ -77,16 +77,24 @@ export async function POST(request: Request) {
     }> } };
     const info = Object.values(payload.query?.pages ?? {})[0]?.imageinfo?.[0];
     const meta = info?.extmetadata ?? {};
-    const license = String(meta.LicenseShortName?.value ?? "");
-    const attribution = String(meta.Artist?.value ?? "");
-    const licenseUrl = String(meta.LicenseUrl?.value ?? "");
-    if (!info?.url?.startsWith("https://") || license !== "CC BY-SA 4.0" ||
-        licenseUrl !== "https://creativecommons.org/licenses/by-sa/4.0/" || !attribution.trim())
+    const plain = (value: unknown) => String(value ?? "").replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
+    const license = plain(meta.LicenseShortName?.value);
+    const attribution = plain(meta.Artist?.value) || plain(meta.Attribution?.value);
+    const licenseUrl = plain(meta.LicenseUrl?.value);
+    const canonicalLicense = "https://creativecommons.org/licenses/by-sa/4.0/";
+    const allowedLicenseUrl = /^https:\/\/creativecommons\.org\/licenses\/by-sa\/4\.0\/?(?:deed\.[a-z-]+)?$/i.test(licenseUrl);
+    const imageUrl = String(info?.url ?? "");
+    const restrictions = plain(meta.Restrictions?.value);
+    const nonFree = plain(meta.NonFree?.value);
+    if (!imageUrl.startsWith("https://upload.wikimedia.org/wikipedia/commons/") ||
+        license !== "CC BY-SA 4.0" || !allowedLicenseUrl || !attribution ||
+        restrictions || nonFree === "true")
       return NextResponse.json({ ok: false, dryRun: true, stage: "photo",
         reason: "commons_license_or_attribution_unverified", writes: 0, paidRequests: 0 }, { status: 422 });
     return NextResponse.json({ ok: true, dryRun: true, identity,
       photo: { filePageUrl: "https://commons.wikimedia.org/wiki/File:Superiority_Burger_NYC.jpg",
-        license, licenseUrl, attribution }, writes: 0, paidRequests: 0,
+        license, licenseUrl: canonicalLicense, attribution }, writes: 0, paidRequests: 0,
       importExecuted: false, searchV3RetrievalCertified: false });
   } catch (error) {
     console.error("li_v2_isolated_certification_failed", error);
