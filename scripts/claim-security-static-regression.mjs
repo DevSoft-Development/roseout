@@ -7,12 +7,12 @@ const paths = [
 ];
 for (const path of paths) {
   const src = readFileSync(path, "utf8");
-  assert.doesNotMatch(src, /if\\s*\\(challenge\\.contact_match\\s*&&\\s*!approved\\)/, path + ": weak contact-match must not auto-approve ownership");
-  assert.doesNotMatch(src, /approveLocationClaim\\s*\\(/, path + ": account linking must not grant ownership");
-  assert.match(src, /claim\\.verified_contact\\s*!==\\s*challenge\\.contact_normalized/, path + ": missing contact binding");
-  assert.match(src, /claim\\.verified_contact_channel\\s*!==\\s*challenge\\.channel/, path + ": missing channel binding");
+  assert.doesNotMatch(src, /if\s*\(challenge\.contact_match\s*&&\s*!approved\)/, path + ": weak contact-match must not auto-approve ownership");
+  assert.doesNotMatch(src, /approveLocationClaim\s*\(/, path + ": account linking must not grant ownership");
+  assert.match(src, /claim\.verified_contact\s*!==\s*challenge\.contact_normalized/, path + ": missing contact binding");
+  assert.match(src, /claim\.verified_contact_channel\s*!==\s*challenge\.channel/, path + ": missing channel binding");
   assert.match(src, /verification_expired/, path + ": missing expiry check");
-  assert.match(src, /\\.is\\("user_id", null\\)/, path + ": missing conditional claimant association");
+  assert.match(src, /\.is\("user_id", null\)/, path + ": missing conditional claimant association");
 }
 const notifications = readFileSync("lib/notifications.ts", "utf8");
 assert.match(notifications, /TheOutHaven Tech Assistant/, "Missing approved Tech Assistant identity");
