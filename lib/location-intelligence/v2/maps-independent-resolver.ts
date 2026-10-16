@@ -47,9 +47,9 @@ export function googleIdentityLead(value:unknown):string|null {
 }
 /** Maps output supplies leads only; official website independently supplies business facts. */
 export async function resolveQueuedMapsToIndependentProfiles(input:{
- runId:string;campaignId:string;items:unknown[]
+ runId:string;campaignId:string;items:unknown[];maxGooglePhotoLookups?:number
 }) {
- let inspected=0,photoBlocked=0,verified=0,staged=0;
+ let inspected=0,photoBlocked=0,verified=0,staged=0,googlePhotoLookups=0;
  const seen=new Set<string>(),batches=new Set<string>();
  for(const raw of input.items.slice(0,50)){
    const origin=websiteLeadFromMapsItem(raw);
@@ -72,7 +72,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,
         photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
-    if(!photoCandidate && id){
+    if(!photoCandidate && id && googlePhotoLookups < (input.maxGooglePhotoLookups ?? 50)){
       // Free-first: reject any ID already attached to a TOH record before billed Google details.
       // A shared venue ID is NOT proof these businesses are duplicates.
       const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
@@ -80,6 +80,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
       if(assigned?.length){photoBlocked++;continue;}
       // Only unresolved identities needing a Google live photo can reach this billed check.
+      googlePhotoLookups++;
       const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id))continue;
       const slot=await getGooglePhotoSlot(id,0);
@@ -99,6 +100,6 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
  }
  const finalizations=[];
  for(const batchId of batches)finalizations.push(await finalizeIndependentBatch(batchId));
- return {inspected,photoBlocked,verified,staged,finalizations,
+ return {inspected,photoBlocked,verified,staged,googlePhotoLookups,finalizations,
   searchV3RetrievalCertified:false};
 }
