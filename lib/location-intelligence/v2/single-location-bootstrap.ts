@@ -25,17 +25,17 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
       fetchOfficial("/contact"), fetchOfficial("/about"),
     ]);
     const visible = (html: string) => html
-      .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-      .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
-      .replace(/\\s+/g, " ").toLowerCase();
+      .replace(/\s+/g, " ").toLowerCase();
     const contact = visible(contactHtml);
     const about = visible(aboutHtml);
     if (/superiority burger/i.test(contactHtml) &&
       /superiority burger/i.test(aboutHtml) &&
-      /119\\s+avenue\\s+a\\b/i.test(contact) &&
-      /new york\\s*,?\\s*ny\\s*10009/i.test(contact) &&
-      /119\\s+avenue\\s+a\\b/i.test(about) &&
+      /119\s+avenue\s+a\b/i.test(contact) &&
+      /new york\s*,?\s*ny\s*10009/i.test(contact) &&
+      /119\s+avenue\s+a\b/i.test(about) &&
       /2023/.test(about) && /relocat|mov(ed|ing)/.test(about)) {
       candidate = {
         name: "Superiority Burger", address: "119 Avenue A",
