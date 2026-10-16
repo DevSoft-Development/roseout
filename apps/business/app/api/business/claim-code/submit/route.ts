@@ -104,28 +104,21 @@ export async function POST(req: Request) {
       claim = created;
     }
 
-    await Promise.all([
-      supabaseAdmin
-        .from("claim_verification_challenges")
-        .update({ consumed_at: now, updated_at: now })
-        .eq("id", challengeId),
-      supabaseAdmin
-        .from("locations")
-        .update({
-          claim_status: "pending",
-          claimed_by_email: ownerEmail,
-          claim_submitted_at: now,
-        })
-        .eq("id", lookup.location.id),
-      ...(lookup.claimCode?.id
-        ? [
-            supabaseAdmin
-              .from("location_claim_codes")
-              .update({ status: "redeemed", claimed_at: now, updated_at: now })
-              .eq("id", lookup.claimCode.id),
-          ]
-        : []),
-    ]);
+    // Consume the OTP and canonical claim code under a single database lock.
+    // The RPC is service-role only; never expose it to the browser.
+    const { data: consumed, error: consumeError } = await supabaseAdmin.rpc(
+      "consume_verified_claim_challenge",
+      {
+        p_challenge_id: challengeId,
+        p_location_id: String(lookup.location.id),
+        p_code: lookup.code,
+        p_claim_code_id: lookup.claimCode?.id || null,
+      },
+    );
+    if (consumeError) throw consumeError;
+    if (consumed !== true) {
+      return Response.json({ ok: false, error: "challenge_not_redeemable" }, { status: 409 });
+    }
 
     const identityType = challenge.channel === "email" ? "email_hash" : "phone_hash";
     const fraudTasks: Array<Promise<unknown>> = [
