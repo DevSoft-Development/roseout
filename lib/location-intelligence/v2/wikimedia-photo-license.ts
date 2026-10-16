@@ -14,7 +14,7 @@ const allowedLicenses: Record<string,string> = {
   "CC BY 3.0":"https://creativecommons.org/licenses/by/3.0/",
   "CC BY-SA 3.0":"https://creativecommons.org/licenses/by-sa/3.0/",
 };
-const plain = (s:string)=>s.replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/\\s+/g," ").trim();
+const plain = (s:string)=>s.replace(/<[^>]+>/g," ").replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim();
 export async function verifyWikimediaPhoto(filePageUrl:string):Promise<WikimediaPhotoEvidence|null> {
   let url:URL;
   try {url=new URL(filePageUrl);}catch{return null;}
@@ -69,7 +69,7 @@ export async function discoverVerifiedWikimediaBusinessPhoto(business:{
     for(const page of pages.slice(0,8)){
       const info=page?.imageinfo?.[0],meta=info?.extmetadata;
       const metadataText=(key:string)=>plain(String(meta?.[key]?.value||""));
-      const title=clean(String(page?.title||"").replace(/^File:/i,"").replace(/\\.[a-z0-9]+$/i,""));
+      const title=clean(String(page?.title||"").replace(/^File:/i,"").replace(/\.[a-z0-9]+$/i,""));
       const description=clean(metadataText("ImageDescription")+" "+metadataText("ObjectName"));
       // Name must be explicit in the title AND descriptive metadata; the exact
       // street must appear in the independent file description. This intentionally
