@@ -380,6 +380,22 @@ jobs:
           done
           test "$healthy" = '1' || { echo 'Background runtime failed Virginia health after 4 attempts.' >&2; exit 1; }
 
+      - name: Report LI V2 private runtime launch gates
+        run: |
+          set -euo pipefail
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
+          # Use the already authenticated direct Lambda invocation from the
+          # preceding health smoke. These are booleans; print no env secrets.
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true)' "$RESPONSE" >/dev/null
+          echo '### LI V2 pilot runtime certification' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.body | fromjson | .liV2Acquisition |
+            "- Searchable import certified: " + (.searchableImportCertified | tostring) +
+            "\n- Independent profile source certified: " + (.independentProfileSourceCertified | tostring) +
+            "\n- Pilot runtime ready: " + (.ready | tostring)' "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.body | fromjson | .liV2Acquisition.ready == true' "$RESPONSE" >/dev/null || {
+            echo 'LI V2 paid acquisition remains blocked: the deployed runtime has not certified both import gates.'
+          }
+
       - name: Prove scheduler Node routing stays inside private AWS runtime
         run: |
           set -euo pipefail
