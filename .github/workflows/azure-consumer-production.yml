@@ -427,7 +427,7 @@ jobs:
             resolve_revision() {
               local app="$1" revision="" attempt
               for attempt in 1 2 3 4 5; do
-                if revision="$(az containerapp revision list --resource-group "$RG" --name "$app" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv 2>"$RUNNER_TEMP/azure-revision-query.err")" && [ -n "$revision" ] && [ "$revision" != "None" ]; then
+                if revision="$(az containerapp revision list --resource-group "$RG" --name "$app" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv 2>"/tmp/azure-revision-query.err")" && [ -n "$revision" ] && [ "$revision" != "None" ]; then
                   printf '%s' "$revision"
                   return 0
                 fi
@@ -435,7 +435,7 @@ jobs:
                 test "$attempt" -lt 5 || break
                 sleep $((attempt * 10))
               done
-              cat "$RUNNER_TEMP/azure-revision-query.err" >&2 || true
+              cat "/tmp/azure-revision-query.err" >&2 || true
               return 1
             }
             PRIMARY_REVISION="$(resolve_revision "$PRIMARY_APP")"
