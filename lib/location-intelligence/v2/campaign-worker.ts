@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { advanceMapsQueue, submitApprovedMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
 import { resolveQueuedMapsToIndependentProfiles } from "@/lib/location-intelligence/v2/maps-independent-resolver";
+import { advanceConsumerChecks, registerConsumerChecks } from "@/lib/location-intelligence/v2/consumer-retrieval-certifier";
 
 type Run = {id:string;campaign_id:string;processed:number};
 type Coverage={market:string;area_key:string;location_kind:string;category:string;target_count:number;current_count:number};
@@ -62,30 +63,41 @@ export async function processQueuedAcquisitionCampaign() {
      return {claimed:true,runId:run.id,queueStatus:"pending"};
    }
    if(queue.status==="ready"){
-     // Maps content is a discovery lead only; official evidence and rights grants
-     // are separately verified before any LI V2 profile is staged/published.
-     const resolved=await resolveQueuedMapsToIndependentProfiles({
-       runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
-     });
-     if(resolved.staged===0){
-       await checkpoint(run.id,0,"failed","no_rights_verified_publishable_candidates");
-       return {claimed:true,runId:run.id,stopped:"no_rights_verified_publishable_candidates",
-         inspected:resolved.inspected,photoBlocked:resolved.photoBlocked};
-     }
-     const indexed=resolved.finalizations.some(batch=>batch.readyLocationIds.length>0 && batch.searchV3RetrievalCertified);
-     if(!indexed){
-       // A new location cannot pass authenticated Search V3 retrieval until it
-       // has actually been imported and indexed. Preserve the paid task and
-       // staged work; pause instead of incorrectly classifying it as failed.
-       // A human must certify the new IDs before resuming paid acquisition.
-       const {error:pauseError}=await supabaseAdmin.rpc("admin_li_v2_import_command",{
-         p_campaign_id:run.campaign_id,p_action:"pause",
+     // Re-enter existing paid task without reposting it: durable per-location
+     // certification is polled before resolving or purchasing anything else.
+     let checks=await advanceConsumerChecks(run.id,index);
+     if(checks.state==="unregistered"){
+       // Maps content is a discovery lead only; original identity, license,
+       // photo-rights and publication gates remain responsible for writes.
+       const resolved=await resolveQueuedMapsToIndependentProfiles({
+         runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
        });
-       if(pauseError)throw new Error("campaign_certification_pause_failed:"+pauseError.message);
-       return {claimed:true,runId:run.id,staged:resolved.staged,
-         stopped:"awaiting_search_v3_live_retrieval_certification",
-         reviewRequired:true};
+       const ids=resolved.finalizations.flatMap(batch=>batch.publishedLocationIds);
+       if(!ids.length){
+         await checkpoint(run.id,0,"failed","no_published_locations_to_certify");
+         return {claimed:true,runId:run.id,stopped:"no_published_locations_to_certify",
+           inspected:resolved.inspected,photoBlocked:resolved.photoBlocked};
+       }
+       await registerConsumerChecks(run.id,index,ids);
+       checks=await advanceConsumerChecks(run.id,index);
      }
+     if(checks.state==="waiting"){
+       await yieldQueuedRun(run.id);
+       return {claimed:true,runId:run.id,stopped:"awaiting_consumer_indexing",
+         verified:checks.verified,quarantined:checks.quarantined,pending:checks.pending,
+         authenticatedSearchV3Certified:false};
+     }
+     if(checks.verified===0){
+       // Do not buy another discovery batch if none of these published
+       // candidates are discoverable. Quarantined IDs stay in the audit log.
+       await checkpoint(run.id,0,"failed","all_consumer_retrieval_checks_quarantined");
+       return {claimed:true,runId:run.id,stopped:"all_consumer_retrieval_checks_quarantined"};
+     }
+     const {data:transition,error:transitionError}=await supabaseAdmin.rpc("li_v2_maps_queue_transition",{
+       p_run_id:run.id,p_index:index,p_query:query,p_from:"ready",p_to:"reviewed"
+     });
+     if(transitionError||transition?.status!=="reviewed")
+       throw new Error("certified_maps_queue_review_transition_failed");
      await checkpoint(run.id,1);
      continue;
    }
