@@ -63,6 +63,10 @@ Resources:
           Environment:
             - Name: PLATFORM_RUNTIME_PROVIDER
               Value: aws-admin
+            # Explicitly authorize only the read-only LI V2 first-location evidence check.
+            # Isolated Admin has no import/publish bootstrap endpoint; this does not enable spending.
+            - Name: LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED
+              Value: 'true'
             - Name: PLATFORM_RUNTIME_GIT_SHA
               Value: !Ref GitSha
             - Name: THEOUTHAVEN_WEB_SURFACE
