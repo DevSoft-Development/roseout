@@ -1,3 +1,4 @@
+import FirstLocationDryRun from "../FirstLocationDryRun";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
@@ -109,10 +110,7 @@ export default async function LocationToolsSectionPage({
           <section className="rounded-2xl border border-white/10 bg-[#111] p-5">
             <h2 className="text-xl font-bold">Superiority Burger certification</h2>
             <p className="mt-2 text-sm text-white/65">Superadmin-only, read-only verification of official business identity and Wikimedia photo attribution. No import, publishing, or paid requests. Authorization flag must be enabled separately.</p>
-            <form className="mt-4" action="/admin/dashboard/settings/location-tools/import" method="get">
-              <a className="inline-flex rounded-xl border border-rose-300/30 px-4 py-3 text-sm font-bold text-rose-200" href="/admin/dashboard/settings/location-tools/import">Import operations</a>
-            </form>
-            <p className="mt-3 text-xs text-white/55">The protected certification API is POST /api/admin/location-growth/li-v2-independent-dry-run. A visual execution client is not yet present.</p>
+            <FirstLocationDryRun />
           </section>
         )}
         <section className="rounded-2xl border border-white/10 bg-[#111] p-5">
