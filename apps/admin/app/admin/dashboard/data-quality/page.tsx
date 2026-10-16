@@ -45,7 +45,7 @@ const primaryActions = [
 const advancedTools = [
   ["Publishing rules", "/admin/dashboard/settings/location-tools/publishing"],
   ["Photos", "/admin/dashboard/settings/location-tools/photos"],
-  ["Import", "/admin/dashboard/settings/location-tools/import"],
+  ["LI V2 Import Operations", "/admin/dashboard/settings/location-tools/import"],
   ["Markets", "/admin/dashboard/settings/location-tools/markets"],
   ["Search profiles", "/admin/dashboard/settings/location-tools/search-profiles"],
   ["Claim URLs", "/admin/dashboard/settings/location-tools/claim-urls"],
@@ -60,7 +60,7 @@ export default async function DataQualityPage() {
       <AdminPageHeader
         eyebrow="Location Intelligence"
         title="Data Quality"
-        subtitle="Prioritize the decision queues that determine whether location inventory is trustworthy, complete, and safe to expose in customer search."
+        subtitle="Manage location quality and find LI V2 import operations, publishing, and search readiness tools."
         badge={<AdminStatusBadge tone="green">Quality controls active</AdminStatusBadge>}
         actions={<AdminActionButton href="/admin/dashboard/settings/location-tools">Location Tools</AdminActionButton>}
       />
