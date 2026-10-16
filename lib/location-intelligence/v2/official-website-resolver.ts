@@ -1,3 +1,4 @@
+import { fetchCorroboratingOfficialPages } from "./official-page-corroboration";
 import "server-only";
 import { fetchOfficialWebsiteContext } from "@/lib/location-intelligence/v2/source-executors";
 import type { IndependentBusinessProfile } from "./independent-profile-gate";
@@ -84,8 +85,10 @@ export function permittedOfficialPhoto(grant:PhotoGrant|undefined,website:string
  */
 export async function resolveOfficialWebsiteLead(website:string,photoGrant?:PhotoGrant) {
  const context=await fetchOfficialWebsiteContext(website);
- const candidate=parseOfficialBusinessJsonLd(context.html,context.url);
- if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_structured_business_missing"};
+ const structured=parseOfficialBusinessJsonLd(context.html,context.url);
+ const corroborated=structured?null:await fetchCorroboratingOfficialPages(context);
+ const candidate=structured || corroborated;
+ if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
  const contact=extractOfficialBusinessEmail(context.html,context.url);
  const enriched={...candidate,...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);

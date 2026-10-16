@@ -15,7 +15,7 @@ export default function AcquisitionCampaignPanel(){
  },[]);
  useEffect(()=>{void refresh();},[refresh]);
  const run=data?.runs?.[0];
- async function act(action:"start"|"pause"|"resume"|"cancel"|"recover"){
+ async function act(action:"start"|"pause"|"resume"|"cancel"|"recover"|"reverify"){
   if(!window.confirm(`Confirm ${action} for li-v2-pilot-001? No new provider purchase is authorized by recovery.`))return;
   setBusy(true);setMessage("");
   try{
@@ -37,14 +37,15 @@ export default function AcquisitionCampaignPanel(){
    <h3 className="font-semibold">Candidate decisions</h3>
    <ul className="text-sm space-y-1">{(data.rejections||[]).map(q=><li key={q.reason+q.status}>{q.reason}: {q.count} ({q.status})</li>)}</ul>
    <div className="flex flex-wrap gap-2">
-    {(["start","pause","resume","cancel","recover"] as const).map(action=><button key={action} disabled={busy||
+    {(["start","pause","resume","cancel","recover","reverify"] as const).map(action=><button key={action} disabled={busy||
      (action==="start"&&!!run&&["queued","running","paused"].includes(run.status))||
      (action==="pause"&&!["queued","running"].includes(run?.status||""))||
      (action==="resume"&&run?.status!=="paused")||
      (action==="cancel"&&!["queued","running","paused"].includes(run?.status||""))||
-     (action==="recover"&&!(run?.status==="failed"&&run.last_error==="no_published_locations_to_certify"&&run.recovery_count===0))}
+     (action==="recover"&&!(run?.status==="failed"&&run.last_error==="no_published_locations_to_certify"&&run.recovery_count===0))||
+     (action==="reverify"&&!(run?.status==="failed"&&run.last_error==="no_published_locations_to_certify"&&run.recovery_count===1))}
      className="rounded-lg border border-white/20 px-3 py-2 text-sm disabled:opacity-30 hover:bg-white/10"
-     onClick={()=>void act(action)}>{action==="recover"?"Recover paid task":action[0].toUpperCase()+action.slice(1)}</button>)}
+     onClick={()=>void act(action)}>{action==="reverify"?"Reverify existing paid task":action==="recover"?"Recover paid task":action[0].toUpperCase()+action.slice(1)}</button>)}
     <button disabled={busy} className="rounded-lg border border-white/20 px-3 py-2 text-sm" onClick={()=>void refresh()}>Refresh</button>
    </div>
   </>}

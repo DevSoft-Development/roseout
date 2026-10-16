@@ -22,13 +22,13 @@ export async function POST(req:Request){
  if(process.env.PLATFORM_RUNTIME_PROVIDER!=="aws-admin")return unavailable();
  const body=await req.json().catch(()=>null);
  const action=body?.action;
- if(!["start","pause","resume","cancel","recover"].includes(action) ||
+ if(!["start","pause","resume","cancel","recover","reverify"].includes(action) ||
   body?.confirmation!==CAMPAIGN)return NextResponse.json({ok:false,error:"invalid_or_unconfirmed_command"},{status:400});
  const db=getAdminDatabaseClient();
- if(action==="recover"){
+ if(action==="recover"||action==="reverify"){
   if(!/^[0-9a-f-]{36}$/i.test(String(body?.runId||"")))
    return NextResponse.json({ok:false,error:"invalid_run_id"},{status:400});
-  const {data,error}=await db.rpc("admin_li_v2_recover_paid_task",{p_run_id:body.runId});
+  const {data,error}=await db.rpc(action==="recover"?"admin_li_v2_recover_paid_task":"admin_li_v2_reverify_existing_paid_task",{p_run_id:body.runId});
   if(error)return NextResponse.json({ok:false,error:error.message},{status:409});
   return NextResponse.json({ok:data===true,action,runId:body.runId,noProviderPurchase:true});
  }
