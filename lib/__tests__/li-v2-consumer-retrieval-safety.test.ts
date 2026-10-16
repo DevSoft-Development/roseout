@@ -32,6 +32,6 @@ describe("LI V2 unattended consumer retrieval safeguards",()=>{
   expect(queue).toContain('"li_v2_paid_acquisition_preflight"');
   expect(queue).toContain('"reserve_location_acquisition_spend"');
   expect(worker).toContain('"li_v2_campaign_run_permitted"');
-  expect(sql).toContain("p_from");
+  expect(worker).toContain('p_from:"ready",p_to:"reviewed"');
  });
 });
