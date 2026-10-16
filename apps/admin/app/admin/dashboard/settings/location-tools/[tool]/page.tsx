@@ -32,8 +32,8 @@ const SECTIONS: Record<string, { title: string; description: string; links: { ti
     ],
   },
   import: {
-    title: "Location Import",
-    description: "Current location inventory and import destinations. Import execution is not yet supported on the isolated Admin runtime.",
+    title: "LI V2 Import Operations",
+    description: "Location inventory and certification access on isolated AWS Admin. The protected Superiority Burger bootstrap is not yet wired to this runtime; do not mistake the old app endpoint for a working production action.",
     links: [
       { title: "Import logs", href: "/admin/dashboard/settings/location-tools/logs" },
       { title: "Location health", href: "/admin/dashboard/crm/location-health" },
