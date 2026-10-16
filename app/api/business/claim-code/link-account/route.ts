@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { approveLocationClaim } from "@/lib/locations/claims";
 import { logClaimFunnelEvent, publicClaimLocation } from "@/lib/business-claim/secureClaim";
 
 export const dynamic = "force-dynamic";
@@ -71,25 +70,14 @@ export async function POST(req: Request) {
       claimCodeId: challenge.claim_code_id ? String(challenge.claim_code_id) : null,
       challengeId,
       eventType: "account_linked",
-      metadata: { autoApprovalEligible: Boolean(challenge.contact_match) },
+      metadata: { ownershipReviewRequired: true, contactMatch: Boolean(challenge.contact_match) },
     });
 
     let approved = claim.status === "approved";
     let status = claim.status || "pending";
-    if (challenge.contact_match && !approved) {
-      const approval = await approveLocationClaim({ claimId: claimRequestId });
-      if (approval.ok) {
-        approved = true;
-        status = "approved";
-        await logClaimFunnelEvent({
-          locationId: String(claim.location_id),
-          claimCodeId: challenge.claim_code_id ? String(challenge.claim_code_id) : null,
-          challengeId,
-          eventType: "claim_approved",
-          metadata: { mode: "verified_business_contact" },
-        });
-      }
-    }
+    // OTP confirmation proves inbox control, not authority to own a business.
+    // Automatic owner grants must be authorized by a separate trusted ownership
+    // verification decision. Existing manual claim approval remains available.
 
     const location = await getLocation(String(claim.location_id));
     return Response.json({
