@@ -56,3 +56,34 @@ begin
 end;$$;
 revoke all on function public.admin_li_v2_recover_paid_task(uuid) from public,anon,authenticated;
 grant execute on function public.admin_li_v2_recover_paid_task(uuid) to service_role;
+
+-- Admin-only consolidated read model. Private queue/ledger stay in private schema.
+create or replace function public.admin_li_v2_acquisition_snapshot(p_campaign_id text)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
+ return pg_catalog.jsonb_build_object(
+  'campaign_id',p_campaign_id,
+  'runs',(select coalesce(pg_catalog.jsonb_agg(pg_catalog.to_jsonb(r) order by r.created_at desc),'[]'::jsonb)
+    from (select id,campaign_id,status,requested_action,processed,discovered,published,failed,last_error,recovery_count,updated_at,created_at
+      from private.li_v2_campaign_import_runs where campaign_id=p_campaign_id order by created_at desc limit 20) r),
+  'queue',(select coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+      'run_id',q.campaign_run_id,'target_index',q.target_index,'status',q.status,
+      'has_provider_task',q.task_id is not null,'updated_at',q.updated_at)),'[]'::jsonb)
+     from private.li_v2_maps_queue q join private.li_v2_campaign_import_runs r on r.id=q.campaign_run_id
+     where r.campaign_id=p_campaign_id),
+  'spend',(select pg_catalog.jsonb_build_object(
+     'estimated_usd',coalesce(sum(u.estimated_usd),0),
+     'actual_usd',coalesce(sum(u.actual_usd),0),
+     'unreconciled',count(*) filter(where u.status not in ('reconciled','void')))
+     from private.location_acquisition_usage u where u.campaign_id=p_campaign_id),
+  'rejections',(select coalesce(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+    'reason',a.reason,'status',a.status,'count',a.n)),'[]'::jsonb) from (
+    select d.reason,d.status,count(*) n from public.li_v2_candidate_audit d
+    join private.li_v2_campaign_import_runs r on r.id=d.run_id
+    where r.campaign_id=p_campaign_id group by d.reason,d.status
+  ) a)
+ );
+end;$$;
+revoke all on function public.admin_li_v2_acquisition_snapshot(text) from public,anon,authenticated;
+grant execute on function public.admin_li_v2_acquisition_snapshot(text) to service_role;
