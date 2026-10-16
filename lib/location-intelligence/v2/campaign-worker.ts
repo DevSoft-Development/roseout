@@ -65,6 +65,12 @@ export async function processQueuedAcquisitionCampaign() {
      await yieldQueuedRun(run.id);
      return {claimed:true,runId:run.id,queueStatus:"pending"};
    }
+   if(queue.status==="reviewed"){
+     // Crash-safe: reviewing the paid task and checkpointing the campaign are
+     // separate operations. Finalize an already-reviewed target without re-buying.
+     await checkpoint(run.id,1);
+     continue;
+   }
    if(queue.status==="ready"){
      // Re-enter existing paid task without reposting it: durable per-location
      // certification is polled before resolving or purchasing anything else.
@@ -75,7 +81,7 @@ export async function processQueuedAcquisitionCampaign() {
        const resolved=await resolveQueuedMapsToIndependentProfiles({
          runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
        });
-       const ids=resolved.finalizations.flatMap(batch=>batch.publishedLocationIds);
+       const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
        if(!ids.length){
          await checkpoint(run.id,0,"failed","no_published_locations_to_certify");
          return {claimed:true,runId:run.id,stopped:"no_published_locations_to_certify",
