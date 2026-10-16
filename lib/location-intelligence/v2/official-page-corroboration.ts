@@ -19,7 +19,7 @@ export function pageBusinessEvidence(page:Page){
  const street=content.match(STREET)?.[1]||"";
  const afterStreet=street?content.slice(content.toLowerCase().indexOf(street.toLowerCase())+street.length,content.toLowerCase().indexOf(street.toLowerCase())+street.length+130):"";
  const locality=afterStreet.match(CITY_STATE_ZIP);
- return {name:title,street,city:locality?.[1]?.trim()||"",state:locality?.[2]?.toUpperCase()||"",zip:locality?.[3]||"",
+ return {name:title,visibleText:normalize(content),street,city:locality?.[1]?.trim()||"",state:locality?.[2]?.toUpperCase()||"",zip:locality?.[3]||"",
   restaurant:RESTAURANT.test(content),hours:HOURS.test(content),closed:CLOSED.test(content),url:page.url};
 }
 export function corroborateOfficialPages(pages:Page[]){
@@ -28,7 +28,7 @@ export function corroborateOfficialPages(pages:Page[]){
  for(let i=0;i<extracted.length;i++)for(let j=i+1;j<extracted.length;j++){
   const a=extracted[i],b=extracted[j];
   if(!a.name||!a.street||!a.city||!a.state||!a.zip || !b.name||!b.street||!b.city||!b.state||!b.zip)continue;
-  if(normalize(a.name)!==normalize(b.name)||normalize(a.street)!==normalize(b.street)||
+  if(normalize(a.name).length<5 || !a.visibleText.includes(normalize(a.name)) || !b.visibleText.includes(normalize(a.name)) ||\n    (normalize(b.name)!==normalize(a.name) && !normalize(b.name).includes(normalize(a.name)) && !normalize(a.name).includes(normalize(b.name)))continue;\n  if(normalize(a.street)!==normalize(b.street)||
     normalize(a.city)!==normalize(b.city)||a.state!==b.state||a.zip!==b.zip)continue;
   if(!a.restaurant&&!b.restaurant)continue;
   if(a.closed||b.closed)continue;
