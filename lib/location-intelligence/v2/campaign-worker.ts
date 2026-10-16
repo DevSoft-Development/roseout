@@ -90,6 +90,7 @@ export async function processQueuedAcquisitionCampaign() {
        // photo-rights and publication gates remain responsible for writes.
        const resolved=await resolveQueuedMapsToIndependentProfiles({
          runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
+         maxGooglePhotoLookups:bootstrap?1:50,
        });
        const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
        if(!ids.length){
