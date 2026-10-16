@@ -1,6 +1,7 @@
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { ADMIN_PAGE_ACCESS } from "@/lib/admin-permissions";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+const supabaseAdmin = getAdminDatabaseClient();
 export const dynamic = "force-dynamic";
 const BUCKET = "claim-verification-evidence";
 // A protected, manually triggered cleanup entry point. A scheduled job can invoke a separate service-role workflow after certification.
