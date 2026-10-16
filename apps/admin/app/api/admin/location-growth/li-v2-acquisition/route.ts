@@ -11,14 +11,10 @@ export async function GET(){
  await requireAdminRole(["superadmin","admin"]);
  if(process.env.PLATFORM_RUNTIME_PROVIDER!=="aws-admin")return unavailable();
  const db=getAdminDatabaseClient();
- const [runs,queue,usage,audit]=await Promise.all([
-  db.rpc("admin_li_v2_import_runs"),
-  db.rpc("li_v2_admin_maps_queue"),
-  db.from("location_acquisition_usage").select("provider,status,estimated_usd,actual_usd,occurred_at").eq("campaign_id",CAMPAIGN).limit(100),
-  db.from("li_v2_candidate_audit").select("run_id,status,reason,website_origin,recorded_at").order("recorded_at",{ascending:false}).limit(100),
- ]);
- if(runs.error||queue.error||usage.error||audit.error)return unavailable();
- return NextResponse.json({ok:true,campaignId:CAMPAIGN,runs:runs.data,queue:queue.data,usage:usage.data,candidates:audit.data});
+ const {data,error}=await db.rpc("admin_li_v2_acquisition_snapshot",{p_campaign_id:CAMPAIGN});
+ if(error)return unavailable();
+ return NextResponse.json({ok:true,...data});
+
 }
 
 export async function POST(req:Request){
