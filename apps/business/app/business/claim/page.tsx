@@ -54,6 +54,8 @@ function ClaimPageInner() {
   const [error, setError] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
   const [videoMessage, setVideoMessage] = useState("");
+  const [dnsChallenge, setDnsChallenge] = useState<{challengeId:string;recordName:string;recordValue:string}|null>(null);
+  const [dnsMessage, setDnsMessage] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
 
   async function loadLocation(codeValue = claimCode, source: "qr" | "manual" = "manual") {
@@ -228,6 +230,30 @@ function ClaimPageInner() {
     }
   }
 
+  async function startDnsVerification() {
+    setError("");setDnsMessage("");setBusy(true);
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) { setError("Sign in first to verify control of your business website.");return; }
+      const response = await fetch("/api/business/claim/domain",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:claimCode})});
+      const result=await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error);
+      setDnsChallenge({challengeId:result.challengeId,recordName:result.recordName,recordValue:result.recordValue});
+    }catch {setError("DNS verification is unavailable for this business. You may use another verification method.");}
+    finally {setBusy(false);}
+  }
+  async function checkDnsVerification() {
+    if (!dnsChallenge) return;
+    setBusy(true);setError("");setDnsMessage("");
+    try {
+      const response=await fetch("/api/business/claim/domain",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({challengeId:dnsChallenge.challengeId})});
+      const result=await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error);
+      setDnsMessage("Domain control verified. Your ownership request still requires review.");
+    }catch {setError("The DNS record was not found or verification expired. Check your TXT record and try again.");}
+    finally {setBusy(false);}
+  }
+
   async function submitVerificationVideo(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!videoFile || !claimCode) return;
@@ -371,6 +397,21 @@ function ClaimPageInner() {
                   <button type="submit" disabled={busy || !videoFile} className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-50">Submit private video for review</button>
                   {videoMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{videoMessage}</p>}
                 </form>
+              )}
+
+              {stage === "contact" && location?.website && (
+                <section className="mt-6 rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-black">Verify with your business website</h3>
+                  <p className="mt-2 text-sm text-white/55">Use DNS verification if you control your official business domain. This proves domain control, not business ownership.</p>
+                  <button type="button" disabled={busy} onClick={()=>void startDnsVerification()} className="mt-3 rounded-xl border border-white/30 px-4 py-3 text-sm font-bold">Generate DNS verification record</button>
+                  {dnsChallenge && <div className="mt-4 space-y-2 text-sm">
+                    <p>Record type: TXT</p>
+                    <p className="break-all">Host: {dnsChallenge.recordName}</p>
+                    <p className="break-all">Value: {dnsChallenge.recordValue}</p>
+                    <button type="button" disabled={busy} onClick={()=>void checkDnsVerification()} className="rounded-xl bg-white px-4 py-3 font-bold text-black">Check DNS record</button>
+                  </div>}
+                  {dnsMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{dnsMessage}</p>}
+                </section>
               )}
 
               {stage === "otp" && (
