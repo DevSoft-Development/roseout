@@ -303,14 +303,16 @@ export async function sendClaimApprovedEmail({
   const url = dashboardUrl || `${siteUrl()}/locations/dashboard`;
   return sendClaimEmail({
     toEmail: email,
-    subject: "Your TheOutHaven claim was approved",
+    subject: `How did everything go with your TheOutHaven listing?`,
     html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">${paragraphs(
       [
         `Hi ${contactNameOrOwnerName || "there"},`,
-        `Your claim for ${locationName} has been approved.`,
-        "You can now access your business dashboard and manage your location on TheOutHaven.",
+        `Thanks for claiming ${locationName} on TheOutHaven!`,
+        "I wanted to check in and see how everything went. Was the process easy? Is there anything you need help setting up or updating?",
+        "If you have questions or need help with anything, just reply to this email. We are happy to help.",
+        "You can also access your business dashboard below.",
       ],
-    )}<p>Dashboard:<br/><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p>Thanks,<br/>TheOutHaven</p></div>`,
+    )}<p>Dashboard:<br/><a href="${escapeHtml(url)}">${escapeHtml(url)}</a></p><p>Thanks again for being part of TheOutHaven!<br/><strong>TheOutHaven Tech Assistant</strong><br/>Automated Business Support &amp; Onboarding</p></div>`,
   });
 }
 
