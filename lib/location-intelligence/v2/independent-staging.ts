@@ -11,6 +11,7 @@ type Candidate=IndependentBusinessProfile&{
   website?:string;googlePlaceId?:string;category:string;
   locationType:"restaurant"|"activity";zip?:string;
   businessEmail?:string;businessEmailSourceUrl?:string;
+  officialEvidenceUrls?:string[];
 };
 function distanceM(a:number,b:number,c:number,d:number){
  const r=Math.PI/180,dy=(c-a)*r,dx=(d-b)*r;
@@ -82,6 +83,7 @@ export async function stageIndependentCandidate(input:{
          ? {email:p.businessEmail,sourceUrl:p.businessEmailSourceUrl,kind:"published_role_mailbox",verified:false}
          : null,
        openStatus:p.openStatus,
+       officialEvidenceUrls:p.officialEvidenceUrls||[p.sourceUrl],
        geocodeProvider:location.provider,geoPrecision:location.precision,
        matchedAddress:location.matchedAddress}},
  };
