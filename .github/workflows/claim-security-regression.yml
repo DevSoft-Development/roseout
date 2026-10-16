@@ -1,0 +1,23 @@
+name: Claim security regression
+on:
+  pull_request:
+    paths:
+      - "apps/business/app/api/business/claim/**"
+      - "apps/business/app/api/business/claim-code/**"
+      - "apps/admin/app/api/admin/claims/**"
+      - "lib/business-claim/**"
+      - "scripts/claim-security-static-regression.mjs"
+      - ".github/workflows/claim-security-regression.yml"
+  workflow_dispatch:
+jobs:
+  claim-static-security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check claim ownership and evidence guards
+        run: node scripts/claim-security-static-regression.mjs
