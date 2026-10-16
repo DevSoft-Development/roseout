@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         /2023/.test(about) && /relocat|mov(ed|ing)/.test(about);
       if (hasName && hasCurrentAddress && confirmsMove)
         identity = { name: "Superiority Burger", streetAddress: "119 Avenue A",
-          city: "New York", state: "NY", evidence: ["official_contact", "official_about"] };
+          city: "New York", state: "NY" };
     }
     if (!identity) return NextResponse.json({ ok: false, dryRun: true, stage: "official_evidence",
       reason: "official_structured_identity_missing", writes: 0, paidRequests: 0 }, { status: 422 });
