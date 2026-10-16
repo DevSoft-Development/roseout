@@ -54,16 +54,16 @@ export async function POST(request: Request) {
         evidence("https://www.superiorityburger.com/contact").then(r => r.text()),
         evidence("https://www.superiorityburger.com/about").then(r => r.text()),
       ]);
-      const strip = (text: string) => text.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
-        .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+      const strip = (text: string) => text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
         .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
-        .replace(/\\s+/g, " ").toLowerCase();
+        .replace(/\s+/g, " ").toLowerCase();
       const contact = strip(contactHtml);
       const about = strip(aboutHtml);
       const hasName = /superiority burger/i.test(contactHtml) && /superiority burger/i.test(aboutHtml);
-      const hasCurrentAddress = /119\\s+avenue\\s+a\\b/i.test(contact) &&
-        /new york\\s*,?\\s*ny\\s*10009/i.test(contact);
-      const confirmsMove = /119\\s+avenue\\s+a\\b/i.test(about) &&
+      const hasCurrentAddress = /119\s+avenue\s+a\b/i.test(contact) &&
+        /new york\s*,?\s*ny\s*10009/i.test(contact);
+      const confirmsMove = /119\s+avenue\s+a\b/i.test(about) &&
         /2023/.test(about) && /relocat|mov(ed|ing)/.test(about);
       if (hasName && hasCurrentAddress && confirmsMove)
         identity = { name: "Superiority Burger", streetAddress: "119 Avenue A",
