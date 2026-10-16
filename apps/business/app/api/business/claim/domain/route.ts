@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { resolveTxt } from "node:dns/promises";
+import { fetchOfficialWebsiteToken } from "@/lib/business-claim/websiteToken";
 import { createClient } from "@/lib/supabase-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { lookupSecureClaim, logClaimFunnelEvent } from "@/lib/business-claim/secureClaim";
@@ -27,7 +28,8 @@ export async function POST(req: Request) {
   const lookup = await lookupSecureClaim(body.code);
   if (!lookup.ok) return Response.json({ error: "claim_unavailable" }, { status: 409 });
   const decision = await getClaimMethodDecision(String(lookup.location.id));
-  if (!decision.methods.includes("dns")) return Response.json({ error: "method_unavailable" }, { status: 400 });
+  const method = body.method === "website" ? "website" : "dns";
+  if (!decision.methods.includes(method)) return Response.json({ error: "method_unavailable" }, { status: 400 });
   let domain: string;
   try { domain = websiteDomain(String(lookup.location.website || "")); }
   catch { return Response.json({ error: "invalid_business_domain" }, { status: 400 }); }
@@ -38,12 +40,14 @@ export async function POST(req: Request) {
   if ((count ?? 0) >= 5) return Response.json({ error: "rate_limited" }, { status: 429 });
   const token = "toh-claim-" + crypto.randomBytes(24).toString("hex");
   const { data, error } = await supabaseAdmin.from("claim_domain_challenges").insert({
-    location_id: lookup.location.id, claimant_user_id: user.id, method: "dns", domain,
+    location_id: lookup.location.id, claimant_user_id: user.id, method, domain,
     token_hash: sha(token), expires_at: new Date(Date.now()+30*60_000).toISOString()
   }).select("id,expires_at").single();
   if (error || !data) return Response.json({ error: "challenge_unavailable" }, { status: 503 });
   return Response.json({ ok: true, challengeId: data.id, recordType: "TXT",
-    recordName: "_theouthaven-claim." + domain, recordValue: token, expiresAt: data.expires_at });
+    recordName: method === "dns" ? "_theouthaven-claim." + domain : null,
+    websiteFileUrl: method === "website" ? "https://" + domain + "/.well-known/theouthaven-claim.txt" : null,
+    method, recordValue: token, expiresAt: data.expires_at });
 }
 export async function PUT(req: Request) {
   const user = await session();
@@ -54,7 +58,7 @@ export async function PUT(req: Request) {
   const { data: challenge, error } = await supabaseAdmin.from("claim_domain_challenges")
     .select("id,location_id,claimant_user_id,method,domain,status,expires_at,attempt_count,token_hash")
     .eq("id", id).eq("claimant_user_id", user.id).maybeSingle();
-  if (error || !challenge || challenge.method !== "dns" || challenge.status !== "pending")
+  if (error || !challenge || !["dns","website"].includes(challenge.method) || challenge.status !== "pending")
     return Response.json({ error: "challenge_unavailable" }, { status: 404 });
   if (Date.parse(challenge.expires_at) <= Date.now()) return Response.json({ error: "expired" }, { status: 410 });
   if (challenge.attempt_count >= 5) return Response.json({ error: "rate_limited" }, { status: 429 });
@@ -68,16 +72,20 @@ export async function PUT(req: Request) {
   if (!bumped?.length) return Response.json({ error: "retry" }, { status: 409 });
   let found = false;
   try {
-    const records = await resolveTxt("_theouthaven-claim." + challenge.domain);
-    found = records.map(parts => parts.join("")).some(value => sha(value.trim()) === challenge.token_hash);
+    if (challenge.method === "website") {
+      found = await fetchOfficialWebsiteToken(challenge.domain, challenge.token_hash, sha);
+    } else {
+      const records = await resolveTxt("_theouthaven-claim." + challenge.domain);
+      found = records.map(parts => parts.join("")).some(value => sha(value.trim()) === challenge.token_hash);
+    }
   } catch { /* No valid TXT record currently resolves. */ }
   if (!found) return Response.json({ ok:false, error: "record_not_found" }, { status: 409 });
   const { data: verified } = await supabaseAdmin.from("claim_domain_challenges")
     .update({ status: "verified", verified_at: new Date().toISOString() })
     .eq("id",id).eq("status","pending").select("id");
   if (!verified?.length) return Response.json({ error: "already_processed" }, { status: 409 });
-  await logClaimFunnelEvent({ locationId: challenge.location_id, eventType:"dns_ownership_evidence_verified",
-    metadata:{method:"dns",requiresOwnershipReview:true} });
+  await logClaimFunnelEvent({ locationId: challenge.location_id, eventType:"domain_ownership_evidence_verified",
+    metadata:{method:challenge.method,requiresOwnershipReview:true} });
   return Response.json({ok:true,verified:true,ownershipApproved:false,
     message:"Domain control verified. Business ownership still requires review."});
 }
