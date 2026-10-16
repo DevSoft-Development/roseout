@@ -1,0 +1,44 @@
+name: Provision protected LI V2 import role
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: li-v2-import-role-provision
+  cancel-in-progress: false
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate using existing production deployment authority
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Provision dedicated LI V2 import role
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name theouthaven-li-v2-single-location-import-role \
+            --template-file infra/aws/cloudformation/li-v2-single-location-import-role.yml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+          aws cloudformation describe-stacks \
+            --stack-name theouthaven-li-v2-single-location-import-role \
+            --query 'Stacks[0].StackStatus' --output text | grep -E '^CREATE_COMPLETE$|^UPDATE_COMPLETE$'
+      - name: Verify dedicated role trust and permissions
+        run: |
+          set -euo pipefail
+          aws iam get-role --role-name TheOutHavenLiV2SingleLocationImportRole \
+            --query 'Role.AssumeRolePolicyDocument' --output json |
+            jq -e '.Statement[] | select(.Action=="sts:AssumeRoleWithWebIdentity") |
+              .Condition.StringEquals["token.actions.githubusercontent.com:sub"] ==
+              "repo:DevSoft-Development/roseout:environment:li-v2-production-import"' >/dev/null
+          aws iam get-role-policy --role-name TheOutHavenLiV2SingleLocationImportRole \
+            --policy-name OnlyPrivateLocationImport --output json |
+            jq -e '.PolicyDocument.Statement | length==3' >/dev/null
+          echo "Dedicated import role provisioned and checked."

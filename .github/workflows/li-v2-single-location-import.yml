@@ -34,7 +34,7 @@ jobs:
       - name: Authenticate to production AWS role
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
-          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenLiV2SingleLocationImportRole
           aws-region: us-east-1
           allowed-account-ids: '742020474738'
       - name: Invoke protected private one-location background import
