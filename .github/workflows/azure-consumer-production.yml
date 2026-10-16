@@ -422,8 +422,24 @@ jobs:
             PRIMARY_APP="ca-toh-consumer-prod-primary"
             SECONDARY_APP="ca-toh-consumer-prod-secondary"
 
-            PRIMARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$PRIMARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
-            SECONDARY_REVISION="$(az containerapp revision list --resource-group "$RG" --name "$SECONDARY_APP" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv)"
+            # Azure management endpoints can transiently disconnect. Retry only
+            # revision discovery (read-only); never continue with empty revisions.
+            resolve_revision() {
+              local app="$1" revision="" attempt
+              for attempt in 1 2 3 4 5; do
+                if revision="$(az containerapp revision list --resource-group "$RG" --name "$app" --all --query "sort_by([?properties.active==\`true\`], &properties.createdTime)[-1].name" -o tsv 2>"$RUNNER_TEMP/azure-revision-query.err")" && [ -n "$revision" ] && [ "$revision" != "None" ]; then
+                  printf '%s' "$revision"
+                  return 0
+                fi
+                echo "::warning::Azure revision discovery for $app failed (attempt $attempt/5)."
+                test "$attempt" -lt 5 || break
+                sleep $((attempt * 10))
+              done
+              cat "$RUNNER_TEMP/azure-revision-query.err" >&2 || true
+              return 1
+            }
+            PRIMARY_REVISION="$(resolve_revision "$PRIMARY_APP")"
+            SECONDARY_REVISION="$(resolve_revision "$SECONDARY_APP")"
 
             test -n "$PRIMARY_REVISION" || { echo "::error::No active primary revision found."; exit 1; }
             test -n "$SECONDARY_REVISION" || { echo "::error::No active secondary revision found."; exit 1; }
