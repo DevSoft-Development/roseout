@@ -1,0 +1,45 @@
+name: Enable protected LI V2 single-location bootstrap
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: li-v2-bootstrap-production-config
+  cancel-in-progress: false
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Authenticate using production AWS authority
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Enable one-location flag while preserving existing secret settings
+        env:
+          SECRET_ID: /theouthaven/production/platform-dr/app-env
+          SECRET_REGION: us-west-2
+        run: |
+          set -euo pipefail
+          umask 077
+          before="$RUNNER_TEMP/li-v2-secret-before.json"
+          after="$RUNNER_TEMP/li-v2-secret-after.json"
+          trap 'rm -f "$before" "$after"' EXIT
+          aws secretsmanager get-secret-value --region "$SECRET_REGION" --secret-id "$SECRET_ID" --query SecretString --output text > "$before"
+          jq -e 'type == "object" and (.CRON_SECRET | type == "string" and length > 0)' "$before" > /dev/null || {
+            echo "::error::Cannot enable bootstrap: production CRON_SECRET is unavailable."
+            exit 1
+          }
+          jq '.LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED = "true"' "$before" > "$after"
+          if cmp -s "$before" "$after"; then
+            echo "Bootstrap flag already enabled; no change needed."
+          else
+            aws secretsmanager put-secret-value --region "$SECRET_REGION" --secret-id "$SECRET_ID" --secret-string "file://$after" > /dev/null
+            echo "Enabled LI V2 bootstrap flag; other JSON settings preserved."
+          fi
+          aws secretsmanager get-secret-value --region "$SECRET_REGION" --secret-id "$SECRET_ID" --query SecretString --output text |
+            jq -e '.LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED == "true" and (.CRON_SECRET | type == "string" and length > 0)' > /dev/null
+          echo "Production flag and CRON_SECRET presence verified."
