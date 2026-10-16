@@ -53,6 +53,8 @@ function ClaimPageInner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
+  const [videoMessage, setVideoMessage] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
 
   async function loadLocation(codeValue = claimCode, source: "qr" | "manual" = "manual") {
     const code = normalizeClaimCode(codeValue);
@@ -226,6 +228,30 @@ function ClaimPageInner() {
     }
   }
 
+  async function submitVerificationVideo(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!videoFile || !claimCode) return;
+    setError(""); setVideoMessage("");
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      setError("Sign into your TheOutHaven account before submitting verification video.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body = new FormData();
+      body.append("code", claimCode);
+      body.append("video", videoFile);
+      const response = await fetch("/api/business/claim/video", { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "video_upload_failed");
+      setVideoMessage("Video submitted securely for ownership review. Submission reference: " + result.submissionId);
+      setVideoFile(null);
+    } catch {
+      setError("We could not submit this video. Please check that it is MP4, WebM, or MOV under 25 MB and try again.");
+    } finally { setBusy(false); }
+  }
+
   async function createOwnerAccess() {
     setError("");
     if (channel !== "email" || !contact.trim() || !claimRequestId || !challengeId) return;
@@ -334,6 +360,16 @@ function ClaimPageInner() {
                     <ClientTurnstile action="business_claim_otp" onToken={setTurnstileToken} onExpire={() => setTurnstileToken("")} onError={() => setTurnstileToken("")} resetKey={turnstileResetKey} theme="dark" />
                   </div>
                   <button type="submit" disabled={busy} className="mt-4 w-full rounded-2xl bg-[#e1062a] px-5 py-4 text-base font-black text-white disabled:opacity-50">{busy ? "Sending…" : "Send verification code"}</button>
+                </form>
+              )}
+
+              {stage === "contact" && (
+                <form onSubmit={submitVerificationVideo} className="mt-6 rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-black">Prefer video verification?</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/55">Show your business signage or work area and evidence that you are authorized to manage this location. Do not show customer records, passwords, or payment details. A reviewer will assess your submission; uploading does not grant access.</p>
+                  <input className="mt-4 block w-full text-sm text-white" type="file" accept="video/mp4,video/webm,video/quicktime" capture="environment" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
+                  <button type="submit" disabled={busy || !videoFile} className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-50">Submit private video for review</button>
+                  {videoMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{videoMessage}</p>}
                 </form>
               )}
 
