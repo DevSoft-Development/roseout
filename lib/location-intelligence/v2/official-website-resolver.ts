@@ -58,6 +58,17 @@ export function parseOfficialBusinessJsonLd(html:string,website:string):Omit<Web
  }
  return null;
 }
+/** Only role-based contact mailboxes actually visible on the official page. */
+export function extractOfficialBusinessEmail(html:string,sourceUrl:string) {
+ try {
+  const url=new URL(sourceUrl);
+  if(url.protocol!=="https:")return null;
+  const match=[...html.matchAll(/(?:mailto:|\\b)([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)]
+   .map(x=>x[1].toLowerCase())
+   .find(e=>/^(info|contact|hello|reservations|booking|inquiries|office|general|support)@/.test(e) && e.length<=254);
+  return match?{email:match,sourceUrl:url.toString()}:null;
+ }catch{return null;}
+}
 export function permittedOfficialPhoto(grant:PhotoGrant|undefined,website:string,now=Date.now()) {
  if(!grant||!grant.verifiedBy.trim())return null;
  try {
@@ -75,8 +86,10 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
  const context=await fetchOfficialWebsiteContext(website);
  const candidate=parseOfficialBusinessJsonLd(context.html,context.url);
  if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_structured_business_missing"};
+ const contact=extractOfficialBusinessEmail(context.html,context.url);
+ const enriched={...candidate,...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
- if(!photo)return {status:"needs_photo_permission" as const,candidate};
- return {status:"verified_evidence" as const,candidate:{...candidate,...photo},
+ if(!photo)return {status:"needs_photo_permission" as const,candidate:enriched};
+ return {status:"verified_evidence" as const,candidate:{...enriched,...photo},
    photoGrant: {evidenceUrl:photo.photoEvidenceUrl,verifiedBy:photoGrant!.verifiedBy}};
 }
