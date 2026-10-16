@@ -14,7 +14,8 @@ export async function registerConsumerChecks(runId:string,index:number,ids:strin
  if(!ids.length)throw new Error("no_published_locations_to_certify");
  const {data,error}=await supabaseAdmin.rpc("li_v2_retrieval_register",{p_run_id:runId,p_index:index,p_ids:[...new Set(ids)]});
  if(error)throw new Error("consumer_certification_registration_failed:"+error.message);
- return data as number;
+ if(typeof data!=="number"||data<1)throw new Error("no_authorized_locations_registered");
+ return data;
 }
 async function verifyOne(row:Check) {
  if(!row.is_searchable||!row.name?.trim())return {found:false,reason:"not_searchable_or_missing_name"};
