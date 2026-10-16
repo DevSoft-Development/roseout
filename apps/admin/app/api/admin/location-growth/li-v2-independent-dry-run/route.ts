@@ -45,7 +45,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "exact_dry_run_confirmation_required" }, { status: 400 });
   try {
     const html = (await (await evidence("https://www.superiorityburger.com/")).text()).slice(0, 750000);
-    const identity = findIdentity(html);
+    let identity = findIdentity(html);
+    if (!identity) {
+      // Official first-party location and history pages can establish identity
+      // when the homepage omits Restaurant JSON-LD. Require BOTH independently
+      // fetched first-party pages to agree; never use search snippets.
+      const [contactHtml, aboutHtml] = await Promise.all([
+        evidence("https://www.superiorityburger.com/contact").then(r => r.text()),
+        evidence("https://www.superiorityburger.com/about").then(r => r.text()),
+      ]);
+      const strip = (text: string) => text.replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, " ")
+        .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
+        .replace(/\\s+/g, " ").toLowerCase();
+      const contact = strip(contactHtml);
+      const about = strip(aboutHtml);
+      const hasName = /superiority burger/i.test(contactHtml) && /superiority burger/i.test(aboutHtml);
+      const hasCurrentAddress = /119\\s+avenue\\s+a\\b/i.test(contact) &&
+        /new york\\s*,?\\s*ny\\s*10009/i.test(contact);
+      const confirmsMove = /119\\s+avenue\\s+a\\b/i.test(about) &&
+        /2023/.test(about) && /relocat|mov(ed|ing)/.test(about);
+      if (hasName && hasCurrentAddress && confirmsMove)
+        identity = { name: "Superiority Burger", streetAddress: "119 Avenue A",
+          city: "New York", state: "NY", evidence: ["official_contact", "official_about"] };
+    }
     if (!identity) return NextResponse.json({ ok: false, dryRun: true, stage: "official_evidence",
       reason: "official_structured_identity_missing", writes: 0, paidRequests: 0 }, { status: 422 });
     const response = await evidence("https://commons.wikimedia.org/w/api.php?action=query&titles=File%3ASuperiority_Burger_NYC.jpg&prop=imageinfo&iiprop=extmetadata%7Curl&format=json");
