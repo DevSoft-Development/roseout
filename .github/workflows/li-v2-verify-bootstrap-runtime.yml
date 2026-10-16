@@ -1,0 +1,63 @@
+name: Verify LI V2 bootstrap runtime (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: li-v2-production-import
+    steps:
+      - name: Authorize protected verification
+        env:
+          APPROVED: ${{ vars.LI_V2_PRODUCTION_IMPORT_APPROVED }}
+        run: |
+          test "$APPROVED" = true || { echo "::error::Protected import environment not approved."; exit 1; }
+      - name: Authenticate to scoped LI V2 AWS role
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenLiV2SingleLocationImportRole
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Check secret and test private Lambda with zero-write dry run
+        env:
+          APP_ENV_SECRET_NAME: /theouthaven/production/platform-dr/app-env
+          APP_ENV_SECRET_REGION: us-west-2
+          STACK: theouthaven-background-runtime-production
+        run: |
+          set -euo pipefail
+          umask 077
+          envfile="$RUNNER_TEMP/li-v2-readonly-env.json"
+          event="$RUNNER_TEMP/li-v2-readonly-event.json"
+          response="$RUNNER_TEMP/li-v2-readonly-response.json"
+          trap 'rm -f "$envfile" "$event" "$response"' EXIT
+          aws secretsmanager get-secret-value --secret-id "$APP_ENV_SECRET_NAME" --region "$APP_ENV_SECRET_REGION" --query SecretString --output text > "$envfile"
+          if ! jq -e '.LI_V2_SINGLE_LOCATION_BOOTSTRAP_ENABLED == "true" and (.CRON_SECRET | type == "string" and length > 0)' "$envfile" > /dev/null; then
+            echo "::error::Bootstrap flag or CRON_SECRET missing in active AWS secret. No Lambda invocation."
+            exit 1
+          fi
+          echo "Production bootstrap secret flag and authorization secret are present."
+          function_name="$(aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='BackgroundRuntimeFunctionName'].OutputValue" --output text)"
+          test -n "$function_name" && test "$function_name" != None
+          aws lambda wait function-updated-v2 --function-name "$function_name"
+          python - "$envfile" "$event" <<'PY'
+          import json,sys
+          from pathlib import Path
+          settings=json.loads(Path(sys.argv[1]).read_text())
+          route="/api/cron/li-v2-single-location-bootstrap"
+          event={"version":"2.0","routeKey":"POST "+route,"rawPath":route,"rawQueryString":"",
+            "headers":{"authorization":"Bearer "+settings["CRON_SECRET"],"x-toh-aws-internal":"managed-dispatch","content-type":"application/json"},
+            "requestContext":{"accountId":"certification","apiId":"internal","domainName":"internal","domainPrefix":"internal",
+            "http":{"method":"POST","path":route,"protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"li-v2-readonly-certification"},
+            "requestId":"li-v2-readonly","routeKey":"POST "+route,"stage":"$default","time":"16/Oct/2026:00:00:00 +0000","timeEpoch":1792108800000},
+            "body":json.dumps({"confirmation":"superiority-burger-119-avenue-a","dryRun":True}),"isBase64Encoded":False}
+          Path(sys.argv[2]).write_text(json.dumps(event))
+          PY
+          aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" > /dev/null
+          jq -c '{statusCode, result:(.body | fromjson? | {ok,dryRun,importExecuted,writes,paidRequests,error})}' "$response"
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .dryRun == true and .writes == 0 and .importExecuted == false)' "$response" > /dev/null || {
+            echo "::error::Runtime dry-run check failed. No real import authorized."
+            exit 1
+          }
+          echo "Runtime bootstrap authorized and certified zero-write dry run."
