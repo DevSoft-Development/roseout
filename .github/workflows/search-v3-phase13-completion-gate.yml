@@ -48,5 +48,10 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON"
             echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE"
           } >> "$GITHUB_ENV"
+      - name: Prepare standalone server-only shim
+        run: |
+          mkdir -p node_modules/server-only
+          printf "module.exports = {};\n" > node_modules/server-only/index.js
+
       - name: Verify Phase 13 completion
         run: npx tsx scripts/verify-search-v3-phase13-completion.ts
