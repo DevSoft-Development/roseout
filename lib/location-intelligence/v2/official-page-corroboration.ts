@@ -27,9 +27,8 @@ export function corroborateOfficialPages(pages:Page[]){
  const extracted=pages.map(pageBusinessEvidence);
  for(let i=0;i<extracted.length;i++)for(let j=i+1;j<extracted.length;j++){
   const a=extracted[i],b=extracted[j];
-  if(!a.name||!a.street||!a.city||!a.state||!a.zip || !b.name||!b.street||!b.city||!b.state||!b.zip)continue;
-  if(normalize(a.name).length<5 || !a.visibleText.includes(normalize(a.name)) || !b.visibleText.includes(normalize(a.name)) ||
-    (normalize(b.name)!==normalize(a.name) && !normalize(b.name).includes(normalize(a.name)) && !normalize(a.name).includes(normalize(b.name)))continue;
+  if(!a.name||!a.street||!a.city||!a.state||!a.zip || !b.street||!b.city||!b.state||!b.zip)continue;
+  if(normalize(a.name).length<5 || !a.visibleText.includes(normalize(a.name)) || !b.visibleText.includes(normalize(a.name)) )continue;
   if(normalize(a.street)!==normalize(b.street)||
     normalize(a.city)!==normalize(b.city)||a.state!==b.state||a.zip!==b.zip)continue;
   if(!a.restaurant&&!b.restaurant)continue;
