@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { discoverVerifiedWikimediaBusinessPhoto } from "./wikimedia-photo-license";
@@ -50,17 +51,25 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
  runId:string;campaignId:string;items:unknown[];maxGooglePhotoLookups?:number
 }) {
  let inspected=0,photoBlocked=0,verified=0,staged=0,googlePhotoLookups=0;
+ const audits:{run_id:string;candidate_key:string;website_origin:string|null;status:string;reason:string}[]=[];
+ const reasons:Record<string,number>={};
+ const mark=(raw:unknown,origin:string|null,status:string,reason:string)=>{
+   reasons[reason]=(reasons[reason]||0)+1;
+   const candidate_key=createHash('sha256').update(JSON.stringify(raw)??'null').digest('hex');
+   audits.push({run_id:input.runId,candidate_key,website_origin:origin,status,reason});
+ };
  const seen=new Set<string>(),batches=new Set<string>();
  for(const raw of input.items.slice(0,50)){
    const origin=websiteLeadFromMapsItem(raw);
-   if(!origin||seen.has(origin))continue;
+   if(!origin){mark(raw,null,'rejected','official_website_missing');continue;}
+   if(seen.has(origin)){mark(raw,origin,'rejected','duplicate_website_lead');continue;}
    seen.add(origin);inspected++;
    try{
     const grant=await grantForSite(origin);
     const resolved=await resolveOfficialWebsiteLead(origin,grant);
-    if(resolved.status==="needs_independent_evidence")continue;
+    if(resolved.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
     const candidate=resolved.candidate;
-    if(!candidate)continue;
+    if(!candidate){mark(raw,origin,"rejected","independent_candidate_missing");continue;}
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
@@ -78,28 +87,33 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
         .select("id").eq("google_place_id",id).limit(1);
       if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
-      if(assigned?.length){photoBlocked++;continue;}
+      if(assigned?.length){photoBlocked++;mark(raw,origin,"rejected","existing_google_identity");continue;}
       // Only unresolved identities needing a Google live photo can reach this billed check.
       googlePhotoLookups++;
       const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
-      if(!matchesIndependentBusiness(candidate,details,id))continue;
+      if(!matchesIndependentBusiness(candidate,details,id)){mark(raw,origin,"rejected","google_identity_mismatch");continue;}
       const slot=await getGooglePhotoSlot(id,0);
       const url=slot?.name?googlePhotoSlotUrl(id,0,800):null;
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    if(!photoCandidate){photoBlocked++;continue;}
+    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",id?"photo_unverified_or_lookup_capped":"photo_unverified_no_google_id");continue;}
     verified++;
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
       candidate:{...photoCandidate,category:candidate.category,
        locationType:candidate.locationType}
     });
-    if(saved.staged){staged++;batches.add(saved.batchId);}
-   }catch{/* malformed or unreachable lead is never promoted */}
+    if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged","independent_stage_accepted");}
+    else mark(raw,origin,"pending_review",saved.reasons?.[0]||"independent_stage_rejected");
+   }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error");}
+ }
+ if(audits.length){
+   const {error:auditError}=await supabaseAdmin.from("li_v2_candidate_audit").upsert(audits,{onConflict:"run_id,candidate_key"});
+   if(auditError)throw new Error("li_v2_candidate_audit_write_failed:"+auditError.message);
  }
  const finalizations=[];
  for(const batchId of batches)finalizations.push(await finalizeIndependentBatch(batchId));
- return {inspected,photoBlocked,verified,staged,googlePhotoLookups,finalizations,
+ return {inspected,photoBlocked,verified,staged,googlePhotoLookups,reasons,finalizations,
   searchV3RetrievalCertified:false};
 }
