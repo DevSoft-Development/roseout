@@ -39,3 +39,23 @@ export async function PATCH(req: Request) {
   if (error || !data) return Response.json({error:"already_reviewed_or_unavailable"},{status:409});
   return Response.json({ok:true,submission:data,ownershipApproved:false});
 }
+
+// Evidence deletion is independent from a claim decision; only claim administrators can invoke it.
+export async function DELETE(req: Request) {
+  const auth = await requireAdminApiRole(ADMIN_PAGE_ACCESS.claimsManage);
+  if (auth.error) return auth.error;
+  const { id } = await req.json().catch(() => ({}));
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) return Response.json({error:"invalid_id"},{status:400});
+  const { data: evidence, error } = await supabaseAdmin.from("claim_video_challenges")
+    .select("id,status,storage_path").eq("id",id).maybeSingle();
+  if (error || !evidence) return Response.json({error:"not_found"},{status:404});
+  if (evidence.status === "submitted") return Response.json({error:"review_required"},{status:409});
+  if (evidence.storage_path) {
+    const removed = await supabaseAdmin.storage.from(BUCKET).remove([evidence.storage_path]);
+    if (removed.error) return Response.json({error:"storage_deletion_failed"},{status:503});
+  }
+  const { error: updateError } = await supabaseAdmin.from("claim_video_challenges")
+    .update({storage_path:null}).eq("id",id).eq("status",evidence.status);
+  if (updateError) return Response.json({error:"metadata_update_failed"},{status:503});
+  return Response.json({ok:true,deleted:true});
+}
