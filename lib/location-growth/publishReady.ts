@@ -189,6 +189,21 @@ function toLocationInsert(row: StagingRow) {
     rating: row.rating,
     review_count: row.review_count,
     main_image: row.main_image,
+    ...(String(row.source || "").startsWith("li_v2_") &&
+      recordValue(recordValue(row.raw_payload).independent_profile).photoSource === "wikimedia_commons"
+      ? {
+          photo_source: "wikimedia_commons",
+          metadata: {
+            photo_attribution: {
+              author: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).author || ""),
+              license: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).license || ""),
+              licenseUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).licenseUrl || ""),
+              filePageUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).filePageUrl || ""),
+              imageUrl: String(row.main_image || ""),
+            },
+          },
+        }
+      : {}),
     // Google photos remain short-lived live provider media, never copied as licensed assets.
     ...(String(row.source||"").startsWith("li_v2_") &&
       recordValue(recordValue(row.raw_payload).independent_profile).photoSource==="google_live"
