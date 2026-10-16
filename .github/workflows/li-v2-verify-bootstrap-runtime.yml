@@ -55,8 +55,8 @@ jobs:
           Path(sys.argv[2]).write_text(json.dumps(event))
           PY
           aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out --payload "fileb://$event" "$response" > /dev/null
-          jq -c '{statusCode, result:(.body | fromjson? | {ok,dryRun,importExecuted,writes,paidRequests,error})}' "$response"
-          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .dryRun == true and .writes == 0 and .importExecuted == false)' "$response" > /dev/null || {
+          jq -c '{statusCode, result:(.body | fromjson? | {ok,dryRun,name,address,photoSource,error})}' "$response"
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true and .dryRun == true and .name == "Superiority Burger" and .address == "119 Avenue A" and (.photoSource | type == "string" and startswith("https://commons.wikimedia.org/")))' "$response" > /dev/null || {
             echo "::error::Runtime dry-run check failed. No real import authorized."
             exit 1
           }
