@@ -13,8 +13,8 @@ export async function getClaimMethodDecision(locationId: string): Promise<ClaimM
   if (error) throw error;
   if (contactError) throw contactError;
   if (!location) throw new Error("Location not found");
-  const officialWebsite = /^https?:\\/\\//i.test(String(location.website || "")) || /^[a-z0-9-]+(\\.[a-z0-9-]+)+/i.test(String(location.website || ""));
-  const sourcedEmail = Boolean((contacts || []).some((entry) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(entry.contact_value || "")) && Boolean(entry.source_url)));
+  const officialWebsite = /^https?:\/\//i.test(String(location.website || "")) || /^[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(String(location.website || ""));
+  const sourcedEmail = Boolean((contacts || []).some((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(entry.contact_value || "")) && Boolean(entry.source_url)));
   const businessPhone = Boolean(String(location.phone || "").trim());
   const mailingAddress = Boolean(location.address && location.city && location.state && location.zip_code);
   const methods: ClaimMethod[] = [];
