@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { verifyWikimediaPhoto } from "./wikimedia-photo-license";
+import { discoverVerifiedWikimediaBusinessPhoto } from "./wikimedia-photo-license";
 import { resolveOfficialWebsiteLead, type PhotoGrant } from "./official-website-resolver";
 import { getGooglePhotoSlot } from "@/lib/google/place-photo-slots";
 import { getPlaceDetailsNew } from "@/lib/google/places-new-client";
@@ -10,9 +10,6 @@ import type { IndependentBusinessProfile } from "./independent-profile-gate";
 import { stageIndependentCandidate } from "./independent-staging";
 import { finalizeIndependentBatch } from "./independent-batch-finalizer";
 
-// Only this manually reviewed business/photo pair is eligible for the first non-billable pilot.
-// Never accept an arbitrary file page supplied by Maps or another discovery lead.
-const pilotCommons = {name:"superiority burger",street:"119 avenue a",city:"new york",state:"ny",filePageUrl:"https://commons.wikimedia.org/wiki/File:Superiority_Burger_NYC.jpg"};
 const forbidden=/(^|\.)(google\.com|google\.[a-z.]+|maps\.google\.com|dataforseo\.com)$/i;
 export function websiteLeadFromMapsItem(value:unknown):string|null {
  if(!value||typeof value!=="object"||Array.isArray(value))return null;
@@ -67,15 +64,15 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
-    else if(resolved.status==="needs_photo_permission" &&
-      String(candidate.name||"").trim().toLowerCase()===pilotCommons.name &&
-      String(candidate.address||"").trim().toLowerCase()===pilotCommons.street &&
-      String(candidate.city||"").trim().toLowerCase()===pilotCommons.city &&
-      String(candidate.state||"").trim().toLowerCase()===pilotCommons.state){
-      const licensed=await verifyWikimediaPhoto(pilotCommons.filePageUrl);
-      if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
+    else if(resolved.status==="needs_photo_permission"){
+      const licensed=await discoverVerifiedWikimediaBusinessPhoto({
+        name:candidate.name||"",address:candidate.address||"",
+        city:candidate.city||"",state:candidate.state||"",
+      });
+      if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,
+        photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
-    if(!photoCandidate && id && String(candidate.name||"").trim().toLowerCase()!==pilotCommons.name){
+    if(!photoCandidate && id){
       // Free-first: reject any ID already attached to a TOH record before billed Google details.
       // A shared venue ID is NOT proof these businesses are duplicates.
       const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
