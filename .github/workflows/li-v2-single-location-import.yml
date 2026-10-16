@@ -23,6 +23,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$CONFIRMATION" = 'superiority-burger-119-avenue-a'
+      - name: Require explicit production import enablement
+        env:
+          IMPORT_ENABLED: ${{ vars.LI_V2_PRODUCTION_IMPORT_APPROVED }}
+        run: |
+          test "$IMPORT_ENABLED" = "true" || {
+            echo "Production import is disabled until separately approved."
+            exit 1
+          }
       - name: Authenticate to production AWS role
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
