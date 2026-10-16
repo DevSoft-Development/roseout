@@ -22,8 +22,13 @@ async function yieldQueuedRun(runId:string) {
 
 /** One bounded step per invocation. Paid work only after both certification flags and DB caps. */
 export async function processQueuedAcquisitionCampaign() {
- if(process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED!=="true" ||
-    process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED!=="true")
+ // First paid evidence cannot be produced if it requires prior paid evidence.
+ // Bootstrap is separately authorized, processes at most target zero, and never
+ // asserts that full searchable-import or independent-source certification passed.
+ const certified=process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED==="true" &&
+   process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED==="true";
+ const bootstrap=process.env.LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !certified;
+ if(!certified&&!bootstrap)
    return {claimed:false,stopped:"searchable_import_certification_required"};
  const {data,error}=await supabaseAdmin.rpc("li_v2_claim_campaign_run");
  if(error)throw error;
@@ -34,6 +39,11 @@ export async function processQueuedAcquisitionCampaign() {
    .gt("target_count",0).order("priority_score",{ascending:false}).limit(10);
  if(coverageError)throw coverageError;
  for(const [index,target] of ((coverage||[]) as Coverage[]).entries()){
+   // A bootstrap must never purchase a second coverage target, even if the
+   // scheduled worker is invoked again after the first has completed.
+   if(bootstrap && index>0)
+     return {claimed:true,runId:run.id,stopped:"bootstrap_one_target_limit",
+       processed:run.processed};
    if(index<run.processed)continue;
    const {data:permitted,error:permissionError}=await supabaseAdmin.rpc(
      "li_v2_campaign_run_permitted",{p_run_id:run.id});
@@ -80,6 +90,7 @@ export async function processQueuedAcquisitionCampaign() {
        // photo-rights and publication gates remain responsible for writes.
        const resolved=await resolveQueuedMapsToIndependentProfiles({
          runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
+         maxGooglePhotoLookups:bootstrap?1:50,
        });
        const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
        if(!ids.length){
