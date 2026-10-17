@@ -1,0 +1,25 @@
+name: LI V2 read-only production retrieval certification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: li-v2-readonly-retrieval-certification
+  cancel-in-progress: false
+
+jobs:
+  certify-public-retrieval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify published bootstrap location is returned by live consumer search
+        run: node scripts/certify-li-v2-bootstrap-live-search.mjs
+      - name: Record certification scope
+        if: success()
+        run: |
+          echo 'LI V2 bootstrap: read-only customer-visible retrieval succeeded.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This does NOT certify authenticated internal Search V3 lane retrieval or the new paid 41-candidate import.' >> "$GITHUB_STEP_SUMMARY"
