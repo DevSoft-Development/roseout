@@ -1,0 +1,53 @@
+name: LI V2 purchased task diagnostic no-write
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - name: Assume existing production AWS identity
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Inspect original purchased provider task without staging or purchases
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          secret="$RUNNER_TEMP/li-v2-task-diagnostic-secret.json"
+          payload="$RUNNER_TEMP/li-v2-task-diagnostic-payload.json"
+          result="$RUNNER_TEMP/li-v2-task-diagnostic-result.json"
+          trap 'rm -f "$secret" "$payload" "$result"' EXIT
+          aws secretsmanager get-secret-value --region us-west-2 --secret-id /theouthaven/production/platform-dr/app-env --query SecretString --output text > "$secret"
+          SECRET_FILE="$secret" PAYLOAD_FILE="$payload" python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          settings=json.loads(Path(os.environ["SECRET_FILE"]).read_text())
+          token=settings.get("CRON_SECRET")
+          if not isinstance(token,str) or not token: raise SystemExit("Existing AWS CRON_SECRET absent")
+          route="/api/cron/li-v2-original-task-safe-diagnostic"
+          event={"version":"2.0","routeKey":"POST "+route,"rawPath":route,"rawQueryString":"",
+            "headers":{"authorization":"Bearer "+token,"x-toh-aws-internal":"managed-dispatch","content-type":"application/json"},
+            "requestContext":{"http":{"method":"POST","path":route,"sourceIp":"127.0.0.1","userAgent":"li-v2-task-diagnostic-certification"}},
+            "body":json.dumps({}),"isBase64Encoded":False}
+          Path(os.environ["PAYLOAD_FILE"]).write_text(json.dumps(event))
+          PY
+          aws lambda wait function-active-v2 --function-name toh-production-background-runtime
+          AWS_MAX_ATTEMPTS=1 aws lambda invoke --function-name toh-production-background-runtime --cli-read-timeout 240 --cli-binary-format raw-in-base64-out --payload "fileb://$payload" "$result" >/dev/null
+          RESULT_FILE="$result" python3 - <<'PY'
+          import json,os,base64
+          from pathlib import Path
+          raw=json.loads(Path(os.environ["RESULT_FILE"]).read_text())
+          body=raw.get("body","{}")
+          data=json.loads(base64.b64decode(body) if raw.get("isBase64Encoded") else body)
+          if raw.get("statusCode")!=200 or data.get("ok") is not True or data.get("readonly") is not True or data.get("noPurchase") is not True or data.get("replayAuthorized") is not False:
+            raise SystemExit("Read-only preflight failed: "+str(data.get("error","uncertified")))
+          print("Purchased task status:",data.get("providerStatus"),"lead count:",data.get("candidates"),"unique websites:",data.get("uniqueWebsiteLeads"),"replay remains BLOCKED")
+          PY
