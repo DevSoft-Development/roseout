@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { discoverUnseenGooglePlaceIds } from "@/lib/location-intelligence/v2/acquisition-identity-gate";
 import { advanceMapsQueue, submitApprovedMapsQueue } from "@/lib/location-intelligence/v2/maps-queue-runner";
 import { resolveQueuedMapsToIndependentProfiles } from "@/lib/location-intelligence/v2/maps-independent-resolver";
+import { advanceConsumerChecks, registerConsumerChecks } from "@/lib/location-intelligence/v2/consumer-retrieval-certifier";
 
 type Run = {id:string;campaign_id:string;processed:number};
 type Coverage={market:string;area_key:string;location_kind:string;category:string;target_count:number;current_count:number};
@@ -21,8 +22,13 @@ async function yieldQueuedRun(runId:string) {
 
 /** One bounded step per invocation. Paid work only after both certification flags and DB caps. */
 export async function processQueuedAcquisitionCampaign() {
- if(process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED!=="true" ||
-    process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED!=="true")
+ // First paid evidence cannot be produced if it requires prior paid evidence.
+ // Bootstrap is separately authorized, processes at most target zero, and never
+ // asserts that full searchable-import or independent-source certification passed.
+ const certified=process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED==="true" &&
+   process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED==="true";
+ const bootstrap=process.env.LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !certified;
+ if(!certified&&!bootstrap)
    return {claimed:false,stopped:"searchable_import_certification_required"};
  const {data,error}=await supabaseAdmin.rpc("li_v2_claim_campaign_run");
  if(error)throw error;
@@ -33,12 +39,20 @@ export async function processQueuedAcquisitionCampaign() {
    .gt("target_count",0).order("priority_score",{ascending:false}).limit(10);
  if(coverageError)throw coverageError;
  for(const [index,target] of ((coverage||[]) as Coverage[]).entries()){
+   // A bootstrap must never purchase a second coverage target, even if the
+   // scheduled worker is invoked again after the first has completed.
+   if(bootstrap && index>0)
+     return {claimed:true,runId:run.id,stopped:"bootstrap_one_target_limit",
+       processed:run.processed};
    if(index<run.processed)continue;
    const {data:permitted,error:permissionError}=await supabaseAdmin.rpc(
      "li_v2_campaign_run_permitted",{p_run_id:run.id});
    if(permissionError||permitted!==true)
      return {claimed:true,runId:run.id,stopped:"operator_command"};
-   if(target.current_count>=target.target_count){
+   const {data:queuedTargets,error:queuedError}=await supabaseAdmin.rpc("li_v2_maps_queue_snapshot",{p_run_id:run.id});
+   if(queuedError)throw queuedError;
+   const existing=(queuedTargets as {target_index:number;status:string}[]).find(q=>q.target_index===index);
+   if(target.current_count>=target.target_count&&!existing){
      await checkpoint(run.id,1);
      continue;
    }
@@ -61,31 +75,53 @@ export async function processQueuedAcquisitionCampaign() {
      await yieldQueuedRun(run.id);
      return {claimed:true,runId:run.id,queueStatus:"pending"};
    }
+   if(queue.status==="reviewed"){
+     // Crash-safe: reviewing the paid task and checkpointing the campaign are
+     // separate operations. Finalize an already-reviewed target without re-buying.
+     await checkpoint(run.id,1);
+     continue;
+   }
    if(queue.status==="ready"){
-     // Maps content is a discovery lead only; official evidence and rights grants
-     // are separately verified before any LI V2 profile is staged/published.
-     const resolved=await resolveQueuedMapsToIndependentProfiles({
-       runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
-     });
-     if(resolved.staged===0){
-       await checkpoint(run.id,0,"failed","no_rights_verified_publishable_candidates");
-       return {claimed:true,runId:run.id,stopped:"no_rights_verified_publishable_candidates",
-         inspected:resolved.inspected,photoBlocked:resolved.photoBlocked};
-     }
-     const indexed=resolved.finalizations.some(batch=>batch.readyLocationIds.length>0 && batch.searchV3RetrievalCertified);
-     if(!indexed){
-       // A new location cannot pass authenticated Search V3 retrieval until it
-       // has actually been imported and indexed. Preserve the paid task and
-       // staged work; pause instead of incorrectly classifying it as failed.
-       // A human must certify the new IDs before resuming paid acquisition.
-       const {error:pauseError}=await supabaseAdmin.rpc("admin_li_v2_import_command",{
-         p_campaign_id:run.campaign_id,p_action:"pause",
+     // Re-enter existing paid task without reposting it: durable per-location
+     // certification is polled before resolving or purchasing anything else.
+     let checks=await advanceConsumerChecks(run.id,index);
+     if(checks.state==="unregistered"){
+       // Maps content is a discovery lead only; original identity, license,
+       // photo-rights and publication gates remain responsible for writes.
+       const resolved=await resolveQueuedMapsToIndependentProfiles({
+         runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
+         maxGooglePhotoLookups:bootstrap?1:50,
        });
-       if(pauseError)throw new Error("campaign_certification_pause_failed:"+pauseError.message);
-       return {claimed:true,runId:run.id,staged:resolved.staged,
-         stopped:"awaiting_search_v3_live_retrieval_certification",
-         reviewRequired:true};
+       const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
+       if(!ids.length){
+         // Independently verified staging is useful, but it is not searchable publication.
+         // Stop rather than retry the paid task automatically or certify zero consumer records.
+         const reason=resolved.staged>0?"photo_pending_or_unpublished_locations":"no_published_locations_to_certify";
+         await checkpoint(run.id,0,"failed",reason);
+         return {claimed:true,runId:run.id,stopped:reason,
+           inspected:resolved.inspected,staged:resolved.staged,photoBlocked:resolved.photoBlocked,
+           authenticatedSearchV3Certified:false};
+       }
+       await registerConsumerChecks(run.id,index,ids);
+       checks=await advanceConsumerChecks(run.id,index);
      }
+     if(checks.state==="waiting"){
+       await yieldQueuedRun(run.id);
+       return {claimed:true,runId:run.id,stopped:"awaiting_consumer_indexing",
+         verified:checks.verified,quarantined:checks.quarantined,pending:checks.pending,
+         authenticatedSearchV3Certified:false};
+     }
+     if(checks.verified===0){
+       // Do not buy another discovery batch if none of these published
+       // candidates are discoverable. Quarantined IDs stay in the audit log.
+       await checkpoint(run.id,0,"failed","all_consumer_retrieval_checks_quarantined");
+       return {claimed:true,runId:run.id,stopped:"all_consumer_retrieval_checks_quarantined"};
+     }
+     const {data:transition,error:transitionError}=await supabaseAdmin.rpc("li_v2_maps_queue_transition",{
+       p_run_id:run.id,p_index:index,p_query:query,p_from:"ready",p_to:"reviewed"
+     });
+     if(transitionError||transition?.status!=="reviewed")
+       throw new Error("certified_maps_queue_review_transition_failed");
      await checkpoint(run.id,1);
      continue;
    }

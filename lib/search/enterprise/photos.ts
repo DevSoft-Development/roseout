@@ -49,23 +49,25 @@ export function firstSearchImage(value: unknown): string | null {
   return null;
 }
 
-export function hasUsableSearchPhoto(location: EnterpriseLocation) {
+/** Search cards use exactly one primary image; galleries belong to the detail view. */
+export function primarySearchCardImage(location: EnterpriseLocation): string | null {
   const record = location as any;
-
-  return Boolean(
+  return firstSearchImage(record.main_image) ||
     firstSearchImage(record.image_url) ||
-      firstSearchImage(record.main_image) ||
-      firstSearchImage(record.photo_url) ||
-      firstSearchImage(record.primary_photo_url) ||
-      firstSearchImage(record.google_photo_url) ||
-      firstSearchImage(record.google_image_url) ||
-      firstSearchImage(record.thumbnail_url) ||
-      firstSearchImage(record.cover_image_url) ||
-      firstSearchImage(record.hero_image_url) ||
-      firstSearchImage(record.images) ||
-      firstSearchImage(record.gallery_images) ||
-      firstSearchImage(record.photos) ||
-      firstSearchImage(record.photo_urls) ||
-      firstSearchImage(record.google_photos)
-  );
+    firstSearchImage(record.primary_photo_url) ||
+    firstSearchImage(record.photo_url) ||
+    firstSearchImage(record.google_photo_url) ||
+    firstSearchImage(record.google_image_url) ||
+    firstSearchImage(record.thumbnail_url) ||
+    firstSearchImage(record.cover_image_url) ||
+    firstSearchImage(record.hero_image_url) ||
+    firstSearchImage(record.images) ||
+    firstSearchImage(record.gallery_images) ||
+    firstSearchImage(record.photos) ||
+    firstSearchImage(record.photo_urls) ||
+    firstSearchImage(record.google_photos);
+}
+
+export function hasUsableSearchPhoto(location: EnterpriseLocation) {
+  return Boolean(primarySearchCardImage(location));
 }
