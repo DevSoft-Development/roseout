@@ -5,6 +5,13 @@ import { lookupSecureClaim } from "@/lib/business-claim/secureClaim";
 export const dynamic = "force-dynamic";
 const digest=(v:string)=>crypto.createHash("sha256").update(v).digest("hex");
 const BUCKET="claim_postcard_challenges";
+function encryptForFulfillment(code:string):string{
+ const secret=process.env.CLAIM_POSTCARD_ENCRYPTION_KEY;
+ if(!secret || !/^[0-9a-f]{64}$/i.test(secret))throw new Error("postcard_encryption_unconfigured");
+ const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv("aes-256-gcm",Buffer.from(secret,"hex"),iv);
+ const encrypted=Buffer.concat([cipher.update(code,"utf8"),cipher.final()]);
+ return [iv,cipher.getAuthTag(),encrypted].map(b=>b.toString("base64url")).join(".");
+}
 async function currentUser(){const db=await createClient();const {data}=await db.auth.getUser();return data.user;}
 export async function POST(req:Request){
  const user=await currentUser();if(!user)return Response.json({error:"auth_required"},{status:401});
@@ -22,9 +29,12 @@ export async function POST(req:Request){
  if(countError)return Response.json({error:"postcard_unavailable"},{status:503});
  if((count??0)>=3)return Response.json({error:"postcard_request_limit"},{status:429});
  const passcode=String(crypto.randomInt(100000000,1000000000)); // Not returned to claimant.
+ let encryptedCode:string;
+ try { encryptedCode=encryptForFulfillment(passcode); }
+ catch { return Response.json({error:"postcard_not_configured"},{status:503}); }
  const {data:created,error:insertError}=await supabaseAdmin.from(BUCKET).insert({
  location_id:l.id,claimant_user_id:user.id,claim_code_hash:digest(lookup.code),
- verification_hash:digest(passcode),
+ verification_hash:digest(passcode),encrypted_verification_code:encryptedCode,
  address_snapshot:{name:record.name,address:record.address,city:record.city,state:record.state,zip_code:record.zip_code}
  }).select("id,expires_at").single();
  if(insertError||!created)return Response.json({error:"postcard_unavailable"},{status:503});
