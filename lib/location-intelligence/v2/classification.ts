@@ -50,7 +50,9 @@ function hasDestinationMealEvidence(row: Record<string, unknown>, text: string) 
 
 export function deriveLocationClassification(row: Record<string, unknown>) {
   const text = classificationText(row);
-  const publicClassification = classifyPublicLocation(row);
+  // Search publication is the OUTPUT of V2 certification, not an input to eligibility.
+  // Keep all independent exclusions (hidden, low-level, unsupported, quality) intact.
+  const publicClassification = classifyPublicLocation({ ...row, is_searchable: undefined });
   const mealEvidence = hasDestinationMealEvidence(row, text);
   const flags = new Set<NegativeLocationFlag>();
 

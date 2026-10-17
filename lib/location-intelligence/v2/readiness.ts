@@ -39,7 +39,7 @@ export async function refreshLocationReadiness(locationId: string) {
   const [{ data: location, error: locationError }, { data: identity, error: identityError }, { data: reviews, error: reviewsError }, { data: profile, error: profileError }] = await Promise.all([
     supabaseAdmin
       .from("locations")
-      .select("id,location_type,primary_category,cuisine,cuisine_type,activity_type,city,state,zip_code,latitude,longitude,google_business_status,active,operating_hours,tags,vibe_tags,best_for_tags,is_low_level,low_level_reason")
+      .select("id,location_type,primary_category,cuisine,cuisine_type,activity_type,city,state,zip_code,latitude,longitude,google_business_status,active,operating_hours,website,phone,tags,vibe_tags,best_for_tags,is_low_level,low_level_reason")
       .eq("id", locationId)
       .single(),
     supabaseAdmin
@@ -79,6 +79,9 @@ export async function refreshLocationReadiness(locationId: string) {
       (profile?.features && typeof profile.features === "object" && (profile.features as Record<string, unknown>).operating_hours)
     ),
     hasFeatures: Boolean(
+      // Verified contact channels are useful structured business features;
+      // never infer amenities, vibes, or reviews that were not collected.
+      (location?.website && location?.phone) ||
       (location?.tags || []).length ||
       (location?.vibe_tags || []).length ||
       (location?.best_for_tags || []).length ||
