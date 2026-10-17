@@ -24,7 +24,7 @@ export async function replayExistingPilotTask() {
     runId,campaignId,items:fetched.items,maxGooglePhotoLookups:0
   });
   return {status:"replayed_without_discovery_purchase",runId,
-    inspected:outcome.inspected,staged:outcome.staged,
+    acquired:outcome.acquired,inspected:outcome.inspected,staged:outcome.staged,
     photoPendingOrBlocked:outcome.photoBlocked,reasonCounts:outcome.reasons,
     publishedLocationIds:outcome.finalizations.flatMap(f=>f.publishedLocationIds),
     searchV3RetrievalCertified:false};
