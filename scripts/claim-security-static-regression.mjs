@@ -32,3 +32,23 @@ const welcome = readFileSync("lib/business-claim/welcomeOnce.ts","utf8");
 assert.match(welcome,/ignoreDuplicates:true/,"Welcome delivery must use conflict-safe reservation");
 const review = readFileSync("apps/admin/app/api/admin/claims/video-review/route.ts","utf8");
 assert.match(review,/requireAdminApiRole/,"Video evidence access requires admin authorization");
+
+const submissions = [
+ "apps/business/app/api/business/claim-code/submit/route.ts",
+ "app/api/business/claim-code/submit/route.ts",
+];
+for (const path of submissions) {
+ const code=readFileSync(path,"utf8");
+ assert.match(code,/consume_verified_claim_challenge/,"Single-use RPC missing: "+path);
+ assert.match(code,/challenge_not_redeemable/,"Duplicate redemption conflict missing: "+path);
+ assert.match(code,/otp_expired/,"Expired OTP must fail: "+path);
+}
+const video=readFileSync("apps/business/app/api/business/claim/video/route.ts","utf8");
+assert.match(video,/auth\.auth\.getUser\(/,"Video uploads must be authenticated");
+assert.match(video,/MAX_SIZE/,"Video evidence size must be bounded");
+assert.match(video,/ownershipApproved:false/,"Video evidence must not auto grant owner permissions");
+const reviewGuard=readFileSync("apps/admin/app/api/admin/claims/video-review/route.ts","utf8");
+assert.match(reviewGuard,/ownershipApproved:false/,"Admin evidence review must not auto approve claim");
+const welcomeRoute=readFileSync("app/api/admin/claims/update/route.ts","utf8");
+assert.match(welcomeRoute,/sendClaimWelcomeOnce/,"Location approval must use deduplicated welcome delivery");
+console.log("Claim ownership, video and delivery guard checks passed; real E2E still pending.");
