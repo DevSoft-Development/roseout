@@ -36,7 +36,7 @@ export async function POST(req: Request) {
         .maybeSingle(),
       supabaseAdmin
         .from("claim_verification_challenges")
-        .select("id,location_id,claim_code_id,channel,contact_normalized,verified_at,consumed_at,contact_match")
+        .select("id,location_id,claim_code_id,channel,contact_normalized,verified_at,consumed_at,expires_at,contact_match")
         .eq("id", challengeId)
         .maybeSingle(),
     ]);
@@ -44,6 +44,12 @@ export async function POST(req: Request) {
     if (challengeError) throw challengeError;
     if (!claim || !challenge || !challenge.verified_at || !challenge.consumed_at) {
       return Response.json({ ok: false, error: "verification_required" }, { status: 403 });
+    }
+    if (challenge.expires_at && Date.parse(challenge.expires_at) <= Date.now()) {
+      return Response.json({ ok: false, error: "verification_expired" }, { status: 410 });
+    }
+    if (claim.verified_contact !== challenge.contact_normalized || claim.verified_contact_channel !== challenge.channel) {
+      return Response.json({ ok: false, error: "claim_contact_mismatch" }, { status: 403 });
     }
     if (String(claim.location_id) !== String(challenge.location_id)) {
       return Response.json({ ok: false, error: "claim_mismatch" }, { status: 403 });
@@ -59,11 +65,16 @@ export async function POST(req: Request) {
     }
 
     const now = new Date().toISOString();
-    const { error: updateError } = await supabaseAdmin
+    const { data: linkedClaims, error: updateError } = await supabaseAdmin
       .from("location_claim_requests")
       .update({ user_id: user.id, owner_email: user.email, updated_at: now })
-      .eq("id", claimRequestId);
+      .eq("id", claimRequestId)
+      .is("user_id", null)
+      .select("id");
     if (updateError) throw updateError;
+    if (!linkedClaims?.length && claim.user_id !== user.id) {
+      return Response.json({ ok: false, error: "claim_already_linked" }, { status: 409 });
+    }
 
     await logClaimFunnelEvent({
       locationId: String(claim.location_id),
