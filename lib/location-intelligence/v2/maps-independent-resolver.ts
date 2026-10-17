@@ -59,6 +59,21 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    const candidate_key=createHash('sha256').update(JSON.stringify(raw)??'null').digest('hex');
    audits.push({run_id:input.runId,candidate_key,website_origin:origin,status,reason});
  };
+ // Preserve non-content lead references *before* any network verification begins.
+ // Do not persist DataForSEO Maps names, addresses, reviews, or full payloads.
+ // Existing audit identities are never reset on replays.
+ const intake=input.items.slice(0,50).map(raw=>({
+   run_id:input.runId,
+   candidate_key:createHash("sha256").update(JSON.stringify(raw)??"null").digest("hex"),
+   website_origin:websiteLeadFromMapsItem(raw),
+   status:"acquired",reason:"awaiting_independent_verification"
+ }));
+ const uniqueIntake=[...new Map(intake.map(row=>[row.candidate_key,row])).values()];
+ if(uniqueIntake.length){
+   const {error:intakeError}=await supabaseAdmin.from("li_v2_candidate_audit")
+     .upsert(uniqueIntake,{onConflict:"run_id,candidate_key",ignoreDuplicates:true});
+   if(intakeError)throw new Error("li_v2_lead_intake_failed:"+intakeError.message);
+ }
  const seen=new Set<string>(),batches=new Set<string>();
  for(const raw of input.items.slice(0,50)){
    const origin=websiteLeadFromMapsItem(raw);
@@ -126,6 +141,6 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
  }
  const finalizations=[];
  for(const batchId of batches)finalizations.push(await finalizeIndependentBatch(batchId));
- return {inspected,photoBlocked,verified,staged,googlePhotoLookups,reasons,finalizations,
+ return {acquired:uniqueIntake.length,inspected,photoBlocked,verified,staged,googlePhotoLookups,reasons,finalizations,
   searchV3RetrievalCertified:false};
 }
