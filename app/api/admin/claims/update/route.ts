@@ -53,7 +53,12 @@ export async function POST(req: Request) {
 
       if (claimLookupError || !claim) return Response.json({ error: "Location claim request not found." }, { status: 404 });
 
-      const resolvedOwnerUserId = userId || ownerUserId || claim.user_id || null;
+      // Ownership approval must use the identity verified and linked to this claim.
+      if (status === "approved" && (userId || ownerUserId) &&
+          String(userId || ownerUserId) !== String(claim.user_id || "")) {
+        return Response.json({ error: "Claimant identity mismatch. Complete verified account linking first." }, { status: 409 });
+      }
+      const resolvedOwnerUserId = claim.user_id || null;
       if (status === "approved" && !resolvedOwnerUserId) {
         return Response.json(
           { error: "Link this claim to the owner's user account before approval." },
