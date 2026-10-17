@@ -221,6 +221,32 @@ jobs:
               print(f'background_failure_category={category} count={count}')
           PY
 
+      - name: Trace LI V2 managed handler dispatch (read-only)
+        run: |
+          set -euo pipefail
+          START_MS="$(( $(date +%s) * 1000 - 4 * 60 * 60 * 1000 ))"
+          for FUNCTION in toh-production-background-cron-worker toh-production-background-runtime; do
+            GROUP="/aws/lambda/$FUNCTION"
+            OUT="$RUNNER_TEMP/${FUNCTION}-li-v2.json"
+            if aws logs filter-log-events --log-group-name "$GROUP" --start-time "$START_MS" --max-items 2000 --output json > "$OUT"; then
+              FUNCTION_NAME="$FUNCTION" LOG_FILE="$OUT" python - <<'PY'
+          import json, os
+          data=json.load(open(os.environ['LOG_FILE'],encoding='utf-8'))
+          events=data.get('events') or []
+          selected=[]
+          for e in events:
+              msg=str(e.get('message') or '')
+              if any(x in msg.lower() for x in ('li-v2-acquisition-campaign','background_cron_failed','managed cron','no_published_locations_to_certify')):
+                  selected.append((e.get('timestamp'),msg.strip()[:320]))
+          print(f"li_v2_log_function={os.environ['FUNCTION_NAME']} scanned={len(events)} matching={len(selected)}")
+          for ts,msg in selected[-15:]:
+              print(f"li_v2_log_event={ts}: {msg}")
+          PY
+            else
+              echo "li_v2_log_unavailable=$FUNCTION"
+            fi
+          done
+
       - name: Read queue alarms when permitted
         run: |
           set -euo pipefail
