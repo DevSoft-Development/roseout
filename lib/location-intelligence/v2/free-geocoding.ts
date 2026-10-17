@@ -20,7 +20,7 @@ export function normalizedAddress(input: Address) {
   const city = clean(input.city);
   const state = clean(input.state).toUpperCase();
   const zip = clean(input.zip);
-  if (!/^\d+\s+\S+/.test(street) || street.length > 180 ||
+  if (!/^\d+(?:-\d+)?\s+\S+/.test(street) || street.length > 180 ||
     !city || city.length > 120 || !/^[A-Z]{2}$/.test(state) ||
     (zip && !/^\d{5}(?:-\d{4})?$/.test(zip))) return null;
   return {street,city,state,zip};
