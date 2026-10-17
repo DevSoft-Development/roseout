@@ -18,7 +18,7 @@ function distanceM(a:number,b:number,c:number,d:number){
  const t=Math.sin(dy/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dx/2)**2;
  return 12742000*Math.asin(Math.sqrt(Math.min(1,t)));
 }
-/** Accept only independently sourced, photographed and geocoded business evidence. */
+/** Retain independently verified evidence even when no licensed business photo exists. */
 export async function stageIndependentCandidate(input:{
  campaignId:string;runId:string;candidate:Candidate
 }) {
@@ -40,7 +40,7 @@ export async function stageIndependentCandidate(input:{
    return {staged:false,reasons:["independent_location_coordinate_disagreement"]};
  const verified={...p,latitude:location.latitude,longitude:location.longitude};
  const verdict=assessIndependentBusinessProfile(verified);
- if(!verdict.publishable)return {staged:false,reasons:verdict.reasons};
+ if(!verdict.importEligible)return {staged:false,reasons:verdict.identityReasons};
  const identifier=(p.googlePlaceId&&/^[A-Za-z0-9_-]{8,255}$/.test(p.googlePlaceId))
    ?p.googlePlaceId:createHash("sha256").update(
      [p.name,p.address,p.city,p.state].join("|").toLowerCase()).digest("hex");
@@ -60,22 +60,24 @@ export async function stageIndependentCandidate(input:{
     metadata:{campaign_id:input.campaignId,run_id:input.runId}
   }).select("id").single();
  if(batchError||!batch)throw new Error("independent_import_batch_creation_failed");
- const primaryPhoto=p.photoUrl!.trim();
+ const primaryPhoto=verdict.photoReady?p.photoUrl!.trim():null;
  // Import a single primary photo only. Gallery photos are loaded on demand on profile views.
  const base={
    batch_id:batch.id,source,source_id:identifier,source_url:p.sourceUrl,
    location_type:p.locationType,name:p.name,address:p.address,city:p.city,
    state:p.state,zip_code:p.zip||null,website:p.website||null,
    latitude:location.latitude,longitude:location.longitude,
-   primary_category:p.category,main_image:primaryPhoto,images:[primaryPhoto],
-   has_photos:true,photo_status:p.photoSource==="google_live"?"google_photo":"imported_photo",
+   primary_category:p.category,main_image:primaryPhoto,images:primaryPhoto?[primaryPhoto]:[],
+   has_photos:Boolean(primaryPhoto),photo_status:primaryPhoto?(p.photoSource==="google_live"?"google_photo":"imported_photo"):"missing_photo",
    duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
    import_confidence:"high",
    raw_payload:{campaign_id:input.campaignId,run_id:input.runId,
      independent_profile:{googlePlaceId:p.googlePlaceId||null,evidenceSource:p.evidenceSource,
-       photoPermission:p.photoPermission||null,
-       photoSource:p.photoSource||"independent",
+       photoPermission:primaryPhoto?p.photoPermission||null:null,
+       photoPending:!primaryPhoto,
+       officialImageReferences:p.officialImageReferences||[],
+       photoSource:primaryPhoto?(p.photoSource||"independent"):null,
        googlePhotoSlotVerified:p.googlePhotoSlotVerified===true,
        photoStrategy:"primary_only_gallery_on_demand",
        wikimediaEvidence,
@@ -91,5 +93,5 @@ export async function stageIndependentCandidate(input:{
  const {error:stageError}=await supabaseAdmin.from("location_import_staging")
   .upsert({...base,...scored},{onConflict:"source,source_id",ignoreDuplicates:true});
  if(stageError)throw new Error("independent_stage_failed:"+stageError.message);
- return {staged:true,batchId:batch.id,qualityStatus:scored.quality_status,sourceId:identifier};
+ return {staged:true,batchId:batch.id,qualityStatus:scored.quality_status,sourceId:identifier,photoPending:!primaryPhoto};
 }
