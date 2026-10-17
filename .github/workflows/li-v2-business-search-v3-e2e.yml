@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   preflight:
@@ -42,5 +43,14 @@ jobs:
       LI_E2E_LOCATION_ID: ${{ inputs.location_id }}
     steps:
       - uses: actions/checkout@v4
+      - name: Assume production AWS role
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Confirm existing production Supabase credential authority
+        run: |
+          aws secretsmanager describe-secret --region us-west-2 --secret-id /theouthaven/production/platform-dr/app-env --query ARN --output text > /dev/null
       - name: Certify authenticated business retrieval without menu requirement
         run: node scripts/certify-li-v2-business-search-v3-e2e.mjs
