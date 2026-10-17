@@ -36,6 +36,9 @@ export async function advanceConsumerChecks(runId:string,index:number) {
  const before=await snapshot(runId,index);
  if(!before.length)return {state:"unregistered" as const,verified:0,quarantined:0,pending:0};
  for(const row of before.filter(x=>x.status==="pending"&&x.due).slice(0,10)){
+  // Do not exhaust retrieval attempts while the internal publication/indexing
+  // prerequisites have not completed; only real consumer probes count.
+  if (!row.is_searchable || !row.name?.trim()) continue;
   const result=await verifyOne(row);
   const {data,error}=await supabaseAdmin.rpc("li_v2_retrieval_record",{
    p_run_id:runId,p_index:index,p_location_id:row.location_id,p_found:result.found,p_error:result.found?null:result.reason
