@@ -51,6 +51,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
  runId:string;campaignId:string;items:unknown[];maxGooglePhotoLookups?:number
 }) {
  let inspected=0,photoBlocked=0,verified=0,staged=0,googlePhotoLookups=0;
+ let failureStage="website";
  const audits:{run_id:string;candidate_key:string;website_origin:string|null;status:string;reason:string}[]=[];
  const reasons:Record<string,number>={};
  const mark=(raw:unknown,origin:string|null,status:string,reason:string)=>{
@@ -65,7 +66,9 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    if(seen.has(origin)){mark(raw,origin,'rejected','duplicate_website_lead');continue;}
    seen.add(origin);inspected++;
    try{
+    failureStage="photo_grant";
     const grant=await grantForSite(origin);
+    failureStage="official_site";
     const resolved=await resolveOfficialWebsiteLead(origin,grant);
     if(resolved.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
     const candidate=resolved.candidate;
@@ -74,6 +77,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(resolved.status==="needs_photo_permission"){
+      failureStage="wikimedia";
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
         name:candidate.name||"",address:candidate.address||"",
         city:candidate.city||"",state:candidate.state||"",
@@ -84,14 +88,17 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     if(!photoCandidate && id && googlePhotoLookups < (input.maxGooglePhotoLookups ?? 50)){
       // Free-first: reject any ID already attached to a TOH record before billed Google details.
       // A shared venue ID is NOT proof these businesses are duplicates.
+      failureStage="google_identity";
       const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
         .select("id").eq("google_place_id",id).limit(1);
       if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
       if(assigned?.length){photoBlocked++;mark(raw,origin,"rejected","existing_google_identity");continue;}
       // Only unresolved identities needing a Google live photo can reach this billed check.
       googlePhotoLookups++;
+      failureStage="google_details";
       const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id)){mark(raw,origin,"rejected","google_identity_mismatch");continue;}
+      failureStage="google_slot";
       const slot=await getGooglePhotoSlot(id,0);
       const url=slot?.name?googlePhotoSlotUrl(id,0,800):null;
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
@@ -99,6 +106,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     }
     if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",id?"photo_unverified_or_lookup_capped":"photo_unverified_no_google_id");continue;}
     verified++;
+    failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
       candidate:{...photoCandidate,category:candidate.category,
@@ -106,7 +114,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     });
     if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged","independent_stage_accepted");}
     else mark(raw,origin,"pending_review",saved.reasons?.[0]||"independent_stage_rejected");
-   }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error");}
+   }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error_"+failureStage); }
  }
  if(audits.length){
    const uniqueAudits=[...new Map(audits.map(a=>[a.candidate_key,a])).values()];
