@@ -30,7 +30,7 @@ jobs:
       ROLE_SECRET: /theouthaven/production/supabase/service-role
       STACK_NAME: theouthaven-edge-runtime-production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:

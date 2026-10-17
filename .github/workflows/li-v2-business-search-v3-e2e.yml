@@ -21,7 +21,7 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check script syntax and fail-closed authentication
         run: |
           node --check scripts/certify-li-v2-business-search-v3-e2e.mjs
@@ -42,7 +42,7 @@ jobs:
       LI_E2E_SEARCH_BEARER_TOKEN: ${{ secrets.LI_E2E_SEARCH_BEARER_TOKEN }}
       LI_E2E_LOCATION_ID: ${{ inputs.location_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Assume production AWS role
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
