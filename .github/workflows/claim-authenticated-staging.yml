@@ -1,0 +1,37 @@
+name: Claim authenticated staging certification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  authenticated-claim:
+    runs-on: ubuntu-latest
+    environment: claim-security-staging
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Verify disposable staging fixture configuration
+        env:
+          STAGING_URL: ${{ vars.CLAIM_STAGING_BASE_URL }}
+          STAGING_TOKEN: ${{ secrets.CLAIM_STAGING_NONOWNER_BEARER }}
+          STAGING_CLAIM: ${{ secrets.CLAIM_STAGING_CLAIM_ID }}
+          STAGING_CHALLENGE: ${{ secrets.CLAIM_STAGING_CHALLENGE_ID }}
+        run: |
+          test -n "$STAGING_URL" && test -n "$STAGING_TOKEN" && test -n "$STAGING_CLAIM" && test -n "$STAGING_CHALLENGE" || {
+            echo "::error::Missing disposable staging URL or fixture secrets"; exit 1;
+          }
+          case "$STAGING_URL" in https://*) ;; *) echo "::error::Staging must be HTTPS"; exit 1;; esac
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Test authenticated non-owner denial
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ vars.CLAIM_STAGING_BASE_URL }}
+          CLAIM_STAGING_BASE_URL: ${{ vars.CLAIM_STAGING_BASE_URL }}
+          CLAIM_STAGING_NONOWNER_BEARER: ${{ secrets.CLAIM_STAGING_NONOWNER_BEARER }}
+          CLAIM_STAGING_CLAIM_ID: ${{ secrets.CLAIM_STAGING_CLAIM_ID }}
+          CLAIM_STAGING_CHALLENGE_ID: ${{ secrets.CLAIM_STAGING_CHALLENGE_ID }}
+        run: npx playwright test tests/e2e/claim-authenticated-staging.spec.ts

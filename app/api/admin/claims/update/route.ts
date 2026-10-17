@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { sendClaimWelcomeOnce } from "@/lib/business-claim/welcomeOnce";
 import { supabase } from "@/lib/supabase";
 import { requireAdminApiRole } from "@/lib/admin-api-auth";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -52,7 +53,12 @@ export async function POST(req: Request) {
 
       if (claimLookupError || !claim) return Response.json({ error: "Location claim request not found." }, { status: 404 });
 
-      const resolvedOwnerUserId = userId || ownerUserId || claim.user_id || null;
+      // Ownership approval must use the identity verified and linked to this claim.
+      if (status === "approved" && (userId || ownerUserId) &&
+          String(userId || ownerUserId) !== String(claim.user_id || "")) {
+        return Response.json({ error: "Claimant identity mismatch. Complete verified account linking first." }, { status: 409 });
+      }
+      const resolvedOwnerUserId = claim.user_id || null;
       if (status === "approved" && !resolvedOwnerUserId) {
         return Response.json(
           { error: "Link this claim to the owner's user account before approval." },
@@ -109,7 +115,7 @@ export async function POST(req: Request) {
           : `${siteUrl}/locations/dashboard/profile?setup=photos&claimed=1`;
 
       if (status === "approved") {
-        await sendClaimApprovedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
+        await sendClaimWelcomeOnce({ claimId: String(claim.id), locationId: String(approvedLocationId || claim.location_id || ""), email: claim.owner_email, name: claim.owner_name, locationName: claim.location_name, dashboardUrl: approvedDestination });
       } else if (status === "rejected") {
         await sendClaimRejectedEmail({ email: claim.owner_email, contactNameOrOwnerName: claim.owner_name, locationName: claim.location_name });
       } else {
