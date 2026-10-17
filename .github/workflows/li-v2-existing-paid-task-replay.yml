@@ -39,9 +39,10 @@ jobs:
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = '742020474738'
           FUNCTION=toh-production-background-runtime
-          EXPECTED_COMMIT=7bd1393b87767478bdb3e4e94643706b633a53be
+          EXPECTED_COMMIT=46e63f7147026b2da95452ed9063f0d6f4daf33f
           DEPLOYED="$(aws lambda get-function-configuration --function-name "$FUNCTION" --query 'Environment.Variables.BACKGROUND_RUNTIME_DEPLOY_GENERATION' --output text)"
           case "$DEPLOYED" in *:"$EXPECTED_COMMIT") ;; *) echo "Expected background runtime merge commit not deployed"; exit 1;; esac
+          echo "Production runtime generation matches certified ingestion commit $EXPECTED_COMMIT"
           aws lambda wait function-active-v2 --function-name "$FUNCTION"
           SECRET_FILE="$RUNNER_TEMP/li-v2-app-env.json"
           PAYLOAD_FILE="$RUNNER_TEMP/li-v2-replay-event.json"
