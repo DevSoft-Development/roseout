@@ -7,15 +7,36 @@ import { evaluateLocationPublishability } from "@/lib/location-publishability";
 
 export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
   const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
-  const { data, error } = await supabaseAdmin
-    .from("location_intelligence_profiles_v2")
-    .select("location_id,classification,search_v3_ready")
-    .eq("search_v3_ready", false)
-    .order("updated_at", { ascending: true, nullsFirst: true })
+  // Prioritize independently acquired locations: an older generic backlog must
+  // not starve live publication and consumer-search certification.
+  const { data: imported, error: importedError } = await supabaseAdmin
+    .from("locations")
+    .select("id")
+    .eq("import_source", "li_v2_independent")
+    .eq("is_searchable", false)
+    .eq("status", "approved")
+    .order("created_at", { ascending: true })
     .limit(safeLimit);
+  if (importedError) throw new Error(`LI V2 independent repair selection failed: ${importedError.message}`);
+  const importedIds = (imported || []).map((item) => item.id);
+  const { data: priority, error: priorityError } = importedIds.length
+    ? await supabaseAdmin.from("location_intelligence_profiles_v2")
+        .select("location_id,classification,search_v3_ready")
+        .in("location_id", importedIds).eq("search_v3_ready", false)
+    : { data: [], error: null };
+  if (priorityError) throw new Error(`LI V2 priority repair lookup failed: ${priorityError.message}`);
+  const remaining = Math.max(0, safeLimit - (priority || []).length);
+  const { data, error } = remaining
+    ? await supabaseAdmin.from("location_intelligence_profiles_v2")
+        .select("location_id,classification,search_v3_ready")
+        .eq("search_v3_ready", false)
+        .order("updated_at", { ascending: true, nullsFirst: true })
+        .limit(safeLimit)
+    : { data: [], error: null };
   if (error) throw new Error(`LI V2 readiness repair plan failed: ${error.message}`);
 
-  const rows = data || [];
+  const seen = new Set((priority || []).map((row) => row.location_id));
+  const rows = [...(priority || []), ...(data || []).filter((row) => !seen.has(row.location_id)).slice(0, remaining)];
   const results: Array<Record<string, unknown>> = [];
 
   for (const row of rows) {
