@@ -3,6 +3,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
+import { evaluateLocationPublishability } from "@/lib/location-publishability";
 
 export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
   const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
@@ -21,15 +22,33 @@ export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
     const locationId = String((row as any).location_id || "");
     if (!locationId) continue;
     try {
-      const classificationMissing = (row as any)?.classification?.negativeClassificationKnown !== true;
-      const classification = classificationMissing
-        ? await refreshLocationClassificationV2(locationId)
-        : (row as any).classification;
+      // Recompute old classifications rather than trusting stale exclusion flags.
+      const classification = await refreshLocationClassificationV2(locationId);
       const readiness = await refreshLocationReadiness(locationId);
+      const { data: location, error: locationError } = await supabaseAdmin.from("locations")
+        .select("*").eq("id", locationId).single();
+      if (locationError || !location) throw new Error("readiness_repair_location_lookup_failed");
+      const assessment = evaluateLocationPublishability(location, { allowApproval: true });
+      let publicationRepaired = false;
+      if (location.import_source === "li_v2_independent" &&
+          location.is_searchable === false && location.status === "approved" &&
+          location.duplicate_status === "unique" &&
+          classification.publiclyDiscoverable && readiness.searchV3Ready &&
+          assessment.isSearchable) {
+        const { data: updated, error: updateError } = await supabaseAdmin.from("locations")
+          .update({ is_searchable: true, publish_ready: true })
+          .eq("id", locationId).eq("import_source", "li_v2_independent")
+          .eq("status", "approved").eq("duplicate_status", "unique")
+          .eq("is_searchable", false).select("id").maybeSingle();
+        if (updateError) throw new Error("readiness_publication_update_failed:" + updateError.message);
+        publicationRepaired = Boolean(updated?.id);
+      }
       results.push({
         locationId,
         repaired: true,
-        classificationRefreshed: classificationMissing,
+        classificationRefreshed: true,
+        publicationRepaired,
+        publishabilityReasons: assessment.reasons,
         searchV3Ready: readiness.searchV3Ready,
         qualityScore: readiness.qualityScore,
         classificationDomain: classification?.domain || null,
