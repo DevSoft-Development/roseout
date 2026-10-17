@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: isExternalBaseURL
     ? undefined
     : {
-        command: "npm run dev",
+        command: process.env.CLAIM_SECURITY_BUSINESS_SURFACE === "true" ? "npx next dev apps/business -p 3000" : "npm run dev",
         url: "http://127.0.0.1:3000",
         reuseExistingServer: true,
         timeout: 120_000,
