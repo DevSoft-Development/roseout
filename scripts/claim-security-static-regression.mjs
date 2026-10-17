@@ -39,7 +39,7 @@ const submissions = [
 ];
 for (const path of submissions) {
  const code=readFileSync(path,"utf8");
- assert.match(code,/consume_verified_claim_challenge/,"Single-use RPC missing: "+path);
+ assert.match(code,/submit_verified_location_claim/,"Atomic submission RPC missing: "+path);
  assert.match(code,/challenge_not_redeemable/,"Duplicate redemption conflict missing: "+path);
  assert.match(code,/otp_expired/,"Expired OTP must fail: "+path);
 }
