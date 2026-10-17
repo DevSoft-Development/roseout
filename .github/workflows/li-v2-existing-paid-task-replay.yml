@@ -1,0 +1,87 @@
+name: LI V2 existing paid task replay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: li-v2-existing-task-replay-production
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 12
+    steps:
+      - name: Configure AWS production role
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+
+      - name: Invoke only the original purchased task
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = '742020474738'
+          FUNCTION=toh-production-background-runtime
+          EXPECTED_COMMIT=74b24be01aeccdacc887a410534157f122165bc7
+          DEPLOYED="$(aws lambda get-function-configuration --function-name "$FUNCTION" --query 'Environment.Variables.BACKGROUND_RUNTIME_DEPLOY_GENERATION' --output text)"
+          case "$DEPLOYED" in *:"$EXPECTED_COMMIT") ;; *) echo "Expected background runtime merge commit not deployed"; exit 1;; esac
+          aws lambda wait function-active-v2 --function-name "$FUNCTION"
+          SECRET_FILE="$RUNNER_TEMP/li-v2-app-env.json"
+          PAYLOAD_FILE="$RUNNER_TEMP/li-v2-replay-event.json"
+          RESULT_FILE="$RUNNER_TEMP/li-v2-replay-result.json"
+          trap 'rm -f "$SECRET_FILE" "$PAYLOAD_FILE" "$RESULT_FILE"' EXIT
+          aws secretsmanager get-secret-value --region us-west-2 \
+            --secret-id /theouthaven/production/platform-dr/app-env \
+            --query SecretString --output text > "$SECRET_FILE"
+          chmod 600 "$SECRET_FILE"
+          SECRET_FILE="$SECRET_FILE" PAYLOAD_FILE="$PAYLOAD_FILE" python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          env=json.loads(Path(os.environ["SECRET_FILE"]).read_text())
+          token=env.get("CRON_SECRET")
+          if not isinstance(token,str) or not token:
+              raise SystemExit("Missing production CRON_SECRET")
+          path="/api/cron/li-v2-existing-task-replay"
+          event={
+              "version":"2.0","routeKey":"POST "+path,
+              "rawPath":path,"rawQueryString":"",
+              "headers":{"authorization":"Bearer "+token,
+                         "x-toh-aws-internal":"managed-dispatch",
+                         "content-type":"application/json"},
+              "requestContext":{"http":{"method":"POST","path":path,
+                                "sourceIp":"127.0.0.1","userAgent":"li-v2-manual-replay"}},
+              "body":"","isBase64Encoded":False}
+          Path(os.environ["PAYLOAD_FILE"]).write_text(json.dumps(event))
+          PY
+          chmod 600 "$PAYLOAD_FILE"
+          aws lambda invoke --function-name "$FUNCTION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "fileb://$PAYLOAD_FILE" \
+            "$RESULT_FILE" > "$RUNNER_TEMP/li-v2-invoke-metadata.json"
+          RESULT_FILE="$RESULT_FILE" python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          raw=json.loads(Path(os.environ["RESULT_FILE"]).read_text())
+          if raw.get("isBase64Encoded"):
+              response=json.loads(base64.b64decode(raw["body"]))
+          else:
+              response=json.loads(raw.get("body","{}"))
+          if int(raw.get("statusCode",500)) != 200 or response.get("ok") is not True:
+              raise SystemExit("Existing-task replay failed: "+str(response.get("error","non-200")))
+          result=response.get("result",{})
+          if result.get("status") not in ("replayed_without_discovery_purchase","provider_task_pending"):
+              raise SystemExit("Unexpected replay result status")
+          print("Replay status:",result.get("status"))
+          print("Inspected:",result.get("inspected"))
+          print("Staged:",result.get("staged"))
+          print("Published location IDs:",len(result.get("publishedLocationIds",[])))
+          PY
+          echo 'Existing-task-only replay invocation completed; verify canonical publication and Search V3 independently.' >> "$GITHUB_STEP_SUMMARY"

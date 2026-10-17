@@ -83,7 +83,7 @@ jobs:
           test -f infra/aws/background-runtime/Dockerfile
           test -f infra/aws/background-runtime/bootstrap.mjs
           for attempt in 1 2 3 4 5; do
-            if docker build --check -f infra/aws/background-runtime/Dockerfile .; then
+            if docker build --check --build-arg LAMBDA_ADAPTER_IMAGE=node:22-alpine -f infra/aws/background-runtime/Dockerfile .; then
               exit 0
             fi
             if [ "$attempt" -eq 5 ]; then
@@ -274,10 +274,35 @@ jobs:
           IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
           ENV_FILE="$RUNNER_TEMP/background-production.env"
           aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
-          DOCKER_BUILDKIT=1 docker build \
-            --secret id=platform_env,src="$ENV_FILE" \
-            -f infra/aws/background-runtime/Dockerfile \
-            -t "$IMAGE_URI" .
+          # Reuse the exact Lambda Adapter from the currently deployed, healthy
+          # production image in our private ECR. Avoid public ECR throttling.
+          ADAPTER_IMAGE="$(aws lambda get-function --function-name toh-production-background-runtime --query 'Code.ImageUri' --output text)"
+          case "$ADAPTER_IMAGE" in
+            "$REGISTRY/$ECR_REPOSITORY:"*|"$REGISTRY/$ECR_REPOSITORY@"*) ;;
+            *) echo "Production Lambda image is not in the expected private ECR repository." >&2; exit 1 ;;
+          esac
+          docker pull "$ADAPTER_IMAGE"
+          docker run --rm --entrypoint /bin/sh "$ADAPTER_IMAGE" -c 'test -x /opt/extensions/lambda-adapter'
+          echo "Reusing the deployed Lambda Adapter from verified private ECR image."
+          built=0
+          for attempt in 1 2 3 4 5 6; do
+            if DOCKER_BUILDKIT=1 docker build \
+              --secret id=platform_env,src="$ENV_FILE" \
+              --build-arg LAMBDA_ADAPTER_IMAGE="$ADAPTER_IMAGE" \
+              -f infra/aws/background-runtime/Dockerfile \
+              -t "$IMAGE_URI" .; then
+              built=1
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "Background runtime image build failed after 6 bounded attempts." >&2
+              exit 1
+            fi
+            delay=$((attempt * 20))
+            echo "Image build failed (attempt $attempt/6); retrying in ${delay}s for registry throttling."
+            sleep "$delay"
+          done
+          test "$built" = "1"
           docker push "$IMAGE_URI"
           rm -f "$ENV_FILE" "$VIRGINIA_SERVICE_ROLE_FILE" "$BACKGROUND_APP_ENV_JSON"
           echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
@@ -362,6 +387,22 @@ jobs:
             fi
           done
           test "$healthy" = '1' || { echo 'Background runtime failed Virginia health after 4 attempts.' >&2; exit 1; }
+
+      - name: Report LI V2 private runtime launch gates
+        run: |
+          set -euo pipefail
+          RESPONSE="$RUNNER_TEMP/background-health-response.json"
+          # Use the already authenticated direct Lambda invocation from the
+          # preceding health smoke. These are booleans; print no env secrets.
+          jq -e '.statusCode == 200 and (.body | fromjson | .ok == true)' "$RESPONSE" >/dev/null
+          echo '### LI V2 pilot runtime certification' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.body | fromjson | .liV2Acquisition |
+            "- Searchable import certified: " + (.searchableImportCertified | tostring) +
+            "\n- Independent profile source certified: " + (.independentProfileSourceCertified | tostring) +
+            "\n- Pilot runtime ready: " + (.ready | tostring)' "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.body | fromjson | .liV2Acquisition.ready == true' "$RESPONSE" >/dev/null || {
+            echo 'LI V2 paid acquisition remains blocked: the deployed runtime has not certified both import gates.'
+          }
 
       - name: Prove scheduler Node routing stays inside private AWS runtime
         run: |
