@@ -61,6 +61,7 @@ jobs:
           keys = (
               "LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED",
               "LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED",
+              "LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED",
           )
           # bootstrap.mjs copies only nonempty string values from the secret over
           # any inherited Lambda env variables. Missing/empty secret entries
@@ -86,6 +87,10 @@ jobs:
               out.write("\n".join(lines) + "\n")
           for key, outcome in results.items():
               print(f"{key}: {outcome}")
-          if not all(v == "enabled" for v in results.values()):
-              raise SystemExit("Certification flags are not both enabled; paid acquisition remains blocked.")
+          certified = all(results[k] == "enabled" for k in keys[:2])
+          bootstrap = results["LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED"] == "enabled"
+          if not certified and not bootstrap:
+              raise SystemExit("Neither full certification nor one-target bootstrap is enabled; acquisition blocked.")
+          if bootstrap and not certified:
+              print("One-target bootstrap enabled; full certification is still NOT established.")
           PY
