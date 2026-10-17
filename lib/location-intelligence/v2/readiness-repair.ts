@@ -21,7 +21,9 @@ export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
     const locationId = String((row as any).location_id || "");
     if (!locationId) continue;
     try {
-      const classificationMissing = (row as any)?.classification?.negativeClassificationKnown !== true;
+      // Re-evaluate classifications generated before searchable-state decoupling.
+      const classificationMissing = (row as any)?.classification?.negativeClassificationKnown !== true ||
+        (row as any)?.classification?.exclusionReason === "Location is marked not searchable.";
       const classification = classificationMissing
         ? await refreshLocationClassificationV2(locationId)
         : (row as any).classification;
