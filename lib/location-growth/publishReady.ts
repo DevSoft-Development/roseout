@@ -208,6 +208,29 @@ function toLocationInsert(row: StagingRow) {
     ...(String(row.source||"").startsWith("li_v2_") &&
       recordValue(recordValue(row.raw_payload).independent_profile).photoSource==="google_live"
       ? {photo_source:"google_places_new"} : {}),
+    // Preserve sourced role mailbox evidence without asserting owner identity or marketing consent.
+    ...(String(row.source || "").startsWith("li_v2_") &&
+      typeof recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).email === "string" &&
+      typeof recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).sourceUrl === "string"
+      ? {
+          metadata: {
+            ...(recordValue(recordValue(row.raw_payload).independent_profile).photoSource === "wikimedia_commons"
+              ? { photo_attribution: {
+                  author: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).author || ""),
+                  license: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).license || ""),
+                  licenseUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).licenseUrl || ""),
+                  filePageUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).filePageUrl || ""),
+                  imageUrl: String(row.main_image || ""),
+                }} : {}),
+            business_contact: {
+              email: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).email),
+              source_url: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).sourceUrl),
+              type: "published_role_mailbox",
+              deliverability_verified: false,
+              marketing_consent: false,
+            },
+          },
+        } : {}),
     images: row.images || [],
     description: row.description,
     import_source: row.source,
