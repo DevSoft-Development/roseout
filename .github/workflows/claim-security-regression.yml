@@ -7,6 +7,7 @@ on:
       - "apps/admin/app/api/admin/claims/**"
       - "lib/business-claim/**"
       - "scripts/claim-security-static-regression.mjs"
+      - "tests/e2e/claim-security.spec.ts"
       - ".github/workflows/claim-security-regression.yml"
   workflow_dispatch:
 jobs:
@@ -21,3 +22,13 @@ jobs:
           node-version: "22"
       - name: Check claim ownership and evidence guards
         run: node scripts/claim-security-static-regression.mjs
+      - name: Install dependencies
+        run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Test anonymous claim API access boundaries
+        run: npx playwright test tests/e2e/claim-security.spec.ts
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: test_placeholder
+          SUPABASE_SERVICE_ROLE_KEY: test_placeholder
