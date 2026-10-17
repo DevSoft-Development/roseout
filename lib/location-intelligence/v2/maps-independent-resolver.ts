@@ -26,6 +26,29 @@ export function websiteLeadFromMapsItem(value:unknown):string|null {
  }
  return null;
 }
+/** Licensed Maps output can be the primary source for business identity. Keep proof of origin. */
+export function licensedBusinessLead(value:unknown,origin:string): (IndependentBusinessProfile & {
+ website:string;category:string;locationType:"restaurant"|"activity";zip?:string
+})|null {
+ if(!value||typeof value!=="object"||Array.isArray(value))return null;
+ const item=value as Record<string,unknown>;
+ const obj=(v:unknown):Record<string,unknown>=>v&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:{};
+ const addr=obj(item.address_info), clean=(v:unknown)=>typeof v==="string"?v.trim():"";
+ const name=clean(item.title)||clean(item.name);
+ const address=clean(addr.address)||clean(item.address);
+ const city=clean(addr.city)||clean(item.city);
+ const state=clean(addr.region)||clean(addr.state)||clean(item.state);
+ const zip=clean(addr.zip)||clean(item.zip);
+ const category=clean(item.category)||clean(item.category_name)||"restaurant";
+ const status=clean(item.business_status).toLowerCase();
+ // Unknown, temporarily closed and permanently closed businesses never auto-publish.
+ const openStatus=status==="open"||status==="operational"||status==="opened"?"open":"unknown";
+ if(!name||!address||!city||!state||!origin)return null;
+ const activity=/activity|museum|park|attraction|theater|theatre|nightclub|entertainment/i.test(category);
+ return {name,address,city,state,zip,website:origin,sourceUrl:origin,
+   category,locationType:activity?"activity":"restaurant",
+   evidenceSource:"licensed_dataset",openStatus};
+}
 async function grantForSite(origin:string):Promise<PhotoGrant|undefined> {
  const {data,error}=await supabaseAdmin.from("li_v2_photo_grants")
   .select("website_origin,image_url,evidence_url,permission,verified_by,expires_at")
@@ -85,14 +108,23 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     // Grants are optional for acquisition; a lookup failure must never block verified business staging.
     const grant=await grantForSite(origin).catch(()=>undefined);
     failureStage="official_site";
-    const resolved=await resolveOfficialWebsiteLead(origin,grant);
-    if(resolved.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
-    const candidate=resolved.candidate;
+    const licensed=licensedBusinessLead(raw,origin);
+    const resolved=licensed?null:await resolveOfficialWebsiteLead(origin,grant);
+    if(!licensed && resolved?.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
+    let candidate=licensed || resolved?.candidate;
+    if(licensed && grant){
+      // A grant is only a photo permission; validate its website origin before using it.
+      const {permittedOfficialPhoto}=await import("./official-website-resolver");
+      const photo=permittedOfficialPhoto(grant,origin);
+      if(photo)candidate={...licensed,photoUrl:photo.photoUrl,photoPermission:photo.photoPermission,photoSource:"independent"};
+    }
     if(!candidate){mark(raw,origin,"rejected","independent_candidate_missing");continue;}
+    if(candidate.openStatus!=="open"){mark(raw,origin,"pending_review","operating_status_unverified");continue;}
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
-    if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
-    else if(resolved.status==="photo_pending"){
+    const candidatePhoto=candidate as IndependentBusinessProfile & typeof candidate;
+    if(candidatePhoto.photoUrl && candidatePhoto.photoPermission)photoCandidate={...candidatePhoto,photoSource:"independent"};
+    else {
       failureStage="wikimedia";
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
         name:candidate.name||"",address:candidate.address||"",
