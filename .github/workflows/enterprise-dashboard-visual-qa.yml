@@ -57,7 +57,7 @@ jobs:
           echo "ENTERPRISE_VISUAL_SURFACE=${{ matrix.surface }}" >> "$GITHUB_ENV"
 
       - name: Check out verification commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 

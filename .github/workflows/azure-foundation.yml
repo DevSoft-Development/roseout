@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build Bicep
         uses: azure/CLI@v2
@@ -59,7 +59,7 @@ jobs:
     environment: ${{ inputs.environment == 'production' && 'Production' || 'staging' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
