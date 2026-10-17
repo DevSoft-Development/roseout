@@ -30,6 +30,7 @@ export async function stageIndependentCandidate(input:{
      return {staged:false,reasons:["wikimedia_license_or_url_unverified"]};
    p={...p,photoPermission:"licensed",photoUrl:wikimediaEvidence.imageUrl};
  }
+ const geocodeFailures:string[]=[];
  const values=await getCredentialVaultProviderValues("geoapify").catch(()=>({apiKey:""}));
  const location=await geocodeFreeFirst({
    street:p.address!,city:p.city!,state:p.state!,zip:p.zip,
