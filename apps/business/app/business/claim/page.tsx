@@ -58,6 +58,38 @@ function ClaimPageInner() {
   const [dnsMessage, setDnsMessage] = useState("");
   const [domainMethod, setDomainMethod] = useState<"dns" | "website">("dns");
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [postcardId, setPostcardId] = useState("");
+  const [postcardCode, setPostcardCode] = useState("");
+  const [postcardMessage, setPostcardMessage] = useState("");
+
+  async function requestPostcard() {
+    setBusy(true);
+    setPostcardMessage("");
+    try {
+      const response = await fetch("/api/business/claim/postcard", {
+        method:"POST", headers:{"Content-Type":"application/json"},body:JSON.stringify({code:claimCode}),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.challengeId) {setPostcardMessage("Postcard request unavailable. Please contact support.");return;}
+      setPostcardId(result.challengeId);
+      setPostcardMessage("Request saved. Mailing is queued for review; we will send the card to the business address on file.");
+    } catch {setPostcardMessage("Could not request the postcard.");}
+    finally {setBusy(false);}
+  }
+  async function verifyPostcard() {
+    setBusy(true);
+    try {
+      const response=await fetch("/api/business/claim/postcard",{
+        method:"PUT",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({challengeId:postcardId,verificationCode:postcardCode}),
+      });
+      const result=await response.json();
+      setPostcardMessage(response.ok&&result.verified ?
+        "Address access verified. Ownership approval still requires review." :
+        "Code invalid, expired, or postcard not yet dispatched.");
+    } catch {setPostcardMessage("Postcard verification failed.");}
+    finally {setBusy(false);}
+  }
 
   async function loadLocation(codeValue = claimCode, source: "qr" | "manual" = "manual") {
     const code = normalizeClaimCode(codeValue);
@@ -414,6 +446,23 @@ function ClaimPageInner() {
                     <button type="button" disabled={busy} onClick={()=>void checkDnsVerification()} className="rounded-xl bg-white px-4 py-3 font-bold text-black">Check DNS record</button>
                   </div>}
                   {dnsMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{dnsMessage}</p>}
+                </section>
+              )}
+
+              {stage === "contact" && (
+                <section className="mt-6 rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-black">Can't verify digitally? Request a postcard</h3>
+                  <p className="mt-2 text-sm text-white/55">We mail a one-time code to the business address already on file. You cannot change that address here. Verification still requires Admin review.</p>
+                  {!postcardId ? (
+                    <button type="button" disabled={busy} onClick={()=>void requestPostcard()} className="mt-4 rounded-xl border border-white/30 px-4 py-3 text-sm font-bold disabled:opacity-50">Request verification postcard</button>
+                  ) : (
+                    <div className="mt-4">
+                      <label className="text-sm font-bold" htmlFor="postcardCode">Nine-digit postcard code</label>
+                      <input id="postcardCode" className={inputClass+" mt-2"} inputMode="numeric" maxLength={9} value={postcardCode} onChange={e=>setPostcardCode(e.target.value.replace(/\\D/g,"").slice(0,9))} placeholder="Enter mailed code" />
+                      <button type="button" disabled={busy||postcardCode.length!==9} onClick={()=>void verifyPostcard()} className="mt-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-50">Verify mailed code</button>
+                    </div>
+                  )}
+                  {postcardMessage && <p role="status" className="mt-3 text-sm text-white/75">{postcardMessage}</p>}
                 </section>
               )}
 
