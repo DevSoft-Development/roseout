@@ -109,7 +109,8 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error");}
  }
  if(audits.length){
-   const {error:auditError}=await supabaseAdmin.from("li_v2_candidate_audit").upsert(audits,{onConflict:"run_id,candidate_key"});
+   const uniqueAudits=[...new Map(audits.map(a=>[a.candidate_key,a])).values()];
+   const {error:auditError}=await supabaseAdmin.from("li_v2_candidate_audit").upsert(uniqueAudits,{onConflict:"run_id,candidate_key"});
    if(auditError)throw new Error("li_v2_candidate_audit_write_failed:"+auditError.message);
  }
  const finalizations=[];
