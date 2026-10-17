@@ -121,7 +121,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve Azure embedding deployment
-        uses: azure/CLI@v2
+        uses: azure/CLI@v3
         env:
           RG: rg-toh-consumer-production
         with:
