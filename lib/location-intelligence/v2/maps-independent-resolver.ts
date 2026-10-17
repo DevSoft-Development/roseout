@@ -67,7 +67,8 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    seen.add(origin);inspected++;
    try{
     failureStage="photo_grant";
-    const grant=await grantForSite(origin);
+    // Grants are optional for acquisition; a lookup failure must never block verified business staging.
+    const grant=await grantForSite(origin).catch(()=>undefined);
     failureStage="official_site";
     const resolved=await resolveOfficialWebsiteLead(origin,grant);
     if(resolved.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
@@ -81,7 +82,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
         name:candidate.name||"",address:candidate.address||"",
         city:candidate.city||"",state:candidate.state||"",
-      });
+      }).catch(()=>null);
       if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,
         photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
