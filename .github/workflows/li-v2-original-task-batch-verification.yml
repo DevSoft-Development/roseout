@@ -8,7 +8,12 @@ jobs:
   certify:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 10
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        offset: [0, 8, 16, 24, 32, 40]
     steps:
       - name: Assume existing production AWS identity
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -36,7 +41,7 @@ jobs:
           event={"version":"2.0","routeKey":"POST "+route,"rawPath":route,"rawQueryString":"",
             "headers":{"authorization":"Bearer "+token,"x-toh-aws-internal":"managed-dispatch","content-type":"application/json"},
             "requestContext":{"http":{"method":"POST","path":route,"sourceIp":"127.0.0.1","userAgent":"li-v2-batch-verify-certification"}},
-            "body":json.dumps({"confirmation":"verify-original-task-no-writes","offset":0}),"isBase64Encoded":False}
+            "body":json.dumps({"confirmation":"verify-original-task-no-writes","offset":${{ matrix.offset }}}),"isBase64Encoded":False}
           Path(os.environ["PAYLOAD_FILE"]).write_text(json.dumps(event))
           PY
           aws lambda wait function-active-v2 --function-name toh-production-background-runtime
@@ -49,5 +54,5 @@ jobs:
           data=json.loads(base64.b64decode(body) if raw.get("isBase64Encoded") else body)
           if raw.get("statusCode")!=200 or data.get("ok") is not True or data.get("readonly") is not True or data.get("noNewDiscoveryPurchase") is not True or data.get("replayAuthorized") is not False:
             raise SystemExit("Read-only preflight failed: "+str(data.get("error","uncertified")))
-          print("Verification-only first batch:",data.get("attempted"),"outcomes:",data.get("reasonCounts"),"total unique websites:",data.get("totalDistinctWebsiteLeads"),"replay remains BLOCKED")
+          print("Verification-only batch:",data.get("attempted"),"outcomes:",data.get("reasonCounts"),"total unique websites:",data.get("totalDistinctWebsiteLeads"),"replay remains BLOCKED")
           PY
