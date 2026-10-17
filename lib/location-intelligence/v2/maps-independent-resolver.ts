@@ -120,14 +120,18 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    // A photo is optional for independently verified staging, never for photo-ready publication.
-    // Preserve a single approved primary image when available; defer any gallery until profile view.
-    if(!photoCandidate)photoBlocked++;
+    // Every imported business must have one usable, business-specific primary photo.
+    // Keep unresolved leads in review rather than staging photo-less records.
+    if(!photoCandidate){
+      photoBlocked++;
+      mark(raw,origin,"pending_review",id ? "approved_primary_photo_unavailable" : "approved_primary_photo_unavailable_no_google_identity");
+      continue;
+    }
     verified++;
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...(photoCandidate||candidate),googlePlaceId:photoCandidate?.googlePlaceId||undefined,category:candidate.category,
+      candidate:{...photoCandidate,googlePlaceId:photoCandidate.googlePlaceId||undefined,category:candidate.category,
        locationType:candidate.locationType}
     });
     if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}

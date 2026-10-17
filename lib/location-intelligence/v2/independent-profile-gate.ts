@@ -33,5 +33,5 @@ export function assessIndependentBusinessProfile(p: IndependentBusinessProfile) 
   const photoReady=independentPhoto || isVerifiedGoogleLivePhoto(p);
   const photoReasons=photoReady?[]:["approved_photo_missing"];
   if (!p.sourceUrl?.startsWith("https://")) reasons.push("evidence_url_missing");
-  return {publishable:reasons.length===0 && photoReady,importEligible:reasons.length===0,photoReady,reasons:[...reasons,...photoReasons],identityReasons:reasons,photoReasons};
+  return {publishable:reasons.length===0 && photoReady,importEligible:reasons.length===0 && photoReady,photoReady,reasons:[...reasons,...photoReasons],identityReasons:reasons,photoReasons};
 }
