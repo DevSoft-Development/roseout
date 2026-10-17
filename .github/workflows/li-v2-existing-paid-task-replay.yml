@@ -15,7 +15,7 @@ jobs:
   replay:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - name: Configure AWS production role
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = '742020474738'
           FUNCTION=toh-production-background-runtime
-          EXPECTED_COMMIT=74b24be01aeccdacc887a410534157f122165bc7
+          EXPECTED_COMMIT=a738b97644a2b242df128aa83643b61fd7e82f8e
           DEPLOYED="$(aws lambda get-function-configuration --function-name "$FUNCTION" --query 'Environment.Variables.BACKGROUND_RUNTIME_DEPLOY_GENERATION' --output text)"
           case "$DEPLOYED" in *:"$EXPECTED_COMMIT") ;; *) echo "Expected background runtime merge commit not deployed"; exit 1;; esac
           aws lambda wait function-active-v2 --function-name "$FUNCTION"
@@ -62,7 +62,8 @@ jobs:
           Path(os.environ["PAYLOAD_FILE"]).write_text(json.dumps(event))
           PY
           chmod 600 "$PAYLOAD_FILE"
-          aws lambda invoke --function-name "$FUNCTION" \
+          AWS_MAX_ATTEMPTS=1 aws lambda invoke --function-name "$FUNCTION" \
+            --cli-read-timeout 920 --cli-connect-timeout 30 \
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$PAYLOAD_FILE" \
             "$RESULT_FILE" > "$RUNNER_TEMP/li-v2-invoke-metadata.json"
