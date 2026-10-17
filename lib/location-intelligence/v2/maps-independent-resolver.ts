@@ -122,7 +122,8 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     if(candidate.openStatus!=="open"){mark(raw,origin,"pending_review","operating_status_unverified");continue;}
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
-    if(candidate.photoUrl && candidate.photoPermission)photoCandidate={...candidate,photoSource:"independent"};
+    const candidatePhoto=candidate as IndependentBusinessProfile & typeof candidate;
+    if(candidatePhoto.photoUrl && candidatePhoto.photoPermission)photoCandidate={...candidatePhoto,photoSource:"independent"};
     else {
       failureStage="wikimedia";
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
