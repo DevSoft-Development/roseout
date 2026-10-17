@@ -111,7 +111,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...(photoCandidate||candidate),googlePlaceId:photoCandidate?.googlePlaceId||id||undefined,category:candidate.category,
+      candidate:{...(photoCandidate||candidate),googlePlaceId:photoCandidate?.googlePlaceId||undefined,category:candidate.category,
        locationType:candidate.locationType}
     });
     if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}
