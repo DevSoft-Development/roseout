@@ -66,7 +66,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    run_id:input.runId,
    candidate_key:createHash("sha256").update(JSON.stringify(raw)??"null").digest("hex"),
    website_origin:websiteLeadFromMapsItem(raw),
-   status:"acquired",reason:"awaiting_independent_verification"
+   status:"pending_review",reason:"awaiting_independent_verification"
  }));
  const uniqueIntake=[...new Map(intake.map(row=>[row.candidate_key,row])).values()];
  if(uniqueIntake.length){
