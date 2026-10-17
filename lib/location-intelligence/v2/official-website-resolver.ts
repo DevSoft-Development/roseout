@@ -79,6 +79,28 @@ export function permittedOfficialPhoto(grant:PhotoGrant|undefined,website:string
    return {photoUrl:grant.imageUrl,photoPermission:grant.permission,photoEvidenceUrl:grant.evidenceUrl};
  }catch{return null;}
 }
+/** Image references are discovery metadata only, never a license to display or store the image. */
+export function extractOfficialImageReferences(html:string,pageUrl:string) {
+ const references:{imageUrl:string;sourcePageUrl:string;kind:string}[]=[];
+ const add=(raw:unknown,kind:string)=>{
+  if(typeof raw!=="string")return;
+  try{const u=new URL(raw,pageUrl);if(u.protocol!=="https:"||u.username||u.password)return;
+   if(!references.some(x=>x.imageUrl===u.href))references.push({imageUrl:u.href,sourcePageUrl:pageUrl,kind});
+  }catch{/* ignore malformed image URL */}
+ };
+ for(const m of html.matchAll(/<meta\b[^>]*>/gi)){
+  const tag=m[0];
+  if(!/(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["']/i.test(tag))continue;
+  const url=tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1];add(url,"social_meta");
+ }
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
+  try{for(const node of graphs(JSON.parse(m[1]))){
+   const img=node.image;
+   for(const value of Array.isArray(img)?img:[img]) add(typeof value==="string"?value:plain(value).url,"json_ld");
+  }}catch{/* untrusted structured data */}
+ }
+ return references.slice(0,30);
+}
 /**
  * Website lead must be independently re-fetched. Coordinates are verified later
  * via Census -> Geoapify; photos must carry explicit grant provenance.
@@ -90,9 +112,9 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
  const candidate=structured || corroborated;
  if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
  const contact=extractOfficialBusinessEmail(context.html,context.url);
- const enriched={...candidate,...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
+ const enriched={...candidate,officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
- if(!photo)return {status:"needs_photo_permission" as const,candidate:enriched};
+ if(!photo)return {status:"photo_pending" as const,candidate:enriched};
  return {status:"verified_evidence" as const,candidate:{...enriched,...photo},
    photoGrant: {evidenceUrl:photo.photoEvidenceUrl,verifiedBy:photoGrant!.verifiedBy}};
 }

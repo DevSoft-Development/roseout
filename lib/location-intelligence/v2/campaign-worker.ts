@@ -94,9 +94,13 @@ export async function processQueuedAcquisitionCampaign() {
        });
        const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
        if(!ids.length){
-         await checkpoint(run.id,0,"failed","no_published_locations_to_certify");
-         return {claimed:true,runId:run.id,stopped:"no_published_locations_to_certify",
-           inspected:resolved.inspected,photoBlocked:resolved.photoBlocked};
+         // Independently verified staging is useful, but it is not searchable publication.
+         // Stop rather than retry the paid task automatically or certify zero consumer records.
+         const reason=resolved.staged>0?"photo_pending_or_unpublished_locations":"no_published_locations_to_certify";
+         await checkpoint(run.id,0,"failed",reason);
+         return {claimed:true,runId:run.id,stopped:reason,
+           inspected:resolved.inspected,staged:resolved.staged,photoBlocked:resolved.photoBlocked,
+           authenticatedSearchV3Certified:false};
        }
        await registerConsumerChecks(run.id,index,ids);
        checks=await advanceConsumerChecks(run.id,index);

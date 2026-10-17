@@ -67,7 +67,8 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
    seen.add(origin);inspected++;
    try{
     failureStage="photo_grant";
-    const grant=await grantForSite(origin);
+    // Grants are optional for acquisition; a lookup failure must never block verified business staging.
+    const grant=await grantForSite(origin).catch(()=>undefined);
     failureStage="official_site";
     const resolved=await resolveOfficialWebsiteLead(origin,grant);
     if(resolved.status==="needs_independent_evidence"){mark(raw,origin,"pending_review",resolved.reason);continue;}
@@ -76,12 +77,12 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
-    else if(resolved.status==="needs_photo_permission"){
+    else if(resolved.status==="photo_pending"){
       failureStage="wikimedia";
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
         name:candidate.name||"",address:candidate.address||"",
         city:candidate.city||"",state:candidate.state||"",
-      });
+      }).catch(()=>null);
       if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,
         photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
@@ -104,15 +105,17 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",!id?"photo_unverified_no_google_id":googlePhotoLookups >= (input.maxGooglePhotoLookups ?? 50)?"photo_lookup_budget_exhausted":"photo_slot_unverified");continue;}
+    // A photo is optional for independently verified staging, never for photo-ready publication.
+    // Preserve a single approved primary image when available; defer any gallery until profile view.
+    if(!photoCandidate)photoBlocked++;
     verified++;
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...photoCandidate,category:candidate.category,
+      candidate:{...(photoCandidate||candidate),googlePlaceId:photoCandidate?.googlePlaceId||undefined,category:candidate.category,
        locationType:candidate.locationType}
     });
-    if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged","independent_stage_accepted");}
+    if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}
     else mark(raw,origin,"pending_review",saved.reasons?.[0]||"independent_stage_rejected");
    }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error_"+failureStage); }
  }
