@@ -17,7 +17,7 @@ export function isVerifiedGoogleLivePhoto(p: IndependentBusinessProfile) {
   const expected="/api/public/google-place-photo?placeId="+encodeURIComponent(id)+"&index=0&maxwidth=800";
   return p.photoUrl===expected && !p.photoPermission;
 }
-export function assessIndependentBusinessProfile(p: IndependentBusinessProfile) {
+export function assessIndependentBusinessProfile(p: IndependentBusinessProfile, options: { allowPhotoPending?: boolean } = {}) {
   const reasons: string[] = [];
   if (!p.name?.trim() || !p.address?.trim() || !p.city?.trim() || !p.state?.trim())
     reasons.push("business_identity_incomplete");
@@ -29,7 +29,7 @@ export function assessIndependentBusinessProfile(p: IndependentBusinessProfile) 
   if (p.duplicate) reasons.push("existing_business_duplicate");
   const independentPhoto=Boolean(p.photoUrl?.startsWith("https://") && p.photoPermission &&
     (p.photoSource===undefined || p.photoSource==="independent" || p.photoSource==="wikimedia_commons"));
-  if (!independentPhoto && !isVerifiedGoogleLivePhoto(p))
+  if (!independentPhoto && !isVerifiedGoogleLivePhoto(p) && !options.allowPhotoPending)
     reasons.push("approved_photo_missing");
   if (!p.sourceUrl?.startsWith("https://")) reasons.push("evidence_url_missing");
   return {publishable:reasons.length===0,reasons};
