@@ -64,11 +64,17 @@ export async function geoapifyGeocode(address:Address,key:string,fetcher:typeof 
   url.searchParams.set("limit","2");
   url.searchParams.set("apiKey",key);
   const data=await json(url,fetcher), features=data?.features;
-  if(!Array.isArray(features)||features.length!==1)return null;
-  const properties=features[0]?.properties||{};
-  if(String(properties.state_code||"").toUpperCase()!==valid.state)return null;
-  if(String(properties.rank?.match_type||"")!=="full_match" && Number(properties.rank?.confidence||0)<0.95)return null;
-  if(String(properties.result_type||"")!=="building" && String(properties.result_type||"")!=="amenity")return null;
+  if(!Array.isArray(features))return null;
+  // Geoapify can return two suggestions where only one is an eligible building.
+  // Accept only a single qualifying result; ambiguous matches remain blocked.
+  const eligible=features.filter((feature:Record<string,any>)=>{
+    const p=feature?.properties||{};
+    return String(p.state_code||"").toUpperCase()===valid.state &&
+      (String(p.rank?.match_type||"")==="full_match" || Number(p.rank?.confidence||0)>=0.95) &&
+      (String(p.result_type||"")==="building" || String(p.result_type||"")==="amenity");
+  });
+  if(eligible.length!==1)return null;
+  const properties=eligible[0].properties;
   const point=validPoint(properties.lat,properties.lon);
   if(!point)return null;
   return {...point,provider:"geoapify",precision:"building",matchedAddress:String(properties.formatted||""),attribution:"© OpenStreetMap contributors; Geoapify"};
