@@ -104,7 +104,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",id?"photo_unverified_or_lookup_capped":"photo_unverified_no_google_id");continue;}
+    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",!id?"photo_unverified_no_google_id":googlePhotoLookups >= (input.maxGooglePhotoLookups ?? 50)?"photo_lookup_budget_exhausted":"photo_slot_unverified");continue;}
     verified++;
     failureStage="staging";
     const saved=await stageIndependentCandidate({
