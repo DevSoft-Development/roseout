@@ -74,7 +74,6 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     const candidate=resolved.candidate;
     if(!candidate){mark(raw,origin,"rejected","independent_candidate_missing");continue;}
     const id=googleIdentityLead(raw);
-    let attemptedGooglePhotoLookup=false;
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
     else if(resolved.status==="photo_pending"){
@@ -96,7 +95,6 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(assigned?.length){photoBlocked++;mark(raw,origin,"rejected","existing_google_identity");continue;}
       // Only unresolved identities needing a Google live photo can reach this billed check.
       googlePhotoLookups++;
-      attemptedGooglePhotoLookup=true;
       failureStage="google_details";
       const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id)){mark(raw,origin,"rejected","google_identity_mismatch");continue;}
@@ -106,7 +104,9 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",!id?"photo_unverified_no_google_id":attemptedGooglePhotoLookup?"photo_slot_unverified":googlePhotoLookups >= (input.maxGooglePhotoLookups ?? 50)?"photo_lookup_budget_exhausted":"photo_identity_not_verified");continue;}
+    // A photo is optional for independently verified staging, never for photo-ready publication.
+    // Preserve a single approved primary image when available; defer any gallery until profile view.
+    if(!photoCandidate)photoBlocked++;
     verified++;
     failureStage="staging";
     const saved=await stageIndependentCandidate({
