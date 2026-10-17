@@ -1,3 +1,7 @@
+import {reconcileVerifiedPosTextToPayRefund} from "@/lib/pos/payments/text-to-pay-refund";
+import {expireVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-expiration";
+import {settleVerifiedTextToPay} from "@/lib/pos/payments/text-to-pay-settlement";
+import {recordVerifiedPosDispute} from "@/lib/pos/payments/dispute-ingestion";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { fulfillPaidEventTicket } from "@/lib/events/paid-ticket-fulfillment";
@@ -297,6 +301,20 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
+        if(object?.metadata?.type==="pos_text_to_pay"){
+          if(process.env.POS_TEXT_TO_PAY_STRIPE_SETTLEMENT_ENABLED!=="true")break;
+          if(event.livemode!==false||!accountId||!owner.locationId||
+             String(object.metadata.location_id)!==owner.locationId)throw Error("pos_checkout_connect_account_mismatch");
+          await settleVerifiedTextToPay({
+           checkoutSessionId:String(object.id),accountId,
+           locationId:String(object.metadata.location_id),
+           checkId:String(object.metadata.check_id),
+           tenderId:String(object.metadata.tender_id),
+           receiptSha256:String(object.metadata.receipt_sha256),
+           sessionId:String(object.metadata.session_id)
+          });
+          break;
+        }
         const type = String(object?.metadata?.type || "");
         if (type === "location_lead_payment" && object.payment_status === "paid") {
           const leadId = String(object.metadata.lead_id || "").trim();
@@ -354,6 +372,17 @@ export async function POST(request: NextRequest) {
 
       case "checkout.session.expired": {
         const type = String(object?.metadata?.type || "");
+        if (type === "pos_text_to_pay") {
+          if(event.livemode!==false||!accountId||!owner.locationId||
+             String(object.metadata.location_id)!==owner.locationId)
+            throw Error("pos_checkout_expiry_account_mismatch");
+          await expireVerifiedTextToPay({
+            checkoutSessionId:String(object.id),accountId,
+            locationId:String(object.metadata.location_id),
+            sessionId:String(object.metadata.session_id)
+          });
+          break;
+        }
         if (type === "location_lead_payment") {
           const leadId = String(object.metadata.lead_id || "").trim();
           const paymentKind = String(object.metadata.payment_kind || "").trim();
@@ -423,6 +452,16 @@ export async function POST(request: NextRequest) {
       }
 
       case "charge.refunded": {
+        if(process.env.POS_TEXT_TO_PAY_STRIPE_SETTLEMENT_ENABLED==="true"&&
+           event.livemode===false&&accountId&&owner.locationId&&
+           typeof object?.payment_intent==="string"&&Number(object.amount_refunded)>0){
+          await reconcileVerifiedPosTextToPayRefund({
+            locationId:owner.locationId,accountId,
+            paymentIntentId:String(object.payment_intent),eventId:String(event.id),
+            amountCents:Number(object.amount),refundedCents:Number(object.amount_refunded),
+            currency:String(object.currency)
+          });
+        }
         const type = String(object?.metadata?.type || "");
         if (type === "location_lead_payment") {
           const leadId = String(object?.metadata?.lead_id || "").trim();
@@ -450,6 +489,25 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "charge.dispute.updated":
+      case "charge.dispute.funds_reinstated":
+      case "charge.dispute.funds_withdrawn": {
+        if(process.env.POS_DISPUTE_INTAKE_ENABLED==="true"&&owner.locationId&&accountId&&
+          typeof object.payment_intent==="string"){
+          try {
+            await recordVerifiedPosDispute({
+              eventId:String(event.id),disputeId:String(object.id),
+              paymentIntentId:object.payment_intent,connectedAccountId:accountId,
+              amountCents:Number(object.amount),currency:String(object.currency),
+              reason:String(object.reason||"unknown"),status:String(object.status||"unknown"),
+              dueAt:object.evidence_details?.due_by?new Date(Number(object.evidence_details.due_by)*1000).toISOString():null
+            });
+          }catch(err){
+            if(!(err instanceof Error)||err.message!=="dispute_payment_ambiguous_or_missing")throw err;
+          }
+        }
+        break;
+      }
       case "charge.dispute.created": {
         const type = String(object?.metadata?.type || "");
         const orderId = type === "event_ticket_order" ? await resolveOrderId(object) : null;
