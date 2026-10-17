@@ -92,5 +92,12 @@ export async function GET() {
     database: "ok",
     nativeRest: "ok",
     client: "ok",
+    // Report only readiness booleans, never environment values or credentials.
+    liV2Acquisition: {
+      searchableImportCertified: process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED === "true",
+      independentProfileSourceCertified: process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED === "true",
+      ready: process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED === "true" &&
+        process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED === "true",
+    },
   });
 }

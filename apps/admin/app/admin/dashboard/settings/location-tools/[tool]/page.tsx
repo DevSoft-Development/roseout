@@ -1,3 +1,4 @@
+import AcquisitionCampaignPanel from "../AcquisitionCampaignPanel";
 import FirstLocationDryRun from "../FirstLocationDryRun";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -34,7 +35,7 @@ const SECTIONS: Record<string, { title: string; description: string; links: { ti
   },
   import: {
     title: "LI V2 Import Operations",
-    description: "Read-only first-location evidence certification. Does not import, publish, or spend money.",
+    description: "Live acquisition campaign, candidate rejections, provider costs and safe recovery. AWS runs worker jobs.",
     links: [
       { title: "Import logs", href: "/admin/dashboard/settings/location-tools/logs" },
       { title: "Location health", href: "/admin/dashboard/crm/location-health" },
@@ -106,6 +107,7 @@ export default async function LocationToolsSectionPage({
             )}
           </section>
         )}
+        {tool === "import" && <AcquisitionCampaignPanel />}
         {tool === "import" && (
           <section className="rounded-2xl border border-white/10 bg-[#111] p-5">
             <h2 className="text-xl font-bold">Superiority Burger certification</h2>
