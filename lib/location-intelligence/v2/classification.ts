@@ -52,7 +52,16 @@ export function deriveLocationClassification(row: Record<string, unknown>) {
   const text = classificationText(row);
   // Search publication is the OUTPUT of V2 certification, not an input to eligibility.
   // Keep all independent exclusions (hidden, low-level, unsupported, quality) intact.
-  const publicClassification = classifyPublicLocation({ ...row, is_searchable: undefined });
+  // These publication outputs are assigned only after classification and
+  // independent publishability/readiness gates pass. Do not feed them back into
+  // pre-publication eligibility or valid imports remain stuck indefinitely.
+  // Keep hidden/visibility, unsupported category, and other exclusions intact.
+  const publicClassification = classifyPublicLocation({
+    ...row,
+    is_searchable: undefined,
+    publish_ready: undefined,
+    quality_status: undefined,
+  });
   const mealEvidence = hasDestinationMealEvidence(row, text);
   const flags = new Set<NegativeLocationFlag>();
 
