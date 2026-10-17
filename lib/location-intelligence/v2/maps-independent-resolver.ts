@@ -132,7 +132,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     });
     if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}
     else mark(raw,origin,"pending_review",saved.reasons?.[0]==="independent_geocode_not_confirmed"
-      ? ["independent_geocode_not_confirmed",...saved.reasons.slice(1)].join(":")
+      ? ["independent_geocode_not_confirmed",...saved.reasons.slice(1)].join(":").slice(0,120)
       : saved.reasons?.[0]||"independent_stage_rejected");
    }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error_"+failureStage); }
  }
