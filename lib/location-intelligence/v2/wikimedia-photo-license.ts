@@ -51,13 +51,13 @@ export async function verifyWikimediaPhoto(filePageUrl:string):Promise<Wikimedia
 export async function discoverVerifiedWikimediaBusinessPhoto(business:{
   name:string; address:string; city:string; state:string;
 }):Promise<WikimediaPhotoEvidence|null> {
-  const clean=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\\s+/g," ");
+  const clean=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
   const name=clean(business.name),street=clean(business.address),city=clean(business.city);
   if(name.length<6||street.length<6||city.length<3)return null;
   const search=new URL("https://commons.wikimedia.org/w/api.php");
   for(const [key,value] of Object.entries({
     action:"query",generator:"search",gsrsearch:`filetype:bitmap "${business.name}" "${business.city}"`,
-    gsrnamespace:"6",gsrlimit:"8",prop:"imageinfo",iiprop:"url|extmetadata",
+    gsrnamespace:"6",gsrlimit:"12",prop:"imageinfo",iiprop:"url|extmetadata",
     format:"json",formatversion:"2",
   }))search.searchParams.set(key,value);
   try {
@@ -66,11 +66,11 @@ export async function discoverVerifiedWikimediaBusinessPhoto(business:{
     if(!response.ok)return null;
     const data=await response.json();
     const pages=Array.isArray(data?.query?.pages)?data.query.pages:[];
-    for(const page of pages.slice(0,8)){
+    for(const page of pages.slice(0,12)){
       const info=page?.imageinfo?.[0],meta=info?.extmetadata;
       const metadataText=(key:string)=>plain(String(meta?.[key]?.value||""));
       const title=clean(String(page?.title||"").replace(/^File:/i,"").replace(/\.[a-z0-9]+$/i,""));
-      const description=clean(metadataText("ImageDescription")+" "+metadataText("ObjectName"));
+      const description=clean(metadataText("ImageDescription")+" "+metadataText("ObjectName")+" "+metadataText("Categories"));
       // Name must be explicit in the title AND descriptive metadata; the exact
       // street must appear in the independent file description. This intentionally
       // sacrifices recall to avoid attaching another business's photo.

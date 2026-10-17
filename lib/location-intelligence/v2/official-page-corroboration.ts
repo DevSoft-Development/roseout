@@ -7,8 +7,10 @@ import { fetchOfficialWebsiteContext } from "./source-executors";
 type Page={url:string;html:string;text:string;title:string};
 const clean=(s:string)=>s.replace(/\s+/g," ").trim();
 const normalize=(s:string)=>clean(s.toLowerCase().replace(/&amp;/g,"&").replace(/[^a-z0-9 ]/g," "));
-const STREET=/\b(\d{1,6}\s+(?:(?:[a-z0-9]+[.]?)\s+){0,5}(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|place|pl|court|ct|way|parkway|pkwy|broadway)(?:\s+[a-z])?)\b/i;
-const CITY_STATE_ZIP=/\b([a-z][a-z .'-]{2,38})\s*,\s*([a-z]{2})\s+(\d{5})(?:-\d{4})?\b/i;
+const STREET=/\b(\d{1,6}(?:-\d{1,4})?\s+(?:(?:[a-z0-9]+[.]?)\s+){0,6}(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|place|pl|court|ct|way|parkway|pkwy|broadway|highway|hwy)(?:[.]?\s+(?:north|south|east|west|n|s|e|w))?)\b/i;
+const CITY_STATE_ZIP=/\b([a-z][a-z .'-]{2,38})\s*,?\s+([a-z]{2})\s+(\d{5})(?:-\d{4})?\b/i;
+const STATES=new Set(["NY","NJ","CT","PA","CA","FL","TX","MA","RI","MD","DC","VA","NC","SC","GA","IL","OH","MI","WA","OR","AZ","CO","NV","MN","WI","TN","MO","LA","AL","AK","AR","DE","HI","ID","IN","IA","KS","KY","ME","MS","MT","NE","NH","NM","ND","OK","SD","UT","VT","WV","WY"]);
+
 const CLOSED=/\b(permanently closed|closed permanently|we have closed|ceased operations)\b/i;
 const HOURS=/\b(?:opening hours|business hours|hours of operation|our hours)\b/i;
 const RESTAURANT=/\b(?:restaurant|cafe|coffee shop|dining|bistro|pizzeria|menu|eatery)\b/i;
@@ -19,7 +21,7 @@ export function pageBusinessEvidence(page:Page){
  const street=content.match(STREET)?.[1]||"";
  const afterStreet=street?content.slice(content.toLowerCase().indexOf(street.toLowerCase())+street.length,content.toLowerCase().indexOf(street.toLowerCase())+street.length+130):"";
  const locality=afterStreet.match(CITY_STATE_ZIP);
- return {name:title,visibleText:normalize(content),street,city:locality?.[1]?.trim()||"",state:locality?.[2]?.toUpperCase()||"",zip:locality?.[3]||"",
+ return {name:title,visibleText:normalize(content),street,city:locality?.[1]?.trim()||"",state:STATES.has(locality?.[2]?.toUpperCase()||"")?locality![2].toUpperCase():"",zip:locality?.[3]||"",
   restaurant:RESTAURANT.test(content),hours:HOURS.test(content),closed:CLOSED.test(content),url:page.url};
 }
 export function corroborateOfficialPages(pages:Page[]){
@@ -46,7 +48,7 @@ export async function fetchCorroboratingOfficialPages(home:Page){
  const origin=new URL(home.url).origin;
  const pages:Page[]=[home];
  // Fixed, bounded same-origin paths, no extracted link following or third-party domains.
- for(const path of ["/contact","/locations","/about","/hours"]){
+ for(const path of ["/contact","/contact-us","/locations","/location","/visit","/about","/hours"]){
   try{
    const page=await fetchOfficialWebsiteContext(origin+path);
    const url=new URL(page.url);
