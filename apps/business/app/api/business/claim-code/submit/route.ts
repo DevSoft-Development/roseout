@@ -52,73 +52,28 @@ export async function POST(req: Request) {
       : "otp_verified_manual_review";
     const now = new Date().toISOString();
 
-    const { data: existing } = await supabaseAdmin
-      .from("location_claim_requests")
-      .select("id,status,user_id")
-      .eq("location_id", lookup.location.id)
-      .eq("verified_contact", challenge.contact_normalized)
-      .in("status", ["pending", "needs_more_info", "approved"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    let claim = existing;
-    if (!claim) {
-      const { data: created, error: createError } = await supabaseAdmin
-        .from("location_claim_requests")
-        .insert({
-          user_id: null,
-          location_id: lookup.location.id,
-          location_name: lookup.publicLocation.name,
-          location_type: lookup.publicLocation.locationType || "location",
-          request_type: "Claim existing listing",
-          address: lookup.publicLocation.address || null,
-          city: lookup.publicLocation.city || null,
-          state: lookup.publicLocation.state || null,
-          zip_code: lookup.publicLocation.zipCode || null,
-          owner_name: "Verified business contact",
-          owner_email: ownerEmail,
-          owner_phone: ownerPhone,
-          status: "pending",
-          verification_status: verificationStatus,
-          match_status: "exact_match",
-          role_at_business: null,
-          claim_code: lookup.code,
-          verified_contact_channel: challenge.channel,
-          verified_contact: challenge.contact_normalized,
-          verified_contact_match: Boolean(challenge.contact_match),
-          submission_ip_hash: challenge.ip_hash || null,
-          matched_location_snapshot: lookup.publicLocation,
-          submission_payload: {
-            source: "qr_otp",
-            challengeId,
-            contactMatch: Boolean(challenge.contact_match),
-          },
-          submitted_at: now,
-          created_at: now,
-          updated_at: now,
-        })
-        .select("id,status,user_id")
-        .single();
-      if (createError || !created) throw createError || new Error("Could not create claim request.");
-      claim = created;
-    }
-
-    // Consume the OTP and canonical claim code under a single database lock.
-    // The RPC is service-role only; never expose it to the browser.
-    const { data: consumed, error: consumeError } = await supabaseAdmin.rpc(
-      "consume_verified_claim_challenge",
-      {
+    // Claim request creation and challenge redemption occur in ONE database transaction.
+    // On any failure PostgreSQL rolls back the claim record and code mutations.
+    const { data: claimId, error: submissionError } = await supabaseAdmin.rpc(
+      "submit_verified_location_claim", {
         p_challenge_id: challengeId,
         p_location_id: String(lookup.location.id),
         p_code: lookup.code,
         p_claim_code_id: lookup.claimCode?.id || null,
-      },
-    );
-    if (consumeError) throw consumeError;
-    if (consumed !== true) {
+        p_claim: {
+          location_name: lookup.publicLocation.name,
+          location_type: lookup.publicLocation.locationType || "location",
+          address: lookup.publicLocation.address || null,
+          city: lookup.publicLocation.city || null,
+          state: lookup.publicLocation.state || null,
+          zip_code: lookup.publicLocation.zipCode || null,
+          matched_location_snapshot: lookup.publicLocation,
+        },
+      });
+    if (submissionError || !claimId) {
       return Response.json({ ok: false, error: "challenge_not_redeemable" }, { status: 409 });
     }
+    const claim = { id: String(claimId), status: "pending", user_id: null };
 
     const identityType = challenge.channel === "email" ? "email_hash" : "phone_hash";
     const fraudTasks: Array<Promise<unknown>> = [
