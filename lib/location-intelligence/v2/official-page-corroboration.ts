@@ -48,7 +48,22 @@ export async function fetchCorroboratingOfficialPages(home:Page){
  const origin=new URL(home.url).origin;
  const pages:Page[]=[home];
  // Fixed, bounded same-origin paths, no extracted link following or third-party domains.
- for(const path of ["/contact","/contact-us","/locations","/location","/visit","/about","/hours"]){
+ // Prefer actual first-party contact/location links when sites use custom paths.
+ // Only same-origin HTTPS URLs with relevant link text or URL paths are eligible.
+ const links:string[]=[];
+ for(const anchor of home.html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)){
+  try {
+   const url=new URL(anchor[1].replace(/&amp;/gi,"&"),origin);
+   const label=anchor[2].replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
+   if(url.protocol!=="https:"||url.origin!==origin||url.username||url.password||
+      !/\b(contact|locations?|visit|about|hours|find us|directions)\b/i.test(url.pathname.replace(/[-_/]/g," ")+" "+label))continue;
+   url.search="";url.hash="";
+   if(url.pathname==="/")continue;
+   if(!links.includes(url.pathname))links.push(url.pathname);
+  }catch{/* malformed or external navigation is not evidence */}
+ }
+ const paths=[...new Set([...links.slice(0,7),"/contact","/contact-us","/locations","/location","/visit","/about","/hours"])].slice(0,10);
+ for(const path of paths){
   try{
    const page=await fetchOfficialWebsiteContext(origin+path);
    const url=new URL(page.url);
