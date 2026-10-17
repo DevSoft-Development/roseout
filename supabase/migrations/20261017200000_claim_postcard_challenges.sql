@@ -7,7 +7,7 @@ create table if not exists public.claim_postcard_challenges (
   verification_hash text not null,
   encrypted_verification_code text not null,
   address_snapshot jsonb not null,
-  status text not null default 'awaiting_fulfillment' check (status in ('awaiting_fulfillment','mailed','verified','expired','canceled')),
+  status text not null default 'awaiting_fulfillment' check (status in ('awaiting_fulfillment','sending','mailed','verified','expired','canceled')),
   attempt_count integer not null default 0 check (attempt_count between 0 and 8),
   resend_count integer not null default 0 check (resend_count between 0 and 2),
   created_at timestamptz not null default now(),
