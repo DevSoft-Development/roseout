@@ -22,9 +22,10 @@ export async function repairLocationIntelligenceV2ReadinessBatch(limit = 50) {
   const { data: priority, error: priorityError } = importedIds.length
     ? await supabaseAdmin.from("location_intelligence_profiles_v2")
         .select("location_id,classification,search_v3_ready")
-        .in("location_id", importedIds).eq("search_v3_ready", false)
+        .in("location_id", importedIds)
     : { data: [], error: null };
   if (priorityError) throw new Error(`LI V2 priority repair lookup failed: ${priorityError.message}`);
+  // Include ready-but-unpublished imports, which also need the publication gate.
   const remaining = Math.max(0, safeLimit - (priority || []).length);
   const { data, error } = remaining
     ? await supabaseAdmin.from("location_intelligence_profiles_v2")
