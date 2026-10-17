@@ -24,7 +24,12 @@ export async function advanceMapsQueue(runId:string,index:number,query:string) {
  if(row?.status==="pending"){
    if(!row.task_id)throw new Error("missing_task_id");
    const result=await getMapsStandardTask(row.task_id);
-   if(result.status==="pending")return {status:"pending"};
+   if(result.status==="pending"){
+     // Pending responses are successful polls. Avoid persisting provider payloads,
+     // but record a safe, query-scoped heartbeat for operational diagnosis.
+     console.info("li_v2_maps_pending_poll",{runId,index,taskId:row.task_id});
+     return {status:"pending"};
+   }
    await update(runId,index,query,"pending","ready");
    // Provider data are not persisted or published until rights and source checks pass.
    return {status:"ready",items:result.items};
