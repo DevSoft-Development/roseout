@@ -15,10 +15,23 @@ type Address = { street: string; city: string; state: string; zip?: string | nul
 export type GeocodeDiagnostic = { provider: "census" | "geoapify"; reason: string };
 type Report = (diagnostic: GeocodeDiagnostic) => void;
 const clean = (v: unknown) => String(v || "").trim().replace(/\s+/g, " ");
+const stateCodes:Record<string,string> = {
+ "ALABAMA":"AL","ALASKA":"AK","ARIZONA":"AZ","ARKANSAS":"AR","CALIFORNIA":"CA","COLORADO":"CO",
+ "CONNECTICUT":"CT","DELAWARE":"DE","DISTRICT OF COLUMBIA":"DC","FLORIDA":"FL","GEORGIA":"GA",
+ "HAWAII":"HI","IDAHO":"ID","ILLINOIS":"IL","INDIANA":"IN","IOWA":"IA","KANSAS":"KS",
+ "KENTUCKY":"KY","LOUISIANA":"LA","MAINE":"ME","MARYLAND":"MD","MASSACHUSETTS":"MA",
+ "MICHIGAN":"MI","MINNESOTA":"MN","MISSISSIPPI":"MS","MISSOURI":"MO","MONTANA":"MT",
+ "NEBRASKA":"NE","NEVADA":"NV","NEW HAMPSHIRE":"NH","NEW JERSEY":"NJ","NEW MEXICO":"NM",
+ "NEW YORK":"NY","NORTH CAROLINA":"NC","NORTH DAKOTA":"ND","OHIO":"OH","OKLAHOMA":"OK",
+ "OREGON":"OR","PENNSYLVANIA":"PA","RHODE ISLAND":"RI","SOUTH CAROLINA":"SC",
+ "SOUTH DAKOTA":"SD","TENNESSEE":"TN","TEXAS":"TX","UTAH":"UT","VERMONT":"VT",
+ "VIRGINIA":"VA","WASHINGTON":"WA","WEST VIRGINIA":"WV","WISCONSIN":"WI","WYOMING":"WY"
+};
 export function normalizedAddress(input: Address) {
   const street = clean(input.street);
   const city = clean(input.city);
-  const state = clean(input.state).toUpperCase();
+  const rawState = clean(input.state).toUpperCase().replace(/\./g,"");
+  const state = stateCodes[rawState] || rawState;
   const zip = clean(input.zip);
   if (!/^\d+(?:-\d+)?\s+\S+/.test(street) || street.length > 180 ||
     !city || city.length > 120 || !/^[A-Z]{2}$/.test(state) ||
