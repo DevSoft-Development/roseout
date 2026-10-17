@@ -53,6 +53,11 @@ function ClaimPageInner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
+  const [videoMessage, setVideoMessage] = useState("");
+  const [dnsChallenge, setDnsChallenge] = useState<{challengeId:string;recordName:string|null;recordValue:string;websiteFileUrl?:string|null}|null>(null);
+  const [dnsMessage, setDnsMessage] = useState("");
+  const [domainMethod, setDomainMethod] = useState<"dns" | "website">("dns");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
 
   async function loadLocation(codeValue = claimCode, source: "qr" | "manual" = "manual") {
     const code = normalizeClaimCode(codeValue);
@@ -226,6 +231,54 @@ function ClaimPageInner() {
     }
   }
 
+  async function startDnsVerification() {
+    setError("");setDnsMessage("");setBusy(true);
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) { setError("Sign in first to verify control of your business website.");return; }
+      const response = await fetch("/api/business/claim/domain",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:claimCode,method:domainMethod})});
+      const result=await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error);
+      setDnsChallenge({challengeId:result.challengeId,recordName:result.recordName,recordValue:result.recordValue,websiteFileUrl:result.websiteFileUrl});
+    }catch {setError("DNS verification is unavailable for this business. You may use another verification method.");}
+    finally {setBusy(false);}
+  }
+  async function checkDnsVerification() {
+    if (!dnsChallenge) return;
+    setBusy(true);setError("");setDnsMessage("");
+    try {
+      const response=await fetch("/api/business/claim/domain",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({challengeId:dnsChallenge.challengeId})});
+      const result=await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error);
+      setDnsMessage("Domain control verified. Your ownership request still requires review.");
+    }catch {setError("The DNS record was not found or verification expired. Check your TXT record and try again.");}
+    finally {setBusy(false);}
+  }
+
+  async function submitVerificationVideo(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!videoFile || !claimCode) return;
+    setError(""); setVideoMessage("");
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      setError("Sign into your TheOutHaven account before submitting verification video.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body = new FormData();
+      body.append("code", claimCode);
+      body.append("video", videoFile);
+      const response = await fetch("/api/business/claim/video", { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(result.error || "video_upload_failed");
+      setVideoMessage("Video submitted securely for ownership review. Submission reference: " + result.submissionId);
+      setVideoFile(null);
+    } catch {
+      setError("We could not submit this video. Please check that it is MP4, WebM, or MOV under 25 MB and try again.");
+    } finally { setBusy(false); }
+  }
+
   async function createOwnerAccess() {
     setError("");
     if (channel !== "email" || !contact.trim() || !claimRequestId || !challengeId) return;
@@ -335,6 +388,33 @@ function ClaimPageInner() {
                   </div>
                   <button type="submit" disabled={busy} className="mt-4 w-full rounded-2xl bg-[#e1062a] px-5 py-4 text-base font-black text-white disabled:opacity-50">{busy ? "Sending…" : "Send verification code"}</button>
                 </form>
+              )}
+
+              {stage === "contact" && (
+                <form onSubmit={submitVerificationVideo} className="mt-6 rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-black">Prefer video verification?</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/55">Show your business signage or work area and evidence that you are authorized to manage this location. Do not show customer records, passwords, or payment details. A reviewer will assess your submission; uploading does not grant access.</p>
+                  <input className="mt-4 block w-full text-sm text-white" type="file" accept="video/mp4,video/webm,video/quicktime" capture="environment" onChange={(event) => setVideoFile(event.target.files?.[0] || null)} />
+                  <button type="submit" disabled={busy || !videoFile} className="mt-4 rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-50">Submit private video for review</button>
+                  {videoMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{videoMessage}</p>}
+                </form>
+              )}
+
+              {stage === "contact" && location?.website && (
+                <section className="mt-6 rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-black">Verify with your business website</h3>
+                  <p className="mt-2 text-sm text-white/55">Use DNS verification if you control your official business domain. This proves domain control, not business ownership.</p>
+                  <div className="mt-3 flex gap-2"><button type="button" onClick={()=>{setDomainMethod("dns");setDnsChallenge(null)}}>DNS TXT</button><button type="button" onClick={()=>{setDomainMethod("website");setDnsChallenge(null)}}>Website file</button></div>
+                  <button type="button" disabled={busy} onClick={()=>void startDnsVerification()} className="mt-3 rounded-xl border border-white/30 px-4 py-3 text-sm font-bold">Generate DNS verification record</button>
+                  {dnsChallenge && <div className="mt-4 space-y-2 text-sm">
+                    <p>{domainMethod==="dns" ? "Record type: TXT" : "Publish a plain-text file containing the value below."}</p>
+                    {dnsChallenge.recordName && <p className="break-all">Host: {dnsChallenge.recordName}</p>}
+                    {dnsChallenge.websiteFileUrl && <p className="break-all">File URL: {dnsChallenge.websiteFileUrl}</p>}
+                    <p className="break-all">Value: {dnsChallenge.recordValue}</p>
+                    <button type="button" disabled={busy} onClick={()=>void checkDnsVerification()} className="rounded-xl bg-white px-4 py-3 font-bold text-black">Check DNS record</button>
+                  </div>}
+                  {dnsMessage && <p role="status" className="mt-3 text-sm text-emerald-200">{dnsMessage}</p>}
+                </section>
               )}
 
               {stage === "otp" && (
