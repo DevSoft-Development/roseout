@@ -33,8 +33,10 @@ export async function stageIndependentCandidate(input:{
  const values=await getCredentialVaultProviderValues("geoapify").catch(()=>({apiKey:""}));
  const location=await geocodeFreeFirst({
    street:p.address!,city:p.city!,state:p.state!,zip:p.zip,
- },{geoapifyKey:String(values.apiKey||"")});
- if(!location)return {staged:false,reasons:["independent_geocode_not_confirmed"]};
+ },{geoapifyKey:String(values.apiKey||""),onDiagnostic:({provider,reason})=>{
+   geocodeFailures.push(`${provider}_${reason}`);
+ }});
+ if(!location)return {staged:false,reasons:["independent_geocode_not_confirmed",...geocodeFailures]};
  if(p.latitude!==undefined && p.longitude!==undefined &&
    distanceM(location.latitude,location.longitude,p.latitude,p.longitude)>500)
    return {staged:false,reasons:["independent_location_coordinate_disagreement"]};
