@@ -52,3 +52,10 @@ assert.match(reviewGuard,/ownershipApproved:false/,"Admin evidence review must n
 const welcomeRoute=readFileSync("app/api/admin/claims/update/route.ts","utf8");
 assert.match(welcomeRoute,/sendClaimWelcomeOnce/,"Location approval must use deduplicated welcome delivery");
 console.log("Claim ownership, video and delivery guard checks passed; real E2E still pending.");
+
+const submitSource=readFileSync("apps/business/app/api/business/claim-code/submit/route.ts","utf8");
+assert.doesNotMatch(submitSource,/\.from\("location_claim_requests"\)[\s\S]*?\.insert\(/,"Claim creation must not happen outside atomic RPC");
+const linkSource=readFileSync("apps/business/app/api/business/claim-code/link-account/route.ts","utf8");
+assert.doesNotMatch(linkSource,/approveLocationClaim/,"Account binding must not approve ownership");
+assert.match(linkSource,/claim\.verified_contact/,"Account must match claim-bound contact");
+console.log("Atomic submission and ownership authorization contracts passed.");
