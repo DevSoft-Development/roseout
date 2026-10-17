@@ -104,15 +104,17 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
-    if(!photoCandidate){photoBlocked++;mark(raw,origin,"pending_review",!id?"photo_unverified_no_google_id":googlePhotoLookups >= (input.maxGooglePhotoLookups ?? 50)?"photo_lookup_budget_exhausted":"photo_slot_unverified");continue;}
-    verified++;
+    // A missing approved photo must not discard independently verified business facts.
+    // Staging records remain photo-pending and are NOT eligible for consumer publication.
+    if(!photoCandidate){photoBlocked++;photoCandidate={...candidate};}
+    else verified++;
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
       candidate:{...photoCandidate,category:candidate.category,
        locationType:candidate.locationType}
     });
-    if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged","independent_stage_accepted");}
+    if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged",photoCandidate.photoUrl?"independent_stage_accepted":"independent_stage_photo_pending");}
     else mark(raw,origin,"pending_review",saved.reasons?.[0]||"independent_stage_rejected");
    }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error_"+failureStage); }
  }
