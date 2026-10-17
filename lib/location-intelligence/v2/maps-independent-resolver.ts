@@ -119,9 +119,34 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(photo)candidate={...licensed,photoUrl:photo.photoUrl,photoPermission:photo.photoPermission,photoSource:"independent"};
     }
     if(!candidate){mark(raw,origin,"rejected","independent_candidate_missing");continue;}
+    const id=googleIdentityLead(raw);
+    // One shared per-candidate Google details call can serve both operating-status
+    // verification and primary-photo identity confirmation. Never exceed the
+    // existing bounded Google lookup allowance, including bootstrap's limit of 1.
+    let matchedGoogleDetails:Awaited<ReturnType<typeof getPlaceDetailsNew>>|null=null;
+    if(candidate.openStatus!=="open" && licensed && id &&
+       googlePhotoLookups < (input.maxGooglePhotoLookups ?? 50)){
+      failureStage="google_identity";
+      const {data:assigned,error:lookupError}=await supabaseAdmin.from("locations")
+        .select("id").eq("google_place_id",id).limit(1);
+      if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
+      if(assigned?.length){mark(raw,origin,"rejected","existing_google_identity");continue;}
+      googlePhotoLookups++;
+      failureStage="google_status";
+      const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"})
+        .catch(()=>null);
+      if(details && matchesIndependentBusiness(candidate,details,id)){
+        matchedGoogleDetails=details;
+        if(details.businessStatus==="OPERATIONAL") candidate={...candidate,openStatus:"open"};
+        else if(details.businessStatus==="CLOSED_TEMPORARILY" ||
+                details.businessStatus==="CLOSED_PERMANENTLY"){
+          mark(raw,origin,"pending_review","google_business_closed");continue;
+        }
+      }
+    }
     if(candidate.openStatus!=="open" && licensed){
-      // A missing provider business_status is not evidence of closure or opening.
-      // Independently corroborate the same business on its official website.
+      // Provider unknown is not proof of closure. Fail closed unless the
+      // official website corroborates an exact business identity and hours.
       failureStage="official_status";
       const proof=await resolveOfficialWebsiteLead(origin,grant).catch(()=>null);
       const verified=proof?.candidate;
@@ -133,7 +158,6 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
         candidate={...candidate,openStatus:"open"};
     }
     if(candidate.openStatus!=="open"){mark(raw,origin,"pending_review","operating_status_unverified");continue;}
-    const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     const candidatePhoto=candidate as IndependentBusinessProfile & typeof candidate;
     if(candidatePhoto.photoUrl && candidatePhoto.photoPermission)photoCandidate={...candidatePhoto,photoSource:"independent"};
@@ -146,7 +170,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(licensed)photoCandidate={...candidate,photoUrl:licensed.imageUrl,
         photoSource:"wikimedia_commons",wikimediaFilePageUrl:licensed.filePageUrl};
     }
-    if(!photoCandidate && id && googlePhotoLookups < (input.maxGooglePhotoLookups ?? 50)){
+    if(!photoCandidate && id && (matchedGoogleDetails || googlePhotoLookups < (input.maxGooglePhotoLookups ?? 50))){
       // Free-first: reject any ID already attached to a TOH record before billed Google details.
       // A shared venue ID is NOT proof these businesses are duplicates.
       failureStage="google_identity";
@@ -155,9 +179,9 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(lookupError)throw new Error("google_identity_lookup_failed:"+lookupError.message);
       if(assigned?.length){photoBlocked++;mark(raw,origin,"rejected","existing_google_identity");continue;}
       // Only unresolved identities needing a Google live photo can reach this billed check.
-      googlePhotoLookups++;
+      if(!matchedGoogleDetails)googlePhotoLookups++;
       failureStage="google_details";
-      const details=await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
+      const details=matchedGoogleDetails || await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
       if(!matchesIndependentBusiness(candidate,details,id)){mark(raw,origin,"rejected","google_identity_mismatch");continue;}
       failureStage="google_slot";
       const slot=await getGooglePhotoSlot(id,0);
