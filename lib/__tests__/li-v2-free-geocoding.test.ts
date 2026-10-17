@@ -3,6 +3,11 @@ import {normalizedAddress,censusGeocode,geoapifyGeocode,geocodeFreeFirst} from "
 
 describe("LI V2 permanent-coordinate free geocoding",()=>{
   const address={street:"100 Main St",city:"Albany",state:"NY",zip:"12207"};
+  it("normalizes licensed-dataset full state names without reducing address precision",()=>{
+    expect(normalizedAddress({...address,state:"New York"})?.state).toBe("NY");
+    expect(normalizedAddress({...address,state:"New Jersey"})?.state).toBe("NJ");
+    expect(normalizedAddress({...address,state:"Unknown State"})).toBeNull();
+  });
   it("rejects partial addresses without network calls",async()=>{
     const fetcher=vi.fn();
     expect(normalizedAddress({...address,street:"Main St"})).toBeNull();
