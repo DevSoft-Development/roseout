@@ -150,7 +150,11 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       failureStage="official_status";
       const proof=await resolveOfficialWebsiteLead(origin,grant).catch(()=>null);
       const verified=proof?.candidate;
-      const normalized=(v:string)=>v.toLowerCase().replace(/[^a-z0-9]/g,"");
+      const normalized=(v:string)=>v.toLowerCase()
+        .replace(/\b(street|st)\b/g,"st").replace(/\b(avenue|ave)\b/g,"ave")
+        .replace(/\b(road|rd)\b/g,"rd").replace(/\b(boulevard|blvd)\b/g,"blvd")
+        .replace(/\b(new york city|nyc)\b/g,"new york")
+        .replace(/[^a-z0-9]/g,"");
       const sameIdentity=verified && normalized(verified.name||"")===normalized(candidate.name||"") &&
         normalized(verified.address||"")===normalized(candidate.address||"") &&
         normalized(verified.city||"")===normalized(candidate.city||"");
@@ -193,7 +197,10 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     // Keep unresolved leads in review rather than staging photo-less records.
     if(!photoCandidate){
       photoBlocked++;
-      mark(raw,origin,"pending_review",id ? "approved_primary_photo_unavailable" : "approved_primary_photo_unavailable_no_google_identity");
+      mark(raw,origin,"pending_review",!id ? "approved_primary_photo_unavailable_no_google_identity" :
+        googlePhotoLookups >= (input.maxGooglePhotoLookups ?? 50) && !matchedGoogleDetails
+          ? "approved_primary_photo_unavailable_google_lookup_cap"
+          : "approved_primary_photo_unavailable_no_licensed_or_google_photo");
       continue;
     }
     verified++;
