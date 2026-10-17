@@ -39,7 +39,7 @@ export async function stageIndependentCandidate(input:{
    distanceM(location.latitude,location.longitude,p.latitude,p.longitude)>500)
    return {staged:false,reasons:["independent_location_coordinate_disagreement"]};
  const verified={...p,latitude:location.latitude,longitude:location.longitude};
- const verdict=assessIndependentBusinessProfile(verified);
+ const verdict=assessIndependentBusinessProfile(verified,{allowPhotoPending:true});
  if(!verdict.publishable)return {staged:false,reasons:verdict.reasons};
  const identifier=(p.googlePlaceId&&/^[A-Za-z0-9_-]{8,255}$/.test(p.googlePlaceId))
    ?p.googlePlaceId:createHash("sha256").update(
@@ -60,15 +60,15 @@ export async function stageIndependentCandidate(input:{
     metadata:{campaign_id:input.campaignId,run_id:input.runId}
   }).select("id").single();
  if(batchError||!batch)throw new Error("independent_import_batch_creation_failed");
- const primaryPhoto=p.photoUrl!.trim();
+ const primaryPhoto=p.photoUrl?.trim() || null;
  // Import a single primary photo only. Gallery photos are loaded on demand on profile views.
  const base={
    batch_id:batch.id,source,source_id:identifier,source_url:p.sourceUrl,
    location_type:p.locationType,name:p.name,address:p.address,city:p.city,
    state:p.state,zip_code:p.zip||null,website:p.website||null,
    latitude:location.latitude,longitude:location.longitude,
-   primary_category:p.category,main_image:primaryPhoto,images:[primaryPhoto],
-   has_photos:true,photo_status:p.photoSource==="google_live"?"google_photo":"imported_photo",
+   primary_category:p.category,main_image:primaryPhoto,images:primaryPhoto?[primaryPhoto]:[],
+   has_photos:Boolean(primaryPhoto),photo_status:!primaryPhoto?"missing_photo":p.photoSource==="google_live"?"google_photo":"imported_photo",
    duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
    import_confidence:"high",
@@ -77,7 +77,7 @@ export async function stageIndependentCandidate(input:{
        photoPermission:p.photoPermission||null,
        photoSource:p.photoSource||"independent",
        googlePhotoSlotVerified:p.googlePhotoSlotVerified===true,
-       photoStrategy:"primary_only_gallery_on_demand",
+       photoStrategy:primaryPhoto?"primary_only_gallery_on_demand":"photo_pending",
        wikimediaEvidence,
        businessContact: p.businessEmail && p.businessEmailSourceUrl
          ? {email:p.businessEmail,sourceUrl:p.businessEmailSourceUrl,kind:"published_role_mailbox",verified:false}
