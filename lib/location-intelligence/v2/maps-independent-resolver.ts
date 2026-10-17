@@ -151,9 +151,9 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       const proof=await resolveOfficialWebsiteLead(origin,grant).catch(()=>null);
       const verified=proof?.candidate;
       const normalized=(v:string)=>v.toLowerCase()
-        .replace(/\\b(street|st)\\b/g,"st").replace(/\\b(avenue|ave)\\b/g,"ave")
-        .replace(/\\b(road|rd)\\b/g,"rd").replace(/\\b(boulevard|blvd)\\b/g,"blvd")
-        .replace(/\\b(new york city|nyc)\\b/g,"new york")
+        .replace(/\b(street|st)\b/g,"st").replace(/\b(avenue|ave)\b/g,"ave")
+        .replace(/\b(road|rd)\b/g,"rd").replace(/\b(boulevard|blvd)\b/g,"blvd")
+        .replace(/\b(new york city|nyc)\b/g,"new york")
         .replace(/[^a-z0-9]/g,"");
       const sameIdentity=verified && normalized(verified.name||"")===normalized(candidate.name||"") &&
         normalized(verified.address||"")===normalized(candidate.address||"") &&
