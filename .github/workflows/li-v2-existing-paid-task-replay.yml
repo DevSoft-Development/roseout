@@ -81,6 +81,7 @@ jobs:
           if result.get("status") not in ("replayed_without_discovery_purchase","provider_task_pending"):
               raise SystemExit("Unexpected replay result status")
           print("Replay status:",result.get("status"))
+          print("Acquired leads checkpointed:",result.get("acquired"))
           print("Inspected:",result.get("inspected"))
           print("Staged:",result.get("staged"))
           print("Published location IDs:",len(result.get("publishedLocationIds",[])))
