@@ -1,0 +1,46 @@
+name: LI V2 authenticated business Search V3 certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      location_id:
+        description: "Verified independently published LI V2 business UUID"
+        required: true
+        default: "0f9c90fa-c73a-4d8b-970d-8c51bec9e968"
+        type: string
+  pull_request:
+    paths:
+      - 'scripts/certify-li-v2-business-search-v3-e2e.mjs'
+      - '.github/workflows/li-v2-business-search-v3-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check script syntax and fail-closed authentication
+        run: |
+          node --check scripts/certify-li-v2-business-search-v3-e2e.mjs
+          if node scripts/certify-li-v2-business-search-v3-e2e.mjs; then
+            echo "ERROR: missing credentials did not block certification"
+            exit 1
+          fi
+  certify:
+    if: github.event_name == 'workflow_dispatch'
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: li-v2-certification
+    timeout-minutes: 10
+    env:
+      LI_E2E_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+      LI_E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.LI_E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      LI_E2E_SEARCH_URL: ${{ vars.LI_E2E_SEARCH_URL }}
+      LI_E2E_SEARCH_BEARER_TOKEN: ${{ secrets.LI_E2E_SEARCH_BEARER_TOKEN }}
+      LI_E2E_LOCATION_ID: ${{ inputs.location_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Certify authenticated business retrieval without menu requirement
+        run: node scripts/certify-li-v2-business-search-v3-e2e.mjs
