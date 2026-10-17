@@ -44,7 +44,7 @@ jobs:
         run: psql "$PG_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014180000_li_v2_acquisition_cost_ledger.sql
       - name: Verify independent-session concurrency and budget exhaustion
         run: bash scripts/certify-li-v2-concurrent-reservations.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
