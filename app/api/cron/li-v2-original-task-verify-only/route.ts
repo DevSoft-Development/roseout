@@ -43,12 +43,13 @@ export async function POST(request:Request) {
    const result=await resolveOfficialWebsiteLead(origin);
    if(result.status==="needs_independent_evidence"||!result.candidate){add(result.reason||"independent_evidence_missing");continue;}
    const candidate=result.candidate;
-   if(candidate.openStatus!=="open"){add("operating_status_unverified");continue;}
+   // Unknown hours do not prove closure. Diagnose geocoding while withholding approval.
+   const operatingStatusConfirmed=candidate.openStatus==="open";
    const diagnostics:string[]=[];
    const location=await geocodeFreeFirst({street:candidate.address!,city:candidate.city!,state:candidate.state!,zip:candidate.zip},
      {geoapifyKey:String(geo.apiKey||""),onDiagnostic:d=>diagnostics.push(d.provider+"_"+d.reason)});
-   if(!location){add("geocode_"+(diagnostics.at(-1)||"unconfirmed"));continue;}
-   add("independently_verified_geocoded");
+   if(!location){add(operatingStatusConfirmed?"geocode_"+(diagnostics.at(-1)||"unconfirmed"):"operating_status_unverified_and_geocode_unconfirmed");continue;}
+   add(operatingStatusConfirmed?"independently_verified_geocoded":"operating_status_unverified_geocode_confirmed");
   }catch{add("verification_request_failed");}
  }
  return Response.json({ok:true,readonly:true,noNewDiscoveryPurchase:true,
