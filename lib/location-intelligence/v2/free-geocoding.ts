@@ -12,6 +12,8 @@ export type GeocodeResult = {
   attribution: string | null;
 };
 type Address = { street: string; city: string; state: string; zip?: string | null };
+export type GeocodeDiagnostic = { provider: "census" | "geoapify"; reason: string };
+type Report = (diagnostic: GeocodeDiagnostic) => void;
 const clean = (v: unknown) => String(v || "").trim().replace(/\s+/g, " ");
 export function normalizedAddress(input: Address) {
   const street = clean(input.street);
@@ -37,9 +39,9 @@ async function json(url:URL, fetcher:typeof fetch) {
     return await response.json() as Record<string,any>;
   } finally {clearTimeout(timeout);}
 }
-export async function censusGeocode(address: Address, fetcher:typeof fetch=fetch):Promise<GeocodeResult|null> {
+export async function censusGeocode(address: Address, fetcher:typeof fetch=fetch, report?:Report):Promise<GeocodeResult|null> {
   const valid=normalizedAddress(address);
-  if(!valid)return null;
+  if(!valid){report?.({provider:"census",reason:"invalid_address"});return null;}
   const url=new URL("https://geocoding.geo.census.gov/geocoder/geographies/address");
   url.searchParams.set("street",valid.street);
   url.searchParams.set("city",valid.city);
@@ -50,9 +52,13 @@ export async function censusGeocode(address: Address, fetcher:typeof fetch=fetch
   url.searchParams.set("format","json");
   const data=await json(url,fetcher);
   const matches=data?.result?.addressMatches;
-  if (!Array.isArray(matches)||matches.length!==1)return null;
+  if (!Array.isArray(matches)){report?.({provider:"census",reason:"invalid_response"});return null;}
+  if (matches.length!==1){report?.({provider:"census",reason:matches.length===0?"no_match":"ambiguous_matches"});return null;}
   const match=matches[0],point=validPoint(match?.coordinates?.y,match?.coordinates?.x);
-  if(!point || !String(match?.matchedAddress||"").toUpperCase().includes(valid.state))return null;
+  if(!point){report?.({provider:"census",reason:"invalid_coordinates"});return null;}
+  if(!String(match?.matchedAddress||"").toUpperCase().includes(valid.state)){
+    report?.({provider:"census",reason:"state_mismatch"});return null;
+  }
   return {...point,provider:"census",precision:"street_range",matchedAddress:String(match.matchedAddress),attribution:null};
 }
 export async function geoapifyGeocode(address:Address,key:string,fetcher:typeof fetch=fetch):Promise<GeocodeResult|null> {
@@ -64,22 +70,37 @@ export async function geoapifyGeocode(address:Address,key:string,fetcher:typeof 
   url.searchParams.set("limit","2");
   url.searchParams.set("apiKey",key);
   const data=await json(url,fetcher), features=data?.features;
-  if(!Array.isArray(features)||features.length!==1)return null;
-  const properties=features[0]?.properties||{};
-  if(String(properties.state_code||"").toUpperCase()!==valid.state)return null;
-  if(String(properties.rank?.match_type||"")!=="full_match" && Number(properties.rank?.confidence||0)<0.95)return null;
-  if(String(properties.result_type||"")!=="building" && String(properties.result_type||"")!=="amenity")return null;
+  if(!Array.isArray(features))return null;
+  // Geoapify can return two suggestions where only one is an eligible building.
+  // Accept only a single qualifying result; ambiguous matches remain blocked.
+  const eligible=features.filter((feature:Record<string,any>)=>{
+    const p=feature?.properties||{};
+    return String(p.state_code||"").toUpperCase()===valid.state &&
+      (String(p.rank?.match_type||"")==="full_match" || Number(p.rank?.confidence||0)>=0.95) &&
+      (String(p.result_type||"")==="building" || String(p.result_type||"")==="amenity");
+  });
+  if(eligible.length!==1)return null;
+  const properties=eligible[0].properties;
   const point=validPoint(properties.lat,properties.lon);
   if(!point)return null;
   return {...point,provider:"geoapify",precision:"building",matchedAddress:String(properties.formatted||""),attribution:"© OpenStreetMap contributors; Geoapify"};
 }
 export async function geocodeFreeFirst(
-  address:Address, options:{geoapifyKey?:string;fetcher?:typeof fetch}={}
+  address:Address, options:{geoapifyKey?:string;fetcher?:typeof fetch;onDiagnostic?:Report}={}
 ):Promise<GeocodeResult|null> {
   const fetcher=options.fetcher||fetch;
   let census:GeocodeResult|null=null;
-  try {census=await censusGeocode(address,fetcher);}catch {/* fallback on outages */ }
+  try {census=await censusGeocode(address,fetcher,options.onDiagnostic);}catch {
+    options.onDiagnostic?.({provider:"census",reason:"request_error"});
+  }
   if(census)return census;
-  if(!options.geoapifyKey)return null;
-  try{return await geoapifyGeocode(address,options.geoapifyKey,fetcher);}catch{return null;}
+  if(!options.geoapifyKey){options.onDiagnostic?.({provider:"geoapify",reason:"not_configured"});return null;}
+  try{
+    const fallback=await geoapifyGeocode(address,options.geoapifyKey,fetcher);
+    if(!fallback)options.onDiagnostic?.({provider:"geoapify",reason:"no_unique_qualifying_match"});
+    return fallback;
+  }catch{
+    options.onDiagnostic?.({provider:"geoapify",reason:"request_error"});
+    return null;
+  }
 }
