@@ -119,6 +119,19 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(photo)candidate={...licensed,photoUrl:photo.photoUrl,photoPermission:photo.photoPermission,photoSource:"independent"};
     }
     if(!candidate){mark(raw,origin,"rejected","independent_candidate_missing");continue;}
+    if(candidate.openStatus!=="open" && licensed){
+      // A missing provider business_status is not evidence of closure or opening.
+      // Independently corroborate the same business on its official website.
+      failureStage="official_status";
+      const proof=await resolveOfficialWebsiteLead(origin,grant).catch(()=>null);
+      const verified=proof?.candidate;
+      const normalized=(v:string)=>v.toLowerCase().replace(/[^a-z0-9]/g,"");
+      const sameIdentity=verified && normalized(verified.name)===normalized(candidate.name) &&
+        normalized(verified.address)===normalized(candidate.address) &&
+        normalized(verified.city)===normalized(candidate.city);
+      if(sameIdentity && verified.openStatus==="open")
+        candidate={...candidate,openStatus:"open"};
+    }
     if(candidate.openStatus!=="open"){mark(raw,origin,"pending_review","operating_status_unverified");continue;}
     const id=googleIdentityLead(raw);
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
