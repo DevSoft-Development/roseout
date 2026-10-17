@@ -88,12 +88,12 @@ export function extractOfficialImageReferences(html:string,pageUrl:string) {
    if(!references.some(x=>x.imageUrl===u.href))references.push({imageUrl:u.href,sourcePageUrl:pageUrl,kind});
   }catch{/* ignore malformed image URL */}
  };
- for(const m of html.matchAll(/<meta\\b[^>]*>/gi)){
+ for(const m of html.matchAll(/<meta\b[^>]*>/gi)){
   const tag=m[0];
-  if(!/(?:property|name)\\s*=\\s*["'](?:og:image|twitter:image)["']/i.test(tag))continue;
-  const url=tag.match(/content\\s*=\\s*["']([^"']+)["']/i)?.[1];add(url,"social_meta");
+  if(!/(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["']/i.test(tag))continue;
+  const url=tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1];add(url,"social_meta");
  }
- for(const m of html.matchAll(/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi)){
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
   try{for(const node of graphs(JSON.parse(m[1]))){
    const img=node.image;
    for(const value of Array.isArray(img)?img:[img]) add(typeof value==="string"?value:plain(value).url,"json_ld");
