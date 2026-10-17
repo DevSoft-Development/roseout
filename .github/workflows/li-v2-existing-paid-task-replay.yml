@@ -39,7 +39,7 @@ jobs:
           set -euo pipefail
           test "$(aws sts get-caller-identity --query Account --output text)" = '742020474738'
           FUNCTION=toh-production-background-runtime
-          EXPECTED_COMMIT=180a6b9d55768b1f9d89aedabe833db905e8ee82
+          EXPECTED_COMMIT=7bd1393b87767478bdb3e4e94643706b633a53be
           DEPLOYED="$(aws lambda get-function-configuration --function-name "$FUNCTION" --query 'Environment.Variables.BACKGROUND_RUNTIME_DEPLOY_GENERATION' --output text)"
           case "$DEPLOYED" in *:"$EXPECTED_COMMIT") ;; *) echo "Expected background runtime merge commit not deployed"; exit 1;; esac
           aws lambda wait function-active-v2 --function-name "$FUNCTION"
