@@ -1,7 +1,7 @@
 import "server-only";
 import {supabaseAdmin} from "@/lib/supabase-admin";
 import {getMapsStandardTask} from "@/lib/location-intelligence/v2/dataforseo-maps-standard";
-import {websiteLeadFromMapsItem} from "@/lib/location-intelligence/v2/maps-independent-resolver";
+import {websiteLeadFromMapsItem,googleIdentityLead} from "@/lib/location-intelligence/v2/maps-independent-resolver";
 import {resolveOfficialWebsiteLead} from "@/lib/location-intelligence/v2/official-website-resolver";
 import {geocodeFreeFirst} from "@/lib/location-intelligence/v2/free-geocoding";
 import {getCredentialVaultProviderValues} from "@/lib/admin/credential-vault-runtime-source";
@@ -29,20 +29,29 @@ export async function POST(request:Request) {
   return Response.json({ok:false,error:"task_identity_not_verified"},{status:409});
  const purchased=await getMapsStandardTask(TASK_ID);
  if(purchased.status!=="ready")return Response.json({ok:false,error:"original_task_not_ready"},{status:409});
- const seen=new Set<string>(),origins:string[]=[];
+ const seen=new Set<string>(),origins:{origin:string;raw:unknown}[]=[];
  for(const raw of purchased.items.slice(0,50)){
   const origin=websiteLeadFromMapsItem(raw);
-  if(origin&&!seen.has(origin)){seen.add(origin);origins.push(origin);}
+  if(origin&&!seen.has(origin)){seen.add(origin);origins.push({origin,raw});}
  }
  const group=origins.slice(offset,offset+8);
  const counts:Record<string,number>={};
  const add=(reason:string)=>{counts[reason]=(counts[reason]||0)+1;};
  const geo=await getCredentialVaultProviderValues("geoapify").catch(()=>({apiKey:""}));
- for(const origin of group){
+ for(const {origin,raw} of group){
   try{
    const result=await resolveOfficialWebsiteLead(origin);
    if(result.status==="needs_independent_evidence"||!result.candidate){add(result.reason||"independent_evidence_missing");continue;}
    const candidate=result.candidate;
+   const item=(raw&&typeof raw==="object"&&!Array.isArray(raw)?raw:{}) as Record<string,unknown>;
+   // Diagnostic only: preserve distinctions between provider-derived assertions and independent proof.
+   const status=String(item.business_status||item.businessStatus||item.status||"").toLowerCase();
+   const providerOpen=["open","opened","operational","operating"].includes(status);
+   const providerClosed=["closed_forever","permanently_closed","permanently closed","closed_permanently"].includes(status);
+   if(providerClosed){add("provider_reports_permanently_closed");continue;}
+   const googleIdentity=googleIdentityLead(raw);
+   if(!googleIdentity)add("google_photo_identity_missing");
+   if(providerOpen)add("provider_claims_open_unconfirmed");
    // Unknown hours do not prove closure. Diagnose geocoding while withholding approval.
    const operatingStatusConfirmed=candidate.openStatus==="open";
    const diagnostics:string[]=[];
