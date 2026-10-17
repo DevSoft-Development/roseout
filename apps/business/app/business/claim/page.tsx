@@ -458,7 +458,7 @@ function ClaimPageInner() {
                   ) : (
                     <div className="mt-4">
                       <label className="text-sm font-bold" htmlFor="postcardCode">Nine-digit postcard code</label>
-                      <input id="postcardCode" className={inputClass+" mt-2"} inputMode="numeric" maxLength={9} value={postcardCode} onChange={e=>setPostcardCode(e.target.value.replace(/\\D/g,"").slice(0,9))} placeholder="Enter mailed code" />
+                      <input id="postcardCode" className={inputClass+" mt-2"} inputMode="numeric" maxLength={9} value={postcardCode} onChange={e=>setPostcardCode(e.target.value.replace(/\D/g,"").slice(0,9))} placeholder="Enter mailed code" />
                       <button type="button" disabled={busy||postcardCode.length!==9} onClick={()=>void verifyPostcard()} className="mt-3 rounded-xl bg-white px-4 py-3 text-sm font-bold text-black disabled:opacity-50">Verify mailed code</button>
                     </div>
                   )}
