@@ -17,6 +17,15 @@ jobs:
     environment: production
     timeout-minutes: 20
     steps:
+      - name: Require end-to-end certification before production replay
+        env:
+          LI_V2_E2E_CERTIFIED: ${{ vars.LI_V2_E2E_CERTIFIED }}
+        run: |
+          set -euo pipefail
+          if [ "$LI_V2_E2E_CERTIFIED" != "true" ]; then
+            echo 'Blocked: LI V2 must pass database intake, duplicate, verification, staging, publication, and Search V3 certification before replay.'
+            exit 1
+          fi
       - name: Configure AWS production role
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
