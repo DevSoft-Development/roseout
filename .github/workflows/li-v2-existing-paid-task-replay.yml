@@ -15,7 +15,7 @@ jobs:
   replay:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - name: Configure AWS production role
         uses: aws-actions/configure-aws-credentials@v6.2.3
@@ -62,7 +62,8 @@ jobs:
           Path(os.environ["PAYLOAD_FILE"]).write_text(json.dumps(event))
           PY
           chmod 600 "$PAYLOAD_FILE"
-          aws lambda invoke --function-name "$FUNCTION" \
+          AWS_MAX_ATTEMPTS=1 aws lambda invoke --function-name "$FUNCTION" \
+            --cli-read-timeout 920 --cli-connect-timeout 30 \
             --cli-binary-format raw-in-base64-out \
             --payload "fileb://$PAYLOAD_FILE" \
             "$RESULT_FILE" > "$RUNNER_TEMP/li-v2-invoke-metadata.json"
