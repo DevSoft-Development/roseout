@@ -104,7 +104,7 @@ jobs:
           printf '%s' "$SHARED_SECRET" > "$RUNNER_TEMP/assistant-api-secret"
           chmod 600 "$RUNNER_TEMP/assistant-api-secret"
       - name: Configure temporary AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}

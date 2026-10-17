@@ -14,7 +14,7 @@ jobs:
           APPROVED: ${{ vars.LI_V2_PRODUCTION_IMPORT_APPROVED }}
         run: test "$APPROVED" = true
       - name: AWS scoped import identity
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenLiV2SingleLocationImportRole
           aws-region: us-east-1
