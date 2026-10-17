@@ -77,7 +77,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     let attemptedGooglePhotoLookup=false;
     let photoCandidate:(IndependentBusinessProfile & {website:string;category:string;locationType:"restaurant"|"activity";zip?:string})|null=null;
     if(resolved.status==="verified_evidence")photoCandidate={...candidate,photoSource:"independent"};
-    else if(resolved.status==="needs_photo_permission"){
+    else if(resolved.status==="photo_pending"){
       failureStage="wikimedia";
       const licensed=await discoverVerifiedWikimediaBusinessPhoto({
         name:candidate.name||"",address:candidate.address||"",
@@ -111,10 +111,10 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...photoCandidate,category:candidate.category,
+      candidate:{...(photoCandidate||candidate),googlePlaceId:photoCandidate?.googlePlaceId||id||undefined,category:candidate.category,
        locationType:candidate.locationType}
     });
-    if(saved.staged){staged++;batches.add(saved.batchId);mark(raw,origin,"staged","independent_stage_accepted");}
+    if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}
     else mark(raw,origin,"pending_review",saved.reasons?.[0]||"independent_stage_rejected");
    }catch(error){mark(raw,origin,"pending_review",error instanceof Error && /^photo_grant_lookup_failed/.test(error.message)?"photo_grant_lookup_failed":"candidate_resolution_error_"+failureStage); }
  }
