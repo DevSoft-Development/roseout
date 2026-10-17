@@ -10,6 +10,18 @@ const MAX_SIZE = 25 * 1024 * 1024;
 const TYPES = new Map([["video/mp4","mp4"],["video/webm","webm"],["video/quicktime","mov"]]);
 const hash = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
 
+// MIME types are client-controlled; verify the container signature before storage.
+function validVideoSignature(bytes: Uint8Array, mime: string): boolean {
+  if (mime === "video/mp4" || mime === "video/quicktime") {
+    if (bytes.length < 12) return false;
+    const box = String.fromCharCode(...bytes.subarray(4, 8));
+    const brand = String.fromCharCode(...bytes.subarray(8, 12));
+    return box === "ftyp" && /^[a-zA-Z0-9 ]{4}$/.test(brand);
+  }
+  return mime === "video/webm" && bytes.length >= 4 &&
+    bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+}
+
 export async function POST(request: Request) {
   const auth = await createClient();
   const { data } = await auth.auth.getUser();
@@ -34,6 +46,7 @@ export async function POST(request: Request) {
   const storagePath = `${lookup.location.id}/${id}.${ext}`;
   // Private evidence; upload only from a trusted server route.
   const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!validVideoSignature(bytes, file.type)) return Response.json({ok:false,error:"invalid_video"},{status:400});
   const uploaded = await supabaseAdmin.storage.from(BUCKET).upload(storagePath,bytes,{
     contentType:file.type,upsert:false,cacheControl:"no-store"
   });
