@@ -38,7 +38,7 @@ export async function finalizeIndependentBatch(batchId:string) {
    if(location.is_searchable===true && location.has_photos===true && result.searchV3Ready)verified.push(id);
    else incomplete.push(id);
  }
- return {dedupe,published,readyLocationIds:verified,needsReadiness:incomplete,
+ return {dedupe,published,publishedLocationIds:(locations||[]).map(x=>String(x.id)),readyLocationIds:verified,needsReadiness:incomplete,
    // Requires a separate authenticated Search V3 retrieval after Azure sync.
    searchV3RetrievalCertified:false};
 }

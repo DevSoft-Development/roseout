@@ -1,0 +1,52 @@
+name: AWS web surface live deployment diagnostics
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/aws-web-surface-live-diagnostics.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AWS_REGION: us-east-1
+      STACK: theouthaven-web-surface-services-production
+      FOUNDATION: theouthaven-web-surfaces-production
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Inspect live CloudFormation ECS and target groups (read only)
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo '=== CloudFormation stack ==='
+          aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].{Status:StackStatus,Reason:StackStatusReason,Updated:LastUpdatedTime}' --output json || true
+          echo '=== Stack resource states ==='
+          aws cloudformation describe-stack-resources --stack-name "$STACK" --query 'StackResources[].[LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' --output table || true
+          echo '=== Recent stack events ==='
+          aws cloudformation describe-stack-events --stack-name "$STACK" --query 'StackEvents[:35].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' --output table || true
+          CLUSTER="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION" --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue" --output text)"
+          echo "Cluster resolved: $([ -n "$CLUSTER" ] && echo yes || echo no)"
+          for SURFACE in admin business; do
+            SERVICE="toh-production-${SURFACE}-web"
+            echo "=== $SERVICE state and service events ==="
+            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[].{status:status,desired:desiredCount,running:runningCount,pending:pendingCount,deployments:deployments[].{status:status,rollout:rolloutState,reason:rolloutStateReason,desired:desiredCount,running:runningCount,pending:pendingCount},events:events[:12].[createdAt,message]}' --output json || true
+            TASKS="$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --desired-status STOPPED --max-results 10 --query taskArns --output text 2>/dev/null || true)"
+            if [ -n "$TASKS" ] && [ "$TASKS" != "None" ]; then
+              echo "=== $SERVICE stopped tasks ==="
+              aws ecs describe-tasks --cluster "$CLUSTER" --tasks $TASKS --query 'tasks[].{stopCode:stopCode,reason:stoppedReason,containers:containers[].{name:name,exitCode:exitCode,reason:reason,lastStatus:lastStatus}}' --output json || true
+            fi
+            KEY="$(echo "$SURFACE" | sed 's/^./\U&/')TargetGroupArn"
+            TG="$(aws cloudformation describe-stacks --stack-name "$FOUNDATION" --query "Stacks[0].Outputs[?OutputKey=='$KEY'].OutputValue" --output text)"
+            if [ -n "$TG" ] && [ "$TG" != "None" ]; then
+              echo "=== $SERVICE target health ==="
+              aws elbv2 describe-target-health --target-group-arn "$TG" --query 'TargetHealthDescriptions[].{state:TargetHealth.State,reason:TargetHealth.Reason,description:TargetHealth.Description}' --output json || true
+            fi
+          done
+          echo 'Diagnostic workflow is read-only and did not modify services or deployment.'

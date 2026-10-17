@@ -20,7 +20,7 @@ const base = {
 
 describe("LI V2 non-billable independent profile certification", () => {
   it("accepts complete independently sourced photo-rights evidence", () => {
-    expect(assessIndependentBusinessProfile(base)).toEqual({ publishable: true, reasons: [] });
+    expect(assessIndependentBusinessProfile(base)).toMatchObject({ publishable: true, importEligible:true, photoReady:true, reasons: [] });
   });
   it.each([
     [{ ...base, photoUrl: undefined }, "approved_photo_missing"],

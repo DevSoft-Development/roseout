@@ -1,6 +1,7 @@
 export type IndependentBusinessProfile = {
   name?: string; address?: string; city?: string; state?: string;
   latitude?: number; longitude?: number; sourceUrl?: string;
+  officialImageReferences?: {imageUrl:string;sourcePageUrl:string;kind:string}[];
   photoUrl?: string; photoPermission?: "licensed" | "owner" | "public_domain";
   /** Google photos are live, attributed provider content, NOT licensed assets. */
   photoSource?: "google_live" | "independent" | "wikimedia_commons";
@@ -29,8 +30,8 @@ export function assessIndependentBusinessProfile(p: IndependentBusinessProfile) 
   if (p.duplicate) reasons.push("existing_business_duplicate");
   const independentPhoto=Boolean(p.photoUrl?.startsWith("https://") && p.photoPermission &&
     (p.photoSource===undefined || p.photoSource==="independent" || p.photoSource==="wikimedia_commons"));
-  if (!independentPhoto && !isVerifiedGoogleLivePhoto(p))
-    reasons.push("approved_photo_missing");
+  const photoReady=independentPhoto || isVerifiedGoogleLivePhoto(p);
+  const photoReasons=photoReady?[]:["approved_photo_missing"];
   if (!p.sourceUrl?.startsWith("https://")) reasons.push("evidence_url_missing");
-  return {publishable:reasons.length===0,reasons};
+  return {publishable:reasons.length===0 && photoReady,importEligible:reasons.length===0,photoReady,reasons:[...reasons,...photoReasons],identityReasons:reasons,photoReasons};
 }

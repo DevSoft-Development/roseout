@@ -1,3 +1,4 @@
+import { fetchCorroboratingOfficialPages } from "./official-page-corroboration";
 import "server-only";
 import { fetchOfficialWebsiteContext } from "@/lib/location-intelligence/v2/source-executors";
 import type { IndependentBusinessProfile } from "./independent-profile-gate";
@@ -58,6 +59,17 @@ export function parseOfficialBusinessJsonLd(html:string,website:string):Omit<Web
  }
  return null;
 }
+/** Only role-based contact mailboxes actually visible on the official page. */
+export function extractOfficialBusinessEmail(html:string,sourceUrl:string) {
+ try {
+  const url=new URL(sourceUrl);
+  if(url.protocol!=="https:")return null;
+  const match=[...html.matchAll(/(?:mailto:|\\b)([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})/gi)]
+   .map(x=>x[1].toLowerCase())
+   .find(e=>/^(info|contact|hello|reservations|booking|inquiries|office|general|support)@/.test(e) && e.length<=254);
+  return match?{email:match,sourceUrl:url.toString()}:null;
+ }catch{return null;}
+}
 export function permittedOfficialPhoto(grant:PhotoGrant|undefined,website:string,now=Date.now()) {
  if(!grant||!grant.verifiedBy.trim())return null;
  try {
@@ -67,16 +79,42 @@ export function permittedOfficialPhoto(grant:PhotoGrant|undefined,website:string
    return {photoUrl:grant.imageUrl,photoPermission:grant.permission,photoEvidenceUrl:grant.evidenceUrl};
  }catch{return null;}
 }
+/** Image references are discovery metadata only, never a license to display or store the image. */
+export function extractOfficialImageReferences(html:string,pageUrl:string) {
+ const references:{imageUrl:string;sourcePageUrl:string;kind:string}[]=[];
+ const add=(raw:unknown,kind:string)=>{
+  if(typeof raw!=="string")return;
+  try{const u=new URL(raw,pageUrl);if(u.protocol!=="https:"||u.username||u.password)return;
+   if(!references.some(x=>x.imageUrl===u.href))references.push({imageUrl:u.href,sourcePageUrl:pageUrl,kind});
+  }catch{/* ignore malformed image URL */}
+ };
+ for(const m of html.matchAll(/<meta\b[^>]*>/gi)){
+  const tag=m[0];
+  if(!/(?:property|name)\s*=\s*["'](?:og:image|twitter:image)["']/i.test(tag))continue;
+  const url=tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1];add(url,"social_meta");
+ }
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
+  try{for(const node of graphs(JSON.parse(m[1]))){
+   const img=node.image;
+   for(const value of Array.isArray(img)?img:[img]) add(typeof value==="string"?value:plain(value).url,"json_ld");
+  }}catch{/* untrusted structured data */}
+ }
+ return references.slice(0,30);
+}
 /**
  * Website lead must be independently re-fetched. Coordinates are verified later
  * via Census -> Geoapify; photos must carry explicit grant provenance.
  */
 export async function resolveOfficialWebsiteLead(website:string,photoGrant?:PhotoGrant) {
  const context=await fetchOfficialWebsiteContext(website);
- const candidate=parseOfficialBusinessJsonLd(context.html,context.url);
- if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_structured_business_missing"};
+ const structured=parseOfficialBusinessJsonLd(context.html,context.url);
+ const corroborated=structured?null:await fetchCorroboratingOfficialPages(context);
+ const candidate=structured || corroborated;
+ if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
+ const contact=extractOfficialBusinessEmail(context.html,context.url);
+ const enriched={...candidate,officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
- if(!photo)return {status:"needs_photo_permission" as const,candidate};
- return {status:"verified_evidence" as const,candidate:{...candidate,...photo},
+ if(!photo)return {status:"photo_pending" as const,candidate:enriched};
+ return {status:"verified_evidence" as const,candidate:{...enriched,...photo},
    photoGrant: {evidenceUrl:photo.photoEvidenceUrl,verifiedBy:photoGrant!.verifiedBy}};
 }
