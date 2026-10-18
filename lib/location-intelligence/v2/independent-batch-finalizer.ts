@@ -26,7 +26,7 @@ export async function finalizeIndependentBatch(batchId:string) {
  const sourceIds=(staged||[]).map(x=>String(x.source_id||"")).filter(Boolean);
  const {data:locations,error:locationError}=sourceIds.length
    ?await supabaseAdmin.from("locations")
-      .select("id,import_source_id,is_searchable,has_photos,website").eq("import_source","li_v2_independent")
+      .select("id,import_source_id,is_searchable,has_photos,website,metadata").eq("import_source","li_v2_independent")
       .in("import_source_id",sourceIds)
    :{data:[],error:null};
  if(locationError)throw new Error("independent_published_location_lookup_failed");
@@ -39,12 +39,21 @@ export async function finalizeIndependentBatch(batchId:string) {
    if(website){
      const menu=await discoverMenu(website,{analyzeContent:true}).catch(()=>null);
      if(menu){
-       const {error:menuError}=await supabaseAdmin.from("location_intelligence_profiles_v2")
-         .update({menu:{initialDiscovery:{
-           status:menu.status,url:menu.menuUrl,source:menu.source,
-           intelligence:menu.intelligence,note:menu.note
-         }}})
-         .eq("location_id",id);
+       const {error:menuError}=await supabaseAdmin.from("locations")
+         .update({
+           menu_url:menu.menuUrl,menu_url_source:menu.source,
+           menu_discovery_status:menu.status,
+           menu_discovery_confidence:menu.confidence,
+           menu_discovery_checked_at:new Date().toISOString(),
+           ...(menu.intelligence?{
+             menu_content_hash:menu.intelligence.contentHash,
+             menu_intelligence_version:menu.intelligence.version,
+             menu_intelligence_checked_at:new Date().toISOString()
+           }:{}),
+           metadata:{...(location.metadata && typeof location.metadata==="object" && !Array.isArray(location.metadata)?location.metadata:{}),
+             li_v2_initial_menu:{status:menu.status,url:menu.menuUrl,intelligence:menu.intelligence,note:menu.note}}
+         })
+         .eq("id",id);
        if(menuError)throw new Error("initial_menu_intelligence_write_failed:"+menuError.message);
      }
    }
