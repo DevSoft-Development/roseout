@@ -27,7 +27,9 @@ async function verifyOne(row:Check) {
   const response=await fetch(url,{headers:{accept:"application/json"},cache:"no-store",signal:AbortSignal.timeout(12000)});
   if(!response.ok)return {found:false,reason:"search_http_"+response.status};
   const json=await response.json();
-  const items=Array.isArray(json?.items)?json.items:Array.isArray(json?.results)?json.results:[];
+  if(json?.success!==true)return {found:false,reason:"consumer_search_reported_failure"};
+  if(!Array.isArray(json?.items))return {found:false,reason:"consumer_search_invalid_items"};
+  const items=json.items;
   const found=items.some((item:any)=>[item?.id,item?.location_id,item?.locationId].includes(row.location_id));
   return {found,reason:found?"verified":"location_not_in_consumer_results"};
  }catch{return {found:false,reason:"consumer_search_unavailable"};}
