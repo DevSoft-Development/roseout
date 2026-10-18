@@ -186,6 +186,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(!matchedGoogleDetails)googlePhotoLookups++;
       failureStage="google_details";
       const details=matchedGoogleDetails || await getPlaceDetailsNew(id,{fieldMode:"rich",jobKey:"li-v2-independent-business-identity"});
+      matchedGoogleDetails=details;
       if(!matchesIndependentBusiness(candidate,details,id)){mark(raw,origin,"rejected","google_identity_mismatch");continue;}
       failureStage="google_slot";
       const slot=await getGooglePhotoSlot(id,0);
@@ -193,6 +194,22 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
       if(url)photoCandidate={...candidate,googlePlaceId:id,photoUrl:url,
         photoSource:"google_live",googlePhotoSlotVerified:true};
     }
+    // Reuse rich facts from the ALREADY authorized provider lookup during initial import.
+    // Do not initiate a second billed details call solely for enrichment.
+    const rich=matchedGoogleDetails;
+    const facts=rich ? {
+      description:rich.editorialSummary?.text,
+      phone:rich.nationalPhoneNumber,
+      rating:rich.rating,
+      reviewCount:rich.userRatingCount,
+      amenities:Object.fromEntries(([
+        "reservable","outdoorSeating","liveMusic","goodForGroups",
+        "goodForWatchingSports","servesCocktails","servesBeer","servesWine",
+        "servesBreakfast","servesBrunch","servesLunch","servesDinner",
+        "servesVegetarianFood","dineIn","takeout","delivery","allowsDogs"
+      ] as const).filter(k=>typeof rich[k]==="boolean").map(k=>[k,rich[k] as boolean])),
+      tags:[...(rich.types||[])].filter(Boolean).slice(0,15),
+    } : {};
     // Every imported business must have one usable, business-specific primary photo.
     // Keep unresolved leads in review rather than staging photo-less records.
     if(!photoCandidate){
@@ -207,7 +224,7 @@ export async function resolveQueuedMapsToIndependentProfiles(input:{
     failureStage="staging";
     const saved=await stageIndependentCandidate({
       runId:input.runId,campaignId:input.campaignId,
-      candidate:{...photoCandidate,googlePlaceId:photoCandidate.googlePlaceId||undefined,category:candidate.category,
+      candidate:{...photoCandidate,...facts,googlePlaceId:photoCandidate.googlePlaceId||undefined,category:candidate.category,
        locationType:candidate.locationType}
     });
     if(saved.staged){staged++;if(!saved.photoPending)batches.add(saved.batchId);mark(raw,origin,"staged",saved.photoPending?"independent_photo_pending_staged":"independent_stage_accepted");}
