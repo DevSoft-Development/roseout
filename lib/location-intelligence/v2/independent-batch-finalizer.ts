@@ -4,6 +4,7 @@ import { dedupeStagedLocationsChunk } from "@/lib/location-growth/dedupeStaging"
 import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady";
 import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
+import { discoverMenu } from "@/supabase/functions/unified-location-gap-repair/menu-discovery";
 
 /** Completion for independently licensed acquisition candidates only.
  * Never interprets SERP results as license to retain or publish business data.
@@ -25,7 +26,7 @@ export async function finalizeIndependentBatch(batchId:string) {
  const sourceIds=(staged||[]).map(x=>String(x.source_id||"")).filter(Boolean);
  const {data:locations,error:locationError}=sourceIds.length
    ?await supabaseAdmin.from("locations")
-      .select("id,import_source_id,is_searchable,has_photos").eq("import_source","li_v2_independent")
+      .select("id,import_source_id,is_searchable,has_photos,website,metadata").eq("import_source","li_v2_independent")
       .in("import_source_id",sourceIds)
    :{data:[],error:null};
  if(locationError)throw new Error("independent_published_location_lookup_failed");
@@ -33,6 +34,44 @@ export async function finalizeIndependentBatch(batchId:string) {
  const incomplete:string[]=[];
  for(const location of locations||[]){
    const id=String(location.id);
+   // Initial import intelligence: reuse the verified website, never paid discovery.
+   const website=String(location.website||"");
+   if(website){
+     const menu=await discoverMenu(website,{analyzeContent:true}).catch(()=>null);
+     if(menu){
+       const {error:menuError}=await supabaseAdmin.from("locations")
+         .update({
+           menu_url:menu.menuUrl,menu_url_source:menu.source,
+           menu_discovery_status:menu.status,
+           menu_discovery_confidence:menu.confidence,
+           menu_discovery_checked_at:new Date().toISOString(),
+           ...(menu.intelligence?{
+             menu_content_hash:menu.intelligence.contentHash,
+             menu_intelligence_version:menu.intelligence.version,
+             menu_intelligence_checked_at:new Date().toISOString()
+           }:{}),
+           metadata:{...(location.metadata && typeof location.metadata==="object" && !Array.isArray(location.metadata)?location.metadata:{}),
+             li_v2_initial_menu:{status:menu.status,url:menu.menuUrl,intelligence:menu.intelligence,note:menu.note}}
+         })
+         .eq("id",id);
+       if(menuError)throw new Error("initial_menu_intelligence_write_failed:"+menuError.message);
+     }
+   }
+   // Create initial review collection state once. Do not submit new paid tasks
+   // implicitly; the approved review worker handles budgeted, opted-in jobs.
+   const {data:reviewState,error:reviewReadError}=await supabaseAdmin.from("location_review_refresh_state")
+     .select("location_id").eq("location_id",id).eq("provider","dataforseo").maybeSingle();
+   if(reviewReadError)throw new Error("initial_review_state_read_failed:"+reviewReadError.message);
+   if(!reviewState){
+     const {error:reviewWriteError}=await supabaseAdmin.from("location_review_refresh_state").upsert({
+       location_id:id,provider:"dataforseo",popularity_score:0,
+       refresh_enabled:false,next_refresh_at:null,
+       metadata:{taskStatus:"awaiting_authorized_initial_100",ingestMode:"initial_100",
+         routinePaidRefresh:false},
+       updated_at:new Date().toISOString()
+     },{onConflict:"location_id,provider",ignoreDuplicates:true});
+     if(reviewWriteError)throw new Error("initial_review_state_write_failed:"+reviewWriteError.message);
+   }
    await refreshLocationClassificationV2(id);
    const result=await refreshLocationReadiness(id);
    if(location.is_searchable===true && location.has_photos===true && result.searchV3Ready)verified.push(id);
