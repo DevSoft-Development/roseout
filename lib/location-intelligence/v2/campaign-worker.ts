@@ -91,9 +91,12 @@ export async function processQueuedAcquisitionCampaign() {
      try{
        checks=await advanceConsumerChecks(run.id,index);
      }catch(error){
-       console.error("li_v2_consumer_monitor_snapshot_failed",error);
+       // Do not repeat profile resolution without knowing durable ledger state.
+       await yieldQueuedRun(run.id);
+       return {claimed:true,runId:run.id,stopped:"consumer_monitor_unavailable",
+         authenticatedSearchV3Certified:false};
      }
-     if(checks?.state==="unregistered" || checks===null){
+     if(checks?.state==="unregistered"){
        const resolved=await resolveQueuedMapsToIndependentProfiles({
          runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
          maxGooglePhotoLookups:bootstrap?1:50,
