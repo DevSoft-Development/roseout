@@ -130,6 +130,38 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
   const pageSize = 200;
   const maxRowsToScan = 10_000;
 
+  // Prioritize newly published independent imports before the legacy ID-ordered
+  // backlog. Otherwise the bounded scan can starve valid new venues indefinitely.
+  const {data:independentImports,error:importError}=await supabaseAdmin
+    .from("locations")
+    .select(CANDIDATE_LOCATION_FIELDS)
+    .eq("import_source","li_v2_independent")
+    .eq("is_searchable",true)
+    .eq("is_hidden",false)
+    .eq("active",true)
+    .is("deleted_at",null)
+    .order("updated_at",{ascending:false})
+    .limit(Math.min(200,Math.max(limit*2,50)));
+  if(importError)throw importError;
+  const candidateIds=(independentImports||[]).map(row=>row.id);
+  const {data:existingEmbeddings,error:existingError}=candidateIds.length
+    ?await supabaseAdmin.from("location_search_embeddings")
+      .select("location_id,status,calculated_at,embedding_version")
+      .in("location_id",candidateIds)
+    :{data:[],error:null};
+  if(existingError)throw existingError;
+  const indexed=new Map((existingEmbeddings||[]).map(row=>[String(row.location_id),row]));
+  for(const location of independentImports||[]){
+    const embedding=indexed.get(String(location.id));
+    const updated=timestampMs(location.updated_at??location.created_at);
+    const calculated=timestampMs(embedding?.calculated_at);
+    const version=process.env.SEARCH_EMBEDDING_VERSION||EMBEDDING_VERSION;
+    if(embedding?.status==="ready" && embedding.embedding_version===version && updated<=calculated)continue;
+    if(!semanticCandidateEligible(location))continue;
+    selected.push(String(location.id));
+    if(selected.length>=limit)return selected;
+  }
+
   for (
     let from = 0;
     selected.length < limit && from < maxRowsToScan;
@@ -172,7 +204,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
         existing.embedding_version !== expectedVersion ||
         (sourceUpdatedAt > 0 && sourceUpdatedAt > embeddingUpdatedAt);
       if (!needsEmbedding || !semanticCandidateEligible(location)) continue;
-      selected.push(String(location.id));
+      if (!selected.includes(String(location.id))) selected.push(String(location.id));
       if (selected.length >= limit) break;
     }
 
