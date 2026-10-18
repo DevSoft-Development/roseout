@@ -8,7 +8,7 @@ import { advanceConsumerChecks, registerConsumerChecks } from "@/lib/location-in
 type Run = {id:string;campaign_id:string;processed:number};
 type Coverage={market:string;area_key:string;location_kind:string;category:string;target_count:number;current_count:number};
 
-async function checkpoint(runId:string, processed:number, status:"running"|"failed"="running",errorMessage?:string) {
+async function checkpoint(runId:string, processed:number, status:"running"|"failed"|"completed"="running",errorMessage?:string) {
  const {data,error}=await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",{
    p_run_id:runId,p_processed:processed,p_discovered:0,p_failed:status==="failed"?1:0,
    p_status:status,p_error:errorMessage||null,
