@@ -5,10 +5,10 @@ const worker=readFileSync("lib/location-intelligence/v2/campaign-worker.ts","utf
 
 describe("LI V2 bounded first-paid-target bootstrap",()=>{
  it("does not assert that the two established certification flags passed",()=>{
-  expect(worker).toContain('LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED==="true"');
+  expect(worker).not.toContain('LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED==="true"');
   expect(worker).toContain('LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED==="true"');
-  expect(worker).toContain('LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !certified');
-  expect(worker).toContain('if(!certified&&!bootstrap)');
+  expect(worker).toContain('LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !acquisitionEnabled');
+  expect(worker).toContain('if(!acquisitionEnabled&&!bootstrap)');
  });
  it("never advances a bootstrap beyond its initial coverage target",()=>{
   const loop=worker.indexOf('for(const [index,target]');
@@ -23,7 +23,7 @@ describe("LI V2 bounded first-paid-target bootstrap",()=>{
   expect(worker).toContain('rpc("li_v2_campaign_run_permitted"');
   expect(worker).toContain('await submitApprovedMapsQueue');
   expect(worker).toContain('await registerConsumerChecks');
-  expect(worker).toContain('all_consumer_retrieval_checks_quarantined');
+  expect(worker).not.toContain('stopped:"all_consumer_retrieval_checks_quarantined"');
   expect(worker).toContain('maps_standard_submission_uncertain_manual_reconciliation');
  });
 });
