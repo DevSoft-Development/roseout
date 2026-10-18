@@ -168,8 +168,7 @@ export function buildSemanticQueryText(intent: SearchIntentGraph): string {
   if (intent.occasion) lines.push("occasion: " + intent.occasion);
   if (intent.anchor?.label) lines.push("near: " + intent.anchor.label);
 
-  return [...new Set(lines.filter(Boolean))].join("
-");
+  return [...new Set(lines.filter(Boolean))].join("\n");
 }
 
 export function semanticDomains(
