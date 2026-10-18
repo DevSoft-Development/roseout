@@ -13,7 +13,7 @@ describe("LI V2 identity-first acquisition",()=>{
   it("gates paid discovery before campaign claim and compares all live/staged IDs",()=>{
     const worker=readFileSync("lib/location-intelligence/v2/campaign-worker.ts","utf8");
     const gate=readFileSync("lib/location-intelligence/v2/acquisition-identity-gate.ts","utf8");
-    expect(worker.indexOf("LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED")).toBeLessThan(worker.indexOf('rpc("li_v2_claim_campaign_run")'));
+    expect(worker.indexOf("LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED")).toBeLessThan(worker.indexOf('rpc("li_v2_claim_campaign_run")'));
     expect(worker.indexOf("discoverUnseenGooglePlaceIds(query)")).toBeLessThan(worker.indexOf("submitApprovedMapsQueue({"));
     expect(worker).toContain("LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED");
     expect(worker).not.toContain("provider.execute({");
@@ -25,7 +25,8 @@ describe("LI V2 identity-first acquisition",()=>{
   it("uses durable consumer retrieval checks without falsely claiming protected V3 certification",()=>{
     const worker=readFileSync("lib/location-intelligence/v2/campaign-worker.ts","utf8");
     expect(worker).toContain("advanceConsumerChecks(run.id,index)");
-    expect(worker).toContain("awaiting_consumer_indexing");
+    expect(worker).not.toContain("awaiting_consumer_indexing");
+    expect(worker).toContain('if(checks?.state==="unregistered")');
     expect(worker).toContain("authenticatedSearchV3Certified:false");
     expect(worker).not.toContain('checkpoint(run.id,0,"failed","search_v3_live_retrieval_certification_required")');
   });
