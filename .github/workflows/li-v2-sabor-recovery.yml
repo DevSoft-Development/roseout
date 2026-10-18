@@ -1,0 +1,60 @@
+name: LI V2 Sabor Recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: li-v2-sabor-proof-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public Sabor result before recovery
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,sys
+          location="05f4f24d-6906-4420-86b0-a4c734654aac"
+          q=urllib.parse.urlencode({"q":"Sabor lounge nyc","kind":"restaurants","limit":"96"})
+          req=urllib.request.Request("https://theouthaven.com/api/explore/search?"+q,headers={"Accept":"application/json","Cache-Control":"no-store"})
+          with urllib.request.urlopen(req,timeout=25) as res:
+              if res.status!=200: sys.exit("Search request failed")
+              payload=json.load(res)
+          items=payload.get("items",[])
+          if payload.get("success") is not True or not isinstance(items,list) or not any(location in [i.get("id"),i.get("location_id"),i.get("locationId")] for i in items if isinstance(i,dict)):
+              sys.exit("Sabor not present in production consumer search; recovery denied")
+          print("Verified Sabor exact location ID in live consumer search")
+          PY
+      - name: Access production credential vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load service-role credentials
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+      - name: Recover exact campaign once
+        env:
+          CAMPAIGN: dba50b2b-de14-4672-81fa-99e21fe3cad7
+          LOCATION: 05f4f24d-6906-4420-86b0-a4c734654aac
+          PROOF: https://github.com/DevSoft-Development/roseout/actions/runs/39137186860
+          PROOF_COMMIT: 44d0cd55007f9f0166965b1b1eb1c39e1c67cf93
+        run: |
+          set -euo pipefail
+          body="$(jq -n --arg r "$CAMPAIGN" --arg l "$LOCATION" --arg u "$PROOF" --arg c "$PROOF_COMMIT" '{p_run_id:$r,p_index:0,p_location_id:$l,p_proof_url:$u,p_proof_commit:$c}')"
+          result="$(curl --fail --silent --show-error --retry 2 --request POST \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data "$body" \
+            "$SUPABASE_URL/rest/v1/rpc/li_v2_certify_exhausted_with_public_proof")"
+          if [ "$result" != 'true' ]; then
+            echo "Recovery RPC returned non-success; no claim of recovery: $result" >&2
+            exit 1
+          fi
+          echo "Sabor recovery accepted by guarded service-role RPC."
+          echo "Recovery completed. Verify campaign ledger separately before new paid acquisition." >> "$GITHUB_STEP_SUMMARY"
