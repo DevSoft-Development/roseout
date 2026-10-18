@@ -99,6 +99,8 @@ function buildExploreQuery(q: string, kind: string, area: string) {
   if (kind === "groups") parts.push("group outing fun activities");
   if (kind === "open-now") parts.push("open now late night");
   if (area !== "all") parts.push(`in ${area}`);
+  // Keep exact venue names intact; kind filtering already happens after search.
+  if (q.trim()) return [q.trim(), ...(area !== "all" ? [`in ${area}`] : [])].join(" ");
   return parts.filter(Boolean).join(" ").trim() || "things to do";
 }
 
@@ -282,7 +284,7 @@ export async function GET(request: NextRequest) {
     const result = await runOutingSearch({
       query,
       useLLM: !simple && q.split(/\s+/).length > 3,
-      displayLimit: 48,
+      displayLimit: Math.max(48, perPage),
       source: betaTesterId ? "beta_tester_search" : "public_explore_search",
       route: "/api/explore/search",
       logPerformance: true,
