@@ -8,7 +8,7 @@ import { advanceConsumerChecks, registerConsumerChecks } from "@/lib/location-in
 type Run = {id:string;campaign_id:string;processed:number};
 type Coverage={market:string;area_key:string;location_kind:string;category:string;target_count:number;current_count:number};
 
-async function checkpoint(runId:string, processed:number, status:"running"|"failed"="running",errorMessage?:string) {
+async function checkpoint(runId:string, processed:number, status:"running"|"failed"|"completed"="running",errorMessage?:string) {
  const {data,error}=await supabaseAdmin.rpc("li_v2_campaign_run_checkpoint",{
    p_run_id:runId,p_processed:processed,p_discovered:0,p_failed:status==="failed"?1:0,
    p_status:status,p_error:errorMessage||null,
@@ -46,9 +46,15 @@ export async function processQueuedAcquisitionCampaign() {
  for(const [index,target] of ((coverage||[]) as Coverage[]).entries()){
    // A bootstrap must never purchase a second coverage target, even if the
    // scheduled worker is invoked again after the first has completed.
-   if(bootstrap && index>0)
+   if(bootstrap && index>0){
+     // A recovered bootstrap run already completed its one authorized paid
+     // target. Finalize the campaign instead of leaving it RUNNING forever.
+     // No second target is discovered, queued, or purchased.
+     await reconcilePublished(run.id);
+     await checkpoint(run.id,0,"completed");
      return {claimed:true,runId:run.id,stopped:"bootstrap_one_target_limit",
        processed:run.processed};
+   }
    if(index<run.processed)continue;
    const {data:permitted,error:permissionError}=await supabaseAdmin.rpc(
      "li_v2_campaign_run_permitted",{p_run_id:run.id});
