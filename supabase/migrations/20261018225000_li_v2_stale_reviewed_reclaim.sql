@@ -2,12 +2,14 @@
 -- has already reached reviewed and is included in the processed checkpoint.
 -- Ambiguous / unfinished provider tasks remain quarantined for reconciliation.
 create table if not exists private.li_v2_stale_reviewed_reclaim_audit (
- run_id uuid primary key,
+ id bigint generated always as identity primary key,
+ run_id uuid not null,
  prior_processed integer not null,
  prior_failed integer not null,
  reviewed_targets integer not null,
  recovered_at timestamptz not null default now(),
- reason text not null default 'stale_running_all_paid_targets_reviewed'
+ reason text not null default 'stale_running_all_paid_targets_reviewed',
+ unique(run_id,prior_processed)
 );
 revoke all on private.li_v2_stale_reviewed_reclaim_audit from public,anon,authenticated;
 
@@ -36,7 +38,7 @@ begin
    insert into private.li_v2_stale_reviewed_reclaim_audit
      (run_id,prior_processed,prior_failed,reviewed_targets)
    select id,processed,failed,reviewed_count from safe
-   on conflict (run_id) do nothing
+   on conflict (run_id,prior_processed) do nothing
    returning run_id
  )
  update private.li_v2_campaign_import_runs r
