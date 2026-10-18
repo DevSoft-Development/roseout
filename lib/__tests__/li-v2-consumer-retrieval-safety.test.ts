@@ -25,6 +25,8 @@ describe("LI V2 unattended consumer retrieval safeguards",()=>{
   expect(worker.indexOf('advanceMapsQueue(run.id,index,query)')).toBeLessThan(worker.indexOf('submitApprovedMapsQueue({'));
   expect(worker).toContain("advanceConsumerChecks(run.id,index)");
   expect(worker).toContain("await yieldQueuedRun(run.id)");
+  expect(worker).toContain('if(checks?.state==="unregistered")');
+  expect(worker).not.toContain('stopped:"all_consumer_retrieval_checks_quarantined"');
   expect(worker).toContain('if(queue.status==="reviewed")');
   expect(queue).toContain('if(row?.status==="reviewed"||row?.status==="failed")');
  });
