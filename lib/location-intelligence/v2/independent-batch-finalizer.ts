@@ -5,6 +5,7 @@ import { publishReadyStagedLocations } from "@/lib/location-growth/publishReady"
 import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/classification";
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import { discoverMenu } from "@/supabase/functions/unified-location-gap-repair/menu-discovery";
+import { evaluateLocationPublishability } from "@/lib/location-publishability";
 
 /** Completion for independently licensed acquisition candidates only.
  * Never interprets SERP results as license to retain or publish business data.
@@ -73,6 +74,18 @@ export async function finalizeIndependentBatch(batchId:string) {
      if(reviewWriteError)throw new Error("initial_review_state_write_failed:"+reviewWriteError.message);
    }
    await refreshLocationClassificationV2(id);
+   // Reconcile the separate consumer quality gate using canonical publication
+   // policy. Search V3 readiness alone never grants public eligibility.
+   const {data:publishedRow,error:publishReadError}=await supabaseAdmin.from("locations")
+     .select("*").eq("id",id).single();
+   if(publishReadError)throw new Error("independent_publishability_read_failed");
+   const eligibility=evaluateLocationPublishability(publishedRow,{allowApproval:true});
+   if(eligibility.isSearchable && publishedRow.quality_status!=="publish_ready"){
+     const {error:qualityError}=await supabaseAdmin.from("locations")
+       .update({quality_status:"publish_ready"})
+       .eq("id",id).eq("quality_status",publishedRow.quality_status);
+     if(qualityError)throw new Error("independent_publishability_reconciliation_failed");
+   }
    const result=await refreshLocationReadiness(id);
    if(location.is_searchable===true && location.has_photos===true && result.searchV3Ready)verified.push(id);
    else incomplete.push(id);
