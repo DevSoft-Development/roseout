@@ -158,56 +158,59 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
     if(embedding?.status==="ready" && embedding.embedding_version===version && updated<=calculated)continue;
     if(!semanticCandidateEligible(location))continue;
     selected.push(String(location.id));
-    if(selected.length>=limit)return selected;
+    if(selected.length>=Math.max(1,Math.floor(limit/2)))break;
   }
 
-  for (
-    let from = 0;
-    selected.length < limit && from < maxRowsToScan;
-    from += pageSize
-  ) {
-    const { data: locationRowsRaw, error: locationError } = await supabaseAdmin
-      .from("locations")
-      .select(CANDIDATE_LOCATION_FIELDS)
-      .eq("is_searchable", true)
-      .eq("is_hidden", false)
-      .eq("active", true)
-      .is("deleted_at", null)
-      .order("id", { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (locationError) throw locationError;
-    const locationRows = (locationRowsRaw ?? []) as any[];
-    if (!locationRows.length) break;
-
-    const ids = locationRows.map((row: any) => row.id).filter(Boolean);
-    const { data: embeddingRows, error: embeddingError } = ids.length
-      ? await supabaseAdmin
-          .from("location_search_embeddings")
-          .select("location_id,status,calculated_at,embedding_version")
-          .in("location_id", ids)
-      : { data: [] as any[], error: null };
-    if (embeddingError) throw embeddingError;
-
-    const embeddingByLocation = new Map(
-      (embeddingRows ?? []).map((row: any) => [String(row.location_id), row]),
-    );
-
-    for (const location of locationRows) {
-      const existing = embeddingByLocation.get(String(location.id));
-      const sourceUpdatedAt = timestampMs(location.updated_at ?? location.created_at);
-      const embeddingUpdatedAt = timestampMs(existing?.calculated_at);
-      const expectedVersion = process.env.SEARCH_EMBEDDING_VERSION || EMBEDDING_VERSION;
-      const needsEmbedding =
-        !existing ||
-        existing.status !== "ready" ||
-        existing.embedding_version !== expectedVersion ||
-        (sourceUpdatedAt > 0 && sourceUpdatedAt > embeddingUpdatedAt);
-      if (!needsEmbedding || !semanticCandidateEligible(location)) continue;
-      if (!selected.includes(String(location.id))) selected.push(String(location.id));
-      if (selected.length >= limit) break;
+  // Durable keyset cursor: subsequent invocations resume where the previous
+  // bounded scan stopped. The wrap-around scan covers older IDs eventually.
+  const cursorKey="search-phase13-embedding-backfill";
+  const {data:cursorState,error:cursorError}=await supabaseAdmin
+    .from("search_maintenance_cursors").select("last_id").eq("job_key",cursorKey).maybeSingle();
+  if(cursorError)throw cursorError;
+  let afterId=String(cursorState?.last_id||"");
+  let scanned=0;
+  let wrapped=false;
+  while(selected.length<limit && scanned<maxRowsToScan){
+    let query=supabaseAdmin.from("locations").select(CANDIDATE_LOCATION_FIELDS)
+      .eq("is_searchable",true).eq("is_hidden",false).eq("active",true)
+      .is("deleted_at",null).order("id",{ascending:true}).limit(pageSize);
+    if(afterId)query=query.gt("id",afterId);
+    const {data:rows,error:locationError}=await query;
+    if(locationError)throw locationError;
+    const locations=(rows||[]) as any[];
+    if(!locations.length){
+      if(!afterId||wrapped)break;
+      afterId="";
+      wrapped=true;
+      continue;
     }
-
-    if (locationRows.length < pageSize) break;
+    const ids=locations.map(row=>String(row.id));
+    const {data:embeddingRows,error:embeddingError}=await supabaseAdmin
+      .from("location_search_embeddings")
+      .select("location_id,status,calculated_at,embedding_version")
+      .in("location_id",ids);
+    if(embeddingError)throw embeddingError;
+    const indexed=new Map((embeddingRows||[]).map(row=>[String(row.location_id),row]));
+    for(const location of locations){
+      const id=String(location.id);
+      afterId=id;
+      scanned++;
+      const existing=indexed.get(id);
+      const sourceUpdatedAt=timestampMs(location.updated_at??location.created_at);
+      const embeddingUpdatedAt=timestampMs(existing?.calculated_at);
+      const version=process.env.SEARCH_EMBEDDING_VERSION||EMBEDDING_VERSION;
+      const needsEmbedding=!existing||existing.status!=="ready"||
+        existing.embedding_version!==version||sourceUpdatedAt>embeddingUpdatedAt;
+      if(needsEmbedding&&semanticCandidateEligible(location)&&!selected.includes(id))
+        selected.push(id);
+      if(selected.length>=limit||scanned>=maxRowsToScan)break;
+    }
+    // Persist the last visited row, not the last page, to avoid skipping rows
+    // when the batch fills in the middle of a page.
+    const {error:saveError}=await supabaseAdmin.from("search_maintenance_cursors")
+      .upsert({job_key:cursorKey,last_id:afterId||null,updated_at:new Date().toISOString()},
+        {onConflict:"job_key"});
+    if(saveError)throw saveError;
   }
 
   return selected;
