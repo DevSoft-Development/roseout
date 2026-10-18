@@ -15,6 +15,10 @@ async function checkpoint(runId:string, processed:number, status:"running"|"fail
  });
  if(error||data!==true)throw new Error("campaign_checkpoint_failed");
 }
+async function reconcilePublished(runId:string) {
+ const {error}=await supabaseAdmin.rpc("li_v2_reconcile_campaign_published",{p_run_id:runId});
+ if(error)console.error("li_v2_publication_counter_reconciliation_failed",error.message);
+}
 async function yieldQueuedRun(runId:string) {
  const {data,error}=await supabaseAdmin.rpc("li_v2_maps_campaign_yield",{p_run_id:runId});
  if(error||data!==true)throw new Error("maps_campaign_yield_failed");
@@ -77,6 +81,7 @@ export async function processQueuedAcquisitionCampaign() {
      return {claimed:true,runId:run.id,queueStatus:"pending"};
    }
    if(queue.status==="reviewed"){
+     await reconcilePublished(run.id);
      // Crash-safe: reviewing the paid task and checkpointing the campaign are
      // separate operations. Finalize an already-reviewed target without re-buying.
      await checkpoint(run.id,1);
@@ -126,6 +131,7 @@ export async function processQueuedAcquisitionCampaign() {
      if(transitionError||transition?.status!=="reviewed")
        throw new Error("certified_maps_queue_review_transition_failed");
      await checkpoint(run.id,1);
+     await reconcilePublished(run.id);
      continue;
    }
    await checkpoint(run.id,0,"failed","maps_queue_manual_reconciliation_required");
