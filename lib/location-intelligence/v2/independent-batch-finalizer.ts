@@ -6,6 +6,7 @@ import { refreshLocationClassificationV2 } from "@/lib/location-intelligence/v2/
 import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readiness";
 import { discoverMenu } from "@/supabase/functions/unified-location-gap-repair/menu-discovery";
 import { evaluateLocationPublishability } from "@/lib/location-publishability";
+import { buildLocationSearchDocument } from "@/lib/location-profile-fields";
 
 /** Completion for independently licensed acquisition candidates only.
  * Never interprets SERP results as license to retain or publish business data.
@@ -79,6 +80,17 @@ export async function finalizeIndependentBatch(batchId:string) {
    const {data:publishedRow,error:publishReadError}=await supabaseAdmin.from("locations")
      .select("*").eq("id",id).single();
    if(publishReadError)throw new Error("independent_publishability_read_failed");
+   // Newly imported locations must be retrievable by business name, not only
+   // the menu-signature tokens that legacy staging sometimes leaves behind.
+   const canonicalDocument=buildLocationSearchDocument(publishedRow);
+   const existingDocument=String(publishedRow.search_document||"").trim();
+   const searchableName=String(publishedRow.name||"").trim().toLowerCase();
+   if (canonicalDocument && searchableName && !existingDocument.toLowerCase().includes(searchableName)) {
+     const {error:documentError}=await supabaseAdmin.from("locations")
+       .update({search_document:[canonicalDocument,existingDocument].filter(Boolean).join(" ").slice(0,12000)})
+       .eq("id",id);
+     if(documentError)throw new Error("independent_search_document_reconciliation_failed:"+documentError.message);
+   }
    const eligibility=evaluateLocationPublishability(publishedRow,{allowApproval:true});
    if(eligibility.isSearchable && publishedRow.quality_status!=="publish_ready"){
      const {error:qualityError}=await supabaseAdmin.from("locations")
