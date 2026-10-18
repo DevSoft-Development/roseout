@@ -25,11 +25,12 @@ export async function processQueuedAcquisitionCampaign() {
  // First paid evidence cannot be produced if it requires prior paid evidence.
  // Bootstrap is separately authorized, processes at most target zero, and never
  // asserts that full searchable-import or independent-source certification passed.
- const certified=process.env.LI_V2_CERTIFIED_SEARCHABLE_IMPORT_ENABLED==="true" &&
-   process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED==="true";
- const bootstrap=process.env.LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !certified;
- if(!certified&&!bootstrap)
-   return {claimed:false,stopped:"searchable_import_certification_required"};
+ // Independent source certification still gates unattended paid acquisition.
+ // Search certification is a separate monitoring signal, not an import prerequisite.
+ const acquisitionEnabled=process.env.LI_V2_INDEPENDENT_PROFILE_SOURCE_CERTIFIED==="true";
+ const bootstrap=process.env.LI_V2_ONE_TARGET_BOOTSTRAP_ENABLED==="true" && !acquisitionEnabled;
+ if(!acquisitionEnabled&&!bootstrap)
+   return {claimed:false,stopped:"independent_source_certification_required"};
  const {data,error}=await supabaseAdmin.rpc("li_v2_claim_campaign_run");
  if(error)throw error;
  if(!data)return {claimed:false};
@@ -82,41 +83,40 @@ export async function processQueuedAcquisitionCampaign() {
      continue;
    }
    if(queue.status==="ready"){
-     // Re-enter existing paid task without reposting it: durable per-location
-     // certification is polled before resolving or purchasing anything else.
-     let checks=await advanceConsumerChecks(run.id,index);
-     if(checks.state==="unregistered"){
-       // Maps content is a discovery lead only; original identity, license,
-       // photo-rights and publication gates remain responsible for writes.
+     // Publication is the import boundary. Consumer retrieval and Search V3
+     // verification remain best-effort, asynchronous quality signals.
+     // Never repurchase a ready paid task or quarantine the whole campaign
+     // merely because a published location is not yet returned by search.
+     let checks:Awaited<ReturnType<typeof advanceConsumerChecks>>|null=null;
+     try{
+       checks=await advanceConsumerChecks(run.id,index);
+     }catch(error){
+       console.error("li_v2_consumer_monitor_snapshot_failed",error);
+     }
+     if(checks?.state==="unregistered" || checks===null){
        const resolved=await resolveQueuedMapsToIndependentProfiles({
          runId:run.id,campaignId:run.campaign_id,items:queue.items||[],
          maxGooglePhotoLookups:bootstrap?1:50,
        });
        const ids=[...new Set(resolved.finalizations.flatMap(batch=>batch.publishedLocationIds))];
        if(!ids.length){
-         // Independently verified staging is useful, but it is not searchable publication.
-         // Stop rather than retry the paid task automatically or certify zero consumer records.
+         // Do not certify or advance a target without a published location.
          const reason=resolved.staged>0?"photo_pending_or_unpublished_locations":"no_published_locations_to_certify";
          await checkpoint(run.id,0,"failed",reason);
          return {claimed:true,runId:run.id,stopped:reason,
            inspected:resolved.inspected,staged:resolved.staged,photoBlocked:resolved.photoBlocked,
            authenticatedSearchV3Certified:false};
        }
-       await registerConsumerChecks(run.id,index,ids);
-       checks=await advanceConsumerChecks(run.id,index);
+       try{
+         await registerConsumerChecks(run.id,index,ids);
+         checks=await advanceConsumerChecks(run.id,index);
+       }catch(error){
+         // Record remains published; a monitor outage cannot fail acquisition.
+         console.error("li_v2_consumer_monitor_registration_failed",error);
+       }
      }
-     if(checks.state==="waiting"){
-       await yieldQueuedRun(run.id);
-       return {claimed:true,runId:run.id,stopped:"awaiting_consumer_indexing",
-         verified:checks.verified,quarantined:checks.quarantined,pending:checks.pending,
-         authenticatedSearchV3Certified:false};
-     }
-     if(checks.verified===0){
-       // Do not buy another discovery batch if none of these published
-       // candidates are discoverable. Quarantined IDs stay in the audit log.
-       await checkpoint(run.id,0,"failed","all_consumer_retrieval_checks_quarantined");
-       return {claimed:true,runId:run.id,stopped:"all_consumer_retrieval_checks_quarantined"};
-     }
+     // Certification ledger persists independently; pending and quarantined
+     // results remain visible for repair. No Search V3 promotion claims.
      const {data:transition,error:transitionError}=await supabaseAdmin.rpc("li_v2_maps_queue_transition",{
        p_run_id:run.id,p_index:index,p_query:query,p_from:"ready",p_to:"reviewed"
      });
