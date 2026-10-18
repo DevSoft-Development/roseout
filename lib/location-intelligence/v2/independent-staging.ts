@@ -12,6 +12,10 @@ type Candidate=IndependentBusinessProfile&{
   locationType:"restaurant"|"activity";zip?:string;
   businessEmail?:string;businessEmailSourceUrl?:string;
   officialEvidenceUrls?:string[];
+  description?:string; cuisine?:string; phone?:string;
+  rating?:number; reviewCount?:number;
+  tags?:string[]; vibeTags?:string[]; bestForTags?:string[];
+  amenities?:Record<string,boolean>; menuSourceUrl?:string;
 };
 function distanceM(a:number,b:number,c:number,d:number){
  const r=Math.PI/180,dy=(c-a)*r,dx=(d-b)*r;
@@ -70,7 +74,10 @@ export async function stageIndependentCandidate(input:{
    location_type:p.locationType,name:p.name,address:p.address,city:p.city,
    state:p.state,zip_code:p.zip||null,website:p.website||null,
    latitude:location.latitude,longitude:location.longitude,
-   primary_category:p.category,main_image:primaryPhoto,images:primaryPhoto?[primaryPhoto]:[],
+   primary_category:p.category,cuisine:p.cuisine||null,phone:p.phone||null,
+   description:p.description||null,rating:p.rating??null,review_count:p.reviewCount??null,
+   tags:p.tags||[],vibe_tags:p.vibeTags||[],best_for_tags:p.bestForTags||[],
+   main_image:primaryPhoto,images:primaryPhoto?[primaryPhoto]:[],
    has_photos:Boolean(primaryPhoto),photo_status:primaryPhoto?(p.photoSource==="google_live"?"google_photo":"imported_photo"):"missing_photo",
    duplicate_status:"unchecked",
    import_status:"staged",source_quality_status:"independently_verified",
@@ -90,7 +97,9 @@ export async function stageIndependentCandidate(input:{
        openStatus:p.openStatus,
        officialEvidenceUrls:p.officialEvidenceUrls||[p.sourceUrl],
        geocodeProvider:location.provider,geoPrecision:location.precision,
-       matchedAddress:location.matchedAddress}},
+       matchedAddress:location.matchedAddress,
+       initialIntelligence:{amenities:p.amenities||{},menuSourceUrl:p.menuSourceUrl||null,
+         reviewSummaryAvailable:p.rating!==undefined||p.reviewCount!==undefined}}},
  };
  const scored=calculateStagingQuality(base);
  const {error:stageError}=await supabaseAdmin.from("location_import_staging")
