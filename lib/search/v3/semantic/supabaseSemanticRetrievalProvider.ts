@@ -66,7 +66,11 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
       this.options.embeddingVersion ??
       process.env.SEARCH_LOCATION_INTELLIGENCE_EMBEDDING_VERSION ??
       "search-embedding:v1";
-    // The production embedding corpus contains both legacy and Azure LI rows.\n    // Both use the same text-embedding-3-small vector space; querying only\n    // one version silently excludes thousands of ready locations.\n    const versions = [...new Set([embeddingVersion, "search-embedding:v1", "azure-location-intelligence:v1"])];\n    const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
+    // The production embedding corpus contains both legacy and Azure LI rows.
+    // Both use the same text-embedding-3-small vector space; querying only
+    // one version silently excludes thousands of ready locations.
+    const versions = [...new Set([embeddingVersion, "search-embedding:v1", "azure-location-intelligence:v1"])];
+    const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
     const minSimilarity = this.options.minSimilarity ?? 0.55;
 
     const results = await Promise.all(
@@ -86,14 +90,16 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
         if (error) throw new Error(error.message);
         return {
           domain: expectedDomain,
+          version,
           rows: Array.isArray(data) ? data as SearchMatchRow[] : [],
         };
-      }),
+      })),
     );
 
     const byLocation = new Map<string, {
       score: number;
-      domains: Set<string>;\n      versions: Set<string>;
+      domains: Set<string>;
+      versions: Set<string>;
     }>();
 
     for (const result of results) {
@@ -103,10 +109,12 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
 
         const current = byLocation.get(row.location_id) ?? {
           score,
-          domains: new Set<string>(),\n          versions: new Set<string>(),
+          domains: new Set<string>(),
+          versions: new Set<string>(),
         };
         current.score = Math.max(current.score, score);
-        current.domains.add(result.domain);\n        current.versions.add(result.version);
+        current.domains.add(result.domain);
+        current.versions.add(result.version);
         byLocation.set(row.location_id, current);
       }
     }
@@ -160,7 +168,8 @@ export function buildSemanticQueryText(intent: SearchIntentGraph): string {
   if (intent.occasion) lines.push("occasion: " + intent.occasion);
   if (intent.anchor?.label) lines.push("near: " + intent.anchor.label);
 
-  return [...new Set(lines.filter(Boolean))].join("\n");
+  return [...new Set(lines.filter(Boolean))].join("
+");
 }
 
 export function semanticDomains(
