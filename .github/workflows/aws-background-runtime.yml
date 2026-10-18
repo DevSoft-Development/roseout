@@ -339,6 +339,35 @@ jobs:
             }
           fi
 
+      - name: Wait for Lambda and CloudFormation to become idle
+        run: |
+          set -euo pipefail
+          FN="toh-production-background-runtime"
+          for attempt in $(seq 1 60); do
+            STACK_STATUS="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+            LAMBDA_STATUS="$(aws lambda get-function-configuration --function-name "$FN" --query 'LastUpdateStatus' --output text)"
+            echo "deploy_preflight attempt=$attempt stack=$STACK_STATUS lambda=$LAMBDA_STATUS"
+            if [ "$LAMBDA_STATUS" = "Failed" ]; then
+              aws lambda get-function-configuration --function-name "$FN" --query '[LastUpdateStatus,LastUpdateStatusReasonCode,LastUpdateStatusReason]' --output table
+              exit 1
+            fi
+            case "$STACK_STATUS" in
+              UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|CREATE_COMPLETE)
+                if [ "$LAMBDA_STATUS" = "Successful" ]; then break; fi
+                ;;
+              UPDATE_ROLLBACK_FAILED|ROLLBACK_FAILED|DELETE_FAILED)
+                echo "CloudFormation is in a terminal failure state: $STACK_STATUS" >&2
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -eq 60 ]; then
+              echo "Timed out waiting for stack and Lambda update to settle" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          aws lambda wait function-updated-v2 --function-name "$FN"
+
       - name: Deploy background runtime stack
         env:
           IMAGE_URI: ${{ steps.image.outputs.uri }}
