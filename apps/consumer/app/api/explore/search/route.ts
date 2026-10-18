@@ -257,6 +257,39 @@ async function loadAreaFallback(area: string) {
   return normalizeAndFilterItems(data || []);
 }
 
+/** Recover verified exact-name venues when the ranked search returns none.
+ * This is a canonical identity lookup, not a static geographic fallback.
+ */
+async function loadExactNamedRestaurant(name: string) {
+  const exactName = name.trim();
+  if (!exactName || exactName.length > 160) return [];
+  const escapedName = exactName.replace(/[%_\\]/g, (char) => `\\${char}`);
+  const { data, error } = await supabaseAdmin.from("locations")
+    .select(AREA_FALLBACK_FIELDS)
+    .ilike("name", escapedName)
+    .eq("location_type", "restaurant")
+    .eq("is_searchable", true)
+    .eq("quality_status", "publish_ready")
+    .eq("data_status", "clean")
+    .eq("has_photos", true)
+    .not("is_hidden", "is", true)
+    .is("deleted_at", null)
+    .eq("active", true)
+    .eq("duplicate_status", "unique")
+    .or("is_low_level.is.null,is_low_level.eq.false")
+    .not("public_visibility_tier", "in", '("low_level","hidden")')
+    .not("curation_tier", "eq", "low_level")
+    .not("status", "in", '("closed","archived","permanently_closed")')
+    .limit(5);
+  if (error) {
+    console.error("EXPLORE_EXACT_NAME_RECOVERY_ERROR", { message: error.message });
+    return [];
+  }
+  return normalizeAndFilterItems((data || []).filter((row: any) =>
+    String(row.name || "").trim().toLocaleLowerCase() === exactName.toLocaleLowerCase(),
+  ));
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const q = cleanParam(params.get("q"));
@@ -375,6 +408,9 @@ export async function GET(request: NextRequest) {
         ),
       );
     items = normalizeAndFilterItems(items);
+    if (items.length === 0 && q && kind === "restaurants") {
+      items = await loadExactNamedRestaurant(q);
+    }
 
     if (!q && kind === "all" && area !== "all" && items.length === 0) {
       items = await loadAreaFallback(area);
