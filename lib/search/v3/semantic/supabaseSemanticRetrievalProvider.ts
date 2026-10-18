@@ -66,11 +66,11 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
       this.options.embeddingVersion ??
       process.env.SEARCH_LOCATION_INTELLIGENCE_EMBEDDING_VERSION ??
       "search-embedding:v1";
-    const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
+    // The production embedding corpus contains both legacy and Azure LI rows.\n    // Both use the same text-embedding-3-small vector space; querying only\n    // one version silently excludes thousands of ready locations.\n    const versions = [...new Set([embeddingVersion, "search-embedding:v1", "azure-location-intelligence:v1"])];\n    const limit = clamp(this.options.candidateLimit ?? 200, 20, 250);
     const minSimilarity = this.options.minSimilarity ?? 0.55;
 
     const results = await Promise.all(
-      expectedDomains.map(async (expectedDomain) => {
+      expectedDomains.flatMap((expectedDomain) => versions.map(async (version) => {
         const { data, error } = await this.client.rpc(
           "match_location_search_embeddings",
           {
@@ -79,7 +79,7 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
             p_market_key: marketKey(args.intent),
             p_match_count: limit,
             p_min_similarity: minSimilarity,
-            p_embedding_version: embeddingVersion,
+            p_embedding_version: version,
           },
         );
 
@@ -93,7 +93,7 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
 
     const byLocation = new Map<string, {
       score: number;
-      domains: Set<string>;
+      domains: Set<string>;\n      versions: Set<string>;
     }>();
 
     for (const result of results) {
@@ -103,10 +103,10 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
 
         const current = byLocation.get(row.location_id) ?? {
           score,
-          domains: new Set<string>(),
+          domains: new Set<string>(),\n          versions: new Set<string>(),
         };
         current.score = Math.max(current.score, score);
-        current.domains.add(result.domain);
+        current.domains.add(result.domain);\n        current.versions.add(result.version);
         byLocation.set(row.location_id, current);
       }
     }
@@ -127,12 +127,12 @@ export class SupabaseSemanticRetrievalProvider implements SearchRetrievalProvide
         evidence: [
           `similarity:${value.score.toFixed(4)}`,
           `model:${embedding.model}`,
-          `version:${embeddingVersion}`,
+          ...[...value.versions].sort().map((version) => `version:${version}`),
           ...[...value.domains].sort().map((domain) => `domain:${domain}`),
         ],
         metadata: {
           semanticModel: embedding.model,
-          semanticVersion: embeddingVersion,
+          semanticVersion: [...value.versions].sort().join(","),
           provider: "azure",
           semanticDomains: [...value.domains].sort(),
         },
