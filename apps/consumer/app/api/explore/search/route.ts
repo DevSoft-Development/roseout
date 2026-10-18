@@ -99,7 +99,9 @@ function buildExploreQuery(q: string, kind: string, area: string) {
   if (kind === "groups") parts.push("group outing fun activities");
   if (kind === "open-now") parts.push("open now late night");
   if (area !== "all") parts.push(`in ${area}`);
-  // The kind selector already limits result types. Avoid diluting exact venue\n  // names with generic food/activity keywords before Search V3 ranking.\n  if (q.trim()) return [q.trim(), ...(area !== "all" ? [`in ${area}`] : [])].join(" ");\n  return parts.filter(Boolean).join(" ").trim() || "things to do";
+  // Keep exact venue names intact; kind filtering already happens after search.
+  if (q.trim()) return [q.trim(), ...(area !== "all" ? [`in ${area}`] : [])].join(" ");
+  return parts.filter(Boolean).join(" ").trim() || "things to do";
 }
 
 function firstObject(...values: unknown[]) {
