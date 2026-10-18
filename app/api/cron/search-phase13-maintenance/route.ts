@@ -142,7 +142,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
     .order("updated_at",{ascending:false})
     .limit(Math.min(500,Math.max(limit*3,100)));
   if(importError)throw importError;
-  const candidateIds=(recentLocations||[]).map(row=>row.id);
+  const candidateIds=((recentLocations||[]) as any[]).map(row=>row.id);
   const {data:existingEmbeddings,error:existingError}=candidateIds.length
     ?await supabaseAdmin.from("location_search_embeddings")
       .select("location_id,status,calculated_at,embedding_version")
@@ -150,7 +150,7 @@ async function getEmbeddingBackfillCandidateIds(limit: number) {
     :{data:[],error:null};
   if(existingError)throw existingError;
   const indexed=new Map((existingEmbeddings||[]).map(row=>[String(row.location_id),row]));
-  for(const location of recentLocations||[]){
+  for(const location of (recentLocations||[]) as any[]){
     const embedding=indexed.get(String(location.id));
     const updated=timestampMs(location.updated_at??location.created_at);
     const calculated=timestampMs(embedding?.calculated_at);
