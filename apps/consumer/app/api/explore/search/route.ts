@@ -263,7 +263,7 @@ async function loadAreaFallback(area: string) {
 async function loadExactNamedRestaurant(name: string) {
   const exactName = name.trim();
   if (!exactName || exactName.length > 160) return [];
-  const escapedName = exactName.replace(/[\\%_]/g, "\\export async function GET(request: NextRequest) {");
+  const escapedName = exactName.replace(/[%_\\]/g, (char) => `\\${char}`);
   const { data, error } = await supabaseAdmin.from("locations")
     .select(AREA_FALLBACK_FIELDS)
     .ilike("name", escapedName)
