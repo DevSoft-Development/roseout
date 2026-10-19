@@ -76,17 +76,17 @@ export async function handler(event){
   if(method==="GET" && path==="/.well-known/oauth-protected-resource"){
     const resource=process.env.MCP_RESOURCE_URL;
     const tenant=process.env.ENTRA_TENANT_ID;
-    if(!resource||!tenant)return json(503,{error:"oauth_metadata_not_configured"});
+    if(!resource?.startsWith("https://")||!tenant)return json(503,{error:"oauth_metadata_not_configured"});
     return json(200,{resource,authorization_servers:[`https://login.microsoftonline.com/${tenant}/v2.0`],scopes_supported:["devops.read"],bearer_methods_supported:["header"]});
   }
 
   const claims=event?.requestContext?.authorizer?.jwt?.claims;
   const tenant=process.env.ENTRA_TENANT_ID;
-  const audience=process.env.ENTRA_CLIENT_ID;
+  const audience=process.env.MCP_EXPECTED_AUDIENCE;
   // JWT issuer/signature/audience validation is enforced by API Gateway's
   // configured JWT authorizer. Never deploy a route without that authorizer.
   if(!tenant||!audience||!claims||claims.tid!==tenant||claims.aud!==audience)
-    return json(401,{error:"unauthorized"},{"www-authenticate":process.env.MCP_RESOURCE_URL ? `Bearer resource_metadata="${process.env.MCP_RESOURCE_URL}/.well-known/oauth-protected-resource"` : "Bearer"});
+    return json(401,{error:"unauthorized"},{"www-authenticate":process.env.MCP_RESOURCE_URL?.startsWith("https://") ? `Bearer resource_metadata="${process.env.MCP_RESOURCE_URL}/.well-known/oauth-protected-resource"` : "Bearer"});
   const scopes=String(claims.scp||"").split(" ");
   if(!scopes.includes("devops.read"))return json(403,{error:"insufficient_scope"});
   if(event.requestContext?.http?.method!=="POST")return json(405,{error:"method_not_allowed"});
