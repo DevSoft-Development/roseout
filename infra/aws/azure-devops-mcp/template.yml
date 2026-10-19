@@ -6,12 +6,14 @@ Parameters:
     AllowedPattern: '[0-9a-fA-F-]{36}'
   EntraClientId:
     Type: String
+    Default: ebc4388d-ef62-413b-b7d9-175b53ca0348
     AllowedPattern: '[0-9a-fA-F-]{36}'
   AzureDevOpsSecretArn:
     Type: String
     Description: AWS Secrets Manager ARN storing the Entra private certificate key
   EntraCertificateSha1Thumbprint:
     Type: String
+    Default: 1B9248EBC79679B023D463C0A47D58F166C79FD6
     AllowedPattern: '[0-9A-Fa-f]{40}'
   LambdaArtifactBucket:
     Type: String
