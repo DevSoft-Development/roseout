@@ -20,6 +20,9 @@ type WebsiteEvidence = IndependentBusinessProfile & {
   category: string;
   locationType: "restaurant" | "activity";
   zip?: string;
+  phone?: string;
+  openingHours?: string[];
+  amenities?: Record<string,boolean>;
 };
 const clean=(v:unknown)=>typeof v==="string"?v.trim():"";
 function plain(v:unknown):Record<string,unknown> {
@@ -51,8 +54,17 @@ export function parseOfficialBusinessJsonLd(html:string,website:string):Omit<Web
    if(websiteValue){
      try{if(new URL(websiteValue).origin!==siteOrigin)continue;}catch{continue;}
    }
-   const status=clean(node.openingHours)||node.openingHoursSpecification?"open":"unknown";
+   const hours=Array.isArray(node.openingHours)?node.openingHours.filter((x):x is string=>typeof x==="string").slice(0,21):
+     (clean(node.openingHours)?[clean(node.openingHours)]:[]);
+   const status=hours.length||node.openingHoursSpecification?"open":"unknown";
+   const phone=clean(node.telephone);
+   const amenities:Record<string,boolean>={};
+   for(const feature of (Array.isArray(node.amenityFeature)?node.amenityFeature:[])){
+     const f=plain(feature),key=clean(f.name).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+     if(key && typeof f.value==="boolean")amenities[key]=f.value;
+   }
    return {name,address:street,city,state:region,zip,sourceUrl:website,website,
+      ...(phone?{phone}:{}),openingHours:hours,amenities,
       evidenceSource:"official_website",openStatus:status,
       category:types.some(t=>/restaurant|food|cafe|bar/i.test(String(t)))?"restaurant":"activity",
       locationType:types.some(t=>/restaurant|food|cafe|bar/i.test(String(t)))?"restaurant":"activity"};
