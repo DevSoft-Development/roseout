@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {handler} from "./handler.mjs";
+
+const goodClaims={tid:"9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08",aud:"ebc4388d-ef62-413b-b7d9-175b53ca0348",scp:"devops.read"};
+process.env.ENTRA_TENANT_ID=goodClaims.tid;
+process.env.ENTRA_CLIENT_ID=goodClaims.aud;
+const event=(method,claims=goodClaims)=>({
+ requestContext:{http:{method:"POST"},authorizer:{jwt:{claims}}},
+ body:JSON.stringify({jsonrpc:"2.0",id:1,method})
+});
+test("missing authorizer fails closed",async()=>{
+ const res=await handler({requestContext:{http:{method:"POST"}},body:"{}"});
+ assert.equal(res.statusCode,401);
+});
+test("wrong tenant is rejected",async()=>{
+ assert.equal((await handler(event("tools/list",{...goodClaims,tid:"wrong"}))).statusCode,401);
+});
+test("wrong audience is rejected",async()=>{
+ assert.equal((await handler(event("tools/list",{...goodClaims,aud:"wrong"}))).statusCode,401);
+});
+test("missing delegated read scope rejected",async()=>{
+ assert.equal((await handler(event("tools/list",{...goodClaims,scp:""}))).statusCode,403);
+});
+test("only read tools are advertised",async()=>{
+ const res=await handler(event("tools/list"));
+ assert.equal(res.statusCode,200);
+ const names=JSON.parse(res.body).result.tools.map(t=>t.name);
+ assert.deepEqual(names,["list_pipelines","list_builds","get_build","list_branches"]);
+});
+test("unknown tool is not callable",async()=>{
+ const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"queue_pipeline"}})});
+ assert.equal(JSON.parse(res.body).error.code,-32601);
+});
