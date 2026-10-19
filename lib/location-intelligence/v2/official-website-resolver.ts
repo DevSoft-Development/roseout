@@ -113,15 +113,15 @@ export function extractOfficialSocialProfiles(html:string,pageUrl:string) {
   try {
    const u=new URL(raw,pageUrl);
    if(u.protocol!=="https:"||u.username||u.password)return;
-   const host=u.hostname.toLowerCase().replace(/^www\\./,"");
+   const host=u.hostname.toLowerCase().replace(/^www\./,"");
    const platform=Object.entries(domains).find(([d])=>host===d)?.[1];
    if(!platform || !u.pathname || u.pathname==="/")return;
-   if(/\\/(?:share|sharer(?:\\.php)?|intent|search|hashtag|p|posts?|watch|reels?|shorts)(?:\\/|$)/i.test(u.pathname))return;
+   if(/\/(?:share|sharer(?:\.php)?|intent|search|hashtag|p|posts?|watch|reels?|shorts)(?:\/|$)/i.test(u.pathname))return;
    if(!profiles[platform])profiles[platform]={url:u.toString(),sourceUrl:pageUrl};
   } catch {/* invalid or unrelated URL */}
  };
- for(const m of html.matchAll(/<a\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*>/gi))add(m[1]);
- for(const m of html.matchAll(/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi)){
+ for(const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi))add(m[1]);
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
   try {for(const node of graphs(JSON.parse(m[1]))){
    for(const url of Array.isArray(node.sameAs)?node.sameAs:[])add(url);
   }}catch{/* malformed structured data */}
