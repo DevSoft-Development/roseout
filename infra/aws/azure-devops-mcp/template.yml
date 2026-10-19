@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default)
+Parameters:
+  EntraTenantId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  EntraClientId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  AzureDevOpsSecretArn:
+    Type: String
+    Description: AWS Secrets Manager ARN storing a scoped Azure DevOps read credential
+Resources:
+  McpRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logs-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+  McpLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs22.x
+      Handler: handler.handler
+      Role: !GetAtt McpRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({statusCode: 503, body: "connector_not_activated"});
+      Timeout: 20
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENTRA_TENANT_ID: !Ref EntraTenantId
+          ENTRA_CLIENT_ID: !Ref EntraClientId
+          AZDO_ORGANIZATION: TheOutHaven
+          AZDO_PROJECT: TheOutHaven
+  McpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: theouthaven-azure-devops-mcp
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: false
+  McpAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref McpApi
+      AuthorizerType: JWT
+      IdentitySource: ['$request.header.Authorization']
+      Name: entra-devops-read
+      JwtConfiguration:
+        Audience: [!Ref EntraClientId]
+        Issuer: !Sub https://login.microsoftonline.com/${EntraTenantId}/v2.0
+  McpIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref McpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt McpLambda.Arn
+      PayloadFormatVersion: '2.0'
+  McpRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: POST /api/mcp
+      AuthorizationType: JWT
+      AuthorizerId: !Ref McpAuthorizer
+      AuthorizationScopes: [devops.read]
+      Target: !Sub integrations/${McpIntegration}
+  McpInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref McpLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*/POST/api/mcp
+  McpStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref McpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 5
+        ThrottlingRateLimit: 2
+Outputs:
+  McpApiId:
+    Value: !Ref McpApi
