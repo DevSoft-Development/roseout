@@ -3,6 +3,7 @@ Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default; 
 Parameters:
   EntraTenantId:
     Type: String
+    Default: 9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08
     AllowedPattern: '[0-9a-fA-F-]{36}'
   EntraClientId:
     Type: String
