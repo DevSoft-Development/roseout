@@ -1,6 +1,6 @@
 # AWS MCP connector — us-east-1 preparation
 
-**State: NOT DEPLOYED.** The CloudFormation template deploys a 503 placeholder Lambda on purpose. The real handler is not wired to the template. Do not expose or advertise a ChatGPT MCP URL until all gates below pass.
+**State: NOT DEPLOYED.** The CloudFormation template references an immutable S3 Lambda ZIP, but has no active API Gateway stage and has the default execute-api endpoint disabled. OAuth discovery and authorization are incomplete. Do not expose or advertise a ChatGPT MCP URL until all gates below pass.
 
 ## 1. Azure DevOps upstream identity
 
@@ -10,17 +10,17 @@ The user-facing Entra App Registration for ChatGPT access is a separate resource
 
 ## 2. AWS secret
 
-In **AWS Secrets Manager, us-east-1**, provision `theouthaven/integrations/azure-devops/read-only` with JSON shape `{"token":"<secure short-lived read-only upstream credential>"}` **in the AWS console only**. Never paste a real credential into GitHub, YAML, or ChatGPT. Record the returned secret ARN for the CloudFormation parameter. Current handler accepts a token for Azure DevOps Basic/PAT authentication; Entra service principal OAuth requires replacing this with Bearer token support and managed rotation before activation. Avoid issuing a standing human PAT.
+The existing AWS Secrets Manager certificate secret holds the PEM private key as its **plaintext secret value**. The Lambda handler now constructs a signed Entra client assertion and requests a short-lived **Bearer** token for Azure DevOps. Supply only the secret ARN as the stack parameter. Never copy the private key into GitHub, YAML, or chat. Certificate-based token exchange still needs real-world integration testing.
 
 ## 3. Build and deployment readiness
 
-1. Run protocol tests and negative auth tests.
-2. Build a Lambda zip containing `handler.mjs`, its Node dependency and lockfile; modify CloudFormation `Code` to reference an immutable S3 artifact.
+1. Run `node --test tools/azure-devops-mcp/aws/handler.test.mjs` and certificate-exchange integration tests in an isolated runtime.
+2. Build a Lambda zip with `bash tools/azure-devops-mcp/aws/build-package.sh`. Upload the reviewed ZIP to a private versioned S3 object; supply the bucket/key parameters already in CloudFormation. Do not use an unreviewed artifact.
 3. Deploy in `us-east-1` via reviewed CloudFormation change set, supplying **EntraTenantId**, **EntraClientId**, and **AzureDevOpsSecretArn** parameters from trusted configuration.
 4. Verify the API Gateway route is bound to its JWT authorizer and unauthorized requests fail before invoking Lambda.
 5. Add OAuth protected-resource discovery and ChatGPT OAuth authorization-client compatibility.
 6. Audit access, enforce allowlisted users, rate limits, payload/response caps; perform real Azure read test and permission-denial tests.
-7. Only after certification, enable Lambda handler and connect ChatGPT using the verified HTTPS URL.
+7. Only after certification, add a reviewed API Gateway stage and enable the endpoint, then connect ChatGPT using the verified HTTPS URL.
 
 ## 4. Security reminders
 
