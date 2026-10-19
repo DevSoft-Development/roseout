@@ -9,9 +9,12 @@ FUNCTION="$(aws cloudformation describe-stack-resource --stack-name "$STACK" --l
 TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT
 chmod 700 "$TEMP"
-cat > "$TEMP/event.json" <<EOF
-{"requestContext":{"http":{"method":"POST"},"authorizer":{"jwt":{"claims":{"aud":"$CLIENT","tid":"$TENANT","scp":"devops.read"}}}},"body":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"list_pipelines\",\"arguments\":{}}}"}
-EOF
+CLIENT="$CLIENT" TENANT="$TENANT" node - "$TEMP/event.json" <<'NODE'
+const fs=require("node:fs");
+const msg={jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"list_pipelines",arguments:{}}};
+const event={requestContext:{http:{method:"POST"},authorizer:{jwt:{claims:{aud:process.env.CLIENT,tid:process.env.TENANT,scp:"devops.read"}}}},body:JSON.stringify(msg)};
+fs.writeFileSync(process.argv[2],JSON.stringify(event),{mode:0o600});
+NODE
 # Authorizer claims below are synthetic and are only passed via IAM-authorized
 # direct Lambda invoke. They are NOT a proof of API Gateway JWT validation.
 aws lambda invoke --region "$REGION" --function-name "$FUNCTION" \
