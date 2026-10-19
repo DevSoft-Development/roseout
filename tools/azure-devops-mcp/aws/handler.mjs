@@ -13,11 +13,23 @@ const org=process.env.AZDO_ORGANIZATION||"TheOutHaven";
 const project=process.env.AZDO_PROJECT||"TheOutHaven";
 const repository=process.env.AZDO_REPOSITORY||"TheOutHaven";
 const apiBase="https://dev.azure.com/"+encodeURIComponent(org)+"/"+encodeURIComponent(project)+"/_apis";
+let credentialClientPromise;
+async function loadUpstreamToken(){
+  const arn=process.env.AZDO_READ_SECRET_ARN;
+  if(!arn)throw new Error("upstream_secret_not_configured");
+  const {SecretsManagerClient,GetSecretValueCommand}=await import("@aws-sdk/client-secrets-manager");
+  if(!credentialClientPromise)credentialClientPromise=Promise.resolve(new SecretsManagerClient({region:process.env.AWS_REGION||"us-east-1"}));
+  const client=await credentialClientPromise;
+  const result=await client.send(new GetSecretValueCommand({SecretId:arn}));
+  if(!result.SecretString)throw new Error("upstream_secret_empty");
+  const value=JSON.parse(result.SecretString);
+  if(typeof value.token!=="string"||!value.token)throw new Error("upstream_secret_invalid");
+  return value.token;
+}
 async function read(path,params){
   // This is a bootstrap: secret retrieval and upstream service identity wiring are
   // deliberately not enabled until the authenticated deployment has been reviewed.
-  const key=process.env.AZDO_READ_TOKEN;
-  if(!key)throw new Error("upstream_credentials_not_configured");
+  const key=await loadUpstreamToken();
   const url=new URL(apiBase+path);
   for(const [k,v] of Object.entries({...params,"api-version":"7.1"}))url.searchParams.set(k,String(v));
   const result=await fetch(url,{headers:{authorization:"Basic "+Buffer.from(":"+key).toString("base64")},redirect:"error",signal:AbortSignal.timeout(12000)});
