@@ -3,7 +3,7 @@ import LiveRefresh from "./LiveRefresh";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
-import { submitInitialReviewSample } from "@/lib/location-intelligence/v2/initial-review-staging";
+import { submitInitialReviewSample, reconcileUnknownInitialReview } from "@/lib/location-intelligence/v2/initial-review-staging";
 
 export const dynamic = "force-dynamic";
 type Budget = { scope:string; scope_id:string; cap_usd:number; enabled:boolean; used_usd:number; period_start:string; period_end:string };
@@ -79,6 +79,20 @@ async function authorizeInitialReviewSample(formData:FormData) {
     latitude,longitude,authorized:true,
   });
   if(outcome.status==="budget_denied")throw new Error("Budget does not permit initial review purchase");
+  revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
+}
+
+async function reconcileInitialReviewTask(formData:FormData) {
+  "use server";
+  await requireAdminRole(["superadmin"]);
+  if(formData.get("explicit_reconciliation")!=="yes")
+    throw new Error("Explicit existing task verification required");
+  const ledgerId=String(formData.get("ledger_id")||"");
+  const stageId=String(formData.get("stage_id")||"");
+  const providerTaskId=String(formData.get("provider_task_id")||"");
+  if(!/^[0-9a-f-]{36}$/i.test(ledgerId) || !/^[0-9a-f-]{36}$/i.test(stageId))
+    throw new Error("Valid ledger and stage IDs required");
+  await reconcileUnknownInitialReview({ledgerId,stageId,providerTaskId,explicitlyVerified:true});
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
@@ -173,6 +187,20 @@ export default async function CampaignControlsPage() {
             I authorize one billable initial review collection for this verified business.
           </label>
           <button className="rounded-lg border border-amber-400/50 px-4 py-3 font-bold sm:col-span-2" type="submit">Authorize one review task</button>
+        </form>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
+        <h2 className="text-xl font-black">Reconcile uncertain initial review submission</h2>
+        <p className="mt-2 text-sm text-white/60">Recover a previously accepted DataForSEO task using its verified task ID. This does not submit another task or purchase reviews.</p>
+        <form action={reconcileInitialReviewTask} className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">Ledger UUID<input required name="ledger_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm">Staging UUID<input required name="stage_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="text-sm sm:col-span-2">Existing provider task ID<input required name="provider_task_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input required name="explicit_reconciliation" type="checkbox" value="yes"/>
+            I verified this task ID belongs to the earlier submission.
+          </label>
+          <button type="submit" className="rounded-lg border border-white/30 px-4 py-3 font-bold sm:col-span-2">Reconcile existing task (no purchase)</button>
         </form>
       </section>
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
