@@ -81,16 +81,16 @@ export function extractOfficialReservationUrl(html:string,pageUrl:string):string
   if(typeof value!=="string")return;
   try {const u=new URL(value,pageUrl);
    if(u.protocol!=="https:"||u.username||u.password)return;
-   if(/^(localhost|127\\.|10\\.|192\\.168\\.)/.test(u.hostname))return;
+   if(/^(localhost|127\.|10\.|192\.168\.)/.test(u.hostname))return;
    candidates.push({url:u.toString(),priority});
   }catch{/* invalid URL */}
  };
- for(const m of html.matchAll(/<a\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*>([\\s\\S]*?)<\\/a>/gi)){
-  const label=m[2].replace(/<[^>]+>/g," ").replace(/\\s+/g," ").trim();
+ for(const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)){
+  const label=m[2].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
   if(/(?:reserve|reservations|book a table|book now|make a booking)/i.test(label))
    add(m[1],10);
  }
- for(const m of html.matchAll(/<script\\b[^>]*type\\s*=\\s*["']application\\/ld\\+json["'][^>]*>([\\s\\S]*?)<\\/script\\s*>/gi)){
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
   try {for(const node of graphs(JSON.parse(m[1]))){
    const actions=Array.isArray(node.potentialAction)?node.potentialAction:[node.potentialAction];
    for(const action of actions){const a=plain(action);
