@@ -412,6 +412,13 @@ export async function publishReadyStagedLocations({
   for (const row of rows) {
     if (String(row.source || "").startsWith("li_v2_")) {
       const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
+      const acceptance = recordValue(recordValue(row.raw_payload).li_v2_one_touch_acceptance);
+      const sample = recordValue(recordValue(row.raw_payload).li_v2_initial_review_sample);
+      if (acceptance.oneTouchComplete !== true ||
+          !["imported", "not_available"].includes(String(sample.status || ""))) {
+        // A general-purpose publisher must not bypass the prepublication gate.
+        continue;
+      }
       if (evidence.photoSource==="wikimedia_commons") {
         const license=recordValue(evidence.wikimediaEvidence);
         const goodLicense=["CC BY 4.0","CC BY-SA 4.0","CC BY 3.0","CC BY-SA 3.0"].includes(String(license.license||""));
@@ -494,6 +501,29 @@ export async function publishReadyStagedLocations({
           qualityScore: Number(row.quality_score || staged.quality_score || 0),
         });
         if (String(staged.source || "").startsWith("li_v2_")) {
+          const reviewSample = recordValue(recordValue(staged.raw_payload).li_v2_initial_review_sample);
+          if (reviewSample.status === "imported") {
+            const reviews = Array.isArray(reviewSample.reviews) ? reviewSample.reviews.slice(0,100) : [];
+            const reviewRows = reviews.map((item:unknown) => {
+              const review = recordValue(item);
+              const id = String(review.review_id || "").trim();
+              const date = new Date(String(review.timestamp || ""));
+              const rawRating = recordValue(review.rating);
+              const rating = Number(typeof review.rating === "number" ? review.rating : rawRating.value);
+              return {
+                location_id: String(row.id), provider: "dataforseo", external_review_id:id,
+                published_at: Number.isFinite(date.getTime()) ? date.toISOString() : null,
+                rating: Number.isFinite(rating) ? rating : null,
+                review_text: String(review.original_review_text || review.review_text || "") || null,
+                author_name: String(review.profile_name || "") || null, payload: review,
+              };
+            }).filter(item => item.external_review_id);
+            if (reviewRows.length) {
+              const {error:reviewError}=await supabaseAdmin.from("location_external_reviews")
+                .upsert(reviewRows,{onConflict:"provider,external_review_id",ignoreDuplicates:true});
+              if(reviewError)throw new Error("li_v2_initial_review_publication_failed:"+reviewError.message);
+            }
+          }
           await refreshLocationClassificationV2(String(row.id));
           await refreshLocationReadiness(String(row.id));
         }
