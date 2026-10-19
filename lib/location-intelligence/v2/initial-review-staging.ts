@@ -129,3 +129,32 @@ export async function collectInitialReviewSample(input:{stageId:string;ledgerId:
   });
   return {status,reviewCount:items.length};
 }
+
+/** Operator-supplied provider task ID recovery. Never submits a new charge. */
+export async function reconcileUnknownInitialReview(input:{
+  ledgerId:string; stageId:string; providerTaskId:string;
+  explicitlyVerified:boolean;
+}) {
+  if(input.explicitlyVerified!==true)throw new Error("review_reconciliation_verification_required");
+  if(!/^[0-9a-f-]{30,40}$/i.test(input.providerTaskId))
+    throw new Error("review_provider_task_id_invalid");
+  const stage=await loadStage(input.stageId);
+  const task=await rpc<JsonObject>("li_v2_initial_review_task_snapshot",{p_id:input.ledgerId});
+  if(text(task.stage_id)!==String(stage.id) || task.status!=="submission_unknown")
+    throw new Error("initial_review_reconciliation_state_mismatch");
+  // Confirm the known task can be retrieved. A response not yet finished is fine;
+  // a nonexistent or inaccessible task is not eligible for reconciliation.
+  const lookup=await getDataForSeoReviewTask(input.providerTaskId);
+  if(!Array.isArray(lookup.tasks) || !lookup.tasks.length)
+    throw new Error("review_provider_task_unverified");
+  const updated=await rpc<boolean>("li_v2_update_initial_review_task",{
+    p_id:input.ledgerId,p_expected_status:"submission_unknown",
+    p_status:"submitted",p_task_id:input.providerTaskId,
+  });
+  if(!updated)throw new Error("review_reconciliation_concurrent_transition");
+  await updateStage(input.stageId,{
+    status:"pending",ledgerId:input.ledgerId,taskId:input.providerTaskId,
+    reconciledAt:new Date().toISOString(),
+  });
+  return {status:"submitted" as const,reconciled:true};
+}
