@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           test "$CONFIRMATION" = 'superiority-burger-119-avenue-a'
       - name: Authenticate to production AWS role
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
           aws-region: us-east-1
