@@ -13,6 +13,12 @@ Parameters:
   EntraCertificateSha1Thumbprint:
     Type: String
     AllowedPattern: '[0-9A-Fa-f]{40}'
+  LambdaArtifactBucket:
+    Type: String
+    Description: Private S3 bucket containing the reviewed Lambda zip
+  LambdaArtifactKey:
+    Type: String
+    Description: Immutable S3 key to the reviewed Lambda zip
   ExistingLambdaRoleArn:
     Type: String
     Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
@@ -22,10 +28,11 @@ Resources:
     Properties:
       Runtime: nodejs22.x
       Handler: handler.handler
+      Description: Read-only connector. Do not enable ChatGPT OAuth until separately certified.
       Role: !Ref ExistingLambdaRoleArn
       Code:
-        ZipFile: |
-          exports.handler = async () => ({statusCode: 503, body: "connector_not_activated"});
+        S3Bucket: !Ref LambdaArtifactBucket
+        S3Key: !Ref LambdaArtifactKey
       Timeout: 20
       MemorySize: 256
       Environment:
@@ -41,7 +48,7 @@ Resources:
     Properties:
       Name: theouthaven-azure-devops-mcp
       ProtocolType: HTTP
-      DisableExecuteApiEndpoint: false
+      DisableExecuteApiEndpoint: true
   McpAuthorizer:
     Type: AWS::ApiGatewayV2::Authorizer
     Properties:
@@ -75,15 +82,6 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*/POST/api/mcp
-  McpStage:
-    Type: AWS::ApiGatewayV2::Stage
-    Properties:
-      ApiId: !Ref McpApi
-      StageName: '$default'
-      AutoDeploy: true
-      DefaultRouteSettings:
-        ThrottlingBurstLimit: 5
-        ThrottlingRateLimit: 2
 Outputs:
   McpApiId:
     Value: !Ref McpApi
