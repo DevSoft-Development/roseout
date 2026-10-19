@@ -25,6 +25,10 @@ Parameters:
   LambdaArtifactVersion:
     Type: String
     Description: Exact S3 version ID of the reviewed Lambda zip
+  McpResourceUrl:
+    Type: String
+    Default: disabled
+    Description: Exact HTTPS MCP resource origin; configure on activation
   ExistingLambdaRoleArn:
     Type: String
     Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
@@ -50,6 +54,7 @@ Resources:
           ENTRA_CERT_SHA1_THUMBPRINT: !Ref EntraCertificateSha1Thumbprint
           AZDO_ORGANIZATION: TheOutHaven
           AZDO_PROJECT: TheOutHaven
+          MCP_RESOURCE_URL: !Ref McpResourceUrl
   McpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -82,13 +87,20 @@ Resources:
       AuthorizerId: !Ref McpAuthorizer
       AuthorizationScopes: [devops.read]
       Target: !Sub integrations/${McpIntegration}
+  MetadataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: GET /.well-known/oauth-protected-resource
+      AuthorizationType: NONE
+      Target: !Sub integrations/${McpIntegration}
   McpInvoke:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref McpLambda
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*/POST/api/mcp
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*
 Outputs:
   McpApiId:
     Value: !Ref McpApi
