@@ -14,12 +14,28 @@ export function assessOneTouchImport(row:OneTouchEvidence) {
  const profile=(raw.independent_profile && typeof raw.independent_profile==="object" &&
   !Array.isArray(raw.independent_profile))
   ? raw.independent_profile as Record<string,unknown>:{};
+ // Each structured channel needs an explicit first-pass source check. A missing
+ // value alone is not proof that the source was actually inspected.
+ const fieldChecks=(raw.li_v2_prepublication_fields &&
+   typeof raw.li_v2_prepublication_fields==="object" &&
+   !Array.isArray(raw.li_v2_prepublication_fields))
+   ?raw.li_v2_prepublication_fields as Record<string,unknown>:{};
+ const channelKeys=["contact","email","reservationUrl","socialProfiles","openingHours","amenities"] as const;
+ const structuredChannels=Object.fromEntries(channelKeys.map(key=>{
+   const check=fieldChecks[key];
+   if(!check||typeof check!=="object"||Array.isArray(check))return [key,false];
+   const item=check as Record<string,unknown>;
+   return [key,(item.status==="available"||item.status==="not_available")&&
+     typeof item.sourceUrl==="string"&&item.sourceUrl.startsWith("https://") &&
+     typeof item.checkedAt==="string"&&!Number.isNaN(Date.parse(item.checkedAt))];
+ })) as Record<typeof channelKeys[number],boolean>;
  const required={
   identity:[row.name,row.address,row.city,row.state].every(v=>typeof v==="string"&&v.trim().length>0),
   coordinates:Number.isFinite(Number(row.latitude))&&Number.isFinite(Number(row.longitude)) &&
     Math.abs(Number(row.latitude))<=90&&Math.abs(Number(row.longitude))<=180,
   website:typeof row.website==="string"&&row.website.startsWith("https://"),
   primaryImage:typeof row.main_image==="string"&&row.main_image.length>0&&row.has_photos===true,
+  structuredFields:Object.values(structuredChannels).every(Boolean),
   menuChecked:menu!==null&&typeof menu.status==="string"&&
     menu.status!=="error"&&menu.website===row.website,
  };
@@ -36,6 +52,7 @@ export function assessOneTouchImport(row:OneTouchEvidence) {
    phone:typeof row.phone==="string"&&row.phone.trim()?"available":"not_in_source",
    hours:profile.openStatus==="open"?"operating_status_verified":"not_in_source",
    amenities:profile.initialIntelligence?"source_checked":"not_in_source",
+   structuredChannels,
    menu:required.menuChecked?"checked":"incomplete",
    reviews:reviewState,
   },
