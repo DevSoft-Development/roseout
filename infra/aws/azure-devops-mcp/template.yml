@@ -9,7 +9,10 @@ Parameters:
     AllowedPattern: '[0-9a-fA-F-]{36}'
   AzureDevOpsSecretArn:
     Type: String
-    Description: AWS Secrets Manager ARN storing a scoped Azure DevOps read credential
+    Description: AWS Secrets Manager ARN storing the Entra private certificate key
+  EntraCertificateSha1Thumbprint:
+    Type: String
+    AllowedPattern: '[0-9A-Fa-f]{40}'
 Resources:
   McpRole:
     Type: AWS::IAM::Role
@@ -46,7 +49,8 @@ Resources:
         Variables:
           ENTRA_TENANT_ID: !Ref EntraTenantId
           ENTRA_CLIENT_ID: !Ref EntraClientId
-          AZDO_READ_SECRET_ARN: !Ref AzureDevOpsSecretArn
+          AZDO_CERT_SECRET_ARN: !Ref AzureDevOpsSecretArn
+          ENTRA_CERT_SHA1_THUMBPRINT: !Ref EntraCertificateSha1Thumbprint
           AZDO_ORGANIZATION: TheOutHaven
           AZDO_PROJECT: TheOutHaven
   McpApi:
