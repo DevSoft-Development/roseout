@@ -13,33 +13,16 @@ Parameters:
   EntraCertificateSha1Thumbprint:
     Type: String
     AllowedPattern: '[0-9A-Fa-f]{40}'
+  ExistingLambdaRoleArn:
+    Type: String
+    Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
 Resources:
-  McpRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal: {Service: lambda.amazonaws.com}
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: logs-only
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
-          - Effect: Allow
-            Action: secretsmanager:GetSecretValue
-            Resource: !Ref AzureDevOpsSecretArn
   McpLambda:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: nodejs22.x
       Handler: handler.handler
-      Role: !GetAtt McpRole.Arn
+      Role: !Ref ExistingLambdaRoleArn
       Code:
         ZipFile: |
           exports.handler = async () => ({statusCode: 503, body: "connector_not_activated"});
