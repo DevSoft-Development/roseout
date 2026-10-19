@@ -29,7 +29,7 @@ trap 'rm -f "$PARAMS"' EXIT
 node - "$PARAMS" "$BUCKET" "$KEY" "$VERSION" <<'NODE'
 const fs=require('fs');
 const [file,bucket,key,version]=process.argv.slice(2);
-const set={LambdaArtifactBucket:bucket,LambdaArtifactKey:key,LambdaArtifactVersion:version};
+const set={LambdaArtifactBucket:bucket,LambdaArtifactKey:key,LambdaArtifactVersion:version,McpExpectedAudience:"api://ebc4388d-ef62-413b-b7d9-175b53ca0348",McpResourceUrl:"disabled"};
 const names=['EntraTenantId','EntraClientId','AzureDevOpsSecretArn','EntraCertificateSha1Thumbprint','LambdaArtifactBucket','LambdaArtifactKey','LambdaArtifactVersion','ExistingLambdaRoleArn','McpExpectedAudience','McpResourceUrl'];
 const params=names.map(n=>set[n]?{ParameterKey:n,ParameterValue:set[n]}:{ParameterKey:n,UsePreviousValue:true});
 fs.writeFileSync(file,JSON.stringify(params),{mode:0o600});
