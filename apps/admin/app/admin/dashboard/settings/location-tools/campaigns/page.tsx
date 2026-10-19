@@ -3,7 +3,6 @@ import LiveRefresh from "./LiveRefresh";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
-import { submitInitialReviewSample, reconcileUnknownInitialReview } from "@/lib/location-intelligence/v2/initial-review-staging";
 
 export const dynamic = "force-dynamic";
 type Budget = { scope:string; scope_id:string; cap_usd:number; enabled:boolean; used_usd:number; period_start:string; period_end:string };
@@ -55,7 +54,7 @@ async function commandImport(formData: FormData) {
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
-async function authorizeInitialReviewSample(formData:FormData) {
+async function reserveInitialReviewSample(formData:FormData) {
   "use server";
   await requireAdminRole(["superadmin"]);
   const stageId=String(formData.get("stage_id")||"").trim();
@@ -63,36 +62,38 @@ async function authorizeInitialReviewSample(formData:FormData) {
   const runId=String(formData.get("run_id")||"").trim();
   const googlePlaceId=String(formData.get("google_place_id")||"").trim();
   const estimate=Number(formData.get("estimated_usd"));
-  const latitude=Number(formData.get("latitude"));
-  const longitude=Number(formData.get("longitude"));
   if(!/^[0-9a-f-]{36}$/i.test(stageId) ||
     !/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId) ||
     !/^[0-9a-zA-Z:_-]{6,100}$/.test(runId) ||
     !/^[A-Za-z0-9_-]{8,255}$/.test(googlePlaceId) ||
     !Number.isFinite(estimate)||estimate<=0 ||
-    !Number.isFinite(latitude)||Math.abs(latitude)>90 ||
-    !Number.isFinite(longitude)||Math.abs(longitude)>180 ||
     formData.get("explicit_authorization")!=="yes")
-    throw new Error("Valid reviewed stage, identity, coordinates, price and explicit authorization required");
-  const outcome=await submitInitialReviewSample({
-    stageId,campaignId,runId,googlePlaceId,quotedTaskUsd:estimate,
-    latitude,longitude,authorized:true,
+    throw new Error("Valid stage, identity, price and authorization required");
+  const db=getAdminDatabaseClient();
+  const {data:prices,error:priceError}=await db.rpc("li_v2_acquisition_controls_snapshot");
+  if(priceError)throw new Error("Provider price policy unavailable");
+  const providers=(prices as {providers?:Array<{provider:string;enabled:boolean;max_usd_per_request:number}>}|null)?.providers||[];
+  const policy=providers.find(p=>p.provider==="dataforseo");
+  if(!policy?.enabled||!Number.isFinite(policy.max_usd_per_request)||
+      estimate<policy.max_usd_per_request)
+    throw new Error("Provider price or authorization denied");
+  const {data:stage,error:stageError}=await db.from("location_import_staging")
+    .select("id,source,source_id,raw_payload,import_status").eq("id",stageId).single();
+  if(stageError||!stage||stage.source!=="li_v2_independent"||stage.import_status==="published")
+    throw new Error("Invalid staged independent business");
+  const raw=stage.raw_payload && typeof stage.raw_payload==="object" && !Array.isArray(stage.raw_payload)
+    ? stage.raw_payload as Record<string,unknown>:{};
+  const profile=raw.independent_profile && typeof raw.independent_profile==="object" && !Array.isArray(raw.independent_profile)
+    ? raw.independent_profile as Record<string,unknown>:{};
+  if(profile.googlePlaceId!==googlePlaceId)throw new Error("Google identity mismatch");
+  const {data,error}=await db.rpc("li_v2_claim_initial_review_task",{
+    p_stage_id:stageId,p_business_key:"google:"+googlePlaceId,
+    p_campaign_id:campaignId,p_run_id:runId,p_google_place_id:googlePlaceId,
+    p_estimated_usd:estimate,
   });
-  if(outcome.status==="budget_denied")throw new Error("Budget does not permit initial review purchase");
-  revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
-}
-
-async function reconcileInitialReviewTask(formData:FormData) {
-  "use server";
-  await requireAdminRole(["superadmin"]);
-  if(formData.get("explicit_reconciliation")!=="yes")
-    throw new Error("Explicit existing task verification required");
-  const ledgerId=String(formData.get("ledger_id")||"");
-  const stageId=String(formData.get("stage_id")||"");
-  const providerTaskId=String(formData.get("provider_task_id")||"");
-  if(!/^[0-9a-f-]{36}$/i.test(ledgerId) || !/^[0-9a-f-]{36}$/i.test(stageId))
-    throw new Error("Valid ledger and stage IDs required");
-  await reconcileUnknownInitialReview({ledgerId,stageId,providerTaskId,explicitlyVerified:true});
+  if(error)throw new Error("Initial review reservation failed: "+error.message);
+  const result=data as {status?:string}|null;
+  if(result?.status==="budget_denied")throw new Error("Acquisition budget denied");
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
@@ -172,9 +173,9 @@ export default async function CampaignControlsPage() {
         </div>)}</div>
       </section>
       <section className="rounded-2xl border border-amber-500/20 bg-[#111] p-6">
-        <h2 className="text-xl font-black">Authorize initial review sample (billable)</h2>
-        <p className="mt-2 text-sm text-amber-100/80">Superadmin only. Submit exactly one DataForSEO 100-review task for an independently verified staged business. Requires active provider pricing and global/campaign budgets. If submission is uncertain, a retry will NOT repurchase; reconcile its task first.</p>
-        <form action={authorizeInitialReviewSample} className="mt-4 grid gap-3 sm:grid-cols-2">
+        <h2 className="text-xl font-black">Reserve initial review budget (no provider submission)</h2>
+        <p className="mt-2 text-sm text-amber-100/80">Superadmin only. Creates one durable task intent and reserves budget. This action makes no DataForSEO request. Actual provider submission remains disabled until worker certification.</p>
+        <form action={reserveInitialReviewSample} className="mt-4 grid gap-3 sm:grid-cols-2">
           {([
             ["stage_id","Staging UUID"],["campaign_id","Campaign ID"],["run_id","Run ID"],
             ["google_place_id","Verified Google Place ID"],["latitude","Verified latitude"],
@@ -184,23 +185,9 @@ export default async function CampaignControlsPage() {
           </label>)}
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
             <input type="checkbox" required name="explicit_authorization" value="yes"/>
-            I authorize one billable initial review collection for this verified business.
+            I authorize reserving budget for one initial review task; this does not submit a provider request.
           </label>
-          <button className="rounded-lg border border-amber-400/50 px-4 py-3 font-bold sm:col-span-2" type="submit">Authorize one review task</button>
-        </form>
-      </section>
-      <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
-        <h2 className="text-xl font-black">Reconcile uncertain initial review submission</h2>
-        <p className="mt-2 text-sm text-white/60">Recover a previously accepted DataForSEO task using its verified task ID. This does not submit another task or purchase reviews.</p>
-        <form action={reconcileInitialReviewTask} className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm">Ledger UUID<input required name="ledger_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
-          <label className="text-sm">Staging UUID<input required name="stage_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
-          <label className="text-sm sm:col-span-2">Existing provider task ID<input required name="provider_task_id" className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/></label>
-          <label className="flex items-center gap-2 text-sm sm:col-span-2">
-            <input required name="explicit_reconciliation" type="checkbox" value="yes"/>
-            I verified this task ID belongs to the earlier submission.
-          </label>
-          <button type="submit" className="rounded-lg border border-white/30 px-4 py-3 font-bold sm:col-span-2">Reconcile existing task (no purchase)</button>
+          <button className="rounded-lg border border-amber-400/50 px-4 py-3 font-bold sm:col-span-2" type="submit">Reserve one initial review task</button>
         </form>
       </section>
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
