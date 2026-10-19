@@ -26,7 +26,7 @@ export function assessOneTouchImport(row:OneTouchEvidence) {
  const reviewSample=(raw.li_v2_initial_review_sample && typeof raw.li_v2_initial_review_sample==="object")
   ? raw.li_v2_initial_review_sample as Record<string,unknown>:null;
  const reviewState=reviewSample?.status==="imported"?"imported":
-  reviewSample?.status==="unavailable"?"unavailable":"pending_authorization";
+  (reviewSample?.status==="not_available" || reviewSample?.status==="unavailable")?"not_available":"pending_authorization";
  return {
   version:1,
   profileReady:Object.values(required).every(Boolean),
