@@ -76,3 +76,39 @@ begin
 end $$;
 revoke all on function public.li_v2_begin_initial_review_submission(uuid) from public,anon,authenticated;
 grant execute on function public.li_v2_begin_initial_review_submission(uuid) to service_role;
+
+-- Service-only durable status transitions, with no automatic retry from unknown.
+create or replace function public.li_v2_update_initial_review_task(
+ p_id uuid,p_expected_status text,p_status text,p_task_id text default null,
+ p_result_count integer default null,p_error text default null
+) returns boolean language plpgsql security definer set search_path='' as $$
+declare changed integer;
+begin
+ if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
+ if not ((p_expected_status='submitting' and p_status in ('submitted','submission_unknown'))
+ or (p_expected_status='submitted' and p_status in ('collected','not_available','quarantined')))
+ then raise exception 'invalid_review_task_transition'; end if;
+ if p_status='submitted' and (p_task_id is null or length(p_task_id)<20) then
+ raise exception 'review_provider_task_id_required'; end if;
+ if p_status='collected' and (p_result_count is null or p_result_count<0 or p_result_count>100) then
+ raise exception 'review_result_count_invalid'; end if;
+ update private.li_v2_initial_review_tasks
+ set status=p_status,provider_task_id=coalesce(p_task_id,provider_task_id),
+ result_count=coalesce(p_result_count,result_count),
+ error_reason=p_error,
+ submitted_at=case when p_status='submitted' then now() else submitted_at end,
+ collected_at=case when p_status in ('collected','not_available') then now() else collected_at end,
+ updated_at=now()
+ where id=p_id and status=p_expected_status;
+ get diagnostics changed=row_count;
+ return changed=1;
+end $$;
+revoke all on function public.li_v2_update_initial_review_task(uuid,text,text,text,integer,text) from public,anon,authenticated;
+grant execute on function public.li_v2_update_initial_review_task(uuid,text,text,text,integer,text) to service_role;
+
+create or replace function public.li_v2_initial_review_task_snapshot(p_id uuid)
+returns jsonb language sql stable security definer set search_path='' as $$
+ select pg_catalog.to_jsonb(t) from private.li_v2_initial_review_tasks t where t.id=p_id
+$$;
+revoke all on function public.li_v2_initial_review_task_snapshot(uuid) from public,anon,authenticated;
+grant execute on function public.li_v2_initial_review_task_snapshot(uuid) to service_role;
