@@ -18,6 +18,7 @@ type Candidate=IndependentBusinessProfile&{
   amenities?:Record<string,boolean>; openingHours?:string[]; menuSourceUrl?:string;
   reservationUrl?:string; reservationSourceUrl?:string;
   socialProfiles?:Record<string,{url:string;sourceUrl:string}>;
+  sourceChecks?:Record<string,{status:"available"|"not_available";sourceUrl:string;checkedAt:string}>;
 };
 function distanceM(a:number,b:number,c:number,d:number){
  const r=Math.PI/180,dy=(c-a)*r,dx=(d-b)*r;
@@ -85,6 +86,7 @@ export async function stageIndependentCandidate(input:{
    import_status:"staged",source_quality_status:"independently_verified",
    import_confidence:"high",
    raw_payload:{campaign_id:input.campaignId,run_id:input.runId,
+     ...(p.sourceChecks?{li_v2_prepublication_fields:p.sourceChecks}:{}),
      independent_profile:{googlePlaceId:p.googlePlaceId||null,evidenceSource:p.evidenceSource,
        photoPermission:primaryPhoto?p.photoPermission||null:null,
        photoPending:!primaryPhoto,
