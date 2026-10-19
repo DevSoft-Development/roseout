@@ -116,7 +116,7 @@ export function extractOfficialSocialProfiles(html:string,pageUrl:string) {
    const host=u.hostname.toLowerCase().replace(/^www\\./,"");
    const platform=Object.entries(domains).find(([d])=>host===d)?.[1];
    if(!platform || !u.pathname || u.pathname==="/")return;
-   if(/\\/(?:share|sharer|intent|search|hashtag|posts?|watch|reel|shorts)(?:\\/|$)/i.test(u.pathname))return;
+   if(/\\/(?:share|sharer(?:\\.php)?|intent|search|hashtag|p|posts?|watch|reels?|shorts)(?:\\/|$)/i.test(u.pathname))return;
    if(!profiles[platform])profiles[platform]={url:u.toString(),sourceUrl:pageUrl};
   } catch {/* invalid or unrelated URL */}
  };
