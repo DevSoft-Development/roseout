@@ -193,7 +193,7 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
   openingHours:Boolean(candidate.openingHours?.length),
   amenities:Boolean(candidate.amenities&&Object.keys(candidate.amenities).length),
  }).map(([key,available])=>[key,{
-  status:available?"available":"not_available",sourceUrl:context.url,checkedAt,
+  status:(available?"available":"not_available") as "available"|"not_available",sourceUrl:context.url,checkedAt,
  }]));
  const enriched={...candidate,sourceChecks,socialProfiles,...(reservationUrl?{reservationUrl,reservationSourceUrl:context.url}:{}),officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
