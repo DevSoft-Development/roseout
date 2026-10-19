@@ -11,5 +11,5 @@ cp "$SRC/package.json" "$STAGE/package.json"
 (cd "$STAGE" && npm install --omit=dev --ignore-scripts --no-audit --no-fund --package-lock=true)
 node --check "$STAGE/handler.mjs"
 (cd "$STAGE" && zip -q -r "$OUT/lambda.zip" .)
-sha256sum "$OUT/lambda.zip" | tee "$OUT/lambda.zip.sha256"
+(cd "$OUT" && sha256sum lambda.zip > lambda.zip.sha256)
 echo "Built $OUT/lambda.zip; DO NOT deploy until OAuth certification is complete."
