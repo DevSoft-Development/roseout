@@ -132,6 +132,27 @@ export async function executeReservedInitialReview(input:{stageId:string;ledgerI
     },
   });
 }
+/** Operator reservation is durable authorization. Only a separate protected AWS
+ * dispatch request with the paid-execution flag enabled can consume it.
+ * Reserved tasks are attempted once, submitted tasks are polled for free.
+ */
+export async function dispatchOperatorReservedInitialReviews(limit=10) {
+  const tasks=await rpc<Array<{stage_id:string;ledger_id:string;status:string}>>(
+    "li_v2_pending_initial_review_dispatch",{p_limit:Math.min(10,Math.max(1,Math.trunc(limit)))});
+  const results:Array<{ledgerId:string;status:string}>=[];
+  for(const task of tasks||[]){
+    try{
+      const result=task.status==="reserved"
+        ?await executeReservedInitialReview({stageId:task.stage_id,ledgerId:task.ledger_id})
+        :await collectInitialReviewSample({stageId:task.stage_id,ledgerId:task.ledger_id});
+      results.push({ledgerId:task.ledger_id,status:String(result.status)});
+    }catch(error){
+      results.push({ledgerId:task.ledger_id,
+        status:"failed:"+ (error instanceof Error?error.message:"unknown").slice(0,120)});
+    }
+  }
+  return results;
+}
 export async function collectInitialReviewSample(input:{stageId:string;ledgerId:string}) {
   const stage=await loadStage(input.stageId);
   const task=await rpc<JsonObject>("li_v2_initial_review_task_snapshot",{p_id:input.ledgerId});
