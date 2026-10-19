@@ -41,6 +41,13 @@ export async function submitInitialReviewSample(input:InitialReviewRequest) {
     throw new Error("initial_reviews_verified_price_required");
   if(!/^[-\w]{8,255}$/.test(input.googlePlaceId))
     throw new Error("initial_reviews_google_place_id_required");
+  const controls=await rpc<{providers?: Array<{provider:string;max_usd_per_request:number;enabled:boolean}>}>(
+    "li_v2_acquisition_controls_snapshot",{});
+  const price=controls.providers?.find(p=>p.provider==="dataforseo");
+  // Use the configured maximum, never a cheaper caller-provided guess.
+  if(!price?.enabled || !Number.isFinite(price.max_usd_per_request) ||
+      price.max_usd_per_request<=0 || input.quotedTaskUsd<price.max_usd_per_request)
+    throw new Error("initial_reviews_provider_price_or_permission_invalid");
   const stage=await loadStage(input.stageId);
   const evidence=object(object(stage.raw_payload).independent_profile);
   if(text(evidence.googlePlaceId)!==input.googlePlaceId)
