@@ -1,23 +1,60 @@
-# Azure Repos migration bootstrap. No production deployment.
+# TheOutHaven LLC - selective Azure CI, no production deployment.
 trigger:
   branches:
     include: [main]
 pr:
   branches:
     include: [main]
+
 pool:
   vmImage: ubuntu-24.04
-steps:
-  - checkout: self
-    fetchDepth: 0
-  - task: UseNode@1
-    inputs:
-      version: '22.x'
-  - bash: |
-      set -euo pipefail
-      node --check scripts/devops/impact-plan.mjs
-      CI_BASE_SHA="${SYSTEM_PULLREQUEST_TARGETBRANCH:+origin/main}" CI_HEAD_SHA=HEAD node scripts/devops/impact-plan.mjs | tee impact-plan.json
-    displayName: Plan affected components, fail closed on unknown inputs
-  - publish: impact-plan.json
-    artifact: change-impact-plan
-    displayName: Publish change plan
+
+jobs:
+  - job: impact
+    displayName: Determine changed components
+    steps:
+      - checkout: self
+        fetchDepth: 0
+      - task: UseNode@1
+        inputs:
+          version: '22.x'
+      - bash: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ "${BUILD_REASON:-}" = "PullRequest" ]; then
+            BASE="$(git merge-base HEAD refs/remotes/origin/main)"
+          else
+            BASE="${BUILD_SOURCEVERSION:-}"
+            BASE="$(git rev-parse "$BASE^" 2>/dev/null || true)"
+          fi
+          CI_BASE_SHA="$BASE" CI_HEAD_SHA=HEAD node scripts/devops/impact-plan.mjs | tee impact-plan.json
+          node -e 'const p=require("./impact-plan.json"); const run=(name)=>console.log("##vso[task.setvariable variable="+name+";isOutput=true]"+String(p.affected.includes(name))); run("background"); run("admin"); run("business"); run("consumer"); run("pos");'
+        name: detect
+        displayName: Calculate conservative change impact
+      - publish: impact-plan.json
+        artifact: change-impact-plan
+
+  - job: background_unit
+    displayName: LI V2 targeted unit tests
+    dependsOn: impact
+    condition: and(succeeded(), eq(dependencies.impact.outputs['detect.background'], 'true'))
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '22.x'
+      - task: Cache@2
+        inputs:
+          key: 'npm | "$(Agent.OS)" | package-lock.json'
+          restoreKeys: |
+            npm | "$(Agent.OS)"
+          path: $(Pipeline.Workspace)/.npm
+        displayName: Cache npm downloads
+      - bash: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund --cache "$(Pipeline.Workspace)/.npm"
+          npx --no-install vitest run lib/location-intelligence/v2/__tests__/structured-first-import-gate.test.ts lib/location-intelligence/v2/__tests__/campaign-operations.test.ts
+        displayName: LI V2 unit tests
+
+# Additional affected-app test lanes and build artifact promotion will follow
+# after each lane is mapped and certified against the dependency graph.
