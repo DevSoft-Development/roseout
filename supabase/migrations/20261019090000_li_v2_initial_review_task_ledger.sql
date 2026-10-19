@@ -86,6 +86,7 @@ declare changed integer;
 begin
  if auth.role() is distinct from 'service_role' then raise exception 'service_role_required'; end if;
  if not ((p_expected_status='submitting' and p_status in ('submitted','submission_unknown'))
+ or (p_expected_status='submission_unknown' and p_status='submitted')
  or (p_expected_status='submitted' and p_status in ('collected','not_available','quarantined')))
  then raise exception 'invalid_review_task_transition'; end if;
  if p_status='submitted' and (p_task_id is null or length(p_task_id)<20) then
