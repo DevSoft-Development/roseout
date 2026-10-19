@@ -7,6 +7,7 @@ import { refreshLocationReadiness } from "@/lib/location-intelligence/v2/readine
 import { discoverMenu } from "@/supabase/functions/unified-location-gap-repair/menu-discovery";
 import { evaluateLocationPublishability } from "@/lib/location-publishability";
 import { buildLocationSearchDocument } from "@/lib/location-profile-fields";
+import { assessOneTouchImport } from "./one-touch-acceptance";
 
 /** Completion for independently licensed acquisition candidates only.
  * Never interprets SERP results as license to retain or publish business data.
@@ -51,6 +52,22 @@ export async function finalizeIndependentBatch(batchId:string) {
      .update({raw_payload:{...payload,li_v2_prepublication_menu:outcome}}).eq("id",stage.id);
    if(saveError)throw new Error("independent_prepublication_intelligence_write_failed:"+saveError.message);
    initialMenus.set(website,menu);
+ }
+ // Persist per-location acceptance evidence before any publication attempt.
+ // A pending review sample is explicitly NOT considered one-touch complete.
+ const {data:acceptanceRows,error:acceptanceError}=await supabaseAdmin.from("location_import_staging")
+   .select("id,name,address,city,state,website,latitude,longitude,phone,main_image,has_photos,raw_payload,import_status")
+   .eq("batch_id",batchId).neq("import_status","published").limit(50);
+ if(acceptanceError)throw new Error("independent_first_import_acceptance_read_failed:"+acceptanceError.message);
+ for(const row of acceptanceRows||[]){
+   const payload=row.raw_payload&&typeof row.raw_payload==="object"&&!Array.isArray(row.raw_payload)
+     ?row.raw_payload as Record<string,unknown>:{};
+   const acceptance=assessOneTouchImport(row);
+   const {error:checkpointError}=await supabaseAdmin.from("location_import_staging")
+     .update({raw_payload:{...payload,li_v2_one_touch_acceptance:acceptance}}).eq("id",row.id);
+   if(checkpointError)throw new Error("independent_first_import_acceptance_write_failed:"+checkpointError.message);
+   if(!acceptance.profileReady)
+     throw new Error("independent_first_import_profile_incomplete:"+acceptance.missing.join(","));
  }
  // Publisher enforces independent provenance and photo rights at final insert.
  const published=await publishReadyStagedLocations({batchId,limit:20});
