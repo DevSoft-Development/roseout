@@ -1,0 +1,38 @@
+name: LI V2 Verified Sabor Lease Recovery
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: li-v2-sabor-failed-lease-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Access production credential vault
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_PLATFORM_DEPLOY_ROLE_ARN || 'arn:aws:iam::742020474738:role/TheOutHavenGitHubPlatformDeployRole' }}
+          aws-region: us-east-1
+          allowed-account-ids: '742020474738'
+      - name: Load service-role credentials
+        run: bash .github/scripts/load-platform-release-registry-env.sh production
+      - name: Requeue verified failed Sabor run once
+        run: |
+          set -euo pipefail
+          result="$(curl --fail --silent --show-error --retry 2 --request POST \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            "$SUPABASE_URL/rest/v1/rpc/li_v2_requeue_verified_sabor_failed_lease")"
+          if [ "$result" != 'true' ]; then
+            echo "Guarded failed-lease recovery not applied; evidence or state mismatch: $result" >&2
+            exit 1
+          fi
+          echo "Verified Sabor lease failure requeued. No provider order submitted." >> "$GITHUB_STEP_SUMMARY"
