@@ -8,6 +8,7 @@ import { discoverMenu } from "@/supabase/functions/unified-location-gap-repair/m
 import { evaluateLocationPublishability } from "@/lib/location-publishability";
 import { buildLocationSearchDocument } from "@/lib/location-profile-fields";
 import { assessOneTouchImport } from "./one-touch-acceptance";
+import { collectInitialReviewSample } from "./initial-review-staging";
 
 /** Completion for independently licensed acquisition candidates only.
  * Never interprets SERP results as license to retain or publish business data.
@@ -62,12 +63,25 @@ export async function finalizeIndependentBatch(batchId:string) {
  for(const row of acceptanceRows||[]){
    const payload=row.raw_payload&&typeof row.raw_payload==="object"&&!Array.isArray(row.raw_payload)
      ?row.raw_payload as Record<string,unknown>:{};
+   // Resume an already submitted initial review task without any paid POST.
+   // Explicit authorization and spend reservation happen only in the Admin
+   // acquisition action, never in this finalization/retry path.
+   const sample=payload.li_v2_initial_review_sample as Record<string,unknown>|undefined;
+   if(sample?.status==="pending" && typeof sample.ledgerId==="string"){
+     await collectInitialReviewSample({stageId:String(row.id),ledgerId:sample.ledgerId});
+     const {data:latest,error:latestError}=await supabaseAdmin.from("location_import_staging")
+       .select("raw_payload").eq("id",row.id).single();
+     if(latestError)throw new Error("initial_review_resume_failed:"+latestError.message);
+     row.raw_payload=latest?.raw_payload;
+   }
    const acceptance=assessOneTouchImport(row);
    const {error:checkpointError}=await supabaseAdmin.from("location_import_staging")
      .update({raw_payload:{...payload,li_v2_one_touch_acceptance:acceptance}}).eq("id",row.id);
    if(checkpointError)throw new Error("independent_first_import_acceptance_write_failed:"+checkpointError.message);
    if(!acceptance.profileReady)
      throw new Error("independent_first_import_profile_incomplete:"+acceptance.missing.join(","));
+   if(!acceptance.oneTouchComplete)
+     throw new Error("independent_first_import_one_touch_incomplete:initial_reviews_pending");
  }
  // Publisher enforces independent provenance and photo rights at final insert.
  const published=await publishReadyStagedLocations({batchId,limit:20});

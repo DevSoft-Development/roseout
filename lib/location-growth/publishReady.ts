@@ -159,6 +159,53 @@ function toLocationInsert(row: StagingRow) {
   const searchKeywords = uniqueStrings([row.search_keywords || [], enrichment.featureTags]);
   const semanticTags = uniqueStrings([row.semantic_tags || [], enrichment.featureTags]);
   const now = new Date().toISOString();
+  const liV2 = String(row.source || "").startsWith("li_v2_");
+  const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
+  const initial = recordValue(evidence.initialIntelligence);
+  const email = recordValue(evidence.businessContact);
+  const wikimedia = recordValue(evidence.wikimediaEvidence);
+  const officialHours = Array.isArray(initial.openingHours)
+    ? initial.openingHours.filter((v: unknown): v is string => typeof v === "string" && Boolean(v.trim()))
+    : [];
+  const social = recordValue(initial.socialProfiles);
+  const verifiedSocial = Object.fromEntries(
+    Object.entries(social).filter(([, v]) => {
+      const value = recordValue(v);
+      return typeof value.url === "string" && value.url.startsWith("https://") &&
+        typeof value.sourceUrl === "string" && value.sourceUrl.startsWith("https://");
+    }).map(([platform, v]) => [platform, {
+      url: recordValue(v).url, source_url: recordValue(v).sourceUrl,
+    }]),
+  );
+  const initialMenu = recordValue(recordValue(row.raw_payload).li_v2_prepublication_menu);
+  // Keep evidence and source URLs in durable metadata; never infer verification or consent.
+  const initialMetadata = liV2 ? {
+    ...(evidence.photoSource === "wikimedia_commons" ? {
+      photo_attribution: {
+        author: String(wikimedia.author || ""),
+        license: String(wikimedia.license || ""),
+        licenseUrl: String(wikimedia.licenseUrl || ""),
+        filePageUrl: String(wikimedia.filePageUrl || ""),
+        imageUrl: String(row.main_image || ""),
+      },
+    } : {}),
+    ...(typeof email.email === "string" && typeof email.sourceUrl === "string" ? {
+      business_contact: {
+        email: email.email, source_url: email.sourceUrl, type: "published_role_mailbox",
+        deliverability_verified: false, marketing_consent: false,
+      },
+    } : {}),
+    li_v2_initial_profile: {
+      reservations: typeof initial.reservationUrl === "string" && initial.reservationUrl.startsWith("https://")
+        ? {url: initial.reservationUrl, source_url: initial.reservationSourceUrl || null} : null,
+      social_profiles: verifiedSocial,
+      amenities: recordValue(initial.amenities),
+      opening_hours: officialHours,
+      menu: Object.keys(initialMenu).length ? initialMenu : null,
+      one_touch_acceptance: recordValue(recordValue(row.raw_payload).li_v2_one_touch_acceptance),
+      captured_at: now,
+    },
+  } : {};
 
   const base = {
     location_type: row.location_type,
@@ -189,48 +236,9 @@ function toLocationInsert(row: StagingRow) {
     rating: row.rating,
     review_count: row.review_count,
     main_image: row.main_image,
-    ...(String(row.source || "").startsWith("li_v2_") &&
-      recordValue(recordValue(row.raw_payload).independent_profile).photoSource === "wikimedia_commons"
-      ? {
-          photo_source: "wikimedia_commons",
-          metadata: {
-            photo_attribution: {
-              author: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).author || ""),
-              license: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).license || ""),
-              licenseUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).licenseUrl || ""),
-              filePageUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).filePageUrl || ""),
-              imageUrl: String(row.main_image || ""),
-            },
-          },
-        }
-      : {}),
-    // Google photos remain short-lived live provider media, never copied as licensed assets.
-    ...(String(row.source||"").startsWith("li_v2_") &&
-      recordValue(recordValue(row.raw_payload).independent_profile).photoSource==="google_live"
-      ? {photo_source:"google_places_new"} : {}),
-    // Preserve sourced role mailbox evidence without asserting owner identity or marketing consent.
-    ...(String(row.source || "").startsWith("li_v2_") &&
-      typeof recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).email === "string" &&
-      typeof recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).sourceUrl === "string"
-      ? {
-          metadata: {
-            ...(recordValue(recordValue(row.raw_payload).independent_profile).photoSource === "wikimedia_commons"
-              ? { photo_attribution: {
-                  author: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).author || ""),
-                  license: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).license || ""),
-                  licenseUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).licenseUrl || ""),
-                  filePageUrl: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).wikimediaEvidence).filePageUrl || ""),
-                  imageUrl: String(row.main_image || ""),
-                }} : {}),
-            business_contact: {
-              email: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).email),
-              source_url: String(recordValue(recordValue(recordValue(row.raw_payload).independent_profile).businessContact).sourceUrl),
-              type: "published_role_mailbox",
-              deliverability_verified: false,
-              marketing_consent: false,
-            },
-          },
-        } : {}),
+    ...(liV2 && evidence.photoSource === "wikimedia_commons" ? {photo_source: "wikimedia_commons"} : {}),
+    ...(liV2 && evidence.photoSource === "google_live" ? {photo_source: "google_places_new"} : {}),
+    ...(liV2 ? {metadata: initialMetadata} : {}),
     images: row.images || [],
     description: row.description,
     import_source: row.source,
@@ -247,10 +255,10 @@ function toLocationInsert(row: StagingRow) {
     google_business_status_checked_at: enrichment.google.business_status ? now : null,
     google_regular_opening_hours: enrichment.regularHours,
     google_current_opening_hours: enrichment.currentHours,
-    operating_hours: enrichment.operatingHours,
-    hours_raw: enrichment.regularHours || enrichment.currentHours,
-    hours_source: enrichment.operatingHours ? "google_places_curated_import" : null,
-    hours_confidence: enrichment.operatingHours ? "verified" : null,
+    operating_hours: enrichment.operatingHours || (liV2 && officialHours.length ? {official: officialHours} : null),
+    hours_raw: enrichment.regularHours || enrichment.currentHours || (liV2 && officialHours.length ? {openingHours: officialHours} : null),
+    hours_source: enrichment.operatingHours ? "google_places_curated_import" : liV2 && officialHours.length ? "official_website_initial" : null,
+    hours_confidence: enrichment.operatingHours ? "verified" : liV2 && officialHours.length ? "source_verified" : null,
     hours_backfill_status: enrichment.operatingHours ? "success" : null,
     hours_last_backfilled_at: enrichment.operatingHours ? now : null,
     price_range: enrichment.priceRange,
@@ -404,6 +412,13 @@ export async function publishReadyStagedLocations({
   for (const row of rows) {
     if (String(row.source || "").startsWith("li_v2_")) {
       const evidence = recordValue(recordValue(row.raw_payload).independent_profile);
+      const acceptance = recordValue(recordValue(row.raw_payload).li_v2_one_touch_acceptance);
+      const sample = recordValue(recordValue(row.raw_payload).li_v2_initial_review_sample);
+      if (acceptance.oneTouchComplete !== true ||
+          !["imported", "not_available"].includes(String(sample.status || ""))) {
+        // A general-purpose publisher must not bypass the prepublication gate.
+        continue;
+      }
       if (evidence.photoSource==="wikimedia_commons") {
         const license=recordValue(evidence.wikimediaEvidence);
         const goodLicense=["CC BY 4.0","CC BY-SA 4.0","CC BY 3.0","CC BY-SA 3.0"].includes(String(license.license||""));
@@ -486,6 +501,29 @@ export async function publishReadyStagedLocations({
           qualityScore: Number(row.quality_score || staged.quality_score || 0),
         });
         if (String(staged.source || "").startsWith("li_v2_")) {
+          const reviewSample = recordValue(recordValue(staged.raw_payload).li_v2_initial_review_sample);
+          if (reviewSample.status === "imported") {
+            const reviews = Array.isArray(reviewSample.reviews) ? reviewSample.reviews.slice(0,100) : [];
+            const reviewRows = reviews.map((item:unknown) => {
+              const review = recordValue(item);
+              const id = String(review.review_id || "").trim();
+              const date = new Date(String(review.timestamp || ""));
+              const rawRating = recordValue(review.rating);
+              const rating = Number(typeof review.rating === "number" ? review.rating : rawRating.value);
+              return {
+                location_id: String(row.id), provider: "dataforseo", external_review_id:id,
+                published_at: Number.isFinite(date.getTime()) ? date.toISOString() : null,
+                rating: Number.isFinite(rating) ? rating : null,
+                review_text: String(review.original_review_text || review.review_text || "") || null,
+                author_name: String(review.profile_name || "") || null, payload: review,
+              };
+            }).filter(item => item.external_review_id);
+            if (reviewRows.length) {
+              const {error:reviewError}=await supabaseAdmin.from("location_external_reviews")
+                .upsert(reviewRows,{onConflict:"provider,external_review_id",ignoreDuplicates:true});
+              if(reviewError)throw new Error("li_v2_initial_review_publication_failed:"+reviewError.message);
+            }
+          }
           await refreshLocationClassificationV2(String(row.id));
           await refreshLocationReadiness(String(row.id));
         }
