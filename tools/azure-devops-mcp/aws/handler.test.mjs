@@ -32,3 +32,20 @@ test("unknown tool is not callable",async()=>{
  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"queue_pipeline"}})});
  assert.equal(JSON.parse(res.body).error.code,-32601);
 });
+
+test("OAuth discovery is unavailable until resource URL is configured",async()=>{
+ const previous=process.env.MCP_RESOURCE_URL;
+ delete process.env.MCP_RESOURCE_URL;
+ const res=await handler({rawPath:"/.well-known/oauth-protected-resource",requestContext:{http:{method:"GET"}}});
+ assert.equal(res.statusCode,503);
+ if(previous!==undefined)process.env.MCP_RESOURCE_URL=previous;
+});
+test("OAuth discovery uses the configured resource and Entra tenant",async()=>{
+ process.env.MCP_RESOURCE_URL="https://mcp.example.test";
+ const res=await handler({rawPath:"/.well-known/oauth-protected-resource",requestContext:{http:{method:"GET"}}});
+ const data=JSON.parse(res.body);
+ assert.equal(res.statusCode,200);
+ assert.equal(data.resource,"https://mcp.example.test");
+ assert.equal(data.authorization_servers[0],"https://login.microsoftonline.com/"+goodClaims.tid+"/v2.0");
+ delete process.env.MCP_RESOURCE_URL;
+});
