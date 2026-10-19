@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default)
+Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default; deploy us-east-1)
 Parameters:
   EntraTenantId:
     Type: String
@@ -28,6 +28,9 @@ Resources:
               - Effect: Allow
                 Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
                 Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Ref AzureDevOpsSecretArn
   McpLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -43,6 +46,7 @@ Resources:
         Variables:
           ENTRA_TENANT_ID: !Ref EntraTenantId
           ENTRA_CLIENT_ID: !Ref EntraClientId
+          AZDO_READ_SECRET_ARN: !Ref AzureDevOpsSecretArn
           AZDO_ORGANIZATION: TheOutHaven
           AZDO_PROJECT: TheOutHaven
   McpApi:
