@@ -9,7 +9,7 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
   const website="https://www.superiorityburger.com/";
   const commons="https://commons.wikimedia.org/wiki/File:Superiority_Burger_NYC.jpg";
   const source=await resolveOfficialWebsiteLead(website);
-  let candidate = source.candidate;
+  let candidate: Parameters<typeof stageIndependentCandidate>[0]["candidate"] | undefined = source.candidate;
   if (!candidate) {
     // Exact-location evidence fallback, matching the isolated Admin dry run.
     // The two first-party pages must corroborate the current business address
