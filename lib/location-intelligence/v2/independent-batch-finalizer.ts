@@ -68,6 +68,8 @@ export async function finalizeIndependentBatch(batchId:string) {
    if(checkpointError)throw new Error("independent_first_import_acceptance_write_failed:"+checkpointError.message);
    if(!acceptance.profileReady)
      throw new Error("independent_first_import_profile_incomplete:"+acceptance.missing.join(","));
+   if(!acceptance.oneTouchComplete)
+     throw new Error("independent_first_import_one_touch_incomplete:initial_reviews_pending");
  }
  // Publisher enforces independent provenance and photo rights at final insert.
  const published=await publishReadyStagedLocations({batchId,limit:20});
