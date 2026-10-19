@@ -30,7 +30,7 @@ node - "$PARAMS" "$BUCKET" "$KEY" "$VERSION" <<'NODE'
 const fs=require('fs');
 const [file,bucket,key,version]=process.argv.slice(2);
 const set={LambdaArtifactBucket:bucket,LambdaArtifactKey:key,LambdaArtifactVersion:version};
-const names=['EntraTenantId','EntraClientId','AzureDevOpsSecretArn','EntraCertificateSha1Thumbprint','LambdaArtifactBucket','LambdaArtifactKey','LambdaArtifactVersion','ExistingLambdaRoleArn'];
+const names=['EntraTenantId','EntraClientId','AzureDevOpsSecretArn','EntraCertificateSha1Thumbprint','LambdaArtifactBucket','LambdaArtifactKey','LambdaArtifactVersion','ExistingLambdaRoleArn','McpExpectedAudience','McpResourceUrl'];
 const params=names.map(n=>set[n]?{ParameterKey:n,ParameterValue:set[n]}:{ParameterKey:n,UsePreviousValue:true});
 fs.writeFileSync(file,JSON.stringify(params),{mode:0o600});
 NODE
