@@ -18,6 +18,40 @@ export async function finalizeIndependentBatch(batchId:string) {
  if(batchError||batch?.source!=="li_v2_independent")
    throw new Error("independent_batch_not_authorized");
  const dedupe=await dedupeStagedLocationsChunk({batchId,limit:50});
+ // Resolve first-import menu intelligence BEFORE publishing the profile.
+ // Do not allow a network outage to silently turn into a placeholder menu:
+ // store an explicit unavailable/error state for the initial acquisition.
+ const {data:prepublishRows,error:prepublishError}=await supabaseAdmin
+   .from("location_import_staging")
+   .select("id,website,raw_payload,import_status")
+   .eq("batch_id",batchId).neq("import_status","published").limit(50);
+ if(prepublishError)throw new Error("independent_prepublication_intelligence_read_failed:"+prepublishError.message);
+ const initialMenus=new Map<string,Awaited<ReturnType<typeof discoverMenu>>|null>();
+ for(const stage of prepublishRows||[]){
+   const website=String(stage.website||"").trim();
+   if(!website)continue;
+   const payload=stage.raw_payload && typeof stage.raw_payload==="object" && !Array.isArray(stage.raw_payload)
+     ? stage.raw_payload as Record<string,unknown>:{};
+   const prior=payload.li_v2_prepublication_menu as Record<string,unknown>|undefined;
+   if(prior && prior.website===website && prior.status!=="error"){
+     // Retain a previously certified prepublication result on crash-safe retry.
+     continue;
+   }
+   let menu:Awaited<ReturnType<typeof discoverMenu>>|null=null;
+   let errorMessage:string|null=null;
+   try {menu=await discoverMenu(website,{analyzeContent:true});}
+   catch(e){errorMessage=e instanceof Error?e.message:"menu_discovery_unavailable";}
+   const outcome={website,checkedAt:new Date().toISOString(),
+     status:errorMessage?"error":menu?.status||"unavailable",
+     menuUrl:menu?.menuUrl||null,
+     source:menu?.source||null,confidence:menu?.confidence||null,
+     intelligence:menu?.intelligence||null,
+     note:errorMessage||menu?.note||null};
+   const {error:saveError}=await supabaseAdmin.from("location_import_staging")
+     .update({raw_payload:{...payload,li_v2_prepublication_menu:outcome}}).eq("id",stage.id);
+   if(saveError)throw new Error("independent_prepublication_intelligence_write_failed:"+saveError.message);
+   initialMenus.set(website,menu);
+ }
  // Publisher enforces independent provenance and photo rights at final insert.
  const published=await publishReadyStagedLocations({batchId,limit:20});
  if(published.errors.length)throw new Error("independent_publish_failed");
@@ -39,7 +73,10 @@ export async function finalizeIndependentBatch(batchId:string) {
    // Initial import intelligence: reuse the verified website, never paid discovery.
    const website=String(location.website||"");
    if(website){
-     const menu=await discoverMenu(website,{analyzeContent:true}).catch(()=>null);
+     // The prepublication scan is authoritative for newly staged rows; legacy
+     // retry paths without staged evidence retain the existing safe fallback.
+     const menu=initialMenus.has(website)?initialMenus.get(website)!:
+       await discoverMenu(website,{analyzeContent:true}).catch(()=>null);
      if(menu){
        const {error:menuError}=await supabaseAdmin.from("locations")
          .update({
