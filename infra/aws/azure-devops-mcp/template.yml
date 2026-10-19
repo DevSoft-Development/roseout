@@ -25,6 +25,10 @@ Parameters:
   LambdaArtifactVersion:
     Type: String
     Description: Exact S3 version ID of the reviewed Lambda zip
+  McpExpectedAudience:
+    Type: String
+    Default: api://ebc4388d-ef62-413b-b7d9-175b53ca0348
+    Description: Audience of delegated tokens issued for the connector resource API
   McpResourceUrl:
     Type: String
     Default: disabled
@@ -55,6 +59,7 @@ Resources:
           AZDO_ORGANIZATION: TheOutHaven
           AZDO_PROJECT: TheOutHaven
           MCP_RESOURCE_URL: !Ref McpResourceUrl
+          MCP_EXPECTED_AUDIENCE: !Ref McpExpectedAudience
   McpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -69,7 +74,7 @@ Resources:
       IdentitySource: ['$request.header.Authorization']
       Name: entra-devops-read
       JwtConfiguration:
-        Audience: [!Ref EntraClientId]
+        Audience: [!Ref McpExpectedAudience]
         Issuer: !Sub https://login.microsoftonline.com/${EntraTenantId}/v2.0
   McpIntegration:
     Type: AWS::ApiGatewayV2::Integration
