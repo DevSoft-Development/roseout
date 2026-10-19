@@ -42,7 +42,7 @@ export async function bootstrapSuperiorityBurger(input:{dryRun:boolean}) {
         city: "New York", state: "NY", zip: "10009",
         sourceUrl: website, website, evidenceSource: "official_website",
         openStatus: "open", category: "restaurant", locationType: "restaurant",
-        officialImageReferences: [], officialEvidenceUrls: [website],
+        socialProfiles: {}, officialImageReferences: [], officialEvidenceUrls: [website],
       };
     }
   }

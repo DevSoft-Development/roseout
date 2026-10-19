@@ -20,6 +20,12 @@ type WebsiteEvidence = IndependentBusinessProfile & {
   category: string;
   locationType: "restaurant" | "activity";
   zip?: string;
+  phone?: string;
+  openingHours?: string[];
+  amenities?: Record<string,boolean>;
+  reservationUrl?: string;
+  reservationSourceUrl?: string;
+  socialProfiles?: Record<string,{url:string;sourceUrl:string}>;
 };
 const clean=(v:unknown)=>typeof v==="string"?v.trim():"";
 function plain(v:unknown):Record<string,unknown> {
@@ -51,13 +57,76 @@ export function parseOfficialBusinessJsonLd(html:string,website:string):Omit<Web
    if(websiteValue){
      try{if(new URL(websiteValue).origin!==siteOrigin)continue;}catch{continue;}
    }
-   const status=clean(node.openingHours)||node.openingHoursSpecification?"open":"unknown";
+   const hours=Array.isArray(node.openingHours)?node.openingHours.filter((x):x is string=>typeof x==="string").slice(0,21):
+     (clean(node.openingHours)?[clean(node.openingHours)]:[]);
+   const status=hours.length||node.openingHoursSpecification?"open":"unknown";
+   const phone=clean(node.telephone);
+   const amenities:Record<string,boolean>={};
+   for(const feature of (Array.isArray(node.amenityFeature)?node.amenityFeature:[])){
+     const f=plain(feature),key=clean(f.name).toLowerCase().replace(/[^a-z0-9]+/g,"_").slice(0,50);
+     if(key && typeof f.value==="boolean")amenities[key]=f.value;
+   }
    return {name,address:street,city,state:region,zip,sourceUrl:website,website,
+      ...(phone?{phone}:{}),openingHours:hours,amenities,
       evidenceSource:"official_website",openStatus:status,
       category:types.some(t=>/restaurant|food|cafe|bar/i.test(String(t)))?"restaurant":"activity",
       locationType:types.some(t=>/restaurant|food|cafe|bar/i.test(String(t)))?"restaurant":"activity"};
  }
  return null;
+}
+/** First-party reservation targets, including external booking providers. */
+export function extractOfficialReservationUrl(html:string,pageUrl:string):string|null {
+ const candidates:{url:string;priority:number}[]=[];
+ const add=(value:unknown,priority:number)=>{
+  if(typeof value!=="string")return;
+  try {const u=new URL(value,pageUrl);
+   if(u.protocol!=="https:"||u.username||u.password)return;
+   if(/^(localhost|127\.|10\.|192\.168\.)/.test(u.hostname))return;
+   candidates.push({url:u.toString(),priority});
+  }catch{/* invalid URL */}
+ };
+ for(const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)){
+  const label=m[2].replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+  if(/(?:reserve|reservations|book a table|book now|make a booking)/i.test(label))
+   add(m[1],10);
+ }
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
+  try {for(const node of graphs(JSON.parse(m[1]))){
+   const actions=Array.isArray(node.potentialAction)?node.potentialAction:[node.potentialAction];
+   for(const action of actions){const a=plain(action);
+    if(!/ReserveAction|BookAction/i.test(String(a["@type"]||"")))continue;
+    const target=plain(a.target);
+    add(typeof a.target==="string"?a.target:target.urlTemplate||target.url,20);
+   }
+  }}catch{/* untrusted JSON-LD */}
+ }
+ return candidates.sort((a,b)=>b.priority-a.priority)[0]?.url||null;
+}
+/** Social accounts explicitly linked by the official business website. */
+export function extractOfficialSocialProfiles(html:string,pageUrl:string) {
+ const profiles:Record<string,{url:string;sourceUrl:string}>={};
+ const domains:Record<string,string>={"instagram.com":"instagram","facebook.com":"facebook",
+  "tiktok.com":"tiktok","youtube.com":"youtube","youtu.be":"youtube",
+  "x.com":"x","twitter.com":"x","linkedin.com":"linkedin"};
+ const add=(raw:unknown)=>{
+  if(typeof raw!=="string")return;
+  try {
+   const u=new URL(raw,pageUrl);
+   if(u.protocol!=="https:"||u.username||u.password)return;
+   const host=u.hostname.toLowerCase().replace(/^www\./,"");
+   const platform=Object.entries(domains).find(([d])=>host===d)?.[1];
+   if(!platform || !u.pathname || u.pathname==="/")return;
+   if(/\/(?:share|sharer(?:\.php)?|intent|search|hashtag|p|posts?|watch|reels?|shorts)(?:\/|$)/i.test(u.pathname))return;
+   if(!profiles[platform])profiles[platform]={url:u.toString(),sourceUrl:pageUrl};
+  } catch {/* invalid or unrelated URL */}
+ };
+ for(const m of html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi))add(m[1]);
+ for(const m of html.matchAll(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script\s*>/gi)){
+  try {for(const node of graphs(JSON.parse(m[1]))){
+   for(const url of Array.isArray(node.sameAs)?node.sameAs:[])add(url);
+  }}catch{/* malformed structured data */}
+ }
+ return profiles;
 }
 /** Only role-based contact mailboxes actually visible on the official page. */
 export function extractOfficialBusinessEmail(html:string,sourceUrl:string) {
@@ -112,7 +181,9 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
  const candidate=structured || corroborated;
  if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
  const contact=extractOfficialBusinessEmail(context.html,context.url);
- const enriched={...candidate,officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
+ const reservationUrl=extractOfficialReservationUrl(context.html,context.url);
+ const socialProfiles=extractOfficialSocialProfiles(context.html,context.url);
+ const enriched={...candidate,socialProfiles,...(reservationUrl?{reservationUrl,reservationSourceUrl:context.url}:{}),officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
  if(!photo)return {status:"photo_pending" as const,candidate:enriched};
  return {status:"verified_evidence" as const,candidate:{...enriched,...photo},

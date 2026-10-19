@@ -15,7 +15,9 @@ type Candidate=IndependentBusinessProfile&{
   description?:string; cuisine?:string; phone?:string;
   rating?:number; reviewCount?:number;
   tags?:string[]; vibeTags?:string[]; bestForTags?:string[];
-  amenities?:Record<string,boolean>; menuSourceUrl?:string;
+  amenities?:Record<string,boolean>; openingHours?:string[]; menuSourceUrl?:string;
+  reservationUrl?:string; reservationSourceUrl?:string;
+  socialProfiles?:Record<string,{url:string;sourceUrl:string}>;
 };
 function distanceM(a:number,b:number,c:number,d:number){
  const r=Math.PI/180,dy=(c-a)*r,dx=(d-b)*r;
@@ -98,7 +100,9 @@ export async function stageIndependentCandidate(input:{
        officialEvidenceUrls:p.officialEvidenceUrls||[p.sourceUrl],
        geocodeProvider:location.provider,geoPrecision:location.precision,
        matchedAddress:location.matchedAddress,
-       initialIntelligence:{amenities:p.amenities||{},menuSourceUrl:p.menuSourceUrl||null,
+       initialIntelligence:{amenities:p.amenities||{},openingHours:p.openingHours||[],menuSourceUrl:p.menuSourceUrl||null,
+         reservationUrl:p.reservationUrl||null,reservationSourceUrl:p.reservationSourceUrl||null,
+         socialProfiles:p.socialProfiles||{},
          reviewSummaryAvailable:p.rating!==undefined||p.reviewCount!==undefined}}},
  };
  const scored=calculateStagingQuality(base);
