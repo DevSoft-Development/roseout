@@ -21,7 +21,10 @@ Parameters:
     Description: Private S3 bucket containing the reviewed Lambda zip
   LambdaArtifactKey:
     Type: String
-    Description: Immutable S3 key to the reviewed Lambda zip
+    Description: S3 key to the reviewed Lambda zip
+  LambdaArtifactVersion:
+    Type: String
+    Description: Exact S3 version ID of the reviewed Lambda zip
   ExistingLambdaRoleArn:
     Type: String
     Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
@@ -36,6 +39,7 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaArtifactBucket
         S3Key: !Ref LambdaArtifactKey
+        S3ObjectVersion: !Ref LambdaArtifactVersion
       Timeout: 20
       MemorySize: 256
       Environment:
