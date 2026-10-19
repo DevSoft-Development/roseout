@@ -3,6 +3,7 @@ import LiveRefresh from "./LiveRefresh";
 import { revalidatePath } from "next/cache";
 import { requireAdminRole } from "@theouthaven/auth/admin-session";
 import { getAdminDatabaseClient } from "@theouthaven/db/admin-client";
+import { submitInitialReviewSample } from "@/lib/location-intelligence/v2/initial-review-staging";
 
 export const dynamic = "force-dynamic";
 type Budget = { scope:string; scope_id:string; cap_usd:number; enabled:boolean; used_usd:number; period_start:string; period_end:string };
@@ -51,6 +52,33 @@ async function commandImport(formData: FormData) {
     p_campaign_id: campaignId, p_action: action,
   });
   if (error || !data) throw new Error(error?.message || "Campaign command denied");
+  revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
+}
+
+async function authorizeInitialReviewSample(formData:FormData) {
+  "use server";
+  await requireAdminRole(["superadmin"]);
+  const stageId=String(formData.get("stage_id")||"").trim();
+  const campaignId=String(formData.get("campaign_id")||"").trim();
+  const runId=String(formData.get("run_id")||"").trim();
+  const googlePlaceId=String(formData.get("google_place_id")||"").trim();
+  const estimate=Number(formData.get("estimated_usd"));
+  const latitude=Number(formData.get("latitude"));
+  const longitude=Number(formData.get("longitude"));
+  if(!/^[0-9a-f-]{36}$/i.test(stageId) ||
+    !/^[a-zA-Z0-9:_-]{6,100}$/.test(campaignId) ||
+    !/^[0-9a-zA-Z:_-]{6,100}$/.test(runId) ||
+    !/^[A-Za-z0-9_-]{8,255}$/.test(googlePlaceId) ||
+    !Number.isFinite(estimate)||estimate<=0 ||
+    !Number.isFinite(latitude)||Math.abs(latitude)>90 ||
+    !Number.isFinite(longitude)||Math.abs(longitude)>180 ||
+    formData.get("explicit_authorization")!=="yes")
+    throw new Error("Valid reviewed stage, identity, coordinates, price and explicit authorization required");
+  const outcome=await submitInitialReviewSample({
+    stageId,campaignId,runId,googlePlaceId,quotedTaskUsd:estimate,
+    latitude,longitude,authorized:true,
+  });
+  if(outcome.status==="budget_denied")throw new Error("Budget does not permit initial review purchase");
   revalidatePath("/admin/dashboard/settings/location-tools/campaigns");
 }
 
@@ -128,6 +156,24 @@ export default async function CampaignControlsPage() {
           {run.last_error && <p className="mt-1 text-rose-300">{run.last_error}</p>}
           <p className="text-white/50">Updated: {new Date(run.updated_at).toLocaleString()}</p>
         </div>)}</div>
+      </section>
+      <section className="rounded-2xl border border-amber-500/20 bg-[#111] p-6">
+        <h2 className="text-xl font-black">Authorize initial review sample (billable)</h2>
+        <p className="mt-2 text-sm text-amber-100/80">Superadmin only. Submit exactly one DataForSEO 100-review task for an independently verified staged business. Requires active provider pricing and global/campaign budgets. If submission is uncertain, a retry will NOT repurchase; reconcile its task first.</p>
+        <form action={authorizeInitialReviewSample} className="mt-4 grid gap-3 sm:grid-cols-2">
+          {([
+            ["stage_id","Staging UUID"],["campaign_id","Campaign ID"],["run_id","Run ID"],
+            ["google_place_id","Verified Google Place ID"],["latitude","Verified latitude"],
+            ["longitude","Verified longitude"],["estimated_usd","USD reservation (at least configured provider maximum)"]
+          ] as const).map(([name,label])=><label key={name} className="text-sm">{label}
+            <input required name={name} className="mt-1 block w-full rounded-lg border border-white/20 bg-black/40 p-3"/>
+          </label>)}
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" required name="explicit_authorization" value="yes"/>
+            I authorize one billable initial review collection for this verified business.
+          </label>
+          <button className="rounded-lg border border-amber-400/50 px-4 py-3 font-bold sm:col-span-2" type="submit">Authorize one review task</button>
+        </form>
       </section>
       <section className="rounded-2xl border border-white/10 bg-[#111] p-6">
         <h2 className="text-xl font-black">Independent photo permission grants</h2>
