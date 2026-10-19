@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {handler} from "./handler.mjs";
 
-const goodClaims={tid:"9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08",aud:"ebc4388d-ef62-413b-b7d9-175b53ca0348",scp:"devops.read"};
+const goodClaims={tid:"9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08",aud:"api://ebc4388d-ef62-413b-b7d9-175b53ca0348",scp:"devops.read"};
 process.env.ENTRA_TENANT_ID=goodClaims.tid;
-process.env.ENTRA_CLIENT_ID=goodClaims.aud;
+process.env.ENTRA_CLIENT_ID="ebc4388d-ef62-413b-b7d9-175b53ca0348";
+process.env.MCP_EXPECTED_AUDIENCE=goodClaims.aud;
 const event=(method,claims=goodClaims)=>({
  requestContext:{http:{method:"POST"},authorizer:{jwt:{claims}}},
  body:JSON.stringify({jsonrpc:"2.0",id:1,method})
@@ -48,4 +49,9 @@ test("OAuth discovery uses the configured resource and Entra tenant",async()=>{
  assert.equal(data.resource,"https://mcp.example.test");
  assert.equal(data.authorization_servers[0],"https://login.microsoftonline.com/"+goodClaims.tid+"/v2.0");
  delete process.env.MCP_RESOURCE_URL;
+});
+
+test("Azure DevOps audience is not accepted for MCP",async()=>{
+ const wrong={...goodClaims,aud:"499b84ac-1321-427f-aa17-267ca6975798"};
+ assert.equal((await handler(event("tools/list",wrong))).statusCode,401);
 });
