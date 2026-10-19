@@ -179,7 +179,7 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
  const context=await fetchOfficialWebsiteContext(website);
  const structured=parseOfficialBusinessJsonLd(context.html,context.url);
  const corroborated=structured?null:await fetchCorroboratingOfficialPages(context);
- const candidate=structured || corroborated;
+ const candidate:WebsiteEvidence | null=structured || corroborated;
  if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
  const contact=extractOfficialBusinessEmail(context.html,context.url);
  const reservationUrl=extractOfficialReservationUrl(context.html,context.url);
