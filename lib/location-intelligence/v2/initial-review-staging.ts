@@ -88,6 +88,51 @@ export async function submitInitialReviewSample(input:InitialReviewRequest) {
     return {status:"submission_unknown" as const,ledgerId:claim.id};
   }
 }
+/** Execute ONLY an already operator-reserved review task in private AWS runtime.
+ * Parallel invocations race on an atomic reserved->submitting state transition.
+ * Never submit a second task if the prior response is unknown.
+ */
+export async function executeReservedInitialReview(input:{stageId:string;ledgerId:string}) {
+  const task=await rpc<JsonObject>("li_v2_initial_review_task_snapshot",{p_id:input.ledgerId});
+  if(!task || task.status!=="reserved")return {status:text(task?.status)||"not_found",submitted:false};
+  if(text(task.stage_id)!==input.stageId)throw new Error("initial_review_stage_mismatch");
+  const stage=await loadStage(input.stageId);
+  const evidence=object(object(stage.raw_payload).independent_profile);
+  const placeId=text(evidence.googlePlaceId);
+  if(!placeId || placeId!==text(task.google_place_id) ||
+      task.business_key!=="google:"+placeId)
+    throw new Error("initial_review_identity_mismatch");
+  const {data:coordinates,error:coordinateError}=await supabaseAdmin
+    .from("location_import_staging").select("latitude,longitude")
+    .eq("id",input.stageId).single();
+  if(coordinateError)throw new Error("initial_review_coordinates_unavailable");
+  const lat=Number(coordinates?.latitude),lon=Number(coordinates?.longitude);
+  if(!Number.isFinite(lat)||Math.abs(lat)>90||!Number.isFinite(lon)||Math.abs(lon)>180)
+    throw new Error("initial_review_coordinates_invalid");
+  const started=await rpc<boolean>("li_v2_begin_initial_review_submission",{p_id:input.ledgerId});
+  if(!started)return {status:"already_claimed",submitted:false};
+  try{
+    const providerTask=await createDataForSeoReviewTask({
+      googlePlaceId:placeId,locationCoordinate:`${lat},${lon},200`,
+      depth:100,sortBy:"newest",tag:`toh:initial:${input.ledgerId}`,
+    });
+    const recorded=await rpc<boolean>("li_v2_update_initial_review_task",{
+      p_id:input.ledgerId,p_expected_status:"submitting",p_status:"submitted",
+      p_task_id:providerTask.id,
+    });
+    if(!recorded)throw new Error("initial_review_provider_task_checkpoint_conflict");
+    await updateStage(input.stageId,{status:"pending",ledgerId:input.ledgerId,taskId:providerTask.id});
+    return {status:"submitted",submitted:true};
+  }catch(error){
+    // A POST may have succeeded before a timeout or failed checkpoint.
+    // Quarantine even if it means operator reconciliation is necessary.
+    await rpc<boolean>("li_v2_update_initial_review_task",{
+      p_id:input.ledgerId,p_expected_status:"submitting",p_status:"submission_unknown",
+      p_error:error instanceof Error?error.message.slice(0,300):"unknown",
+    }).catch(()=>false);
+    return {status:"submission_unknown",submitted:false};
+  }
+}
 export async function collectInitialReviewSample(input:{stageId:string;ledgerId:string}) {
   const stage=await loadStage(input.stageId);
   const task=await rpc<JsonObject>("li_v2_initial_review_task_snapshot",{p_id:input.ledgerId});
