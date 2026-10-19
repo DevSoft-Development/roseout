@@ -26,6 +26,7 @@ type WebsiteEvidence = IndependentBusinessProfile & {
   reservationUrl?: string;
   reservationSourceUrl?: string;
   socialProfiles?: Record<string,{url:string;sourceUrl:string}>;
+  sourceChecks?: Record<string,{status:"available"|"not_available";sourceUrl:string;checkedAt:string}>;
 };
 const clean=(v:unknown)=>typeof v==="string"?v.trim():"";
 function plain(v:unknown):Record<string,unknown> {
@@ -178,12 +179,23 @@ export async function resolveOfficialWebsiteLead(website:string,photoGrant?:Phot
  const context=await fetchOfficialWebsiteContext(website);
  const structured=parseOfficialBusinessJsonLd(context.html,context.url);
  const corroborated=structured?null:await fetchCorroboratingOfficialPages(context);
- const candidate=structured || corroborated;
+ const candidate:WebsiteEvidence | null=structured || corroborated;
  if(!candidate)return {status:"needs_independent_evidence" as const,reason:"official_business_corroboration_missing"};
  const contact=extractOfficialBusinessEmail(context.html,context.url);
  const reservationUrl=extractOfficialReservationUrl(context.html,context.url);
  const socialProfiles=extractOfficialSocialProfiles(context.html,context.url);
- const enriched={...candidate,socialProfiles,...(reservationUrl?{reservationUrl,reservationSourceUrl:context.url}:{}),officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
+ const checkedAt=new Date().toISOString();
+ const sourceChecks=Object.fromEntries(Object.entries({
+  contact:Boolean(candidate.phone),
+  email:Boolean(contact),
+  reservationUrl:Boolean(reservationUrl),
+  socialProfiles:Object.keys(socialProfiles).length>0,
+  openingHours:Boolean(candidate.openingHours?.length),
+  amenities:Boolean(candidate.amenities&&Object.keys(candidate.amenities).length),
+ }).map(([key,available])=>[key,{
+  status:(available?"available":"not_available") as "available"|"not_available",sourceUrl:context.url,checkedAt,
+ }]));
+ const enriched={...candidate,sourceChecks,socialProfiles,...(reservationUrl?{reservationUrl,reservationSourceUrl:context.url}:{}),officialImageReferences:extractOfficialImageReferences(context.html,context.url),...(contact?{businessEmail:contact.email,businessEmailSourceUrl:contact.sourceUrl}:{})};
  const photo=permittedOfficialPhoto(photoGrant,context.url);
  if(!photo)return {status:"photo_pending" as const,candidate:enriched};
  return {status:"verified_evidence" as const,candidate:{...enriched,...photo},
