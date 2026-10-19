@@ -1,0 +1,23 @@
+# Azure Repos migration bootstrap. No production deployment.
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+pool:
+  vmImage: ubuntu-24.04
+steps:
+  - checkout: self
+    fetchDepth: 0
+  - task: UseNode@1
+    inputs:
+      version: '22.x'
+  - bash: |
+      set -euo pipefail
+      node --check scripts/devops/impact-plan.mjs
+      CI_BASE_SHA="${SYSTEM_PULLREQUEST_TARGETBRANCH:+origin/main}" CI_HEAD_SHA=HEAD node scripts/devops/impact-plan.mjs | tee impact-plan.json
+    displayName: Plan affected components, fail closed on unknown inputs
+  - publish: impact-plan.json
+    artifact: change-impact-plan
+    displayName: Publish change plan
