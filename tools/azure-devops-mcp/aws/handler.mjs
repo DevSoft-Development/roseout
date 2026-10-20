@@ -8,6 +8,8 @@ const tools=[
 {name:"list_pipelines",description:"Read Azure DevOps pipelines",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"list_builds",description:"Read recent Azure DevOps builds",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"get_build",description:"Read one Azure DevOps build",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1}},required:["buildId"],additionalProperties:false}},
+{name:"get_build_timeline",description:"Read bounded job and step outcomes for a build",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1}},required:["buildId"],additionalProperties:false}},
+{name:"get_build_log",description:"Read one bounded build log by build and log IDs",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1},logId:{type:"integer",minimum:1}},required:["buildId","logId"],additionalProperties:false}},
 {name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"queue_pipeline",description:"Queue an approved, non-production Azure Pipeline against main",inputSchema:{type:"object",properties:{pipelineId:{type:"integer",enum:[3,5]}},required:["pipelineId"],additionalProperties:false}}
 ];
@@ -71,6 +73,15 @@ async function read(path,params){
   if(!result.ok)throw new Error("upstream_http_"+result.status);
   return result.json();
 }
+async function readBuildLog(buildId,logId){
+  const token=await getDevOpsToken();
+  const url=new URL(apiBase+"/build/builds/"+buildId+"/logs/"+logId);
+  url.searchParams.set("api-version","7.1");
+  const response=await fetch(url,{headers:{authorization:"Bearer "+token,accept:"text/plain"},redirect:"error",signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw new Error("upstream_log_http_"+response.status);
+  const value=await response.text();
+  return {buildId,logId,text:value.slice(-30000),truncated:value.length>30000};
+}
 async function queueApprovedPipeline(pipelineId){
   const token=await getDevOpsToken();
   const url=new URL(apiBase+"/pipelines/"+pipelineId+"/runs");
@@ -131,6 +142,19 @@ export async function handler(event){
     if(name==="list_pipelines")result=await read("/pipelines",{"$top":25});
     if(name==="list_builds")result=await read("/build/builds",{"$top":25});
     if(name==="get_build"){if(!Number.isInteger(args.buildId)||args.buildId<1)return json(400,{error:"invalid_build_id"});result=await read("/build/builds/"+args.buildId,{});}
+    if(name==="get_build_timeline"){
+      if(!Number.isInteger(args.buildId)||args.buildId<1)return json(400,{error:"invalid_build_id"});
+      const timeline=await read("/build/builds/"+args.buildId+"/timeline",{});
+      result={buildId:args.buildId,records:(timeline.records||[]).slice(0,150).map(r=>({
+        id:r.id,parentId:r.parentId,name:r.name,type:r.type,state:r.state,result:r.result,
+        logId:r.log?.id,issues:(r.issues||[]).slice(0,5).map(i=>({type:i.type,message:String(i.message||"").slice(0,500)}))
+      }))};
+    }
+    if(name==="get_build_log"){
+      if(!Number.isInteger(args.buildId)||args.buildId<1||!Number.isInteger(args.logId)||args.logId<1)
+        return json(400,{error:"invalid_build_or_log_id"});
+      result=await readBuildLog(args.buildId,args.logId);
+    }
     if(name==="list_branches")result=await read("/git/repositories/"+encodeURIComponent(repository)+"/refs",{filter:"heads/"});
     return reply({content:[{type:"text",text:JSON.stringify(result)}]});
   }catch{return reply({isError:true,content:[{type:"text",text:"Azure DevOps operation unavailable"}]});}

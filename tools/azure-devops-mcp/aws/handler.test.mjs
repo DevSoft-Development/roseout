@@ -31,7 +31,7 @@ test("read tools and gated pipeline queue are advertised",async()=>{
  const res=await handler(event("tools/list"));
  assert.equal(res.statusCode,200);
  const names=JSON.parse(res.body).result.tools.map(t=>t.name);
- assert.deepEqual(names,["list_pipelines","list_builds","get_build","list_branches","queue_pipeline"]);
+ assert.deepEqual(names,["list_pipelines","list_builds","get_build","get_build_timeline","get_build_log","list_branches","queue_pipeline"]);
 });
 test("unknown tool is not callable",async()=>{
  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"delete_pipeline"}})});
@@ -75,4 +75,11 @@ test("pipeline queue rejects unauthorized callers and production pipeline IDs",a
  assert.match(JSON.parse((await invoke({...goodClaims,scp:"devops.read devops.queue",oid:"11111111-1111-4111-8111-111111111111"},1)).body).result.content[0].text,/not approved/);
  delete process.env.MCP_QUEUE_ENABLED;
  delete process.env.MCP_QUEUE_ALLOWED_OIDS;
+});
+
+test("build diagnostics reject invalid IDs before upstream access",async()=>{
+ for(const [name,args] of [["get_build_timeline",{buildId:0}],["get_build_log",{buildId:1,logId:0}]]){
+  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}})});
+  assert.equal(res.statusCode,400);
+ }
 });
