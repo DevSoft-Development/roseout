@@ -85,7 +85,7 @@ export async function handler(event){
   const audience=process.env.MCP_EXPECTED_AUDIENCE;
   // JWT issuer/signature/audience validation is enforced by API Gateway's
   // configured JWT authorizer. Never deploy a route without that authorizer.
-  if(!tenant||!audience||!claims||claims.tid!==tenant||claims.aud!==audience)
+  if(!tenant||!audience||!claims||claims.tid!==tenant||![audience,audience.startsWith("api://")?audience.slice(6):`api://${audience}`].includes(claims.aud))
     return json(401,{error:"unauthorized"},{"www-authenticate":process.env.MCP_RESOURCE_URL?.startsWith("https://") ? `Bearer resource_metadata="${new URL("/.well-known/oauth-protected-resource",process.env.MCP_RESOURCE_URL).href}"` : "Bearer"});
   const scopes=String(claims.scp||"").split(" ");
   if(!scopes.includes("devops.read"))return json(403,{error:"insufficient_scope"});
