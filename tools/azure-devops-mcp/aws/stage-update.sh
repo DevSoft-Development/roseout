@@ -16,7 +16,8 @@ STATE="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$ST
 test "$STATE" = UPDATE_COMPLETE -o "$STATE" = CREATE_COMPLETE
 API="$(aws cloudformation describe-stack-resource --region "$REGION" --stack-name "$STACK" --logical-resource-id McpApi --query 'StackResourceDetail.PhysicalResourceId' --output text)"
 DISABLED="$(aws apigatewayv2 get-api --region "$REGION" --api-id "$API" --query DisableExecuteApiEndpoint --output text)"
-if [ "$DISABLED" != True ];then echo 'ABORT: API is not disabled' >&2;exit 1;fi
+if [ "$DISABLED" != True ] && [ "$DISABLED" != False ];then echo 'ABORT: API endpoint state could not be verified' >&2;exit 1;fi
+printf 'Existing API endpoint disabled: %s (preserved by template parameters)\n' "$DISABLED"
 HASH="$(sha256sum "$ZIP" | awk '{print $1}')"
 KEY="releases/azure-devops-mcp/lambda-${HASH}.zip"
 echo "Uploading reviewed ZIP by content digest (sha256=$HASH)"
@@ -29,13 +30,13 @@ trap 'rm -f "$PARAMS"' EXIT
 node - "$PARAMS" "$BUCKET" "$KEY" "$VERSION" <<'NODE'
 const fs=require('fs');
 const [file,bucket,key,version]=process.argv.slice(2);
-const set={LambdaArtifactBucket:bucket,LambdaArtifactKey:key,LambdaArtifactVersion:version,McpExpectedAudience:"api://ebc4388d-ef62-413b-b7d9-175b53ca0348",McpResourceUrl:"disabled"};
-const names=['EntraTenantId','EntraClientId','AzureDevOpsSecretArn','EntraCertificateSha1Thumbprint','LambdaArtifactBucket','LambdaArtifactKey','LambdaArtifactVersion','ExistingLambdaRoleArn','McpExpectedAudience','McpResourceUrl'];
+const set={LambdaArtifactBucket:bucket,LambdaArtifactKey:key,LambdaArtifactVersion:version};
+const names=['EntraTenantId','EntraClientId','AzureDevOpsSecretArn','EntraCertificateSha1Thumbprint','LambdaArtifactBucket','LambdaArtifactKey','LambdaArtifactVersion','ExistingLambdaRoleArn','McpExpectedAudience','McpResourceUrl','EnablePublicEndpoint','EnablePipelineQueue','McpQueueAllowedOids','EnableRepoWrite','McpRepoWriteAllowedOids'];
 const params=names.map(n=>set[n]?{ParameterKey:n,ParameterValue:set[n]}:{ParameterKey:n,UsePreviousValue:true});
 fs.writeFileSync(file,JSON.stringify(params),{mode:0o600});
 NODE
-aws cloudformation create-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" --change-set-type UPDATE --template-body "file://$TEMPLATE" --parameters "file://$PARAMS" --description 'Private staged MCP auth update; public API disabled'
+aws cloudformation create-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" --change-set-type UPDATE --template-body "file://$TEMPLATE" --parameters "file://$PARAMS" --description 'Staged MCP update; preserve live endpoint and authorization settings'
 aws cloudformation wait change-set-create-complete --region "$REGION" --stack-name "$STACK" --change-set-name "$CS"
 echo "CHANGE SET CREATED - NOT EXECUTED: $CS"
 aws cloudformation describe-change-set --region "$REGION" --stack-name "$STACK" --change-set-name "$CS" --query '{Status:Status,Changes:Changes[*].ResourceChange.{Type:ResourceType,Action:Action,LogicalId:LogicalResourceId}}' --output json
-echo 'Stop: review the change set before executing. Public API must remain disabled.'
+echo 'Stop: review the change set before executing. Preserve current API endpoint and authorization settings.'
