@@ -244,9 +244,10 @@ export async function handler(event){
       url.searchParams.set("versionDescriptor.versionType","branch");
       url.searchParams.set("versionDescriptor.version",args.branch);
       url.searchParams.set("includeContent","true");
+      url.searchParams.set("$format","json");
       url.searchParams.set("api-version","7.1");
       const response=await fetch(url,{headers:{authorization:"Bearer "+token,accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(12000)});
-      if(!response.ok)throw new Error("upstream_repo_read_http_"+response.status);
+      if(!response.ok){console.error("azdo_repo_read_failed",{status:response.status,operation:"read_repo_file"});throw new Error("upstream_repo_read_http_"+response.status);}
       const item=await response.json();
       if(item.isFolder||typeof item.content!=="string"||item.content.length>100000)throw new Error("invalid_repo_file_response");
       result={path:args.path,branch:args.branch,commitId:item.commitId||null,content:item.content};
