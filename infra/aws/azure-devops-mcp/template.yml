@@ -88,7 +88,7 @@ Resources:
       IdentitySource: ['$request.header.Authorization']
       Name: entra-devops-read
       JwtConfiguration:
-        Audience: [!Ref McpExpectedAudience]
+        Audience: [!Ref McpExpectedAudience, 'ebc4388d-ef62-413b-b7d9-175b53ca0348']
         Issuer: !Sub https://login.microsoftonline.com/${EntraTenantId}/v2.0
   McpIntegration:
     Type: AWS::ApiGatewayV2::Integration
