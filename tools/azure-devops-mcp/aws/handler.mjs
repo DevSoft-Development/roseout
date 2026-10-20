@@ -12,7 +12,7 @@ const tools=[
 {name:"get_build_log",description:"Read one bounded build log by build and log IDs",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1},logId:{type:"integer",minimum:1}},required:["buildId","logId"],additionalProperties:false}},
 {name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"create_repo_branch",description:"Create a chatgpt/ branch from current main",inputSchema:{type:"object",properties:{branch:{type:"string",pattern:"^chatgpt/[a-z0-9][a-z0-9-]{2,60}$"}},required:["branch"],additionalProperties:false}},
-{name:"commit_repo_file",description:"Commit one UTF-8 source file to a chatgpt/ branch with optimistic concurrency",inputSchema:{type:"object",properties:{branch:{type:"string"},path:{type:"string"},content:{type:"string"},message:{type:"string"},expectedCommit:{type:"string"}},required:["branch","path","content","message","expectedCommit"],additionalProperties:false}},
+{name:"commit_repo_file",description:"Commit one UTF-8 source file to a chatgpt/ branch with optimistic concurrency",inputSchema:{type:"object",properties:{branch:{type:"string"},path:{type:"string"},content:{type:"string"},message:{type:"string"},expectedCommit:{type:"string"},changeType:{type:"string",enum:["add","edit"]}},required:["branch","path","content","message","expectedCommit"],additionalProperties:false}},
 {name:"create_repo_pr",description:"Open Azure Repos PR from chatgpt/ branch to main",inputSchema:{type:"object",properties:{branch:{type:"string"},title:{type:"string"},description:{type:"string"}},required:["branch","title"],additionalProperties:false}},
 {name:"get_repo_pr",description:"Read Azure Repos pull-request status",inputSchema:{type:"object",properties:{pullRequestId:{type:"integer",minimum:1}},required:["pullRequestId"],additionalProperties:false}},
 {name:"complete_repo_pr",description:"Request Azure Repos PR completion without bypassing policy",inputSchema:{type:"object",properties:{pullRequestId:{type:"integer",minimum:1},expectedSourceCommit:{type:"string"}},required:["pullRequestId","expectedSourceCommit"],additionalProperties:false}},
@@ -171,12 +171,12 @@ export async function handler(event){
         if(!safeBranch(args.branch))return reply({isError:true,content:[{type:"text",text:"Invalid chatgpt branch"}]});
         const current=await repoMainSha();
         result=await azdoWrite(gitBase()+"/refs","POST",[{name:"refs/heads/"+args.branch,oldObjectId:"0".repeat(40),newObjectId:current}]);
-        if(!result.value?.[0]?.success)throw new Error("create_branch_rejected");
+        if(!(Array.isArray(result)?result[0]?.success:result.value?.[0]?.success))throw new Error("create_branch_rejected");
         result={branch:args.branch,baseCommit:current};
       }
       if(name==="commit_repo_file"){
         if(!safeBranch(args.branch)||!safePath(args.path)||!safeCommit(args.expectedCommit)||
-          typeof args.content!=="string"||args.content.length>100000||
+          typeof args.content!=="string"||args.content.length>100000||!["add","edit"].includes(args.changeType)||
           typeof args.message!=="string"||args.message.length<5||args.message.length>160)
           return reply({isError:true,content:[{type:"text",text:"Invalid commit arguments"}]});
         const refs=await read(gitBase()+"/refs",{filter:"heads/"+args.branch});
@@ -184,7 +184,7 @@ export async function handler(event){
         if(current!==args.expectedCommit)return reply({isError:true,content:[{type:"text",text:"Branch changed; refresh expectedCommit"}]});
         const file=await azdoWrite(gitBase()+"/pushes","POST",{
           refUpdates:[{name:"refs/heads/"+args.branch,oldObjectId:current}],
-          commits:[{comment:args.message,changes:[{changeType:"edit",item:{path:"/"+args.path},newContent:{content:args.content,contentType:"rawtext"}}]}]
+          commits:[{comment:args.message,changes:[{changeType:args.changeType,item:{path:"/"+args.path},newContent:{content:args.content,contentType:"rawtext"}}]}]
         });
         result={branch:args.branch,commitId:file.commits?.[0]?.commitId||null};
       }
