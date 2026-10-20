@@ -27,14 +27,14 @@ test("wrong audience is rejected",async()=>{
 test("missing delegated read scope rejected",async()=>{
  assert.equal((await handler(event("tools/list",{...goodClaims,scp:""}))).statusCode,403);
 });
-test("only read tools are advertised",async()=>{
+test("read tools and gated pipeline queue are advertised",async()=>{
  const res=await handler(event("tools/list"));
  assert.equal(res.statusCode,200);
  const names=JSON.parse(res.body).result.tools.map(t=>t.name);
- assert.deepEqual(names,["list_pipelines","list_builds","get_build","list_branches"]);
+ assert.deepEqual(names,["list_pipelines","list_builds","get_build","list_branches","queue_pipeline"]);
 });
 test("unknown tool is not callable",async()=>{
- const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"queue_pipeline"}})});
+ const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"delete_pipeline"}})});
  assert.equal(JSON.parse(res.body).error.code,-32601);
 });
 
@@ -58,4 +58,21 @@ test("OAuth discovery uses the configured resource and Entra tenant",async()=>{
 test("Azure DevOps audience is not accepted for MCP",async()=>{
  const wrong={...goodClaims,aud:"499b84ac-1321-427f-aa17-267ca6975798"};
  assert.equal((await handler(event("tools/list",wrong))).statusCode,401);
+});
+
+test("pipeline queue is disabled by default",async()=>{
+ delete process.env.MCP_QUEUE_ENABLED;
+ const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"queue_pipeline",arguments:{pipelineId:3}}})});
+ assert.equal(JSON.parse(res.body).result.isError,true);
+ assert.match(JSON.parse(res.body).result.content[0].text,/not authorized/);
+});
+test("pipeline queue rejects unauthorized callers and production pipeline IDs",async()=>{
+ process.env.MCP_QUEUE_ENABLED="true";
+ process.env.MCP_QUEUE_ALLOWED_OIDS="11111111-1111-4111-8111-111111111111";
+ const invoke=(claims,pipelineId)=>handler({...event("tools/call",claims),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"queue_pipeline",arguments:{pipelineId}}})});
+ assert.equal(JSON.parse((await invoke({...goodClaims,scp:"devops.read devops.queue",oid:"other"},3)).body).result.isError,true);
+ assert.equal(JSON.parse((await invoke({...goodClaims,oid:"11111111-1111-4111-8111-111111111111"},3)).body).result.isError,true);
+ assert.match(JSON.parse((await invoke({...goodClaims,scp:"devops.read devops.queue",oid:"11111111-1111-4111-8111-111111111111"},1)).body).result.content[0].text,/not approved/);
+ delete process.env.MCP_QUEUE_ENABLED;
+ delete process.env.MCP_QUEUE_ALLOWED_OIDS;
 });
