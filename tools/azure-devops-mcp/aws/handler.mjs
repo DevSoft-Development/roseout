@@ -1,5 +1,5 @@
 import {createSign,randomUUID} from "node:crypto";
-// AWS Lambda HTTP API entrypoint for read-only Azure DevOps MCP.
+// AWS Lambda HTTP API entrypoint for Azure DevOps MCP with approval-gated pipeline queueing.
 // The API Gateway JWT authorizer MUST validate Microsoft Entra issuer,
 // audience and token expiry before this function can be invoked.
 // We independently enforce tenant and delegated scope; no unauthenticated tools.
@@ -8,7 +8,8 @@ const tools=[
 {name:"list_pipelines",description:"Read Azure DevOps pipelines",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"list_builds",description:"Read recent Azure DevOps builds",inputSchema:{type:"object",properties:{},additionalProperties:false}},
 {name:"get_build",description:"Read one Azure DevOps build",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1}},required:["buildId"],additionalProperties:false}},
-{name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}}
+{name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}},
+{name:"queue_pipeline",description:"Queue an approved, non-production Azure Pipeline against main",inputSchema:{type:"object",properties:{pipelineId:{type:"integer",enum:[3,5]}},required:["pipelineId"],additionalProperties:false}}
 ];
 const org=process.env.AZDO_ORGANIZATION||"TheOutHaven";
 const project=process.env.AZDO_PROJECT||"TheOutHaven";
@@ -70,6 +71,20 @@ async function read(path,params){
   if(!result.ok)throw new Error("upstream_http_"+result.status);
   return result.json();
 }
+async function queueApprovedPipeline(pipelineId){
+  const token=await getDevOpsToken();
+  const url=new URL(apiBase+"/pipelines/"+pipelineId+"/runs");
+  url.searchParams.set("api-version","7.1");
+  const response=await fetch(url,{method:"POST",headers:{
+    authorization:"Bearer "+token,"content-type":"application/json"
+  },body:JSON.stringify({resources:{repositories:{self:{refName:"refs/heads/main"}}}}),
+  redirect:"error",signal:AbortSignal.timeout(12000)});
+  if(!response.ok)throw new Error("upstream_queue_http_"+response.status);
+  const data=await response.json();
+  if(!Number.isInteger(data.id))throw new Error("invalid_queue_response");
+  console.info("azdo_pipeline_queued",{pipelineId,runId:data.id});
+  return {id:data.id,pipelineId,state:data.state||"unknown",url:data._links?.web?.href||null};
+}
 export async function handler(event){
   const path=event?.rawPath||event?.requestContext?.http?.path||"";
   const method=event?.requestContext?.http?.method;
@@ -77,7 +92,7 @@ export async function handler(event){
     const resource=process.env.MCP_RESOURCE_URL;
     const tenant=process.env.ENTRA_TENANT_ID;
     if(!resource?.startsWith("https://")||!tenant)return json(503,{error:"oauth_metadata_not_configured"});
-    return json(200,{resource,authorization_servers:[`https://login.microsoftonline.com/${tenant}/v2.0`],scopes_supported:["devops.read"],bearer_methods_supported:["header"]});
+    return json(200,{resource,authorization_servers:[`https://login.microsoftonline.com/${tenant}/v2.0`],scopes_supported:["devops.read","devops.queue"],bearer_methods_supported:["header"]});
   }
 
   const claims=event?.requestContext?.authorizer?.jwt?.claims;
@@ -103,10 +118,20 @@ export async function handler(event){
   const name=msg.params.name, args=msg.params.arguments||{};
   try{
     let result;
+    if(name==="queue_pipeline"){
+      const allowedIds=[3,5];
+      const authorizedOids=String(process.env.MCP_QUEUE_ALLOWED_OIDS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
+      if(process.env.MCP_QUEUE_ENABLED!=="true"||!scopes.includes("devops.queue")||
+        !claims.oid||!authorizedOids.includes(String(claims.oid).toLowerCase()))
+        return reply({isError:true,content:[{type:"text",text:"Pipeline queue not authorized"}]});
+      if(!Number.isInteger(args.pipelineId)||!allowedIds.includes(args.pipelineId))
+        return reply({isError:true,content:[{type:"text",text:"Pipeline not approved for queueing"}]});
+      result=await queueApprovedPipeline(args.pipelineId);
+    }
     if(name==="list_pipelines")result=await read("/pipelines",{"$top":25});
     if(name==="list_builds")result=await read("/build/builds",{"$top":25});
     if(name==="get_build"){if(!Number.isInteger(args.buildId)||args.buildId<1)return json(400,{error:"invalid_build_id"});result=await read("/build/builds/"+args.buildId,{});}
     if(name==="list_branches")result=await read("/git/repositories/"+encodeURIComponent(repository)+"/refs",{filter:"heads/"});
     return reply({content:[{type:"text",text:JSON.stringify(result)}]});
-  }catch{return reply({isError:true,content:[{type:"text",text:"Azure DevOps read unavailable"}]});}
+  }catch{return reply({isError:true,content:[{type:"text",text:"Azure DevOps operation unavailable"}]});}
 }
