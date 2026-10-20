@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default; deploy us-east-1)
+Parameters:
+  EntraTenantId:
+    Type: String
+    Default: 9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  EntraClientId:
+    Type: String
+    Default: ebc4388d-ef62-413b-b7d9-175b53ca0348
+    AllowedPattern: '[0-9a-fA-F-]{36}'
+  AzureDevOpsSecretArn:
+    Type: String
+    Description: AWS Secrets Manager ARN storing the Entra private certificate key
+  EntraCertificateSha1Thumbprint:
+    Type: String
+    Default: 1B9248EBC79679B023D463C0A47D58F166C79FD6
+    AllowedPattern: '[0-9A-Fa-f]{40}'
+  LambdaArtifactBucket:
+    Type: String
+    Description: Private S3 bucket containing the reviewed Lambda zip
+  LambdaArtifactKey:
+    Type: String
+    Description: S3 key to the reviewed Lambda zip
+  LambdaArtifactVersion:
+    Type: String
+    Description: Exact S3 version ID of the reviewed Lambda zip
+  McpExpectedAudience:
+    Type: String
+    Default: api://ebc4388d-ef62-413b-b7d9-175b53ca0348
+    Description: Audience of delegated tokens issued for the connector resource API
+  McpResourceUrl:
+    Type: String
+    Default: disabled
+    Description: Exact HTTPS MCP resource origin; configure on activation
+  EnablePublicEndpoint:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Explicit authorization to enable public API Gateway HTTPS endpoint
+  ExistingLambdaRoleArn:
+    Type: String
+    Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
+Conditions:
+  PublicEndpointEnabled: !Equals [!Ref EnablePublicEndpoint, 'true']
+Resources:
+  McpLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: nodejs22.x
+      Handler: handler.handler
+      Description: Read-only connector. Do not enable ChatGPT OAuth until separately certified.
+      Role: !Ref ExistingLambdaRoleArn
+      Code:
+        S3Bucket: !Ref LambdaArtifactBucket
+        S3Key: !Ref LambdaArtifactKey
+        S3ObjectVersion: !Ref LambdaArtifactVersion
+      Timeout: 20
+      MemorySize: 256
+      Environment:
+        Variables:
+          ENTRA_TENANT_ID: !Ref EntraTenantId
+          ENTRA_CLIENT_ID: !Ref EntraClientId
+          AZDO_CERT_SECRET_ARN: !Ref AzureDevOpsSecretArn
+          ENTRA_CERT_SHA1_THUMBPRINT: !Ref EntraCertificateSha1Thumbprint
+          AZDO_ORGANIZATION: TheOutHaven
+          AZDO_PROJECT: TheOutHaven
+          MCP_RESOURCE_URL: !Ref McpResourceUrl
+          MCP_EXPECTED_AUDIENCE: !Ref McpExpectedAudience
+  McpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: theouthaven-azure-devops-mcp
+      ProtocolType: HTTP
+      DisableExecuteApiEndpoint: !If [PublicEndpointEnabled, false, true]
+  McpDefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Condition: PublicEndpointEnabled
+    Properties:
+      ApiId: !Ref McpApi
+      StageName: $default
+      AutoDeploy: true
+  McpAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref McpApi
+      AuthorizerType: JWT
+      IdentitySource: ['$request.header.Authorization']
+      Name: entra-devops-read
+      JwtConfiguration:
+        Audience: [!Ref McpExpectedAudience, 'ebc4388d-ef62-413b-b7d9-175b53ca0348']
+        Issuer: !Sub https://login.microsoftonline.com/${EntraTenantId}/v2.0
+  McpIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref McpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt McpLambda.Arn
+      PayloadFormatVersion: '2.0'
+  McpRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: POST /api/mcp
+      AuthorizationType: JWT
+      AuthorizerId: !Ref McpAuthorizer
+      AuthorizationScopes: [devops.read]
+      Target: !Sub integrations/${McpIntegration}
+  MetadataRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref McpApi
+      RouteKey: GET /.well-known/oauth-protected-resource
+      AuthorizationType: NONE
+      Target: !Sub integrations/${McpIntegration}
+  McpInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref McpLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${McpApi}/*
+Outputs:
+  McpApiId:
+    Value: !Ref McpApi
