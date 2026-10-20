@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Isolated read-only Azure DevOps MCP endpoint (disabled by default; deploy us-east-1)
+Description: Isolated Azure DevOps MCP with opt-in non-production pipeline queueing
 Parameters:
   EntraTenantId:
     Type: String
@@ -38,6 +38,14 @@ Parameters:
     Default: 'false'
     AllowedValues: ['true', 'false']
     Description: Explicit authorization to enable public API Gateway HTTPS endpoint
+  EnablePipelineQueue:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  McpQueueAllowedOids:
+    Type: String
+    Default: ''
+    Description: Comma-separated approved Entra delegated user object IDs for queue access
   ExistingLambdaRoleArn:
     Type: String
     Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
@@ -49,7 +57,7 @@ Resources:
     Properties:
       Runtime: nodejs22.x
       Handler: handler.handler
-      Description: Read-only connector. Do not enable ChatGPT OAuth until separately certified.
+      Description: Azure DevOps connector; pipeline queue defaults off.
       Role: !Ref ExistingLambdaRoleArn
       Code:
         S3Bucket: !Ref LambdaArtifactBucket
@@ -67,6 +75,8 @@ Resources:
           AZDO_PROJECT: TheOutHaven
           MCP_RESOURCE_URL: !Ref McpResourceUrl
           MCP_EXPECTED_AUDIENCE: !Ref McpExpectedAudience
+          MCP_QUEUE_ENABLED: !Ref EnablePipelineQueue
+          MCP_QUEUE_ALLOWED_OIDS: !Ref McpQueueAllowedOids
   McpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
