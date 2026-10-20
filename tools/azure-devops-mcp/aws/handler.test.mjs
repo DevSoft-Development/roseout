@@ -31,7 +31,7 @@ test("read tools and gated pipeline queue are advertised",async()=>{
  const res=await handler(event("tools/list"));
  assert.equal(res.statusCode,200);
  const names=JSON.parse(res.body).result.tools.map(t=>t.name);
- assert.deepEqual(names,["list_pipelines","list_builds","get_build","get_build_timeline","get_build_log","list_branches","create_repo_branch","commit_repo_file","create_repo_pr","get_repo_pr","complete_repo_pr","queue_pipeline"]);
+ assert.deepEqual(names,["list_pipelines","list_builds","get_build","get_build_timeline","get_build_log","list_branches","get_pipeline_definition","read_repo_file","create_repo_branch","commit_repo_file","create_repo_pr","get_repo_pr","complete_repo_pr","queue_pipeline"]);
 });
 test("unknown tool is not callable",async()=>{
  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"delete_pipeline"}})});
@@ -99,4 +99,17 @@ test("invalid branch and unsafe paths fail before upstream writes",async()=>{
  assert.match(JSON.parse((await invoke("create_repo_branch",{branch:"main"})).body).result.content[0].text,/Invalid/);
  assert.match(JSON.parse((await invoke("commit_repo_file",{branch:"chatgpt/feature",path:"../secrets",content:"x",message:"test update",expectedCommit:"a".repeat(40)})).body).result.content[0].text,/Invalid/);
  delete process.env.MCP_REPO_WRITE_ENABLED;delete process.env.MCP_REPO_WRITE_ALLOWED_OIDS;
+});
+
+test("repository reads reject unsupported branches and invalid paths before upstream access",async()=>{
+ const invoke=(args)=>handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"read_repo_file",arguments:args}})});
+ for(const args of [{branch:"feature/unsafe",path:"azure-pipelines.yml"},{branch:"main",path:"../secrets"},{branch:"main",path:"/absolute"}]){
+  const body=JSON.parse((await invoke(args)).body);
+  assert.equal(body.result.isError,true);
+  assert.match(body.result.content[0].text,/Invalid repository read/);
+ }
+});
+test("pipeline definition access rejects unapproved IDs before upstream access",async()=>{
+ const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"get_pipeline_definition",arguments:{pipelineId:1}}})});
+ assert.match(JSON.parse(res.body).result.content[0].text,/not approved/);
 });
