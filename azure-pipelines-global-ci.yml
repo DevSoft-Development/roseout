@@ -28,7 +28,7 @@ jobs:
             BASE="$(git rev-parse "$BASE^" 2>/dev/null || true)"
           fi
           CI_BASE_SHA="$BASE" CI_HEAD_SHA=HEAD node scripts/devops/impact-plan.mjs | tee impact-plan.json
-          node -e 'const p=require("./impact-plan.json"); const run=(name)=>console.log("##vso[task.setvariable variable="+name+";isOutput=true]"+String(p.affected.includes(name))); run("background"); run("admin"); run("business"); run("consumer"); run("pos");'
+          node -e 'const p=require("./impact-plan.json"); const run=(name)=>console.log("##vso[task.setvariable variable="+name+";isOutput=true]"+String(p.affected.includes(name))); run("background"); run("admin"); run("business"); run("consumer"); run("pos"); run("reserve");'
         name: detect
         displayName: Calculate conservative change impact
       - publish: impact-plan.json
@@ -56,5 +56,69 @@ jobs:
           npx --no-install vitest run lib/location-intelligence/v2/__tests__/structured-first-import-gate.test.ts lib/location-intelligence/v2/__tests__/campaign-operations.test.ts
         displayName: LI V2 unit tests
 
-# Additional affected-app test lanes and build artifact promotion will follow
-# after each lane is mapped and certified against the dependency graph.
+  - job: reserve_unit
+    displayName: Reservations targeted tests
+    dependsOn: impact
+    condition: and(succeeded(), eq(dependencies.impact.outputs['detect.reserve'], 'true'))
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '22.x'
+      - task: Cache@2
+        inputs:
+          key: 'npm | "$(Agent.OS)" | package-lock.json'
+          restoreKeys: |
+            npm | "$(Agent.OS)"
+          path: $(Pipeline.Workspace)/.npm
+      - bash: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund --cache "$(Pipeline.Workspace)/.npm"
+          npm run test:reserve
+        displayName: Reservation unit tests
+
+  - job: pos_unit
+    displayName: POS targeted regression tests
+    dependsOn: impact
+    condition: and(succeeded(), eq(dependencies.impact.outputs['detect.pos'], 'true'))
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '22.x'
+      - task: Cache@2
+        inputs:
+          key: 'npm | "$(Agent.OS)" | package-lock.json'
+          restoreKeys: |
+            npm | "$(Agent.OS)"
+          path: $(Pipeline.Workspace)/.npm
+      - bash: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund --cache "$(Pipeline.Workspace)/.npm"
+          npm run test:pos-printers
+          npm run test:pos-routing
+        displayName: POS printer and routing tests
+
+  - job: consumer_search
+    displayName: Consumer search targeted tests
+    dependsOn: impact
+    condition: and(succeeded(), eq(dependencies.impact.outputs['detect.consumer'], 'true'))
+    steps:
+      - checkout: self
+      - task: UseNode@1
+        inputs:
+          version: '22.x'
+      - task: Cache@2
+        inputs:
+          key: 'npm | "$(Agent.OS)" | package-lock.json'
+          restoreKeys: |
+            npm | "$(Agent.OS)"
+          path: $(Pipeline.Workspace)/.npm
+      - bash: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund --cache "$(Pipeline.Workspace)/.npm"
+          npm run test:enterprise-search
+        displayName: Enterprise search unit tests
+
+# Remaining app lanes (admin/business/mobile/infrastructure) require separately
+# certified representative test mappings before adding new hosted-agent jobs.
