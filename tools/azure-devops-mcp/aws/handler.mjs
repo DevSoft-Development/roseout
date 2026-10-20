@@ -11,6 +11,8 @@ const tools=[
 {name:"get_build_timeline",description:"Read bounded job and step outcomes for a build",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1}},required:["buildId"],additionalProperties:false}},
 {name:"get_build_log",description:"Read one bounded build log by build and log IDs",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1},logId:{type:"integer",minimum:1}},required:["buildId","logId"],additionalProperties:false}},
 {name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}},
+{name:"get_pipeline_definition",description:"Read an Azure pipeline definition and YAML path (read-only)",inputSchema:{type:"object",properties:{pipelineId:{type:"integer",enum:[2,3,5]}},required:["pipelineId"],additionalProperties:false}},
+{name:"read_repo_file",description:"Read bounded UTF-8 source text from Azure Repos (read-only)",inputSchema:{type:"object",properties:{path:{type:"string"},branch:{type:"string",enum:["main","automation/repo-sync-bootstrap"]}},required:["path","branch"],additionalProperties:false}},
 {name:"create_repo_branch",description:"Create a chatgpt/ branch from current main",inputSchema:{type:"object",properties:{branch:{type:"string",pattern:"^chatgpt/[a-z0-9][a-z0-9-]{2,60}$"}},required:["branch"],additionalProperties:false}},
 {name:"commit_repo_file",description:"Commit one UTF-8 source file to a chatgpt/ branch with optimistic concurrency",inputSchema:{type:"object",properties:{branch:{type:"string"},path:{type:"string"},content:{type:"string"},message:{type:"string"},expectedCommit:{type:"string"},changeType:{type:"string",enum:["add","edit"]}},required:["branch","path","content","message","expectedCommit"],additionalProperties:false}},
 {name:"create_repo_pr",description:"Open Azure Repos PR from chatgpt/ branch to main",inputSchema:{type:"object",properties:{branch:{type:"string"},title:{type:"string"},description:{type:"string"}},required:["branch","title"],additionalProperties:false}},
@@ -228,6 +230,28 @@ export async function handler(event){
       result=await readBuildLog(args.buildId,args.logId);
     }
     if(name==="list_branches")result=await read("/git/repositories/"+encodeURIComponent(repository)+"/refs",{filter:"heads/"});
+    if(name==="get_pipeline_definition"){
+      if(![2,3,5].includes(args.pipelineId))return reply({isError:true,content:[{type:"text",text:"Pipeline ID not approved"}]});
+      const def=await read("/build/definitions/"+args.pipelineId,{});
+      result={id:def.id,name:def.name,path:def.process?.yamlFilename||null,repositoryId:def.repository?.id||null,repositoryType:def.repository?.type||null,repositoryDefaultBranch:def.repository?.defaultBranch||null,processType:def.process?.type||null};
+    }
+    if(name==="read_repo_file"){
+      if(!safePath(args.path)||!["main","automation/repo-sync-bootstrap"].includes(args.branch))
+        return reply({isError:true,content:[{type:"text",text:"Invalid repository read arguments"}]});
+      const token=await getDevOpsToken();
+      const url=new URL(apiBase+gitBase()+"/items");
+      url.searchParams.set("path","/"+args.path);
+      url.searchParams.set("versionDescriptor.versionType","branch");
+      url.searchParams.set("versionDescriptor.version",args.branch);
+      url.searchParams.set("includeContent","true");
+      url.searchParams.set("api-version","7.1");
+      const response=await fetch(url,{headers:{authorization:"Bearer "+token,accept:"application/json"},redirect:"error",signal:AbortSignal.timeout(12000)});
+      if(!response.ok)throw new Error("upstream_repo_read_http_"+response.status);
+      const item=await response.json();
+      if(item.isFolder||typeof item.content!=="string"||item.content.length>100000)throw new Error("invalid_repo_file_response");
+      result={path:args.path,branch:args.branch,commitId:item.commitId||null,content:item.content};
+    }
+
     return reply({content:[{type:"text",text:JSON.stringify(result)}]});
   }catch{return reply({isError:true,content:[{type:"text",text:"Azure DevOps operation unavailable"}]});}
 }
