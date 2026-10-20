@@ -15,6 +15,7 @@ jobs:
     steps:
       - checkout: self
         fetchDepth: 0
+        persistCredentials: true
       - task: UseNode@1
         inputs:
           version: '22.x'
