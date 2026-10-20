@@ -31,7 +31,7 @@ test("read tools and gated pipeline queue are advertised",async()=>{
  const res=await handler(event("tools/list"));
  assert.equal(res.statusCode,200);
  const names=JSON.parse(res.body).result.tools.map(t=>t.name);
- assert.deepEqual(names,["list_pipelines","list_builds","get_build","get_build_timeline","get_build_log","list_branches","queue_pipeline"]);
+ assert.deepEqual(names,["list_pipelines","list_builds","get_build","get_build_timeline","get_build_log","list_branches","create_repo_branch","commit_repo_file","create_repo_pr","get_repo_pr","complete_repo_pr","queue_pipeline"]);
 });
 test("unknown tool is not callable",async()=>{
  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"delete_pipeline"}})});
@@ -82,4 +82,21 @@ test("build diagnostics reject invalid IDs before upstream access",async()=>{
   const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}})});
   assert.equal(res.statusCode,400);
  }
+});
+
+test("repository mutations disabled by default even with delegated scope",async()=>{
+ delete process.env.MCP_REPO_WRITE_ENABLED;
+ const claims={...goodClaims,scp:"devops.read devops.write",oid:"11111111-1111-4111-8111-111111111111"};
+ for(const name of ["create_repo_branch","commit_repo_file","create_repo_pr","complete_repo_pr"]){
+  const res=await handler({...event("tools/call",claims),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:{branch:"chatgpt/test",pullRequestId:1}}})});
+  assert.match(JSON.parse(res.body).result.content[0].text,/not authorized/);
+ }
+});
+test("invalid branch and unsafe paths fail before upstream writes",async()=>{
+ process.env.MCP_REPO_WRITE_ENABLED="true";process.env.MCP_REPO_WRITE_ALLOWED_OIDS="11111111-1111-4111-8111-111111111111";
+ const claims={...goodClaims,scp:"devops.read devops.write",oid:"11111111-1111-4111-8111-111111111111"};
+ const invoke=(name,args)=>handler({...event("tools/call",claims),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name,arguments:args}})});
+ assert.match(JSON.parse((await invoke("create_repo_branch",{branch:"main"})).body).result.content[0].text,/Invalid/);
+ assert.match(JSON.parse((await invoke("commit_repo_file",{branch:"chatgpt/feature",path:"../secrets",content:"x",message:"test update",expectedCommit:"a".repeat(40)})).body).result.content[0].text,/Invalid/);
+ delete process.env.MCP_REPO_WRITE_ENABLED;delete process.env.MCP_REPO_WRITE_ALLOWED_OIDS;
 });

@@ -46,6 +46,14 @@ Parameters:
     Type: String
     Default: ''
     Description: Comma-separated approved Entra delegated user object IDs for queue access
+  EnableRepoWrite:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true','false']
+  McpRepoWriteAllowedOids:
+    Type: String
+    Default: ''
+    Description: Approved Entra delegated user object IDs for Azure Repos changes
   ExistingLambdaRoleArn:
     Type: String
     Description: Pre-created execution role ARN with logs and certificate-secret read permissions.
@@ -77,6 +85,8 @@ Resources:
           MCP_EXPECTED_AUDIENCE: !Ref McpExpectedAudience
           MCP_QUEUE_ENABLED: !Ref EnablePipelineQueue
           MCP_QUEUE_ALLOWED_OIDS: !Ref McpQueueAllowedOids
+          MCP_REPO_WRITE_ENABLED: !Ref EnableRepoWrite
+          MCP_REPO_WRITE_ALLOWED_OIDS: !Ref McpRepoWriteAllowedOids
   McpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
