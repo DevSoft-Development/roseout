@@ -11,6 +11,11 @@ const tools=[
 {name:"get_build_timeline",description:"Read bounded job and step outcomes for a build",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1}},required:["buildId"],additionalProperties:false}},
 {name:"get_build_log",description:"Read one bounded build log by build and log IDs",inputSchema:{type:"object",properties:{buildId:{type:"integer",minimum:1},logId:{type:"integer",minimum:1}},required:["buildId","logId"],additionalProperties:false}},
 {name:"list_branches",description:"Read Azure Repos branches",inputSchema:{type:"object",properties:{},additionalProperties:false}},
+{name:"create_repo_branch",description:"Create a chatgpt/ branch from current main",inputSchema:{type:"object",properties:{branch:{type:"string",pattern:"^chatgpt/[a-z0-9][a-z0-9-]{2,60}$"}},required:["branch"],additionalProperties:false}},
+{name:"commit_repo_file",description:"Commit one UTF-8 source file to a chatgpt/ branch with optimistic concurrency",inputSchema:{type:"object",properties:{branch:{type:"string"},path:{type:"string"},content:{type:"string"},message:{type:"string"},expectedCommit:{type:"string"}},required:["branch","path","content","message","expectedCommit"],additionalProperties:false}},
+{name:"create_repo_pr",description:"Open Azure Repos PR from chatgpt/ branch to main",inputSchema:{type:"object",properties:{branch:{type:"string"},title:{type:"string"},description:{type:"string"}},required:["branch","title"],additionalProperties:false}},
+{name:"get_repo_pr",description:"Read Azure Repos pull-request status",inputSchema:{type:"object",properties:{pullRequestId:{type:"integer",minimum:1}},required:["pullRequestId"],additionalProperties:false}},
+{name:"complete_repo_pr",description:"Request Azure Repos PR completion without bypassing policy",inputSchema:{type:"object",properties:{pullRequestId:{type:"integer",minimum:1},expectedSourceCommit:{type:"string"}},required:["pullRequestId","expectedSourceCommit"],additionalProperties:false}},
 {name:"queue_pipeline",description:"Queue an approved, non-production Azure Pipeline against main",inputSchema:{type:"object",properties:{pipelineId:{type:"integer",enum:[3,5]}},required:["pipelineId"],additionalProperties:false}}
 ];
 const org=process.env.AZDO_ORGANIZATION||"TheOutHaven";
@@ -82,6 +87,23 @@ async function readBuildLog(buildId,logId){
   const value=await response.text();
   return {buildId,logId,text:value.slice(-30000),truncated:value.length>30000};
 }
+const safeBranch=b=>typeof b==="string"&&/^chatgpt\/[a-z0-9][a-z0-9-]{2,60}$/.test(b);
+const safeCommit=c=>typeof c==="string"&&/^[a-f0-9]{40}$/.test(c);
+const safePath=p=>typeof p==="string"&&p.length<=240&&/^[a-zA-Z0-9_./-]+$/.test(p)&&!p.startsWith("/")&&!p.split("/").includes("..")&&!p.startsWith(".git/")&&!p.includes("//");
+const gitBase=()=>"/git/repositories/"+encodeURIComponent(repository);
+async function azdoWrite(path,method,body){
+ const token=await getDevOpsToken();
+ const url=new URL(apiBase+path);url.searchParams.set("api-version","7.1");
+ const response=await fetch(url,{method,headers:{authorization:"Bearer "+token,"content-type":"application/json"},body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)});
+ if(!response.ok)throw new Error("upstream_repo_http_"+response.status);
+ return response.json();
+}
+async function repoMainSha(){
+ const d=await read(gitBase()+"/refs",{filter:"heads/main"});
+ const main=(d.value||[]).find(r=>r.name==="refs/heads/main");
+ if(!safeCommit(main?.objectId))throw new Error("main_ref_not_found");
+ return main.objectId;
+}
 async function queueApprovedPipeline(pipelineId){
   const token=await getDevOpsToken();
   const url=new URL(apiBase+"/pipelines/"+pipelineId+"/runs");
@@ -103,7 +125,7 @@ export async function handler(event){
     const resource=process.env.MCP_RESOURCE_URL;
     const tenant=process.env.ENTRA_TENANT_ID;
     if(!resource?.startsWith("https://")||!tenant)return json(503,{error:"oauth_metadata_not_configured"});
-    return json(200,{resource,authorization_servers:[`https://login.microsoftonline.com/${tenant}/v2.0`],scopes_supported:["devops.read","devops.queue"],bearer_methods_supported:["header"]});
+    return json(200,{resource,authorization_servers:[`https://login.microsoftonline.com/${tenant}/v2.0`],scopes_supported:["devops.read","devops.queue","devops.write"],bearer_methods_supported:["header"]});
   }
 
   const claims=event?.requestContext?.authorizer?.jwt?.claims;
@@ -138,6 +160,56 @@ export async function handler(event){
       if(!Number.isInteger(args.pipelineId)||!allowedIds.includes(args.pipelineId))
         return reply({isError:true,content:[{type:"text",text:"Pipeline not approved for queueing"}]});
       result=await queueApprovedPipeline(args.pipelineId);
+    }
+    if(["create_repo_branch","commit_repo_file","create_repo_pr","get_repo_pr","complete_repo_pr"].includes(name)){
+      if(name!=="get_repo_pr"){
+        const allowed=String(process.env.MCP_REPO_WRITE_ALLOWED_OIDS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
+        if(process.env.MCP_REPO_WRITE_ENABLED!=="true"||!scopes.includes("devops.write")||!claims.oid||!allowed.includes(String(claims.oid).toLowerCase()))
+          return reply({isError:true,content:[{type:"text",text:"Repository write not authorized"}]});
+      }
+      if(name==="create_repo_branch"){
+        if(!safeBranch(args.branch))return reply({isError:true,content:[{type:"text",text:"Invalid chatgpt branch"}]});
+        const current=await repoMainSha();
+        result=await azdoWrite(gitBase()+"/refs","POST",[{name:"refs/heads/"+args.branch,oldObjectId:"0".repeat(40),newObjectId:current}]);
+        if(!result.value?.[0]?.success)throw new Error("create_branch_rejected");
+        result={branch:args.branch,baseCommit:current};
+      }
+      if(name==="commit_repo_file"){
+        if(!safeBranch(args.branch)||!safePath(args.path)||!safeCommit(args.expectedCommit)||
+          typeof args.content!=="string"||args.content.length>100000||
+          typeof args.message!=="string"||args.message.length<5||args.message.length>160)
+          return reply({isError:true,content:[{type:"text",text:"Invalid commit arguments"}]});
+        const refs=await read(gitBase()+"/refs",{filter:"heads/"+args.branch});
+        const current=(refs.value||[]).find(r=>r.name==="refs/heads/"+args.branch)?.objectId;
+        if(current!==args.expectedCommit)return reply({isError:true,content:[{type:"text",text:"Branch changed; refresh expectedCommit"}]});
+        const file=await azdoWrite(gitBase()+"/pushes","POST",{
+          refUpdates:[{name:"refs/heads/"+args.branch,oldObjectId:current}],
+          commits:[{comment:args.message,changes:[{changeType:"edit",item:{path:"/"+args.path},newContent:{content:args.content,contentType:"rawtext"}}]}]
+        });
+        result={branch:args.branch,commitId:file.commits?.[0]?.commitId||null};
+      }
+      if(name==="create_repo_pr"){
+        if(!safeBranch(args.branch)||typeof args.title!=="string"||args.title.length<5||args.title.length>160||
+          (args.description!==undefined&&(typeof args.description!=="string"||args.description.length>6000)))
+          return reply({isError:true,content:[{type:"text",text:"Invalid pull request arguments"}]});
+        const pr=await azdoWrite(gitBase()+"/pullrequests","POST",{sourceRefName:"refs/heads/"+args.branch,targetRefName:"refs/heads/main",title:args.title,description:args.description||""});
+        result={pullRequestId:pr.pullRequestId,status:pr.status};
+      }
+      if(name==="get_repo_pr"||name==="complete_repo_pr"){
+        if(!Number.isInteger(args.pullRequestId)||args.pullRequestId<1)return reply({isError:true,content:[{type:"text",text:"Invalid pull request ID"}]});
+        const pr=await read(gitBase()+"/pullrequests/"+args.pullRequestId,{});
+        if(name==="get_repo_pr")result={pullRequestId:pr.pullRequestId,status:pr.status,sourceRefName:pr.sourceRefName,targetRefName:pr.targetRefName,sourceCommit:pr.lastMergeSourceCommit?.commitId};
+        else {
+          if(pr.status!=="active"||pr.targetRefName!=="refs/heads/main"||!pr.sourceRefName?.startsWith("refs/heads/chatgpt/")||!safeCommit(args.expectedSourceCommit)||
+            pr.lastMergeSourceCommit?.commitId!==args.expectedSourceCommit)
+            return reply({isError:true,content:[{type:"text",text:"PR completion precondition failed"}]});
+          const updated=await azdoWrite(gitBase()+"/pullrequests/"+args.pullRequestId,"PATCH",{
+            status:"completed",lastMergeSourceCommit:{commitId:args.expectedSourceCommit},
+            completionOptions:{bypassPolicy:false,deleteSourceBranch:false,mergeStrategy:"noFastForward"}
+          });
+          result={pullRequestId:updated.pullRequestId,status:updated.status};
+        }
+      }
     }
     if(name==="list_pipelines")result=await read("/pipelines",{"$top":25});
     if(name==="list_builds")result=await read("/build/builds",{"$top":25});
