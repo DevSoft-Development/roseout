@@ -17,6 +17,10 @@ test("missing authorizer fails closed",async()=>{
 test("wrong tenant is rejected",async()=>{
  assert.equal((await handler(event("tools/list",{...goodClaims,tid:"wrong"}))).statusCode,401);
 });
+test("Entra v2 GUID audience is accepted",async()=>{
+ const res=await handler(event("tools/list",{...goodClaims,aud:"ebc4388d-ef62-413b-b7d9-175b53ca0348"}));
+ assert.equal(res.statusCode,200);
+});
 test("wrong audience is rejected",async()=>{
  assert.equal((await handler(event("tools/list",{...goodClaims,aud:"wrong"}))).statusCode,401);
 });
