@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const worker=readFileSync("lib/location-intelligence/v2/campaign-worker.ts","utf8");
+const queueRunner=readFileSync("lib/location-intelligence/v2/maps-queue-runner.ts","utf8");
+const resolver=readFileSync("lib/location-intelligence/v2/maps-independent-resolver.ts","utf8");
+const staging=readFileSync("lib/location-intelligence/v2/independent-staging.ts","utf8");
+const finalizer=readFileSync("lib/location-intelligence/v2/independent-batch-finalizer.ts","utf8");
 const route=readFileSync("app/api/cron/li-v2-acquisition-campaign/route.ts","utf8");
 const controls=readFileSync("supabase/migrations/20261015190000_li_v2_import_campaign_runs.sql","utf8");
 const schedule=JSON.parse(readFileSync("infra/aws/edge-runtime/schedules.json","utf8")) as Array<{name:string;expression:string;body?:{target:string};enabled?:boolean}>;
@@ -23,22 +27,32 @@ describe("LI V2 campaign operational wiring",()=>{
   expect(route).toContain('"x-toh-aws-internal"');
   expect(route).toContain('processQueuedAcquisitionCampaign()');
  });
- it("checks budget and operator state before each paid request and before publication",()=>{
-  const check=worker.indexOf('rpc("li_v2_campaign_run_permitted"');
-  const paid=worker.indexOf("await provider.execute");
-  const final=worker.indexOf('const publishing=await publishReadyStagedLocations');
-  expect(check).toBeGreaterThan(0);
-  expect(check).toBeLessThan(paid);
-  expect(worker.lastIndexOf('li_v2_campaign_run_permitted',final)).toBeGreaterThan(paid);
-  expect(worker).toContain('if (index < run.processed) continue');
+ it("checks operator state and reserves budget before billable Maps submission",()=>{
+  expect(worker).toContain('"li_v2_campaign_run_permitted"');
+  expect(worker).toContain('submitApprovedMapsQueue(');
+  expect(worker).toContain('if(index<run.processed)continue');
+  const permitted=queueRunner.indexOf('"li_v2_campaign_run_permitted"');
+  const preflight=queueRunner.indexOf('"li_v2_paid_acquisition_preflight"');
+  const reserved=queueRunner.indexOf('"reserve_location_acquisition_spend"');
+  const submit=queueRunner.indexOf('return submitReservedMapsQueue(');
+  expect(permitted).toBeGreaterThan(0);
+  expect(preflight).toBeGreaterThan(permitted);
+  expect(reserved).toBeGreaterThan(preflight);
+  expect(submit).toBeGreaterThan(reserved);
+  expect(queueRunner).toContain('if(reserveError||reserved!==true)');
+  expect(queueRunner).toContain('"submitting","uncertain"');
  });
- it("stages unverified evidence and applies existing dedupe and publishability protections",()=>{
-  expect(worker).toContain('source_quality_status:"imported_unverified"');
-  expect(worker).toContain('import_confidence:"low"');
-  expect(worker).toContain('onConflict:"source,source_id",ignoreDuplicates:true');
-  expect(worker).toContain("dedupeStagedLocationsChunk");
-  expect(worker).toContain("publishReadyStagedLocations");
-  expect(worker).not.toContain('quality_status:"publish_ready"');
+ it("stages verified evidence through dedupe and publishability protections",()=>{
+  expect(worker).toContain('resolveQueuedMapsToIndependentProfiles(');
+  expect(resolver).toContain('stageIndependentCandidate(');
+  expect(resolver).toContain('finalizeIndependentBatch(batchId)');
+  expect(staging).toContain('source_quality_status:"independently_verified"');
+  expect(staging).toContain('import_confidence:"high"');
+  expect(staging).toContain('import_status:"staged"');
+  expect(staging).toContain('onConflict:"source,source_id"');
+  expect(finalizer).toContain('dedupeStagedLocationsChunk(');
+  expect(finalizer).toContain('publishReadyStagedLocations(');
+  expect(finalizer).toContain('evaluateLocationPublishability(');
  });
  it("records cancellation and prohibits resumed duplicate active runs",()=>{
   expect(controls).toContain("li_v2_one_active_campaign_run");
