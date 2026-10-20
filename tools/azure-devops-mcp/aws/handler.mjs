@@ -95,7 +95,7 @@ async function azdoWrite(path,method,body){
  const token=await getDevOpsToken();
  const url=new URL(apiBase+path);url.searchParams.set("api-version","7.1");
  const response=await fetch(url,{method,headers:{authorization:"Bearer "+token,"content-type":"application/json"},body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)});
- if(!response.ok)throw new Error("upstream_repo_http_"+response.status);
+ if(!response.ok){ console.error("azdo_repo_request_failed",{status:response.status,method,operation:path.includes("/pullrequests")?"pull_request":path.includes("/pushes")?"commit":"branch",requestId:response.headers.get("x-vss-e2eid")||null}); throw new Error("upstream_repo_http_"+response.status); }
  return response.json();
 }
 async function repoMainSha(){
