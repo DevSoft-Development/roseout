@@ -100,7 +100,22 @@ async function azdoWrite(path,method,body){
  if(!response.ok){
   const operation=path.includes("/pullrequests")?"pull_request":path.includes("/pushes")?"commit":"branch";
   const requestId=response.headers.get("x-vss-e2eid")||null;
-  console.error("azdo_repo_request_failed",{status:response.status,method,operation,requestId});
+  // Log only Azure DevOps' structured error identifiers, never its raw response.
+  let upstreamType=null, upstreamCode=null, upstreamMessage=null;
+  try {
+    const payload=await response.json();
+    if(payload&&typeof payload==="object"){
+      const type=typeof payload.typeKey==="string"?payload.typeKey:null;
+      const code=typeof payload.errorCode==="number"?payload.errorCode:null;
+      const message=typeof payload.message==="string"?payload.message:null;
+      upstreamType=type&&/^[A-Za-z0-9_.-]{1,100}$/.test(type)?type:null;
+      upstreamCode=Number.isSafeInteger(code)?code:null;
+      // Explicit allowlist: avoid logging path, content, tokens or user-supplied text.
+      const knownMessages=["A file or folder with the provided name already exists.","TF401027: You need the Git 'GenericContribute' permission to perform this action.","The specified ref update was rejected.","The file or directory already exists."];
+      upstreamMessage=knownMessages.includes(message)?message:null;
+    }
+  }catch{}
+  console.error("azdo_repo_request_failed",{status:response.status,method,operation,requestId,upstreamType,upstreamCode,upstreamMessage});
   const error=new Error("upstream_repo_http");
   error.safeCode="AZDO_HTTP_"+response.status;
   error.safeOperation=operation;
