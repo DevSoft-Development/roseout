@@ -93,6 +93,20 @@ const safeBranch=b=>typeof b==="string"&&/^chatgpt\/[a-z0-9][a-z0-9-]{2,60}$/.te
 const safeCommit=c=>typeof c==="string"&&/^[a-f0-9]{40}$/.test(c);
 const safePath=p=>typeof p==="string"&&p.length<=240&&/^[a-zA-Z0-9_./-]+$/.test(p)&&!p.startsWith("/")&&!p.split("/").includes("..")&&!p.startsWith(".git/")&&!p.includes("//");
 const gitBase=()=>"/git/repositories/"+encodeURIComponent(repository);
+// Classify only known Azure DevOps response phrases; never log the raw upstream text.
+export function classifyRepoValidation(message){
+ if(typeof message!=="string")return "unknown_validation";
+ const m=message.toLowerCase();
+ if(/(already exists|item exists|file exists)/.test(m))return "path_already_exists";
+ if(/(does not exist|not found|item was not found)/.test(m))return "path_not_found";
+ if(/(invalid|unsupported|not valid).{0,45}(changetype|change type)/.test(m))return "invalid_change_type";
+ if(/(invalid|unsupported|not valid).{0,45}(path|item path)/.test(m))return "invalid_path";
+ if(/(invalid|unsupported|not valid).{0,45}(ref|branch)/.test(m))return "invalid_ref";
+ if(/(oldobjectid|old object id|stale|reference has changed|ref update was rejected)/.test(m))return "ref_conflict";
+ if(/(permission|denied|unauthorized|not authorized)/.test(m))return "permission_denied";
+ if(/(change|commit|push|refupdate|ref update).{0,70}(invalid|must|missing|required)/.test(m))return "invalid_push_payload";
+ return "unknown_validation";
+}
 async function azdoWrite(path,method,body){
  const token=await getDevOpsToken();
  const url=new URL(apiBase+path);url.searchParams.set("api-version","7.1");
@@ -101,7 +115,7 @@ async function azdoWrite(path,method,body){
   const operation=path.includes("/pullrequests")?"pull_request":path.includes("/pushes")?"commit":"branch";
   const requestId=response.headers.get("x-vss-e2eid")||null;
   // Log only Azure DevOps' structured error identifiers, never its raw response.
-  let upstreamType=null, upstreamCode=null, upstreamMessage=null;
+  let upstreamType=null, upstreamCode=null, upstreamMessage=null, validationCategory="unknown_validation";
   try {
     const payload=await response.json();
     if(payload&&typeof payload==="object"){
@@ -113,9 +127,10 @@ async function azdoWrite(path,method,body){
       // Explicit allowlist: avoid logging path, content, tokens or user-supplied text.
       const knownMessages=["A file or folder with the provided name already exists.","TF401027: You need the Git 'GenericContribute' permission to perform this action.","The specified ref update was rejected.","The file or directory already exists."];
       upstreamMessage=knownMessages.includes(message)?message:null;
+      validationCategory=classifyRepoValidation(message);
     }
   }catch{}
-  console.error("azdo_repo_request_failed",{status:response.status,method,operation,requestId,upstreamType,upstreamCode,upstreamMessage});
+  console.error("azdo_repo_request_failed",{status:response.status,method,operation,requestId,upstreamType,upstreamCode,upstreamMessage,validationCategory});
   const error=new Error("upstream_repo_http");
   error.safeCode="AZDO_HTTP_"+response.status;
   error.safeOperation=operation;
