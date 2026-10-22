@@ -121,7 +121,7 @@ test("Azure Repos error classification never echoes arbitrary upstream text",()=
   ["Invalid changeType value.","invalid_change_type"],
   ["Invalid path supplied.","invalid_path"],
   ["Invalid branch ref.","invalid_ref"],
-  ["oldObjectId does not match.","path_not_found"],
+  ["oldObjectId does not match.","ref_conflict"],
   ["Permission denied.","permission_denied"],
   ["token=super-secret and content=private","unknown_validation"],
   [null,"unknown_validation"]
