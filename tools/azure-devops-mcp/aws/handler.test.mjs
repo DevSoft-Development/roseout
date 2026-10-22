@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {handler} from "./handler.mjs";
+import {handler,classifyRepoValidation} from "./handler.mjs";
 
 const goodClaims={tid:"9ad8a4ab-1f10-4d2d-b9ef-2458a2d20a08",aud:"api://ebc4388d-ef62-413b-b7d9-175b53ca0348",scp:"devops.read"};
 process.env.ENTRA_TENANT_ID=goodClaims.tid;
@@ -112,4 +112,19 @@ test("repository reads reject unsupported branches and invalid paths before upst
 test("pipeline definition access rejects unapproved IDs before upstream access",async()=>{
  const res=await handler({...event("tools/call"),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"get_pipeline_definition",arguments:{pipelineId:1}}})});
  assert.match(JSON.parse(res.body).result.content[0].text,/not approved/);
+});
+
+test("Azure Repos error classification never echoes arbitrary upstream text",()=>{
+ const cases=[
+  ["A file or folder with the provided name already exists.","path_already_exists"],
+  ["The file does not exist.","path_not_found"],
+  ["Invalid changeType value.","invalid_change_type"],
+  ["Invalid path supplied.","invalid_path"],
+  ["Invalid branch ref.","invalid_ref"],
+  ["oldObjectId does not match.","path_not_found"],
+  ["Permission denied.","permission_denied"],
+  ["token=super-secret and content=private","unknown_validation"],
+  [null,"unknown_validation"]
+ ];
+ for(const [message,expected] of cases)assert.equal(classifyRepoValidation(message),expected);
 });
