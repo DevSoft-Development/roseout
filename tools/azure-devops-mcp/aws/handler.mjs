@@ -97,7 +97,16 @@ async function azdoWrite(path,method,body){
  const token=await getDevOpsToken();
  const url=new URL(apiBase+path);url.searchParams.set("api-version","7.1");
  const response=await fetch(url,{method,headers:{authorization:"Bearer "+token,"content-type":"application/json"},body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)});
- if(!response.ok){ console.error("azdo_repo_request_failed",{status:response.status,method,operation:path.includes("/pullrequests")?"pull_request":path.includes("/pushes")?"commit":"branch",requestId:response.headers.get("x-vss-e2eid")||null}); throw new Error("upstream_repo_http_"+response.status); }
+ if(!response.ok){
+  const operation=path.includes("/pullrequests")?"pull_request":path.includes("/pushes")?"commit":"branch";
+  const requestId=response.headers.get("x-vss-e2eid")||null;
+  console.error("azdo_repo_request_failed",{status:response.status,method,operation,requestId});
+  const error=new Error("upstream_repo_http");
+  error.safeCode="AZDO_HTTP_"+response.status;
+  error.safeOperation=operation;
+  error.safeRequestId=requestId&&/^[a-zA-Z0-9-]{1,100}$/.test(requestId)?requestId:null;
+  throw error;
+ }
  return response.json();
 }
 async function repoMainSha(){
@@ -254,5 +263,12 @@ export async function handler(event){
     }
 
     return reply({content:[{type:"text",text:JSON.stringify(result)}]});
-  }catch{return reply({isError:true,content:[{type:"text",text:"Azure DevOps operation unavailable"}]});}
+  }catch(error){
+    const allowedCodes=new Set(["AZDO_HTTP_400","AZDO_HTTP_401","AZDO_HTTP_403","AZDO_HTTP_404","AZDO_HTTP_409","AZDO_HTTP_412","AZDO_HTTP_429"]);
+    const code=allowedCodes.has(error?.safeCode)?error.safeCode:"AZDO_OPERATION_FAILED";
+    const operation=["commit","branch","pull_request"].includes(error?.safeOperation)?error.safeOperation:"unknown";
+    const requestId=error?.safeRequestId||null;
+    console.error("azdo_mcp_tool_failed",{tool:name,code,operation,requestId});
+    return reply({isError:true,content:[{type:"text",text:JSON.stringify({error:code,operation,requestId})}]});
+  }
 }
