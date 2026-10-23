@@ -60,7 +60,7 @@ jobs:
           echo "key_id=$(jq -r '.keyId' "$WORK/vault.json")" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure with GitHub OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
