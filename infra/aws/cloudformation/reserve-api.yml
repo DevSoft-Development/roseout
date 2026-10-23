@@ -6,10 +6,9 @@ Parameters:
     Type: String
     Default: production
     AllowedValues: [production, staging]
-  ReserveApiSharedSecret:
+  ReserveApiSecretArn:
     Type: String
-    NoEcho: true
-    MinLength: 32
+    Description: ARN of the persistent Reserve API HMAC secret managed outside this stack.
   SupabaseUrl:
     Type: String
   SupabaseServiceRoleSecretArn:
@@ -21,21 +20,6 @@ Parameters:
     MaxValue: 200
 
 Resources:
-  ReserveApiSecret:
-    Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      Name: !Sub /theouthaven/${Environment}/reserve-api/hmac
-      SecretString: !Ref ReserveApiSharedSecret
-      Tags:
-        - Key: Project
-          Value: TheOutHaven
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Service
-          Value: ReserveAPI
-
   ReserveApiRole:
     Type: AWS::IAM::Role
     Properties:
@@ -61,7 +45,7 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource:
-                  - !Ref ReserveApiSecret
+                  - !Ref ReserveApiSecretArn
                   - !Ref SupabaseServiceRoleSecretArn
       Tags:
         - Key: Project
@@ -94,7 +78,7 @@ Resources:
         Variables:
           ENVIRONMENT: !Ref Environment
           SUPABASE_URL: !Ref SupabaseUrl
-          SHARED_SECRET_ARN: !Ref ReserveApiSecret
+          SHARED_SECRET_ARN: !Ref ReserveApiSecretArn
           SUPABASE_SERVICE_ROLE_SECRET_ID: !Ref SupabaseServiceRoleSecretArn
       Code:
         ZipFile: |
@@ -193,6 +177,6 @@ Outputs:
   ReserveApiUrl:
     Value: !GetAtt ReserveApiUrl.FunctionUrl
   ReserveApiSecretArn:
-    Value: !Ref ReserveApiSecret
+    Value: !Ref ReserveApiSecretArn
   ReserveOutboxRuleName:
     Value: !Ref ReserveOutboxRule
