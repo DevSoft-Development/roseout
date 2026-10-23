@@ -43,6 +43,7 @@ export const adminNavSections: readonly AdminNavSection[] = [
   { label: "System", icon: Settings, items: [
     { label: "Microsoft 365", href: "/admin/dashboard/settings/microsoft-365", icon: Mail, permission: "dashboard" },
     { label: "Device Management", href: "/admin/dashboard/security/devices", icon: MonitorSmartphone, permission: "security" },
+    { label: "Apple Device Enrollment", href: "/admin/dashboard/security/apple-devices", icon: MonitorSmartphone, permission: "security" },
     { label: "Cloud Infrastructure", href: "/admin/dashboard/infrastructure", icon: Network, permission: "productionFinishLine" },
     { label: "Critical Incidents", href: "/admin/dashboard/infrastructure/incidents", icon: ShieldAlert, permission: "productionFinishLine" },
     { label: "Security", href: "/admin/dashboard/security", icon: LockKeyhole, permission: "security" },
