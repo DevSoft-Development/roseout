@@ -266,6 +266,29 @@ function recentOutboundBodies(conversation: SupportMessageContext[]) {
     .slice(-4);
 }
 
+function latestRelevantOutboundQuestion(conversation: SupportMessageContext[], latestMessage: string) {
+  for (let index = conversation.length - 1; index >= 0; index -= 1) {
+    const item = conversation[index];
+    if (item.direction !== "outbound") continue;
+    const body = String(item.body || "").trim();
+    if (!body || !body.includes("?")) continue;
+
+    const laterInbound = conversation.slice(index + 1).some((later) =>
+      later.direction === "inbound" &&
+      normalizeText(String(later.body || "")) === normalizeText(latestMessage),
+    );
+    if (laterInbound) return body;
+  }
+  return "";
+}
+
+function looksLikeSubstantiveAnswer(latestMessage: string) {
+  const normalized = normalizeText(latestMessage);
+  if (!normalized) return false;
+  if (/^(help|hello|hi|hey|thanks|thank you|ok|okay|yes|no|yep|nope)$/.test(normalized)) return false;
+  return normalized.split(/\s+/).filter(Boolean).length >= 3;
+}
+
 function progressiveFallbackQuestion(
   conversation: SupportMessageContext[],
   latestMessage: string,
@@ -274,11 +297,16 @@ function progressiveFallbackQuestion(
   const candidate = routineFallbackQuestion(searchContext);
   const recent = recentOutboundBodies(conversation);
   const normalizedCandidate = normalizedReply(candidate);
-  const repeated = recent.some((body) => normalizedReply(body) === normalizedCandidate);
+  const exactRepeat = recent.some((body) => normalizedReply(body) === normalizedCandidate);
+  const answeredQuestion = latestRelevantOutboundQuestion(conversation, latestMessage);
 
-  if (!repeated) return candidate;
+  if (!exactRepeat && !answeredQuestion) return candidate;
 
   const latest = latestMessage.trim();
+  if (answeredQuestion && looksLikeSubstantiveAnswer(latest)) {
+    return `Thanks — I got that: "${latest.slice(0, 140)}". I’ll use that answer and move forward instead of asking the same troubleshooting question again. What is the next specific detail or result you see from there?`;
+  }
+
   return latest
     ? `Thanks — I got your answer: "${latest.slice(0, 140)}". I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?`
     : "Thanks — I got your reply. I don’t want to repeat the last question. What is the next thing you see or what happens when you continue from there?";
