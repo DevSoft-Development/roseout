@@ -49,7 +49,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate DNS cutover safety contract
         run: node scripts/web-surfaces-dns-cutover-regression.mjs
 
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate operator confirmation
         env:

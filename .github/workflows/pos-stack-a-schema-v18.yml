@@ -21,7 +21,7 @@ jobs:
       AWS_REGION: us-east-1
       SUPABASE_VAULT_SECRET: /theouthaven/credential-vault/production/supabase
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Pin to the fully green Stack A PR head; the workflow definition lives on main.
           ref: fc6e58dffa3ad4eb54e1f0ec1d6a191429691b85

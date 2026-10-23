@@ -65,7 +65,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate SES event worker syntax
         run: python -m py_compile infra/aws/lambda/ses_event_worker.py
       - name: Install cfn-lint
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve deployment configuration
         id: config

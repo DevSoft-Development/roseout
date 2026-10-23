@@ -67,7 +67,7 @@ jobs:
     name: Validate custom OTA contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate OTA configuration
         run: |
           set -euo pipefail
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Login to Azure with GitHub OIDC
         uses: azure/login@v2
@@ -149,7 +149,7 @@ jobs:
     timeout-minutes: 45
     environment: Production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
