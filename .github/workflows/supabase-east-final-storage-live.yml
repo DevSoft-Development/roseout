@@ -1,0 +1,191 @@
+name: Supabase East final storage live delta
+
+on:
+  push:
+    branches:
+      - migration/east-final-storage-live
+    paths:
+      - '.github/workflows/supabase-east-final-storage-live.yml'
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+  SOURCE_SUPABASE_URL: https://hnhbzynoyrhjndefbwkh.supabase.co
+  EAST_SUPABASE_URL: https://ftdsltatyqhtllyyefzp.supabase.co
+
+jobs:
+  storage-delta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Resolve source and Virginia service-role keys
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            file="$RUNNER_TEMP/${side}-keys.json"
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/api-keys?reveal=true" > "$file"
+            key="$(jq -r '[.[] | select(.type=="legacy" and .name=="service_role" and (.disabled != true))][0].api_key // empty' "$file")"
+            test -n "$key" || { echo "Unable to resolve ${side} service-role key" >&2; exit 1; }
+            echo "::add-mask::$key"
+            printf '%s' "$key" > "$RUNNER_TEMP/${side}-service-role"
+            chmod 600 "$RUNNER_TEMP/${side}-service-role"
+            rm -f "$file"
+          done
+          echo "storage_service_role_keys_resolved=true"
+
+      - name: Confirm source database writers remain frozen
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          query() {
+            local ref="$1" sql="$2" out="$3"
+            jq -n --arg query "$sql" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$out"
+          }
+          query "$SOURCE_SUPABASE_REF" "select count(*) filter (where active) as active_jobs, count(*) filter (where not active) as paused_jobs from cron.job" "$RUNNER_TEMP/source-cron.json"
+          query "$EAST_SUPABASE_REF" "select count(*) as cron_jobs from cron.job" "$RUNNER_TEMP/east-cron.json"
+          test "$(jq -r '.[0].active_jobs' "$RUNNER_TEMP/source-cron.json")" = "0" || { echo "Oregon cron is not frozen" >&2; exit 1; }
+          test "$(jq -r '.[0].paused_jobs' "$RUNNER_TEMP/source-cron.json")" = "25" || { echo "Unexpected Oregon paused cron count" >&2; exit 1; }
+          test "$(jq -r '.[0].cron_jobs' "$RUNNER_TEMP/east-cron.json")" = "0" || { echo "Virginia cron is not empty" >&2; exit 1; }
+          echo "storage_delta_preflight=true"
+
+      - name: Build live storage object set diff
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SQL="select bucket_id, name, coalesce((metadata->>'size')::bigint,0) as size, coalesce(metadata->>'mimetype','application/octet-stream') as mime from storage.objects order by bucket_id,name"
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            jq -n --arg query "$SQL" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-objects.json"
+            jq -e 'type == "array"' "$RUNNER_TEMP/${side}-objects.json" >/dev/null
+          done
+
+          jq -n \
+            --slurpfile source "$RUNNER_TEMP/source-objects.json" \
+            --slurpfile east "$RUNNER_TEMP/east-objects.json" '
+              ($east[0] | map({key:(.bucket_id + "\u0000" + .name), value:.}) | from_entries) as $eastMap |
+              $source[0] | map(select(($eastMap[.bucket_id + "\u0000" + .name] // null) == null))
+            ' > "$RUNNER_TEMP/missing-objects.json"
+
+          missing="$(jq 'length' "$RUNNER_TEMP/missing-objects.json")"
+          bytes="$(jq '[.[].size] | add // 0' "$RUNNER_TEMP/missing-objects.json")"
+          source_count="$(jq 'length' "$RUNNER_TEMP/source-objects.json")"
+          east_count="$(jq 'length' "$RUNNER_TEMP/east-objects.json")"
+          echo "storage_source_objects=$source_count"
+          echo "storage_virginia_objects_before=$east_count"
+          echo "storage_missing_objects=$missing"
+          echo "storage_missing_bytes=$bytes"
+          test "$missing" -le 100 || { echo "Unexpectedly large storage delta: $missing objects" >&2; exit 1; }
+
+      - name: Copy every missing object and byte-verify
+        run: |
+          set -euo pipefail
+          SOURCE_KEY="$(cat "$RUNNER_TEMP/source-service-role")"
+          EAST_KEY="$(cat "$RUNNER_TEMP/east-service-role")"
+          echo "::add-mask::$SOURCE_KEY"
+          echo "::add-mask::$EAST_KEY"
+          copied=0
+
+          while IFS= read -r item; do
+            bucket="$(jq -r '.bucket_id' <<<"$item")"
+            object="$(jq -r '.name' <<<"$item")"
+            mime="$(jq -r '.mime' <<<"$item")"
+            expected="$(jq -r '.size' <<<"$item")"
+            encoded="$(python3 -c 'import sys, urllib.parse; print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))' "$object")"
+            src="$RUNNER_TEMP/source-object.bin"
+            response="$RUNNER_TEMP/upload-response.json"
+            verify="$RUNNER_TEMP/east-object.bin"
+
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --header "Authorization: Bearer $SOURCE_KEY" \
+              --header "apikey: $SOURCE_KEY" \
+              "${SOURCE_SUPABASE_URL}/storage/v1/object/authenticated/${bucket}/${encoded}" \
+              --output "$src"
+            source_size="$(wc -c < "$src" | tr -d ' ')"
+            test "$source_size" = "$expected" || { echo "Source byte mismatch for ${bucket}/${object}" >&2; exit 1; }
+
+            code="$(curl --silent --show-error \
+              --retry 5 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --request POST \
+              --header "Authorization: Bearer $EAST_KEY" \
+              --header "apikey: $EAST_KEY" \
+              --header 'x-upsert: true' \
+              --header "Content-Type: $mime" \
+              --data-binary "@$src" \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              "${EAST_SUPABASE_URL}/storage/v1/object/${bucket}/${encoded}")"
+            [[ "$code" == 2* ]] || { echo "Virginia upload failed for ${bucket}/${object} with HTTP $code" >&2; cat "$response" >&2 || true; exit 1; }
+
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 2 --retry-all-errors --max-time 180 \
+              --header "Authorization: Bearer $EAST_KEY" \
+              --header "apikey: $EAST_KEY" \
+              "${EAST_SUPABASE_URL}/storage/v1/object/authenticated/${bucket}/${encoded}" \
+              --output "$verify"
+            east_size="$(wc -c < "$verify" | tr -d ' ')"
+            test "$east_size" = "$expected" || { echo "Virginia byte mismatch for ${bucket}/${object}" >&2; exit 1; }
+
+            copied=$((copied + 1))
+            rm -f "$src" "$response" "$verify"
+          done < <(jq -c '.[]' "$RUNNER_TEMP/missing-objects.json")
+
+          echo "storage_objects_copied=$copied"
+
+      - name: Require exact storage object and byte-size parity
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SQL="select bucket_id, name, coalesce((metadata->>'size')::bigint,0) as size from storage.objects order by bucket_id,name"
+          for side in source east; do
+            if [ "$side" = source ]; then ref="$SOURCE_SUPABASE_REF"; else ref="$EAST_SUPABASE_REF"; fi
+            jq -n --arg query "$SQL" '{query:$query}' > "$RUNNER_TEMP/query.json"
+            curl --fail --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$RUNNER_TEMP/query.json" \
+              "https://api.supabase.com/v1/projects/${ref}/database/query" > "$RUNNER_TEMP/${side}-final.json"
+            jq -S '.' "$RUNNER_TEMP/${side}-final.json" > "$RUNNER_TEMP/${side}-final-normalized.json"
+          done
+
+          if ! cmp -s "$RUNNER_TEMP/source-final-normalized.json" "$RUNNER_TEMP/east-final-normalized.json"; then
+            echo "Storage object-set parity failed" >&2
+            exit 1
+          fi
+          objects="$(jq 'length' "$RUNNER_TEMP/source-final.json")"
+          source_bytes="$(jq '[.[].size] | add // 0' "$RUNNER_TEMP/source-final.json")"
+          east_bytes="$(jq '[.[].size] | add // 0' "$RUNNER_TEMP/east-final.json")"
+          test "$source_bytes" = "$east_bytes" || { echo "Storage byte parity failed" >&2; exit 1; }
+          echo "storage_object_parity=$objects"
+          echo "storage_byte_parity=$source_bytes"
+          echo "storage_final_delta=verified"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/source-service-role "$RUNNER_TEMP"/east-service-role "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/*.bin
