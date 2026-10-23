@@ -1,0 +1,285 @@
+name: Supabase East Auth field sync probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/supabase-east-auth-write-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_SUPABASE_REF: hnhbzynoyrhjndefbwkh
+  EAST_SUPABASE_REF: ftdsltatyqhtllyyefzp
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Fetch Oregon and Virginia Auth configs
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Missing SUPABASE_ACCESS_TOKEN" >&2; exit 1; }
+          for ref in "$SOURCE_SUPABASE_REF" "$EAST_SUPABASE_REF"; do
+            curl --fail --silent --show-error \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/${ref}/config/auth" \
+              > "$RUNNER_TEMP/auth-${ref}.json"
+            jq -e 'type == "object"' "$RUNNER_TEMP/auth-${ref}.json" >/dev/null
+          done
+
+      - name: Validate source secure Auth prerequisites
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          jq -e '
+            (.smtp_admin_email | type == "string" and length > 0) and
+            (.smtp_host | type == "string" and length > 0) and
+            (.smtp_port != null) and
+            (.smtp_user | type == "string" and length > 0) and
+            (.smtp_pass | type == "string" and length > 0) and
+            (.external_azure_client_id | type == "string" and length > 0) and
+            (.external_azure_url | type == "string" and length > 0) and
+            (.external_azure_secret | type == "string" and length > 0)
+          ' "$SOURCE" >/dev/null
+          echo "source_custom_smtp_ready=true"
+          echo "source_azure_credentials_ready=true"
+          echo "Secret values were not printed."
+
+      - name: Keep Virginia Azure disabled during synchronization
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          CODE="$(curl --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data '{"external_azure_enabled":false}' \
+            --output "$RUNNER_TEMP/azure-disable-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+          echo "azure_disable_http_status=$CODE"
+          [[ "$CODE" == 2* ]] || exit 1
+
+      - name: Synchronize portable Auth fields except email rate limit
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          KEYS="$RUNNER_TEMP/auth-sync-keys.txt"
+          FAILED="$RUNNER_TEMP/auth-sync-failed.txt"
+          : > "$FAILED"
+
+          python3 - <<'PY' > "$KEYS"
+          import json, os
+          from pathlib import Path
+
+          src = json.loads((Path(os.environ['RUNNER_TEMP']) / f"auth-{os.environ['SOURCE_SUPABASE_REF']}.json").read_text())
+          exact = {
+              'site_url',
+              'uri_allow_list',
+              'password_hibp_enabled',
+              'external_azure_client_id',
+              'external_azure_url',
+          }
+          prefixes = ('mailer_subjects_', 'mailer_templates_')
+          for key in sorted(k for k in src if k in exact or k.startswith(prefixes)):
+              print(key)
+          PY
+
+          while IFS= read -r key; do
+            PAYLOAD="$RUNNER_TEMP/auth-field-payload.json"
+            RESPONSE="$RUNNER_TEMP/auth-field-response.json"
+            jq --arg key "$key" '{($key): .[$key]}' "$SOURCE" > "$PAYLOAD"
+            CODE="$(curl --silent --show-error \
+              --request PATCH \
+              --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$PAYLOAD" \
+              --output "$RESPONSE" \
+              --write-out '%{http_code}' \
+              "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+            echo "auth_field=$key http_status=$CODE"
+            if [[ "$CODE" != 2* ]]; then
+              echo "$key" >> "$FAILED"
+              if jq -e 'type == "object"' "$RESPONSE" >/dev/null 2>&1; then
+                MESSAGE="$(jq -r '.message // .error // empty' "$RESPONSE")"
+                test -z "$MESSAGE" || echo "auth_field_error=$key message=$MESSAGE"
+              fi
+            fi
+          done < "$KEYS"
+
+          if [ -s "$FAILED" ]; then
+            echo "Portable Auth fields rejected by Supabase:"
+            sed 's/^/  - /' "$FAILED"
+            exit 1
+          fi
+          echo "portable_auth_fields_written=$(wc -l < "$KEYS" | tr -d ' ')"
+
+      - name: Copy Oregon custom SMTP to Virginia without printing secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          PAYLOAD="$RUNNER_TEMP/smtp-payload.json"
+          RESPONSE="$RUNNER_TEMP/smtp-response.json"
+          jq '{
+            smtp_admin_email,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_pass,
+            smtp_sender_name
+          }' "$SOURCE" > "$PAYLOAD"
+          chmod 600 "$PAYLOAD"
+          CODE="$(curl --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$PAYLOAD" \
+            --output "$RESPONSE" \
+            --write-out '%{http_code}' \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+          echo "smtp_sync_http_status=$CODE"
+          if [[ "$CODE" != 2* ]]; then
+            jq -r '.message // .error // "Virginia SMTP synchronization failed"' "$RESPONSE" >&2 || true
+            exit 1
+          fi
+          : > "$RUNNER_TEMP/smtp-write-ok"
+          echo "virginia_custom_smtp_written=true"
+          rm -f "$PAYLOAD" "$RESPONSE"
+
+      - name: Synchronize email rate limit after SMTP is ready
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          PAYLOAD="$RUNNER_TEMP/rate-limit-payload.json"
+          jq '{rate_limit_email_sent}' "$SOURCE" > "$PAYLOAD"
+          CODE="$(curl --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$PAYLOAD" \
+            --output "$RUNNER_TEMP/rate-limit-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+          echo "email_rate_limit_sync_http_status=$CODE"
+          [[ "$CODE" == 2* ]] || exit 1
+
+      - name: Copy Oregon Azure secret to Virginia without printing it
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          PAYLOAD="$RUNNER_TEMP/azure-secret-payload.json"
+          RESPONSE="$RUNNER_TEMP/azure-secret-response.json"
+          jq '{external_azure_secret}' "$SOURCE" > "$PAYLOAD"
+          chmod 600 "$PAYLOAD"
+          CODE="$(curl --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$PAYLOAD" \
+            --output "$RESPONSE" \
+            --write-out '%{http_code}' \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+          echo "azure_secret_sync_http_status=$CODE"
+          [[ "$CODE" == 2* ]] || exit 1
+          : > "$RUNNER_TEMP/azure-secret-write-ok"
+          echo "virginia_azure_secret_written=true"
+          rm -f "$PAYLOAD" "$RESPONSE"
+
+      - name: Verify Auth SMTP and Azure configuration before activation
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/smtp-write-ok" || { echo "SMTP write success marker missing" >&2; exit 1; }
+          test -f "$RUNNER_TEMP/azure-secret-write-ok" || { echo "Azure secret write success marker missing" >&2; exit 1; }
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth" \
+            > "$RUNNER_TEMP/auth-east-after.json"
+
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          tmp = Path(os.environ['RUNNER_TEMP'])
+          src = json.loads((tmp / f"auth-{os.environ['SOURCE_SUPABASE_REF']}.json").read_text())
+          east = json.loads((tmp / 'auth-east-after.json').read_text())
+          exact = {
+              'site_url', 'uri_allow_list', 'rate_limit_email_sent',
+              'password_hibp_enabled', 'external_azure_client_id',
+              'external_azure_url', 'smtp_admin_email', 'smtp_host',
+              'smtp_port', 'smtp_user', 'smtp_sender_name'
+          }
+          prefixes = ('mailer_subjects_', 'mailer_templates_')
+          keys = sorted(k for k in src if k in exact or k.startswith(prefixes))
+          mismatches = [k for k in keys if src.get(k) != east.get(k)]
+          if mismatches:
+              print('Auth parity mismatches:')
+              for key in mismatches:
+                  print(f'  - {key}')
+              raise SystemExit(1)
+
+          smtp_secret_present = isinstance(east.get('smtp_pass'), str) and len(east.get('smtp_pass')) > 0
+          azure_secret_present = isinstance(east.get('external_azure_secret'), str) and len(east.get('external_azure_secret')) > 0
+          print(f'virginia_smtp_secret_present={str(smtp_secret_present).lower()}')
+          print(f'virginia_azure_secret_present={str(azure_secret_present).lower()}')
+          if not smtp_secret_present or not azure_secret_present:
+              raise SystemExit('Virginia secure Auth credential presence check failed')
+          if east.get('external_azure_enabled') is not False:
+              raise SystemExit('Virginia Azure provider must remain disabled before activation')
+          print(f'auth_fields_verified={len(keys)}')
+          print('pre_activation_gate=passed')
+          PY
+
+      - name: Enable Virginia Azure provider to match Oregon
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          SOURCE="$RUNNER_TEMP/auth-${SOURCE_SUPABASE_REF}.json"
+          SOURCE_ENABLED="$(jq -r '.external_azure_enabled // false' "$SOURCE")"
+          test "$SOURCE_ENABLED" = "true" || { echo "Oregon Azure provider is not enabled; refusing to activate Virginia." >&2; exit 1; }
+          CODE="$(curl --silent --show-error \
+            --request PATCH \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data '{"external_azure_enabled":true}' \
+            --output "$RUNNER_TEMP/azure-enable-response.json" \
+            --write-out '%{http_code}' \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth")"
+          echo "azure_enable_http_status=$CODE"
+          [[ "$CODE" == 2* ]] || exit 1
+
+      - name: Final Virginia Auth activation verification
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/${EAST_SUPABASE_REF}/config/auth" \
+            > "$RUNNER_TEMP/auth-east-final.json"
+          jq -e '.external_azure_enabled == true' "$RUNNER_TEMP/auth-east-final.json" >/dev/null
+          echo "virginia_azure_provider_enabled=true"
+          echo "virginia_auth_activation=verified"
+          echo "OAuth redirect propagation is validated by the separate Supabase East Azure OAuth smoke workflow."
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/auth-*.json "$RUNNER_TEMP"/azure-*.json "$RUNNER_TEMP"/smtp-*.json "$RUNNER_TEMP"/rate-limit-*.json "$RUNNER_TEMP"/auth-sync-keys.txt "$RUNNER_TEMP"/auth-sync-failed.txt "$RUNNER_TEMP"/auth-field-payload.json "$RUNNER_TEMP"/auth-field-response.json "$RUNNER_TEMP"/smtp-write-ok "$RUNNER_TEMP"/azure-secret-write-ok "$RUNNER_TEMP"/azure-oauth-headers.txt
