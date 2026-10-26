@@ -45,7 +45,7 @@ jobs:
           echo "email_identity=$EMAIL_IDENTITY" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
