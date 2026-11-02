@@ -1,6 +1,7 @@
 import "server-only";
 
 import crypto from "crypto";
+import {authenticateSandboxVirtualDevice} from "@/lib/pos/sandbox-virtual-device";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { resolveOperationalShardForLocationId } from "@/lib/operational-shards";
 
@@ -108,8 +109,13 @@ export async function claimPosDeviceCredential(input: {
 export async function authenticatePosDeviceCredential(input: {
   deviceId: string;
   credential: string;
+  allowSandboxVirtual?: boolean;
 }) {
   const deviceId=required(input.deviceId,"device_id");
+  if(deviceId.startsWith("sandbox-")){
+    if(input.allowSandboxVirtual!==true)throw Error("pos_sandbox_scope_denied");
+    return authenticateSandboxVirtualDevice({deviceId,credential:input.credential});
+  }
   const presentedHash=sha256(required(input.credential,"credential"));
   const { data, error }=await supabaseAdmin.from("pos_device_credentials")
     .select("device_id,location_id,credential_hash,status")
