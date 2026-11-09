@@ -106,7 +106,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure temporary AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
@@ -226,7 +226,7 @@ jobs:
           echo "Minimal deploy-role recovery policy installed and allowed to propagate; refreshing AWS session before reconciliation." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Refresh AWS credentials for recovery permissions
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
@@ -345,7 +345,7 @@ jobs:
           echo "Temporary managed recovery policy attached before rollback recovery." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Refresh AWS credentials after recovery-policy attach
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: ${{ steps.config.outputs.role_arn }}
           aws-region: ${{ env.AWS_REGION }}
