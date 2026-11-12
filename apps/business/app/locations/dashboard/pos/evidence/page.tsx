@@ -9,6 +9,7 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n/100);
 export default async function PosEvidencePage({searchParams}:{searchParams:Promise<{locationId?:string}>}){
   const locationId=String((await searchParams).locationId||"");
+  const signedPdfAvailable=process.env.POS_SIGNED_DISPUTE_PDF_ENABLED==="true";
   if(!uuid.test(locationId))redirect("/locations/dashboard");
   const auth=await createClient();
   const {data:{user}}=await auth.auth.getUser();
@@ -35,7 +36,7 @@ export default async function PosEvidencePage({searchParams}:{searchParams:Promi
         <td className="p-3">{t.status}</td>
         <td className="p-3">{money(Number(t.amount_cents||0))}</td>
         <td className="p-3">{(evidence.data||[]).filter(e=>e.tender_id===t.id).map(e=>e.evidence_type).join(", ")||"None attached"}</td>
-        <td className="p-3"><a className="underline" href={`/api/pos/evidence/packet?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(t.id)}`}>Printable manifest</a></td>
+        <td className="p-3"><a className="underline" href={`/api/pos/evidence/packet?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(t.id)}`}>Printable manifest</a>{signedPdfAvailable?<a className="ml-3 underline" href={`/api/pos/evidence/packet/pdf?locationId=${encodeURIComponent(locationId)}&tenderId=${encodeURIComponent(t.id)}`}>Download signed PDF</a>:null}</td>
       </tr>)}</tbody></table>
       {(tenders.data||[]).length===0?<p className="p-5 text-sm">No transactions found for this location.</p>:null}
     </div>

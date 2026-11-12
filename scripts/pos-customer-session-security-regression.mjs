@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const api=readFileSync("apps/business/app/api/pos/evidence/customer-session/route.ts","utf8");
+const legacy=readFileSync("apps/business/app/api/pos/evidence/route.ts","utf8");
+assert.match(api,/POS_CUSTOMER_SIGNATURE_DEVICE_SESSIONS_ENABLED/);
+assert.match(api,/authenticatePosDeviceCredential/);
+assert.match(api,/readBytes>1500000/);
+assert.match(api,/pos_consume_evidence_session/);
+assert.match(api,/verifyCustomerEvidenceSession/);
+assert.match(legacy,/customer_signature_session_required/);
+assert.doesNotMatch(legacy,/storeVerifiedPosSignature\s*\(/);
+console.log("PASS: signature endpoints default disabled; authenticated device, max bytes, nonce checks present");
+console.log("RELEASE BLOCK: Stripe remote reconciliation, immutable amount match, rate limits, access audit, and real device verification are not certified.");

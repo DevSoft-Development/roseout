@@ -19,6 +19,7 @@ async function authenticate(request:Request){
   return authenticatePosDeviceCredential({
     deviceId:String(request.headers.get("x-pos-device-id")||""),
     credential:bearer(request),
+    allowSandboxVirtual:true,
   });
 }
 function statusFor(message:string){
