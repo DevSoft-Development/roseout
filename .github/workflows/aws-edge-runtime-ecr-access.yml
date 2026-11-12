@@ -19,7 +19,9 @@ env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: '742020474738'
   ECR_REPOSITORY: theouthaven/edge-runtime
+  RESERVATION_RENDERER_ECR_REPOSITORY: theouthaven/reservation-renderer
   EDGE_RUNTIME_FUNCTION: toh-production-edge-runtime
+  RESERVATION_RENDERER_FUNCTION: toh-production-reservation-renderer
   DEPLOY_ROLE_NAME: TheOutHavenGitHubPlatformDeployRole
 
 jobs:
@@ -49,7 +51,10 @@ jobs:
                   "ecr:SetRepositoryPolicy",
                   "ecr:GetRepositoryPolicy"
                 ],
-                "Resource": "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${ECR_REPOSITORY}"
+                "Resource": [
+                  "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${ECR_REPOSITORY}",
+                  "arn:aws:ecr:${AWS_REGION}:${AWS_ACCOUNT_ID}:repository/${RESERVATION_RENDERER_ECR_REPOSITORY}"
+                ]
               }
             ]
           }
@@ -68,8 +73,11 @@ jobs:
       - name: Grant Lambda image retrieval access
         run: |
           set -euo pipefail
-          POLICY="$RUNNER_TEMP/ecr-policy.json"
-          cat > "$POLICY" <<JSON
+          apply_policy() {
+            local repository="$1"
+            local function_name="$2"
+            local policy="$RUNNER_TEMP/ecr-policy-${function_name}.json"
+            cat > "$policy" <<JSON
           {
             "Version": "2012-10-17",
             "Statement": [
@@ -83,28 +91,39 @@ jobs:
                 ],
                 "Condition": {
                   "StringLike": {
-                    "aws:SourceArn": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${EDGE_RUNTIME_FUNCTION}"
+                    "aws:SourceArn": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${function_name}"
                   }
                 }
               }
             ]
           }
           JSON
-          aws ecr set-repository-policy \
-            --repository-name "$ECR_REPOSITORY" \
-            --policy-text "file://$POLICY" >/dev/null
+            aws ecr set-repository-policy \
+              --repository-name "$repository" \
+              --policy-text "file://$policy" >/dev/null
+          }
+          apply_policy "$ECR_REPOSITORY" "$EDGE_RUNTIME_FUNCTION"
+          apply_policy "$RESERVATION_RENDERER_ECR_REPOSITORY" "$RESERVATION_RENDERER_FUNCTION"
 
       - name: Verify scoped Lambda access
         run: |
           set -euo pipefail
-          POLICY="$(aws ecr get-repository-policy --repository-name "$ECR_REPOSITORY" --query policyText --output text)"
-          jq -e --arg expected "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${EDGE_RUNTIME_FUNCTION}" '
-            .Statement | any(
-              .Sid == "LambdaECRImageRetrievalPolicy"
-              and .Effect == "Allow"
-              and .Principal.Service == "lambda.amazonaws.com"
-              and (.Action | index("ecr:BatchGetImage"))
-              and (.Action | index("ecr:GetDownloadUrlForLayer"))
-              and .Condition.StringLike["aws:SourceArn"] == $expected
-            )
-          ' <<<"$POLICY" >/dev/null
+          verify_policy() {
+            local repository="$1"
+            local function_name="$2"
+            local expected="arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${function_name}"
+            local policy
+            policy="$(aws ecr get-repository-policy --repository-name "$repository" --query policyText --output text)"
+            jq -e --arg expected "$expected" '
+              .Statement | any(
+                .Sid == "LambdaECRImageRetrievalPolicy"
+                and .Effect == "Allow"
+                and .Principal.Service == "lambda.amazonaws.com"
+                and (.Action | index("ecr:BatchGetImage"))
+                and (.Action | index("ecr:GetDownloadUrlForLayer"))
+                and .Condition.StringLike["aws:SourceArn"] == $expected
+              )
+            ' <<<"$policy" >/dev/null
+          }
+          verify_policy "$ECR_REPOSITORY" "$EDGE_RUNTIME_FUNCTION"
+          verify_policy "$RESERVATION_RENDERER_ECR_REPOSITORY" "$RESERVATION_RENDERER_FUNCTION"
