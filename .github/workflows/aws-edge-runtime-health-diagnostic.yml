@@ -67,3 +67,14 @@ jobs:
             echo 'cloudwatch_log_read_allowed=false'
             cat "$RUNNER_TEMP/runtime-errors.err" | sed -E 's/(Bearer|apikey|token|secret|key)[=: ]+[^ ,}]+/\1=[REDACTED]/Ig' | tail -n 20
           fi
+
+
+      - name: Inspect recent CloudFormation failures
+        run: |
+          set -euo pipefail
+          STACK_NAME=theouthaven-edge-runtime-production
+          echo "stack_status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].StackStatus' --output text)"
+          aws cloudformation describe-stack-events \
+            --stack-name "$STACK_NAME" \
+            --query 'StackEvents[?ResourceStatus==`CREATE_FAILED` || ResourceStatus==`UPDATE_FAILED` || ResourceStatus==`UPDATE_ROLLBACK_IN_PROGRESS`].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+            --output table | head -n 80 || true
