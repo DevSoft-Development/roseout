@@ -1,0 +1,32 @@
+name: LI V2 pilot pipeline gates
+on:
+  pull_request:
+    paths:
+      - 'lib/__tests__/li-v2-pilot-pipeline.test.ts'
+      - 'lib/location-growth/**'
+      - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-publishability.ts'
+      - '.github/workflows/li-v2-pilot-pipeline-gates.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/__tests__/li-v2-pilot-pipeline.test.ts'
+      - 'lib/location-growth/**'
+      - 'lib/location-intelligence/v2/campaign-worker.ts'
+      - 'lib/location-publishability.ts'
+      - '.github/workflows/li-v2-pilot-pipeline-gates.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pilot-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run provider staging, quality, identity and publish exclusion tests
+        run: npx vitest run lib/__tests__/li-v2-pilot-pipeline.test.ts
