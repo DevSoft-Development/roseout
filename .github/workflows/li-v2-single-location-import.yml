@@ -32,7 +32,7 @@ jobs:
             exit 1
           }
       - name: Authenticate to production AWS role
-        uses: aws-actions/configure-aws-credentials@v6.2.3
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           role-to-assume: arn:aws:iam::742020474738:role/TheOutHavenLiV2SingleLocationImportRole
           aws-region: us-east-1
