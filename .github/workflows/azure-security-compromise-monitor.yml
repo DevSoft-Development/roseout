@@ -90,7 +90,7 @@ jobs:
           aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
 
       - name: Login to Azure with GitHub OIDC
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
